@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ function loadDefaults(extDir: string): Defaults {
   return YAML.parse(fs.readFileSync(yamlPath, "utf-8")) as Defaults;
 }
 
-const _defaults = loadDefaults(path.dirname(new URL(import.meta.url).pathname));
+const _defaults = loadDefaults(path.dirname(fileURLToPath(import.meta.url)));
 const BACKOFF = _defaults.backoff_minutes.map(m => m * 60_000);
 const SOFT_BACKOFF = _defaults.soft_backoff_ms;
 const COST_MUX_AT_HIT = _defaults.cost_mux_at_hit;
@@ -125,7 +126,7 @@ function stripDateSuffix(s: string): string {
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  const extDir = path.dirname(new URL(import.meta.url).pathname);
+  const extDir = path.dirname(fileURLToPath(import.meta.url));
   const cfgPath = path.join(extDir, "router-config.json");
   const cachePath = path.join(extDir, ".cache/scan-cache.json");
 
