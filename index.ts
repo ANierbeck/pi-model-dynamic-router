@@ -301,7 +301,8 @@ export default function (pi: ExtensionAPI) {
   function parsePassTree(): string[] {
     if (passEntries !== null) return passEntries;
     try {
-      const raw = execSync("pass ls", { encoding: "utf-8", timeout: 5000 });
+      // Redirect stderr to suppress "pass not found" errors in containers without pass
+      const raw = execSync("pass ls 2>/dev/null", { encoding: "utf-8", timeout: 5000 });
       // Parse tree output: extract leaf paths from lines like "├── api-key" or "│   └── token"
       const lines = raw.split("\n");
       const stack: string[] = [];
@@ -563,7 +564,7 @@ export default function (pi: ExtensionAPI) {
 
   function resolveKeyValue(key: string): string {
     if (key.startsWith("!pass show ")) {
-      try { return execSync(key.slice(1), { encoding: "utf-8" }).trim(); }
+      try { return execSync(key.slice(1) + " 2>/dev/null", { encoding: "utf-8" }).trim(); }
       catch { return key; }
     }
     if (key.startsWith("__cli_oauth__:")) {
