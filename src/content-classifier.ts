@@ -3,7 +3,6 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { callOllama } from "./ollama-utils.js";
- // (wird noch erstellt)
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -108,8 +107,12 @@ export const CATEGORY_TO_GROUP: Record<ClassificationResult["category"], string>
   design: "strategic",
   planning: "tactical",
   exploration: "scout",
-  fallback: "tactical", // Default-Fallback
+  fallback: "tactical",
 };
+
+export function getGroupForCategory(category: string): string {
+  return CATEGORY_TO_GROUP[category as ClassificationResult["category"]] ?? "fallback";
+}
 
 // ── PI Integration ──────────────────────────────────────────────────────
 
