@@ -1,25 +1,19 @@
 // src/ollama-utils.ts
 // Hilfsfunktionen für Ollama-Aufrufe (Klassifizierung, Fallback-Handling)
 
-import { execa } from "execa"; // Wird für CLI-Aufrufe benötigt
-
 // ── Types ────────────────────────────────────────────────────────────────
 
 interface OllamaOptions {
   model: string;
   prompt: string;
   timeoutMs?: number;
-  format?: "json" | "text"; // Standard: "json"
+  format?: "json" | "text";
 }
 
 // ── Core Function ────────────────────────────────────────────────────────
 
 /**
- * Führt einen Ollama-Aufruf aus und gibt die Antwort zurück.
- * @param model Ollama-Modell (z. B. "gemma2:2b").
- * @param prompt Der Prompt für Ollama.
- * @param options Zusätzliche Optionen.
- * @returns Die Antwort von Ollama.
+ * Ruft die Ollama HTTP API auf und gibt die Antwort zurück.
  */
 export async function callOllama(
   model: string,
@@ -27,34 +21,17 @@ export async function callOllama(
   options: Partial<OllamaOptions> = {}
 ): Promise<string> {
   const { timeoutMs = 30_000, format = "json" } = options;
-  const args = [
-    "run",
-    model,
-    "--no-stream", // Kein Streaming für einfache Antworten
-    `--format=${format}`, // JSON-Format für strukturierte Antworten
-  ];
 
-  try {
-    // Ollama über CLI aufrufen
-    const { stdout, stderr, exitCode } = await execa("ollama", args, {
-      input: prompt,
-      timeout: timeoutMs,
-      reject: false, // Kein automatischer Fehler bei exitCode != 0
-    });
+  const res = await fetch("http://localhost:11434/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, prompt, stream: false, ...(format === "json" ? { format: "json" } : {}) }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
 
-    if (exitCode !== 0) {
-      throw new Error(`Ollama failed (exit ${exitCode}): ${stderr}`);
-    }
-
-    return stdout.trim();
-  } catch (error) {
-    console.error("Ollama call failed:", error);
-    throw new Error(
-      `Ollama error: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
-    );
-  }
+  if (!res.ok) throw new Error(`Ollama HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json() as { response: string };
+  return data.response;
 }
 
 // ── Fallback Handling ───────────────────────────────────────────────────

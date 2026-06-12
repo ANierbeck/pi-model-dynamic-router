@@ -14,24 +14,24 @@
             "method": "best"
         },
         "tactical": {
-            "description": "ELO ≥1400, cheapest (prefer subscription)",
+            "description": "Top 25% quality, cheapest (prefer subscription)",
             "method": "tiered",
-            "min_gdpval": 1400
+            "min_gdpval_pct": 75
         },
         "operational": {
-            "description": "ELO ≥1200, cheapest (prefer subscription)",
+            "description": "Top 50% quality, cheapest (prefer subscription)",
             "method": "tiered",
-            "min_gdpval": 1200
+            "min_gdpval_pct": 50
         },
         "scout": {
-            "description": "ELO ≥1000, cheapest (prefer subscription)",
+            "description": "Top 25% quality, cheapest (prefer subscription)",
             "method": "tiered",
-            "min_gdpval": 1000
+            "min_gdpval_pct": 25
         },
         "fallback": {
-            "description": "Cheapest available, no minimum score",
+            "description": "Any available, cheapest (prefer subscription)",
             "method": "tiered",
-            "min_gdpval": 0
+            "min_gdpval_pct": 0
         },
         "dynamic": {
             "description": "Classifies each prompt via Ollama (gemma2:2b) and routes to scout/operational/tactical/strategic",

@@ -1279,7 +1279,7 @@ export default function (pi: ExtensionAPI) {
             return;
           }
 
-          const { classifyPrompt, getGroupForCategory } = await import("./src/dynamic-classifier.js");
+          const { classifyPrompt, getGroupForCategory } = await import("./src/content-classifier.js");
           const prompt = extractLastUserPrompt(context);
           const { category, reason } = await classifyPrompt(prompt);
           const targetGroup = getGroupForCategory(category);
