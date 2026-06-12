@@ -5,9 +5,9 @@
 ## Install
 
 ```bash
-pi install git:github.com/a-canary/pi-model-router
+pi install git:github.com/ANierbeck/pi-model-dynamic-router
 # Or symlink for development
-ln -s ~/pi-model-router ~/.pi/agent/extensions/pi-model-router
+ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
 ```
 
 Then `/reload` in pi.
@@ -16,10 +16,11 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The dynamic routing in this project allows dynamically mapping model groups to concrete provider/model pairs. It considers the quality, cost, and availability of the models. The classification of user prompts is done dynamically to choose the appropriate model group based on the type of request.
-
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses **Ollama (gemma2:2b)** for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
 
 #### Categories for Classification
+
+The system classifies prompts into the following categories:
 
 - `code_simple`: Simple code changes (1–10 lines, syntax fixes, typos)
 - `code_complex`: Complex code changes (refactoring, debugging, >50 lines)
@@ -30,51 +31,26 @@ The dynamic routing in this project allows dynamically mapping model groups to c
 
 #### Mapping of Categories to Model Groups
 
-- `code_simple`: operational
-- `code_complex`: tactical
-- `design`: strategic
-- `planning`: tactical
-- `exploration`: scout
-- `fallback`: fallback
+Each category maps to a specific model group:
 
-#### Classification Function
+| Category | Model Group | Use Case |
+|----------|-------------|----------|
+| `code_simple` | operational | Simple coding tasks |
+| `code_complex` | tactical | Complex coding tasks |
+| `design` | strategic | High-level design decisions |
+| `planning` | tactical | Project planning and coordination |
+| `exploration` | scout | Research and exploration |
+| `fallback` | fallback | Fallback for unclear requests |
 
-The `classifyPrompt` function classifies a user prompt into one of the predefined categories. The `getGroupForCategory` function selects the appropriate model group based on the classification.
+#### Dynamic Group
 
+The **`dynamic`** group is a special group that uses **Ollama (gemma2:2b)** to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
-### Ollama Calls
+**Requirements for Dynamic Routing:**
+- **Ollama** must be installed and running locally.
+- The **gemma2:2b** model must be available in Ollama (`ollama pull gemma2:2b`).
 
-The `ollama-utils.ts` file contains helper functions for Ollama calls, which are used for classification and fallback handling.
-
-
-#### Function `callOllama`
-
-- Executes an Ollama call and returns the response.
-- Supports various options such as timeout and format.
-
-#### Fallback Strategy
-
-- The `getFallbackClassification` function provides a fallback strategy when Ollama is not available.
-
-### Example
-
-Here is an example of how dynamic classification works:
-
-```typescript
-import { classifyPrompt, getGroupForCategory } from "./dynamic-classifier";
-
-async function handleUserPrompt(prompt: string) {
-  const { category, reason } = await classifyPrompt(prompt);
-  const group = getGroupForCategory(category);
-  console.log(`Category: ${category}, Group: ${group}, Reason: ${reason}`);
-}
-
-handleUserPrompt("How can I fix this simple syntax error in my code?");
-```
-
-This would classify the prompt as `code_simple` and choose the `operational` model group.
-
-## How It Works
+### Auto-Discovery
 
 ### Auto-Discovery
 
@@ -94,10 +70,11 @@ Each group auto-discovers available models, filters by quality, and selects by b
 | Group | Method | Quality Filter | Use For |
 |-------|--------|---------------|---------|
 | **strategic** | `best` | — | Best model available. Critical decisions. |
-| **tactical** | `tiered` | ≥75th pct | Top quality, cost-optimized. Planning. |
-| **operational** | `tiered` | ≥50th pct | Good quality, cheapest. Daily coding. |
-| **scout** | `tiered` | ≥25th pct | Acceptable quality, cheapest. Exploration. |
-| **fallback** | `tiered` | ≥0th pct | Any available. Last resort. |
+| **tactical** | `tiered` | ≥75th percentile | Top quality, cost-optimized. Planning. |
+| **operational** | `tiered` | ≥50th percentile | Good quality, cheapest. Daily coding. |
+| **scout** | `tiered` | ≥25th percentile | Acceptable quality, cheapest. Exploration. |
+| **fallback** | `tiered` | ≥0th percentile | Any available. Last resort. |
+| **dynamic** | `dynamic` | — | Auto-classifies prompts and routes to the best group. |
 
 **Billing preference**: free → subscription (lowest rate-limit pressure) → local → pay-per-token (by cost)
 
@@ -148,6 +125,13 @@ Or manually:
 
 anthropic, openai, google, openrouter, chutes, mistral, groq, cerebras, xai, zai, huggingface, kimi-coding, minimax, minimax-cn, opencode, opencode-go, vercel-ai-gateway, azure-openai, deepseek, github-copilot, qwen-cli, gemini-cli, ollama, lm-studio
 
+### Requirements for Dynamic Routing
+
+To use the **`dynamic`** group, you need:
+- **Ollama** installed and running locally (`ollama serve`)
+- The **gemma2:2b** model pulled (`ollama pull gemma2:2b`)
+- Ollama accessible from your system (default: `http://localhost:11434`)
+
 ## Commands
 
 | Command | Description |
@@ -164,6 +148,13 @@ anthropic, openai, google, openrouter, chutes, mistral, groq, cerebras, xai, zai
 | `set_model_from_group` | Switch session to best model from a group |
 | `resolve_model_group` | Preview what a group would resolve to |
 | `update_model_metrics` | Manual metric override |
+
+### Dynamic Routing Tools
+
+The **`dynamic`** group uses the following internal tools:
+- **`classifyPrompt`**: Classifies user prompts into categories (via Ollama).
+- **`getGroupForCategory`**: Maps categories to model groups.
+- **`setupContentBasedRouting`**: PI hook for real-time classification and model switching.
 
 ## Footer
 

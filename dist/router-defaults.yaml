@@ -1,0 +1,36 @@
+# pi-model-router defaults
+# Override any value in router-config.json under the same key
+
+# GDPval scraping
+gdpval_url: "https://artificialanalysis.ai/evaluations/gdpval-aa"
+
+# Rate-limit backoff schedule (minutes, converted to ms at runtime)
+backoff_minutes: [1, 2, 4, 8, 16, 32, 64, 90]
+
+# Soft backoff for empty responses (ms)
+soft_backoff_ms: [30000, 60000, 120000, 300000]
+
+# After this many 429 hits, permanently mux cost for the provider
+cost_mux_at_hit: 4
+
+# Subscription discount factor (sunk cost preference)
+sub_discount: 0.5
+
+# How often to re-fetch available models (ms, default 24h)
+models_ttl_ms: 86400000
+
+# Stream retry config
+max_stream_retries: 2
+empty_response_timeout_ms: 30000
+
+# Model ID normalization — stripped suffixes (prefixes handled by lastIndexOf("/"))
+strip_suffixes:
+  - "-tee"
+  - ":free"
+  - ":api"
+  - "-instruct"
+  - "-thinking"
+  - "-chat"
+  - "-reasoning"
+  - "-fp8"
+  - "-preview"

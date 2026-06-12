@@ -123,6 +123,12 @@ function stripDateSuffix(s: string): string {
   return s.replace(/-\d{4,8}$/, "");
 }
 
+// Exportierte Hilfsfunktion
+function splitRef(ref: string): { provider: string; modelId: string } {
+  const i = ref.indexOf("/");
+  return i === -1 ? { provider: ref, modelId: ref } : { provider: ref.slice(0, i), modelId: ref.slice(i + 1) };
+}
+
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -141,6 +147,7 @@ export default function (pi: ExtensionAPI) {
   let sessionStart = Date.now();
   let turnStart = 0;
   let curModel = "";
+  let lastDynamicModel = "";
   let sessionCtx: any = null;
 
   // ── Helpers ────────────────────────────────────────────────────────────
@@ -472,36 +479,49 @@ export default function (pi: ExtensionAPI) {
         .some(([p, pc]) => pc.keys?.length && !(cache.available_models ?? []).some(m => m.provider === p));
       if (force || age > MODELS_TTL || missingProviders) {
         const models: Cache["available_models"] = [];
-        try {
-          const d = await fetchJson("https://llm.chutes.ai/v1/models");
-          const pricing = cache.openrouter_pricing ?? {};
-          for (const m of d.data ?? []) {
-            models.push({ id: m.id, provider: "chutes", cost_per_m: m.pricing?.prompt ?? 0 });
-            const inp = m.pricing?.prompt ?? 0;
-            const out = m.pricing?.completion ?? 0;
-            if (inp >= 0 && out >= 0) {
-              const ref = `chutes/${m.id}`;
-              if (!pricing[ref] || inp < pricing[ref].input) pricing[ref] = { input: inp, output: out };
-            }
-          }
-          cache.openrouter_pricing = pricing;
-        } catch {}
-        try {
-          const d = await fetchJson("https://openrouter.ai/api/v1/models", { timeoutMs: 25_000 });
-          const pricing: Record<string, { input: number; output: number }> = cache.openrouter_pricing ?? {};
-          for (const m of d.data ?? []) {
-            if (String(m.pricing?.prompt ?? "1") === "0") models.push({ id: m.id, provider: "openrouter", cost_per_m: 0 });
-            const inp = parseFloat(m.pricing?.prompt ?? "0") * 1_000_000;
-            const out = parseFloat(m.pricing?.completion ?? "0") * 1_000_000;
-            if (inp >= 0 && out >= 0) {
-              const ref = `openrouter/${m.id}`;
-              pricing[ref] = { input: inp, output: out };
-              if (m.id.includes("/") && inp > 0) {
-                if (!pricing[m.id] || inp < pricing[m.id].input) pricing[m.id] = { input: inp, output: out };
+        if (cfg.providers?.chutes?.keys?.length) {
+          try {
+            const d = await fetchJson("https://llm.chutes.ai/v1/models");
+            const pricing = cache.openrouter_pricing ?? {};
+            for (const m of d.data ?? []) {
+              models.push({ id: m.id, provider: "chutes", cost_per_m: m.pricing?.prompt ?? 0 });
+              const inp = m.pricing?.prompt ?? 0;
+              const out = m.pricing?.completion ?? 0;
+              if (inp >= 0 && out >= 0) {
+                const ref = `chutes/${m.id}`;
+                if (!pricing[ref] || inp < pricing[ref].input) pricing[ref] = { input: inp, output: out };
               }
             }
+            cache.openrouter_pricing = pricing;
+          } catch {}
+        }
+        if (cfg.providers?.openrouter?.keys?.length) {
+          try {
+            const d = await fetchJson("https://openrouter.ai/api/v1/models", { timeoutMs: 25_000 });
+            const pricing: Record<string, { input: number; output: number }> = cache.openrouter_pricing ?? {};
+            for (const m of d.data ?? []) {
+              if (String(m.pricing?.prompt ?? "1") === "0") models.push({ id: m.id, provider: "openrouter", cost_per_m: 0 });
+              const inp = parseFloat(m.pricing?.prompt ?? "0") * 1_000_000;
+              const out = parseFloat(m.pricing?.completion ?? "0") * 1_000_000;
+              if (inp >= 0 && out >= 0) {
+                const ref = `openrouter/${m.id}`;
+                pricing[ref] = { input: inp, output: out };
+                if (m.id.includes("/") && inp > 0) {
+                  if (!pricing[m.id] || inp < pricing[m.id].input) pricing[m.id] = { input: inp, output: out };
+                }
+              }
+            }
+            cache.openrouter_pricing = pricing;
+          } catch {}
+        }
+        try {
+          const d = await fetchJson("http://localhost:11434/api/tags", { timeoutMs: 5_000 });
+          for (const m of d.models ?? []) {
+            const id = m.name;
+            if (!id) continue;
+            const existing = models.find(x => x.provider === "ollama" && x.id === id);
+            if (!existing) models.push({ id, provider: "ollama", cost_per_m: 0 });
           }
-          cache.openrouter_pricing = pricing;
         } catch {}
         // Scan direct API providers with modelsUrl (anthropic, openai, etc.)
         const providerScans = Object.entries(PROVIDER_MAP)
@@ -748,9 +768,21 @@ export default function (pi: ExtensionAPI) {
   /** All known model refs: auto-discovered + any pinned models in group config */
   function allDiscoveredRefs(): string[] {
     const refs = new Set<string>();
-    for (const m of cache.available_models ?? []) refs.add(`${m.provider}/${m.id}`);
+    // Always include explicitly pinned group models
     for (const g of Object.values(cfg.model_groups)) {
       for (const r of g.models ?? []) refs.add(r);
+    }
+    if (sessionCtx) {
+      // Session active: only use registry models so every ref is guaranteed to pass tryStream.
+      // Cache models from providers without a configured key would always fail tryStream — exclude them.
+      for (const m of sessionCtx.modelRegistry.getAvailable()) {
+        if (PROVIDER_MAP[m.provider] || cfg.providers?.[m.provider]) {
+          refs.add(`${m.provider}/${m.id}`);
+        }
+      }
+    } else {
+      // Pre-session: fall back to scan cache so registerGroupProviders can set initial model names
+      for (const m of cache.available_models ?? []) refs.add(`${m.provider}/${m.id}`);
     }
     return [...refs];
   }
@@ -851,6 +883,10 @@ export default function (pi: ExtensionAPI) {
   function resolve(name: string): { selected: string; candidates: string[] } | null {
     const g = cfg.model_groups[name];
     if (!g) return null;
+
+    // Dynamic group is handled by the hook, not here
+    if (g.method === "dynamic") return null;
+
     let c = available(g);
     if (!c.length) return null;
 
@@ -885,6 +921,7 @@ export default function (pi: ExtensionAPI) {
   function getTopModels(groupName: string, n: number): { ref: string; limited: boolean; rank: number }[] {
     const g = cfg.model_groups[groupName];
     if (!g) return [];
+    if (g.method === "dynamic") return []; // resolved at prompt-time via classifier
     let c = allDiscoveredRefs();
     if (g.min_gdpval != null) c = filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = filterByQualityPct(c, g.min_gdpval_pct);
@@ -975,8 +1012,12 @@ export default function (pi: ExtensionAPI) {
         render(w: number): string[] {
           const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "";
           const grp = ref ? detectGroup(ref) : null;
-          const m = ref ? getM(ref) : null;
-          const rStr = theme.fg("accent", `${grp ?? "—"}/${ctx.model?.provider ?? "?"}/${ctx.model?.id ?? "?"}`);
+          const isDynamic = ctx.model?.id === "dynamic";
+          const m = ref ? getM(isDynamic && lastDynamicModel ? lastDynamicModel : ref) : null;
+          const modelDisplay = isDynamic && lastDynamicModel
+            ? `dynamic→${lastDynamicModel}`
+            : `${ctx.model?.provider ?? "?"}/${ctx.model?.id ?? "?"}`;
+          const rStr = theme.fg("accent", `${grp ?? "—"}/${modelDisplay}`);
           const iStr = m ? theme.fg("warning", `int:${m.gdpval}`) : "";
           const tStr = m ? theme.fg("success", `tps:${Math.round(m.throughput_tps)}`) : "";
 
@@ -1114,10 +1155,12 @@ export default function (pi: ExtensionAPI) {
     const realModel = sessionCtx.modelRegistry.find(provider, modelId);
     if (!realModel) return null;
     if (cfg.model_groups[realModel.provider]) return null;
-    // Resolve API key for the target provider (may come from customProviderApiKeys fallback)
-    const apiKey = await sessionCtx.modelRegistry.getApiKey(realModel).catch(() => null);
-    if (!apiKey) return null;
-    const streamOpts = { ...options, apiKey };
+    const apiKey = await sessionCtx.modelRegistry.getApiKeyForProvider(realModel.provider).catch(() => null);
+    const isLocal = (PROVIDER_MAP as any)[realModel.provider]?.local ?? false;
+    if (!apiKey && !isLocal) return null;
+    // Strip the group's virtual apiKey from options — it must not reach the real provider
+    const { apiKey: _drop, ...baseOpts } = options ?? {};
+    const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
     return { stream: piStreamSimple(realModel, context, streamOpts), ref };
   }
 
@@ -1190,16 +1233,77 @@ export default function (pi: ExtensionAPI) {
    * Creates a proxy AssistantMessageEventStream that consumers iterate.
    * On failure, records the model as soft-limited and tries the next candidate.
    */
+  function extractLastUserPrompt(context: Context): string {
+    try {
+      const userMsgs = context.messages.filter((m) => m.role === "user");
+      const last = userMsgs[userMsgs.length - 1];
+      if (!last) return "";
+      const c = last.content;
+      if (typeof c === "string") return c;
+      if (Array.isArray(c)) return c.filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+    } catch { /* context shape unknown */ }
+    return "";
+  }
+
   function groupStream(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
       const groupName = model.id;
-      const res = resolve(groupName);
-      if (!res) throw new Error(`No available models for group "${groupName}"`);
+      const g = cfg.model_groups[groupName];
+      const isDynamic = g?.method === "dynamic";
 
+      if (!isDynamic) {
+        const res = resolve(groupName);
+        if (!res) throw new Error(`No available models for group "${groupName}"`);
+        // fall through with res below
+        const proxy = createAssistantMessageEventStream();
+        const candidates = [...res.candidates];
+        driveStream(proxy, candidates, context, options);
+        return proxy;
+      }
+
+      // Dynamic group: classify the prompt first, then stream from the resolved group
       const proxy = createAssistantMessageEventStream();
-      const candidates = [...res.candidates];
-
-      // Drive the proxy asynchronously
       (async () => {
+        let candidates: string[];
+        let dynamicLabel: string | undefined;
+        try {
+          // If the last message is a tool result, we're mid-conversation — reuse the same
+          // model to avoid "unmatched tool result" errors from pi's bridge
+          const lastMsg = context.messages[context.messages.length - 1];
+          const isToolFollowUp = lastMsg?.role === "toolResult" && !!lastDynamicModel;
+          if (isToolFollowUp) {
+            const res = resolve("fallback") ?? resolve(Object.keys(cfg.model_groups).find(k => cfg.model_groups[k].method !== "dynamic")!);
+            if (!res) throw new Error("No fallback model for tool follow-up");
+            // Prefer the exact model used in the previous turn
+            candidates = [lastDynamicModel, ...res.candidates.filter(r => r !== lastDynamicModel)];
+            await driveStream(proxy, candidates, context, options);
+            return;
+          }
+
+          const { classifyPrompt, getGroupForCategory } = await import("./src/dynamic-classifier.js");
+          const prompt = extractLastUserPrompt(context);
+          const { category, reason } = await classifyPrompt(prompt);
+          const targetGroup = getGroupForCategory(category);
+          const res = resolve(targetGroup) ?? resolve("fallback");
+          if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
+          candidates = [...res.candidates];
+          lastDynamicModel = res.selected;
+          dynamicLabel = `${category} → ${targetGroup}`;
+          const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, " ")}"`;
+          console.log(`[dynamic] ${logLine}`);
+          try { fs.appendFileSync(path.join(homedir(), ".pi", "logs", "router.log"), logLine + "\n"); } catch {}
+        } catch (err) {
+          console.error("[dynamic] classification failed, using fallback:", err);
+          const fb = resolve("fallback") ?? resolve(Object.keys(cfg.model_groups).find(k => cfg.model_groups[k].method !== "dynamic")!);
+          if (!fb) { proxy.push({ type: "error", reason: "error", error: { role: "assistant", content: [{ type: "text", text: `[router] Dynamic routing failed: ${err}` }], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "error", timestamp: Date.now() } as AssistantMessage } as AssistantMessageEvent); return; }
+          candidates = [...fb.candidates];
+        }
+        await driveStream(proxy, candidates, context, options, dynamicLabel);
+      })();
+      return proxy;
+  }
+
+  function driveStream(proxy: AssistantMessageEventStream, candidates: string[], context: Context, options: SimpleStreamOptions | undefined, label?: string): Promise<void> {
+      return (async () => {
         let lastError: string | undefined;
 
         for (let attempt = 0; attempt <= MAX_STREAM_RETRIES && candidates.length > 0; attempt++) {
@@ -1216,6 +1320,10 @@ export default function (pi: ExtensionAPI) {
 
           if (!target || !targetRef) break;
 
+          // Show which model is actually used (may differ from initially selected after retries)
+          const prefix = label ? `${label} · ${targetRef}` : targetRef;
+          proxy.push({ type: "text_delta", text: `> [router] ${prefix}\n\n` } as any);
+
           const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
 
           if (result.ok) {
@@ -1230,10 +1338,15 @@ export default function (pi: ExtensionAPI) {
           lastError = `${targetRef}: ${result.reason}`;
           recordSoftFailure(targetRef);
 
-          // If we have more candidates, log the retry
+          // Notify the user about the empty response
+          const reason = result.reason === "empty_timeout"
+            ? "keine Antwort innerhalb des Timeouts"
+            : "leere Antwort vom Modell";
           if (candidates.length > 0 && attempt < MAX_STREAM_RETRIES) {
-            // Push a synthetic text event so the consumer sees what happened
-            // (This is visible in the output as a brief note)
+            const nextRef = candidates[0];
+            proxy.push({ type: "text_delta", text: `> [router] ${targetRef} — ${reason}, versuche ${nextRef} …\n\n` } as any);
+          } else {
+            proxy.push({ type: "text_delta", text: `> [router] ${targetRef} — ${reason}\n\n` } as any);
           }
         }
 
@@ -1257,8 +1370,6 @@ export default function (pi: ExtensionAPI) {
         } as AssistantMessage;
         proxy.push({ type: "error", reason: "error", error: errMsg } as AssistantMessageEvent);
       });
-
-      return proxy;
   }
 
   async function registerGroupModels(ctx: any) {
@@ -1326,9 +1437,9 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       load();
       const arg = args?.trim();
-      if (arg === "reload") { load(); loadModelMap(); loadCache(); ctx.ui.notify("Reloaded", "success"); return; }
-      if (arg === "scan") { ctx.ui.notify("Scanning...", "info"); await scan(true); ctx.ui.notify(`Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`, "success"); return; }
-      if (arg === "sync") { load(); registerGroupModels(ctx); ctx.ui.notify("Re-registered group models", "success"); return; }
+      if (arg === "reload") { load(); loadModelMap(); loadCache(); ctx.ui.notify("Reloaded"); return; }
+      if (arg === "scan") { ctx.ui.notify("Scanning..."); await scan(true); ctx.ui.notify(`Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`); return; }
+      if (arg === "sync") { load(); registerGroupModels(ctx); ctx.ui.notify("Re-registered group models"); return; }
 
       if (arg && cfg.model_groups[arg]) {
         const g = cfg.model_groups[arg], res = resolve(arg);
@@ -1349,6 +1460,7 @@ export default function (pi: ExtensionAPI) {
           ? g.pipeline!.map(s => `${s.method}${s.top_k ? `:${s.top_k}` : ""}`).join(" → ")
           : g.method === "best" ? "best gdpval"
           : g.method === "tiered" ? (g.min_gdpval != null ? `tiered ≥${g.min_gdpval}` : `tiered ≥${g.min_gdpval_pct ?? 0}%`)
+          : g.method === "dynamic" ? "dynamic (content-based)"
           : g.method;
         const active = curModel && allDiscoveredRefs().includes(curModel);
         const activeMarker = active ? " ◀" : "";
@@ -1356,7 +1468,11 @@ export default function (pi: ExtensionAPI) {
         // Group header
         lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, "─") + ` ${method} ─`);
 
-        if (top.length === 0) {
+        if (top.length === 0 && g.method === "dynamic") {
+          const cats = ["code_simple→operational", "code_complex→tactical", "design→strategic", "planning→tactical", "exploration→scout"];
+          lines.push("│ Routes per prompt via Ollama (gemma2:2b):");
+          cats.forEach(c => lines.push(`│   ${c}`));
+        } else if (top.length === 0) {
           lines.push("│ (no models configured)");
         } else {
           // Compute max model name width (capped at 38)
