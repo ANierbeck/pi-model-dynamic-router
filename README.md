@@ -14,6 +14,68 @@ Then `/reload` in pi.
 
 ## How It Works
 
+### Dynamic Routing
+
+The dynamic routing in this project allows dynamically mapping model groups to concrete provider/model pairs. It considers the quality, cost, and availability of the models. The classification of user prompts is done dynamically to choose the appropriate model group based on the type of request.
+
+
+#### Categories for Classification
+
+- `code_simple`: Simple code changes (1–10 lines, syntax fixes, typos)
+- `code_complex`: Complex code changes (refactoring, debugging, >50 lines)
+- `design`: Architecture, system design, API design
+- `planning`: Project planning, roadmaps, task breakdown
+- `exploration`: Research, unclear requirements, brainstorming
+- `fallback`: Unclear or multiple categories apply
+
+#### Mapping of Categories to Model Groups
+
+- `code_simple`: operational
+- `code_complex`: tactical
+- `design`: strategic
+- `planning`: tactical
+- `exploration`: scout
+- `fallback`: fallback
+
+#### Classification Function
+
+The `classifyPrompt` function classifies a user prompt into one of the predefined categories. The `getGroupForCategory` function selects the appropriate model group based on the classification.
+
+
+### Ollama Calls
+
+The `ollama-utils.ts` file contains helper functions for Ollama calls, which are used for classification and fallback handling.
+
+
+#### Function `callOllama`
+
+- Executes an Ollama call and returns the response.
+- Supports various options such as timeout and format.
+
+#### Fallback Strategy
+
+- The `getFallbackClassification` function provides a fallback strategy when Ollama is not available.
+
+### Example
+
+Here is an example of how dynamic classification works:
+
+```typescript
+import { classifyPrompt, getGroupForCategory } from "./dynamic-classifier";
+
+async function handleUserPrompt(prompt: string) {
+  const { category, reason } = await classifyPrompt(prompt);
+  const group = getGroupForCategory(category);
+  console.log(`Category: ${category}, Group: ${group}, Reason: ${reason}`);
+}
+
+handleUserPrompt("How can I fix this simple syntax error in my code?");
+```
+
+This would classify the prompt as `code_simple` and choose the `operational` model group.
+
+## How It Works
+
 ### Auto-Discovery
 
 On startup, the router automatically:
