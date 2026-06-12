@@ -1,18 +1,30 @@
 {
-  "name": "pi-model-router",
+  "name": "pi-model-dynamic-router",
   "version": "1.1.0",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
+  "bin": {
+    "pi-model-router": "./dist/index.js"
+  },
   "pi": {
-    "extensions": ["./index.ts"],
-    "skills": ["./skills"]
+    "extension": "./dist/index.js",
+    "commands": ["router"]
   },
   "scripts": {
+    "build": "tsc && cp src/*.js dist/ && cp index.js dist/ && cp router-defaults.yaml router-config.json model-map.yaml dist/",
+    "prepack": "npm run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts"
   },
-  "keywords": ["pi", "pi-extension", "model-router", "llm", "ai"],
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "model-router",
+    "llm",
+    "ai"
+  ],
   "author": "Aaron Canary",
   "license": "MIT",
   "repository": {
@@ -25,6 +37,7 @@
     "router-defaults.yaml",
     "model-map.yaml",
     "skills/",
+    "src/",
     "PI.md",
     "README.md"
   ],
@@ -32,12 +45,16 @@
     "yaml": "^2.0.0"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {
-    "vitest": "^3.0.0"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.9.2",
+    "execa": "^9.6.1",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.6"
   }
 }

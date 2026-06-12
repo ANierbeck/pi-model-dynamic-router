@@ -1,6 +1,37 @@
-# pi-model-router
+# pi-model-dynamic-router
 
-Route model group names (strategic, tactical, operational, scout, fallback) to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence, cost, and availability.
+Route model group names (strategic, tactical, operational, scout, fallback, **dynamic**) to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence, cost, and availability.
+
+## Dynamic Routing
+
+The **dynamic routing** feature introduces a new model group (`dynamic`) that automatically classifies user prompts and selects the optimal model group based on the task type. This enables **context-aware model selection** without manual intervention.
+
+### How It Works
+
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories using **Ollama (gemma2:2b)**.
+2. **Group Mapping**: The category is mapped to a specific model group (`scout`, `operational`, `tactical`, or `strategic`).
+3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
+
+### Categories and Mappings
+
+| Category | Model Group | Description |
+|----------|-------------|-------------|
+| `code_simple` | operational | Simple code changes (1–10 lines, syntax fixes, typos) |
+| `code_complex` | tactical | Complex code changes (refactoring, debugging, >50 lines) |
+| `design` | strategic | Architecture, system design, API design |
+| `planning` | tactical | Project planning, roadmaps, task breakdown |
+| `exploration` | scout | Research, unclear requirements, brainstorming |
+| `fallback` | tactical | Fallback for unclear or multi-category requests |
+
+### Implementation
+
+The dynamic routing is implemented in **`src/content-classifier.ts`** and integrated via the `before_user_prompt` hook in the extension. The classification is performed using **Ollama (gemma2:2b)**, which must be installed and running locally.
+
+### Requirements
+
+- **Ollama** must be installed and running (`ollama serve`).
+- The **gemma2:2b** model must be available (`ollama pull gemma2:2b`).
+- Ollama must be accessible from the system (default: `http://localhost:11434`).
 
 ## Architecture
 
@@ -26,6 +57,7 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 | **operational** | `tiered` ≥50% | Top 50% quality, cheapest by billing preference |
 | **scout** | `tiered` ≥25% | Top 25% quality, cheapest by billing preference |
 | **fallback** | `tiered` ≥0% | Any available, cheapest by billing preference |
+| **dynamic** | `dynamic` | Auto-classifies prompts via Ollama (gemma2:2b) and routes to the best group |
 
 **Billing preference order**: free → subscription (by rate-limit pressure + cost) → local → pay-per-token (by cost)
 
@@ -77,20 +109,40 @@ tool_result   → detect 429 → key rotation → backoff + costMux at 4th hit
   "providers": {
     "anthropic": { "billing": "subscription", "keys": [{ "key": "!pass show api/claude/token", "label": "primary" }] },
     "chutes": { "billing": "subscription" },
-    "openrouter": { "billing": "pay_per_token" }
+    "openrouter": { "billing": "pay_per_token" },
+    "ollama": { "billing": "subscription" }  // Required for dynamic routing
   },
   "model_groups": {
     "strategic": { "method": "best" },
     "tactical": { "method": "tiered", "min_gdpval_pct": 75 },
     "operational": { "method": "tiered", "min_gdpval_pct": 50 },
     "scout": { "method": "tiered", "min_gdpval_pct": 25 },
-    "fallback": { "method": "tiered", "min_gdpval_pct": 0 }
+    "fallback": { "method": "tiered", "min_gdpval_pct": 0 },
+    "dynamic": { "method": "dynamic", "description": "Auto-classifies prompts via Ollama (gemma2:2b)" }
   },
   "model_metrics": {}
 }
 ```
 
 No curated model lists. Models auto-discovered. GDPval scores scraped + cached.
+
+### Dynamic Routing Implementation Details
+
+The **`dynamic`** group uses the following workflow:
+
+1. **Prompt Classification**: The `classifyPrompt` function in `src/content-classifier.ts` sends the user prompt to **Ollama (gemma2:2b)** for classification.
+2. **Category Mapping**: The classification result is mapped to a model group using `CATEGORY_TO_GROUP`.
+3. **Model Resolution**: The `resolve_model_group` tool is called to select the best model for the mapped group.
+4. **Model Switching**: The extension automatically switches to the resolved model using `pi.setModel()`.
+
+**Key Functions:**
+- `classifyPrompt(prompt, options)`: Classifies a prompt into a category.
+- `setupContentBasedRouting(pi)`: Sets up the `before_user_prompt` hook for real-time classification.
+- `CATEGORY_TO_GROUP`: Maps categories to model groups (e.g., `code_simple` → `operational`).
+
+**Fallback Behavior:**
+- If Ollama is unavailable or classification fails, the system falls back to the `tactical` group.
+- If the resolved model is unavailable, the system falls back to the next best candidate in the group.
 
 ## Files
 
@@ -100,6 +152,8 @@ No curated model lists. Models auto-discovered. GDPval scores scraped + cached.
 | `router-config.json` | Providers, groups, optional metric overrides |
 | `.cache/scan-cache.json` | GDPval scores, model lists, pricing, costMux |
 | `skills/router-login/` | Guided provider onboarding skill |
+| `src/content-classifier.ts` | Dynamic prompt classification and routing logic |
+| `src/ollama-utils.ts` | Ollama helper functions for classification |
 | `PI.md` | This file — design source of truth |
 | `README.md` | Quick-start reference |
 
