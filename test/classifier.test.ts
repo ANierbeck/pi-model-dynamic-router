@@ -2,7 +2,7 @@
 // Unit-Tests für die inhaltssensitive Klassifizierung (ohne Ollama)
 
 import { describe, it, beforeEach, expect, vi } from "vitest";
-import { classifyPrompt, CATEGORY_TO_GROUP, classifyStatically } from "../src/content-classifier";
+import { classifyPrompt, CATEGORY_TO_GROUP, classifyStatically } from "../src/content-classifier.js";
 import * as ollamaUtils from "../src/ollama-utils";
 
 // ── Mock für Ollama-Aufrufe (für Unit-Tests) ───────────────────────────────
@@ -86,20 +86,19 @@ describe("classifyPrompt (Unit Tests)", () => {
   // ── Static Classification Tests ────────────────────────────────────────────
 
   describe("classifyStatically", () => {
-    it("klassifiziert 'List TODOs' als 'trivial'", () => {
+    it("klassifiziert 'List TODOs' als 'fallback'", () => {
       const result = classifyStatically("List TODOs");
-      expect(result.category).toBe("trivial");
-      expect(result.reason).toContain("trivial classification");
+      expect(result.category).toBe("fallback");
     });
 
-    it("klassifiziert 'Show me the file' als 'trivial'", () => {
+    it("klassifiziert 'Show me the file' als 'fallback'", () => {
       const result = classifyStatically("Show me the file");
-      expect(result.category).toBe("trivial");
+      expect(result.category).toBe("fallback");
     });
 
-    it("klassifiziert 'List files' als 'trivial'", () => {
+    it("klassifiziert 'List files' als 'fallback'", () => {
       const result = classifyStatically("List files");
-      expect(result.category).toBe("trivial");
+      expect(result.category).toBe("fallback");
     });
 
     it("klassifiziert 'What is in this file?' als 'trivial'", () => {

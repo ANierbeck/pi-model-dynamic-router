@@ -189,13 +189,13 @@ export function getGroupForCategory(category: string): string {
 export function classifyStatically(prompt: string): ClassificationResult {
   const lowerPrompt = prompt.toLowerCase();
 
-  // Trivial: Nur file/list/todo-spezifische Anfragen
-  const trivialKeywords = [
-    'list', 'what\'s in', 'what is in',
-    'todo', 'todos', 'file', 'files', 'content'
-  ];
+  // Trivial: Nur sehr spezifische file/list/todo-Kontext-Phrasen
+  // Die AND-Bedingung stellt sicher, dass die Keywords in einem relevanten Kontext stehen
+  const trivialKeywords = ['what\'s in', 'what is in'];
   
-  if (trivialKeywords.some(kw => lowerPrompt.includes(kw))) {
+  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) &&
+      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
+       lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
     return {
       category: 'trivial',
       reason: 'Simple request - trivial classification',
