@@ -971,7 +971,7 @@ export default function (pi: ExtensionAPI) {
   ): AssistantMessageEventStream {
     const useStaticMatch = model.id.match(/^use-static:(.+)$/);
     const useStatic = useStaticMatch !== null;
-    const groupName = useStatic ? useStaticMatch[1] : model.id;
+    const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
 

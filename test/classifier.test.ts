@@ -70,9 +70,9 @@ describe("classifyPrompt (Unit Tests)", () => {
   it("behandelt Ollama-Fehler mit allowStaticFallback=true", async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
-    const result = await classifyPrompt("Irgendeine Anfrage", { allowStaticFallback: true });
-    expect(result.category).toBe("fallback");
-    expect(result.reason).toMatch(/Could not classify|falling back to static classification/);
+    const result = await classifyPrompt("Explain something", { allowStaticFallback: true });
+    expect(result.category).toBe("simple");
+    expect(result.reason).toBe("Simple question - simple classification");
   });
 
   it("validiert das JSON-Format der Ollama-Antwort", async () => {
