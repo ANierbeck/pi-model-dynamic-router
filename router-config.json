@@ -41,7 +41,7 @@
     "strategic": {
       "description": "Best available model by intelligence (max GDPval)",
       "method": "best",
-      "models": ["mistral/mistral-medium-3.5"]
+      "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"]
     },
     "tactical": {
       "description": "GDPval \u2265600: magistral/mistral-medium tier, cheapest first",
@@ -53,7 +53,11 @@
       "description": "GDPval \u2265300: broad quality pool, cheapest first",
       "method": "tiered",
       "min_gdpval": 300,
-      "models": ["mistral/mistral-medium-3.5", "mistral/codestral-latest", "anthropic/claude-3-haiku"]
+      "models": [
+        "mistral/mistral-medium-3.5",
+        "mistral/codestral-latest",
+        "anthropic/claude-3-haiku"
+      ]
     },
     "scout": {
       "description": "Any available model, cheapest first",

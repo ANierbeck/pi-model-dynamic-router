@@ -712,7 +712,13 @@ export default function (pi: ExtensionAPI) {
     description:
       'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
     parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }) as any,
-    async execute(_id: string, params: { group: string }, _sig: any, _up: any, ctx: any) {
+    async execute(
+      _id: string,
+      params: { group: string },
+      _sig: unknown,
+      _up: unknown,
+      ctx: { modelRegistry: { find: (provider: string, modelId: string) => any } }
+    ) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -752,7 +758,7 @@ export default function (pi: ExtensionAPI) {
           'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
       }),
     }) as any,
-    async execute(_id: string, params: { group: string }) {
+    async execute(_id: string, params: { group: string }, _sig?: unknown, _up?: unknown) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -791,7 +797,7 @@ export default function (pi: ExtensionAPI) {
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
     }) as any,
-    async execute(_id: any, p: any) {
+    async execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }) {
       load();
       const e = cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval;
