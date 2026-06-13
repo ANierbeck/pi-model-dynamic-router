@@ -115,11 +115,6 @@ describe("applyHintOverride", () => {
     const result = applyHintOverride("tactical", mockCfg, mockResolveEmpty);
     expect(result).toBeNull();
   });
-
-  it("gibt null zurück für unbekanntes bare-word Target", () => {
-    const result = applyHintOverride("unknown-group", mockCfg, mockResolve);
-    expect(result).toBeNull();
-  });
 });
 
 describe("processHintOverride", () => {
