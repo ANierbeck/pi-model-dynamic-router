@@ -1030,7 +1030,12 @@ const defaultExport = function (pi: ExtensionAPI) {
           console.warn(`[dynamic] HINT target not found: ${hintTarget}`);
         }
         
-        const { category } = await classifyPrompt(prompt, { allowStaticFallback: useStatic });
+        const { category } = await classifyPrompt(prompt, { 
+          allowStaticFallback: useStatic, 
+          allowCloudFallback: true, // Aktiviere Cloud-Fallback für dynamisches Routing
+          cfg, 
+          cache 
+        });
         const targetGroup = getGroupForCategory(category);
         const res = resolve(targetGroup) ?? resolve('fallback');
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
