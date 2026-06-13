@@ -1011,7 +1011,7 @@ export default function (pi: ExtensionAPI) {
         const prompt = extractLastUserPrompt(context);
         
         // HINT-Override: User kann Modell/Gruppe direkt im Prompt angeben
-        const hintMatch = prompt.match(/HINT:\s*(?:use\s+)?(?:model\s+)?([a-zA-Z0-9\-_:/]+)/i);
+        const hintMatch = prompt.match(/HINT:\s*(?:use\s+)?(?:(?:model|group)\s+)?([a-zA-Z0-9\-_:/.]+)/i);
         if (hintMatch) {
           const hintTarget = hintMatch[1];
           // Prüfe ob es eine Gruppe ist
