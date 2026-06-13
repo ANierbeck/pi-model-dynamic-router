@@ -766,7 +766,7 @@ export default function (pi: ExtensionAPI) {
           'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
       }),
     }) as any,
-    async execute(_id: string, params: { group: string }, _onUpdate?: unknown) {
+    async execute(_id: string, params: { group: string }, _onUpdate: unknown, _ctx: ExtensionContext) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -805,7 +805,7 @@ export default function (pi: ExtensionAPI) {
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
     }) as any,
-    async execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }) {
+    async execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }, _onUpdate: unknown, _ctx: ExtensionContext) {
       load();
       const e = cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval;
