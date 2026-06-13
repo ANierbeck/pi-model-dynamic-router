@@ -541,7 +541,7 @@ export default function (pi: ExtensionAPI) {
       const resolvedRef = res?.selected ?? 'none';
       const resolvedMetrics = res ? getM(resolvedRef) : null;
 
-      pi.registerProvider(groupName, {
+      (pi as any).registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
         apiKey: 'router-virtual', // not used — streamSimple overrides
         api: `router-group-${groupName}`, // unique per group to avoid overwriting global API providers
@@ -711,11 +711,8 @@ export default function (pi: ExtensionAPI) {
     label: 'Set Model from Group',
     description:
       'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
-    promptGuidelines: [
-      'When spawning subagents or selecting models for tasks, use resolve_model_group with the appropriate tier: strategic (best quality), tactical (quality/cost balance), operational (throughput/cost), scout (cheapest).',
-    ],
-    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }),
-    async execute(_id, params, _sig, _up, ctx) {
+    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }) as any,
+    async execute(_id: any, params: any, _sig: any, _up: any, ctx: any) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -754,8 +751,8 @@ export default function (pi: ExtensionAPI) {
         description:
           'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
       }),
-    }),
-    async execute(_id, params) {
+    }) as any,
+    async execute(_id: any, params: any) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -793,8 +790,8 @@ export default function (pi: ExtensionAPI) {
       gdpval: Type.Optional(Type.Number()),
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
-    }),
-    async execute(_id, p) {
+    }) as any,
+    async execute(_id: any, p: any) {
       load();
       const e = cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval;
@@ -1187,7 +1184,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       try {
-        pi.registerProvider(provId, {
+        (pi as any).registerProvider(provId, {
           baseUrl: def.baseUrl,
           apiKey,
           api: def.api,

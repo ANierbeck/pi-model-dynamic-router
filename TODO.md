@@ -36,6 +36,21 @@
 ### 🔥 **Sofort umsetzbar** (Quick Wins - 1-2 Stunden)
 
 #### 0. **Kritische Verbesserungen** ⭐⭐⭐⭐⭐
+
+- [ ] **HINT-Override im Prompt** - User kann Modell/Gruppe direkt im Prompt überschreiben
+  - *Idee*: `HINT: use mistral-medium-3.5` oder `HINT: use group tactical` im Prompt → Router ignoriert Klassifizierung und nutzt dieses Modell/diese Gruppe direkt
+  - *Umsetzung*: Vor Klassifizierung Prompt auf `HINT:` Pattern prüfen (`/HINT:\s*use\s+(.+)/i`); bei Treffer Klassifizierung überspringen und direkt routen
+  - *Impact*: **HOCH** - User-Kontrolle ohne Pi-UI anzufassen
+  - *Aufwand*: 1-2 Stunden
+  - *Abhängigkeiten*: `index.ts` (dynamic routing block, vor `classifyPrompt`)
+
+- [ ] **Session-Eskalation bei Kreis-Erkennung** - Modell automatisch hochstufen wenn Session stagniert
+  - *Problem*: Wenn ein Modell dasselbe Problem mehrfach falsch löst (Session "dreht im Kreis"), hilft oft nur ein stärkeres Modell
+  - *Idee*: Erkennung anhand gleicher Fehler-Keywords, wiederholter kurzer Prompts oder User-Korrekturen in n aufeinanderfolgenden Turns → automatisch eine Tier-Stufe nach oben (`operational → tactical → strategic`)
+  - *Signale*: gleiche Fehlermeldung 2× gesehen, User schreibt "nochmal", "immer noch", "schon wieder", Review-Findings steigen statt fallen
+  - *Impact*: **HOCH** - verhindert Frustrations-Loops mit schwachen Modellen
+  - *Aufwand*: 3-4 Stunden (Kreis-Detektion ist komplex)
+  - *Abhängigkeiten*: `index.ts` (turn-Kontext mitführen, Eskalations-Logik)
 - [ ] **Kosteneffizientes dynamisches Routing** - Nutze billige Modelle für einfache Aufgaben
   - *Problem*: Alle Anfragen nutzen teure Modelle, auch für einfache Aufgaben
   - *Lösung*: Klassifizierung nach Komplexität + Routing zu passenden Kostenstufen
