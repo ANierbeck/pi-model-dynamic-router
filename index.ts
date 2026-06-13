@@ -712,7 +712,7 @@ export default function (pi: ExtensionAPI) {
     description:
       'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
     parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }) as any,
-    async execute(_id: any, params: any, _sig: any, _up: any, ctx: any) {
+    async execute(_id: string, params: { group: string }, _sig: any, _up: any, ctx: any) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
@@ -752,7 +752,7 @@ export default function (pi: ExtensionAPI) {
           'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
       }),
     }) as any,
-    async execute(_id: any, params: any) {
+    async execute(_id: string, params: { group: string }) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
