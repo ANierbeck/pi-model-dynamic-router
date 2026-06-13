@@ -1089,7 +1089,7 @@ export default function (pi: ExtensionAPI) {
         recordSoftFailure(targetRef);
 
         // Notify the user about the empty response
-        const reason = lastError.includes('Timeout')
+        const reason = result.reason === 'empty_timeout'
           ? 'keine Antwort innerhalb des Timeouts'
           : 'leere Antwort vom Modell';
         if (candidates.length > 0 && attempt < MAX_STREAM_RETRIES) {
