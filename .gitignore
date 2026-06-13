@@ -6,3 +6,6 @@ node_modules/
 # roborev snapshots
 /.roborev/
 dist/
+
+# Lokale Arbeitsdateien (nicht für Versionierung)
+archive/

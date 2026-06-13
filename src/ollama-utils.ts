@@ -31,7 +31,17 @@ export async function callOllama(
 
   if (!res.ok) throw new Error(`Ollama HTTP ${res.status}: ${await res.text()}`);
   const data = await res.json() as { response: string };
-  return data.response;
+  
+  // Clean up the response: remove markdown code blocks and trim whitespace
+  let response = data.response;
+  
+  // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+  response = response.replace(/^```(json)?\s*/, '').replace(/\s*```$/, '');
+  
+  // Remove any remaining markdown formatting
+  response = response.replace(/```[\s\S]*?```/g, '');
+  
+  return response.trim();
 }
 
 // ── Fallback Handling ───────────────────────────────────────────────────
