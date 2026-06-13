@@ -5,7 +5,16 @@ import { callOllama } from './ollama-utils.js';
 // ── Types ────────────────────────────────────────────────────────────────
 
 export interface ClassificationResult {
-  category: 'code_simple' | 'code_complex' | 'design' | 'planning' | 'exploration' | 'fallback';
+  category: 
+    | 'trivial'
+    | 'simple' 
+    | 'code_simple'
+    | 'standard'
+    | 'code_complex' 
+    | 'design'
+    | 'planning'
+    | 'exploration'
+    | 'fallback';
   reason: string;
   confidence?: number;
 }
@@ -36,14 +45,22 @@ const CONTINUATION_MAX_WORDS = 4;
 
 const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category:
 
-- code_simple:  Small code changes (1–10 lines, syntax fixes, renames, typos)
-- code_complex: Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation.
+- trivial:      Very simple requests ("list files", "show TODOs", "what's in this file?", "read this file")
+- simple:       Simple questions ("explain briefly", "summarize", "what does this do?", "tell me about")
+- code_simple:   Small code changes (1–10 lines, syntax fixes, renames, typos)
+- standard:      Standard requests (general questions, moderate complexity, "explain this concept")
+- code_complex:  Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation.
 - design:       Architecture, system design, API design, database schema
 - planning:     Task breakdown, roadmaps, prioritization, project planning
 - exploration:  Vague or open-ended questions with no clear deliverable ("what could we do about X?", brainstorming, unclear requirements). NOT code analysis.
 - fallback:     Ambiguous, or a short continuation/confirmation of previous work
 
-The request may be in any language. Classify by intent, not language.
+The request may be in any language. Classify by complexity and required model capability.
+Short requests with clear, simple answers → trivial or simple.
+"List TODOs", "Show me the file" → trivial.
+"Explain this code" (simple code) → simple.
+"Explain this concept" → standard.
+"Design an architecture" → design.
 Short imperatives that continue prior work ("do it", "go ahead", "yes", "Machen!", "weiter") → fallback.
 "Analyze / review / explain the code / docs" → code_complex (not exploration).
 
@@ -125,18 +142,20 @@ export async function classifyPrompt(
     }
   }
 
-  return {
-    category: context.lastCategory ?? 'fallback',
-    reason: 'Both classification models failed — using momentum or fallback',
-    confidence: 0,
-  };
+  // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
+  // Diese Logik ist ein Platzhalter für zukünftige Cloud-Integration
+  // Aktuell nutzen wir nur Ollama, aber die Struktur ist für Cloud vorbereitet
+  console.warn('[classifier] Ollama models failed, falling back to static classification');
+
+  // Ultimate Fallback: Statische Klassifizierung
+  return classifyStatically(prompt, context);
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {
   return (
     obj &&
     typeof obj.category === 'string' &&
-    ['code_simple', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
+    ['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
       obj.category
     ) &&
     typeof obj.reason === 'string'
@@ -146,16 +165,169 @@ function isValidClassification(obj: any): obj is ClassificationResult {
 // ── Mapping ──────────────────────────────────────────────────────────────
 
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
-  code_simple: 'operational',
-  code_complex: 'tactical',
-  design: 'strategic',
-  planning: 'tactical',
-  exploration: 'scout',
-  fallback: 'tactical',
+  trivial: 'trivial',
+  simple: 'simple',
+  code_simple: 'simple',
+  standard: 'standard',
+  code_complex: 'complex',
+  design: 'complex',
+  planning: 'complex',
+  exploration: 'standard',
+  fallback: 'trivial',
 };
 
 export function getGroupForCategory(category: string): string {
   return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'fallback';
+}
+
+// ── Static Classification Fallback ─────────────────────────────────────
+
+/**
+ * Statische Klassifizierung als Fallback wenn Ollama/Cloud nicht verfügbar
+ * Nutzt Keyword-Matching für einfache Kategorisierung
+ */
+function classifyStatically(prompt: string, context: ClassificationContext = {}): ClassificationResult {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
+  const wordCount = prompt.trim().split(/\s+/).length;
+  if (context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
+    return {
+      category: context.lastCategory,
+      reason: 'Short prompt — inheriting previous task context',
+      confidence: 0.85,
+    };
+  }
+
+  // Trivial: Sehr einfache Anfragen
+  const trivialKeywords = [
+    'list', 'show', 'display', 'read', 'what\'s in', 'what is in',
+    'todo', 'todos', 'file', 'files', 'content', 'show me',
+    'open', 'view', 'print', 'output', 'give me'
+  ];
+  
+  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) && 
+      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
+       lowerPrompt.includes('list') || lowerPrompt.includes('show'))) {
+    return {
+      category: 'trivial',
+      reason: 'Simple request - trivial classification',
+      confidence: 0.9,
+    };
+  }
+
+  // Simple: Einfache Fragen/Erklärungen
+  const simpleKeywords = [
+    'explain', 'summarize', 'summary', 'what does', 'what is',
+    'tell me', 'describe', 'briefly', 'short', 'quick',
+    'meaning', 'definition', 'what\'s', 'how to', 'how do'
+  ];
+  
+  if (simpleKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'simple',
+      reason: 'Simple question - simple classification',
+      confidence: 0.85,
+    };
+  }
+
+  // Code Simple: Kleine Code-Änderungen
+  const codeSimpleKeywords = [
+    'fix', 'rename', 'typo', 'syntax', 'import', 'export',
+    'add a', 'remove', 'delete', 'change', 'update',
+    'one line', 'few lines', 'small'
+  ];
+  
+  if (codeSimpleKeywords.some(kw => lowerPrompt.includes(kw)) &&
+      (lowerPrompt.includes('code') || lowerPrompt.includes('function') || 
+       lowerPrompt.includes('variable') || lowerPrompt.includes('line'))) {
+    return {
+      category: 'code_simple',
+      reason: 'Small code change - code_simple classification',
+      confidence: 0.8,
+    };
+  }
+
+  // Standard: Standard-Anfragen
+  const standardKeywords = [
+    'explain this', 'how does', 'why does', 'what are',
+    'difference', 'compare', 'pro and con', 'advantage',
+    'disadvantage', 'when to use', 'best practice'
+  ];
+  
+  if (standardKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'standard',
+      reason: 'Standard request - standard classification',
+      confidence: 0.8,
+    };
+  }
+
+  // Code Complex: Komplexe Code-Aufgaben
+  const codeComplexKeywords = [
+    'refactor', 'debug', 'architecture', 'design', 'implement',
+    'new feature', 'complex', 'large', 'many lines',
+    'review', 'analyze', 'optimize', 'performance'
+  ];
+  
+  if (codeComplexKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'code_complex',
+      reason: 'Complex code task - code_complex classification',
+      confidence: 0.85,
+    };
+  }
+
+  // Design: Architektur/Design
+  const designKeywords = [
+    'architecture', 'system design', 'api design', 'database',
+    'schema', 'diagram', 'flowchart', 'uml', 'structure'
+  ];
+  
+  if (designKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'design',
+      reason: 'Design task - design classification',
+      confidence: 0.9,
+    };
+  }
+
+  // Planning: Planung/Roadmaps
+  const planningKeywords = [
+    'roadmap', 'plan', 'prioritize', 'prioritization',
+    'task breakdown', 'tasks', 'steps', 'milestone',
+    'timeline', 'schedule', 'break down'
+  ];
+  
+  if (planningKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'planning',
+      reason: 'Planning task - planning classification',
+      confidence: 0.85,
+    };
+  }
+
+  // Exploration: Offene Fragen/Brainstorming
+  const explorationKeywords = [
+    'what could', 'what should', 'brainstorm', 'ideas',
+    'suggestions', 'options', 'possibilities', 'vague',
+    'open-ended', 'what if'
+  ];
+  
+  if (explorationKeywords.some(kw => lowerPrompt.includes(kw))) {
+    return {
+      category: 'exploration',
+      reason: 'Exploration task - exploration classification',
+      confidence: 0.75,
+    };
+  }
+
+  // Fallback
+  return {
+    category: 'fallback',
+    reason: 'Could not classify - fallback',
+    confidence: 0.5,
+  };
 }
 
 // ── PI Integration (legacy hook) ─────────────────────────────────────────

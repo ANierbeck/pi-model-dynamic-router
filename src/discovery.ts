@@ -255,6 +255,34 @@ export class DiscoveryManager {
     return 'valid';
   }
 
+  // ── Free Models Discovery ────────────────────────────────────────────
+
+  /**
+   * Gibt alle verfügbaren kostenlosen Modelle zurück
+   */
+  getFreeModels(): string[] {
+    const freeModels: string[] = [];
+    
+    for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
+      if (def.freeModels && def.freeModels.length > 0) {
+        // Prüfe ob Provider konfiguriert und Keys verfügbar
+        const prov = this.cfg.providers?.[provId];
+        if (prov?.keys?.length > 0) {
+          freeModels.push(...def.freeModels);
+        }
+      }
+    }
+    
+    return freeModels;
+  }
+
+  /**
+   * Prüft ob kostenlose Modelle verfügbar sind
+   */
+  hasFreeModels(): boolean {
+    return this.getFreeModels().length > 0;
+  }
+
   // ── Getter ─────────────────────────────────────────────────────────────
 
   getDiscoveredProviders(): Set<string> {
