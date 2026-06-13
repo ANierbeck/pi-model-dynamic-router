@@ -75,6 +75,8 @@ describe("classifyPrompt (Unit Tests)", () => {
     expect(result.reason).toBe("Simple question - simple classification");
   });
 
+
+
   it("validiert das JSON-Format der Ollama-Antwort", async () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue('{"category": "invalid_category", "reason": "test"}');
     

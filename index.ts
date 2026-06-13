@@ -1009,6 +1009,44 @@ export default function (pi: ExtensionAPI) {
         }
 
         const prompt = extractLastUserPrompt(context);
+        
+        // HINT-Override: User kann Modell/Gruppe direkt im Prompt angeben
+        const hintMatch = prompt.match(/HINT:\s*(?:use\s+)?(?:model\s+)?([a-zA-Z0-9\-_:/]+)/i);
+        if (hintMatch) {
+          const hintTarget = hintMatch[1];
+          // Prüfe ob es eine Gruppe ist
+          if (cfg.model_groups[hintTarget]) {
+            const res = resolve(hintTarget);
+            if (res) {
+              candidates = [...res.candidates];
+              lastDynamicModel = res.selected;
+              dynamicLabel = `HINT: ${hintTarget} → ${res.selected}`;
+              const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
+              console.log(`[dynamic] ${logLine}`);
+              try {
+                fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
+              } catch {}
+              await driveStream(proxy, candidates, context, options, dynamicLabel);
+              return;
+            }
+          }
+          // Prüfe ob es ein Modell-Ref ist (provider/model-id) - direkt verwenden
+          // Einfache Validierung: muss '/' enthalten für provider/model
+          if (hintTarget.includes('/')) {
+            candidates = [hintTarget];
+            lastDynamicModel = hintTarget;
+            dynamicLabel = `HINT: ${hintTarget}`;
+            const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
+            console.log(`[dynamic] ${logLine}`);
+            try {
+              fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
+            } catch {}
+            await driveStream(proxy, candidates, context, options, dynamicLabel);
+            return;
+          }
+          console.warn(`[dynamic] HINT target not found: ${hintTarget}`);
+        }
+        
         const { category } = await classifyPrompt(prompt, { allowStaticFallback: useStatic });
         const targetGroup = getGroupForCategory(category);
         const res = resolve(targetGroup) ?? resolve('fallback');
