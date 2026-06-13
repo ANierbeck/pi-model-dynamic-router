@@ -7,11 +7,10 @@
             "billing": "subscription"
         }
     },
-
     "model_groups": {
         "trivial": {
             "description": "Trivial tasks - free models only",
-            "method": "cheapest",
+            "method": "min_cost",
             "max_cost": 0,
             "models": [
                 "qwen/qwen3-4b:free",
@@ -21,7 +20,7 @@
         },
         "simple": {
             "description": "Simple tasks - free models only",
-            "method": "cheapest",
+            "method": "min_cost",
             "max_cost": 0,
             "models": [
                 "qwen/qwen3-4b:free",
@@ -35,25 +34,32 @@
             "method": "tiered",
             "min_gdpval": 500,
             "max_cost_per_m": 0.5,
-            "models": ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+            "models": [
+                "openai/gpt-4o-mini",
+                "anthropic/claude-3-haiku"
+            ]
         },
         "complex": {
             "description": "Complex tasks - premium models",
             "method": "best",
             "min_gdpval": 800,
-            "models": ["anthropic/claude-3-sonnet", "openai/gpt-4o", "mistral-medium-3.5"]
+            "models": [
+                "anthropic/claude-3-sonnet",
+                "openai/gpt-4o",
+                "mistral-medium-3.5"
+            ]
         },
         "strategic": {
             "description": "Best available model by intelligence (max GDPval)",
             "method": "best"
         },
         "tactical": {
-            "description": "GDPval ≥600: magistral/mistral-medium tier, cheapest first",
+            "description": "GDPval \u2265600: magistral/mistral-medium tier, cheapest first",
             "method": "tiered",
             "min_gdpval": 600
         },
         "operational": {
-            "description": "GDPval ≥300: broad quality pool, cheapest first",
+            "description": "GDPval \u2265300: broad quality pool, cheapest first",
             "method": "tiered",
             "min_gdpval": 300
         },
@@ -72,13 +78,11 @@
             "method": "dynamic"
         }
     },
-
     "model_metrics": {},
-
     "gdpval_builtin": {
-        "magistral-small":  669,
+        "magistral-small": 669,
         "magistral-medium": 665,
-        "devstral":         585,
+        "devstral": 585,
         "mistral-small-3-2": 478,
         "mistral-small-3-1": 421
     },

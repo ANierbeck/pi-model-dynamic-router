@@ -2,7 +2,7 @@
 // Unit-Tests für die inhaltssensitive Klassifizierung (ohne Ollama)
 
 import { describe, it, beforeEach, expect, vi } from "vitest";
-import { classifyPrompt, CATEGORY_TO_GROUP } from "../src/content-classifier";
+import { classifyPrompt, CATEGORY_TO_GROUP, classifyStatically } from "../src/content-classifier";
 import * as ollamaUtils from "../src/ollama-utils";
 
 // ── Mock für Ollama-Aufrufe (für Unit-Tests) ───────────────────────────────
@@ -81,5 +81,83 @@ describe("classifyPrompt (Unit Tests)", () => {
     });
     expect(result.category).toBe("code_complex");
     expect(result.reason).toContain("Short prompt");
+  });
+
+  // ── Static Classification Tests ────────────────────────────────────────────
+
+  describe("classifyStatically", () => {
+    it("klassifiziert 'List TODOs' als 'trivial'", () => {
+      const result = classifyStatically("List TODOs");
+      expect(result.category).toBe("trivial");
+      expect(result.reason).toContain("trivial classification");
+    });
+
+    it("klassifiziert 'Show me the file' als 'trivial'", () => {
+      const result = classifyStatically("Show me the file");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What is in this file?' als 'trivial'", () => {
+      const result = classifyStatically("What is in this file?");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'Explain briefly' als 'simple'", () => {
+      const result = classifyStatically("Explain briefly how this works");
+      expect(result.category).toBe("simple");
+      expect(result.reason).toContain("simple classification");
+    });
+
+    it("klassifiziert 'Summarize this' als 'simple'", () => {
+      const result = classifyStatically("Summarize this document");
+      expect(result.category).toBe("simple");
+    });
+
+    it("klassifiziert 'What does this do?' als 'simple'", () => {
+      const result = classifyStatically("What does this function do?");
+      expect(result.category).toBe("simple");
+    });
+
+    it("klassifiziert 'Fix syntax error' als 'code_simple'", () => {
+      const result = classifyStatically("Fix syntax error in line 5");
+      expect(result.category).toBe("code_simple");
+      expect(result.reason).toContain("code_simple classification");
+    });
+
+    it("klassifiziert 'Explain this concept' als 'simple'", () => {
+      const result = classifyStatically("Explain this concept in detail");
+      expect(result.category).toBe("simple");
+      expect(result.reason).toContain("simple classification");
+    });
+
+    it("klassifiziert 'Refactor this function' als 'code_complex'", () => {
+      const result = classifyStatically("Refactor this 200-line function for performance");
+      expect(result.category).toBe("code_complex");
+      expect(result.reason).toContain("code_complex classification");
+    });
+
+    it("klassifiziert 'Design an architecture' als 'code_complex'", () => {
+      const result = classifyStatically("Design an architecture for this system");
+      expect(result.category).toBe("code_complex");
+      expect(result.reason).toContain("code_complex classification");
+    });
+
+    it("klassifiziert 'Create a roadmap' als 'planning'", () => {
+      const result = classifyStatically("Create a roadmap for this project");
+      expect(result.category).toBe("planning");
+      expect(result.reason).toContain("planning classification");
+    });
+
+    it("klassifiziert 'What could we do about X?' als 'exploration'", () => {
+      const result = classifyStatically("What could we do about this problem?");
+      expect(result.category).toBe("exploration");
+      expect(result.reason).toContain("exploration classification");
+    });
+
+    it("klassifiziert unbekannte Anfragen als 'fallback'", () => {
+      const result = classifyStatically("Some completely unknown request with no keywords");
+      expect(result.category).toBe("fallback");
+      expect(result.reason).toContain("Could not classify");
+    });
   });
 });
