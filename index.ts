@@ -556,6 +556,15 @@ export default function (pi: ExtensionAPI) {
             contextWindow: resolvedMetrics ? 200_000 : 128_000,
             maxTokens: 64_000,
           },
+          ...(cfg.model_groups[groupName]?.method === 'dynamic' ? [{
+            id: 'use-static',
+            name: `${groupName} → ${resolvedRef} (static fallback)`,
+            reasoning: true,
+            input: ['text', 'image'] as any,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: resolvedMetrics ? 200_000 : 128_000,
+            maxTokens: 64_000,
+          }] : []),
         ],
       });
     }
@@ -960,7 +969,8 @@ export default function (pi: ExtensionAPI) {
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
-    const groupName = model.id;
+    const useStatic = model.id === 'use-static';
+    const groupName = useStatic ? 'dynamic' : model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
 
@@ -998,7 +1008,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         const prompt = extractLastUserPrompt(context);
-        const { category } = await classifyPrompt(prompt);
+        const { category } = await classifyPrompt(prompt, { allowStaticFallback: useStatic });
         const targetGroup = getGroupForCategory(category);
         const res = resolve(targetGroup) ?? resolve('fallback');
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);

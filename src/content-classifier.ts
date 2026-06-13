@@ -29,6 +29,7 @@ interface ClassificationOptions {
   model?: string;
   timeoutMs?: number;
   context?: ClassificationContext;
+  allowStaticFallback?: boolean;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
 ): Promise<ClassificationResult> {
-  const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {} } = options;
+  const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false } = options;
 
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
@@ -145,14 +146,13 @@ export async function classifyPrompt(
   // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
   // Diese Logik ist ein Platzhalter für zukünftige Cloud-Integration
   // Aktuell nutzen wir nur Ollama, aber die Struktur ist für Cloud vorbereitet
-  if (process.env.DISABLE_STATIC_CLASSIFIER === '1') {
+  if (!allowStaticFallback) {
     console.warn('[classifier] Ollama models failed, static classifier disabled — returning fallback');
     return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
   }
 
   console.warn('[classifier] Ollama models failed, falling back to static classification');
 
-  // Ultimate Fallback: Statische Klassifizierung
   return classifyStatically(prompt);
 }
 
