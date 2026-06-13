@@ -33,12 +33,15 @@ const testConfig: Config = {
   },
   providers: {
     anthropic: {
+      billing: 'subscription',
       keys: [{ key: 'test-key-1', label: 'Test Key 1' }],
     },
     openai: {
+      billing: 'payg',
       keys: [{ key: 'test-key-2', label: 'Test Key 2' }],
     },
     google: {
+      billing: 'payg',
       keys: [{ key: 'test-key-3', label: 'Test Key 3' }],
     },
   },
@@ -82,19 +85,18 @@ const discoveryManager = new DiscoveryManager(testConfig, cache);
 const router = new Router(
   testConfig,
   cache,
-  rateLimitManager.getLimits(),
-  rateLimitManager
+  rateLimitManager.getLimits()
 );
 
 describe('Router Integration Tests', () => {
   beforeAll(() => {
     // Initialisiere Cache mit Test-Daten
     cache.available_models = [
-      { provider: 'anthropic', id: 'claude-3-sonnet', name: 'Claude 3 Sonnet' },
-      { provider: 'openai', id: 'gpt-4', name: 'GPT-4' },
-      { provider: 'google', id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-      { provider: 'anthropic', id: 'claude-3-haiku', name: 'Claude 3 Haiku' },
-      { provider: 'openai', id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+      { provider: 'anthropic', id: 'claude-3-sonnet', cost_per_m: 0.003 },
+      { provider: 'openai', id: 'gpt-4', cost_per_m: 0.002 },
+      { provider: 'google', id: 'gemini-1.5-pro', cost_per_m: 0.0025 },
+      { provider: 'anthropic', id: 'claude-3-haiku', cost_per_m: 0.0005 },
+      { provider: 'openai', id: 'gpt-3.5-turbo', cost_per_m: 0.001 },
     ];
   });
 
@@ -162,34 +164,30 @@ describe('Router Integration Tests', () => {
       }
     });
 
-    it('should handle unknown group', () => {
+    it('should return null for unknown group', () => {
       const result = router.resolve('unknown-group');
 
-      expect(result).toBeDefined();
-      // Sollte fallback verwenden
-      if (result) {
-        expect(result.selected).toBeDefined();
-      }
+      expect(result).toBeNull();
     });
   });
 
   describe('getTopModels()', () => {
     it('should return top 3 models', () => {
-      const topModels = router.getTopModels(3);
+      const topModels = router.getTopModels('strategic', 3);
 
       expect(Array.isArray(topModels)).toBe(true);
       expect(topModels.length).toBeLessThanOrEqual(3);
     });
 
     it('should return all models when count is high', () => {
-      const allModels = router.getTopModels(100);
+      const allModels = router.getTopModels('strategic', 100);
 
       expect(Array.isArray(allModels)).toBe(true);
       expect(allModels.length).toBeGreaterThanOrEqual(0);
     });
 
     it('should return empty array for 0 models', () => {
-      const zeroModels = router.getTopModels(0);
+      const zeroModels = router.getTopModels('strategic', 0);
       expect(zeroModels).toEqual([]);
     });
   });
@@ -237,7 +235,7 @@ describe('Router Integration Tests', () => {
         'google/gemini-1.5-pro', // gdpval: 0.93
       ];
 
-      const sorted = router.sortBy(refs);
+      const sorted = router.sortBy(refs, 'max_gdpval');
 
       expect(Array.isArray(sorted)).toBe(true);
       expect(sorted.length).toBe(3);
