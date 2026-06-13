@@ -40,9 +40,10 @@ export class CacheManager {
   /**
    * Speichert den Cache in die Datei
    */
-  saveCache(): void {
+  saveCache(cache?: Cache): void {
+    const dataToSave = cache ?? this.cache;
     fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
-    fs.writeFileSync(this.cachePath, JSON.stringify(this.cache, null, 2));
+    fs.writeFileSync(this.cachePath, JSON.stringify(dataToSave, null, 2));
   }
 
   /**

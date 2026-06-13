@@ -9,6 +9,10 @@ import type { ModelRef } from "./types.js";
 /**
  * Normalisiert einen String für den Vergleich
  */
+export function stripDateSuffix(s: string): string {
+  // Strip trailing date/version tags: -YYYYMMDD, -YYMMDD, -YYMM (e.g., -20250514, -2507, -0324)
+  return s.replace(/-\d{4,8}$/, "");
+}
 export function norm(s: string): string {
   s = s.toLowerCase();
   // Strip to last path segment — "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-v3"
@@ -22,10 +26,6 @@ export function norm(s: string): string {
 /**
  * Entfernt Datums-Suffixes von Modell-IDs (z.B. -20250514, -2507, -0324)
  */
-export function stripDateSuffix(s: string): string {
-  // Strip trailing date/version tags: -YYYYMMDD, -YYMMDD, -YYMM (e.g., -20250514, -2507, -0324)
-  return s.replace(/-\d{4,8}$/, "");
-}
 
 /**
  * Teilt eine Modell-Referenz in Provider und Modell-ID

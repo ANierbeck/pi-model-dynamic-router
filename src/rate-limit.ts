@@ -194,9 +194,6 @@ export class RateLimitManager {
 
   // ── Getter ─────────────────────────────────────────────────────────────
 
-  getLimits(): Map<string, RateLimit> {
-    return this.limits;
-  }
 
   getActiveKeyIdx(): Record<string, number> {
     return this.activeKeyIdx;

@@ -1,9 +1,12 @@
 // src/metrics.ts
 // Metriken-Verwaltung für den pi-model-router
 
-import type { Metrics, Config, Cache, Group, ModelRef } from "./types.js";
-import { norm, stripDateSuffix, baseTokens, splitRef } from "./utils.js";
-import { PROVIDER_MAP } from "./providers.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import YAML from "yaml";
+import type { Metrics, Config, Cache, Group, ModelRef } from "./types.ts";
+import { norm, stripDateSuffix, baseTokens, splitRef } from "./utils.ts";
+import { PROVIDER_MAP } from "./providers.ts";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -181,10 +184,6 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────
-
-import * as fs from "node:fs";
-import * as path from "node:path";
-import YAML from "yaml";
 
 /**
  * Gibt die Billing-Tier für eine Referenz zurück
