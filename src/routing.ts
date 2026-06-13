@@ -24,6 +24,7 @@ export class Router {
   private curModel: string = "";
   private lastDynamicModel: string = "";
   private lastDynamicCategory: string | undefined;
+  private sessionCtx: any = null;
 
   constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
     this.cfg = cfg;
@@ -31,12 +32,16 @@ export class Router {
     this.limits = limits;
   }
 
+  setSessionCtx(ctx: any): void {
+    this.sessionCtx = ctx;
+  }
+
   // ── Model Discovery ─────────────────────────────────────────────────────
 
   /**
    * Gibt alle entdeckten Modell-Referenzen zurück
    */
-  allDiscoveredRefs(sessionCtx?: any): string[] {
+  allDiscoveredRefs(): string[] {
     const refs = new Set<string>();
     // Always include explicitly pinned group models
     for (const g of Object.values(this.cfg.model_groups)) {
@@ -44,8 +49,8 @@ export class Router {
     }
     
     // Session active: only use registry models so every ref is guaranteed to pass tryStream
-    if (sessionCtx?.modelRegistry) {
-      for (const model of sessionCtx.modelRegistry.getAvailable()) {
+    if (this.sessionCtx?.modelRegistry) {
+      for (const model of this.sessionCtx.modelRegistry.getAvailable()) {
         refs.add(`${model.provider}/${model.id}`);
       }
     } else {
@@ -63,12 +68,12 @@ export class Router {
   /**
    * Filtert Modelle nach Verfügbarkeit (nicht rate-limited)
    */
-  filterAvailable(refs: string[], exhausted_keys?: Record<string, number>): string[] {
+  filterAvailable(refs: string[], activeKeyIdx: Record<string, number> = {}): string[] {
     return refs.filter(r => {
       if (this.isLimited(r)) return false;
       const prov = r.split("/")[0];
-      const idx = 0; // Default to first key for now
-      if (exhausted_keys && exhausted_keys[`${prov}:${idx}`] && Date.now() < exhausted_keys[`${prov}:${idx}`]) {
+      const idx = activeKeyIdx[prov] ?? 0;
+      if (this.cache.exhausted_keys?.[`${prov}:${idx}`] && Date.now() < this.cache.exhausted_keys[`${prov}:${idx}`]) {
         return false;
       }
       return true;

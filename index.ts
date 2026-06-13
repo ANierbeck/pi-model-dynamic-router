@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
 import type { Config, Cache, Metrics, RateLimit, Group, PipeStep, ProviderKey, ProviderConfig, Defaults } from "./src/types.ts";
-import { PROVIDER_MAP, SKIP_REGISTRATION, PARAM_SUFFIXES, STRIP_SUFFIXES } from "./src/providers.ts";
+import { PROVIDER_MAP, SKIP_REGISTRATION, PARAM_SUFFIXES } from "./src/providers.ts";
 import { norm, splitRef, stripDateSuffix } from "./src/utils.ts";
 import { RateLimitManager } from "./src/rate-limit.ts";
 import { DiscoveryManager } from "./src/discovery.ts";
@@ -202,7 +202,6 @@ export default function (pi: ExtensionAPI) {
     cacheManager = new CacheManager(extDir);
     router = new Router(cfg, cache, rateLimitManager.getLimits());
     metricsModule.setCache(cache);
-    if (cfg.gdpval_builtin) { Object.assign(gdpval, cfg.gdpval_builtin); gdpvalVersion++; }
   }
 
   function loadCache() { cache = cacheManager.loadCache(); metricsModule.setCache(cache); }
@@ -424,7 +423,7 @@ function effCost(ref: string): number { return metricsModule.effCost(ref); }
   // ── Auto-discovery ────────────────────────────────────────────────────
 
   /** All known model refs: auto-discovered + any pinned models in group config */
-  function allDiscoveredRefs(): string[] { return router.allDiscoveredRefs(sessionCtx); }
+  function allDiscoveredRefs(): string[] { return router.allDiscoveredRefs(); }
 
   /** Get billing tier for a model ref: 0=free, 1=subscription, 2=local, 3=payg */
 function billingTier(ref: string): number { return metricsModule.billingTier(ref); }
@@ -435,7 +434,7 @@ function billingTier(ref: string): number { return metricsModule.billingTier(ref
   }
 
   /** Filter to available models (not rate-limited, healthy provider keys) */
-function filterAvailable(refs: string[]): string[] { return router.filterAvailable(refs, cache.exhausted_keys); }
+function filterAvailable(refs: string[]): string[] { return router.filterAvailable(refs, activeKeyIdx); }
 
   /** Filter by minimum gdpval percentile (0-100). Keeps models at or above the percentile threshold. */
 function filterByQualityPct(refs: string[], pct: number): string[] { return router.filterByQualityPct(refs, pct); }
@@ -450,10 +449,10 @@ function filterByQualityMin(refs: string[], min: number): string[] { return rout
   function sortByBillingPreference(refs: string[]): string[] { return router.sortByBillingPreference(refs); }
 
   function available(g: Group) {
-    let c = router.allDiscoveredRefs(sessionCtx);
+    let c = router.allDiscoveredRefs();
     if (g.min_gdpval != null) c = router.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = router.filterByQualityPct(c, g.min_gdpval_pct);
-    return router.filterAvailable(c, cache.exhausted_keys);
+    return router.filterAvailable(c, activeKeyIdx);
   }
 
   function sortBy(models: string[], method: string): string[] { return router.sortBy(models, method); }
