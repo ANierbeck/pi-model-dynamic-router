@@ -100,6 +100,9 @@ export interface ProviderDef {
 // ── Classification Types ───────────────────────────────────────────────
 
 export type ClassificationCategory =
+  | 'trivial'
+  | 'simple'
+  | 'standard'
   | 'code_simple'
   | 'code_complex'
   | 'design'
@@ -107,17 +110,7 @@ export type ClassificationCategory =
   | 'exploration'
   | 'fallback';
 
-export interface ClassificationResult {
-  category: ClassificationCategory;
-  reason: string;
-  confidence?: number;
-}
 
-export interface ClassificationContext {
-  lastCategory?: ClassificationCategory;
-  previousUserMessage?: string;
-  lastAssistantSnippet?: string;
-}
 
 // ── Extension Types ──────────────────────────────────────────────────────
 

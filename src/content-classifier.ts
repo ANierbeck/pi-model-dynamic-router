@@ -186,18 +186,8 @@ export function getGroupForCategory(category: string): string {
  * Statische Klassifizierung als Fallback wenn Ollama/Cloud nicht verfügbar
  * Nutzt Keyword-Matching für einfache Kategorisierung
  */
-function classifyStatically(prompt: string, context: ClassificationContext = {}): ClassificationResult {
+export function classifyStatically(prompt: string, context: ClassificationContext = {}): ClassificationResult {
   const lowerPrompt = prompt.toLowerCase();
-  
-  // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
-  const wordCount = prompt.trim().split(/\s+/).length;
-  if (context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
-    return {
-      category: context.lastCategory,
-      reason: 'Short prompt — inheriting previous task context',
-      confidence: 0.85,
-    };
-  }
 
   // Trivial: Sehr einfache Anfragen
   const trivialKeywords = [
@@ -206,9 +196,7 @@ function classifyStatically(prompt: string, context: ClassificationContext = {})
     'open', 'view', 'print', 'output', 'give me'
   ];
   
-  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) && 
-      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
-       lowerPrompt.includes('list') || lowerPrompt.includes('show'))) {
+  if (trivialKeywords.some(kw => lowerPrompt.includes(kw))) {
     return {
       category: 'trivial',
       reason: 'Simple request - trivial classification',
