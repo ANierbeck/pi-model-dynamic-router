@@ -557,7 +557,7 @@ export default function (pi: ExtensionAPI) {
             maxTokens: 64_000,
           },
           ...(cfg.model_groups[groupName]?.method === 'dynamic' ? [{
-            id: 'use-static',
+            id: `use-static:${groupName}`,
             name: `${groupName} → ${resolvedRef} (static fallback)`,
             reasoning: true,
             input: ['text', 'image'] as any,
@@ -969,8 +969,9 @@ export default function (pi: ExtensionAPI) {
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
-    const useStatic = model.id === 'use-static';
-    const groupName = useStatic ? 'dynamic' : model.id;
+    const useStaticMatch = model.id.match(/^use-static:(.+)$/);
+    const useStatic = useStaticMatch !== null;
+    const groupName = useStatic ? useStaticMatch[1] : model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
 
