@@ -4,7 +4,8 @@
 import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt, CATEGORY_TO_GROUP } from "../src/content-classifier.js";
 import * as ollamaUtils from "../src/ollama-utils";
-import { groupStream } from "../index.js";
+import piModelRouter from "../index.js";
+const { groupStream } = piModelRouter;
 
 // ── Mock für Ollama-Aufrufe ─────────────────────────────────────────────────────
 

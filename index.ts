@@ -14,8 +14,8 @@ import type {
   Model,
   Context,
   SimpleStreamOptions,
+  AssistantMessageEventStream,
 } from '@mariozechner/pi-ai';
-import { AssistantMessageEventStream } from '@mariozechner/pi-ai';
 import {
   streamSimple as piStreamSimple,
   createAssistantMessageEventStream,
@@ -55,7 +55,7 @@ const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
-export default function (pi: ExtensionAPI) {
+const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
   const cfgPath = path.join(extDir, 'router-config.json');
 
@@ -1406,6 +1406,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Export groupStream for testing
-  const indexExports = { groupStream };
-  Object.assign(module.exports, indexExports);
-}
+  (defaultExport as any).groupStream = groupStream;
+};
+
+export default defaultExport;
