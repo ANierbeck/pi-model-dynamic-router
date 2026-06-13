@@ -1,12 +1,12 @@
 // src/metrics.ts
 // Metriken-Verwaltung für den pi-model-router
 
-import * as fs from "node:fs";
-import * as path from "node:path";
-import YAML from "yaml";
-import type { Metrics, Config, Cache, Group, ModelRef } from "./types.ts";
-import { norm, stripDateSuffix, baseTokens, splitRef } from "./utils.ts";
-import { PROVIDER_MAP } from "./providers.ts";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import YAML from 'yaml';
+import type { Metrics, Config, Cache, Group, ModelRef } from './types.ts';
+import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
+import { PROVIDER_MAP } from './providers.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -26,14 +26,14 @@ let lastIndexVersion = -1;
  * Lädt die Model-Map aus der YAML-Datei
  */
 export function loadModelMap(extDir: string): void {
-  const yamlPath = path.join(extDir, "model-map.yaml");
+  const yamlPath = path.join(extDir, 'model-map.yaml');
   try {
-    const raw = YAML.parse(fs.readFileSync(yamlPath, "utf-8")) as Record<string, string | null>;
+    const raw = YAML.parse(fs.readFileSync(yamlPath, 'utf-8')) as Record<string, string | null>;
     modelMap = {};
     modelMapWildcards = [];
     for (const [key, slug] of Object.entries(raw)) {
-      if (key === null || typeof key !== "string") continue;
-      if (key.endsWith("*")) {
+      if (key === null || typeof key !== 'string') continue;
+      if (key.endsWith('*')) {
         modelMapWildcards.push([key.slice(0, -1), slug]);
       } else {
         modelMap[key] = slug;
@@ -68,7 +68,7 @@ export function setModelMap(map: ModelMap, wildcards: [string, string | null][])
  * Strip provider prefix from ref: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3"
  */
 export function stripProvider(ref: string): string {
-  const i = ref.indexOf("/");
+  const i = ref.indexOf('/');
   if (i === -1) return ref;
   const prov = ref.slice(0, i);
   if (PROVIDER_MAP[prov] || (global as any).cfg?.providers?.[prov]) return ref.slice(i + 1);
@@ -95,7 +95,7 @@ export function mapLookup(ref: string): string | null | undefined {
 function buildGdpvalIndex(): void {
   gdpvalIndex = new Map();
   for (const [slug, score] of Object.entries(gdpval)) {
-    const key = [...baseTokens(slug)].sort().join("|");
+    const key = [...baseTokens(slug)].sort().join('|');
     const existing = gdpvalIndex.get(key);
     if (existing === undefined || score > existing) gdpvalIndex.set(key, score);
   }
@@ -112,12 +112,12 @@ export function lookupGdp(id: string): number | null {
   if (mapped !== undefined) {
     // Find the slug's score (take highest across parameter variants)
     if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
-    const key = [...baseTokens(mapped)].sort().join("|");
+    const key = [...baseTokens(mapped)].sort().join('|');
     return gdpvalIndex!.get(key) ?? null;
   }
   // Fallback: automatic token-set matching
   if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
-  const key = [...baseTokens(id)].sort().join("|");
+  const key = [...baseTokens(id)].sort().join('|');
   return gdpvalIndex!.get(key) ?? null;
 }
 
@@ -160,23 +160,24 @@ export function setMetrics(newMetrics: Record<string, Metrics>): void {
 export function getM(ref: string): Metrics {
   if (metrics[ref]) return metrics[ref];
   const cm = cfg.model_metrics[ref] ?? {};
-  return metrics[ref] = {
+  return (metrics[ref] = {
     gdpval: lookupGdp(ref) ?? cm.gdpval ?? 50,
     throughput_tps: cm.throughput_tps ?? 100,
     avg_latency_ms: cm.avg_latency_ms ?? 1000,
     cost_per_m: cm.cost_per_m ?? 0,
-    last_updated: Date.now()
-  };
+    last_updated: Date.now(),
+  });
 }
 
 /**
  * Aktualisiert die Metriken für eine Referenz
  */
 export function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
-  const m = getM(ref), α = 0.3;
+  const m = getM(ref),
+    α = 0.3;
   m.avg_latency_ms = m.avg_latency_ms * (1 - α) + latMs * α;
   if (durMs > 0 && tokens > 0) {
-    m.throughput_tps = m.throughput_tps * (1 - α) + (tokens / durMs * 1000) * α;
+    m.throughput_tps = m.throughput_tps * (1 - α) + (tokens / durMs) * 1000 * α;
     if (!cache.benchmarks) cache.benchmarks = {};
     cache.benchmarks[ref] = m.throughput_tps;
   }
@@ -190,17 +191,17 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * 0=free, 1=subscription, 2=local, 3=payg
  */
 export function billingTier(ref: string): number {
-  const prov = ref.split("/")[0];
+  const prov = ref.split('/')[0];
   const provDef = PROVIDER_MAP[prov];
   const provCfg = cfg.providers?.[prov];
-  const billing = provCfg?.billing ?? provDef?.billing ?? "pay_per_token";
-  
+  const billing = provCfg?.billing ?? provDef?.billing ?? 'pay_per_token';
+
   // Local providers (ollama, lm-studio)
   if (provDef?.local) return 2;
   // Subscription providers
-  if (billing === "subscription") return 1;
+  if (billing === 'subscription') return 1;
   // Free models
-  const discovered = (cache.available_models ?? []).find(m => `${m.provider}/${m.id}` === ref);
+  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   if (discovered?.cost_per_m === 0) return 0;
   return 3; // pay per token
 }
@@ -221,7 +222,7 @@ export function lookupPrice(ref: string): { input: number; output: number } | nu
   const n = norm(modelId);
   for (const [k, v] of Object.entries(cache.openrouter_pricing ?? {})) {
     if (v.input <= 0) continue; // skip free-tier
-    const kModel = k.indexOf("/") >= 0 ? k.slice(k.indexOf("/") + 1) : k;
+    const kModel = k.indexOf('/') >= 0 ? k.slice(k.indexOf('/') + 1) : k;
     if (norm(kModel) === n) return v;
   }
   return null;
@@ -231,7 +232,8 @@ export function lookupPrice(ref: string): { input: number; output: number } | nu
  * Berechnet die effektiven Kosten für eine Referenz
  */
 export function effCost(ref: string): number {
-  const m = getM(ref), prov = ref.split("/")[0];
+  const m = getM(ref),
+    prov = ref.split('/')[0];
   // 1. Use metrics cost_per_m if set
   let base = m.cost_per_m;
   // 2. Look up in OpenRouter/Chutes pricing cache
@@ -242,7 +244,7 @@ export function effCost(ref: string): number {
   // 3. Fallback to tiny base (costMux still differentiates free models)
   if (!base) base = 0.01;
   // Apply subscription discount
-  if (cfg.providers?.[prov]?.billing === "subscription") base *= SUB_DISCOUNT;
+  if (cfg.providers?.[prov]?.billing === 'subscription') base *= SUB_DISCOUNT;
   return base * costMux(prov);
 }
 
@@ -261,7 +263,7 @@ export function costMux(prov: string): number {
 export function getUsage(ref: string, days: number): number {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   return (cache.usage_log ?? [])
-    .filter(e => e.ref === ref && e.ts > cutoff)
+    .filter((e) => e.ref === ref && e.ts > cutoff)
     .reduce((sum, e) => sum + e.tokens, 0);
 }
 

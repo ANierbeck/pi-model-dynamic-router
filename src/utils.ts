@@ -1,8 +1,8 @@
 // src/utils.ts
 // Hilfsfunktionen für den pi-model-router
 
-import { STRIP_SUFFIXES, PARAM_SUFFIXES } from "./providers.js";
-import type { ModelRef } from "./types.js";
+import { STRIP_SUFFIXES, PARAM_SUFFIXES } from './providers.js';
+import type { ModelRef } from './types.js';
 
 // ── String Utilities ──────────────────────────────────────────────────────
 
@@ -11,16 +11,16 @@ import type { ModelRef } from "./types.js";
  */
 export function stripDateSuffix(s: string): string {
   // Strip trailing date/version tags: -YYYYMMDD, -YYMMDD, -YYMM (e.g., -20250514, -2507, -0324)
-  return s.replace(/-\d{4,8}$/, "");
+  return s.replace(/-\d{4,8}$/, '');
 }
 export function norm(s: string): string {
   s = s.toLowerCase();
   // Strip to last path segment — "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-v3"
-  const slash = s.lastIndexOf("/");
+  const slash = s.lastIndexOf('/');
   if (slash !== -1 && slash < s.length - 1) s = s.slice(slash + 1);
-  for (const x of STRIP_SUFFIXES) s = s.replace(x, "");
+  for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
   s = stripDateSuffix(s);
-  return s.replace(/[^a-z0-9]/g, "");
+  return s.replace(/[^a-z0-9]/g, '');
 }
 
 /**
@@ -31,8 +31,10 @@ export function norm(s: string): string {
  * Teilt eine Modell-Referenz in Provider und Modell-ID
  */
 export function splitRef(ref: string): ModelRef {
-  const i = ref.indexOf("/");
-  return i === -1 ? { provider: ref, modelId: ref } : { provider: ref.slice(0, i), modelId: ref.slice(i + 1) };
+  const i = ref.indexOf('/');
+  return i === -1
+    ? { provider: ref, modelId: ref }
+    : { provider: ref.slice(0, i), modelId: ref.slice(i + 1) };
 }
 
 /**
@@ -40,7 +42,7 @@ export function splitRef(ref: string): ModelRef {
  * Beispiel: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3"
  */
 export function stripProvider(ref: string): string {
-  const i = ref.indexOf("/");
+  const i = ref.indexOf('/');
   if (i === -1) return ref;
   const prov = ref.slice(0, i);
   // Wenn der Provider in PROVIDER_MAP oder cfg.providers existiert, entferne ihn
@@ -61,9 +63,10 @@ export function fmt(n: number): string {
 export function fmtTime(ms: number): string {
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60), rs = s % 60;
-  if (m < 60) return `${m}m${rs ? rs + "s" : ""}`;
-  return `${Math.floor(m / 60)}h${m % 60 ? (m % 60) + "m" : ""}`;
+  const m = Math.floor(s / 60),
+    rs = s % 60;
+  if (m < 60) return `${m}m${rs ? rs + 's' : ''}`;
+  return `${Math.floor(m / 60)}h${m % 60 ? (m % 60) + 'm' : ''}`;
 }
 
 // ── Model Token Utilities ─────────────────────────────────────────────────
@@ -74,10 +77,10 @@ export function fmtTime(ms: number): string {
  */
 export function baseTokens(s: string): Set<string> {
   s = s.toLowerCase();
-  const slash = s.lastIndexOf("/");
+  const slash = s.lastIndexOf('/');
   if (slash !== -1 && slash < s.length - 1) s = s.slice(slash + 1);
-  for (const ps of PARAM_SUFFIXES) s = s.replace(ps, "");
-  for (const x of STRIP_SUFFIXES) s = s.replace(x, "");
+  for (const ps of PARAM_SUFFIXES) s = s.replace(ps, '');
+  for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
   s = stripDateSuffix(s);
   return new Set(s.match(/[a-z]+|\d+/g) ?? []);
 }
@@ -87,7 +90,10 @@ export function baseTokens(s: string): Set<string> {
 /**
  * Prüft, ob eine Modell-Referenz aktuell rate-limited ist
  */
-export function isModelLimited(ref: string, limits: Map<string, { cooldown_until: number }>): boolean {
+export function isModelLimited(
+  ref: string,
+  limits: Map<string, { cooldown_until: number }>
+): boolean {
   const limit = limits.get(ref);
   if (!limit) return false;
   if (Date.now() >= limit.cooldown_until) {

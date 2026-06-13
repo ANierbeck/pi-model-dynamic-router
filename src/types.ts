@@ -1,8 +1,8 @@
 // src/types.ts
 // TypeScript-Typdefinitionen für den pi-model-router
 
-import type { Model } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { Model } from '@mariozechner/pi-ai';
+import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
@@ -84,27 +84,27 @@ export interface Cache {
 // ── Provider Discovery Types ────────────────────────────────────────────
 
 export interface ProviderDef {
-  envVar?: string;        // e.g. "ANTHROPIC_API_KEY"
-  authKey?: string;       // key in ~/.pi/agent/auth.json
+  envVar?: string; // e.g. "ANTHROPIC_API_KEY"
+  authKey?: string; // key in ~/.pi/agent/auth.json
   passPatterns?: string[]; // glob-ish prefixes to match in `pass ls`
   cliAuthFiles?: { path: string; tokenField: string }[]; // CLI tool auth files
-  local?: boolean;        // ollama/lm-studio — no key needed
-  billing?: string;       // default billing type
-  modelsUrl?: string;     // API endpoint for model discovery
+  local?: boolean; // ollama/lm-studio — no key needed
+  billing?: string; // default billing type
+  modelsUrl?: string; // API endpoint for model discovery
   authHeader?: (key: string) => Record<string, string>; // how to authenticate
-  baseUrl?: string;       // API base URL for pi provider registration
-  api?: string;           // pi API type (e.g. "anthropic", "openai-responses", "qwen")
+  baseUrl?: string; // API base URL for pi provider registration
+  api?: string; // pi API type (e.g. "anthropic", "openai-responses", "qwen")
 }
 
 // ── Classification Types ───────────────────────────────────────────────
 
-export type ClassificationCategory = 
-  | "code_simple"
-  | "code_complex"
-  | "design"
-  | "planning"
-  | "exploration"
-  | "fallback";
+export type ClassificationCategory =
+  | 'code_simple'
+  | 'code_complex'
+  | 'design'
+  | 'planning'
+  | 'exploration'
+  | 'fallback';
 
 export interface ClassificationResult {
   category: ClassificationCategory;
