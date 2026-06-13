@@ -5,7 +5,6 @@ import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt, CATEGORY_TO_GROUP } from "../src/content-classifier.js";
 import * as ollamaUtils from "../src/ollama-utils";
 import piModelRouter from "../index.js";
-const { groupStream } = piModelRouter;
 
 // ── Mock für Ollama-Aufrufe ─────────────────────────────────────────────────────
 
@@ -24,6 +23,16 @@ describe("groupStream (Integration Tests)", () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "code_simple", "reason": "Einfache Textersetzung", "confidence": 0.95}'
     );
+    
+    // Initialize the plugin to set up groupStream
+    const mockPi = {
+      on: vi.fn(),
+      ui: { notify: vi.fn() },
+      extension: { dir: '/test/dir' }
+    };
+    piModelRouter(mockPi);
+    
+    const { groupStream } = piModelRouter as any;
     
     const mockModel = {
       id: 'dynamic:use-static',
