@@ -512,6 +512,7 @@ function detectGroup(ref: string): string | null { return router.detectGroup(ref
 
   pi.on("session_start", async (_ev, ctx) => {
     sessionCtx = ctx;
+    router.setSessionCtx(ctx);
     load(); loadModelMap(); loadCache(); sessionStart = Date.now();
     await discoverKeys();
 
@@ -1039,5 +1040,10 @@ function detectGroup(ref: string): string | null { return router.detectGroup(ref
       lines.push("", "/router <group> | scan | reload | sync");
       ctx.ui.notify(lines.join("\n"), "info");
     },
+  });
+
+  pi.on("session_shutdown", () => {
+    sessionCtx = null;
+    router.setSessionCtx(null);
   });
 }
