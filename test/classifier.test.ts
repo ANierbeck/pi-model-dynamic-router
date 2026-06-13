@@ -101,9 +101,34 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.category).toBe("fallback");
     });
 
-    it("klassifiziert 'What is in this file?' als 'simple'", () => {
+    it("klassifiziert 'What is in this file?' als 'trivial'", () => {
       const result = classifyStatically("What is in this file?");
-      expect(result.category).toBe("simple");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What\'s in the todo list?' als 'trivial'", () => {
+      const result = classifyStatically("What's in the todo list?");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What is in this content?' als 'trivial'", () => {
+      const result = classifyStatically("What is in this content?");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What is in this list?' als 'trivial'", () => {
+      const result = classifyStatically("What is in this list?");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What\'s in the todo list?' als 'trivial'", () => {
+      const result = classifyStatically("What's in the todo list?");
+      expect(result.category).toBe("trivial");
+    });
+
+    it("klassifiziert 'What is in this content?' als 'trivial'", () => {
+      const result = classifyStatically("What is in this content?");
+      expect(result.category).toBe("trivial");
     });
 
     it("klassifiziert 'Explain briefly' als 'simple'", () => {

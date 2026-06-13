@@ -33,8 +33,8 @@ interface ClassificationOptions {
 
 // ── Defaults ────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gemma2:2b';
-const DEFAULT_TIMEOUT = 15_000; // gemma2:2b needs ~5-8s inference
+const DEFAULT_MODEL = 'gemma4:12b-mlx';
+const DEFAULT_TIMEOUT = 45_000; // gemma4:12b-mlx needs ~22s on M3 Max
 const FALLBACK_MODEL = 'gemma2:2b';
 const FALLBACK_TIMEOUT = 10_000;
 const MIN_CONFIDENCE = 0.5;
@@ -165,15 +165,15 @@ function isValidClassification(obj: any): obj is ClassificationResult {
 // ── Mapping ──────────────────────────────────────────────────────────────
 
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
-  trivial: 'trivial',
-  simple: 'simple',
-  code_simple: 'simple',
-  standard: 'standard',
-  code_complex: 'complex',
-  design: 'complex',
-  planning: 'complex',
-  exploration: 'standard',
-  fallback: 'trivial',
+  trivial:      'scout',       // any free model
+  simple:       'operational', // GDPval ≥ 300
+  code_simple:  'operational', // GDPval ≥ 300
+  standard:     'operational', // GDPval ≥ 300
+  code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
+  design:       'tactical',   // GDPval ≥ 600
+  planning:     'tactical',   // GDPval ≥ 600
+  exploration:  'scout',       // any model, cheap
+  fallback:     'tactical',   // uncertain → use a decent model, not a free one
 };
 
 export function getGroupForCategory(category: string): string {

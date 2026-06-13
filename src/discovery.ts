@@ -267,7 +267,7 @@ export class DiscoveryManager {
       if (def.freeModels && def.freeModels.length > 0) {
         // Prüfe ob Provider konfiguriert und Keys verfügbar
         const prov = this.cfg.providers?.[provId];
-        if (prov?.keys?.length > 0) {
+        if ((prov?.keys?.length ?? 0) > 0) {
           freeModels.push(...def.freeModels);
         }
       }

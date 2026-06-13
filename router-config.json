@@ -1,95 +1,95 @@
 {
-    "providers": {
-        "mistral": {
-            "billing": "pay_per_token"
-        },
-        "ollama": {
-            "billing": "subscription"
-        }
+  "providers": {
+    "mistral": {
+      "billing": "pay_per_token"
     },
-    "model_groups": {
-        "trivial": {
-            "description": "Trivial tasks - free models only",
-            "method": "min_cost",
-            "max_cost": 0,
-            "models": [
-                "qwen/qwen3-4b:free",
-                "google/gemma-3-4b-it:free",
-                "ollama/gemma4:12b-mlx"
-            ]
-        },
-        "simple": {
-            "description": "Simple tasks - free models only",
-            "method": "min_cost",
-            "max_cost": 0,
-            "models": [
-                "qwen/qwen3-4b:free",
-                "google/gemma-3-12b-it:free",
-                "meta-llama/llama-3.3-70b-instruct:free",
-                "ollama/gemma4:12b-mlx"
-            ]
-        },
-        "standard": {
-            "description": "Standard tasks - cost-effective models",
-            "method": "tiered",
-            "min_gdpval": 500,
-            "max_cost_per_m": 0.5,
-            "models": [
-                "openai/gpt-4o-mini",
-                "anthropic/claude-3-haiku"
-            ]
-        },
-        "complex": {
-            "description": "Complex tasks - premium models",
-            "method": "best",
-            "min_gdpval": 800,
-            "models": [
-                "anthropic/claude-3-sonnet",
-                "openai/gpt-4o",
-                "mistral-medium-3.5"
-            ]
-        },
-        "strategic": {
-            "description": "Best available model by intelligence (max GDPval)",
-            "method": "best"
-        },
-        "tactical": {
-            "description": "GDPval \u2265600: magistral/mistral-medium tier, cheapest first",
-            "method": "tiered",
-            "min_gdpval": 600
-        },
-        "operational": {
-            "description": "GDPval \u2265300: broad quality pool, cheapest first",
-            "method": "tiered",
-            "min_gdpval": 300
-        },
-        "scout": {
-            "description": "Any available model, cheapest first",
-            "method": "tiered",
-            "min_gdpval": 0
-        },
-        "fallback": {
-            "description": "Any available, cheapest first",
-            "method": "tiered",
-            "min_gdpval": 0
-        },
-        "dynamic": {
-            "description": "Classifies each prompt via Ollama (gemma2:2b) and routes to trivial/simple/standard/complex",
-            "method": "dynamic"
-        }
-    },
-    "model_metrics": {},
-    "gdpval_builtin": {
-        "magistral-small": 669,
-        "magistral-medium": 665,
-        "devstral": 585,
-        "mistral-small-3-2": 478,
-        "mistral-small-3-1": 421
-    },
-    "cost_optimization": {
-        "enabled": true,
-        "default_group": "simple",
-        "auto_downgrade": true,
-        "max_cost_per_request": 1.0
+    "ollama": {
+      "billing": "subscription"
     }
+  },
+  "model_groups": {
+    "trivial": {
+      "description": "Trivial tasks - free models only",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "google/gemma-3-4b-it:free",
+        "ollama/gemma4:12b-mlx"
+      ]
+    },
+    "simple": {
+      "description": "Simple tasks - free models only",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "google/gemma-3-12b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "ollama/gemma4:12b-mlx"
+      ]
+    },
+    "standard": {
+      "description": "Standard tasks - cost-effective models",
+      "method": "tiered",
+      "min_gdpval": 500,
+      "max_cost_per_m": 0.5,
+      "models": [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3-haiku"
+      ]
+    },
+    "complex": {
+      "description": "Complex tasks - GDPval \u2265600 (mistral-medium tier), best available",
+      "method": "best",
+      "min_gdpval": 600,
+      "models": [
+        "anthropic/claude-3-sonnet",
+        "openai/gpt-4o",
+        "mistral-medium-3.5"
+      ]
+    },
+    "strategic": {
+      "description": "Best available model by intelligence (max GDPval)",
+      "method": "best"
+    },
+    "tactical": {
+      "description": "GDPval \u2265600: magistral/mistral-medium tier, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 600
+    },
+    "operational": {
+      "description": "GDPval \u2265300: broad quality pool, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 300
+    },
+    "scout": {
+      "description": "Any available model, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 0
+    },
+    "fallback": {
+      "description": "Any available, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 0
+    },
+    "dynamic": {
+      "description": "Classifies each prompt via Ollama (gemma2:2b) and routes to trivial/simple/standard/complex",
+      "method": "dynamic"
+    }
+  },
+  "model_metrics": {},
+  "gdpval_builtin": {
+    "magistral-small": 669,
+    "magistral-medium": 665,
+    "devstral": 585,
+    "mistral-small-3-2": 478,
+    "mistral-small-3-1": 421
+  },
+  "cost_optimization": {
+    "enabled": true,
+    "default_group": "simple",
+    "auto_downgrade": true,
+    "max_cost_per_request": 1.0
+  }
 }
