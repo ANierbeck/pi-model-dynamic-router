@@ -2,6 +2,24 @@
 
 > Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
 
+## Architecture
+
+The router uses a **modular architecture** with the following components:
+
+| Module | Purpose | Key Features |
+|--------|---------|--------------|
+| **providers.ts** | Provider definitions and mappings | 24 supported providers, authentication patterns |
+| **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
+| **utils.ts** | Utility functions | String manipulation, reference parsing |
+| **rate-limit.ts** | Rate limit management | Key rotation, backoff, cost multiplier |
+| **discovery.ts** | Discovery management | API key discovery, model scanning |
+| **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
+| **cache.ts** | Cache management | Persistent caching, versioning |
+| **routing.ts** | Routing logic | Model selection, filtering, sorting |
+| **content-classifier.ts** | Content classification | Ollama-based prompt categorization |
+
+This modular design enables better maintainability, testing, and extensibility.
+
 ## Install
 
 ```bash
@@ -92,6 +110,8 @@ On HTTP 429:
 Group streams detect soft failures (empty responses, timeouts) and automatically retry with the next candidate model.
 
 ## Configuration
+
+### Main Configuration File
 
 `router-config.json`:
 

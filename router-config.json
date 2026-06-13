@@ -39,5 +39,13 @@
         }
     },
 
-    "model_metrics": {}
+    "model_metrics": {},
+
+    "gdpval_builtin": {
+        "magistral-small":  669,
+        "magistral-medium": 665,
+        "devstral":         585,
+        "mistral-small-3-2": 478,
+        "mistral-small-3-1": 421
+    }
 }

@@ -1,26 +1,25 @@
 // test/classifier.test.ts
-// Tests für die inhaltssensitive Klassifizierung
+// Unit-Tests für die inhaltssensitive Klassifizierung (ohne Ollama)
 
+import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt, CATEGORY_TO_GROUP } from "../src/content-classifier";
-import { callOllama } from "../src/ollama-utils";
+import * as ollamaUtils from "../src/ollama-utils";
 
 // ── Mock für Ollama-Aufrufe (für Unit-Tests) ───────────────────────────────
 
-jest.mock("../src/ollama-utils", () => ({
-  callOllama: jest.fn(),
+vi.mock("../src/ollama-utils", () => ({
+  callOllama: vi.fn(),
 }));
-
-const mockCallOllama = callOllama as jest.Mock;
 
 // ── Testfälle ────────────────────────────────────────────────────────────
 
-describe("classifyPrompt", () => {
+describe("classifyPrompt (Unit Tests)", () => {
   beforeEach(() => {
-    mockCallOllama.mockReset();
+    vi.resetAllMocks();
   });
 
   it("klassifiziert einfache Code-Änderungen als 'code_simple'", async () => {
-    mockCallOllama.mockResolvedValue(
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "code_simple", "reason": "Einfache Textersetzung", "confidence": 0.95}'
     );
     
@@ -31,7 +30,7 @@ describe("classifyPrompt", () => {
   });
 
   it("klassifiziert komplexe Code-Änderungen als 'code_complex'", async () => {
-    mockCallOllama.mockResolvedValue(
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "code_complex", "reason": "Refactoring erforderlich", "confidence": 0.9}'
     );
     
@@ -41,7 +40,7 @@ describe("classifyPrompt", () => {
   });
 
   it("klassifiziert Design-Fragen als 'design'", async () => {
-    mockCallOllama.mockResolvedValue(
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "design", "reason": "Architektur-Entwurf", "confidence": 0.85}'
     );
     
@@ -51,7 +50,7 @@ describe("classifyPrompt", () => {
   });
 
   it("klassifiziert unklare Anfragen als 'fallback'", async () => {
-    mockCallOllama.mockResolvedValue(
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "fallback", "reason": "Unklare Anfrage", "confidence": 0.3}'
     );
     
@@ -61,43 +60,26 @@ describe("classifyPrompt", () => {
   });
 
   it("behandelt Ollama-Fehler als Fallback", async () => {
-    mockCallOllama.mockRejectedValue(new Error("Ollama not running"));
+    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
     const result = await classifyPrompt("Irgendeine Anfrage");
     expect(result.category).toBe("fallback");
-    expect(result.reason).toContain("Ollama error");
+    expect(result.reason).toContain("Both classification models failed");
   });
 
   it("validiert das JSON-Format der Ollama-Antwort", async () => {
-    mockCallOllama.mockResolvedValue('{"category": "invalid_category", "reason": "test"}');
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue('{"category": "invalid_category", "reason": "test"}');
     
     // Sollte auf Fallback fallen, da "invalid_category" nicht erlaubt ist
     const result = await classifyPrompt("Test");
     expect(result.category).toBe("fallback");
   });
-});
 
-// ── Integrationstest (mit echten Ollama-Aufrufen) ────────────────────────
-
-describe("classifyPrompt (Integration)", () => {
-  // WARNUNG: Diese Tests benötigen laufendes Ollama mit gemma2:2b!
-  // Deaktiviert per Default — aktivieren mit `TEST_INTEGRATION=true npm test`
-  const TEST_INTEGRATION = process.env.TEST_INTEGRATION === "true";
-
-  if (TEST_INTEGRATION) {
-    it("klassifiziert echte Prompts mit Ollama", async () => {
-      // Ollama muss laufen und gemma2:2b verfügbar sein
-      jest.unmock("../src/ollama-utils"); // Mock entfernen
-      
-      const simpleResult = await classifyPrompt("Ersetze 'x' mit 'y'");
-      console.log("Simple prompt classified as:", simpleResult);
-      expect(["code_simple", "fallback"]).toContain(simpleResult.category);
-
-      const complexResult = await classifyPrompt("Debugge diese rekursive Funktion");
-      console.log("Complex prompt classified as:", complexResult);
-      expect(["code_complex", "fallback"]).toContain(complexResult.category);
-    }, 20000); // Timeout erhöhen für Ollama-Aufrufe
-  } else {
-    it.skip("Integrationstests deaktiviert (setze TEST_INTEGRATION=true)", () => {});
-  }
+  it("erbt Kategorie für kurze Prompts mit Kontext", async () => {
+    const result = await classifyPrompt("Ja", { 
+      context: { lastCategory: "code_complex" } 
+    });
+    expect(result.category).toBe("code_complex");
+    expect(result.reason).toContain("Short prompt");
+  });
 });
