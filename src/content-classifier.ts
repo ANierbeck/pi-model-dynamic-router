@@ -186,17 +186,18 @@ export function getGroupForCategory(category: string): string {
  * Statische Klassifizierung als Fallback wenn Ollama/Cloud nicht verfügbar
  * Nutzt Keyword-Matching für einfache Kategorisierung
  */
-export function classifyStatically(prompt: string, context: ClassificationContext = {}): ClassificationResult {
+export function classifyStatically(prompt: string): ClassificationResult {
   const lowerPrompt = prompt.toLowerCase();
 
-  // Trivial: Sehr einfache Anfragen
+  // Trivial: Nur file/list/todo-spezifische Anfragen
   const trivialKeywords = [
-    'list', 'show', 'display', 'read', 'what\'s in', 'what is in',
-    'todo', 'todos', 'file', 'files', 'content', 'show me',
-    'open', 'view', 'print', 'output', 'give me'
+    'list', 'what\'s in', 'what is in',
+    'todo', 'todos', 'file', 'files', 'content'
   ];
   
-  if (trivialKeywords.some(kw => lowerPrompt.includes(kw))) {
+  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) &&
+      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
+       lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
     return {
       category: 'trivial',
       reason: 'Simple request - trivial classification',
