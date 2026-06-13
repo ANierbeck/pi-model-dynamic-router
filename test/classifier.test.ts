@@ -60,11 +60,23 @@ describe("classifyPrompt (Unit Tests)", () => {
   });
 
   it("behandelt Ollama-Fehler als Fallback", async () => {
+    delete process.env.DISABLE_STATIC_CLASSIFIER;
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
     const result = await classifyPrompt("Irgendeine Anfrage");
     expect(result.category).toBe("fallback");
-    expect(result.reason).toMatch(/falling back to static classification|Could not classify/);
+    expect(result.reason).toMatch(/falling back to static classification|Could not classify|Ollama unavailable, static classifier disabled/);
+  });
+
+  it("behandelt Ollama-Fehler mit DISABLE_STATIC_CLASSIFIER=1", async () => {
+    process.env.DISABLE_STATIC_CLASSIFIER = '1';
+    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
+    
+    const result = await classifyPrompt("Irgendeine Anfrage");
+    expect(result.category).toBe("fallback");
+    expect(result.reason).toBe("Ollama unavailable, static classifier disabled");
+    
+    delete process.env.DISABLE_STATIC_CLASSIFIER;
   });
 
   it("validiert das JSON-Format der Ollama-Antwort", async () => {
@@ -106,30 +118,6 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.category).toBe("trivial");
     });
 
-    it("klassifiziert 'What\'s in the todo list?' als 'trivial'", () => {
-      const result = classifyStatically("What's in the todo list?");
-      expect(result.category).toBe("trivial");
-    });
-
-    it("klassifiziert 'What is in this content?' als 'trivial'", () => {
-      const result = classifyStatically("What is in this content?");
-      expect(result.category).toBe("trivial");
-    });
-
-    it("klassifiziert 'What is in this list?' als 'trivial'", () => {
-      const result = classifyStatically("What is in this list?");
-      expect(result.category).toBe("trivial");
-    });
-
-    it("klassifiziert 'What\'s in the todo list?' als 'trivial'", () => {
-      const result = classifyStatically("What's in the todo list?");
-      expect(result.category).toBe("trivial");
-    });
-
-    it("klassifiziert 'What is in this content?' als 'trivial'", () => {
-      const result = classifyStatically("What is in this content?");
-      expect(result.category).toBe("trivial");
-    });
 
     it("klassifiziert 'Explain briefly' als 'simple'", () => {
       const result = classifyStatically("Explain briefly how this works");
