@@ -145,6 +145,11 @@ export async function classifyPrompt(
   // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
   // Diese Logik ist ein Platzhalter für zukünftige Cloud-Integration
   // Aktuell nutzen wir nur Ollama, aber die Struktur ist für Cloud vorbereitet
+  if (process.env.DISABLE_STATIC_CLASSIFIER === '1') {
+    console.warn('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+    return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
+  }
+
   console.warn('[classifier] Ollama models failed, falling back to static classification');
 
   // Ultimate Fallback: Statische Klassifizierung

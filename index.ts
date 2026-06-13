@@ -715,8 +715,7 @@ export default function (pi: ExtensionAPI) {
     async execute(
       _id: string,
       params: { group: string },
-      _sig: unknown,
-      _up: unknown,
+      _onUpdate: unknown,
       ctx: ExtensionContext
     ) {
       load();
@@ -758,7 +757,7 @@ export default function (pi: ExtensionAPI) {
           'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
       }),
     }) as any,
-    async execute(_id: string, params: { group: string }, _sig?: unknown, _up?: unknown) {
+    async execute(_id: string, params: { group: string }, _onUpdate?: unknown) {
       load();
       const name = params.group.toLowerCase(),
         res = resolve(name);
