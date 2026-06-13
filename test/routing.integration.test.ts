@@ -16,18 +16,23 @@ import { PROVIDER_MAP } from '../src/providers.js';
 const testConfig: Config = {
   model_groups: {
     strategic: {
+      method: 'best',
       models: ['anthropic/claude-3-sonnet', 'openai/gpt-4', 'google/gemini-1.5-pro'],
     },
     tactical: {
+      method: 'tiered',
       models: ['anthropic/claude-3-haiku', 'openai/gpt-3.5-turbo', 'mistral/mistral-large'],
     },
     operational: {
+      method: 'tiered',
       models: ['google/gemini-1.5-flash', 'mistral/mistral-small'],
     },
     scout: {
+      method: 'tiered',
       models: ['openai/gpt-4o-mini', 'google/gemini-1.5-nano'],
     },
     fallback: {
+      method: 'tiered',
       models: ['local/llama-3.2-1b'],
     },
   },
@@ -246,7 +251,7 @@ describe('Router Integration Tests', () => {
     });
 
     it('should handle empty input', () => {
-      const sorted = router.sortBy([]);
+      const sorted = router.sortBy([], 'max_gdpval');
       expect(sorted).toEqual([]);
     });
   });
