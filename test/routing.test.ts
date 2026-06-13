@@ -17,7 +17,7 @@ describe('lookupGdp built-in tests', () => {
   });
 
   afterAll(() => {
-    setConfig({ model_groups: {}, model_metrics: {} });
+    setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
   });
 
   test('lookupGdp returns correct built-in score for magistral-small (>= 600 threshold)', () => {

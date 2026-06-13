@@ -720,8 +720,6 @@ export default function (pi: ExtensionAPI) {
       ctx: ExtensionContext
     ) {
       load();
-      if (!ctx?.modelRegistry?.find)
-        throw new Error("ctx.modelRegistry unavailable");
       const name = params.group.toLowerCase(),
         res = resolve(name);
       if (!res)
