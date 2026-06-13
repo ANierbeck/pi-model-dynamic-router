@@ -14,8 +14,8 @@ import type {
   Model,
   Context,
   SimpleStreamOptions,
-  AssistantMessageEventStream,
 } from '@mariozechner/pi-ai';
+import { AssistantMessageEventStream } from '@mariozechner/pi-ai';
 import {
   streamSimple as piStreamSimple,
   createAssistantMessageEventStream,
@@ -1404,4 +1404,8 @@ export default function (pi: ExtensionAPI) {
     sessionCtx = null;
     router.setSessionCtx(null);
   });
+
+  // Export groupStream for testing
+  const indexExports = { groupStream };
+  Object.assign(module.exports, indexExports);
 }
