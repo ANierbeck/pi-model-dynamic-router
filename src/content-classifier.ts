@@ -191,9 +191,9 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Trivial: Nur sehr spezifische file/list/todo-Kontext-Phrasen
   // Die AND-Bedingung stellt sicher, dass die Keywords in einem relevanten Kontext stehen
-  const trivialKeywords = ['what\'s in ', 'what is in '];
+  const trivialKeywords = [/what(?:'s| is) in\s/i];
   
-  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) &&
+  if (trivialKeywords.some(regex => regex.test(lowerPrompt)) &&
       (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
        lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
     return {
