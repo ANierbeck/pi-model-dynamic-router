@@ -97,6 +97,11 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.category).toBe("trivial");
     });
 
+    it("klassifiziert 'List files' als 'trivial'", () => {
+      const result = classifyStatically("List files");
+      expect(result.category).toBe("trivial");
+    });
+
     it("klassifiziert 'What is in this file?' als 'trivial'", () => {
       const result = classifyStatically("What is in this file?");
       expect(result.category).toBe("trivial");

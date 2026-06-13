@@ -110,8 +110,6 @@ export type ClassificationCategory =
   | 'exploration'
   | 'fallback';
 
-
-
 // ── Extension Types ──────────────────────────────────────────────────────
 
 export interface RouterExtensionContext {
