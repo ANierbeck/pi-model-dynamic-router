@@ -59,24 +59,20 @@ describe("classifyPrompt (Unit Tests)", () => {
     expect(CATEGORY_TO_GROUP[result.category]).toBe("trivial"); // Default-Fallback
   });
 
-  it("behandelt Ollama-Fehler als Fallback", async () => {
-    delete process.env.DISABLE_STATIC_CLASSIFIER;
-    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
-    
-    const result = await classifyPrompt("Irgendeine Anfrage");
-    expect(result.category).toBe("fallback");
-    expect(result.reason).toMatch(/falling back to static classification|Could not classify|Ollama unavailable, static classifier disabled/);
-  });
-
-  it("behandelt Ollama-Fehler mit DISABLE_STATIC_CLASSIFIER=1", async () => {
-    process.env.DISABLE_STATIC_CLASSIFIER = '1';
+  it("behandelt Ollama-Fehler mit allowStaticFallback=false (default)", async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
     const result = await classifyPrompt("Irgendeine Anfrage");
     expect(result.category).toBe("fallback");
     expect(result.reason).toBe("Ollama unavailable, static classifier disabled");
+  });
+
+  it("behandelt Ollama-Fehler mit allowStaticFallback=true", async () => {
+    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
-    delete process.env.DISABLE_STATIC_CLASSIFIER;
+    const result = await classifyPrompt("Irgendeine Anfrage", { allowStaticFallback: true });
+    expect(result.category).toBe("fallback");
+    expect(result.reason).toMatch(/Could not classify|falling back to static classification/);
   });
 
   it("validiert das JSON-Format der Ollama-Antwort", async () => {
