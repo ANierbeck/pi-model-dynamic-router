@@ -26,7 +26,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     const result = await classifyPrompt("Ersetze 'foo' mit 'bar' in Zeile 42");
     expect(result.category).toBe("code_simple");
     expect(result.reason).toContain("Einfache Textersetzung");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("simple");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("operational");
   });
 
   it("klassifiziert komplexe Code-Änderungen als 'code_complex'", async () => {
@@ -36,7 +36,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Optimiere diese 200-Zeilen-Funktion für Performance");
     expect(result.category).toBe("code_complex");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("complex");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical");
   });
 
   it("klassifiziert Design-Fragen als 'design'", async () => {
@@ -46,7 +46,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Entwirf eine Event-Sourcing-Architektur");
     expect(result.category).toBe("design");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("complex");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical");
   });
 
   it("klassifiziert unklare Anfragen als 'fallback'", async () => {
@@ -56,7 +56,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Mach das besser");
     expect(result.category).toBe("fallback");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("trivial"); // Default-Fallback
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical"); // Default-Fallback
   });
 
   it("behandelt Ollama-Fehler mit allowStaticFallback=false (default)", async () => {

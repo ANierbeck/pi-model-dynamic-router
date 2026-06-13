@@ -1,6 +1,8 @@
 // src/content-classifier.ts
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { callOllama } from './ollama-utils.js';
+import { CloudClient } from './cloud-client.js';
+import type { Config, Cache } from './types.js';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -144,14 +146,40 @@ export async function classifyPrompt(
   }
 
   // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
-  // Diese Logik ist ein Platzhalter für zukünftige Cloud-Integration
-  // Aktuell nutzen wir nur Ollama, aber die Struktur ist für Cloud vorbereitet
+  // Nur aktivieren wenn allowStaticFallback true ist (Standard: false für Backward-Kompatibilität)
+  if (allowStaticFallback) {
+    try {
+      // CloudClient benötigt cfg und cache - für jetzt nutzen wir eine einfache Implementierung
+      // TODO: cfg und cache als Parameter hinzufügen für volle Cloud-Fallback-Unterstützung
+      const cloudModels = getFreeModelsFromConfig();
+      if (cloudModels.length > 0) {
+        for (const modelRef of cloudModels) {
+          try {
+            const cloudResponse = await callCloudModel(modelRef, ollamaPrompt);
+            const cleaned = cloudResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+            const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
+            if (isValidClassification(parsed)) {
+              console.log(`[classifier] Cloud model ${modelRef} succeeded`);
+              return parsed;
+            }
+          } catch (cloudError) {
+            console.warn(`[classifier] Cloud model ${modelRef} failed:`, (cloudError as Error).message);
+          }
+        }
+      }
+    } catch (cloudFallbackError) {
+      console.warn('[classifier] Cloud fallback failed:', (cloudFallbackError as Error).message);
+    }
+  }
+
+  // Statischer Fallback
   if (!allowStaticFallback) {
     console.warn('[classifier] Ollama models failed, static classifier disabled — returning fallback');
     return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
   }
 
-  console.warn('[classifier] Ollama models failed, falling back to static classification');
+  console.warn('[classifier] Ollama and cloud models failed, falling back to static classification');
 
   return classifyStatically(prompt);
 }
@@ -165,6 +193,21 @@ function isValidClassification(obj: any): obj is ClassificationResult {
     ) &&
     typeof obj.reason === 'string'
   );
+}
+
+// Hilfsfunktion: Extrahiere kostenlose Modelle aus der Konfiguration
+// Diese Funktion ist ein Platzhalter - für volle Funktionalität brauchen wir cfg als Parameter
+function getFreeModelsFromConfig(): string[] {
+  // Für jetzt: Leere Liste zurückgeben, da wir keine cfg haben
+  // In Zukunft: cfg.providers durchgehen und free_models sammeln
+  return [];
+}
+
+// Hilfsfunktion: Rufe ein Cloud-Modell auf
+// Diese Funktion ist ein Platzhalter - für volle Funktionalität brauchen wir CloudClient
+async function callCloudModel(modelRef: string, prompt: string): Promise<string> {
+  // Für jetzt: Simuliere einen Fehler, da wir keine echte Cloud-Implementierung haben
+  throw new Error('Cloud model calls not yet implemented - CloudClient Integration fehlt');
 }
 
 // ── Mapping ──────────────────────────────────────────────────────────────
