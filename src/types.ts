@@ -57,6 +57,7 @@ export interface ProviderConfig {
   billing: string;
   monthly_cost_usd?: number;
   keys?: ProviderKey[];
+  free_models?: string[];
 }
 
 export interface Config {
