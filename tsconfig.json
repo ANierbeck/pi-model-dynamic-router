@@ -3,14 +3,40 @@
     "target": "es2022",
     "module": "Node16",
     "moduleResolution": "node16",
+    "lib": ["es2022", "dom"],
     "ignoreDeprecations": "6.0",
     "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true,
     "noEmit": false,
     "esModuleInterop": true,
+    
+    /* Strict Type-Checking Options */
     "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+    
+    /* Additional Checks - Pragmatisch angepasst */
+    "noUnusedLocals": false,  /* Deaktiviert wegen vielen Debug/Erweiterungs-Variablen */
+    "noUnusedParameters": false, /* Deaktiviert wegen API-Konsistenz */
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false, /* Deaktiviert wegen Performance-Impact */
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false, /* Deaktiviert wegen Performance-Impact */
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    
+    /* Module Resolution */
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "index.ts"]
+  "include": ["src/**/*.ts", "index.ts"],
+  "exclude": ["node_modules", "test/**/*.ts", "archive/**/*"]
 }

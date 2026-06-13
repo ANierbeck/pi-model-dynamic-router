@@ -1,8 +1,8 @@
 // src/rate-limit.ts
 // Rate-Limit-Handling für den pi-model-router
 
-import type { RateLimit, Cache } from "./types.js";
-import { splitRef } from "./utils.js";
+import type { RateLimit, Cache } from './types.js';
+import { splitRef } from './utils.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -20,8 +20,13 @@ export class RateLimitManager {
   private costMuxAtHit: number;
   private cache: Cache;
   private activeKeyIdx: Record<string, number> = {};
-  
-  constructor(backoffMinutes: number[], softBackoffMs: number[], costMuxAtHit: number, cache: Cache) {
+
+  constructor(
+    backoffMinutes: number[],
+    softBackoffMs: number[],
+    costMuxAtHit: number,
+    cache: Cache
+  ) {
     this.backoffMinutes = backoffMinutes;
     this.softBackoffMs = softBackoffMs;
     this.costMuxAtHit = costMuxAtHit;
@@ -66,10 +71,10 @@ export class RateLimitManager {
    */
   rotateKey(prov: string, keys: { key: string; label?: string }[]): boolean {
     if (!keys || keys.length <= 1) return false;
-    
+
     const curIdx = this.activeKeyIdx[prov] ?? 0;
     this.exhaustKey(prov, curIdx);
-    
+
     for (let i = 1; i < keys.length; i++) {
       const nextIdx = (curIdx + i) % keys.length;
       if (!this.isKeyExhausted(prov, nextIdx)) {
@@ -108,29 +113,32 @@ export class RateLimitManager {
    * Zeichnet einen Rate-Limit-Fehler auf und versucht Key-Rotation
    * Gibt zurück, ob rotiert wurde und ggf. den neuen Key
    */
-  recordLimit(ref: string, providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>): { rotated: boolean; newKey?: string } {
+  recordLimit(
+    ref: string,
+    providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>
+  ): { rotated: boolean; newKey?: string } {
     const { provider } = splitRef(ref);
-    
+
     // Versuche zuerst Key-Rotation
     const keys = providerKeys[provider]?.keys;
     if (keys && this.rotateKey(provider, keys)) {
-      const label = this.activeKeyLabel(provider, keys) ?? "next";
+      const label = this.activeKeyLabel(provider, keys) ?? 'next';
       return { rotated: true, newKey: label };
     }
-    
+
     // Keine Keys zum Rotieren — fall back zu Model-Level Backoff
     const prev = this.limits.get(ref);
     const hits = (prev?.hits ?? 0) + 1;
     const backoffIndex = Math.min(hits - 1, this.backoffMinutes.length - 1);
     const ms = this.backoffMinutes[backoffIndex] * 60_000;
-    
+
     this.limits.set(ref, { cooldown_until: Date.now() + ms, backoff_ms: ms, hits });
-    
+
     // Nach einer bestimmten Anzahl von Hits den Cost-Mux erhöhen
     if (hits === this.costMuxAtHit) {
       this.bumpMux(provider, splitRef(ref).modelId);
     }
-    
+
     return { rotated: false };
   }
 
@@ -176,16 +184,21 @@ export class RateLimitManager {
   bumpMux(prov: string, modelId: string): void {
     // 1/Tag Guard
     const last = this.cache.cost_mux_last_bump?.[prov];
-    if (last && new Date(last).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)) {
+    if (
+      last &&
+      new Date(last).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+    ) {
       return;
     }
-    
+
     // Verifiziere, dass das Modell noch gehostet wird
-    if (this.cache.available_models && 
-        !this.cache.available_models.some(m => m.provider === prov && m.id === modelId)) {
+    if (
+      this.cache.available_models &&
+      !this.cache.available_models.some((m) => m.provider === prov && m.id === modelId)
+    ) {
       return;
     }
-    
+
     if (!this.cache.cost_mux) this.cache.cost_mux = {};
     if (!this.cache.cost_mux_last_bump) this.cache.cost_mux_last_bump = {};
     this.cache.cost_mux[prov] = (this.cache.cost_mux[prov] ?? 1) + 1;
@@ -193,7 +206,6 @@ export class RateLimitManager {
   }
 
   // ── Getter ─────────────────────────────────────────────────────────────
-
 
   getActiveKeyIdx(): Record<string, number> {
     return this.activeKeyIdx;

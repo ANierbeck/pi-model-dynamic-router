@@ -1,10 +1,10 @@
 // src/cache.ts
 // Cache-Handling für den pi-model-router
 
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
-import type { Cache } from "./types.js";
+import type { Cache } from './types.js';
 
 // ── Cache Management ───────────────────────────────────────────────────────
 
@@ -14,11 +14,9 @@ import type { Cache } from "./types.js";
 export class CacheManager {
   private cache: Cache;
   private cachePath: string;
-  private extDir: string;
 
   constructor(extDir: string) {
-    this.extDir = extDir;
-    this.cachePath = path.join(extDir, ".cache", "scan-cache.json");
+    this.cachePath = path.join(extDir, '.cache', 'scan-cache.json');
     this.cache = this.loadCache();
   }
 
@@ -29,7 +27,7 @@ export class CacheManager {
     try {
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
       if (fs.existsSync(this.cachePath)) {
-        return JSON.parse(fs.readFileSync(this.cachePath, "utf-8"));
+        return JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
       }
     } catch {
       /* first run */
@@ -111,7 +109,7 @@ export class CacheManager {
     this.cache.usage_log.push({ ref, tokens, ts: Date.now() });
     // Trim log to last 30 days
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    this.cache.usage_log = this.cache.usage_log.filter(e => e.ts > cutoff);
+    this.cache.usage_log = this.cache.usage_log.filter((e) => e.ts > cutoff);
     this.saveCache();
   }
 

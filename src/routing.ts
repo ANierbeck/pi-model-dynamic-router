@@ -1,11 +1,19 @@
 // src/routing.ts
 // Routing-Logik für den pi-model-router
 
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import type { Group, Config, Cache, RateLimit, Metrics, ModelWithLimits, GroupResolution } from "./types.js";
-import { splitRef, stripProvider, norm, baseTokens } from "./utils.js";
-import { PROVIDER_MAP } from "./providers.js";
-import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice } from "./metrics.js";
+import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
+import type {
+  Group,
+  Config,
+  Cache,
+  RateLimit,
+  Metrics,
+  ModelWithLimits,
+  GroupResolution,
+} from './types.js';
+import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
+import { PROVIDER_MAP } from './providers.js';
+import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice } from './metrics.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -22,8 +30,8 @@ export class Router {
   private limits: Map<string, RateLimit>;
   private rrCounters: Record<string, number> = {};
   private activeGroup: string | null = null;
-  private curModel: string = "";
-  private lastDynamicModel: string = "";
+  private curModel: string = '';
+  private lastDynamicModel: string = '';
   private lastDynamicCategory: string | undefined;
   private sessionCtx: ExtensionContext | null = null;
 
@@ -48,7 +56,7 @@ export class Router {
     for (const g of Object.values(this.cfg.model_groups)) {
       for (const r of g.models ?? []) refs.add(r);
     }
-    
+
     // Session active: only use registry models so every ref is guaranteed to pass tryStream
     if (this.sessionCtx?.modelRegistry) {
       for (const model of this.sessionCtx.modelRegistry.getAvailable()) {
@@ -60,7 +68,7 @@ export class Router {
         refs.add(`${m.provider}/${m.id}`);
       }
     }
-    
+
     return [...refs];
   }
 
@@ -70,11 +78,14 @@ export class Router {
    * Filtert Modelle nach Verfügbarkeit (nicht rate-limited)
    */
   filterAvailable(refs: string[], activeKeyIdx: Record<string, number> = {}): string[] {
-    return refs.filter(r => {
+    return refs.filter((r) => {
       if (this.isLimited(r)) return false;
-      const prov = r.split("/")[0];
+      const prov = r.split('/')[0];
       const idx = activeKeyIdx[prov] ?? 0;
-      if (this.cache.exhausted_keys?.[`${prov}:${idx}`] && Date.now() < this.cache.exhausted_keys[`${prov}:${idx}`]) {
+      if (
+        this.cache.exhausted_keys?.[`${prov}:${idx}`] &&
+        Date.now() < this.cache.exhausted_keys[`${prov}:${idx}`]
+      ) {
         return false;
       }
       return true;
@@ -86,10 +97,10 @@ export class Router {
    */
   filterByQualityPct(refs: string[], pct: number): string[] {
     if (!refs.length || pct <= 0) return refs;
-    const gdps = refs.map(r => getM(r).gdpval).sort((a, b) => a - b);
+    const gdps = refs.map((r) => getM(r).gdpval).sort((a, b) => a - b);
     const idx = Math.floor((pct / 100) * (gdps.length - 1));
     const threshold = gdps[idx];
-    return refs.filter(r => getM(r).gdpval >= threshold);
+    return refs.filter((r) => getM(r).gdpval >= threshold);
   }
 
   /**
@@ -97,7 +108,7 @@ export class Router {
    */
   filterByQualityMin(refs: string[], min: number): string[] {
     if (!refs.length || min <= 0) return refs;
-    const filtered = refs.filter(r => getM(r).gdpval >= min);
+    const filtered = refs.filter((r) => getM(r).gdpval >= min);
     return filtered.length ? filtered : refs;
   }
 
@@ -108,12 +119,15 @@ export class Router {
    */
   sortBy(models: string[], method: string): string[] {
     const s = [...models];
-    if (method === "min_latency") return s.sort((a, b) => getM(a).avg_latency_ms - getM(b).avg_latency_ms);
-    if (method === "max_throughput") return s.sort((a, b) => getM(b).throughput_tps - getM(a).throughput_tps);
-    if (method === "min_cost") return s.sort((a, b) => effCost(a) - effCost(b) || getM(b).gdpval - getM(a).gdpval);
-    if (method === "max_gdpval") return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
-    if (method === "billing_preference") return this.sortByBillingPreference(s);
-    if (method === "roundrobin") return s;
+    if (method === 'min_latency')
+      return s.sort((a, b) => getM(a).avg_latency_ms - getM(b).avg_latency_ms);
+    if (method === 'max_throughput')
+      return s.sort((a, b) => getM(b).throughput_tps - getM(a).throughput_tps);
+    if (method === 'min_cost')
+      return s.sort((a, b) => effCost(a) - effCost(b) || getM(b).gdpval - getM(a).gdpval);
+    if (method === 'max_gdpval') return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
+    if (method === 'billing_preference') return this.sortByBillingPreference(s);
+    if (method === 'roundrobin') return s;
     return s;
   }
 
@@ -122,11 +136,13 @@ export class Router {
    */
   sortByBillingPreference(refs: string[]): string[] {
     return [...refs].sort((a, b) => {
-      const ta = billingTier(a), tb = billingTier(b);
+      const ta = billingTier(a),
+        tb = billingTier(b);
       if (ta !== tb) return ta - tb;
       // Within subscription tier, prefer lower rate-limit pressure first, then cost
       if (ta === 1) {
-        const pa = this.limitSecs(a), pb = this.limitSecs(b);
+        const pa = this.limitSecs(a),
+          pb = this.limitSecs(b);
         if (pa !== pb) return pa - pb;
       }
       return effCost(a) - effCost(b);
@@ -143,24 +159,24 @@ export class Router {
     if (!g) return null;
 
     // Dynamic group is handled by the hook, not here
-    if (g.method === "dynamic") return null;
+    if (g.method === 'dynamic') return null;
 
     let c = this.allDiscoveredRefs();
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
 
-    if (g.method === "best") {
+    if (g.method === 'best') {
       // Strategic: highest gdpval available
-      c = this.sortBy(c, "max_gdpval");
-    } else if (g.method === "tiered") {
+      c = this.sortBy(c, 'max_gdpval');
+    } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
       c = this.sortByBillingPreference(c);
-    } else if (g.method === "pipeline" && g.pipeline) {
+    } else if (g.method === 'pipeline' && g.pipeline) {
       for (const step of g.pipeline) {
         c = this.sortBy(c, step.method);
         if (step.top_k && step.top_k < c.length) c = c.slice(0, step.top_k);
       }
-    } else if (g.method === "roundrobin") {
+    } else if (g.method === 'roundrobin') {
       const i = (this.rrCounters[name] ?? 0) % c.length;
       this.rrCounters[name] = i + 1;
       c = [...c.slice(i), ...c.slice(0, i)];
@@ -179,11 +195,12 @@ export class Router {
    */
   detectGroup(ref: string): string | null {
     if (this.activeGroup) return this.activeGroup;
-    for (const [n, g] of Object.entries(this.cfg.model_groups)) if (g.models?.includes(ref)) return n;
+    for (const [n, g] of Object.entries(this.cfg.model_groups))
+      if (g.models?.includes(ref)) return n;
     // With auto-discovery, any available model belongs to any group — return lowest tier that includes it
     const refs = this.allDiscoveredRefs();
     if (refs.includes(ref)) {
-      for (const name of ["scout", "operational", "tactical", "strategic"]) {
+      for (const name of ['scout', 'operational', 'tactical', 'strategic']) {
         if (this.cfg.model_groups[name]) return name;
       }
     }
@@ -221,17 +238,17 @@ export class Router {
   getTopModels(groupName: string, n: number): ModelWithLimits[] {
     const g = this.cfg.model_groups[groupName];
     if (!g) return [];
-    if (g.method === "dynamic") return []; // resolved at prompt-time via classifier
+    if (g.method === 'dynamic') return []; // resolved at prompt-time via classifier
 
     let c = this.allDiscoveredRefs();
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
 
-    if (g.method === "best") {
-      c = this.sortBy(c, "max_gdpval");
-    } else if (g.method === "tiered") {
+    if (g.method === 'best') {
+      c = this.sortBy(c, 'max_gdpval');
+    } else if (g.method === 'tiered') {
       c = this.sortByBillingPreference(c);
-    } else if (g.method === "pipeline" && g.pipeline) {
+    } else if (g.method === 'pipeline' && g.pipeline) {
       for (let i = 0; i < g.pipeline.length; i++) {
         const step = g.pipeline[i];
         c = this.sortBy(c, step.method);
@@ -242,8 +259,8 @@ export class Router {
       c = this.sortBy(c, g.method);
     }
 
-    const avail = c.filter(ref => !this.isLimited(ref));
-    const limited = c.filter(ref => this.isLimited(ref));
+    const avail = c.filter((ref) => !this.isLimited(ref));
+    const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
     return ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));
   }
