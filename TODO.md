@@ -215,6 +215,53 @@ npm test
 - [ ] **Performance-Metriken** messen
 - [ ] **Optimierungspotenziale** identifizieren
 
+### 4. **Manuelle Steuerung (1-2 Stunden)** ⭐⭐⭐
+- [ ] **Manuelle Modellauswahl** - User kann Modell für nächste Anfrage festlegen
+  - *Beispiel*: `/use-model claude-3-sonnet` oder `/use-group complex`
+  - *Impact*: **HOCH** - Mehr Kontrolle für User
+  - *Aufwand*: 1-2 Stunden
+
+---
+
+## 📊 **MONITORING & LOGGING** (aus alter TODO.md)
+
+### 1. **Monitoring-Logging implementieren** ⭐⭐⭐
+- [ ] **Routing-Entscheidungen loggen** - Welches Modell wurde gewählt und warum
+  - *Beispiel*: `[router] Selected claude-3-sonnet for design task (confidence: 0.95)`
+  - *Impact*: **HOCH** - Transparenz & Debugging
+  - *Aufwand*: 2 Stunden
+
+- [ ] **Kosten-Tracking** - Echtzeit-Kostenüberwachung pro Anfrage
+  - *Beispiel*: `[cost] Request cost: $0.25 (tokens: 1000, model: claude-3-sonnet)`
+  - *Impact*: **HOCH** - Kostenkontrolle
+  - *Aufwand*: 2 Stunden
+
+- [ ] **Performance-Metriken** - Latenz, Durchsatz, Fehlerraten
+  - *Beispiel*: `[perf] Latency: 2.4s, Throughput: 5 req/s, Errors: 0`
+  - *Impact*: **MITTEL** - Performance-Überwachung
+  - *Aufwand*: 1 Stunde
+
+---
+
+## 🔌 **ERWEITERBARKEIT** (aus alter TODO.md)
+
+### 1. **Plugin-System entwerfen** ⭐⭐⭐
+- [ ] **Provider-Plugin-System** - Einfaches Hinzufügen neuer Provider
+  - *Beispiel*: `plugins/my-provider.ts` mit `registerProvider()`
+  - *Impact*: **HOCH** - Erweiterbarkeit
+  - *Aufwand*: 3-4 Stunden
+
+- [ ] **Modell-Plugin-System** - Einfaches Hinzufügen neuer Modelle
+  - *Beispiel*: `plugins/my-model.ts` mit `registerModel()`
+  - *Impact*: **MITTEL** - Flexibilität
+  - *Aufwand*: 2 Stunden
+
+### 2. **Weitere Provider unterstützen** ⭐⭐⭐
+- [ ] **Neue Provider integrieren** - Unterstützung für weitere LLM-Anbieter
+  - *Kandidaten*: `together.ai`, `cohere`, `ai21`, `perplexity`
+  - *Impact*: **HOCH** - Mehr Auswahl für User
+  - *Aufwand*: 2-3 Stunden pro Provider
+
 ---
 
 ## 💰 **KOSTENEFFIZIENTES ROUTING IMPLEMENTIERUNG**
