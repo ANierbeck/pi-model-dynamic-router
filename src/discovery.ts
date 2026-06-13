@@ -259,17 +259,16 @@ export class DiscoveryManager {
 
   /**
    * Gibt alle verfügbaren kostenlosen Modelle zurück
+   * Nutzt free_models aus router-config.json (nicht aus PROVIDER_MAP)
    */
   getFreeModels(): string[] {
     const freeModels: string[] = [];
     
-    for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
-      if (def.freeModels && def.freeModels.length > 0) {
-        // Prüfe ob Provider konfiguriert und Keys verfügbar
-        const prov = this.cfg.providers?.[provId];
-        if ((prov?.keys?.length ?? 0) > 0) {
-          freeModels.push(...def.freeModels);
-        }
+    // Durchsuche alle Provider in der Konfiguration
+    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+      // Prüfe ob Provider free_models hat und Keys verfügbar sind
+      if (provConfig.free_models && provConfig.free_models.length > 0 && provConfig.keys?.length) {
+        freeModels.push(...provConfig.free_models);
       }
     }
     

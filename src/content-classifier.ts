@@ -2,6 +2,7 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
 import { callOllama } from './ollama-utils.js';
 import { CloudClient } from './cloud-client.js';
+import { DiscoveryManager } from './discovery.js';
 import type { Config, Cache } from './types.js';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -76,9 +77,13 @@ Respond with JSON only, no extra text:
 
 export async function classifyPrompt(
   prompt: string,
-  options: ClassificationOptions = {}
+  options: ClassificationOptions & {
+    cfg?: Config;
+    cache?: Cache;
+    allowCloudFallback?: boolean;
+  } = {}
 ): Promise<ClassificationResult> {
-  const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false } = options;
+  const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false, allowCloudFallback = false, cfg, cache } = options;
 
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
@@ -146,17 +151,19 @@ export async function classifyPrompt(
   }
 
   // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
-  // Nur aktivieren wenn allowStaticFallback true ist (Standard: false für Backward-Kompatibilität)
-  if (allowStaticFallback) {
+  // Nur aktivieren wenn allowCloudFallback true ist UND cfg/cache verfügbar
+  if (allowCloudFallback && cfg && cache) {
     try {
-      // CloudClient benötigt cfg und cache - für jetzt nutzen wir eine einfache Implementierung
-      // TODO: cfg und cache als Parameter hinzufügen für volle Cloud-Fallback-Unterstützung
-      const cloudModels = getFreeModelsFromConfig();
+      const discovery = new DiscoveryManager(cfg, cache);
+      const cloudModels = discovery.getFreeModels();
+      
       if (cloudModels.length > 0) {
+        const cloudClient = new CloudClient(cfg);
+        
         for (const modelRef of cloudModels) {
           try {
-            const cloudResponse = await callCloudModel(modelRef, ollamaPrompt);
-            const cleaned = cloudResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            const cloudResponse = await cloudClient.callModel(modelRef, ollamaPrompt);
+            const cleaned = cloudResponse.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
             const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
             const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
             if (isValidClassification(parsed)) {
@@ -195,20 +202,7 @@ function isValidClassification(obj: any): obj is ClassificationResult {
   );
 }
 
-// Hilfsfunktion: Extrahiere kostenlose Modelle aus der Konfiguration
-// Diese Funktion ist ein Platzhalter - für volle Funktionalität brauchen wir cfg als Parameter
-function getFreeModelsFromConfig(): string[] {
-  // Für jetzt: Leere Liste zurückgeben, da wir keine cfg haben
-  // In Zukunft: cfg.providers durchgehen und free_models sammeln
-  return [];
-}
 
-// Hilfsfunktion: Rufe ein Cloud-Modell auf
-// Diese Funktion ist ein Platzhalter - für volle Funktionalität brauchen wir CloudClient
-async function callCloudModel(modelRef: string, prompt: string): Promise<string> {
-  // Für jetzt: Simuliere einen Fehler, da wir keine echte Cloud-Implementierung haben
-  throw new Error('Cloud model calls not yet implemented - CloudClient Integration fehlt');
-}
 
 // ── Mapping ──────────────────────────────────────────────────────────────
 
