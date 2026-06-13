@@ -1,5 +1,5 @@
-// test/integration.test.ts
-// Integrationstests für das gesamte Routing-System
+// test/classifier-integration.test.ts
+// Integrationstests für classifyPrompt mit Ollama-Mocks
 
 import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt, CATEGORY_TO_GROUP } from "../src/content-classifier.js";
@@ -13,7 +13,7 @@ vi.mock("../src/ollama-utils", () => ({
 
 // ── Testfälle ──────────────────────────────────────────────────────────────
 
-describe("classifyPrompt (Integration Tests)", () => {
+describe("classifyPrompt (Integration Tests mit Ollama-Mocks)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });

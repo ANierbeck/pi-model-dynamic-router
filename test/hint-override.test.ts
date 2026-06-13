@@ -18,12 +18,8 @@ const mockCfg: Config = {
       description: 'Operational models',
     },
   },
+  model_metrics: {},
   providers: {},
-  defaults: {
-    backoff_minutes: [1, 2, 4],
-    soft_backoff_ms: 1000,
-    cost_mux_at_hit: 2,
-  },
 };
 
 // ── Mock resolve function ────────────────────────────────────────────────────
@@ -75,9 +71,14 @@ describe("extractHintTarget", () => {
     expect(result).toBeNull();
   });
 
-  it("gibt null zurück bei ungültigem HINT-Format", () => {
+  it("gibt null zurück bei ungültigem HINT-Format (Sonderzeichen am Anfang)", () => {
     const result = extractHintTarget("HINT: !@# invalid");
     expect(result).toBeNull();
+  });
+
+  it("extrahiere gültiges Target das nicht existiert (bare word)", () => {
+    const result = extractHintTarget("HINT: unknown-group");
+    expect(result).toBe("unknown-group");
   });
 });
 
@@ -112,6 +113,11 @@ describe("applyHintOverride", () => {
   it("gibt null zurück für Gruppe ohne resolve-Ergebnis", () => {
     const mockResolveEmpty = vi.fn(() => null);
     const result = applyHintOverride("tactical", mockCfg, mockResolveEmpty);
+    expect(result).toBeNull();
+  });
+
+  it("gibt null zurück für unbekanntes bare-word Target", () => {
+    const result = applyHintOverride("unknown-group", mockCfg, mockResolve);
     expect(result).toBeNull();
   });
 });

@@ -53,8 +53,9 @@ export function applyHintOverride(
 
 /**
  * Vollständige HINT-Verarbeitung für einen Prompt
+ * (Nicht exportiert, da nicht in Produktion verwendet, aber für Tests nützlich)
  */
-export function processHintOverride(
+function processHintOverride(
   prompt: string,
   cfg: Config,
   resolve: (name: string) => { selected: string; candidates: string[] } | null
@@ -64,3 +65,6 @@ export function processHintOverride(
   
   return applyHintOverride(hintTarget, cfg, resolve);
 }
+
+// Export für Tests
+export { processHintOverride };
