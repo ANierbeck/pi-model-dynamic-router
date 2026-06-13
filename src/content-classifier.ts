@@ -148,7 +148,7 @@ export async function classifyPrompt(
   console.warn('[classifier] Ollama models failed, falling back to static classification');
 
   // Ultimate Fallback: Statische Klassifizierung
-  return classifyStatically(prompt, context);
+  return classifyStatically(prompt);
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {
@@ -195,9 +195,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     'todo', 'todos', 'file', 'files', 'content'
   ];
   
-  if (trivialKeywords.some(kw => lowerPrompt.includes(kw)) &&
-      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
-       lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
+  if (trivialKeywords.some(kw => lowerPrompt.includes(kw))) {
     return {
       category: 'trivial',
       reason: 'Simple request - trivial classification',
