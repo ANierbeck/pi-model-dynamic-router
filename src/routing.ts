@@ -1,6 +1,7 @@
 // src/routing.ts
 // Routing-Logik für den pi-model-router
 
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Group, Config, Cache, RateLimit, Metrics, ModelWithLimits, GroupResolution } from "./types.js";
 import { splitRef, stripProvider, norm, baseTokens } from "./utils.js";
 import { PROVIDER_MAP } from "./providers.js";
@@ -24,7 +25,7 @@ export class Router {
   private curModel: string = "";
   private lastDynamicModel: string = "";
   private lastDynamicCategory: string | undefined;
-  private sessionCtx: any = null;
+  private sessionCtx: ExtensionContext | null = null;
 
   constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
     this.cfg = cfg;
@@ -32,7 +33,7 @@ export class Router {
     this.limits = limits;
   }
 
-  setSessionCtx(ctx: any): void {
+  setSessionCtx(ctx: ExtensionContext | null): void {
     this.sessionCtx = ctx;
   }
 
