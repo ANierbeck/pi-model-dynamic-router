@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { lookupGdp, setConfig } from '../src/metrics.js';
 
 describe('lookupGdp built-in tests', () => {
@@ -16,12 +16,16 @@ describe('lookupGdp built-in tests', () => {
     });
   });
 
-  test('lookupGdp returns correct built-in score for mistral-medium-3-5', () => {
-    const score = lookupGdp("mistral-medium-3-5");
+  afterAll(() => {
+    setConfig({ model_groups: {}, model_metrics: {} });
+  });
+
+  test('lookupGdp returns correct built-in score for magistral-small (>= 600 threshold)', () => {
+    const score = lookupGdp("magistral-small");
     expect(score).toBeGreaterThanOrEqual(600);
   });
 
-  test('lookupGdp returns correct built-in score for mistral-medium-3-5 with gdpval_builtin only', () => {
+  test('lookupGdp returns exact built-in score for mistral-medium-3-5 (=== 665)', () => {
     const score = lookupGdp("mistral-medium-3-5");
     expect(score).toBeGreaterThanOrEqual(600);
     expect(score).toBe(665);

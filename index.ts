@@ -20,7 +20,7 @@ import {
   streamSimple as piStreamSimple,
   createAssistantMessageEventStream,
 } from '@mariozechner/pi-ai';
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 import { truncateToWidth } from '@mariozechner/pi-tui';
 import * as fs from 'node:fs';
@@ -717,9 +717,11 @@ export default function (pi: ExtensionAPI) {
       params: { group: string },
       _sig: unknown,
       _up: unknown,
-      ctx: { modelRegistry: { find: (provider: string, modelId: string) => any } }
+      ctx: ExtensionContext
     ) {
       load();
+      if (!ctx?.modelRegistry?.find)
+        throw new Error("ctx.modelRegistry unavailable");
       const name = params.group.toLowerCase(),
         res = resolve(name);
       if (!res)
