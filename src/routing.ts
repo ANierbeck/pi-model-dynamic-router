@@ -36,16 +36,23 @@ export class Router {
   /**
    * Gibt alle entdeckten Modell-Referenzen zurück
    */
-  allDiscoveredRefs(): string[] {
+  allDiscoveredRefs(sessionCtx?: any): string[] {
     const refs = new Set<string>();
     // Always include explicitly pinned group models
     for (const g of Object.values(this.cfg.model_groups)) {
       for (const r of g.models ?? []) refs.add(r);
     }
     
-    // Add models from available_models cache
-    for (const m of this.cache.available_models ?? []) {
-      refs.add(`${m.provider}/${m.id}`);
+    // Session active: only use registry models so every ref is guaranteed to pass tryStream
+    if (sessionCtx?.modelRegistry) {
+      for (const model of sessionCtx.modelRegistry.getAvailable()) {
+        refs.add(`${model.provider}/${model.id}`);
+      }
+    } else {
+      // Add models from available_models cache
+      for (const m of this.cache.available_models ?? []) {
+        refs.add(`${m.provider}/${m.id}`);
+      }
     }
     
     return [...refs];
@@ -56,8 +63,16 @@ export class Router {
   /**
    * Filtert Modelle nach Verfügbarkeit (nicht rate-limited)
    */
-  filterAvailable(refs: string[]): string[] {
-    return refs.filter(r => !this.isLimited(r));
+  filterAvailable(refs: string[], exhausted_keys?: Record<string, number>): string[] {
+    return refs.filter(r => {
+      if (this.isLimited(r)) return false;
+      const prov = r.split("/")[0];
+      const idx = 0; // Default to first key for now
+      if (exhausted_keys && exhausted_keys[`${prov}:${idx}`] && Date.now() < exhausted_keys[`${prov}:${idx}`]) {
+        return false;
+      }
+      return true;
+    });
   }
 
   /**

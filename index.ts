@@ -20,10 +20,15 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
-
-import type { Config, Cache, Metrics, RateLimit, Group, PipeStep, ProviderKey, ProviderConfig, Defaults } from "./src/types.js";
-
-
+import type { Config, Cache, Metrics, RateLimit, Group, PipeStep, ProviderKey, ProviderConfig, Defaults } from "./src/types.ts";
+import { PROVIDER_MAP, SKIP_REGISTRATION, PARAM_SUFFIXES, STRIP_SUFFIXES } from "./src/providers.ts";
+import { norm, splitRef, stripDateSuffix } from "./src/utils.ts";
+import { RateLimitManager } from "./src/rate-limit.ts";
+import { DiscoveryManager } from "./src/discovery.ts";
+import * as metricsModule from "./src/metrics.ts";
+import { CacheManager } from "./src/cache.ts";
+import { Router } from "./src/routing.ts";
+import { classifyPrompt, getGroupForCategory } from "./src/content-classifier.ts";
 
 
 
@@ -43,16 +48,6 @@ const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
 const GDPVAL_URL = _defaults.gdpval_url;
 
 
-
-const STRIP_SUFFIXES = _defaults.strip_suffixes;
-
-  return s.replace(/-\d{4,8}$/, "");
-}
-
-// Exportierte Hilfsfunktion
-  return i === -1 ? { provider: ref, modelId: ref } : { provider: ref.slice(0, i), modelId: ref.slice(i + 1) };
-}
-
 // ── Extension ──────────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -60,14 +55,13 @@ export default function (pi: ExtensionAPI) {
   const cfgPath = path.join(extDir, "router-config.json");
   const cachePath = path.join(extDir, ".cache/scan-cache.json");
 
+  const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
   let cache: Cache = {};
-const rateLimitManager = new RateLimitManager(BACKOFF, SOFT_BACKOFF, COST_MUX_AT_HIT, cache);
-const discoveryManager = new DiscoveryManager(cfg, cache);
-metricsModule.setConfig(cfg);
-const cacheManager = new CacheManager(extDir);
-const router = new Router(cfg, cache, rateLimitManager.getLimits());
-metricsModule.setCache(cache);
+  let rateLimitManager: RateLimitManager;
+  let discoveryManager: DiscoveryManager;
+  let cacheManager: CacheManager;
+  let router: Router;
     let gdpval: Record<string, number> = {};
   let scanning = false;
   let activeGroup: string | null = null;
@@ -185,10 +179,6 @@ metricsModule.setCache(cache);
     return gdpvalIndex!.get(key) ?? null;
   }
 
-  function splitRef(ref: string) {
-    const i = ref.indexOf("/");
-    return i === -1 ? { provider: ref, modelId: ref } : { provider: ref.slice(0, i), modelId: ref.slice(i + 1) };
-  }
 
   function fmt(n: number) { return n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`; }
 
@@ -205,6 +195,14 @@ metricsModule.setCache(cache);
   function load() {
     cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
     if (cfg.gdpval_builtin) { Object.assign(gdpval, cfg.gdpval_builtin); gdpvalVersion++; }
+    // Initialize managers
+    rateLimitManager = new RateLimitManager(BACKOFF, SOFT_BACKOFF, COST_MUX_AT_HIT, cache);
+    discoveryManager = new DiscoveryManager(cfg, cache);
+    metricsModule.setConfig(cfg);
+    cacheManager = new CacheManager(extDir);
+    router = new Router(cfg, cache, rateLimitManager.getLimits());
+    metricsModule.setCache(cache);
+    if (cfg.gdpval_builtin) { Object.assign(gdpval, cfg.gdpval_builtin); gdpvalVersion++; }
   }
 
   function loadCache() { cache = cacheManager.loadCache(); metricsModule.setCache(cache); }
@@ -219,7 +217,7 @@ metricsModule.setCache(cache);
   function parsePassTree(): string[] { return discoveryManager.parsePassTree(); }
 
   async function discoverKeys() {
-    await discoveryManager.await discoverKeys();
+    await discoveryManager.discoverKeys();
     cache = discoveryManager.getCache();
   }
 
@@ -426,7 +424,7 @@ function effCost(ref: string): number { return metricsModule.effCost(ref); }
   // ── Auto-discovery ────────────────────────────────────────────────────
 
   /** All known model refs: auto-discovered + any pinned models in group config */
-  function allDiscoveredRefs(): string[] { return router.allDiscoveredRefs(); }
+  function allDiscoveredRefs(): string[] { return router.allDiscoveredRefs(sessionCtx); }
 
   /** Get billing tier for a model ref: 0=free, 1=subscription, 2=local, 3=payg */
 function billingTier(ref: string): number { return metricsModule.billingTier(ref); }
@@ -437,7 +435,7 @@ function billingTier(ref: string): number { return metricsModule.billingTier(ref
   }
 
   /** Filter to available models (not rate-limited, healthy provider keys) */
-function filterAvailable(refs: string[]): string[] { return router.filterAvailable(refs); }
+function filterAvailable(refs: string[]): string[] { return router.filterAvailable(refs, cache.exhausted_keys); }
 
   /** Filter by minimum gdpval percentile (0-100). Keeps models at or above the percentile threshold. */
 function filterByQualityPct(refs: string[], pct: number): string[] { return router.filterByQualityPct(refs, pct); }
@@ -452,10 +450,10 @@ function filterByQualityMin(refs: string[], min: number): string[] { return rout
   function sortByBillingPreference(refs: string[]): string[] { return router.sortByBillingPreference(refs); }
 
   function available(g: Group) {
-    let c = router.allDiscoveredRefs();
+    let c = router.allDiscoveredRefs(sessionCtx);
     if (g.min_gdpval != null) c = router.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = router.filterByQualityPct(c, g.min_gdpval_pct);
-    return router.filterAvailable(c);
+    return router.filterAvailable(c, cache.exhausted_keys);
   }
 
   function sortBy(models: string[], method: string): string[] { return router.sortBy(models, method); }
@@ -648,7 +646,11 @@ function detectGroup(ref: string): string | null { return router.detectGroup(ref
       load(); const e = cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval; if (p.throughput_tps !== undefined) e.throughput_tps = p.throughput_tps; if (p.avg_latency_ms !== undefined) e.avg_latency_ms = p.avg_latency_ms;
       cfg.model_metrics[p.model_ref] = e; fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-      metricsModule.updateMetrics(p.model_ref, 0, 0, 0); // Update metrics cache
+      // Update metrics cache with new values from config
+      const existingMetrics = metricsModule.getM(p.model_ref);
+      if (existingMetrics) {
+        Object.assign(existingMetrics, e, { last_updated: Date.now() });
+      }
       return { content: [{ type: "text", text: `Updated ${p.model_ref}: ${JSON.stringify(e)}` }], details: { model_ref: p.model_ref, metrics: e } };
     },
   });
@@ -895,11 +897,6 @@ function detectGroup(ref: string): string | null { return router.detectGroup(ref
     // Register discovered providers with pi's model registry.
     // Skip providers that have dedicated extensions (CLI OAuth), built-in pi support,
     // or are already registered by another extension.
-    const SKIP_REGISTRATION = new Set(
-      Object.entries(PROVIDER_MAP)
-        .filter(([, def]) => def.cliAuthFiles || def.local) // CLI OAuth or local — have dedicated extensions
-        .map(([id]) => id)
-    );
     // Also skip providers pi knows natively (have built-in models)
     for (const prov of ["anthropic", "openai", "google"]) SKIP_REGISTRATION.add(prov);
 
