@@ -90,6 +90,7 @@ export interface ProviderDef {
   cliAuthFiles?: { path: string; tokenField: string }[]; // CLI tool auth files
   local?: boolean; // ollama/lm-studio — no key needed
   billing?: string; // default billing type
+  freeModels?: string[]; // list of free models for this provider
   modelsUrl?: string; // API endpoint for model discovery
   authHeader?: (key: string) => Record<string, string>; // how to authenticate
   baseUrl?: string; // API base URL for pi provider registration
