@@ -38,7 +38,6 @@ import * as metricsModule from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, getGroupForCategory } from './src/content-classifier.ts';
-import { extractHintTarget, applyHintOverride } from './src/hint-override.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -1010,25 +1009,6 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
 
         const prompt = extractLastUserPrompt(context);
-        
-        // HINT-Override: User kann Modell/Gruppe direkt im Prompt angeben
-        const hintTarget = extractHintTarget(prompt);
-        if (hintTarget) {
-          const hintResult = applyHintOverride(hintTarget, cfg, resolve);
-          if (hintResult) {
-            candidates = hintResult.candidates;
-            lastDynamicModel = hintResult.model;
-            dynamicLabel = hintResult.label;
-            const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
-            console.log(`[dynamic] ${logLine}`);
-            try {
-              fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
-            } catch {}
-            await driveStream(proxy, candidates, context, options, dynamicLabel);
-            return;
-          }
-          console.warn(`[dynamic] HINT target not found: ${hintTarget}`);
-        }
         
         const { category } = await classifyPrompt(prompt, { 
           allowStaticFallback: useStatic, 

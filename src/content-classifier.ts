@@ -17,9 +17,12 @@ export interface ClassificationResult {
     | 'design'
     | 'planning'
     | 'exploration'
-    | 'fallback';
+    | 'fallback'
+    | string; // Allow any string for HINT targets (model names, group names)
   reason: string;
   confidence?: number;
+  hintType?: 'model' | 'group'; // Optional: indicates if this is a HINT override
+  hintTarget?: string; // Optional: the original HINT target
 }
 
 export interface ClassificationContext {
@@ -51,6 +54,18 @@ const CONTINUATION_MAX_WORDS = 4;
 // Written in English for model performance — handles input in any language.
 
 const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category:
+
+IMPORTANT HINT RULE: If the request contains a HINT instruction (in any language) like:
+- "HINT: use mistral-medium-3.5"
+- "HINT: use group tactical"  
+- "HINT: nutze mistral-medium-3.5"
+- "HINT: verwende Gruppe complex"
+- "HINT: benutz modell xyz"
+Then extract the model or group name and return it with the "hint:" prefix:
+- For models: {"category": "hint:mistral-medium-3.5", "reason": "User specified model via HINT", "confidence": 1.0}
+- For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
+
+If NO HINT is present, classify normally into one of these categories:
 
 - trivial:      Very simple requests ("list files", "show TODOs", "what's in this file?", "read this file")
 - simple:       Simple questions ("explain briefly", "summarize", "what does this do?", "tell me about")
@@ -120,6 +135,32 @@ export async function classifyPrompt(
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
     if (!isValidClassification(parsed)) throw new Error(`Invalid format: ${response}`);
+    
+    // Check for HINT override in the classification result
+    if (parsed.category && parsed.category.startsWith('hint:')) {
+      // Extract the hint target from the category
+      const hintTarget = parsed.category.slice(5); // Remove 'hint:' prefix
+      if (hintTarget.startsWith('group:')) {
+        // This is a group hint
+        return {
+          category: hintTarget.slice(6), // Remove 'group:' prefix
+          reason: parsed.reason || 'User specified group via HINT',
+          confidence: 1.0,
+          hintType: 'group',
+          hintTarget: hintTarget.slice(6),
+        };
+      } else {
+        // This is a model hint
+        return {
+          category: hintTarget,
+          reason: parsed.reason || 'User specified model via HINT',
+          confidence: 1.0,
+          hintType: 'model',
+          hintTarget: hintTarget,
+        };
+      }
+    }
+    
     if (parsed.confidence !== undefined && parsed.confidence < MIN_CONFIDENCE) {
       const inherited = context.lastCategory ?? 'fallback';
       return {
@@ -194,9 +235,9 @@ function isValidClassification(obj: any): obj is ClassificationResult {
   return (
     obj &&
     typeof obj.category === 'string' &&
-    ['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
+    (['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
       obj.category
-    ) &&
+    ) || obj.category.startsWith('hint:')) &&
     typeof obj.reason === 'string'
   );
 }
