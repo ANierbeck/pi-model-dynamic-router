@@ -76,12 +76,13 @@ describe('calculateScore - Real Implementation Tests', () => {
   });
 
   test('Recent models should get recency bonus', () => {
-    // devstral-medium-2507: Release 2025-05-01 (neu, sollte Bonus bekommen)
-    // claude-3-sonnet: Release 2024-02-26 (älter)
+    // devstral-medium-2507: Release 2025-05-01 (13 Monate alt, +1 Recency Bonus)
+    // claude-3-sonnet: Release 2024-02-26 (16 Monate alt, 0 Recency Bonus)
+    // devstral gewinnt hauptsächlich wegen höherem GDPval (691 vs 680) und besseren Benchmarks,
+    // der Recency Bonus (+1) ist ein zusätzlicher Faktor
     const scoreDevstral = calculateScore('mistral/devstral-medium-2507', 'standard');
     const scoreClaude3 = calculateScore('anthropic/claude-3-sonnet', 'standard');
     
-    // devstral-medium-2507 sollte aufgrund des Release-Datums Bonus bekommen
     expect(scoreDevstral).toBeGreaterThan(scoreClaude3);
   });
 

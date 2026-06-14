@@ -342,6 +342,9 @@ describe('Dynamic Configuration Generation', () => {
   describe('Multi-Metric Scoring with Mocks', () => {
     // Diese Tests verwenden die gemockte calculateScore-Funktion
     
+    // Speichere die originale Funktion für die Wiederherstellung
+    const originalCalculateScore = metricsModule.calculateScore;
+    
     beforeAll(() => {
       // Setze eine spezielle Mock-Implementierung für calculateScore
       const mockCalculateScore = (ref: string, taskType?: string, config?: any) => {
@@ -358,9 +361,10 @@ describe('Dynamic Configuration Generation', () => {
         const generation = generationMap[ref] ?? 0;
         const generationBonus = Math.max(0, generation - 3) * 5;
         
-        // Code-Bonus für Code-Aufgaben
-        const isCodeModel = ref.includes('codestral') || taskType === 'code';
-        const codeBonus = isCodeModel ? 10 : 0;
+        // Code-Bonus: Nur für Code-Modelle auf Code-Aufgaben (wie die echte Implementierung)
+        const isCodeModelType = ref.includes('codestral');
+        const isCodeTask = taskType === 'code';
+        const codeBonus = (isCodeModelType && isCodeTask) ? 5 : 0;
         
         // Recency Bonus (Mock-Daten)
         const releaseDateMap: Record<string, string> = {
@@ -386,8 +390,8 @@ describe('Dynamic Configuration Generation', () => {
     });
 
     afterAll(() => {
-      // Setze calculateScore zurück (wird durch den Modul-Mock ersetzt)
-      delete metricsModule.calculateScore;
+      // Stelle die originale Funktion wieder her
+      metricsModule.calculateScore = originalCalculateScore;
     });
 
     test('Claude 4 should score higher than Claude 3 due to generation bonus', () => {
@@ -404,11 +408,23 @@ describe('Dynamic Configuration Generation', () => {
       expect(scoreClaude4).toBeGreaterThan(scoreDevstral);
     });
 
-    test('Code models should get bonus for code tasks', () => {
-      const scoreGeneral = metricsModule.calculateScore('anthropic/claude-3-sonnet', 'standard');
-      const scoreCode = metricsModule.calculateScore('anthropic/claude-3-sonnet', 'code');
+    test('Code models should score higher for code tasks due to weighting', () => {
+      // codestral-latest hat bessere Code-Benchmarks (SWE-bench, HumanEval)
+      // Für Code-Aufgaben werden diese stärker gewichtet
+      const scoreGeneral = metricsModule.calculateScore('mistral/codestral-latest', 'standard');
+      const scoreCode = metricsModule.calculateScore('mistral/codestral-latest', 'code');
       
-      expect(scoreCode).toBe(scoreGeneral + 10);
+      // Code-Aufgaben: 35% SWE-bench + 25% HumanEval vs Allgemein: 20% + 10%
+      expect(scoreCode).toBeGreaterThan(scoreGeneral);
+    });
+
+    test('Code-type models should get bonus for code tasks', () => {
+      // codestral-latest IST ein Code-Modell, also +5 Bonus für Code-Aufgaben
+      const scoreGeneral = metricsModule.calculateScore('mistral/codestral-latest', 'standard');
+      const scoreCode = metricsModule.calculateScore('mistral/codestral-latest', 'code');
+      
+      // Code-Modell + Code-Aufgabe = +5 Bonus + höhere SWE-bench Gewichtung
+      expect(scoreCode).toBe(scoreGeneral + 5);
     });
 
     test('Recent models should get recency bonus', () => {
