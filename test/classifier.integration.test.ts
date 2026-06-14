@@ -17,17 +17,17 @@ describe("classifyPrompt (Integration)", () => {
     const result = await classifyPrompt("Ersetze 'x' mit 'y'");
     console.log("Simple prompt classified as:", result);
     expect(["code_simple", "fallback"]).toContain(result.category);
-  }, 30000);
+  }, 60000); // Timeout auf 60s erhöht
 
   it("klassifiziert komplexe Prompts mit Ollama", async () => {
     const result = await classifyPrompt("Debugge diese rekursive Funktion");
     console.log("Complex prompt classified as:", result);
     expect(["code_complex", "code_simple", "fallback"]).toContain(result.category);
-  }, 30000);
+  }, 60000); // Timeout auf 60s erhöht
 
   it("klassifiziert Design-Prompts mit Ollama", async () => {
     const result = await classifyPrompt("Entwirf eine Event-Sourcing-Architektur");
     console.log("Design prompt classified as:", result);
     expect(["design", "fallback"]).toContain(result.category);
-  }, 30000);
+  }, 60000); // Timeout auf 60s erhöht
 });

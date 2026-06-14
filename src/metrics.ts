@@ -8,6 +8,15 @@ import type { Metrics, Config, Cache, Group, ModelRef } from './types.ts';
 import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 
+// Extended metrics interface for benchmark data
+interface ExtendedMetrics extends Metrics {
+  mmlu?: number;
+  gpqa?: number;
+  truthful?: number;
+  humaneval?: number;
+  swebench?: number;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
@@ -156,17 +165,27 @@ export function setMetrics(newMetrics: Record<string, Metrics>): void {
 
 /**
  * Gibt die Metriken für eine Referenz zurück
+ * Inklusive Benchmark-Daten falls verfügbar
  */
-export function getM(ref: string): Metrics {
-  if (metrics[ref]) return metrics[ref];
+export function getM(ref: string): Metrics & ExtendedMetrics {
+  if (metrics[ref]) return metrics[ref] as Metrics & ExtendedMetrics;
+  
   const cm = cfg.model_metrics[ref] ?? {};
+  const benchmarks = cfg.model_benchmarks?.[ref] ?? {};
+  
   return (metrics[ref] = {
     gdpval: lookupGdp(ref) ?? cm.gdpval ?? 50,
     throughput_tps: cm.throughput_tps ?? 100,
     avg_latency_ms: cm.avg_latency_ms ?? 1000,
     cost_per_m: cm.cost_per_m ?? 0,
     last_updated: Date.now(),
-  });
+    // Benchmark-Daten
+    mmlu: benchmarks.mmlu,
+    gpqa: benchmarks.gpqa,
+    truthful: benchmarks.truthful,
+    humaneval: benchmarks.humaneval,
+    swebench: benchmarks.swebench
+  } as Metrics & ExtendedMetrics);
 }
 
 /**
@@ -182,6 +201,46 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
     cache.benchmarks[ref] = m.throughput_tps;
   }
   m.last_updated = Date.now();
+}
+
+// ── Multi-Metric Scoring ────────────────────────────────────────────────
+
+/**
+ * Berechnet einen gewichteten Score basierend auf mehreren Metriken
+ * Berücksichtigt GDPval, Benchmarks und Generations-Bonus
+ * @param ref - Modell-Referenz (z.B. "anthropic/claude-3-sonnet")
+ * @param taskType - Optionaler Aufgabentyp für spezifische Gewichtung (z.B. "code")
+ * @param config - Konfiguration für Zugriff auf model_metadata und model_benchmarks
+ */
+export function calculateScore(ref: string, taskType?: string, config?: Config): number {
+  const m = getM(ref);
+  const metadata = config?.model_metadata?.[ref] ?? cfg.model_metadata?.[ref] ?? {};
+  const benchmarks = config?.model_benchmarks?.[ref] ?? cfg.model_benchmarks?.[ref] ?? {};
+  
+  // Basis-Score: GDPval (40% Gewicht)
+  let score = m.gdpval * 0.4;
+  
+  // Benchmark-Bonus (60% Gewicht verteilt auf Benchmarks)
+  if (benchmarks.mmlu || m.mmlu) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.2;    // 20% Gewicht
+  if (benchmarks.gpqa || m.gpqa) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.12;   // 12% Gewicht
+  if (benchmarks.truthful || m.truthful) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.08; // 8% Gewicht
+  if (benchmarks.humaneval || m.humaneval) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1; // 10% Gewicht
+  if (benchmarks.swebench || m.swebench) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;  // 10% Gewicht
+  
+  // Generations-Bonus: +20 Punkte pro Generation über 3
+  if (metadata.generation) {
+    const generationBonus = Math.max(0, metadata.generation - 3) * 20;
+    score += generationBonus;
+  }
+  
+  // Aufgaben-spezifische Anpassungen
+  if (taskType === 'code') {
+    // Für Code-Aufgaben: Humaneval und SWE-bench stärker gewichten
+    if (benchmarks.humaneval || m.humaneval) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1;
+    if (benchmarks.swebench || m.swebench) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;
+  }
+  
+  return score;
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────
