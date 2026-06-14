@@ -1,0 +1,136 @@
+{
+  "_dynamic": {
+    "generated_at": "2026-06-14T20:00:00.000Z",
+    "source": "router scan",
+    "model_count": 10,
+    "base_config": "router-config.json",
+    "free_models_count": 5,
+    "scanned_models_count": 5
+  },
+  "providers": {
+    "mistral": {
+      "billing": "pay_per_token",
+      "keys": [{ "key": "test-key", "label": "auth.json" }]
+    },
+    "ollama": {
+      "billing": "subscription",
+      "keys": [{ "key": "__local__", "label": "local" }]
+    },
+    "openrouter": {
+      "billing": "pay_per_token",
+      "free_models": [
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/openai/gpt-4o-mini:free",
+        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+        "openrouter/google/gemma-3-4b-it:free",
+        "openrouter/google/gemma-3-12b-it:free"
+      ],
+      "keys": []
+    }
+  },
+  "model_groups": {
+    "trivial": {
+      "description": "Trivial tasks - free models only",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "google/gemma-3-4b-it:free",
+        "ollama/gemma4:12b-mlx"
+      ]
+    },
+    "simple": {
+      "description": "Simple tasks - free models only",
+      "method": "min_cost",
+      "min_gdpval": 300,
+      "max_cost": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "google/gemma-3-12b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "ollama/gemma4:12b-mlx"
+      ]
+    },
+    "standard": {
+      "description": "Standard tasks - cost-effective models",
+      "method": "tiered",
+      "min_gdpval": 500,
+      "max_cost_per_m": 0.5,
+      "models": [
+        "openai/gpt-4o-mini",
+        "anthropic/claude-3-haiku",
+        "mistral/mistral-medium-3.5"
+      ]
+    },
+    "complex": {
+      "description": "Complex tasks - GDPval \u2265600 (mistral-medium tier), best available",
+      "method": "best",
+      "min_gdpval": 600,
+      "models": [
+        "anthropic/claude-3-sonnet",
+        "openai/gpt-4o",
+        "mistral/mistral-medium-3.5"
+      ]
+    },
+    "strategic": {
+      "description": "Best available model by intelligence (max GDPval)",
+      "method": "best",
+      "models": [
+        "mistral/mistral-medium-3.5",
+        "anthropic/claude-3-sonnet"
+      ]
+    },
+    "tactical": {
+      "description": "GDPval \u2265600: magistral/mistral-medium tier, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 600,
+      "models": [
+        "mistral/mistral-medium-3.5"
+      ]
+    },
+    "operational": {
+      "description": "GDPval \u2265300: broad quality pool, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 300,
+      "models": [
+        "mistral/mistral-medium-3.5",
+        "mistral/codestral-latest",
+        "anthropic/claude-3-haiku"
+      ]
+    },
+    "scout": {
+      "description": "Any available model, cheapest first",
+      "method": "min_cost",
+      "min_gdpval": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "google/gemma-3-4b-it:free",
+        "mistral/mistral-medium-3.5",
+        "anthropic/claude-3-haiku"
+      ]
+    },
+    "fallback": {
+      "description": "Any available, cheapest first",
+      "method": "tiered",
+      "min_gdpval": 0,
+      "models": [
+        "qwen/qwen3-4b:free",
+        "mistral/mistral-medium-3.5"
+      ]
+    },
+    "dynamic": {
+      "description": "Classifies each prompt and routes to cost-efficient group",
+      "method": "dynamic"
+    }
+  },
+  "model_metrics": {},
+  "model_benchmarks": {},
+  "model_metadata": {},
+  "gdpval_builtin": {},
+  "cost_optimization": {
+    "enabled": true,
+    "default_group": "simple",
+    "auto_downgrade": true,
+    "max_cost_per_request": 1.0
+  }
+}
