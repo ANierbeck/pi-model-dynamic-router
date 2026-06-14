@@ -9,11 +9,11 @@
     "openrouter": {
       "billing": "pay_per_token",
       "free_models": [
-        "qwen/qwen3-4b:free",
-        "openai/gpt-oss-120b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-3-4b-it:free",
-        "google/gemma-3-12b-it:free"
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/openai/gpt-4o-mini:free",
+        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+        "openrouter/google/gemma-3-4b-it:free",
+        "openrouter/google/gemma-3-12b-it:free"
       ]
     }
   },

@@ -63,7 +63,7 @@ export class CloudClient {
     // Provider-spezifische Aufrufe
     switch (providerDef.api) {
       case 'openai-completions':
-        return this.callOpenRouter(modelRef, prompt, systemPrompt, apiKey, providerDef);
+        return this.callOpenRouter(modelId, prompt, systemPrompt, apiKey, providerDef);
       default:
         throw new Error(`Unsupported API type for cloud calls: ${providerDef.api}`);
     }
@@ -71,13 +71,25 @@ export class CloudClient {
 
   /**
    * Teile Modell-Referenz in Provider und Modell-ID
+   * Unterstützt Formate:
+   * - "provider/model-id" (z. B. "openrouter/qwen/qwen3-4b:free")
+   * - "model-id" (z. B. "qwen/qwen3-4b:free") → Provider wird aus PROVIDER_MAP gesucht
    */
   private splitModelRef(modelRef: string): [string, string] {
     const parts = modelRef.split('/');
-    if (parts.length !== 2) {
+    if (parts.length >= 2) {
+      // Provider + Modell-ID (z. B. "openrouter/qwen3-4b:free" oder "openrouter/qwen/qwen3-4b:free")
+      const providerId = parts[0];
+      if (PROVIDER_MAP[providerId]) {
+        // Erster Teil ist der Provider
+        return [providerId, parts.slice(1).join('/')];
+      } else {
+        // Kein bekannter Provider
+        throw new Error(`Unknown provider: ${providerId}`);
+      }
+    } else {
       throw new Error(`Invalid model reference format: ${modelRef}`);
     }
-    return [parts[0], parts[1]];
   }
 
   /**

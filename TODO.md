@@ -1,8 +1,8 @@
 # 🚀 pi-model-router - Aktuelle Aufgaben & Roadmap
 
-> **Status**: Aktualisiert mit kosteneffizientem Routing  
+> **Status**: Aktualisiert mit HINT-Override Fix & Modellabgrenzung  
 > **Letzte Aktualisierung**: 13. Juni 2026  
-> **Aktueller Stand**: ✅ Migration abgeschlossen, alle Tests grün, Cloud-Fallback & Kostenoptimierung geplant
+> **Aktueller Stand**: ✅ Migration abgeschlossen, alle Tests grün, Cloud-Fallback implementiert, HINT-Override & Modellabgrenzung zu fixen
 
 ---
 
@@ -37,12 +37,26 @@
 
 #### 0. **Kritische Verbesserungen** ⭐⭐⭐⭐⭐
 
-- [ ] **HINT-Override im Prompt** - User kann Modell/Gruppe direkt im Prompt überschreiben
-  - *Idee*: `HINT: use mistral-medium-3.5` oder `HINT: use group tactical` im Prompt → Router ignoriert Klassifizierung und nutzt dieses Modell/diese Gruppe direkt
-  - *Umsetzung*: Vor Klassifizierung Prompt auf `HINT:` Pattern prüfen (`/HINT:\s*use\s+(.+)/i`); bei Treffer Klassifizierung überspringen und direkt routen
+- [ ] **HINT-Override System reparieren** - HINTS werden aktuell ignoriert
+  - *Problem*: HINT-Override funktioniert nicht wie erwartet. Hints im Prompt (z.B. `HINT: use mistral-medium-3.5` oder `HINT: use group tactical`) werden ignoriert
+  - *Analyse*: HINT-Override ist nur im dynamischen Routing-Pfad aktiv (`/model dynamic`). Bei statischen Modellen oder wenn Klassifizierung bereits stattgefunden hat, wird HINT ignoriert
+  - *Lösung*: HINT-Override muss **vor** der Klassifizierung geprüft werden und **alle** Routing-Pfade überschreiben können
   - *Impact*: **HOCH** - User-Kontrolle ohne Pi-UI anzufassen
   - *Aufwand*: 1-2 Stunden
-  - *Abhängigkeiten*: `index.ts` (dynamic routing block, vor `classifyPrompt`)
+  - *Abhängigkeiten*: `index.ts` (vor `classifyPrompt` Aufruf, alle Routing-Pfade)
+  - *Status*: ⚠️ **Teilweise implementiert, aber nicht funktionsfähig**
+  - *Aktueller Stand*: `src/hint-override.ts` existiert und wird in `index.ts` aufgerufen, aber nur im dynamischen Routing-Pfad. HINTS werden bei statischen Modellen ignoriert.
+
+- [ ] **Modellabgrenzung verbessern** - Präzisere Modellauswahl basierend auf Kontext
+  - *Problem*: Dynamisches Routing wählt manchmal `anthropic/claude-3-haiku` für komplexe Aufgaben, obwohl `mistral-medium-3.5` besser geeignet wäre
+  - *Analyse*: Die aktuelle Klassifizierung und/oder Modellauswahl berücksichtigt nicht ausreichend die spezifischen Stärken der verfügbaren Modelle
+  - *Lösung*: 
+    - Modell-GDPval-Schwellenwerte anpassen
+    - Spezifischere Klassifizierungskategorien für verschiedene Modelltypen
+    - Modell-spezifische Routing-Regeln (z.B. Code-Aufgaben → Mistral, Analyse → Claude)
+  - *Impact*: **HOCH** - Bessere Modellauswahl, höhere Qualität
+  - *Aufwand*: 2-3 Stunden
+  - *Abhängigkeiten*: `src/content-classifier.ts`, `router-config.json`, `src/routing.ts`
 
 - [ ] **Session-Eskalation bei Kreis-Erkennung** - Modell automatisch hochstufen wenn Session stagniert
   - *Problem*: Wenn ein Modell dasselbe Problem mehrfach falsch löst (Session "dreht im Kreis"), hilft oft nur ein stärkeres Modell
