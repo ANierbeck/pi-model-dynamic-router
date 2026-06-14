@@ -229,9 +229,14 @@ export class Router {
             const modelGdpval = getM(requiredModel).gdpval;
             if (modelGdpval < g.min_gdpval) passesFilters = false;
           }
-          if (g.min_gdpval_pct != null) {
-            // Für min_gdpval_pct müssten wir alle Modelle kennen - vereinfacht: nur min_gdpval prüfen
-            // TODO: min_gdpval_pct für pinned models implementieren
+          if (g.min_gdpval_pct != null && passesFilters) {
+            // Für min_gdpval_pct: Berechne den Schwellwert aus allen entdeckten Modellen
+            const allRefs = this.allDiscoveredRefs();
+            const allGdpvals = allRefs.map(r => getM(r).gdpval).sort((a, b) => a - b);
+            const thresholdIndex = Math.floor((g.min_gdpval_pct / 100) * (allGdpvals.length - 1));
+            const threshold = allGdpvals[thresholdIndex];
+            const modelGdpval = getM(requiredModel).gdpval;
+            if (modelGdpval < threshold) passesFilters = false;
           }
           
           // Kosten Filter
