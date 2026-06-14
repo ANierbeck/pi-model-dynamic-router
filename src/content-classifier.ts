@@ -150,32 +150,32 @@ export async function classifyPrompt(
       // Guard: if hintTarget is empty, fall through to normal classification
       if (!hintTarget || hintTarget.length === 0) {
         console.warn(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
-        // Fall through to normal classification
-      } else if (hintTarget.startsWith('group:')) {
+        // Fall through to normal classification - return the parsed result as-is
+        // This will be handled by the normal classification path
+        return parsed;
+      }
+      
+      if (hintTarget.startsWith('group:')) {
         // This is a group hint
         const groupName = hintTarget.slice(6); // Remove 'group:' prefix
         if (!groupName || groupName.length === 0) {
           console.warn(`[classifier] Empty group name in HINT: ${parsed.category}`);
-        } else {
-          return {
-            reason: parsed.reason || 'User specified group via HINT',
-            confidence: 1.0,
-            hintType: 'group',
-            hintTarget: groupName,
-          };
+          return parsed; // Fall through to normal classification
         }
+        return {
+          reason: parsed.reason || 'User specified group via HINT',
+          confidence: 1.0,
+          hintType: 'group',
+          hintTarget: groupName,
+        };
       } else {
         // This is a model hint
-        if (!hintTarget || hintTarget.length === 0) {
-          console.warn(`[classifier] Empty model name in HINT: ${parsed.category}`);
-        } else {
-          return {
-            reason: parsed.reason || 'User specified model via HINT',
-            confidence: 1.0,
-            hintType: 'model',
-            hintTarget: hintTarget,
-          };
-        }
+        return {
+          reason: parsed.reason || 'User specified model via HINT',
+          confidence: 1.0,
+          hintType: 'model',
+          hintTarget: hintTarget,
+        };
       }
     }
     
@@ -263,7 +263,7 @@ function isValidClassification(obj: any): obj is ClassificationResult {
 function isValidHintClassification(obj: any): obj is HintClassificationResult {
   return (
     obj &&
-    obj.hintType === 'model' || obj.hintType === 'group' &&
+    (obj.hintType === 'model' || obj.hintType === 'group') &&
     typeof obj.hintTarget === 'string' &&
     obj.hintTarget.length > 0 &&
     typeof obj.reason === 'string' &&
@@ -272,7 +272,20 @@ function isValidHintClassification(obj: any): obj is HintClassificationResult {
 }
 
 function isValidFullClassification(obj: any): obj is FullClassificationResult {
-  return isValidClassification(obj) || isValidHintClassification(obj);
+  // Check for normal classification
+  if (isValidClassification(obj)) return true;
+  
+  // Check for raw HINT response from LLM (before extraction)
+  // These have category starting with 'hint:' but no hintType/hintTarget yet
+  if (obj && 
+      typeof obj.category === 'string' && 
+      obj.category.startsWith('hint:') && 
+      typeof obj.reason === 'string') {
+    return true;
+  }
+  
+  // Check for processed HINT classification
+  return isValidHintClassification(obj);
 }
 
 
@@ -453,6 +466,15 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
       // Handle HINT classification
       if ('hintType' in classification) {
         // HINT overrides are not supported in this hook context
+        console.warn(`[classifier] HINT override not supported in hook context, falling back to static classification`);
+        const staticResult = classifyStatically(prompt);
+        const group = CATEGORY_TO_GROUP[staticResult.category];
+        const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
+        if (toolResult?.details?.selected) {
+          const { provider, modelId } = toolResult.details;
+          const model = context.modelRegistry.find(provider, modelId);
+          if (model) await pi.setModel(model);
+        }
         return;
       }
       const group = CATEGORY_TO_GROUP[classification.category];
