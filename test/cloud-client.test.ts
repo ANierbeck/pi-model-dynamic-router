@@ -98,6 +98,11 @@ describe("CloudClient", () => {
             }),
           })
         );
+
+        // Verify that the body contains the correct model ID (without provider prefix)
+        const fetchCalls = vi.mocked(globalThis.fetch).mock.calls;
+        const requestBody = JSON.parse(fetchCalls[0][1]?.body as string);
+        expect(requestBody.model).toBe("qwen/qwen3-4b:free");
       });
 
       it("unterstützt System-Prompt", async () => {
