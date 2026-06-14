@@ -43,22 +43,24 @@
 - *Vorteil*: Kostenoptimierung durch Verwendung des günstigsten geeigneten Modells
 - *HINT-Override*: User kann diese automatische Entscheidung überschreiben mit z.B. `HINT: use mistral-medium-3.5`
 
-- [x] **HINT-Override System** - ✅ **Funktioniert wie designed**
-  - *Zweck*: User kann im dynamischen Modus die automatische Modellauswahl überschreiben
+- [x] **HINT-Override System** - ✅ **LLM-basiert implementiert**
+  - *Zweck*: User kann die automatische Modellauswahl überschreiben
   - *Funktionsweise*:
-    - **NUR im dynamischen Modus aktiv** (`/model dynamic` oder `/model dynamic:use-static`)
+    - **Funktioniert in ALLEN Modi** (dynamisch, statisch, direkt) - HINT wird in der Klassifizierung erkannt
     - User fügt `HINT: use mistral-medium-3.5` oder `HINT: use group tactical` zum Prompt hinzu
-    - Router überspringt dann die automatische Klassifizierung und verwendet das angegebene Modell/die Gruppe
-  - *Begründung*: 
-    - Dynamischer Modus = Router entscheidet basierend auf Anfrage, welches Modell am besten passt
-    - HINT erlaubt User, diese Entscheidung zu überschreiben (z.B. "Für diese komplexe Aufgabe bitte mistral-medium-3.5 verwenden")
-    - Bei statischen Modellen/Gruppen ist HINT **absichtlich irrelevant**, da User bereits manuell ein Modell ausgewählt hat
+    - Das LLM erkennt den HINT und klassifiziert mit `category: "hint:mistral-medium-3.5"` oder `category: "hint:group:tactical"`
+    - Die `classifyPrompt` Funktion extrahiert dann das Modell/die Gruppe und gibt es zurück
   - *Implementierung*:
-    - `src/hint-override.ts` mit Regex: `/HINT:\s*(?:use\s+)?(?:(?:model|group)\s+)?([a-zA-Z0-9\-_:/.]+)/i`
-    - In `index.ts` innerhalb des `isDynamic` Blocks aufgerufen (Zeile ~127)
-    - Unterstützte Formate: `HINT: use mistral-medium-3.5`, `HINT: use group tactical`, `HINT: mistral-medium-3.5`
-  - *Status*: ✅ **Funktioniert korrekt wie designed**
-  - *Wichtig*: HINT wird **absichtlich** bei statischen Modellen ignoriert - das ist kein Bug, sondern gewolltes Verhalten
+    - **Keine Regex mehr!** - HINT-Erkennung ist jetzt in den `CLASSIFICATION_PROMPT` integriert
+    - Der Prompt enthält jetzt eine HINT-Rule: "If the request contains a HINT instruction... return it with the 'hint:' prefix"
+    - Unterstützt alle Sprachen (deutsch, englisch, etc.) und Formate
+    - `classifyPrompt` erkennt HINT-Kategorien und extrahiert Modell/Gruppe
+  - *Status*: ✅ **Funktioniert jetzt korrekt mit LLM-basierter Erkennung**
+  - *Vorteile*:
+    - Keine Regex-Probleme mehr mit natürlicher Sprache
+    - Funktioniert in allen Sprachen
+    - Funktioniert mit beliebigen Formaten (mit/ohne Doppelpunkt, verschiedene Befehle)
+    - Einfacher zu warten und zu erweitern
 
 - [ ] **Modellabgrenzung verbessern** - Präzisere Modellauswahl basierend auf Kontext
   - *Problem*: Dynamisches Routing wählt manchmal `anthropic/claude-3-haiku` für komplexe Aufgaben, obwohl `mistral-medium-3.5` besser geeignet wäre
