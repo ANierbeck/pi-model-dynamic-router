@@ -246,29 +246,31 @@ describe('resolveShortModelName()', () => {
     expect(result).toBe('mistral/mistral-medium-3.5');
   });
 
-  it('returns unknown short name unchanged when not found in any group', () => {
+  it('returns null when short name is not found in any group', () => {
     const result = resolveShortModelName('typo-model-name', modelGroups);
-    expect(result).toBe('typo-model-name');
+    expect(result).toBeNull();
   });
 
   it('stops at first match (break-on-first-match behavior)', () => {
     const groups = {
+      // Object.values() iterates in insertion order for non-integer string keys (ES2015+),
+      // so groupA is always searched before groupB — this is intentional and spec-compliant.
       groupA: { models: ['providerA/same-model'] },
       groupB: { models: ['providerB/same-model'] },
     };
     const result = resolveShortModelName('same-model', groups);
-    expect(['providerA/same-model', 'providerB/same-model']).toContain(result);
     expect(result).toBe('providerA/same-model');
   });
 
   it('resolves exact match (model stored without provider prefix)', () => {
     const groups = { local: { models: ['ollama/gemma4:12b-mlx', 'llama3.1:latest'] } };
     const result = resolveShortModelName('llama3.1:latest', groups);
+    // Exact match on unqualified name — returns the stored ref, not null
     expect(result).toBe('llama3.1:latest');
   });
 
-  it('handles empty model groups', () => {
+  it('returns null for empty model groups', () => {
     const result = resolveShortModelName('some-model', {});
-    expect(result).toBe('some-model');
+    expect(result).toBeNull();
   });
 });

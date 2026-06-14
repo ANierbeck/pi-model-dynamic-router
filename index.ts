@@ -1285,10 +1285,12 @@ const defaultExport = function (pi: ExtensionAPI) {
             // fully-qualified "provider/model" ref by searching all group models lists.
             // Without this, splitRef() would use the whole string as provider, which is
             // never registered, causing "All candidates failed: no candidates".
-            const resolvedTarget = resolveShortModelName(classification.hintTarget, cfg.model_groups);
-            if (!classification.hintTarget.includes('/') && resolvedTarget === classification.hintTarget) {
-              console.warn(`[dynamic] HINT model "${resolvedTarget}" not found in any group; using as-is`);
+            const shortName = classification.hintTarget;
+            const resolved = resolveShortModelName(shortName, cfg.model_groups);
+            if (!shortName.includes('/') && resolved === null) {
+              console.warn(`[dynamic] HINT model "${shortName}" not found in any group; using as-is`);
             }
+            const resolvedTarget = resolved ?? shortName;
             candidates = [resolvedTarget];
             lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;

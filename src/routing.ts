@@ -219,57 +219,6 @@ export class Router {
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
     
-    // Falls models-Array existiert: Stelle sicher, dass diese Modelle enthalten sind
-    // ABER: Sie müssen auch die Filter-Kriterien erfüllen (min_gdpval, max_cost, etc.)
-    if (g.models?.length) {
-      // Berechne Thresholds einmal vor der Schleife (Performance-Optimierung)
-      let gdpvalPctThreshold: number | null = null;
-      if (g.min_gdpval_pct != null) {
-        const allRefs = this.allDiscoveredRefs();
-        const allGdpvals = allRefs.map(r => getM(r).gdpval).sort((a, b) => a - b);
-        if (allGdpvals.length > 0) {
-          const thresholdIndex = Math.floor((g.min_gdpval_pct / 100) * (allGdpvals.length - 1));
-          gdpvalPctThreshold = allGdpvals[thresholdIndex];
-        }
-      }
-      
-      for (const requiredModel of g.models) {
-        if (!c.includes(requiredModel)) {
-          // Prüfe ob das Modell die Filter-Kriterien erfüllt
-          let passesFilters = true;
-          
-          // GDPval Filter
-          if (g.min_gdpval != null) {
-            const modelGdpval = getM(requiredModel).gdpval;
-            if (modelGdpval < g.min_gdpval) passesFilters = false;
-          }
-          if (gdpvalPctThreshold != null && passesFilters) {
-            const modelGdpval = getM(requiredModel).gdpval;
-            // Konsistent mit filterByQualityPct: >= threshold
-            if (modelGdpval < gdpvalPctThreshold) passesFilters = false;
-          }
-          
-          // Kosten Filter
-          if (g.max_cost !== undefined && passesFilters) {
-            if (effCost(requiredModel) > g.max_cost) passesFilters = false;
-          }
-          if (g.max_cost_per_m !== undefined && passesFilters) {
-            const price = lookupPrice(requiredModel);
-            if (price && price.input > g.max_cost_per_m) passesFilters = false;
-          }
-          
-          if (passesFilters) {
-            c.push(requiredModel);
-          }
-        }
-      }
-      // Nochmal sortieren, um die besten Modelle nach oben zu bringen
-      if (g.method === 'best') {
-        c = this.sortBy(c, 'best', name);
-      } else {
-        c = this.sortBy(c, g.method, name);
-      }
-    }
 
     return { selected: c[0], candidates: c };
   }
