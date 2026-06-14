@@ -89,13 +89,15 @@ export function baseTokens(s: string): Set<string> {
 
 /**
  * Resolves a short model name (e.g. "mistral-medium-3.5") to a fully-qualified
- * "provider/model" ref by searching group models lists. Returns the original
- * target unchanged if already qualified or no match is found.
+ * "provider/model" ref by searching group models lists.
+ * - Already-qualified refs (contain '/') are returned unchanged.
+ * - Returns null when the short name is not found in any group, so callers can
+ *   distinguish a genuine lookup miss from a successful exact-match resolution.
  */
 export function resolveShortModelName(
   target: string,
   modelGroups: Record<string, { models?: string[] }>
-): string {
+): string | null {
   if (target.includes('/')) return target;
   for (const groupConfig of Object.values(modelGroups)) {
     const match = groupConfig.models?.find(
@@ -103,7 +105,7 @@ export function resolveShortModelName(
     );
     if (match) return match;
   }
-  return target;
+  return null;
 }
 
 // ── Validation Utilities ──────────────────────────────────────────────────
