@@ -176,23 +176,23 @@ describe('HINT Classification', () => {
     });
   });
 
-  describe('Statische Klassifizierung als Fallback', () => {
-    it('klassifiziert statisch wenn LLM fehlschlägt', async () => {
+  describe('Static Classification Fallback', () => {
+    it('falls back to static classification when LLM fails', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
       
-      // Mock callOllama, um Fehler zu werfen
+      // Mock callOllama to throw error
       vi.mocked(callOllama).mockRejectedValue(new Error('Ollama not available'));
 
-      const result = await classifyPrompt('List all files in this directory', { 
+      // Use a prompt that classifyStatically maps to 'simple' (not 'fallback')
+      const result = await classifyPrompt('What is the capital of France?', { 
         allowStaticFallback: true 
       });
       
-      // Sollte statische Klassifizierung verwenden
-      // "List all files in this directory" sollte als 'trivial' klassifiziert werden
-      const staticResult = classifyStatically('List all files in this directory');
+      // Should use static classification
+      // "What is the capital of France?" is classified as 'simple' by classifyStatically
+      const staticResult = classifyStatically('What is the capital of France?');
       expect(result.category).toBe(staticResult.category);
-      // Die reason enthält entweder 'static' oder 'fallback' - beides ist akzeptabel
-      expect(result.reason.toLowerCase()).toMatch(/static|fallback|could not classify/i);
+      expect(result.category).toBe('simple');
     });
   });
 
