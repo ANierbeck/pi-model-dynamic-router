@@ -209,7 +209,30 @@ const defaultExport = function (pi: ExtensionAPI) {
   // ── Config + Cache ─────────────────────────────────────────────────────
 
   function load() {
-    cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    // Versuche zuerst, die dynamische Konfiguration zu laden
+    const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+    let loadedFromDynamic = false;
+    
+    try {
+      if (fs.existsSync(dynamicConfigPath)) {
+        const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
+        // Prüfe ob die dynamische Konfiguration gültig ist (hat _dynamic Metadaten)
+        if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
+          cfg = dynamicCfg;
+          loadedFromDynamic = true;
+          console.log('[router] Loaded dynamic configuration from router-config.dynamic.json');
+        }
+      }
+    } catch (error) {
+      console.warn('[router] Error loading dynamic configuration, falling back to static config:', error);
+    }
+    
+    // Falls keine dynamische Konfiguration, lade die statische
+    if (!loadedFromDynamic) {
+      cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      console.log('[router] Loaded static configuration from router-config.json');
+    }
+    
     if (cfg.gdpval_builtin) {
       Object.assign(gdpval, cfg.gdpval_builtin);
       gdpvalVersion++;
@@ -447,8 +470,199 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
       saveCache();
+      
+      // Generiere dynamische Konfiguration nach dem Scan
+      await generateDynamicConfig();
     } finally {
       scanning = false;
+    }
+  }
+
+  /**
+   * Generiert eine dynamische Router-Konfiguration basierend auf den gescanten Modellen
+   * und den Einstellungen aus router-config.json
+   */
+  async function generateDynamicConfig(): Promise<void> {
+    try {
+      console.log('[router] Generating dynamic configuration...');
+      
+      // 1. Alle verfügbaren Modelle holen
+      const allModels = cache.available_models ?? [];
+      if (!allModels.length) {
+        console.log('[router] No models available, skipping dynamic config generation');
+        return;
+      }
+      
+      // 2. Modelle mit GDPval anreichern
+      const modelsWithGdpval = allModels.map(model => {
+        const ref = `${model.provider}/${model.id}`;
+        const gdpval = lookupGdp(ref) ?? 0;
+        return { ...model, ref, gdpval };
+      }).filter(m => m.gdpval > 0); // Nur Modelle mit GDPval
+      
+      if (!modelsWithGdpval.length) {
+        console.log('[router] No models with GDPval scores, skipping dynamic config generation');
+        return;
+      }
+      
+      // 3. Dynamische Gruppen-Konfiguration generieren
+      const dynamicGroups: Record<string, any> = {};
+      
+      for (const [groupName, groupConfig] of Object.entries(cfg.model_groups)) {
+        // Skip dynamic group (handled separately)
+        if (groupConfig.method === 'dynamic') {
+          dynamicGroups[groupName] = groupConfig;
+          continue;
+        }
+        
+        // Filter Modelle basierend auf Gruppen-Kriterien
+        let filteredModels = [...modelsWithGdpval];
+        
+        // GDPval Filter
+        if (groupConfig.min_gdpval !== undefined) {
+          filteredModels = filteredModels.filter(m => m.gdpval >= groupConfig.min_gdpval!);
+        }
+        
+        // Kosten Filter (max_cost_per_m)
+        if (groupConfig.max_cost_per_m !== undefined) {
+          filteredModels = filteredModels.filter(m => {
+            const price = lookupPrice(m.ref);
+            return price ? price.input <= groupConfig.max_cost_per_m! : true;
+          });
+        }
+        
+        // Kosten Filter (max_cost - effektive Kosten)
+        if (groupConfig.max_cost !== undefined) {
+          filteredModels = filteredModels.filter(m => {
+            const eff = effCost(m.ref);
+            return eff <= groupConfig.max_cost!;
+          });
+        }
+        
+        // Sortierung basierend auf Gruppen-Methode
+        let sortedGroupModels = [...filteredModels];
+        
+        if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
+          // Verwende Multi-Metrik-Scoring für 'best'-Methode
+          sortedGroupModels.sort((a, b) => {
+            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
+            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
+            return scoreB - scoreA;
+          });
+        } else if (groupConfig.method === 'min_cost') {
+          sortedGroupModels.sort((a, b) => {
+            const costA = effCost(a.ref);
+            const costB = effCost(b.ref);
+            if (costA !== costB) return costA - costB;
+            // Bei gleichen Kosten: Verwende Multi-Metrik-Score
+            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
+            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
+            return scoreB - scoreA;
+          });
+        } else if (groupConfig.method === 'tiered') {
+          // Quality-gated + Multi-Metrik-Scoring
+          sortedGroupModels.sort((a, b) => {
+            // Erst nach GDPval (Quality Gate)
+            if (b.gdpval !== a.gdpval) return b.gdpval - a.gdpval;
+            // Dann nach Multi-Metrik-Score
+            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
+            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            // Dann nach Kosten
+            return effCost(a.ref) - effCost(b.ref);
+          });
+        }
+        
+        // Modelle für diese Gruppe sammeln
+        const modelsToInclude = new Set<string>();
+        
+        // 1. Zuerst die besten gefilterten Modelle
+        for (const model of sortedGroupModels) {
+          modelsToInclude.add(model.ref);
+        }
+        
+        // 2. Dann die Original-Modelle aus router-config.json als Fallback
+        const originalModels = groupConfig.models ?? [];
+        for (const origModel of originalModels) {
+          const origGdpval = lookupGdp(origModel);
+          if (origGdpval === null) continue;
+          
+          const modelInCache = modelsWithGdpval.find(m => m.ref === origModel);
+          if (modelInCache) {
+            modelsToInclude.add(origModel);
+          } else {
+            const gdpval = lookupGdp(origModel);
+            if (gdpval !== null && gdpval !== undefined) {
+              let passesFilters = true;
+              if (groupConfig.min_gdpval !== undefined && gdpval < groupConfig.min_gdpval) {
+                passesFilters = false;
+              }
+              if (passesFilters && groupConfig.max_cost_per_m !== undefined) {
+                const price = lookupPrice(origModel);
+                if (price && price.input > groupConfig.max_cost_per_m) {
+                  passesFilters = false;
+                }
+              }
+              if (passesFilters && groupConfig.max_cost !== undefined) {
+                if (effCost(origModel) > groupConfig.max_cost) {
+                  passesFilters = false;
+                }
+              }
+              if (passesFilters) {
+                modelsToInclude.add(origModel);
+              }
+            }
+          }
+        }
+        
+        // Konvertiere zu Array und sortiere final
+        const finalModels = Array.from(modelsToInclude);
+        
+        if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
+          finalModels.sort((a, b) => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0));
+        } else if (groupConfig.method === 'min_cost') {
+          finalModels.sort((a, b) => {
+            const costA = effCost(a);
+            const costB = effCost(b);
+            if (costA !== costB) return costA - costB;
+            return (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
+          });
+        } else if (groupConfig.method === 'tiered') {
+          finalModels.sort((a, b) => {
+            const gdpA = lookupGdp(a) ?? 0;
+            const gdpB = lookupGdp(b) ?? 0;
+            if (gdpB !== gdpA) return gdpB - gdpA;
+            return effCost(a) - effCost(b);
+          });
+        }
+        
+        // Erstelle die dynamische Gruppen-Konfiguration
+        dynamicGroups[groupName] = {
+          ...groupConfig,
+          models: finalModels
+        };
+      }
+      
+      // 4. Dynamische Konfiguration speichern
+      const dynamicConfig = {
+        ...cfg,
+        model_groups: dynamicGroups,
+        _dynamic: {
+          generated_at: new Date().toISOString(),
+          source: 'router scan',
+          model_count: modelsWithGdpval.length,
+          base_config: 'router-config.json'
+        }
+      };
+      
+      const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+      fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
+      
+      console.log(`[router] Dynamic configuration saved to ${dynamicConfigPath}`);
+      console.log(`[router] Generated groups: ${Object.keys(dynamicGroups).join(', ')}`);
+      
+    } catch (error) {
+      console.error('[router] Error generating dynamic configuration:', error);
     }
   }
 
@@ -1310,7 +1524,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan|reload]',
+    description: 'Model router status. Usage: /router [group|scan|reload|reset]',
     handler: async (args, ctx) => {
       load();
       const arg = args?.trim();
@@ -1335,8 +1549,11 @@ const defaultExport = function (pi: ExtensionAPI) {
         if (arg === 'scan') {
           ctx.ui.notify('Scanning...');
           await scan(true);
+          const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+          const hasDynamicConfig = fs.existsSync(dynamicConfigPath);
           ctx.ui.notify(
-            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`
+            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.` +
+            (hasDynamicConfig ? ' Dynamic config generated!' : '')
           );
           return;
         }
@@ -1344,6 +1561,21 @@ const defaultExport = function (pi: ExtensionAPI) {
           load();
           registerGroupModels(ctx);
           ctx.ui.notify('Re-registered group models');
+          return;
+        }
+        if (arg === 'reset') {
+          const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+          try {
+            if (fs.existsSync(dynamicConfigPath)) {
+              fs.unlinkSync(dynamicConfigPath);
+              load();
+              ctx.ui.notify('Dynamic config removed. Reverted to static router-config.json');
+            } else {
+              ctx.ui.notify('No dynamic config found to reset');
+            }
+          } catch (error) {
+            ctx.ui.notify('Error resetting config: ' + error);
+          }
           return;
         }
 
@@ -1452,7 +1684,7 @@ const defaultExport = function (pi: ExtensionAPI) {
       }
 
       lines.push('└' + '─'.repeat(71));
-      lines.push('', '/router <group> | scan | reload | sync');
+      lines.push('', '/router <group> | scan | reload | reset | sync');
       ctx.ui.notify(lines.join('\n'), 'info');
       } finally {
         // Always restore previous session context
