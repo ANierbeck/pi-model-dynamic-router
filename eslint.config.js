@@ -1,8 +1,19 @@
+import js from '@eslint/js';
 import ts from '@typescript-eslint/eslint-plugin';
 import parser from '@typescript-eslint/parser';
 import prettierConfig from 'eslint-config-prettier';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default [
+  // Base JavaScript recommended rules
+  js.configs.recommended,
+  
+  // TypeScript flat config (replaces legacy eslintrc format)
+  ...ts.configs['flat/recommended-type-checked'],
+  
   {
     files: ['**/*.ts'],
     plugins: {
@@ -12,16 +23,18 @@ export default [
       parser: parser,
       parserOptions: {
         project: './tsconfig.json',
-        tsconfigRootDir: import.meta.dirname,
+        tsconfigRootDir: __dirname,
       },
     },
     rules: {
-      ...ts.configs['recommended-type-checked'].rules,
+      // TypeScript specific
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
+      
+      // General
       'no-console': 'warn',
       'prefer-const': 'error',
       'no-var': 'error',

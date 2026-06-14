@@ -3,6 +3,9 @@
   "version": "1.1.0",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
   "main": "dist/index.js",
   "bin": {
     "pi-model-router": "./dist/index.js"
