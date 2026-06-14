@@ -177,7 +177,10 @@ export class Router {
     // Dynamic group is handled by the hook, not here
     if (g.method === 'dynamic') return null;
 
-    let c = this.allDiscoveredRefs();
+    // When a group has an explicit models list, use it as the routing pool so that
+    // routing candidates match what /router displays. Fall back to allDiscoveredRefs()
+    // only for groups without an explicit list (auto-discovery mode).
+    let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
     
     // Filter nach Qualität
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);

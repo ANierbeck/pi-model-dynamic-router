@@ -195,6 +195,22 @@ describe('Router Integration Tests', () => {
       const zeroModels = router.getTopModels('strategic', 0);
       expect(zeroModels).toEqual([]);
     });
+
+    it('should return only refs from the group explicit models list', () => {
+      const groupModels = testConfig.model_groups['strategic'].models!;
+      const topModels = router.getTopModels('strategic', 10);
+      for (const m of topModels) {
+        expect(groupModels).toContain(m.ref);
+      }
+    });
+
+    it('should return only refs from tactical group models list', () => {
+      const groupModels = testConfig.model_groups['tactical'].models!;
+      const topModels = router.getTopModels('tactical', 10);
+      for (const m of topModels) {
+        expect(groupModels).toContain(m.ref);
+      }
+    });
   });
 
   describe('filterAvailable()', () => {
