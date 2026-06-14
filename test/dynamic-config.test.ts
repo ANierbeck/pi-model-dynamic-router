@@ -408,22 +408,13 @@ describe('Dynamic Configuration Generation', () => {
       expect(scoreClaude4).toBeGreaterThan(scoreDevstral);
     });
 
-    test('Code models should score higher for code tasks due to weighting', () => {
-      // codestral-latest hat bessere Code-Benchmarks (SWE-bench, HumanEval)
-      // Für Code-Aufgaben werden diese stärker gewichtet
+    test('Code-type models get +5 bonus for code tasks', () => {
+      // codestral-latest ist ein Code-Modell (type: 'code')
+      // Der Mock gibt +5 Bonus für Code-Modelle auf Code-Aufgaben
       const scoreGeneral = metricsModule.calculateScore('mistral/codestral-latest', 'standard');
       const scoreCode = metricsModule.calculateScore('mistral/codestral-latest', 'code');
       
-      // Code-Aufgaben: 35% SWE-bench + 25% HumanEval vs Allgemein: 20% + 10%
-      expect(scoreCode).toBeGreaterThan(scoreGeneral);
-    });
-
-    test('Code-type models should get bonus for code tasks', () => {
-      // codestral-latest IST ein Code-Modell, also +5 Bonus für Code-Aufgaben
-      const scoreGeneral = metricsModule.calculateScore('mistral/codestral-latest', 'standard');
-      const scoreCode = metricsModule.calculateScore('mistral/codestral-latest', 'code');
-      
-      // Code-Modell + Code-Aufgabe = +5 Bonus + höhere SWE-bench Gewichtung
+      // Exakter Bonus: +5 Punkte
       expect(scoreCode).toBe(scoreGeneral + 5);
     });
 
