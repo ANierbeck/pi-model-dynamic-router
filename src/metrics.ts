@@ -210,10 +210,11 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * Berücksichtigt GDPval, Generation, Benchmarks, Modell-Typ und Release-Datum
  * Alle Metriken werden auf die gleiche Skala (0-100) normalisiert
  * 
- * Gewichtung (summiert zu 100% Basis + bis zu 15% Bonuses):
- * - Code-Aufgaben: 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 30% SWE-bench
- * - Allgemein:    25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 10% SWE-bench
- * - Bonuses: Generation (+5 pro Gen >3, max +10) + Recency (+5/+3/+1) + Code-Type (+5)
+ * Gewichtung (summiert zu 100% Basis + bis zu 20% Bonuses):
+ * - Code-Aufgaben: 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench
+ * - Allgemein:    25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench
+ * - Bonuses: Generation (+5 pro Gen >3, max +10) + Recency (+5/+3/+1) + Code-Modell für Code-Aufgaben (+5)
+ *   Maximaler Bonus: +10 (Generation) + +5 (Recency) + +5 (Code) = +20
  * 
  * @param ref - Modell-Referenz (z.B. "anthropic/claude-3-sonnet")
  * @param taskType - Optionaler Aufgabentyp für spezifische Gewichtung (z.B. "code")
@@ -230,9 +231,11 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
   // Basis-Score: Normalisierter GDPval
   let score: number;
   
-  // Bestimme die Gewichtung basierend auf taskType und Modell-Typ
+  // Bestimme die Gewichtung basierend auf taskType
+  // taskType hat Vorrang vor modelType
   const modelType = metadata.type ?? 'general';
-  const isCodeModel = modelType === 'code' || taskType === 'code';
+  const isCodeTask = taskType === 'code';
+  const isCodeModel = modelType === 'code';
   
   // Benchmark-basierte Scores (0-100 Skala)
   // MMLU kann über 100% gehen (z.B. 110%), also normalisieren wir auf 100
@@ -243,7 +246,7 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
   const swebenchScore = Math.min(100, (benchmarks.swebench ?? m.swebench ?? 0) * 100);
   
   // Aufgaben-spezifische Gewichtung (summiert zu 100% Basis)
-  if (isCodeModel) {
+  if (isCodeTask) {
     // Für Code-Aufgaben: Starke Gewichtung auf Code-Benchmarks
     // 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench = 100%
     score = normalizedGdpval * 0.20;
@@ -285,9 +288,9 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
   }
   score += recencyBonus;
   
-  // Code-Modell-Bonus: Code-spezialisierte Modelle bekommen +5 Punkte für allgemeine Aufgaben
-  // (da sie oft besser für präzise Antworten sind)
-  if (modelType === 'code' && !isCodeModel) {
+  // Code-Modell-Bonus: Code-spezialisierte Modelle bekommen +5 Punkte für Code-Aufgaben
+  // (da sie für Code-Aufgaben optimiert sind)
+  if (isCodeModel && isCodeTask) {
     score += 5;
   }
   
