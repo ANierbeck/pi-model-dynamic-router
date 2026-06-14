@@ -326,55 +326,18 @@ const defaultExport = function (pi: ExtensionAPI) {
     try {
       if (!cache.gdpval_scraped || force) {
         try {
-          console.log('[scan] Fetching GDPval scores from Artificial Analysis...');
           const res = await fetch(GDPVAL_URL, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             signal: AbortSignal.timeout(30_000),
           });
           const html = await res.text().then((h) => h.replace(/\\"/g, '"'));
-          
-          // Extract slug → name mapping from JSON data embedded in page
-          const slugMap: Record<string, string> = {};
-          const slugRe = /"([a-z0-9][a-z0-9._-]+)","name":"([^"]+)","shortName":"([^"]+)"/g;
-          let sm;
-          while ((sm = slugRe.exec(html))) {
-            if (sm[2]) {
-              slugMap[sm[2]] = sm[1];
-              if (sm[3] && sm[3] !== sm[2]) slugMap[sm[3]] = sm[1];
-            }
-          }
-          console.log(`[scan] Found ${Object.keys(slugMap).length} slug mappings`);
-          
-          // Extract name → score from HTML table
-          const tableRe = /<div[^>]*>([^<]{3,80})<\/div><\/td>\s*<td[^>]*>(\d{3,4})<\/td>/g;
-          let m;
-          const scores: Record<string, number> = {};
-          let matchCount = 0;
-          while ((m = tableRe.exec(html))) {
-            const nm = m[1]
-              .trim()
-              .replace(/&#x27;/g, "'")
-              .replace(/&amp;/g, '&')
-              .replace(/&lt;/g, '<')
-              .replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"');
-            if (!nm || !/[A-Za-z]/.test(nm) || nm.startsWith('<')) continue;
-            const score = +m[2];
-            // Prefer slug key (machine-readable) over display name
-            const slug = slugMap[nm];
-            const key = slug ?? nm;
-            if (!scores[key] || score > scores[key]) scores[key] = score;
-            matchCount++;
-          }
-          console.log(`[scan] Extracted ${matchCount} model scores from table`);
-          console.log(`[scan] Sample scores:`, JSON.stringify(Object.entries(scores).slice(0, 5)));
-          
+          const scores = extractGdpvalScores(html);
+
           if (Object.keys(scores).length) {
             gdpval = { ...scores };
             gdpvalVersion++;
             cache.gdpval_scores = gdpval;
             cache.gdpval_scraped = true;
-            console.log(`[scan] Successfully updated ${Object.keys(scores).length} GDPval scores`);
           } else {
             console.warn('[scan] No GDPval scores extracted - table regex may be outdated');
           }
