@@ -323,7 +323,11 @@ export class Router {
     if (!g) return [];
     if (g.method === 'dynamic') return []; // resolved at prompt-time via classifier
 
-    let c = this.allDiscoveredRefs();
+    // When a group has an explicit models list (e.g. from dynamic config), use it as the
+    // display pool so /router reflects what the config actually intends to route to —
+    // not just whatever Pi's session registry happens to have discovered.
+    // Fall back to allDiscoveredRefs() only for groups without an explicit list.
+    let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
 
