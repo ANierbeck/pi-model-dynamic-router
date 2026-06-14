@@ -14,6 +14,16 @@ import type {
 import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
 import { PROVIDER_MAP } from './providers.js';
 import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
+import {
+  CostTier,
+  CostTierConfig,
+  getModelCostTier,
+  modelFitsCostTier,
+  getCostTierForCategory,
+  getGroupForCategory,
+  DEFAULT_COST_TIERS,
+  getCostTiersFromConfig
+} from './cost-tiers.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -221,6 +231,133 @@ export class Router {
     
 
     return { selected: c[0], candidates: c };
+  }
+
+  // ── Cost Tier Methods ──────────────────────────────────────────────────
+
+  /**
+   * Gibt die Kostenstufen-Konfiguration zurück
+   */
+  getCostTiers(): Record<CostTier, CostTierConfig> {
+    return getCostTiersFromConfig(this.cfg);
+  }
+
+  /**
+   * Löst eine Modellgruppe mit Kostenstufen-Filter auf
+   * @param name - Gruppenname
+   * @param costTier - Kostenstufe (optional, wird aus Gruppe extrahiert)
+   * @returns GroupResolution oder null
+   */
+  resolveWithCostTier(name: string, costTier?: CostTier): GroupResolution | null {
+    const g = this.cfg.model_groups[name];
+    if (!g) return null;
+
+    // Wenn eine Kostenstufe angegeben ist, filtere nach dieser
+    if (costTier) {
+      const tierConfig = this.getCostTiers()[costTier];
+      if (!tierConfig) return null;
+
+      // Extrahiere statische free_models aus der Konfiguration
+      const staticFreeModels: string[] = [];
+      for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+        if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
+          for (const model of provConfig.free_models) {
+            const normalized = model.startsWith(`${provId}/`) ? model : `${provId}/${model}`;
+            staticFreeModels.push(normalized);
+          }
+        }
+      }
+
+      // Filtere Modelle nach Kostenstufe
+      let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
+      
+      const filtered = c.filter(ref => {
+        return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
+      });
+
+      if (filtered.length === 0) {
+        console.warn(`[router] No models fit cost tier "${costTier}" for group "${name}"`);
+        return null;
+      }
+
+      // Sortiere nach Gruppen-Methode
+      let sorted = [...filtered];
+      if (g.method === 'best') {
+        sorted = this.sortBy(sorted, 'best', name);
+      } else if (g.method === 'tiered') {
+        sorted = this.sortByBillingPreference(sorted);
+      } else if (g.method === 'min_cost') {
+        sorted = this.sortBy(sorted, 'min_cost', name);
+      } else {
+        sorted = this.sortBy(sorted, g.method, name);
+      }
+
+      return { selected: sorted[0], candidates: sorted };
+    }
+
+    // Standard-Verhalten
+    return this.resolve(name);
+  }
+
+  /**
+   * Löst eine Gruppe basierend auf der Klassifizierungskategorie auf
+   * @param category - Klassifizierungskategorie
+   * @returns GroupResolution oder null
+   */
+  resolveByCategory(category: string): GroupResolution | null {
+    // Hole die Kostenstufe und Gruppe für diese Kategorie
+    const costTier = getCostTierForCategory(category as any);
+    const groupName = getGroupForCategory(category as any);
+
+    if (!costTier || !groupName) {
+      console.warn(`[router] Unknown category: ${category}`);
+      return this.resolve('fallback');
+    }
+
+    // Versuche zuerst die spezifische Gruppe mit Kostenstufen-Filter
+    const groupResolution = this.resolveWithCostTier(groupName, costTier);
+    if (groupResolution) {
+      return groupResolution;
+    }
+
+    // Fallback: Versuche ohne Kostenstufen-Filter
+    const fallbackResolution = this.resolve(groupName);
+    if (fallbackResolution) {
+      return fallbackResolution;
+    }
+
+    // Ultimate Fallback
+    return this.resolve('fallback');
+  }
+
+  /**
+   * Gibt die Kostenstufe für eine Klassifizierungskategorie zurück
+   */
+  getCostTierForCategory(category: string): CostTier {
+    return getCostTierForCategory(category as any);
+  }
+
+  /**
+   * Gibt die Gruppe für eine Klassifizierungskategorie zurück
+   */
+  getGroupForCategory(category: string): string {
+    return getGroupForCategory(category as any);
+  }
+
+  /**
+   * Gibt die Kostenstufe eines Modells zurück
+   */
+  getModelCostTier(modelRef: string): CostTier {
+    const staticFreeModels: string[] = [];
+    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+      if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
+        for (const model of provConfig.free_models) {
+          const normalized = model.startsWith(`${provId}/`) ? model : `${provId}/${model}`;
+          staticFreeModels.push(normalized);
+        }
+      }
+    }
+    return getModelCostTier(modelRef, staticFreeModels);
   }
 
   // ── Group Detection ─────────────────────────────────────────────────────
