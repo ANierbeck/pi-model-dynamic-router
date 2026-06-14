@@ -638,12 +638,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         const originalModels = groupConfig.models ?? [];
         for (const origModel of originalModels) {
           // Normalisiere den Modell-Ref
-          // Für OpenRouter-Modelle ohne Provider-Präfix: füge 'openrouter/' hinzu
+          // Füge 'openrouter/' Präfix hinzu, wenn nicht bereits vorhanden
           const normalizedOrig = origModel.startsWith('openrouter/') 
             ? origModel 
-            : origModel.includes('/') 
-              ? `openrouter/${origModel}` 
-              : `openrouter/${origModel}`;
+            : `openrouter/${origModel}`;
           
           // Prüfe ob das Modell die Gruppen-Kriterien erfüllt
           const origGdpval = lookupGdp(normalizedOrig);

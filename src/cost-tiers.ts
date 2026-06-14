@@ -1,39 +1,17 @@
 // src/cost-tiers.ts
 // Kostenstufen-System für kosteneffizientes dynamisches Routing
 
-import type { Config, ClassificationCategory } from './types.js';
+import type { 
+  Config, 
+  ClassificationCategory,
+  CostTier,
+  CostTierConfig,
+  CostTiersConfig 
+} from './types.js';
 import { lookupPrice, effCost } from './metrics.js';
 
-// ── Types ──────────────────────────────────────────────────────────────
-
-/**
- * Kostenstufen für das Routing
- * - free: Kostenlose Modelle ($0)
- * - budget: Kosteneffiziente Modelle ($)
- * - premium: Hochwertige Modelle ($$)
- */
-export type CostTier = 'free' | 'budget' | 'premium';
-
-/**
- * Konfiguration für eine Kostenstufe
- */
-export interface CostTierConfig {
-  id: CostTier;
-  description: string;
-  max_cost_per_m: number;      // Maximale Kosten pro Million Tokens
-  max_cost_per_request: number; // Maximale Kosten pro Anfrage
-  min_gdpval: number;          // Minimales GDPval
-  preferred_providers: string[]; // Bevorzugte Provider
-}
-
-/**
- * Kostenstufen-Konfiguration
- */
-export interface CostTiersConfig {
-  free: CostTierConfig;
-  budget: CostTierConfig;
-  premium: CostTierConfig;
-}
+// Re-export der Typen für Kompatibilität
+export type { CostTier, CostTierConfig, CostTiersConfig };
 
 // ── Default Cost Tiers ─────────────────────────────────────────────────
 
@@ -123,8 +101,8 @@ export function modelFitsCostTier(
 ): boolean {
   const price = lookupPrice(modelRef);
   const cost = effCost(modelRef);
-  const isFreeModel = staticFreeModels.includes(modelRef);
-  const isZeroCost = price && price.input === 0 && price.output === 0;
+  const isFreeModel: boolean = staticFreeModels.includes(modelRef);
+  const isZeroCost: boolean = price !== null && price.input === 0 && price.output === 0;
   
   // 1. Kostenlose Modelle passen immer zu 'free'
   if (tier === 'free') {
