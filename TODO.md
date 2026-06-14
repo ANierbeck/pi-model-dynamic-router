@@ -75,7 +75,7 @@
     - Einfacher zu warten und zu erweitern
 
 - [x] **Modellabgrenzung verbessern** - ✅ **Implementiert mit GDPval-basierten Modell-Grenzen**
-  - *Lösung*: 
+  - *Lösung*:
     - `CATEGORY_TO_GROUP`-Mapping in `src/content-classifier.ts` ordnet Kategorien Modell-Gruppen basierend auf GDPval-Anforderungen zu
     - `router-config.json` enthält Modell-Gruppen mit `min_gdpval`-Schwellenwerten für präzise Modellauswahl
     - Komplexe Aufgaben (code_complex, design, planning) → tactical-Gruppe (GDPval ≥ 600) → enthält `mistral/mistral-medium-3.5`
@@ -221,11 +221,11 @@
 - [ ] **Caching für Klassifizierung** - LRU-Cache mit TTL für häufige Prompts
   - *Impact*: Reduziert Ollama-Aufrufe um ~30-50%
   - *Komplexität*: Mittel
-  
+
 - [ ] **Batch-Processing** - Parallelisierung von Klassifizierungsanfragen
   - *Impact*: Bessere Performance für Batch-Operationen
   - *Komplexität*: Hoch
-  
+
 - [ ] **Model-Optimierung** - Kleinere Modelle für Klassifizierung evaluieren
   - *Kandidaten*: phi3:mini, mistral-nemo, gemma2:2b
   - *Impact*: Schnellere Klassifizierung (Ziel: <2s)
@@ -234,11 +234,11 @@
 - [ ] **Mehr Kategorien** - Spezifischere Unterscheidung
   - *Beispiele*: `code_review`, `documentation`, `testing`, `refactoring`
   - *Impact*: Bessere Routing-Entscheidungen
-  
+
 - [ ] **Multi-Label Klassifizierung** - Mehrere Kategorien pro Prompt
   - *Beispiel*: `code_complex + design` für Architektur-Refactoring
   - *Impact*: Präzisere Modellauswahl
-  
+
 - [ ] **Kontext-basierte Klassifizierung** - Berücksichtigung des Session-Kontexts
   - *Idee*: Vorherige Nachrichten und Antworten einbeziehen
   - *Impact*: Konsistenteres Routing
@@ -388,7 +388,7 @@ npm test
 ```typescript
 // src/content-classifier.ts
 export type ClassificationResult = {
-  category: 
+  category:
     | 'trivial'      // $0 - "Liste TODOs", "Was steht in der Datei?"
     | 'simple'       // $0 - "Erkläre kurz", "Fasse zusammen"
     | 'code_simple'  // $0 - 1-10 Zeilen Code
@@ -470,7 +470,7 @@ const CLASSIFICATION_PROMPT = `Classify the following user request into exactly 
 
 - trivial:      Very simple requests ("list files", "show TODOs", "what's in this file?")
 - simple:       Simple questions ("explain briefly", "summarize", "what does this do?")
-- code_simple:   Small code changes (1–10 lines, syntax fixes, renames, typos)
+- code_simple:   Small code changes (1-10 lines, syntax fixes, renames, typos)
 - standard:      Standard requests (general questions, moderate complexity)
 - code_complex:  Substantial code changes (refactoring, debugging, new features, >50 lines)
 - design:        Architecture, system design, API design, database schema
@@ -524,7 +524,7 @@ openrouter: {
 // Neue Methode in DiscoveryManager
 getFreeModels(): string[] {
   const freeModels: string[] = [];
-  
+
   for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
     if (def.freeModels) {
       // Prüfe ob Provider konfiguriert und Keys verfügbar
@@ -534,7 +534,7 @@ getFreeModels(): string[] {
       }
     }
   }
-  
+
   return freeModels;
 }
 
@@ -570,11 +570,11 @@ export async function classifyPrompt(
       console.warn('[classifier] Ollama failed, trying free cloud models');
     }
   }
-  
+
   // 2. Versuche freie Cloud-Modelle
   const discovery = new DiscoveryManager(config, cache);
   const freeModels = discovery.getFreeModels();
-  
+
   if (freeModels.length > 0) {
     for (const model of freeModels) {
       try {
@@ -584,7 +584,7 @@ export async function classifyPrompt(
       }
     }
   }
-  
+
   // 3. Ultimate Fallback: Statische Klassifizierung
   return classifyStatically(prompt);
 }
@@ -653,13 +653,13 @@ async function classifyPrompt(prompt: string): Promise<string> {
       console.warn("Ollama classification failed, falling back to static");
     }
   }
-  
+
   // 2. Fallback: Statische Klassifizierung
   const staticCategory = classifyStatically(prompt);
   if (staticCategory) {
     return staticCategory;
   }
-  
+
   // 3. Ultimate Fallback: Default-Gruppe
   return config.classification.default_group || "tactical";
 }
@@ -698,6 +698,59 @@ ollama pull gemma2:2b
 rm -rf .cache/scan-cache.json
 ```
 
+--- 
+
+## 💰 **Preisbasiertes Routing - Bekannte Probleme**
+
+### Problem: Komplexe Anfragen erhalten einfache Modelle
+
+**Was passiert:**
+- `tactical`-Gruppe hat 4 Modelle mit ähnlichen GDP-Scores: magistral-small:669, mistral-medium-3.5:665, magistral-medium:665
+- `method: tiered` sortiert nach Billing-Präferenz, dann nach Kosten
+- Alle 4 sind `pay_per_token` → gleiche Tier-Stufe → kostengünstigstes gewinnt immer
+- magistral-small ist das billigste → immer an erster Stelle
+- **Zusätzlich:** magistral-small hat den höchsten GDP-Score (669) — obwohl ein "small" Modell typischerweise schlechter als "medium" sein sollte
+
+**Ursachen:**
+1. **Falsche GDP-Scores:** magistral-small hat GDP=669 > magistral-medium GDP=665 → **umgekehrte Logik**
+2. **tiered-Methode bevorzugt Kosten statt Qualität** → Für Planungsaufgaben macht das wenig Sinn
+3. **planning-Kategorie → tactical-Gruppe** → Für große Planungsaufgaben wäre `strategic`-Gruppe sinnvoller
+
+**Lösungsvorschläge:**
+
+#### 1. GDP-Scores korrigieren
+- [ ] **magistral-small GDP auf 660-665 reduzieren** (sollte niedriger als medium sein)
+- [ ] **magistral-medium GDP auf 670-675 erhöhen** (sollte höher als small sein)
+- [ ] **GDP-Scores in router-config.json prüfen und anpassen**
+
+#### 2. Sortiermethode für tactical-Gruppe anpassen
+- [ ] **`method: tiered` → `method: best` ändern** für tactical-Gruppe
+  - `best` sortiert nach GDPval, dann nach Kosten
+  - Besser für Qualitäts-fokussierte Gruppen
+- [ ] **Oder: Custom-Sortierung implementieren** die Qualität und Kosten balanciert
+
+#### 3. planning-Kategorie → strategic-Gruppe
+- [ ] **CATEGORY_TO_GROUP-Mapping anpassen:**
+  ```typescript
+  // Aktuell:
+  planning: 'tactical'
+  
+  // Vorschlag:
+  planning: 'strategic'
+  ```
+- [ ] **strategic-Gruppe in router-config.json erstellen** mit High-End-Modellen
+- [ ] **strategic-Gruppe sollte nur Premium-Modelle enthalten** (GDPval ≥ 800)
+
+#### 4. Hybrid-Sortierung für tactical-Gruppe
+- [ ] **Neue Sortiermethode `hybrid` implementieren** die:
+  - 70% Gewicht auf GDPval
+  - 30% Gewicht auf Kosten
+  - Besser für Gruppen wo Qualität UND Kosten wichtig sind
+
+**Priorität:** Hoch (beeinträchtigt die Modellauswahl für komplexe Aufgaben)
+**Aufwand:** 1-2 Stunden
+**Impact:** Signifikante Verbesserung der Modellauswahl-Qualität
+
 ---
 
 ## 🔗 **Verwandte Dokumente**
@@ -708,4 +761,4 @@ rm -rf .cache/scan-cache.json
 
 ---
 
-*Letzte Aktualisierung: 12. Juni 2026, 13:45 Uhr*
+*Letzte Aktualisierung: 14. Juni 2026, 23:30 Uhr*
