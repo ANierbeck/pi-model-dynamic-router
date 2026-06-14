@@ -227,7 +227,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
     } catch (error) {
-      // Ignoriere Fehler beim Laden der dynamischen Konfiguration
+      console.warn('[router] Error loading dynamic configuration, falling back to static config:', error);
     }
     
     // Falls keine dynamische Konfiguration, verwende die statische
@@ -235,12 +235,15 @@ const defaultExport = function (pi: ExtensionAPI) {
       cfg = staticCfg;
     }
     
-    if (cfg.gdpval_builtin) {
-      Object.assign(gdpval, cfg.gdpval_builtin);
-      gdpvalVersion++;
-    }
+    // Lade gdpval_builtin aus der statischen Konfiguration (immer)
     if (staticCfg.gdpval_builtin) {
       Object.assign(gdpval, staticCfg.gdpval_builtin);
+      gdpvalVersion++;
+    }
+    
+    // Falls dynamische Konfiguration geladen wurde und eigene gdpval_builtin hat, füge sie hinzu
+    if (loadedFromDynamic && cfg.gdpval_builtin) {
+      Object.assign(gdpval, cfg.gdpval_builtin);
       gdpvalVersion++;
     }
     // Initialize managers
