@@ -197,6 +197,7 @@ export class Router {
     // Sortierung
     if (g.method === 'best') {
       // Multi-Metrik-Scoring für 'best'-Methode
+      // taskType ist der Gruppenname - nur 'code' triggert Code-spezifische Gewichtung
       c = this.sortBy(c, 'best', name);
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
@@ -216,11 +217,35 @@ export class Router {
     }
     
     // Falls models-Array existiert: Stelle sicher, dass diese Modelle enthalten sind
-    // (als Mindestanforderung, nicht als Einschränkung)
+    // ABER: Sie müssen auch die Filter-Kriterien erfüllen (min_gdpval, max_cost, etc.)
     if (g.models?.length) {
       for (const requiredModel of g.models) {
         if (!c.includes(requiredModel)) {
-          c.push(requiredModel);
+          // Prüfe ob das Modell die Filter-Kriterien erfüllt
+          let passesFilters = true;
+          
+          // GDPval Filter
+          if (g.min_gdpval != null) {
+            const modelGdpval = getM(requiredModel).gdpval;
+            if (modelGdpval < g.min_gdpval) passesFilters = false;
+          }
+          if (g.min_gdpval_pct != null) {
+            // Für min_gdpval_pct müssten wir alle Modelle kennen - vereinfacht: nur min_gdpval prüfen
+            // TODO: min_gdpval_pct für pinned models implementieren
+          }
+          
+          // Kosten Filter
+          if (g.max_cost !== undefined && passesFilters) {
+            if (effCost(requiredModel) > g.max_cost) passesFilters = false;
+          }
+          if (g.max_cost_per_m !== undefined && passesFilters) {
+            const price = lookupPrice(requiredModel);
+            if (price && price.input > g.max_cost_per_m) passesFilters = false;
+          }
+          
+          if (passesFilters) {
+            c.push(requiredModel);
+          }
         }
       }
       // Nochmal sortieren, um die besten Modelle nach oben zu bringen
