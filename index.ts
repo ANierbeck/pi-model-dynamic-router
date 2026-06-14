@@ -1830,8 +1830,8 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   // Cleanup CostTracker on process exit
   process.on('exit', () => costTracker.destroy());
-  process.on('SIGTERM', () => { costTracker.destroy(); process.exit(0); });
-  process.on('SIGINT', () => { costTracker.destroy(); process.exit(0); });
+  process.on('SIGTERM', () => process.exit(0));
+  process.on('SIGINT', () => process.exit(0));
 
   // Export groupStream for testing
   (defaultExport as any).groupStream = groupStream;

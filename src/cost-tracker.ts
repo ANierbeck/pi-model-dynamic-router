@@ -4,6 +4,7 @@
 import type { CostMetrics, CostTier } from './types.js';
 import { lookupPrice } from './metrics.js';
 import { getModelCostTier } from './cost-tiers.js';
+import fs from 'node:fs';
 
 /**
  * CostTracker - Verfolgt die Kosten von Modell-Anfragen für Monitoring
@@ -151,11 +152,11 @@ export class CostTracker {
 
     // In Datei schreiben, falls Pfad angegeben
     if (this.logFilePath) {
-      import('node:fs').then(({ appendFileSync }) => {
-        appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
-      }).catch(() => {
+      try {
+        fs.appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
+      } catch {
         // Ignoriere Fehler beim Schreiben
-      });
+      }
     }
 
     // Metriken zurücksetzen
