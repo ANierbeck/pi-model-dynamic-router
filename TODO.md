@@ -1,8 +1,20 @@
-# 🚀 pi-model-router - Aktuelle Aufgaben & Roadmap
+# 🚀 pi-model-router - Current Tasks & Roadmap
 
-> **Status**: Aktualisiert mit HINT-Override Fix & Modellabgrenzung  
-> **Letzte Aktualisierung**: 13. Juni 2026  
-> **Aktueller Stand**: ✅ Migration abgeschlossen, alle Tests grün, Cloud-Fallback implementiert, HINT-Override & Modellabgrenzung zu fixen
+> **Status**: Updated with HINT-Override fix & model boundary improvements  
+> **Last Updated**: June 13, 2026  
+> **Current State**: ✅ Migration complete, all tests green, Cloud-Fallback implemented, HINT-Override & model boundary to fix
+
+## 📌 **IMPORTANT RULES**
+
+### Documentation Language
+- **ALL documentation MUST be in English** - This includes:
+  - Code comments
+  - JSDoc comments
+  - Markdown files (README.md, TODO.md, etc.)
+  - Commit messages
+  - Type definitions and interfaces
+- **Rationale**: International project, English is the lingua franca of development
+- **Exception**: None - all German comments/documentation must be translated to English
 
 ---
 
