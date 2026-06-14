@@ -485,7 +485,8 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
         // HINT overrides are not supported in this hook context
         console.warn(`[classifier] HINT override not supported in hook context, falling back to static classification`);
         const staticResult = classifyStatically(prompt);
-        await applyModelGroup(staticResult.category, context);
+        const group = CATEGORY_TO_GROUP[staticResult.category];
+        await applyModelGroup(group, context);
         return;
       }
       const group = CATEGORY_TO_GROUP[classification.category];
