@@ -1,30 +1,25 @@
 // test/hint-classification.test.ts
 // Unit-Tests für LLM-basierte HINT-Klassifizierung
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { classifyPrompt, classifyStatically } from '../src/content-classifier.js';
 import type { ClassificationResult, HintClassificationResult, FullClassificationResult } from '../src/content-classifier.js';
 
 // ── Mock für callOllama ─────────────────────────────────────────────────
 
-const originalCallOllama = (await import('../src/ollama-utils.js')).callOllama;
+vi.mock('../src/ollama-utils.js', async () => {
+  const actual = await vi.importActual('../src/ollama-utils.js');
+  return {
+    ...actual,
+    callOllama: vi.fn(),
+  };
+});
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe('HINT Classification', () => {
   beforeEach(() => {
-    // Mock callOllama für HINT-Tests
-    vi.mock('../src/ollama-utils.js', async () => {
-      const actual = await vi.importActual('../src/ollama-utils.js');
-      return {
-        ...actual,
-        callOllama: vi.fn(),
-      };
-    });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
+    vi.resetAllMocks();
   });
 
   describe('HINT Model Detection', () => {
@@ -188,11 +183,16 @@ describe('HINT Classification', () => {
       // Mock callOllama, um Fehler zu werfen
       vi.mocked(callOllama).mockRejectedValue(new Error('Ollama not available'));
 
-      const result = await classifyPrompt('List all files in this directory');
+      const result = await classifyPrompt('List all files in this directory', { 
+        allowStaticFallback: true 
+      });
       
       // Sollte statische Klassifizierung verwenden
-      expect(result.category).toBeDefined();
-      expect(typeof result.category).toBe('string');
+      // "List all files in this directory" sollte als 'trivial' klassifiziert werden
+      const staticResult = classifyStatically('List all files in this directory');
+      expect(result.category).toBe(staticResult.category);
+      // Die reason enthält entweder 'static' oder 'fallback' - beides ist akzeptabel
+      expect(result.reason.toLowerCase()).toMatch(/static|fallback|could not classify/i);
     });
   });
 
