@@ -41,6 +41,7 @@ import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src
 import {
   getCostTierForCategory
 } from './src/cost-tiers.ts';
+import { CostTracker, costTracker } from './src/cost-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -1336,6 +1337,10 @@ const defaultExport = function (pi: ExtensionAPI) {
       // fall through with res below
       const proxy = createAssistantMessageEventStream();
       const candidates = [...res.candidates];
+      
+      // Cost Tracking für statisches Routing
+      costTracker.trackRequest(res.selected, 1000, 500);
+      
       driveStream(proxy, candidates, context, options);
       return proxy;
     }
@@ -1382,6 +1387,9 @@ const defaultExport = function (pi: ExtensionAPI) {
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
               console.log(`[dynamic] ${logLine}`);
+              
+              // Cost Tracking für HINT-Override
+              costTracker.trackRequest(res.selected, 1000, 500);
               try {
                 fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
               } catch {}
@@ -1436,6 +1444,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         dynamicLabel = `${normalClassification.category} → ${targetGroup} [${costTier}]`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
         console.log(`[dynamic] ${logLine}`);
+        
+        // Cost Tracking: Annahme von 1000 Input- und 500 Output-Tokens pro Request
+        // (kann später durch tatsächliche Token-Zählung ersetzt werden)
+        costTracker.trackRequest(res.selected, 1000, 500);
         try {
           fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
         } catch {}
