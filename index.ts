@@ -490,30 +490,59 @@ const defaultExport = function (pi: ExtensionAPI) {
   /**
    * Generiert eine dynamische Router-Konfiguration basierend auf den gescanten Modellen
    * und den Einstellungen aus router-config.json
+   * 
+   * KORRIGIERT: Behebt das Problem, dass kostenlose Modelle (free_models) nicht in die
+   * dynamische Konfiguration aufgenommen wurden, was dazu führte, dass immer das gleiche
+   * Modell (Qwen3-32B-TEE) verwendet wurde.
    */
   async function generateDynamicConfig(): Promise<void> {
     try {
       
-      // 1. Alle verfügbaren Modelle holen
-      const allModels = cache.available_models ?? [];
-      if (!allModels.length) {
+      // 1. Alle verfügbaren Modelle holen (aus Cache)
+      const scannedModels = cache.available_models ?? [];
+      
+      // 2. STATISCHE free_models aus der Konfiguration laden (wichtig für kostenlose Modelle!)
+      // Diese Modelle werden NICHT gescannt, sondern direkt aus router-config.json genommen
+      const staticFreeModels: string[] = [];
+      for (const [provId, provConfig] of Object.entries(staticCfg.providers ?? {})) {
+        if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
+          for (const freeModel of provConfig.free_models) {
+            // Normalisiere den Modell-Ref (Provider/Modell-Id)
+            const normalizedModel = freeModel.startsWith(`${provId}/`) ? freeModel : `${provId}/${freeModel}`;
+            staticFreeModels.push(normalizedModel);
+          }
+        }
+      }
+      
+      // 3. Alle Modelle kombinieren: statische free_models + gescannte Modelle
+      const allModelRefs = [...new Set([...staticFreeModels, ...scannedModels.map(m => `${m.provider}/${m.id}`)])];
+      
+      if (!allModelRefs.length) {
         console.log('[router] No models available, skipping dynamic config generation');
         return;
       }
       
-      // 2. Modelle mit GDPval anreichern
-      const modelsWithGdpval = allModels.map(model => {
-        const ref = `${model.provider}/${model.id}`;
+      // 4. Modelle mit GDPval und Kosten anreichern
+      const modelsWithMetadata = allModelRefs.map(ref => {
         const gdpval = lookupGdp(ref) ?? 0;
-        return { ...model, ref, gdpval };
+        const cost = effCost(ref);
+        const price = lookupPrice(ref);
+        
+        // Prüfe ob es ein kostenloses Modell ist (entweder Preis=0 oder in free_models)
+        const isFreeModel = staticFreeModels.includes(ref) || 
+                          (price && price.input === 0 && price.output === 0);
+        
+        return { ref, gdpval, cost, price, isFreeModel };
       }).filter(m => m.gdpval > 0); // Nur Modelle mit GDPval
       
-      if (!modelsWithGdpval.length) {
+      if (!modelsWithMetadata.length) {
         console.log('[router] No models with GDPval scores, skipping dynamic config generation');
         return;
       }
       
-      // 3. Dynamische Gruppen-Konfiguration generieren
+      console.log(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
+      
+      // 5. Dynamische Gruppen-Konfiguration generieren
       const dynamicGroups: Record<string, any> = {};
       
       for (const [groupName, groupConfig] of Object.entries(staticCfg.model_groups)) {
@@ -523,31 +552,36 @@ const defaultExport = function (pi: ExtensionAPI) {
           continue;
         }
         
-        // Filter Modelle basierend auf Gruppen-Kriterien
-        let filteredModels = [...modelsWithGdpval];
+        // 6. Filter Modelle basierend auf Gruppen-Kriterien
+        let filteredModels = [...modelsWithMetadata];
         
         // GDPval Filter
         if (groupConfig.min_gdpval !== undefined) {
           filteredModels = filteredModels.filter(m => m.gdpval >= groupConfig.min_gdpval!);
         }
         
-        // Kosten Filter (max_cost_per_m)
+        // Kosten Filter (max_cost_per_m) - KORRIGIERT: Berücksichtige auch free_models
         if (groupConfig.max_cost_per_m !== undefined) {
           filteredModels = filteredModels.filter(m => {
-            const price = lookupPrice(m.ref);
+            // Kostenlose Modelle immer erlauben
+            if (m.isFreeModel) return true;
+            
+            const price = m.price;
             return price ? price.input <= groupConfig.max_cost_per_m! : true;
           });
         }
         
-        // Kosten Filter (max_cost - effektive Kosten)
+        // Kosten Filter (max_cost) - KORRIGIERT: Berücksichtige auch free_models
         if (groupConfig.max_cost !== undefined) {
           filteredModels = filteredModels.filter(m => {
-            const eff = effCost(m.ref);
-            return eff <= groupConfig.max_cost!;
+            // Kostenlose Modelle immer erlauben (max_cost=0)
+            if (m.isFreeModel && groupConfig.max_cost === 0) return true;
+            
+            return m.cost <= groupConfig.max_cost!;
           });
         }
         
-        // Sortierung basierend auf Gruppen-Methode
+        // 7. Sortierung basierend auf Gruppen-Methode
         let sortedGroupModels = [...filteredModels];
         
         if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
@@ -558,10 +592,17 @@ const defaultExport = function (pi: ExtensionAPI) {
             return scoreB - scoreA;
           });
         } else if (groupConfig.method === 'min_cost') {
+          // KORRIGIERT: Kostenlose Modelle zuerst, dann nach Kosten sortieren
           sortedGroupModels.sort((a, b) => {
-            const costA = effCost(a.ref);
-            const costB = effCost(b.ref);
+            // Kostenlose Modelle haben Priorität
+            if (a.isFreeModel && !b.isFreeModel) return -1;
+            if (!a.isFreeModel && b.isFreeModel) return 1;
+            
+            // Dann nach Kosten
+            const costA = a.cost;
+            const costB = b.cost;
             if (costA !== costB) return costA - costB;
+            
             // Bei gleichen Kosten: Verwende Multi-Metrik-Score
             const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
             const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
@@ -572,62 +613,82 @@ const defaultExport = function (pi: ExtensionAPI) {
           sortedGroupModels.sort((a, b) => {
             // Erst nach GDPval (Quality Gate)
             if (b.gdpval !== a.gdpval) return b.gdpval - a.gdpval;
+            
+            // Kostenlose Modelle haben Vorrang bei gleichem GDPval
+            if (a.isFreeModel && !b.isFreeModel) return -1;
+            if (!a.isFreeModel && b.isFreeModel) return 1;
+            
             // Dann nach Multi-Metrik-Score
             const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
             const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
             if (scoreB !== scoreA) return scoreB - scoreA;
+            
             // Dann nach Kosten
-            return effCost(a.ref) - effCost(b.ref);
+            return a.cost - b.cost;
           });
         }
         
-        // Modelle für diese Gruppe sammeln
+        // 8. Modelle für diese Gruppe sammeln - KORRIGIERT: Statische Modelle haben Priorität!
         const modelsToInclude = new Set<string>();
         
-        // 1. Zuerst die besten gefilterten Modelle
-        for (const model of sortedGroupModels) {
-          modelsToInclude.add(model.ref);
-        }
-        
-        // 2. Dann die Original-Modelle aus router-config.json als Fallback
+        // 1. Zuerst die STATISCHEN Modelle aus router-config.json (höchste Priorität!)
         const originalModels = groupConfig.models ?? [];
         for (const origModel of originalModels) {
-          const origGdpval = lookupGdp(origModel);
-          if (origGdpval === null) continue;
+          // Normalisiere den Modell-Ref
+          const normalizedOrig = origModel.includes('/') ? origModel : `openrouter/${origModel}`;
           
-          const modelInCache = modelsWithGdpval.find(m => m.ref === origModel);
-          if (modelInCache) {
-            modelsToInclude.add(origModel);
-          } else {
-            const gdpval = lookupGdp(origModel);
-            if (gdpval !== null && gdpval !== undefined) {
-              let passesFilters = true;
-              if (groupConfig.min_gdpval !== undefined && gdpval < groupConfig.min_gdpval) {
-                passesFilters = false;
-              }
-              if (passesFilters && groupConfig.max_cost_per_m !== undefined) {
-                const price = lookupPrice(origModel);
-                if (price && price.input > groupConfig.max_cost_per_m) {
-                  passesFilters = false;
-                }
-              }
-              if (passesFilters && groupConfig.max_cost !== undefined) {
-                if (effCost(origModel) > groupConfig.max_cost) {
-                  passesFilters = false;
-                }
-              }
-              if (passesFilters) {
-                modelsToInclude.add(origModel);
-              }
+          // Prüfe ob das Modell die Gruppen-Kriterien erfüllt
+          const origGdpval = lookupGdp(normalizedOrig);
+          if (origGdpval === null) {
+            // Modell explizit ausgeschlossen
+            continue;
+          }
+          
+          let passesFilters = true;
+          
+          // GDPval Filter
+          if (groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
+            passesFilters = false;
+          }
+          
+          // Kosten Filter (max_cost_per_m)
+          if (passesFilters && groupConfig.max_cost_per_m !== undefined) {
+            const price = lookupPrice(normalizedOrig);
+            const isFree = staticFreeModels.includes(normalizedOrig);
+            if (!isFree && price && price.input > groupConfig.max_cost_per_m) {
+              passesFilters = false;
             }
+          }
+          
+          // Kosten Filter (max_cost)
+          if (passesFilters && groupConfig.max_cost !== undefined) {
+            const isFree = staticFreeModels.includes(normalizedOrig);
+            if (!isFree && effCost(normalizedOrig) > groupConfig.max_cost) {
+              passesFilters = false;
+            }
+          }
+          
+          if (passesFilters) {
+            modelsToInclude.add(normalizedOrig);
           }
         }
         
-        // Konvertiere zu Array - KEINE erneute Sortierung nötig!
-        // Die Modelle wurden bereits in sortedGroupModels nach der Gruppen-Methode sortiert.
-        // Original-Modelle aus der Konfiguration werden einfach angehängt und behalten ihre Position.
-        // Falls wir eine vollständige Neu-Sortierung wollen, müssen wir alle Modelle gemeinsam sortieren.
+        // 2. Dann die GEFILTERTEN dynamischen Modelle hinzufügen
+        for (const model of sortedGroupModels) {
+          // Nur hinzufügen, wenn nicht schon in statischen Modellen
+          if (!modelsToInclude.has(model.ref)) {
+            modelsToInclude.add(model.ref);
+          }
+        }
+        
+        // 3. Konvertiere zu Array (Reihenfolge: statisch zuerst, dann dynamisch sortiert)
         const finalModels = Array.from(modelsToInclude);
+        
+        // Debug-Logging
+        if (groupName === 'trivial' || groupName === 'simple') {
+          console.log(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
+          console.log(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
+        }
         
         // Erstelle die dynamische Gruppen-Konfiguration
         dynamicGroups[groupName] = {
@@ -636,20 +697,24 @@ const defaultExport = function (pi: ExtensionAPI) {
         };
       }
       
-      // 4. Dynamische Konfiguration speichern
+      // 9. Dynamische Konfiguration speichern
       const dynamicConfig = {
         ...cfg,
         model_groups: dynamicGroups,
         _dynamic: {
           generated_at: new Date().toISOString(),
           source: 'router scan',
-          model_count: modelsWithGdpval.length,
-          base_config: 'router-config.json'
+          model_count: modelsWithMetadata.length,
+          base_config: 'router-config.json',
+          free_models_count: staticFreeModels.length,
+          scanned_models_count: scannedModels.length
         }
       };
       
       const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
+      
+      console.log(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
     } catch (error) {
       console.error('[router] Error generating dynamic configuration:', error);
