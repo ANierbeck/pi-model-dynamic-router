@@ -207,7 +207,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 
 /**
  * Berechnet einen gewichteten Score basierend auf mehreren Metriken
- * Berücksichtigt GDPval, Benchmarks und Generations-Bonus
+ * Alle Metriken werden auf die gleiche Skala (0-100) normalisiert
  * @param ref - Modell-Referenz (z.B. "anthropic/claude-3-sonnet")
  * @param taskType - Optionaler Aufgabentyp für spezifische Gewichtung (z.B. "code")
  * @param config - Konfiguration für Zugriff auf model_metadata und model_benchmarks
@@ -217,27 +217,36 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
   const metadata = config?.model_metadata?.[ref] ?? cfg.model_metadata?.[ref] ?? {};
   const benchmarks = config?.model_benchmarks?.[ref] ?? cfg.model_benchmarks?.[ref] ?? {};
   
-  // Basis-Score: GDPval (40% Gewicht)
-  let score = m.gdpval * 0.4;
+  // Normalisiere GDPval von 0-1000 auf 0-100 Skala
+  const normalizedGdpval = Math.min(100, m.gdpval / 10);
+  
+  // Basis-Score: Normalisierter GDPval (40% Gewicht)
+  let score = normalizedGdpval * 0.4;
   
   // Benchmark-Bonus (60% Gewicht verteilt auf Benchmarks)
-  if (benchmarks.mmlu || m.mmlu) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.2;    // 20% Gewicht
-  if (benchmarks.gpqa || m.gpqa) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.12;   // 12% Gewicht
-  if (benchmarks.truthful || m.truthful) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.08; // 8% Gewicht
-  if (benchmarks.humaneval || m.humaneval) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1; // 10% Gewicht
-  if (benchmarks.swebench || m.swebench) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;  // 10% Gewicht
+  // Alle Benchmarks sind bereits in 0-100 Skala
+  if (benchmarks.mmlu != null || m.mmlu != null) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.2;    // 20% Gewicht
+  if (benchmarks.gpqa != null || m.gpqa != null) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.12;   // 12% Gewicht
+  if (benchmarks.truthful != null || m.truthful != null) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.08; // 8% Gewicht
+  if (benchmarks.humaneval != null || m.humaneval != null) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1; // 10% Gewicht
+  if (benchmarks.swebench != null || m.swebench != null) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;  // 10% Gewicht
   
-  // Generations-Bonus: +20 Punkte pro Generation über 3
+  // Generations-Bonus: +2 Punkte pro Generation über 3 (auf 0-100 Skala)
   if (metadata.generation) {
-    const generationBonus = Math.max(0, metadata.generation - 3) * 20;
+    const generationBonus = Math.max(0, metadata.generation - 3) * 2;
     score += generationBonus;
   }
   
   // Aufgaben-spezifische Anpassungen
   if (taskType === 'code') {
-    // Für Code-Aufgaben: Humaneval und SWE-bench stärker gewichten
-    if (benchmarks.humaneval || m.humaneval) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1;
-    if (benchmarks.swebench || m.swebench) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;
+    // Für Code-Aufgaben: Gewichte umverteilen (nicht addieren!)
+    // Reduziere Allround-Benchmarks, erhöhe Code-Benchmarks
+    score = normalizedGdpval * 0.3; // GDPval auf 30% reduzieren
+    if (benchmarks.mmlu != null || m.mmlu != null) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.1;    // MMLU auf 10% reduzieren
+    if (benchmarks.gpqa != null || m.gpqa != null) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.05;   // GPQA auf 5% reduzieren
+    if (benchmarks.truthful != null || m.truthful != null) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.05; // Truthful auf 5% reduzieren
+    if (benchmarks.humaneval != null || m.humaneval != null) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.2; // HumanEval auf 20% erhöhen
+    if (benchmarks.swebench != null || m.swebench != null) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.2;  // SWE-bench auf 20% erhöhen
   }
   
   return score;
