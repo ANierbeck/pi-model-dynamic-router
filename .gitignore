@@ -1,6 +1,7 @@
 node_modules/
 .cache/
 *.js
+!eslint.config.js
 *.d.ts
 *.map
 # roborev snapshots
