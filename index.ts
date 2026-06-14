@@ -1281,9 +1281,22 @@ const defaultExport = function (pi: ExtensionAPI) {
             }
             console.warn(`[dynamic] HINT group not found: ${classification.hintTarget}`);
           } else if (classification.hintType === 'model') {
-            // Direct model override
-            candidates = [classification.hintTarget];
-            lastDynamicModel = classification.hintTarget;
+            // Direct model override — resolve short name (e.g. "mistral-medium-3.5") to
+            // fully-qualified "provider/model" ref by searching all group models lists.
+            // Without this, splitRef() would use the whole string as provider, which is
+            // never registered, causing "All candidates failed: no candidates".
+            let resolvedTarget = classification.hintTarget;
+            if (!resolvedTarget.includes('/')) {
+              for (const groupConfig of Object.values(cfg.model_groups)) {
+                const models = (groupConfig as any).models as string[] | undefined;
+                const match = models?.find(
+                  (m: string) => m.endsWith('/' + resolvedTarget) || m === resolvedTarget
+                );
+                if (match) { resolvedTarget = match; break; }
+              }
+            }
+            candidates = [resolvedTarget];
+            lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;
             const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
             console.log(`[dynamic] ${logLine}`);
