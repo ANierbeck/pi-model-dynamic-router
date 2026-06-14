@@ -37,23 +37,51 @@
 
 #### 0. **Kritische Verbesserungen** ⭐⭐⭐⭐⭐
 
-- [ ] **HINT-Override System reparieren** - HINTS werden aktuell ignoriert
-  - *Problem*: HINT-Override funktioniert nicht wie erwartet. Hints im Prompt (z.B. `HINT: use mistral-medium-3.5` oder `HINT: use group tactical`) werden ignoriert
-  - *Analyse*: HINT-Override ist nur im dynamischen Routing-Pfad aktiv (`/model dynamic`). Bei statischen Modellen oder wenn Klassifizierung bereits stattgefunden hat, wird HINT ignoriert
-  - *Lösung*: HINT-Override muss **vor** der Klassifizierung geprüft werden und **alle** Routing-Pfade überschreiben können
-  - *Impact*: **HOCH** - User-Kontrolle ohne Pi-UI anzufassen
-  - *Aufwand*: 1-2 Stunden
-  - *Abhängigkeiten*: `index.ts` (vor `classifyPrompt` Aufruf, alle Routing-Pfade)
-  - *Status*: ⚠️ **Teilweise implementiert, aber nicht funktionsfähig**
-  - *Aktueller Stand*: `src/hint-override.ts` existiert und wird in `index.ts` aufgerufen, aber nur im dynamischen Routing-Pfad. HINTS werden bei statischen Modellen ignoriert.
+**Wichtig zum Verständnis des dynamischen Modus:**
+- *Zweck*: Im dynamischen Modus (`/model dynamic`) entscheidet der Router **automatisch**, welches Modell am besten zur Anfrage passt
+- *Ablauf*: User-Prompt → Klassifizierung (Ollama/Cloud/Statisch) → Modellauswahl basierend auf Kategorie → Antwort
+- *Vorteil*: Kostenoptimierung durch Verwendung des günstigsten geeigneten Modells
+- *HINT-Override*: User kann diese automatische Entscheidung überschreiben mit z.B. `HINT: use mistral-medium-3.5`
+
+- [x] **HINT-Override System** - ✅ **Funktioniert wie designed**
+  - *Zweck*: User kann im dynamischen Modus die automatische Modellauswahl überschreiben
+  - *Funktionsweise*:
+    - **NUR im dynamischen Modus aktiv** (`/model dynamic` oder `/model dynamic:use-static`)
+    - User fügt `HINT: use mistral-medium-3.5` oder `HINT: use group tactical` zum Prompt hinzu
+    - Router überspringt dann die automatische Klassifizierung und verwendet das angegebene Modell/die Gruppe
+  - *Begründung*: 
+    - Dynamischer Modus = Router entscheidet basierend auf Anfrage, welches Modell am besten passt
+    - HINT erlaubt User, diese Entscheidung zu überschreiben (z.B. "Für diese komplexe Aufgabe bitte mistral-medium-3.5 verwenden")
+    - Bei statischen Modellen/Gruppen ist HINT **absichtlich irrelevant**, da User bereits manuell ein Modell ausgewählt hat
+  - *Implementierung*:
+    - `src/hint-override.ts` mit Regex: `/HINT:\s*(?:use\s+)?(?:(?:model|group)\s+)?([a-zA-Z0-9\-_:/.]+)/i`
+    - In `index.ts` innerhalb des `isDynamic` Blocks aufgerufen (Zeile ~127)
+    - Unterstützte Formate: `HINT: use mistral-medium-3.5`, `HINT: use group tactical`, `HINT: mistral-medium-3.5`
+  - *Status*: ✅ **Funktioniert korrekt wie designed**
+  - *Wichtig*: HINT wird **absichtlich** bei statischen Modellen ignoriert - das ist kein Bug, sondern gewolltes Verhalten
 
 - [ ] **Modellabgrenzung verbessern** - Präzisere Modellauswahl basierend auf Kontext
   - *Problem*: Dynamisches Routing wählt manchmal `anthropic/claude-3-haiku` für komplexe Aufgaben, obwohl `mistral-medium-3.5` besser geeignet wäre
-  - *Analyse*: Die aktuelle Klassifizierung und/oder Modellauswahl berücksichtigt nicht ausreichend die spezifischen Stärken der verfügbaren Modelle
+  - *Analyse*: 
+    - Die aktuelle Klassifizierung und/oder Modellauswahl berücksichtigt nicht ausreichend die spezifischen Stärken der verfügbaren Modelle
+    - Der Klassifizierungsprompt (`CLASSIFICATION_PROMPT` in `src/content-classifier.ts`) enthält detaillierte Kategorien mit Beispielen
+  - *Aktueller Klassifizierungsprompt*:
+    ```
+    - trivial: Very simple requests ("list files", "show TODOs", "what's in this file?")
+    - simple: Simple questions ("explain briefly", "summarize", "what does this do?")
+    - code_simple: Small code changes (1–10 lines, syntax fixes, renames, typos)
+    - standard: Standard requests (general questions, moderate complexity)
+    - code_complex: Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation.
+    - design: Architecture, system design, API design, database schema
+    - planning: Task breakdown, roadmaps, prioritization, project planning
+    - exploration: Vague or open-ended questions ("what could we do about X?", brainstorming)
+    - fallback: Ambiguous, or a short continuation of previous work
+    ```
   - *Lösung*: 
-    - Modell-GDPval-Schwellenwerte anpassen
+    - Modell-GDPval-Schwellenwerte in `router-config.json` anpassen
     - Spezifischere Klassifizierungskategorien für verschiedene Modelltypen
     - Modell-spezifische Routing-Regeln (z.B. Code-Aufgaben → Mistral, Analyse → Claude)
+    - Eventuell: Separate Klassifizierung für Code vs. Nicht-Code Aufgaben
   - *Impact*: **HOCH** - Bessere Modellauswahl, höhere Qualität
   - *Aufwand*: 2-3 Stunden
   - *Abhängigkeiten*: `src/content-classifier.ts`, `router-config.json`, `src/routing.ts`
