@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 // Mock für die globale Konfiguration und Cache
 import type { Config, Cache } from '../src/types.js';
 
-// Mock für die Metrics-Module
+// Importiere die echte calculateScore-Funktion für direkte Tests
+import { calculateScore, setConfig, setCache, setGdpval } from '../src/metrics.js';
+// Mock für die Metrics-Module (für die meisten Tests)
 import * as metricsModule from '../src/metrics.js';
-import { calculateScore, setConfig } from '../src/metrics.js';
 
 // Mock für die Router-Klasse
 import { Router } from '../src/routing.js';
@@ -334,6 +335,108 @@ describe('Dynamic Configuration Generation', () => {
       expect(sorted[0]).toBe('openai/gpt-4o-mini'); // GDP 720
       expect(sorted[1]).toBe('mistral/devstral-medium-2507'); // GDP 691
       expect(sorted[2]).toBe('anthropic/claude-3-sonnet'); // GDP 680
+    });
+  });
+
+  describe('Real calculateScore Implementation', () => {
+    // Diese Tests verwenden die ECHTE calculateScore-Funktion, nicht den Mock
+    const originalSetConfig = setConfig;
+    const originalSetCache = setCache;
+    const originalSetGdpval = setGdpval;
+
+    beforeEach(() => {
+      // Setze die Konfiguration für die echte calculateScore zurück
+      originalSetConfig({
+        model_groups: {},
+        model_metrics: {},
+        gdpval_builtin: {
+          'claude-3-sonnet': 680,
+          'claude-4-sonnet': 720,
+          'devstral-medium-2507': 691,
+          'codestral-latest': 520
+        },
+        model_metadata: {
+          'anthropic/claude-3-sonnet': { generation: 3, type: 'general', release_date: '2024-02-26' },
+          'anthropic/claude-4-sonnet': { generation: 4, type: 'general', release_date: '2025-03-01' },
+          'mistral/devstral-medium-2507': { generation: 3, type: 'general', release_date: '2025-05-01' },
+          'mistral/codestral-latest': { generation: 1, type: 'code', release_date: '2024-11-01' }
+        },
+        model_benchmarks: {
+          'anthropic/claude-3-sonnet': { mmlu: 88.7, gpqa: 84.5, truthful: 85.1, humaneval: 0.852, swebench: 0.654 },
+          'anthropic/claude-4-sonnet': { mmlu: 92.5, gpqa: 90.1, truthful: 91.2, humaneval: 0.905, swebench: 0.753 },
+          'mistral/devstral-medium-2507': { mmlu: 89.2, gpqa: 85.1, truthful: 86.3, humaneval: 0.868, swebench: 0.671 },
+          'mistral/codestral-latest': { mmlu: 82.3, gpqa: 79.8, truthful: 81.5, humaneval: 0.855, swebench: 0.682 }
+        }
+      });
+      originalSetCache({});
+      originalSetGdpval({
+        'claude-3-sonnet': 680,
+        'claude-4-sonnet': 720,
+        'devstral-medium-2507': 691,
+        'codestral-latest': 520
+      });
+    });
+
+    afterAll(() => {
+      // Setze alles zurück
+      originalSetConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
+      originalSetCache({});
+      originalSetGdpval({});
+    });
+
+    test('Claude 4 should score higher than Claude 3 due to generation bonus', () => {
+      const scoreClaude4 = calculateScore('anthropic/claude-4-sonnet', 'standard');
+      const scoreClaude3 = calculateScore('anthropic/claude-3-sonnet', 'standard');
+      
+      expect(scoreClaude4).toBeGreaterThan(scoreClaude3);
+    });
+
+    test('Claude 4 should score higher than devstral-medium-2507 despite similar GDPval', () => {
+      const scoreClaude4 = calculateScore('anthropic/claude-4-sonnet', 'standard');
+      const scoreDevstral = calculateScore('mistral/devstral-medium-2507', 'standard');
+      
+      // Claude 4: GDPval 720, Generation 4, neu (2025-03-01)
+      // devstral-medium-2507: GDPval 691, Generation 3, neu (2025-05-01)
+      // Claude 4 sollte durch Generation-Bonus gewinnen
+      expect(scoreClaude4).toBeGreaterThan(scoreDevstral);
+    });
+
+    test('Code models should get bonus for code tasks', () => {
+      // Verwende ein allgemeines Modell (claude-3-sonnet) für den Test
+      // Für Code-Aufgaben werden Code-Benchmarks stärker gewichtet (35% SWE-bench vs 20%)
+      const scoreGeneral = calculateScore('anthropic/claude-3-sonnet', 'standard');
+      const scoreCode = calculateScore('anthropic/claude-3-sonnet', 'code');
+      
+      // Für Code-Aufgaben: 35% SWE-bench vs 20% für allgemeine Aufgaben
+      // claude-3-sonnet hat swebench: 0.654 → 65.4 Punkte
+      // Code-Gewichtung: 65.4 * 0.35 = 22.89
+      // Allgemein-Gewichtung: 65.4 * 0.20 = 13.08
+      // Differenz: ~9.81 Punkte
+      expect(scoreCode).toBeGreaterThan(scoreGeneral);
+    });
+
+    test('Recent models should get recency bonus', () => {
+      const scoreDevstral = calculateScore('mistral/devstral-medium-2507', 'standard');
+      const scoreClaude3 = calculateScore('anthropic/claude-3-sonnet', 'standard');
+      
+      // devstral-medium-2507 (Mai 2025) vs claude-3-sonnet (Februar 2024)
+      // devstral sollte durch Recency-Bonus gewinnen
+      expect(scoreDevstral).toBeGreaterThan(scoreClaude3);
+    });
+
+    test('Scoring should be between 0 and 100', () => {
+      const models = [
+        'anthropic/claude-3-sonnet',
+        'anthropic/claude-4-sonnet',
+        'mistral/devstral-medium-2507',
+        'mistral/codestral-latest'
+      ];
+      
+      for (const model of models) {
+        const score = calculateScore(model, 'standard');
+        expect(score).toBeGreaterThanOrEqual(0);
+        expect(score).toBeLessThanOrEqual(100);
+      }
     });
   });
 

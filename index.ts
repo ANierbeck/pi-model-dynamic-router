@@ -61,6 +61,7 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
+  let staticCfg: Config; // Statische Konfiguration (immer router-config.json)
   let cache: Cache = {};
   let rateLimitManager: RateLimitManager;
   let discoveryManager: DiscoveryManager;
@@ -209,7 +210,10 @@ const defaultExport = function (pi: ExtensionAPI) {
   // ── Config + Cache ─────────────────────────────────────────────────────
 
   function load() {
-    // Versuche zuerst, die dynamische Konfiguration zu laden
+    // Lade IMMER die statische Konfiguration (für Fallback in generateDynamicConfig)
+    staticCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    
+    // Versuche, die dynamische Konfiguration zu laden
     const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
     
@@ -220,21 +224,23 @@ const defaultExport = function (pi: ExtensionAPI) {
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
           cfg = dynamicCfg;
           loadedFromDynamic = true;
-          console.log('[router] Loaded dynamic configuration from router-config.dynamic.json');
         }
       }
     } catch (error) {
-      console.warn('[router] Error loading dynamic configuration, falling back to static config:', error);
+      // Ignoriere Fehler beim Laden der dynamischen Konfiguration
     }
     
-    // Falls keine dynamische Konfiguration, lade die statische
+    // Falls keine dynamische Konfiguration, verwende die statische
     if (!loadedFromDynamic) {
-      cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-      console.log('[router] Loaded static configuration from router-config.json');
+      cfg = staticCfg;
     }
     
     if (cfg.gdpval_builtin) {
       Object.assign(gdpval, cfg.gdpval_builtin);
+      gdpvalVersion++;
+    }
+    if (staticCfg.gdpval_builtin) {
+      Object.assign(gdpval, staticCfg.gdpval_builtin);
       gdpvalVersion++;
     }
     // Initialize managers
@@ -484,7 +490,6 @@ const defaultExport = function (pi: ExtensionAPI) {
    */
   async function generateDynamicConfig(): Promise<void> {
     try {
-      console.log('[router] Generating dynamic configuration...');
       
       // 1. Alle verfügbaren Modelle holen
       const allModels = cache.available_models ?? [];
@@ -508,7 +513,7 @@ const defaultExport = function (pi: ExtensionAPI) {
       // 3. Dynamische Gruppen-Konfiguration generieren
       const dynamicGroups: Record<string, any> = {};
       
-      for (const [groupName, groupConfig] of Object.entries(cfg.model_groups)) {
+      for (const [groupName, groupConfig] of Object.entries(staticCfg.model_groups)) {
         // Skip dynamic group (handled separately)
         if (groupConfig.method === 'dynamic') {
           dynamicGroups[groupName] = groupConfig;
@@ -615,26 +620,11 @@ const defaultExport = function (pi: ExtensionAPI) {
           }
         }
         
-        // Konvertiere zu Array und sortiere final
+        // Konvertiere zu Array - KEINE erneute Sortierung nötig!
+        // Die Modelle wurden bereits in sortedGroupModels nach der Gruppen-Methode sortiert.
+        // Original-Modelle aus der Konfiguration werden einfach angehängt und behalten ihre Position.
+        // Falls wir eine vollständige Neu-Sortierung wollen, müssen wir alle Modelle gemeinsam sortieren.
         const finalModels = Array.from(modelsToInclude);
-        
-        if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
-          finalModels.sort((a, b) => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0));
-        } else if (groupConfig.method === 'min_cost') {
-          finalModels.sort((a, b) => {
-            const costA = effCost(a);
-            const costB = effCost(b);
-            if (costA !== costB) return costA - costB;
-            return (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
-          });
-        } else if (groupConfig.method === 'tiered') {
-          finalModels.sort((a, b) => {
-            const gdpA = lookupGdp(a) ?? 0;
-            const gdpB = lookupGdp(b) ?? 0;
-            if (gdpB !== gdpA) return gdpB - gdpA;
-            return effCost(a) - effCost(b);
-          });
-        }
         
         // Erstelle die dynamische Gruppen-Konfiguration
         dynamicGroups[groupName] = {
@@ -657,9 +647,6 @@ const defaultExport = function (pi: ExtensionAPI) {
       
       const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
-      
-      console.log(`[router] Dynamic configuration saved to ${dynamicConfigPath}`);
-      console.log(`[router] Generated groups: ${Object.keys(dynamicGroups).join(', ')}`);
       
     } catch (error) {
       console.error('[router] Error generating dynamic configuration:', error);
@@ -1549,11 +1536,8 @@ const defaultExport = function (pi: ExtensionAPI) {
         if (arg === 'scan') {
           ctx.ui.notify('Scanning...');
           await scan(true);
-          const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
-          const hasDynamicConfig = fs.existsSync(dynamicConfigPath);
           ctx.ui.notify(
-            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.` +
-            (hasDynamicConfig ? ' Dynamic config generated!' : '')
+            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`
           );
           return;
         }
