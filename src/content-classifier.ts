@@ -147,12 +147,14 @@ export async function classifyPrompt(
       // Extract the hint target from the category
       const hintTarget = parsed.category.slice(5); // Remove 'hint:' prefix
       
-      // Guard: if hintTarget is empty, fall through to normal classification
+      // Guard: if hintTarget is empty, return explicit fallback
       if (!hintTarget || hintTarget.length === 0) {
         console.warn(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
-        // Fall through to normal classification - return the parsed result as-is
-        // This will be handled by the normal classification path
-        return parsed;
+        return { 
+          category: 'fallback', 
+          reason: 'Empty HINT target from LLM', 
+          confidence: 0.5 
+        };
       }
       
       if (hintTarget.startsWith('group:')) {
@@ -160,7 +162,11 @@ export async function classifyPrompt(
         const groupName = hintTarget.slice(6); // Remove 'group:' prefix
         if (!groupName || groupName.length === 0) {
           console.warn(`[classifier] Empty group name in HINT: ${parsed.category}`);
-          return parsed; // Fall through to normal classification
+          return { 
+            category: 'fallback', 
+            reason: 'Empty group name in HINT', 
+            confidence: 0.5 
+          };
         }
         return {
           reason: parsed.reason || 'User specified group via HINT',
@@ -460,6 +466,17 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
   const piWithTools = pi as unknown as {
     tools: { resolve_model_group: { execute: (params: { group: string }) => Promise<any> } };
   };
+  
+  // Helper function to apply model group resolution
+  async function applyModelGroup(group: string, context: any): Promise<void> {
+    const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
+    if (toolResult?.details?.selected) {
+      const { provider, modelId } = toolResult.details;
+      const model = context.modelRegistry.find(provider, modelId);
+      if (model) await pi.setModel(model);
+    }
+  }
+  
   piWithHooks.hooks.before_user_prompt(
     async ({ prompt, context }: { prompt: string; context: any }) => {
       const classification = await classifyPrompt(prompt);
@@ -468,22 +485,11 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
         // HINT overrides are not supported in this hook context
         console.warn(`[classifier] HINT override not supported in hook context, falling back to static classification`);
         const staticResult = classifyStatically(prompt);
-        const group = CATEGORY_TO_GROUP[staticResult.category];
-        const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
-        if (toolResult?.details?.selected) {
-          const { provider, modelId } = toolResult.details;
-          const model = context.modelRegistry.find(provider, modelId);
-          if (model) await pi.setModel(model);
-        }
+        await applyModelGroup(staticResult.category, context);
         return;
       }
       const group = CATEGORY_TO_GROUP[classification.category];
-      const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
-      if (toolResult?.details?.selected) {
-        const { provider, modelId } = toolResult.details;
-        const model = context.modelRegistry.find(provider, modelId);
-        if (model) await pi.setModel(model);
-      }
+      await applyModelGroup(group, context);
     }
   );
 }
