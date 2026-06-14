@@ -1,8 +1,8 @@
 # 🚀 pi-model-router - Current Tasks & Roadmap
 
-> **Status**: Updated with HINT-Override fix & model boundary improvements  
-> **Last Updated**: June 13, 2026  
-> **Current State**: ✅ Migration complete, all tests green, Cloud-Fallback implemented, HINT-Override & model boundary to fix
+> **Status**: Updated with HINT-Override implementation & model boundary improvements  
+> **Last Updated**: June 14, 2026  
+> **Current State**: ✅ Migration complete, all tests green, Cloud-Fallback implemented, HINT-Override implemented, model boundaries improved
 
 ## 📌 **IMPORTANT RULES**
 
@@ -74,30 +74,31 @@
     - Funktioniert mit beliebigen Formaten (mit/ohne Doppelpunkt, verschiedene Befehle)
     - Einfacher zu warten und zu erweitern
 
-- [ ] **Modellabgrenzung verbessern** - Präzisere Modellauswahl basierend auf Kontext
-  - *Problem*: Dynamisches Routing wählt manchmal `anthropic/claude-3-haiku` für komplexe Aufgaben, obwohl `mistral-medium-3.5` besser geeignet wäre
-  - *Analyse*: 
-    - Die aktuelle Klassifizierung und/oder Modellauswahl berücksichtigt nicht ausreichend die spezifischen Stärken der verfügbaren Modelle
-    - Der Klassifizierungsprompt (`CLASSIFICATION_PROMPT` in `src/content-classifier.ts`) enthält detaillierte Kategorien mit Beispielen
-  - *Aktueller Klassifizierungsprompt*:
-    ```
-    - trivial: Very simple requests ("list files", "show TODOs", "what's in this file?")
-    - simple: Simple questions ("explain briefly", "summarize", "what does this do?")
-    - code_simple: Small code changes (1–10 lines, syntax fixes, renames, typos)
-    - standard: Standard requests (general questions, moderate complexity)
-    - code_complex: Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation.
-    - design: Architecture, system design, API design, database schema
-    - planning: Task breakdown, roadmaps, prioritization, project planning
-    - exploration: Vague or open-ended questions ("what could we do about X?", brainstorming)
-    - fallback: Ambiguous, or a short continuation of previous work
-    ```
+- [x] **Modellabgrenzung verbessern** - ✅ **Implementiert mit GDPval-basierten Modell-Grenzen**
   - *Lösung*: 
-    - Modell-GDPval-Schwellenwerte in `router-config.json` anpassen
-    - Spezifischere Klassifizierungskategorien für verschiedene Modelltypen
-    - Modell-spezifische Routing-Regeln (z.B. Code-Aufgaben → Mistral, Analyse → Claude)
-    - Eventuell: Separate Klassifizierung für Code vs. Nicht-Code Aufgaben
+    - `CATEGORY_TO_GROUP`-Mapping in `src/content-classifier.ts` ordnet Kategorien Modell-Gruppen basierend auf GDPval-Anforderungen zu
+    - `router-config.json` enthält Modell-Gruppen mit `min_gdpval`-Schwellenwerten für präzise Modellauswahl
+    - Komplexe Aufgaben (code_complex, design, planning) → tactical-Gruppe (GDPval ≥ 600) → enthält `mistral/mistral-medium-3.5`
+    - Standard-Aufgaben → operational-Gruppe (GDPval ≥ 300)
+    - Triviale/Einfache Aufgaben → scout-Gruppe (beliebige kostenlose Modelle)
+  - *Aktuelles Mapping*:
+    ```typescript
+    trivial: 'scout' (beliebige kostenlose Modelle)
+    simple: 'operational' (GDPval ≥ 300)
+    code_simple: 'operational' (GDPval ≥ 300)
+    standard: 'operational' (GDPval ≥ 300)
+    code_complex: 'tactical' (GDPval ≥ 600) → enthält mistral-medium-3.5
+    design: 'tactical' (GDPval ≥ 600) → enthält mistral-medium-3.5
+    planning: 'tactical' (GDPval ≥ 600) → enthält mistral-medium-3.5
+    exploration: 'scout' (beliebige günstige Modelle)
+    fallback: 'tactical' (unsicher → nutze gutes Modell)
+    ```
+  - *Modell-Gruppen in router-config.json*:
+    - `complex`-Gruppe: min_gdpval: 600, Modelle: [claude-3-sonnet, gpt-4o, mistral/mistral-medium-3.5]
+    - `tactical`-Gruppe: min_gdpval: 600, Modelle: [mistral/mistral-medium-3.5]
+    - `operational`-Gruppe: min_gdpval: 300, Modelle: [mistral/mistral-medium-3.5, codestral-latest, claude-3-haiku]
+  - *Status*: ✅ **Vollständig implementiert mit präzisen Modell-Grenzen**
   - *Impact*: **HOCH** - Bessere Modellauswahl, höhere Qualität
-  - *Aufwand*: 2-3 Stunden
   - *Abhängigkeiten*: `src/content-classifier.ts`, `router-config.json`, `src/routing.ts`
 
 - [ ] **Session-Eskalation bei Kreis-Erkennung** - Modell automatisch hochstufen wenn Session stagniert
@@ -119,13 +120,17 @@
   - *Aufwand*: 4-5 Stunden
   - *Abhängigkeiten*: `src/content-classifier.ts`, `router-config.json`, `src/routing.ts`
 
-- [ ] **Cloud-Fallback für Klassifizierung** - Nutze freie Cloud-Modelle wenn Ollama nicht verfügbar
-  - *Problem*: Aktuell schlägt Klassifizierung fehl wenn Ollama nicht läuft
-  - *Lösung*: Fallback auf kostenlose Cloud-Modelle (z.B. `qwen/qwen3-4b:free`, `openai/gpt-oss-120b:free`)
-  - *Verfügbare freie Modelle*: Siehe `model-map.yaml` (50+ kostenlose Modelle)
+- [x] **Cloud-Fallback für Klassifizierung** - ✅ **Implementiert mit kostenlosen Cloud-Modellen**
+  - *Lösung*: Fallback-Kette: Ollama → Kostenlose Cloud-Modelle (aus `router-config.json` `free_models`) → Statische Klassifizierung
+  - *Implementierung*:
+    - `DiscoveryManager.getFreeModels()` gibt kostenlose Modelle aus Provider-Konfigurationen zurück
+    - `classifyPrompt()` in `src/content-classifier.ts` nutzt Cloud-Modelle wenn Ollama fehlschlägt
+    - Cloud-Fallback wird durch `allowCloudFallback`-Option gesteuert
+    - Nutzt `CloudClient` um kostenlose Cloud-Modelle für die Klassifizierung aufzurufen
+  - *Konfigurierte kostenlose Modelle*: `openrouter/qwen/qwen3-4b:free`, `openrouter/openai/gpt-4o-mini:free`, `openrouter/meta-llama/llama-3.3-70b-instruct:free`, `openrouter/google/gemma-3-4b-it:free`, `openrouter/google/gemma-3-12b-it:free`
+  - *Status*: ✅ **Vollständig implementiert und funktionsfähig**
   - *Impact*: **HOCH** - System bleibt funktionsfähig ohne Ollama
-  - *Aufwand*: 3-4 Stunden
-  - *Abhängigkeiten*: `src/providers.ts`, `src/discovery.ts`, `src/content-classifier.ts`
+  - *Abhängigkeiten*: `src/providers.ts`, `src/discovery.ts`, `src/content-classifier.ts`, `router-config.json`
 
 #### 1. Code-Qualität & Wartung
 - [ ] **Code Review durchführen** - Alle Module auf Konsistenz prüfen
@@ -148,27 +153,28 @@
 ### 🚀 **Mittelfristige Verbesserungen** (1-3 Tage)
 
 #### 0. **Resilienz & Fallback-Strategien** ⭐⭐⭐⭐
-- [ ] **Freie Cloud-Modelle für Klassifizierung nutzen** - Erweitere `src/providers.ts` und `src/discovery.ts`
+- [x] **Freie Cloud-Modelle für Klassifizierung nutzen** - ✅ **Implementiert in `src/discovery.ts`**
   - *Änderungen*:
-    - `PROVIDER_MAP` um `freeModels: string[]` erweitern
-    - `DiscoveryManager.getFreeModels()` implementieren
-    - `DiscoveryManager.hasFreeModels()` für schnelle Prüfung
-  - *Beispiel*: `openrouter.freeModels = ['qwen/qwen3-4b:free', 'openai/gpt-oss-120b:free']`
+    - `DiscoveryManager.getFreeModels()` gibt kostenlose Modelle aus `router-config.json` zurück
+    - `DiscoveryManager.hasFreeModels()` für schnelle Verfügbarkeitsprüfung
+  - *Beispiel-Konfiguration*: `openrouter.free_models = ['openrouter/qwen/qwen3-4b:free', ...]`
   - *Impact*: **HOCH** - Klassifizierung funktioniert ohne Ollama
-  - *Aufwand*: 2 Stunden
+  - *Status*: ✅ **Vollständig implementiert**
 
-- [ ] **Klassifizierung mit Cloud-Fallback** - Erweitere `src/content-classifier.ts`
+- [x] **Klassifizierung mit Cloud-Fallback** - ✅ **Implementiert in `src/content-classifier.ts`**
   - *Fallback-Kette*: Ollama → Freie Cloud-Modelle → Statische Klassifizierung
-  - *Neue Funktion*: `classifyWithCloudModel(prompt: string, model: string)`
+  - *Implementierung*: `classifyPrompt()` mit `allowCloudFallback`-Option
+  - *Cloud-Client-Integration*: Nutzt `CloudClient.callModel()` für Cloud-Klassifizierung
   - *Impact*: **HOCH** - Volle Funktionalität ohne Ollama
-  - *Aufwand*: 2 Stunden
+  - *Status*: ✅ **Vollständig implementiert**
 
-- [ ] **Statische Klassifizierung als Ultimate Fallback** - Keyword-basierte Klassifizierung
-  - *Funktionen*: `classifyStatically(prompt: string): string`
-  - *Kategorien*: code, design, documentation, analysis, general
+- [x] **Statische Klassifizierung als Ultimate Fallback** - ✅ **Implementiert in `src/content-classifier.ts`**
+  - *Funktion*: `classifyStatically(prompt: string): ClassificationResult`
+  - *Kategorien*: trivial, simple, code_simple, standard, code_complex, design, planning, exploration, fallback
   - *Fallback-Kette*: Ollama → Cloud → Statisch → Default-Modell
+  - *Implementierung*: Keyword-basierte Klassifizierung mit Confidence-Scores
   - *Impact*: **MITTEL** - Letzte Sicherheitsstufe
-  - *Aufwand*: 1 Stunde
+  - *Status*: ✅ **Vollständig implementiert**
 
 #### 1. Performance-Optimierungen
 - [ ] **Caching für Klassifizierung** - LRU-Cache mit TTL für häufige Prompts
