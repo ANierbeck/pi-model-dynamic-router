@@ -83,7 +83,26 @@ export interface Config {
   gdpval_builtin?: Record<string, number>;
   model_metadata?: Record<string, ModelMetadata>;
   model_benchmarks?: Record<string, ModelBenchmarks>;
-  cost_tiers?: any; // Kostenstufen-Konfiguration (optional)
+  cost_tiers?: Partial<CostTiersConfig>; // Kostenstufen-Konfiguration (optional)
+}
+
+// ── Cost Tiers Types ────────────────────────────────────────────────────
+
+export type CostTier = 'free' | 'budget' | 'premium';
+
+export interface CostTierConfig {
+  id: CostTier;
+  description: string;
+  max_cost_per_m: number;
+  max_cost_per_request: number;
+  min_gdpval: number;
+  preferred_providers: string[];
+}
+
+export interface CostTiersConfig {
+  free: CostTierConfig;
+  budget: CostTierConfig;
+  premium: CostTierConfig;
 }
 
 // ── Cache Types ───────────────────────────────────────────────────────────
