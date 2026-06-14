@@ -58,12 +58,13 @@ export class CostTracker {
     midnight.setHours(24, 0, 0, 0);
     const msUntilMidnight = midnight.getTime() - now.getTime();
 
-    // Setze Timeout für Mitternacht
+    // Setze Timeout für Mitternacht (unref um Process-Exit zu ermöglichen)
     this.logInterval = setTimeout(() => {
       this.logSummary();
       // Plane nächste Zusammenfassung
       this.scheduleDailySummary();
     }, msUntilMidnight);
+    this.logInterval.unref();
   }
 
   /**
@@ -150,13 +151,11 @@ export class CostTracker {
 
     // In Datei schreiben, falls Pfad angegeben
     if (this.logFilePath) {
-      try {
-        import('node:fs').then(({ appendFileSync }) => {
-          appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
-        });
-      } catch {
+      import('node:fs').then(({ appendFileSync }) => {
+        appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
+      }).catch(() => {
         // Ignoriere Fehler beim Schreiben
-      }
+      });
     }
 
     // Metriken zurücksetzen

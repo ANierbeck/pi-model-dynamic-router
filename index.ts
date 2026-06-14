@@ -41,7 +41,7 @@ import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src
 import {
   getCostTierForCategory
 } from './src/cost-tiers.ts';
-import { CostTracker, costTracker } from './src/cost-tracker.ts';
+import { costTracker } from './src/cost-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -1827,6 +1827,11 @@ const defaultExport = function (pi: ExtensionAPI) {
     sessionCtx = null;
     router.setSessionCtx(null);
   });
+
+  // Cleanup CostTracker on process exit
+  process.on('exit', () => costTracker.destroy());
+  process.on('SIGTERM', () => { costTracker.destroy(); process.exit(0); });
+  process.on('SIGINT', () => { costTracker.destroy(); process.exit(0); });
 
   // Export groupStream for testing
   (defaultExport as any).groupStream = groupStream;
