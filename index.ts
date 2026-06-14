@@ -241,6 +241,73 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
 
+  /**
+   * Extract GDPval scores from Artificial Analysis HTML
+   * Tries JSON data first (modern), falls back to HTML table parsing
+   */
+  function extractGdpvalScores(html: string): Record<string, number> {
+    const scores: Record<string, number> = {};
+    
+    // Try to extract JSON data from <script> tag (modern Artificial Analysis structure)
+    // Pattern: window.__MODELS_DATA__ = {...}
+    const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
+    
+    if (scriptJsonMatch) {
+      try {
+        const modelsData = JSON.parse(scriptJsonMatch[1]);
+        let count = 0;
+        
+        for (const [slug, model] of Object.entries(modelsData)) {
+          // Type assertion for the model object from Artificial Analysis
+          const m = model as { gdpval?: number; shortName?: string; name?: string };
+          if (m.gdpval !== undefined) {
+            scores[slug] = m.gdpval;
+            
+            // Also add shortName and name as alternative keys
+            if (m.shortName) scores[m.shortName] = m.gdpval;
+            if (m.name) {
+              const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+              scores[nameKey] = m.gdpval;
+            }
+            count++;
+          }
+        }
+        
+        return scores;
+      } catch (e) {
+        // JSON parsing failed, will fall back to HTML table
+      }
+    }
+    
+    // Fallback to HTML table parsing (legacy)
+    
+    const slugMap: Record<string, string> = {};
+    const slugRe = /"([a-z0-9][a-z0-9._-]+)","name":"([^"]+)","shortName":"([^"]+)"/g;
+    let sm;
+    while ((sm = slugRe.exec(html))) {
+      if (sm[2]) {
+        slugMap[sm[2]] = sm[1];
+        if (sm[3] && sm[3] !== sm[2]) slugMap[sm[3]] = sm[1];
+      }
+    }
+    
+    const tableRe = /<div[^>]*>([^<]{3,80})<\/div><\/td>\s*<td[^>]*>(\d{3,4})<\/td>/g;
+    let m;
+    let matchCount = 0;
+    while ((m = tableRe.exec(html))) {
+      const nm = m[1].trim().replace(/&#x27;/g, "'").replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      if (!nm || !/[A-Za-z]/.test(nm) || nm.startsWith('<')) continue;
+      const score = +m[2];
+      const slug = slugMap[nm];
+      const key = slug ?? nm;
+      if (!scores[key] || score > scores[key]) scores[key] = score;
+      matchCount++;
+    }
+    
+    return scores;
+  }
+
   async function fetchJson(
     url: string,
     opts?: { headers?: Record<string, string>; timeoutMs?: number }
@@ -259,11 +326,13 @@ const defaultExport = function (pi: ExtensionAPI) {
     try {
       if (!cache.gdpval_scraped || force) {
         try {
+          console.log('[scan] Fetching GDPval scores from Artificial Analysis...');
           const res = await fetch(GDPVAL_URL, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
             signal: AbortSignal.timeout(30_000),
           });
           const html = await res.text().then((h) => h.replace(/\\"/g, '"'));
+          
           // Extract slug → name mapping from JSON data embedded in page
           const slugMap: Record<string, string> = {};
           const slugRe = /"([a-z0-9][a-z0-9._-]+)","name":"([^"]+)","shortName":"([^"]+)"/g;
@@ -274,10 +343,13 @@ const defaultExport = function (pi: ExtensionAPI) {
               if (sm[3] && sm[3] !== sm[2]) slugMap[sm[3]] = sm[1];
             }
           }
+          console.log(`[scan] Found ${Object.keys(slugMap).length} slug mappings`);
+          
           // Extract name → score from HTML table
           const tableRe = /<div[^>]*>([^<]{3,80})<\/div><\/td>\s*<td[^>]*>(\d{3,4})<\/td>/g;
           let m;
           const scores: Record<string, number> = {};
+          let matchCount = 0;
           while ((m = tableRe.exec(html))) {
             const nm = m[1]
               .trim()
@@ -292,12 +364,19 @@ const defaultExport = function (pi: ExtensionAPI) {
             const slug = slugMap[nm];
             const key = slug ?? nm;
             if (!scores[key] || score > scores[key]) scores[key] = score;
+            matchCount++;
           }
+          console.log(`[scan] Extracted ${matchCount} model scores from table`);
+          console.log(`[scan] Sample scores:`, JSON.stringify(Object.entries(scores).slice(0, 5)));
+          
           if (Object.keys(scores).length) {
             gdpval = { ...scores };
             gdpvalVersion++;
             cache.gdpval_scores = gdpval;
             cache.gdpval_scraped = true;
+            console.log(`[scan] Successfully updated ${Object.keys(scores).length} GDPval scores`);
+          } else {
+            console.warn('[scan] No GDPval scores extracted - table regex may be outdated');
           }
         } catch {
           /* scrape failed, use builtins */
@@ -1272,41 +1351,52 @@ const defaultExport = function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       load();
       const arg = args?.trim();
-      if (arg === 'reload') {
-        load();
-        loadModelMap();
-        loadCache();
-        ctx.ui.notify('Reloaded');
-        return;
-      }
-      if (arg === 'scan') {
-        ctx.ui.notify('Scanning...');
-        await scan(true);
-        ctx.ui.notify(
-          `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`
-        );
-        return;
-      }
-      if (arg === 'sync') {
-        load();
-        registerGroupModels(ctx);
-        ctx.ui.notify('Re-registered group models');
-        return;
-      }
+      
+      // Temporarily set session context so allDiscoveredRefs() can access modelRegistry
+      // This allows /router command to show models from Pi's registry even outside a session
+      const previousSessionCtx = sessionCtx;
+      
+      try {
+        if (ctx.modelRegistry) {
+          sessionCtx = ctx;
+          router.setSessionCtx(ctx);
+        }
+        
+        if (arg === 'reload') {
+          load();
+          loadModelMap();
+          loadCache();
+          ctx.ui.notify('Reloaded');
+          return;
+        }
+        if (arg === 'scan') {
+          ctx.ui.notify('Scanning...');
+          await scan(true);
+          ctx.ui.notify(
+            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`
+          );
+          return;
+        }
+        if (arg === 'sync') {
+          load();
+          registerGroupModels(ctx);
+          ctx.ui.notify('Re-registered group models');
+          return;
+        }
 
-      if (arg && cfg.model_groups[arg]) {
-        const g = cfg.model_groups[arg],
-          res = resolve(arg);
-        const desc =
-          g.method === 'pipeline'
-            ? `pipeline(${g.pipeline!.map((s) => `${s.method}:${s.top_k ?? '∞'}`).join('→')})`
-            : g.method;
-        const lines = [`${arg} | ${desc}`, g.description ?? '', ''];
-        if (res) res.candidates.forEach((r, i) => lines.push(fmtModel(r, i, i === 0)));
-        else lines.push('(no available models)');
-        ctx.ui.notify(lines.filter(Boolean).join('\n'), 'info');
-        return;
-      }
+        if (arg && cfg.model_groups[arg]) {
+          const g = cfg.model_groups[arg],
+            res = resolve(arg);
+          const desc =
+            g.method === 'pipeline'
+              ? `pipeline(${g.pipeline!.map((s) => `${s.method}:${s.top_k ?? '∞'}`).join('→')})`
+              : g.method;
+          const lines = [`${arg} | ${desc}`, g.description ?? '', ''];
+          if (res) res.candidates.forEach((r, i) => lines.push(fmtModel(r, i, i === 0)));
+          else lines.push('(no available models)');
+          ctx.ui.notify(lines.filter(Boolean).join('\n'), 'info');
+          return;
+        }
 
       // Overview with table
       const lines: string[] = ['Model Router', ''];
@@ -1401,6 +1491,11 @@ const defaultExport = function (pi: ExtensionAPI) {
       lines.push('└' + '─'.repeat(71));
       lines.push('', '/router <group> | scan | reload | sync');
       ctx.ui.notify(lines.join('\n'), 'info');
+      } finally {
+        // Always restore previous session context
+        sessionCtx = previousSessionCtx;
+        router.setSessionCtx(previousSessionCtx);
+      }
     },
   });
 

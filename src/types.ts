@@ -46,6 +46,8 @@ export interface Group {
   filter_free?: boolean;
   min_gdpval_pct?: number;
   min_gdpval?: number;
+  max_cost?: number;
+  max_cost_per_m?: number;
 }
 
 export interface ProviderKey {
@@ -60,11 +62,27 @@ export interface ProviderConfig {
   free_models?: string[];
 }
 
+export interface ModelMetadata {
+  generation?: number;
+  type?: string;
+  release_date?: string;
+}
+
+export interface ModelBenchmarks {
+  mmlu?: number;
+  gpqa?: number;
+  truthful?: number;
+  humaneval?: number;
+  swebench?: number;
+}
+
 export interface Config {
   providers?: Record<string, ProviderConfig>;
   model_groups: Record<string, Group>;
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
+  model_metadata?: Record<string, ModelMetadata>;
+  model_benchmarks?: Record<string, ModelBenchmarks>;
 }
 
 // ── Cache Types ───────────────────────────────────────────────────────────

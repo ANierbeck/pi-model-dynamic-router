@@ -13,7 +13,7 @@ import type {
 } from './types.js';
 import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
 import { PROVIDER_MAP } from './providers.js';
-import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice } from './metrics.js';
+import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -52,20 +52,25 @@ export class Router {
    */
   allDiscoveredRefs(): string[] {
     const refs = new Set<string>();
-    // Always include explicitly pinned group models
-    for (const g of Object.values(this.cfg.model_groups)) {
-      for (const r of g.models ?? []) refs.add(r);
-    }
-
-    // Session active: only use registry models so every ref is guaranteed to pass tryStream
+    
+    // ALWAYS include models from Pi's model registry if available
+    // This is the primary source of truth for available models
     if (this.sessionCtx?.modelRegistry) {
       for (const model of this.sessionCtx.modelRegistry.getAvailable()) {
         refs.add(`${model.provider}/${model.id}`);
       }
-    } else {
-      // Add models from available_models cache
-      for (const m of this.cache.available_models ?? []) {
+    } else if (this.cache.available_models) {
+      // Fallback to cached models if no session context
+      for (const m of this.cache.available_models) {
         refs.add(`${m.provider}/${m.id}`);
+      }
+    }
+    
+    // Also include explicitly pinned group models (for backwards compatibility)
+    // These might not be in the registry (e.g., free cloud models)
+    for (const g of Object.values(this.cfg.model_groups)) {
+      for (const r of g.models ?? []) {
+        refs.add(r);
       }
     }
 
@@ -116,8 +121,9 @@ export class Router {
 
   /**
    * Sortiert Modelle nach verschiedenen Methoden
+   * Für 'best' wird Multi-Metrik-Scoring verwendet
    */
-  sortBy(models: string[], method: string): string[] {
+  sortBy(models: string[], method: string, taskType?: string): string[] {
     const s = [...models];
     if (method === 'min_latency')
       return s.sort((a, b) => getM(a).avg_latency_ms - getM(b).avg_latency_ms);
@@ -125,7 +131,16 @@ export class Router {
       return s.sort((a, b) => getM(b).throughput_tps - getM(a).throughput_tps);
     if (method === 'min_cost')
       return s.sort((a, b) => effCost(a) - effCost(b) || getM(b).gdpval - getM(a).gdpval);
-    if (method === 'max_gdpval') return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
+    if (method === 'max_gdpval') 
+      return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
+    if (method === 'best') {
+      // Multi-Metrik-Scoring für 'best'-Methode
+      return s.sort((a, b) => {
+        const scoreB = calculateScore(b, taskType, this.cfg);
+        const scoreA = calculateScore(a, taskType, this.cfg);
+        return scoreB - scoreA;
+      });
+    }
     if (method === 'billing_preference') return this.sortByBillingPreference(s);
     if (method === 'roundrobin') return s;
     return s;
@@ -153,6 +168,7 @@ export class Router {
 
   /**
    * Löst eine Modellgruppe auf
+   * Verwendet Multi-Metrik-Scoring für 'best'-Methode
    */
   resolve(name: string): GroupResolution | null {
     const g = this.cfg.model_groups[name];
@@ -162,18 +178,32 @@ export class Router {
     if (g.method === 'dynamic') return null;
 
     let c = this.allDiscoveredRefs();
+    
+    // Filter nach Qualität
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
+    
+    // Filter nach Kosten (falls konfiguriert)
+    if (g.max_cost !== undefined) {
+      c = c.filter(ref => effCost(ref) <= g.max_cost!);
+    }
+    if (g.max_cost_per_m !== undefined) {
+      c = c.filter(ref => {
+        const price = lookupPrice(ref);
+        return price ? price.input <= g.max_cost_per_m! : true;
+      });
+    }
 
+    // Sortierung
     if (g.method === 'best') {
-      // Strategic: highest gdpval available
-      c = this.sortBy(c, 'max_gdpval');
+      // Multi-Metrik-Scoring für 'best'-Methode
+      c = this.sortBy(c, 'best', name);
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
       c = this.sortByBillingPreference(c);
     } else if (g.method === 'pipeline' && g.pipeline) {
       for (const step of g.pipeline) {
-        c = this.sortBy(c, step.method);
+        c = this.sortBy(c, step.method, name);
         if (step.top_k && step.top_k < c.length) c = c.slice(0, step.top_k);
       }
     } else if (g.method === 'roundrobin') {
@@ -181,8 +211,24 @@ export class Router {
       this.rrCounters[name] = i + 1;
       c = [...c.slice(i), ...c.slice(0, i)];
     } else {
-      c = this.sortBy(c, g.method);
+      c = this.sortBy(c, g.method, name);
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
+    }
+    
+    // Falls models-Array existiert: Stelle sicher, dass diese Modelle enthalten sind
+    // (als Mindestanforderung, nicht als Einschränkung)
+    if (g.models?.length) {
+      for (const requiredModel of g.models) {
+        if (!c.includes(requiredModel)) {
+          c.push(requiredModel);
+        }
+      }
+      // Nochmal sortieren, um die besten Modelle nach oben zu bringen
+      if (g.method === 'best') {
+        c = this.sortBy(c, 'best', name);
+      } else {
+        c = this.sortBy(c, g.method, name);
+      }
     }
 
     return { selected: c[0], candidates: c };
