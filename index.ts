@@ -31,7 +31,7 @@ import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
-import { splitRef, stripDateSuffix } from './src/utils.ts';
+import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
@@ -1285,15 +1285,9 @@ const defaultExport = function (pi: ExtensionAPI) {
             // fully-qualified "provider/model" ref by searching all group models lists.
             // Without this, splitRef() would use the whole string as provider, which is
             // never registered, causing "All candidates failed: no candidates".
-            let resolvedTarget = classification.hintTarget;
-            if (!resolvedTarget.includes('/')) {
-              for (const groupConfig of Object.values(cfg.model_groups)) {
-                const models = (groupConfig as any).models as string[] | undefined;
-                const match = models?.find(
-                  (m: string) => m.endsWith('/' + resolvedTarget) || m === resolvedTarget
-                );
-                if (match) { resolvedTarget = match; break; }
-              }
+            const resolvedTarget = resolveShortModelName(classification.hintTarget, cfg.model_groups);
+            if (!classification.hintTarget.includes('/') && resolvedTarget === classification.hintTarget) {
+              console.warn(`[dynamic] HINT model "${resolvedTarget}" not found in any group; using as-is`);
             }
             candidates = [resolvedTarget];
             lastDynamicModel = resolvedTarget;

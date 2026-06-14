@@ -85,6 +85,27 @@ export function baseTokens(s: string): Set<string> {
   return new Set(s.match(/[a-z]+|\d+/g) ?? []);
 }
 
+// ── HINT Resolution Utilities ─────────────────────────────────────────────
+
+/**
+ * Resolves a short model name (e.g. "mistral-medium-3.5") to a fully-qualified
+ * "provider/model" ref by searching group models lists. Returns the original
+ * target unchanged if already qualified or no match is found.
+ */
+export function resolveShortModelName(
+  target: string,
+  modelGroups: Record<string, { models?: string[] }>
+): string {
+  if (target.includes('/')) return target;
+  for (const groupConfig of Object.values(modelGroups)) {
+    const match = groupConfig.models?.find(
+      (m) => m.endsWith('/' + target) || m === target
+    );
+    if (match) return match;
+  }
+  return target;
+}
+
 // ── Validation Utilities ──────────────────────────────────────────────────
 
 /**
