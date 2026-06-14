@@ -192,3 +192,17 @@ export interface PriceInfo {
   input: number;
   output: number;
 }
+
+// ── Cost Tracking Types ────────────────────────────────────────────────
+
+export type CostTier = 'free' | 'budget' | 'premium';
+
+export interface CostMetrics {
+  totalCost: number;                    // Gesamtkosten in $
+  totalInputTokens: number;            // Gesamt-Input-Tokens
+  totalOutputTokens: number;           // Gesamt-Output-Tokens
+  requestsByTier: Record<CostTier, number>;  // Anfragen pro Kostenstufe
+  costByTier: Record<CostTier, number>;      // Kosten pro Kostenstufe
+  requestsByModel: Record<string, number>;   // Anfragen pro Modell
+  costByModel: Record<string, number>;       // Kosten pro Modell
+}
