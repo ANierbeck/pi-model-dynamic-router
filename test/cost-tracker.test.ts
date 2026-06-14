@@ -51,7 +51,10 @@ describe('CostTracker', () => {
     
     tracker = new CostTracker();
     // Deaktiviere die automatische tägliche Zusammenfassung für Tests
-    (tracker as any).logInterval = null;
+    if ((tracker as any).logInterval) {
+      clearTimeout((tracker as any).logInterval);
+      (tracker as any).logInterval = null;
+    }
   });
 
   afterEach(() => {

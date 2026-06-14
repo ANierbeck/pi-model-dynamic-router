@@ -195,8 +195,6 @@ export interface PriceInfo {
 
 // ── Cost Tracking Types ────────────────────────────────────────────────
 
-export type CostTier = 'free' | 'budget' | 'premium';
-
 export interface CostMetrics {
   totalCost: number;                    // Gesamtkosten in $
   totalInputTokens: number;            // Gesamt-Input-Tokens
