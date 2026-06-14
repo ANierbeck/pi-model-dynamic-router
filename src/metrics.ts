@@ -207,6 +207,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 
 /**
  * Berechnet einen gewichteten Score basierend auf mehreren Metriken
+ * Berücksichtigt GDPval, Generation, Benchmarks, Modell-Typ und Release-Datum
  * Alle Metriken werden auf die gleiche Skala (0-100) normalisiert
  * @param ref - Modell-Referenz (z.B. "anthropic/claude-3-sonnet")
  * @param taskType - Optionaler Aufgabentyp für spezifische Gewichtung (z.B. "code")
@@ -223,33 +224,70 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
   // Basis-Score: Normalisierter GDPval
   let score: number;
   
-  if (taskType === 'code') {
-    // Für Code-Aufgaben: Gewichte umverteilen (summiert zu 100%)
-    // 30% GDPval + 10% MMLU + 10% GPQA + 10% Truthful + 20% HumanEval + 20% SWE-bench
-    score = normalizedGdpval * 0.3;
-    if (benchmarks.mmlu != null || m.mmlu != null) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.1;
-    if (benchmarks.gpqa != null || m.gpqa != null) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.1;
-    if (benchmarks.truthful != null || m.truthful != null) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.1;
-    if (benchmarks.humaneval != null || m.humaneval != null) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.2;
-    if (benchmarks.swebench != null || m.swebench != null) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.2;
-  } else {
-    // Standard-Gewichtung: 40% GDPval + 20% MMLU + 12% GPQA + 8% Truthful + 10% HumanEval + 10% SWE-bench
-    score = normalizedGdpval * 0.4;
-    if (benchmarks.mmlu != null || m.mmlu != null) score += (benchmarks.mmlu ?? m.mmlu ?? 0) * 0.2;
-    if (benchmarks.gpqa != null || m.gpqa != null) score += (benchmarks.gpqa ?? m.gpqa ?? 0) * 0.12;
-    if (benchmarks.truthful != null || m.truthful != null) score += (benchmarks.truthful ?? m.truthful ?? 0) * 0.08;
-    if (benchmarks.humaneval != null || m.humaneval != null) score += (benchmarks.humaneval ?? m.humaneval ?? 0) * 0.1;
-    if (benchmarks.swebench != null || m.swebench != null) score += (benchmarks.swebench ?? m.swebench ?? 0) * 0.1;
+  // Bestimme die Gewichtung basierend auf taskType und Modell-Typ
+  const modelType = metadata.type ?? 'general';
+  const isCodeModel = modelType === 'code' || taskType === 'code';
+  
+  // Generations-Bonus: +5 Punkte pro Generation über 3 (starkes Gewicht, da Generation oft wichtiger ist als GDPval)
+  // Beispiel: Claude 4 (Generation 4) bekommt +5 Punkte, Claude 5 bekommt +10 Punkte
+  const generation = metadata.generation ?? 0;
+  const generationBonus = Math.max(0, generation - 3) * 5;
+  
+  // Release-Datum Bonus: Neuere Modelle bekommen leichten Bonus (max +5 Punkte)
+  // Modelle aus den letzten 6 Monaten: +5, 6-12 Monate: +3, 12-18 Monate: +1
+  let recencyBonus = 0;
+  if (metadata.release_date) {
+    try {
+      const releaseDate = new Date(metadata.release_date);
+      const monthsOld = (Date.now() - releaseDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+      if (monthsOld < 6) recencyBonus = 5;
+      else if (monthsOld < 12) recencyBonus = 3;
+      else if (monthsOld < 18) recencyBonus = 1;
+    } catch {
+      // Ignoriere ungültige Datumsformate
+    }
   }
   
-  // Generations-Bonus: +2 Punkte pro Generation über 3 (auf 0-100 Skala)
-  // Wird NACH der Aufgaben-spezifischen Berechnung hinzugefügt
-  if (metadata.generation) {
-    const generationBonus = Math.max(0, metadata.generation - 3) * 2;
+  // Benchmark-basierte Scores (0-100 Skala)
+  const mmluScore = (benchmarks.mmlu ?? m.mmlu ?? 0) / 1.1; // MMLU max ~110%
+  const gpqaScore = (benchmarks.gpqa ?? m.gpqa ?? 0); // GPQA max ~100%
+  const truthfulScore = (benchmarks.truthful ?? m.truthful ?? 0);
+  const humanevalScore = (benchmarks.humaneval ?? m.humaneval ?? 0) * 100; // 0-1 auf 0-100
+  const swebenchScore = (benchmarks.swebench ?? m.swebench ?? 0) * 100; // 0-1 auf 0-100
+  
+  // Aufgaben-spezifische Gewichtung
+  if (isCodeModel) {
+    // Für Code-Aufgaben: Starke Gewichtung auf Code-Benchmarks
+    // 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 30% SWE-bench + 5% Generation
+    score = normalizedGdpval * 0.20;
+    score += mmluScore * 0.10;
+    score += gpqaScore * 0.05;
+    score += truthfulScore * 0.05;
+    score += humanevalScore * 0.25;
+    score += swebenchScore * 0.30;
     score += generationBonus;
+    score += recencyBonus;
+  } else {
+    // Für allgemeine Aufgaben: Ausgewogene Gewichtung
+    // 25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 10% SWE-bench + 10% Generation
+    score = normalizedGdpval * 0.25;
+    score += mmluScore * 0.20;
+    score += gpqaScore * 0.15;
+    score += truthfulScore * 0.10;
+    score += humanevalScore * 0.10;
+    score += swebenchScore * 0.10;
+    score += generationBonus;
+    score += recencyBonus;
   }
   
-  return score;
+  // Code-Modell-Bonus: Code-spezialisierte Modelle bekommen +5 Punkte für allgemeine Aufgaben
+  // (da sie oft besser für präzise Antworten sind)
+  if (modelType === 'code' && !isCodeModel) {
+    score += 5;
+  }
+  
+  // Normalisiere den finalen Score auf 0-100 (falls durch Bonuses darüber)
+  return Math.min(100, Math.max(0, score));
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────
