@@ -1,8 +1,8 @@
 # 🚀 pi-model-router - Current Tasks & Roadmap
 
-> **Status**: Updated with HINT-Override implementation & model boundary improvements  
-> **Last Updated**: June 14, 2026  
-> **Current State**: ✅ Migration complete, all tests green, Cloud-Fallback implemented, HINT-Override implemented, model boundaries improved
+> **Status**: Updated with cost-efficient dynamic routing Phase 2 implementation
+> **Last Updated**: June 14, 2026
+> **Current State**: ✅ Migration complete, all tests green (192), Cloud-Fallback implemented, HINT-Override implemented, model boundaries improved, cost tiers system implemented
 
 ## 📌 **IMPORTANT RULES**
 
@@ -108,17 +108,36 @@
   - *Impact*: **HOCH** - verhindert Frustrations-Loops mit schwachen Modellen
   - *Aufwand*: 3-4 Stunden (Kreis-Detektion ist komplex)
   - *Abhängigkeiten*: `index.ts` (turn-Kontext mitführen, Eskalations-Logik)
-- [ ] **Kosteneffizientes dynamisches Routing** - Nutze billige Modelle für einfache Aufgaben
-  - *Problem*: Alle Anfragen nutzen teure Modelle, auch für einfache Aufgaben
-  - *Lösung*: Klassifizierung nach Komplexität + Routing zu passenden Kostenstufen
-  - *Kostenstufen*:
-    - **trivial/simple** ($0): `qwen/qwen3-4b:free`, `gemma-3-12b-it:free`, `llama-3.3-70b:free`
-    - **standard** ($): `gpt-4o-mini`, `claude-3-haiku`
-    - **complex** ($$): `claude-3-sonnet`, `gpt-4o`, `mistral-medium-3.5`
+- [x] **Kosteneffizientes dynamisches Routing** - ✅ **Phase 2 implementiert**
+  - *Lösung*: Kostenstufen-System (free/budget/premium) + Klassifizierung → Kostenstufe → Modellgruppe
+  - *Implementierung*:
+    - `src/cost-tiers.ts`: Kostenstufen-System mit DEFAULT_COST_TIERS
+    - `src/routing.ts`: Erweiterte Router-Klasse mit Kostenstufen-Methoden
+    - `resolveByCategory()`: Löst Gruppe basierend auf Klassifizierungskategorie auf
+    - `resolveWithCostTier()`: Filtert Modelle nach Kostenstufe
+    - `getCostTierForCategory()`: Mapping von Kategorie zu Kostenstufe
+  - *Kostenstufen-Mapping*:
+    ```
+    trivial → free ($0)
+    simple → free ($0)
+    code_simple → free ($0)
+    standard → budget ($)
+    code_complex → premium ($$)
+    design → premium ($$)
+    planning → premium ($$)
+    exploration → free ($0)
+    fallback → budget ($)
+    ```
+  - *Kostenstufen-Konfiguration*:
+    - **free**: max_cost_per_m: 0, max_cost_per_request: 0, min_gdpval: 0
+    - **budget**: max_cost_per_m: 0.5, max_cost_per_request: 0.1, min_gdpval: 300
+    - **premium**: max_cost_per_m: 2.0, max_cost_per_request: 1.0, min_gdpval: 600
   - *Einsparpotenzial*: ~90% der Anfragen könnten $0 kosten
+  - *Status*: ✅ **Kernimplementierung abgeschlossen**
   - *Impact*: **SEHR HOCH** - Massive Kosteneinsparung
-  - *Aufwand*: 4-5 Stunden
-  - *Abhängigkeiten*: `src/content-classifier.ts`, `router-config.json`, `src/routing.ts`
+  - *Aufwand*: 4-5 Stunden (tatsächlich: ~3 Stunden)
+  - *Abhängigkeiten*: `src/cost-tiers.ts`, `src/routing.ts`
+  - *Nächste Schritte*: Integration in dynamisches Routing (index.ts), Monitoring, Feinabstimmung
 
 - [x] **Cloud-Fallback für Klassifizierung** - ✅ **Implementiert mit kostenlosen Cloud-Modellen**
   - *Lösung*: Fallback-Kette: Ollama → Kostenlose Cloud-Modelle (aus `router-config.json` `free_models`) → Statische Klassifizierung
@@ -175,6 +194,17 @@
   - *Implementierung*: Keyword-basierte Klassifizierung mit Confidence-Scores
   - *Impact*: **MITTEL** - Letzte Sicherheitsstufe
   - *Status*: ✅ **Vollständig implementiert**
+
+- [x] **Fix für dynamische Konfiguration** - ✅ **Implementiert in `index.ts`**
+  - *Problem*: Kostenlose Modelle wurden nicht in die dynamische Konfiguration aufgenommen
+  - *Lösung*: Statische `free_models` aus `router-config.json` werden jetzt extrahiert und hinzugefügt
+  - *Änderungen*:
+    - `generateDynamicConfig()` lädt jetzt `free_models` aus Provider-Konfigurationen
+    - Statische Modelle haben Priorität vor gescannten Modellen
+    - Kostenfilter berücksichtigen jetzt kostenlose Modelle
+    - Sortierung bevorzugt kostenlose Modelle
+  - *Impact*: **HOCH** - Behebt das Problem, dass immer Qwen3-32B-TEE verwendet wurde
+  - *Status*: ✅ **Vollständig implementiert und getestet (14 Tests)**
 
 #### 1. Performance-Optimierungen
 - [ ] **Caching für Klassifizierung** - LRU-Cache mit TTL für häufige Prompts
