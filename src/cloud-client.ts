@@ -73,7 +73,7 @@ export class CloudClient {
    * Teile Modell-Referenz in Provider und Modell-ID
    * Unterstützt Formate:
    * - "provider/model-id" (z. B. "openrouter/qwen/qwen3-4b:free")
-   * - "model-id" (z. B. "qwen/qwen3-4b:free") → Provider wird aus PROVIDER_MAP gesucht
+   * - "provider/namespace/model-id" (z. B. "openrouter/qwen/qwen3-4b:free")
    */
   private splitModelRef(modelRef: string): [string, string] {
     const parts = modelRef.split('/');

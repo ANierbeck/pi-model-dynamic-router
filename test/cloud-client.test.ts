@@ -76,7 +76,7 @@ describe("CloudClient", () => {
 
         const client = new CloudClient(mockCfg);
         const result = await client.callModel(
-          "openrouter/openrouter/qwen/qwen3-4b:free",
+          "openrouter/qwen/qwen3-4b:free",
           "Klassifiziere diesen Prompt"
         );
 
@@ -224,17 +224,7 @@ describe("CloudClient", () => {
       });
     });
 
-    describe("Provider-Erkennung", () => {
-      it("erkennt OpenRouter-Modelle", () => {
-        const client = new CloudClient(mockCfg);
-        expect(client).toBeInstanceOf(CloudClient);
-      });
 
-      it("unterstützt nur openai-completions API", async () => {
-        const client = new CloudClient(mockCfg);
-        expect(client).toBeInstanceOf(CloudClient);
-      });
-    });
 
     describe("Headers", () => {
       it("sendet korrekte OpenRouter-Headers", async () => {
@@ -261,10 +251,5 @@ describe("CloudClient", () => {
     });
   });
 
-  describe("splitModelRef", () => {
-    it("teilt Modell-Referenz korrekt auf", () => {
-      const client = new CloudClient(mockCfg);
-      expect(client).toBeInstanceOf(CloudClient);
-    });
-  });
+
 });
