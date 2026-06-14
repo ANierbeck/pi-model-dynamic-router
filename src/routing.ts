@@ -219,6 +219,17 @@ export class Router {
     // Falls models-Array existiert: Stelle sicher, dass diese Modelle enthalten sind
     // ABER: Sie müssen auch die Filter-Kriterien erfüllen (min_gdpval, max_cost, etc.)
     if (g.models?.length) {
+      // Berechne Thresholds einmal vor der Schleife (Performance-Optimierung)
+      let gdpvalPctThreshold: number | null = null;
+      if (g.min_gdpval_pct != null) {
+        const allRefs = this.allDiscoveredRefs();
+        const allGdpvals = allRefs.map(r => getM(r).gdpval).sort((a, b) => a - b);
+        if (allGdpvals.length > 0) {
+          const thresholdIndex = Math.floor((g.min_gdpval_pct / 100) * (allGdpvals.length - 1));
+          gdpvalPctThreshold = allGdpvals[thresholdIndex];
+        }
+      }
+      
       for (const requiredModel of g.models) {
         if (!c.includes(requiredModel)) {
           // Prüfe ob das Modell die Filter-Kriterien erfüllt
@@ -229,14 +240,10 @@ export class Router {
             const modelGdpval = getM(requiredModel).gdpval;
             if (modelGdpval < g.min_gdpval) passesFilters = false;
           }
-          if (g.min_gdpval_pct != null && passesFilters) {
-            // Für min_gdpval_pct: Berechne den Schwellwert aus allen entdeckten Modellen
-            const allRefs = this.allDiscoveredRefs();
-            const allGdpvals = allRefs.map(r => getM(r).gdpval).sort((a, b) => a - b);
-            const thresholdIndex = Math.floor((g.min_gdpval_pct / 100) * (allGdpvals.length - 1));
-            const threshold = allGdpvals[thresholdIndex];
+          if (gdpvalPctThreshold != null && passesFilters) {
             const modelGdpval = getM(requiredModel).gdpval;
-            if (modelGdpval < threshold) passesFilters = false;
+            // Konsistent mit filterByQualityPct: >= threshold
+            if (modelGdpval < gdpvalPctThreshold) passesFilters = false;
           }
           
           // Kosten Filter
