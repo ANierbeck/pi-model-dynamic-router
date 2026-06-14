@@ -33,6 +33,9 @@ interface ClassificationOptions {
   timeoutMs?: number;
   context?: ClassificationContext;
   allowStaticFallback?: boolean;
+  cfg?: Config;
+  cache?: Cache;
+  allowCloudFallback?: boolean;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────
@@ -77,11 +80,7 @@ Respond with JSON only, no extra text:
 
 export async function classifyPrompt(
   prompt: string,
-  options: ClassificationOptions & {
-    cfg?: Config;
-    cache?: Cache;
-    allowCloudFallback?: boolean;
-  } = {}
+  options: ClassificationOptions = {}
 ): Promise<ClassificationResult> {
   const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false, allowCloudFallback = false, cfg, cache } = options;
 
