@@ -38,6 +38,12 @@ import * as metricsModule from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
+import {
+  getCostTierForCategory,
+  getGroupForCategory as getGroupForCategoryFromCostTiers,
+  DEFAULT_COST_TIERS,
+  getCostTiersFromConfig
+} from './src/cost-tiers.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -812,6 +818,51 @@ const defaultExport = function (pi: ExtensionAPI) {
     return router.resolve(name);
   }
 
+  /**
+   * Löst eine Gruppe mit Kostenstufen-Filter auf
+   * @param name - Gruppenname
+   * @param costTier - Kostenstufe (optional)
+   * @returns GroupResolution oder null
+   */
+  function resolveWithCostTier(name: string, costTier?: string): { selected: string; candidates: string[] } | null {
+    // Wenn keine Kostenstufe angegeben, Standard-Resolve verwenden
+    if (!costTier) {
+      return resolve(name);
+    }
+    
+    // Kostenstufe in CostTier Typ umwandeln
+    const tier = costTier as 'free' | 'budget' | 'premium';
+    const result = router.resolveWithCostTier(name, tier);
+    return result;
+  }
+
+  /**
+   * Löst eine Gruppe basierend auf der Klassifizierungskategorie auf
+   * @param category - Klassifizierungskategorie
+   * @returns GroupResolution oder null
+   */
+  function resolveByCategory(category: string): { selected: string; candidates: string[] } | null {
+    return router.resolveByCategory(category);
+  }
+
+  /**
+   * Gibt die Kostenstufe für eine Klassifizierungskategorie zurück
+   * @param category - Klassifizierungskategorie
+   * @returns Kostenstufe
+   */
+  function getCostTierForCategoryFunc(category: string): string {
+    return getCostTierForCategory(category as any);
+  }
+
+  /**
+   * Gibt die Gruppe für eine Klassifizierungskategorie zurück (aus Kostenstufen)
+   * @param category - Klassifizierungskategorie
+   * @returns Gruppenname
+   */
+  function getGroupForCategoryFromCostTiersFunc(category: string): string {
+    return getGroupForCategoryFromCostTiers(category as any);
+  }
+
   // ── Format ─────────────────────────────────────────────────────────────
 
   function fmtModel(ref: string, i: number, sel: boolean) {
@@ -1369,15 +1420,27 @@ const defaultExport = function (pi: ExtensionAPI) {
           }
         }
         
-        // For normal classification (not HINT), get the group
+        // For normal classification (not HINT), get the group with cost tier
         // Type assertion: if it's not a HINT, it must have a category
         const normalClassification = classification as ClassificationResult;
-        const targetGroup = getGroupForCategory(normalClassification.category);
-        const res = resolve(targetGroup) ?? resolve('fallback');
+        
+        // Hole die Kostenstufe und Gruppe für diese Kategorie
+        const costTier = getCostTierForCategoryFunc(normalClassification.category);
+        const targetGroup = getGroupForCategoryFromCostTiersFunc(normalClassification.category);
+        
+        // Versuche zuerst mit Kostenstufen-Filter
+        let res = resolveWithCostTier(targetGroup, costTier);
+        
+        // Fallback: Wenn keine Modelle zur Kostenstufe passen, versuche ohne Filter
+        if (!res || res.candidates.length === 0) {
+          console.warn(`[dynamic] No models fit cost tier "${costTier}" for group "${targetGroup}", falling back to standard resolution`);
+          res = resolve(targetGroup) ?? resolve('fallback');
+        }
+        
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
         candidates = [...res.candidates];
         lastDynamicModel = res.selected;
-        dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
+        dynamicLabel = `${normalClassification.category} → ${targetGroup} [${costTier}]`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
         console.log(`[dynamic] ${logLine}`);
         try {
