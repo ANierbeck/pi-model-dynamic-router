@@ -17,13 +17,19 @@ export interface ClassificationResult {
     | 'design'
     | 'planning'
     | 'exploration'
-    | 'fallback'
-    | string; // Allow any string for HINT targets (model names, group names)
+    | 'fallback';
   reason: string;
   confidence?: number;
-  hintType?: 'model' | 'group'; // Optional: indicates if this is a HINT override
-  hintTarget?: string; // Optional: the original HINT target
 }
+
+export interface HintClassificationResult {
+  reason: string;
+  confidence: 1.0;
+  hintType: 'model' | 'group';
+  hintTarget: string;
+}
+
+export type FullClassificationResult = ClassificationResult | HintClassificationResult;
 
 export interface ClassificationContext {
   lastCategory?: ClassificationResult['category'];
@@ -96,7 +102,7 @@ Respond with JSON only, no extra text:
 export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
-): Promise<ClassificationResult> {
+): Promise<FullClassificationResult> {
   const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false, allowCloudFallback = false, cfg, cache } = options;
 
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
@@ -127,37 +133,49 @@ export async function classifyPrompt(
     prompt
   );
 
-  const tryClassify = async (m: string, t: number): Promise<ClassificationResult> => {
+  const tryClassify = async (m: string, t: number): Promise<FullClassificationResult> => {
     const response = await callOllama(m, ollamaPrompt, { timeoutMs: t });
     // Strip <think>...</think> blocks (gemma4 and other reasoning models output these)
     const cleaned = response.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     // Extract first JSON object in case of surrounding text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
-    if (!isValidClassification(parsed)) throw new Error(`Invalid format: ${response}`);
+    if (!isValidFullClassification(parsed)) throw new Error(`Invalid format: ${response}`);
     
     // Check for HINT override in the classification result
     if (parsed.category && parsed.category.startsWith('hint:')) {
       // Extract the hint target from the category
       const hintTarget = parsed.category.slice(5); // Remove 'hint:' prefix
-      if (hintTarget.startsWith('group:')) {
+      
+      // Guard: if hintTarget is empty, fall through to normal classification
+      if (!hintTarget || hintTarget.length === 0) {
+        console.warn(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
+        // Fall through to normal classification
+      } else if (hintTarget.startsWith('group:')) {
         // This is a group hint
-        return {
-          category: hintTarget.slice(6), // Remove 'group:' prefix
-          reason: parsed.reason || 'User specified group via HINT',
-          confidence: 1.0,
-          hintType: 'group',
-          hintTarget: hintTarget.slice(6),
-        };
+        const groupName = hintTarget.slice(6); // Remove 'group:' prefix
+        if (!groupName || groupName.length === 0) {
+          console.warn(`[classifier] Empty group name in HINT: ${parsed.category}`);
+        } else {
+          return {
+            reason: parsed.reason || 'User specified group via HINT',
+            confidence: 1.0,
+            hintType: 'group',
+            hintTarget: groupName,
+          };
+        }
       } else {
         // This is a model hint
-        return {
-          category: hintTarget,
-          reason: parsed.reason || 'User specified model via HINT',
-          confidence: 1.0,
-          hintType: 'model',
-          hintTarget: hintTarget,
-        };
+        if (!hintTarget || hintTarget.length === 0) {
+          console.warn(`[classifier] Empty model name in HINT: ${parsed.category}`);
+        } else {
+          return {
+            reason: parsed.reason || 'User specified model via HINT',
+            confidence: 1.0,
+            hintType: 'model',
+            hintTarget: hintTarget,
+          };
+        }
       }
     }
     
@@ -205,8 +223,8 @@ export async function classifyPrompt(
             const cloudResponse = await cloudClient.callModel(modelRef, ollamaPrompt);
             const cleaned = cloudResponse.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
             const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-            const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
-            if (isValidClassification(parsed)) {
+            const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
+            if (isValidFullClassification(parsed)) {
               console.log(`[classifier] Cloud model ${modelRef} succeeded`);
               return parsed;
             }
@@ -235,11 +253,26 @@ function isValidClassification(obj: any): obj is ClassificationResult {
   return (
     obj &&
     typeof obj.category === 'string' &&
-    (['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
+    ['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
       obj.category
-    ) || obj.category.startsWith('hint:')) &&
+    ) &&
     typeof obj.reason === 'string'
   );
+}
+
+function isValidHintClassification(obj: any): obj is HintClassificationResult {
+  return (
+    obj &&
+    obj.hintType === 'model' || obj.hintType === 'group' &&
+    typeof obj.hintTarget === 'string' &&
+    obj.hintTarget.length > 0 &&
+    typeof obj.reason === 'string' &&
+    obj.confidence === 1.0
+  );
+}
+
+function isValidFullClassification(obj: any): obj is FullClassificationResult {
+  return isValidClassification(obj) || isValidHintClassification(obj);
 }
 
 
@@ -417,6 +450,11 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
   piWithHooks.hooks.before_user_prompt(
     async ({ prompt, context }: { prompt: string; context: any }) => {
       const classification = await classifyPrompt(prompt);
+      // Handle HINT classification
+      if ('hintType' in classification) {
+        // HINT overrides are not supported in this hook context
+        return;
+      }
       const group = CATEGORY_TO_GROUP[classification.category];
       const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
       if (toolResult?.details?.selected) {

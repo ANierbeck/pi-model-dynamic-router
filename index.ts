@@ -37,7 +37,7 @@ import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, getGroupForCategory } from './src/content-classifier.ts';
+import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -1010,18 +1010,54 @@ const defaultExport = function (pi: ExtensionAPI) {
 
         const prompt = extractLastUserPrompt(context);
         
-        const { category } = await classifyPrompt(prompt, { 
+        const classification = await classifyPrompt(prompt, { 
           allowStaticFallback: useStatic, 
           allowCloudFallback: true, // Aktiviere Cloud-Fallback für dynamisches Routing
           cfg, 
           cache 
         });
-        const targetGroup = getGroupForCategory(category);
+        
+        // Check for HINT override
+        if ('hintType' in classification) {
+          if (classification.hintType === 'group') {
+            const res = resolve(classification.hintTarget);
+            if (res) {
+              candidates = [...res.candidates];
+              lastDynamicModel = res.selected;
+              dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
+              const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
+              console.log(`[dynamic] ${logLine}`);
+              try {
+                fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
+              } catch {}
+              await driveStream(proxy, candidates, context, options, dynamicLabel);
+              return;
+            }
+            console.warn(`[dynamic] HINT group not found: ${classification.hintTarget}`);
+          } else if (classification.hintType === 'model') {
+            // Direct model override
+            candidates = [classification.hintTarget];
+            lastDynamicModel = classification.hintTarget;
+            dynamicLabel = `HINT: ${classification.hintTarget}`;
+            const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
+            console.log(`[dynamic] ${logLine}`);
+            try {
+              fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
+            } catch {}
+            await driveStream(proxy, candidates, context, options, dynamicLabel);
+            return;
+          }
+        }
+        
+        // For normal classification (not HINT), get the group
+        // Type assertion: if it's not a HINT, it must have a category
+        const normalClassification = classification as ClassificationResult;
+        const targetGroup = getGroupForCategory(normalClassification.category);
         const res = resolve(targetGroup) ?? resolve('fallback');
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
         candidates = [...res.candidates];
         lastDynamicModel = res.selected;
-        dynamicLabel = `${category} → ${targetGroup}`;
+        dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
         console.log(`[dynamic] ${logLine}`);
         try {
