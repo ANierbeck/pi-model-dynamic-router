@@ -9,3 +9,7 @@ dist/
 
 # Lokale Arbeitsdateien (nicht für Versionierung)
 archive/
+
+# Generierte Konfigurationsdateien
+router-config.dynamic.json
+router-config.dynamic.*.json

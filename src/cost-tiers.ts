@@ -1,7 +1,7 @@
 // src/cost-tiers.ts
 // Kostenstufen-System für kosteneffizientes dynamisches Routing
 
-import type { Config } from './types.js';
+import type { Config, ClassificationCategory } from './types.js';
 import { lookupPrice, effCost } from './metrics.js';
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -97,8 +97,14 @@ export function getModelCostTier(
     return 'budget';
   }
   
-  // 4. Ansonsten: Premium
-  return 'premium';
+  // 4. Prüfe ob Modell im Premium-Bereich ist (über Budget-Schwellenwert)
+  if (price && price.input > DEFAULT_COST_TIERS.budget.max_cost_per_m) {
+    return 'premium';
+  }
+  
+  // 5. Ansonsten: Budget (konservativer Default für unbekannte Modelle oder Modelle ohne Preis)
+  // Unbekannte Modelle werden als Budget klassifiziert, um auf der sicheren Seite zu sein
+  return 'budget';
 }
 
 /**
@@ -130,46 +136,32 @@ export function modelFitsCostTier(
     // Kostenlose Modelle passen immer zu budget
     if (isFreeModel || isZeroCost) return true;
     
-    // Modelle unter Budget-Schwelle passen
+    // Modelle unter Budget-Schwelle passen (input Preis pro 1M Tokens)
     if (price && price.input <= tierConfig.max_cost_per_m) return true;
-    
-    // Effektive Kosten-Check
-    if (cost <= tierConfig.max_cost_per_request) return true;
     
     return false;
   }
   
-  // 3. Premium-Modelle: Alle Modelle, die nicht explizit ausgeschlossen sind
+  // 3. Premium-Modelle: Alle Modelle, die nicht kostenlos sind
+  // Premium ist die höchste Stufe und akzeptiert alle Modelle
   if (tier === 'premium') {
     // Kostenlose und Budget-Modelle passen immer zu premium
     if (isFreeModel || isZeroCost) return true;
     
-    // Budget-Modelle passen zu premium
-    if (price && price.input <= DEFAULT_COST_TIERS.budget.max_cost_per_m) return true;
-    
-    // Premium-spezifische Checks
-    if (price && price.input > tierConfig.max_cost_per_m) return false;
-    if (cost > tierConfig.max_cost_per_request) return false;
-    
+    // Alle anderen Modelle passen zu premium (keine Obergrenze)
+    // Premium ist die "catch-all" Stufe für teure Modelle
     return true;
   }
   
   return false;
 }
 
+// Re-Export aus content-classifier.ts für Kompatibilität
+export { getGroupForCategory } from './content-classifier.js';
+
 /**
  * Gibt die Kostenstufe basierend auf der Klassifizierungskategorie zurück
  */
-export type ClassificationCategory = 
-  | 'trivial'
-  | 'simple'
-  | 'code_simple'
-  | 'standard'
-  | 'code_complex'
-  | 'design'
-  | 'planning'
-  | 'exploration'
-  | 'fallback';
 
 /**
  * Mapping von Klassifizierungskategorien zu Kostenstufen
@@ -194,28 +186,7 @@ export function getCostTierForCategory(category: ClassificationCategory): CostTi
   return CATEGORY_TO_COST_TIER[category] || 'budget';
 }
 
-/**
- * Gibt die passende Modellgruppe für eine Klassifizierungskategorie zurück
- * (Kompatibilität mit bestehendem CATEGORY_TO_GROUP Mapping)
- */
-export const CATEGORY_TO_GROUP: Record<ClassificationCategory, string> = {
-  trivial: 'trivial',
-  simple: 'simple',
-  code_simple: 'simple',
-  standard: 'standard',
-  code_complex: 'complex',
-  design: 'complex',
-  planning: 'complex',
-  exploration: 'scout',
-  fallback: 'standard',
-};
 
-/**
- * Gibt die Modellgruppe für eine Klassifizierungskategorie zurück
- */
-export function getGroupForCategory(category: ClassificationCategory): string {
-  return CATEGORY_TO_GROUP[category] || 'fallback';
-}
 
 // ── Cost Optimization Utilities ────────────────────────────────────────
 

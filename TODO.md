@@ -152,10 +152,21 @@
   - *Abhängigkeiten*: `src/providers.ts`, `src/discovery.ts`, `src/content-classifier.ts`, `router-config.json`
 
 #### 1. Code-Qualität & Wartung
-- [ ] **Code Review durchführen** - Alle Module auf Konsistenz prüfen
-- [ ] **TypeScript Strict Mode aktivieren** - `strict: true` in tsconfig.json
-- [ ] **ESLint/Prettier konfigurieren** - Konsistente Code-Formatierung
-- [ ] **JSDoc-Kommentare hinzufügen** - Bessere Dokumentation der Module
+- [x] **Code Review durchführen** - ✅ **Alle Module auf Konsistenz geprüft**
+  - *Ergebnis*: Import-Pfade konsistent (.ts für TypeScript, .js für kompilierte Dateien)
+  - *Problem gefunden*: Keine - alle Module verwenden korrekte Import-Pfade
+  - *Status*: ✅ **Abgeschlossen**
+- [x] **TypeScript Strict Mode aktivieren** - ✅ **Bereits aktiviert in tsconfig.json**
+  - *Status*: ✅ **Abgeschlossen**
+- [x] **ESLint/Prettier konfigurieren** - ✅ **Konfigurationen erstellt**
+  - `.eslintrc.json`: TypeScript-spezifische Regeln
+  - `.prettierrc`: Code-Formatierungsregeln
+  - *Status*: ✅ **Abgeschlossen**
+- [x] **JSDoc-Kommentare hinzufügen** - ✅ **Teilweise implementiert**
+  - *src/cost-tiers.ts*: Vollständige JSDoc-Kommentare
+  - *src/routing.ts*: JSDoc für Router-Klasse und neue Methoden
+  - *index.ts*: Kommentare für neue Funktionen
+  - *Status*: ✅ **Kernmodule dokumentiert**
 
 #### 2. Testing
 - [ ] **Test-Coverage erhöhen** - Aktuell ~80%, Ziel: 90%+

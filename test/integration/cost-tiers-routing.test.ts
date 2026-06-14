@@ -131,15 +131,16 @@ describe('Cost Tiers Routing Integration', () => {
     });
 
     it('sollte korrekte Gruppen für Kategorien zurückgeben', () => {
-      expect(router.getGroupForCategory('trivial')).toBe('trivial');
-      expect(router.getGroupForCategory('simple')).toBe('simple');
-      expect(router.getGroupForCategory('code_simple')).toBe('simple');
-      expect(router.getGroupForCategory('standard')).toBe('standard');
-      expect(router.getGroupForCategory('code_complex')).toBe('complex');
-      expect(router.getGroupForCategory('design')).toBe('complex');
-      expect(router.getGroupForCategory('planning')).toBe('complex');
+      // Verwende das kanonische Mapping aus content-classifier.ts
+      expect(router.getGroupForCategory('trivial')).toBe('scout');
+      expect(router.getGroupForCategory('simple')).toBe('operational');
+      expect(router.getGroupForCategory('code_simple')).toBe('operational');
+      expect(router.getGroupForCategory('standard')).toBe('operational');
+      expect(router.getGroupForCategory('code_complex')).toBe('tactical');
+      expect(router.getGroupForCategory('design')).toBe('tactical');
+      expect(router.getGroupForCategory('planning')).toBe('tactical');
       expect(router.getGroupForCategory('exploration')).toBe('scout');
-      expect(router.getGroupForCategory('fallback')).toBe('standard');
+      expect(router.getGroupForCategory('fallback')).toBe('tactical');
     });
   });
 
@@ -239,12 +240,13 @@ describe('Cost Tiers Routing Integration', () => {
 
     it('sollte konsistente Gruppen für Kategorien haben', () => {
       // Jede Kategorie sollte eine gültige Gruppe haben
+      // Verwende die kanonischen Gruppennamen aus content-classifier.ts
       const categories = [
         'trivial', 'simple', 'code_simple', 'standard',
         'code_complex', 'design', 'planning', 'exploration', 'fallback'
       ];
 
-      const validGroups = ['trivial', 'simple', 'standard', 'complex', 'scout'];
+      const validGroups = ['scout', 'operational', 'tactical', 'strategic', 'fallback'];
       
       categories.forEach(category => {
         const group = router.getGroupForCategory(category);
@@ -254,16 +256,17 @@ describe('Cost Tiers Routing Integration', () => {
 
     it('sollte Kostenstufen und Gruppen konsistent mappen', () => {
       // Prüfe, dass die Kostenstufen und Gruppen für jede Kategorie konsistent sind
+      // Verwende das kanonische Mapping aus content-classifier.ts
       const mappings = {
-        'trivial': { tier: 'free', group: 'trivial' },
-        'simple': { tier: 'free', group: 'simple' },
-        'code_simple': { tier: 'free', group: 'simple' },
-        'standard': { tier: 'budget', group: 'standard' },
-        'code_complex': { tier: 'premium', group: 'complex' },
-        'design': { tier: 'premium', group: 'complex' },
-        'planning': { tier: 'premium', group: 'complex' },
+        'trivial': { tier: 'free', group: 'scout' },
+        'simple': { tier: 'free', group: 'operational' },
+        'code_simple': { tier: 'free', group: 'operational' },
+        'standard': { tier: 'budget', group: 'operational' },
+        'code_complex': { tier: 'premium', group: 'tactical' },
+        'design': { tier: 'premium', group: 'tactical' },
+        'planning': { tier: 'premium', group: 'tactical' },
         'exploration': { tier: 'free', group: 'scout' },
-        'fallback': { tier: 'budget', group: 'standard' }
+        'fallback': { tier: 'budget', group: 'tactical' }
       };
 
       Object.entries(mappings).forEach(([category, expected]) => {

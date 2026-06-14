@@ -20,10 +20,10 @@ import {
   getModelCostTier,
   modelFitsCostTier,
   getCostTierForCategory,
-  getGroupForCategory,
   DEFAULT_COST_TIERS,
   getCostTiersFromConfig
 } from './cost-tiers.js';
+import { getGroupForCategory } from './content-classifier.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -306,13 +306,10 @@ export class Router {
    */
   resolveByCategory(category: string): GroupResolution | null {
     // Hole die Kostenstufe und Gruppe für diese Kategorie
+    // HINWEIS: getCostTierForCategory und getGroupForCategory geben immer einen Wahrheit zurück
+    // (mit Fallback-Werten), also ist der !costTier || !groupName Check immer false
     const costTier = getCostTierForCategory(category as any);
     const groupName = getGroupForCategory(category as any);
-
-    if (!costTier || !groupName) {
-      console.warn(`[router] Unknown category: ${category}`);
-      return this.resolve('fallback');
-    }
 
     // Versuche zuerst die spezifische Gruppe mit Kostenstufen-Filter
     const groupResolution = this.resolveWithCostTier(groupName, costTier);
