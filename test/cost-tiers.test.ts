@@ -93,7 +93,8 @@ describe('Cost Tiers System', () => {
       expect(tier).toBe('free');
     });
 
-    it('should return premium for unknown models with non-zero price', () => {
+    it('should return premium for models with high price', () => {
+      // Modelle mit input > 0.5 sollten als premium klassifiziert werden
       mockLookupPrice.mockReturnValueOnce({ input: 1.0, output: 2.0 });
       const tier = getModelCostTier('unknown/expensive-model', []);
       expect(tier).toBe('premium');
@@ -234,40 +235,40 @@ describe('Cost Tiers System', () => {
   });
 
   describe('CATEGORY_TO_GROUP Mapping', () => {
-    it('should map trivial to trivial group', () => {
-      expect(getGroupForCategory('trivial')).toBe('trivial');
+    it('should map trivial to scout group', () => {
+      expect(getGroupForCategory('trivial')).toBe('scout');
     });
 
-    it('should map simple to simple group', () => {
-      expect(getGroupForCategory('simple')).toBe('simple');
+    it('should map simple to operational group', () => {
+      expect(getGroupForCategory('simple')).toBe('operational');
     });
 
-    it('should map code_simple to simple group', () => {
-      expect(getGroupForCategory('code_simple')).toBe('simple');
+    it('should map code_simple to operational group', () => {
+      expect(getGroupForCategory('code_simple')).toBe('operational');
     });
 
-    it('should map standard to standard group', () => {
-      expect(getGroupForCategory('standard')).toBe('standard');
+    it('should map standard to operational group', () => {
+      expect(getGroupForCategory('standard')).toBe('operational');
     });
 
-    it('should map code_complex to complex group', () => {
-      expect(getGroupForCategory('code_complex')).toBe('complex');
+    it('should map code_complex to tactical group', () => {
+      expect(getGroupForCategory('code_complex')).toBe('tactical');
     });
 
-    it('should map design to complex group', () => {
-      expect(getGroupForCategory('design')).toBe('complex');
+    it('should map design to tactical group', () => {
+      expect(getGroupForCategory('design')).toBe('tactical');
     });
 
-    it('should map planning to complex group', () => {
-      expect(getGroupForCategory('planning')).toBe('complex');
+    it('should map planning to tactical group', () => {
+      expect(getGroupForCategory('planning')).toBe('tactical');
     });
 
     it('should map exploration to scout group', () => {
       expect(getGroupForCategory('exploration')).toBe('scout');
     });
 
-    it('should map fallback to standard group', () => {
-      expect(getGroupForCategory('fallback')).toBe('standard');
+    it('should map fallback to tactical group', () => {
+      expect(getGroupForCategory('fallback')).toBe('tactical');
     });
   });
 

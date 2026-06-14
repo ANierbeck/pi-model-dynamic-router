@@ -39,10 +39,7 @@ import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import {
-  getCostTierForCategory,
-  getGroupForCategory as getGroupForCategoryFromCostTiers,
-  DEFAULT_COST_TIERS,
-  getCostTiersFromConfig
+  getCostTierForCategory
 } from './src/cost-tiers.ts';
 
 function loadDefaults(extDir: string): Defaults {
@@ -641,7 +638,12 @@ const defaultExport = function (pi: ExtensionAPI) {
         const originalModels = groupConfig.models ?? [];
         for (const origModel of originalModels) {
           // Normalisiere den Modell-Ref
-          const normalizedOrig = origModel.includes('/') ? origModel : `openrouter/${origModel}`;
+          // Für OpenRouter-Modelle ohne Provider-Präfix: füge 'openrouter/' hinzu
+          const normalizedOrig = origModel.startsWith('openrouter/') 
+            ? origModel 
+            : origModel.includes('/') 
+              ? `openrouter/${origModel}` 
+              : `openrouter/${origModel}`;
           
           // Prüfe ob das Modell die Gruppen-Kriterien erfüllt
           const origGdpval = lookupGdp(normalizedOrig);
@@ -854,14 +856,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     return getCostTierForCategory(category as any);
   }
 
-  /**
-   * Gibt die Gruppe für eine Klassifizierungskategorie zurück (aus Kostenstufen)
-   * @param category - Klassifizierungskategorie
-   * @returns Gruppenname
-   */
-  function getGroupForCategoryFromCostTiersFunc(category: string): string {
-    return getGroupForCategoryFromCostTiers(category as any);
-  }
+
 
   // ── Format ─────────────────────────────────────────────────────────────
 
@@ -1426,7 +1421,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         
         // Hole die Kostenstufe und Gruppe für diese Kategorie
         const costTier = getCostTierForCategoryFunc(normalClassification.category);
-        const targetGroup = getGroupForCategoryFromCostTiersFunc(normalClassification.category);
+        const targetGroup = getGroupForCategory(normalClassification.category);
         
         // Versuche zuerst mit Kostenstufen-Filter
         let res = resolveWithCostTier(targetGroup, costTier);

@@ -83,6 +83,7 @@ export interface Config {
   gdpval_builtin?: Record<string, number>;
   model_metadata?: Record<string, ModelMetadata>;
   model_benchmarks?: Record<string, ModelBenchmarks>;
+  cost_tiers?: any; // Kostenstufen-Konfiguration (optional)
 }
 
 // ── Cache Types ───────────────────────────────────────────────────────────
