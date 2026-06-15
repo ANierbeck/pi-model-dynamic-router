@@ -1507,7 +1507,8 @@ const defaultExport = function (pi: ExtensionAPI) {
       // Iterate every candidate in order; skip limited or unregistered ones without
       // consuming the remainder. This ensures all group models are tried even if some
       // are not yet in Pi's session registry or are temporarily rate-limited.
-      for (const ref of candidates) {
+      for (let i = 0; i < candidates.length; i++) {
+        const ref = candidates[i];
         if (isLimited(ref)) continue;
         const target = await tryStream(ref, context, options);
         if (!target) continue;
@@ -1530,13 +1531,15 @@ const defaultExport = function (pi: ExtensionAPI) {
         lastError = `${ref}: ${result.reason}`;
         recordSoftFailure(ref);
 
-        // Notify the user about the empty response
+        // Notify the user about the empty response, with next candidate hint if available
         const reason = result.reason === 'empty_timeout'
           ? 'keine Antwort innerhalb des Timeouts'
           : 'leere Antwort vom Modell';
+        const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+        const suffix = nextRef ? `, versuche ${nextRef} …` : '';
         proxy.push({
           type: 'text_delta',
-          text: `> [router] ${ref} — ${reason}\n\n`,
+          text: `> [router] ${ref} — ${reason}${suffix}\n\n`,
         } as any);
       }
 
