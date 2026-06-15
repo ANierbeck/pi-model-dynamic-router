@@ -115,6 +115,7 @@ export interface Cache {
   benchmarks?: Record<string, number>;
   cost_mux?: Record<string, number>;
   cost_mux_last_bump?: Record<string, string>;
+  lastScanTimestamp?: number;
   exhausted_keys?: Record<string, number>; // "provider:keyIdx" → exhausted_until timestamp
   openrouter_pricing?: Record<string, { input: number; output: number }>; // provider/modelId ref → $/1M
   usage_log?: { ref: string; tokens: number; ts: number }[]; // token usage history

@@ -60,6 +60,25 @@ export class CacheManager {
   }
 
   /**
+   * Setzt den Timestamp des letzten Scans
+   */
+  setLastScanTimestamp(timestamp: number = Date.now()): void {
+    this.updateCache({ lastScanTimestamp: timestamp });
+  }
+
+  /**
+   * Prüft, ob der Cache noch gültig ist (max. 30 Tage alt)
+   */
+  isScanCacheValid(): boolean {
+    const lastScan = this.cache.lastScanTimestamp;
+    if (lastScan === undefined) return false;
+    
+    const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 Tage in Millisekunden
+    const now = Date.now();
+    return (now - lastScan) < thirtyDaysInMs;
+  }
+
+  /**
    * Setzt den Cache zurück
    */
   resetCache(): void {
