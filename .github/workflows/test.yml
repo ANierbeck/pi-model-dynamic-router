@@ -21,6 +21,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Install Ollama
+      run: chmod +x scripts/install-ollama.sh && ./scripts/install-ollama.sh
+
     - name: Run TypeScript checks
       run: npx tsc --noEmit
 
