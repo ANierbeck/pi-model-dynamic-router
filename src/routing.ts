@@ -195,7 +195,8 @@ export class Router {
     //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
     //   resolve() uses allDiscoveredRefs() for ROUTING so models not yet registered in
     //   Pi's session registry (e.g. right after restart) don't cause "no candidates".
-    let c = this.allDiscoveredRefs();
+    //   Group Isolation: Filter auf g.models + sessionCtx.modelRegistry
+    let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref) || this.sessionCtx?.modelRegistry?.includes(ref));
     
     // Filter nach Qualität
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
@@ -273,8 +274,8 @@ export class Router {
         }
       }
 
-      // Filtere Modelle nach Kostenstufe
-      let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
+      // Filtere Modelle nach Kostenstufe (mit Group Isolation)
+      let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref) || this.sessionCtx?.modelRegistry?.includes(ref));
       
       const filtered = c.filter(ref => {
         return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
