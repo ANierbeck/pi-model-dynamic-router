@@ -59,7 +59,8 @@ const CONTINUATION_MAX_WORDS = 4;
 // ── Classification Prompt ────────────────────────────────────────────────
 // Written in English for model performance — handles input in any language.
 
-const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category:
+const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category.
+{{context_block}}
 
 IMPORTANT HINT RULE: If the request contains a HINT instruction (in any language) like:
 - "HINT: use mistral-medium-3.5"
