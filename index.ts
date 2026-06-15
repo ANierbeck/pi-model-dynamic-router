@@ -501,6 +501,11 @@ const defaultExport = function (pi: ExtensionAPI) {
    */
   async function generateDynamicConfig(): Promise<void> {
     try {
+      // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt)
+      if (cacheManager.isScanCacheValid()) {
+        console.log('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
+        return;
+      }
       
       // 1. Alle verfügbaren Modelle holen (aus Cache)
       const scannedModels = cache.available_models ?? [];
@@ -720,6 +725,9 @@ const defaultExport = function (pi: ExtensionAPI) {
       
       const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
+      
+      // Setze den Timestamp des letzten Scans
+      cacheManager.setLastScanTimestamp();
       
       console.log(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
