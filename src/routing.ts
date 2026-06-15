@@ -187,10 +187,15 @@ export class Router {
     // Dynamic group is handled by the hook, not here
     if (g.method === 'dynamic') return null;
 
-    // When a group has an explicit models list, use it as the routing pool so that
-    // routing candidates match what /router displays. Fall back to allDiscoveredRefs()
-    // only for groups without an explicit list (auto-discovery mode).
-    let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
+    // Always use allDiscoveredRefs() as the routing pool. This includes models from
+    // Pi's session registry (already registered and stream-able via tryStream) plus
+    // all explicit g.models entries across all groups.
+    //
+    // Intentional asymmetry with getTopModels():
+    //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
+    //   resolve() uses allDiscoveredRefs() for ROUTING so models not yet registered in
+    //   Pi's session registry (e.g. right after restart) don't cause "no candidates".
+    let c = this.allDiscoveredRefs();
     
     // Filter nach Qualität
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
