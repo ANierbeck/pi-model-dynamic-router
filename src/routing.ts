@@ -187,9 +187,9 @@ export class Router {
     // Dynamic group is handled by the hook, not here
     if (g.method === 'dynamic') return null;
 
-    // Always use allDiscoveredRefs() as the routing pool. This includes models from
-    // Pi's session registry (already registered and stream-able via tryStream) plus
-    // all explicit g.models entries across all groups.
+    // Start from allDiscoveredRefs() (which unconditionally includes all g.models
+    // entries across all groups, preserving the post-restart fix), then filter to
+    // only this group's g.models for strict isolation.
     //
     // Intentional asymmetry with getTopModels():
     //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
