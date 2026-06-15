@@ -485,7 +485,7 @@ const defaultExport = function (pi: ExtensionAPI) {
       saveCache();
       
       // Generiere dynamische Konfiguration nach dem Scan
-      await generateDynamicConfig();
+      await generateDynamicConfig(force);
     } finally {
       scanning = false;
     }
@@ -499,10 +499,10 @@ const defaultExport = function (pi: ExtensionAPI) {
    * dynamische Konfiguration aufgenommen wurden, was dazu führte, dass immer das gleiche
    * Modell (Qwen3-32B-TEE) verwendet wurde.
    */
-  async function generateDynamicConfig(): Promise<void> {
+  async function generateDynamicConfig(force = false): Promise<void> {
     try {
       // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt)
-      if (cacheManager.isScanCacheValid()) {
+      if (!force && cacheManager.isScanCacheValid()) {
         console.log('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }

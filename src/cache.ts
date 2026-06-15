@@ -75,7 +75,9 @@ export class CacheManager {
     
     const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 Tage in Millisekunden
     const now = Date.now();
-    return (now - lastScan) < thirtyDaysInMs;
+    const diff = now - lastScan;
+    // Prüfe Lower Bound: diff >= 0 (keine Future Timestamps) und < 30 Tage
+    return diff >= 0 && diff < thirtyDaysInMs;
   }
 
   /**
