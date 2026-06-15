@@ -1329,19 +1329,19 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   function extractLastAssistantSnippet(context: Context): string | undefined {
     // Extrahiere die letzte Assistenz-Antwort (kompakt für schnelle Klassifizierung)
-    // Max. 500 Zeichen, um die Antwortzeit unter 45s zu halten
+    // Max. 150 Zeichen (matcht die Begrenzung in classifyPrompt)
     try {
       const assistantMsgs = context.messages.filter((m) => m.role === 'assistant');
       const last = assistantMsgs[assistantMsgs.length - 1];
       if (!last) return undefined;
       const c = last.content as string | Array<{ type: string; text: string }> | unknown;
-      if (typeof c === 'string') return c.slice(0, 500);
+      if (typeof c === 'string') return c.slice(0, 150);
       if (Array.isArray(c)) {
         const textContent = c
           .filter((b: any) => b.type === 'text')
           .map((b: any) => b.text as string)
           .join('');
-        return textContent.slice(0, 500);
+        return textContent.slice(0, 150);
       }
     } catch {
       /* context shape unknown */
