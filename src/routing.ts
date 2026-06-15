@@ -193,16 +193,10 @@ export class Router {
     //
     // Intentional asymmetry with getTopModels():
     //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
-    //   resolve() uses allDiscoveredRefs() for ROUTING so models not yet registered in
-    //   Pi's session registry (e.g. right after restart) don't cause "no candidates".
-    //   Pool: allDiscoveredRefs() filtered to g.models OR registry refs (preserves restart fix)
-    const registryRefs = new Set(
-      (this.sessionCtx?.modelRegistry?.getAvailable() ?? [])
-        .map(m => `${m.provider}/${m.id}`)
-    );
-    let c = this.allDiscoveredRefs().filter(ref => 
-      g.models?.includes(ref) || registryRefs.has(ref)
-    );
+    //   resolve() uses allDiscoveredRefs() for ROUTING which already includes all g.models
+    //   entries (lines 81-85), so filtering to g.models preserves both group isolation and
+    //   the post-restart fix (models in g.models are in the pool regardless of registry state).
+    let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
     
     // Filter nach Qualität
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
@@ -280,14 +274,8 @@ export class Router {
         }
       }
 
-      // Filtere Modelle nach Kostenstufe (Pool: g.models OR registry refs)
-      const registryRefs = new Set(
-        (this.sessionCtx?.modelRegistry?.getAvailable() ?? [])
-          .map(m => `${m.provider}/${m.id}`)
-      );
-      let c = this.allDiscoveredRefs().filter(ref => 
-        g.models?.includes(ref) || registryRefs.has(ref)
-      );
+      // Filtere Modelle nach Kostenstufe (Pool: g.models from allDiscoveredRefs)
+      let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
       
       const filtered = c.filter(ref => {
         return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
