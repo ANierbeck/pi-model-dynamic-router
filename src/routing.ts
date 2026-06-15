@@ -195,11 +195,10 @@ export class Router {
     //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
     //   resolve() uses allDiscoveredRefs() for ROUTING so models not yet registered in
     //   Pi's session registry (e.g. right after restart) don't cause "no candidates".
-    //   Group Isolation: Filter auf g.models + session-registry models that are also in g.models
+    //   Pool: allDiscoveredRefs() filtered to g.models OR registry refs (preserves restart fix)
     const registryRefs = new Set(
       (this.sessionCtx?.modelRegistry?.getAvailable() ?? [])
         .map(m => `${m.provider}/${m.id}`)
-        .filter(ref => g.models?.includes(ref))
     );
     let c = this.allDiscoveredRefs().filter(ref => 
       g.models?.includes(ref) || registryRefs.has(ref)
@@ -281,11 +280,10 @@ export class Router {
         }
       }
 
-      // Filtere Modelle nach Kostenstufe (mit Group Isolation)
+      // Filtere Modelle nach Kostenstufe (Pool: g.models OR registry refs)
       const registryRefs = new Set(
         (this.sessionCtx?.modelRegistry?.getAvailable() ?? [])
           .map(m => `${m.provider}/${m.id}`)
-          .filter(ref => g.models?.includes(ref))
       );
       let c = this.allDiscoveredRefs().filter(ref => 
         g.models?.includes(ref) || registryRefs.has(ref)
