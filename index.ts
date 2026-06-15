@@ -53,7 +53,6 @@ const BACKOFF = _defaults.backoff_minutes.map((m) => m * 60_000);
 const SOFT_BACKOFF = _defaults.soft_backoff_ms;
 const COST_MUX_AT_HIT = _defaults.cost_mux_at_hit;
 const MODELS_TTL = _defaults.models_ttl_ms;
-const MAX_STREAM_RETRIES = _defaults.max_stream_retries;
 const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
 const GDPVAL_URL = _defaults.gdpval_url;
 
@@ -1419,8 +1418,9 @@ const defaultExport = function (pi: ExtensionAPI) {
             candidates = [resolvedTarget];
             lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;
-            const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
+            const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${resolvedTarget}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
             console.log(`[dynamic] ${logLine}`);
+            costTracker.trackRequest(resolvedTarget, 1000, 500);
             try {
               fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
             } catch {}
@@ -1504,57 +1504,40 @@ const defaultExport = function (pi: ExtensionAPI) {
     return (async () => {
       let lastError: string | undefined;
 
-      for (let attempt = 0; attempt <= MAX_STREAM_RETRIES && candidates.length > 0; attempt++) {
-        // Pick next available candidate (skip any that became limited between attempts)
-        let target: { stream: AssistantMessageEventStream; ref: string } | null = null;
-        let targetRef: string | undefined;
+      // Iterate every candidate in order; skip limited or unregistered ones without
+      // consuming the remainder. This ensures all group models are tried even if some
+      // are not yet in Pi's session registry or are temporarily rate-limited.
+      for (const ref of candidates) {
+        if (isLimited(ref)) continue;
+        const target = await tryStream(ref, context, options);
+        if (!target) continue;
 
-        while (candidates.length > 0) {
-          const ref = candidates.shift()!;
-          if (isLimited(ref)) continue;
-          target = await tryStream(ref, context, options);
-          if (target) {
-            targetRef = ref;
-            break;
-          }
-        }
-
-        if (!target || !targetRef) break;
-
-        // Show which model is actually used (may differ from initially selected after retries)
-        const prefix = label ? `${label} · ${targetRef}` : targetRef;
+        // Show which model is actually being used
+        const prefix = label ? `${label} · ${ref}` : ref;
         proxy.push({ type: 'text_delta', text: `> [router] ${prefix}\n\n` } as any);
 
         const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
 
         if (result.ok) {
           // Success — record healthy, finalize proxy
-          recordOk(targetRef);
+          recordOk(ref);
           // The stream's done/error event was already forwarded via push()
           // The proxy will complete naturally via the pushed "done" event
           return;
         }
 
-        // Soft failure — record and try next
-        lastError = `${targetRef}: ${result.reason}`;
-        recordSoftFailure(targetRef);
+        // Soft failure — record and try next candidate
+        lastError = `${ref}: ${result.reason}`;
+        recordSoftFailure(ref);
 
         // Notify the user about the empty response
         const reason = result.reason === 'empty_timeout'
           ? 'keine Antwort innerhalb des Timeouts'
           : 'leere Antwort vom Modell';
-        if (candidates.length > 0 && attempt < MAX_STREAM_RETRIES) {
-          const nextRef = candidates[0];
-          proxy.push({
-            type: 'text_delta',
-            text: `> [router] ${targetRef} — ${reason}, versuche ${nextRef} …\n\n`,
-          } as any);
-        } else {
-          proxy.push({
-            type: 'text_delta',
-            text: `> [router] ${targetRef} — ${reason}\n\n`,
-          } as any);
-        }
+        proxy.push({
+          type: 'text_delta',
+          text: `> [router] ${ref} — ${reason}\n\n`,
+        } as any);
       }
 
       // All retries exhausted — push an error event
