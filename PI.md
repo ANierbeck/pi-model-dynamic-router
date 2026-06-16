@@ -65,10 +65,14 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 
 | Attempt | Delay | Action |
 |---------|-------|--------|
-| 1 | 0s | Try current key |
-| 2 | 1m | **Key rotation** — try next API key for the provider (1hr cooldown on current key) |
+| 1 | 1m | Try current key |
+| 2 | 2m | **Key rotation** — try next API key for the provider (1hr cooldown on current key) |
 | 3 | 4m | **Exponential backoff** — wait 4x previous delay |
-| 4 | 8m | **costMux** — on 4th consecutive 429, provider gets permanent cost penalty |
+| 4 | 8m | **Exponential backoff** — wait 4x previous delay |
+| 5 | 16m | **Exponential backoff** — wait 4x previous delay |
+| 6 | 32m | **Exponential backoff** — wait 4x previous delay |
+| 7 | 64m | **Exponential backoff** — wait 4x previous delay |
+| 8 | 90m | **costMux** — on 4th consecutive 429, provider gets permanent cost penalty |
 
 ### Cost Multiplier
 ```
@@ -103,65 +107,72 @@ session_start → load config + cache, async scan, register providers + groups, 
 
 ### `router-config.json`
 
+The actual configuration file contains provider definitions, model groups, and cost tiers. Below is a simplified example based on the real configuration:
+
 ```json
 {
   "providers": {
     "openrouter": {
       "billing": "pay_per_token",
-      "free_models": ["openrouter/qwen/qwen3-4b:free"]
+      "free_models": ["openrouter/qwen/qwen3-4b:free", "openrouter/google/gemma-3-4b-it:free"]
     },
     "anthropic": {
+      "billing": "pay_per_token"
+    },
+    "mistral": {
       "billing": "pay_per_token"
     }
   },
   "model_groups": {
-    "strategic": {
-      "description": "High intelligence models",
-      "method": "best",
-      "min_gdpval": 700,
-      "models": ["anthropic/claude-3-opus", "openai/gpt-4o"]
-    },
-    "tactical": {
-      "description": "Medium intelligence models",
-      "method": "best",
-      "min_gdpval": 600,
-      "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"]
-    },
-    "operational": {
-      "description": "Cost-effective models",
-      "method": "tiered",
-      "min_gdpval": 300,
-      "max_cost_per_m": 0.5,
-      "models": ["anthropic/claude-3-haiku", "openai/gpt-4o-mini"]
-    },
-    "scout": {
-      "description": "Free models for simple tasks",
+    "trivial": {
+      "description": "Trivial tasks - free models only",
       "method": "min_cost",
       "max_cost": 0,
       "models": ["qwen/qwen3-4b:free", "google/gemma-3-4b-it:free"]
     },
-    "fallback": {
-      "description": "Fallback group",
+    "simple": {
+      "description": "Simple tasks - free models only",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": ["qwen/qwen3-4b:free", "google/gemma-3-12b-it:free"]
+    },
+    "standard": {
+      "description": "Standard tasks - cost-effective models",
+      "method": "tiered",
+      "min_gdpval": 500,
+      "max_cost_per_m": 0.5,
+      "models": ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+    },
+    "complex": {
+      "description": "Complex tasks - GDPval >=600 (mistral-medium tier), best available",
       "method": "best",
-      "models": ["anthropic/claude-3-haiku"]
+      "min_gdpval": 600,
+      "models": ["anthropic/claude-3-sonnet", "openai/gpt-4o", "mistral/mistral-medium-3.5"]
+    },
+    "tactical": {
+      "description": "GDPval >=600: magistral/mistral-medium tier, best available",
+      "method": "best",
+      "min_gdpval": 600,
+      "models": ["mistral/mistral-medium-3.5"]
     },
     "dynamic": {
-      "description": "Dynamic model selection based on content",
+      "description": "Dynamic model selection based on content classification",
       "method": "dynamic"
+    },
+    "fallback": {
+      "description": "Fallback group for ambiguous requests",
+      "method": "tiered",
+      "models": ["anthropic/claude-3-haiku"]
     }
   },
   "gdpval_builtin": {
     "magistral-small": 665,
-    "magistral-medium": 669,
-    "mistral-medium-3.5": 665
-  },
-  "cost_tiers": {
-    "free": {"max_cost_per_m": 0.01, "max_cost_per_request": 0.01},
-    "budget": {"max_cost_per_m": 0.75, "max_cost_per_request": 1.5},
-    "premium": {"max_cost_per_m": 10.0, "max_cost_per_request": 20.0}
+    "magistral-medium": 669
   }
 }
 ```
+
+Note: The actual configuration may contain additional fields and values. See `router-config.json` for the complete and up-to-date configuration.
 
 ### Files
 
