@@ -1,181 +1,219 @@
 # PI Model Router — Content-Based Extension
 
-**Inhaltssensitiver Router für PI**: Erweitert den bestehenden `pi-model-router` um eine **dynamische Klassifizierung von User-Prompts**, um basierend auf der **Komplexität/Kategorie** der Anfrage das optimale Modell auszuwählen.
+**Content-sensitive router for PI**: Extends the existing `pi-model-router` with **dynamic classification of user prompts** to select the optimal model based on the **complexity/category** of the request.
 
 ---
 
-## Warum dieser Fork?
-Der originale [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) routet Modelle basierend auf:
-- **Modellqualität** (GDPval-Scores),
-- **Kosten** (Billing-Präferenzen),
-- **Verfügbarkeit** (Rate-Limits, Latenz).
+## Why This Fork?
+The original [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) routes models based on:
+- **Model quality** (GDPval scores),
+- **Cost** (billing preferences),
+- **Availability** (rate limits, latency).
 
-**Lücke**: Es fehlt eine **Echtzeit-Analyse des Inhalts** der Anfrage. Beispiel:
-- Eine einfache Code-Editierung (`"Ersetze Zeile 42"`) könnte lokal mit Ollama bearbeitet werden.
-- Eine komplexe Architektur-Frage (`"Entwirf eine Mikroservice-Architektur"`) sollte an Claude Opus gehen.
+**Gap**: Missing **real-time content analysis** of the request. For example:
+- A simple code edit (`"Replace line 42"`) could be handled locally with Ollama.
+- A complex architecture question (`"Design a microservice architecture"`) should go to Claude Opus.
 
 ---
 
-## Wie es funktioniert
-### 1. Prompt-Klassifizierung
-Ein lokales Modell (z. B. `ollama/gemma4:12b`) analysiert die User-Anfrage und klassifiziert sie in eine der folgenden Kategorien:
+## How It Works
+### 1. Prompt Classification
+A local model (e.g., `ollama/gemma4:12b`) analyzes the user request and classifies it into one of the following categories:
 
-| Kategorie          | Beschreibung                                                                 | Beispiel                                  |
-|--------------------|------------------------------------------------------------------------------|-------------------------------------------|
-| `code_simple`      | Einfache Code-Änderungen (1–10 Zeilen, Syntax-Fixes, Typos).              | `"Ersetze 'foo' mit 'bar' in Zeile 42"` |
-| `code_complex`     | Komplexe Code-Änderungen (Refactoring, Debugging, >50 Zeilen).           | `"Optimiere diese 200-Zeilen-Funktion"` |
-| `design`           | Architektur, Systemdesign, API-Entwurf.                                    | `"Entwirf eine REST-API für X"`          |
-| `planning`         | Projektplanung, Roadmaps, Aufgabenaufschlüsselung.                        | `"Erstelle einen Migrationsplan"`       |
-| `exploration`      | Forschung, unklare Anforderungen, Brainstorming.                          | `"Welche Datenbank für 10M IoT-Geräte?"` |
-| `fallback`          | Unklar oder mehrere Kategorien zutreffend.                                  | `"Hilfe"` oder `"Mach alles besser"`   |
+| Category          | Description                                                                 | Example                                  |
+|-------------------|-----------------------------------------------------------------------------|------------------------------------------|
+| `code_simple`     | Simple code changes (1–10 lines, syntax fixes, typos).              | `"Replace 'foo' with 'bar' in line 42"` |
+| `code_complex`    | Complex code changes (refactoring, debugging, >50 lines).           | `"Optimize this 200-line function"`    |
+| `design`          | Architecture, system design, API design.                                    | `"Design a REST API for X"`          |
+| `planning`        | Project planning, roadmaps, task breakdown.                        | `"Create a migration plan"`       |
+| `exploration`     | Research, unclear requirements, brainstorming.                          | `"Which database for 10M IoT devices?"` |
+| `fallback`         | Unclear or multiple categories apply.                                  | `"Help"` or `"Make everything better"`   |
 
-### 2. Routing-Entscheidung
-Basierend auf der Kategorie wird eine **Modellgruppe** ausgewählt:
+### 2. Routing Decision
+Based on the category, a **model group** is selected:
 
-| Kategorie          | Zielgruppe          | Modellbeispiele                          |
-|--------------------|---------------------|------------------------------------------|
-| `code_simple`      | `operational`       | `ollama/phi3:mini`, `mistral-tiny`      |
-| `code_complex`     | `tactical`          | `mistral-medium`, `deepseek-coder`       |
-| `design`           | `strategic`         | `claude-opus`, `gpt-4o`                 |
-| `planning`         | `tactical`          | `mistral-medium`, `claude-sonnet`       |
-| `exploration`      | `scout`             | `ollama/gemma4:12b`                      |
-| `fallback`          | User-Bestätigung    | Nachfrage, welches Modell genutzt werden soll. |
+| Category          | Target Group          | Model Examples                          |
+|-------------------|-----------------------|------------------------------------------|
+| `code_simple`     | `operational`         | `ollama/phi3:mini`, `mistral-tiny`      |
+| `code_complex`    | `tactical`            | `mistral-medium`, `deepseek-coder`       |
+| `design`          | `strategic`           | `claude-opus`, `gpt-4o`                 |
+| `planning`        | `tactical`            | `mistral-medium`, `claude-sonnet`       |
+| `exploration`     | `scout`               | `ollama/gemma4:12b`                      |
+| `fallback`         | User confirmation    | Ask which model to use.                  |
 
-### 3. Integration in den bestehenden Router
-- **Hook**: Der `before_user_prompt`-Hook klassifiziert die Anfrage **vor** dem Routing.
+### 3. Integration with Existing Router
+- **Hook**: The `before_user_prompt` hook classifies the request **before** routing.
 - **Workflow**:
-  1. User sendet Prompt.
-  2. **Klassifizierung**: Prompt wird an `ollama/gemma4:12b` gesendet.
-  3. **Routing**: Basierend auf der Kategorie wird eine Gruppe ausgewählt (z. B. `code_simple` → `operational`).
-  4. **Modellauswahl**: Der bestehende Router wählt das beste Modell aus der Gruppe (basierend auf GDPval, Kosten, Verfügbarkeit).
-  5. **Fallback**: Bei hohen Kosten (>5000 Tokens) oder Unsicherheit → User-Bestätigung.
+  1. User sends prompt.
+  2. **Classification**: Prompt is sent to `ollama/gemma4:12b`.
+  3. **Routing**: Based on the category, a group is selected (e.g., `code_simple` → `operational`).
+  4. **Model Selection**: The existing router selects the best model from the group (based on GDPval, cost, availability).
 
 ---
 
-## Installation
-### 1. Fork klonen und installieren
-```bash
-git clone https://github.com/a-canary/pi-model-router /Users/anierbeck/git/pi-model-router-fork
-cd /Users/anierbeck/git/pi-model-router-fork
-npm install
-```
+## Architecture
 
-### 2. Ollama-Modelle vorbereiten
-```bash
-# gemma4:12b wird genutzt (lokal bereits verfügbar)
-ollama pull phi3:mini      # Fallback-Option
-```
+### Content Classifier (`src/content-classifier.ts`)
+The classifier uses **Ollama (gemma4:12b)** for prompt classification:
 
-### 3. PI-Extension aktivieren
-```bash
-# Symlink für Entwicklung
-ln -s /Users/anierbeck/git/pi-model-router-fork ~/.pi/agent/extensions/pi-model-router
-# PI neu laden
-/reload
-```
-
----
-
-## Testen
-### 1. Unit-Tests (ohne Ollama)
-```bash
-npm test
-```
-- Testet die Klassifizierungslogik mit gemockten Ollama-Antworten.
-
-### 2. Integrationstests (mit Ollama)
-```bash
-npm run test:integration
-```
-- **Voraussetzung**: Ollama muss laufen (`ollama serve`).
-- Testet die Klassifizierung mit echten Prompts.
-
-### 3. Manuell in PI testen
-1. PI starten und eine Anfrage stellen.
-2. Der Router sollte automatisch das Modell basierend auf der Kategorie auswählen.
-3. Überprüfen mit:
-   ```
-   /router
-   ```
-   - Die aktive Gruppe und das Modell sollten angepasst sein.
-
----
-
-## Konfiguration
-### 1. Routing-Regeln anpassen
-Die Zuordnung von Kategorien zu Gruppen kann in `src/content-classifier.ts` angepasst werden:
 ```typescript
-// src/content-classifier.ts
-export const CATEGORY_TO_GROUP = {
-  code_simple: "operational",  // Einfach → günstige lokale Modelle
-  code_complex: "tactical",    // Komplex → Remote, aber kosteneffizient
-  design: "strategic",         // Design → beste verfügbare Modelle
-  // ...
-};
-```
+// Classification prompt sent to Ollama
+export const CLASSIFICATION_PROMPT = `
+Classify the following user request into exactly one category:
+- trivial: Very simple requests ("list files", "show TODOs")
+- simple: Simple questions ("explain briefly", "summarize")
+- code_simple: Small code changes (1–10 lines, syntax fixes)
+- standard: Standard requests (general questions, moderate complexity)
+- code_complex: Substantial changes (refactoring, debugging, >50 lines)
+- design: Architecture, system design, API design
+- planning: Task breakdown, roadmaps, prioritization
+- exploration: Vague or open-ended questions
+- fallback: Ambiguous or short continuation
 
-### 2. Klassifizierungs-Prompt anpassen
-Der Prompt für die Ollama-Klassifizierung kann in `src/content-classifier.ts` modifiziert werden:
-```typescript
-const CLASSIFICATION_PROMPT = `
-  Klassifiziere die folgende Anfrage in eine der Kategorien:
-  code_simple, code_complex, design, planning, exploration, fallback.
-  ...
+Current request:
+{{prompt}}
+
+Respond ONLY with a JSON object containing:
+- category: one of the above categories
+- reason: brief explanation
+- confidence: 0.0-1.0 score
 `;
 ```
 
----
+### Classification Process
+1. **Prompt Extraction**: Extract the last user prompt from the context.
+2. **Ollama Call**: Send the prompt to Ollama with the classification prompt.
+3. **JSON Parsing**: Parse the JSON response from Ollama.
+4. **Fallback**: If Ollama fails, use static classification (keyword-based).
 
-## Beispiel-Prompts und erwartete Routing-Entscheidungen
-| User-Prompt                                                                 | Kategorie          | Gruppe          | Beispiel-Modell               |
-|---------------------------------------------------------------------------|--------------------|------------------|--------------------------------|
-| "Ersetze alle Vorkommen von 'oldVar' mit 'newVar' in dieser Datei."      | `code_simple`      | `operational`    | `ollama/phi3:mini`             |
-| "Debugge diese rekursive Funktion — sie stürzt bei großen Eingaben ab." | `code_complex`     | `tactical`       | `mistral-medium`               |
-| "Entwirf eine REST-API für ein Benutzerverwaltungssystem."              | `design`           | `strategic`      | `claude-opus`                  |
-| "Erstelle einen Projektplan für die Umstellung auf TypeScript."       | `planning`         | `tactical`       | `mistral-medium`               |
-| "Welche Datenbank eignet sich für Echtzeit-Analysen von 10M Datensätzen?" | `exploration`    | `scout`          | `ollama/gemma4:12b`             |
-| "Hilfe"                                                                   | `fallback`         | User-Bestätigung | —                              |
+### Model Groups (`router-config.json`)
+Each group defines:
+- **Models**: List of models that belong to the group.
+- **Method**: Selection method (`best`, `tiered`, `min_cost`, `dynamic`).
+- **Criteria**: Minimum GDPval, maximum cost, etc.
 
----
-
-## Offene Fragen & TODO
-1. **Genauigkeit der Klassifizierung**:
-   - Wie gut kann `gemma4:12b` die Kategorien unterscheiden?
-   - *Aktion*: Manuelle Evaluation mit 20–30 Beispiel-Prompts.
-2. **Performance**:
-   - Latenz der Klassifizierung messen (Ziel: <500ms).
-3. **User-Control**:
-   - Soll der User die Klassifizierung überschreiben können (z. B. per `/model-hint complex`)?
-4. **Kategorien erweitern**:
-   - Fehlen Kategorien wie `documentation` (Dokumentationsgenerierung)?
-
----
-
-## Entwicklung
-### 1. Code-Struktur
-```
-pi-model-router-fork/
-├── src/
-│   ├── content-classifier.ts   # Kernlogik: Klassifizierung + Routing
-│   └── ollama-utils.ts         # Hilfsfunktionen für Ollama-Aufrufe
-├── skills/
-│   └── content-based-router/   # Dokumentation des Skills
-│       └── SKILL.md
-├── test/
-│   └── classifier.test.ts      # Unit- und Integrationstests
-├── index.ts                    # Hauptdatei (Hook ist eingebunden)
-└── README-CONTENT-BASED.md     # Diese Dokumentation
+Example:
+```json
+{
+  "model_groups": {
+    "scout": {
+      "description": "Free models for simple tasks",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": ["qwen/qwen3-4b:free", "google/gemma-3-4b-it:free"]
+    },
+    "operational": {
+      "description": "Cost-effective models for standard tasks",
+      "method": "tiered",
+      "min_gdpval": 300,
+      "max_cost_per_m": 0.5,
+      "models": ["anthropic/claude-3-haiku", "openai/gpt-4o-mini"]
+    }
+  }
+}
 ```
 
-### 2. Wichtige Funktionen
-- **`classifyPrompt()`** (`src/content-classifier.ts`):
-  Klassifiziert einen Prompt mit Ollama.
-- **`setupContentBasedRouting()`** (`src/content-classifier.ts`):
-  Registriert den `before_user_prompt`-Hook in PI.
-- **`callOllama()`** (`src/ollama-utils.ts`):
-  Führt Ollama-Aufrufe aus (mit Fehlerbehandlung).
+---
+
+## Features
+
+### ✅ Implemented
+- [x] **Content-based classification** with Ollama
+- [x] **Dynamic model group selection**
+- [x] **Fallback to static classification**
+- [x] **Cloud fallback** for classification
+- [x] **Cost tier system** (free/budget/premium)
+- [x] **HINT-Override** for manual model selection
+
+### 🚀 Planned
+- [ ] **Session escalation** on loop detection
+- [ ] **Multi-label classification**
+- [ ] **Context-based classification**
+- [ ] **Performance metrics**
 
 ---
 
-## Lizenz
-MIT (wie der originale Router).
+## Usage
+
+### Basic Usage
+1. Install the extension:
+   ```bash
+   pi install git:github.com/ANierbeck/pi-model-dynamic-router
+   ```
+2. Reload PI:
+   ```
+   /reload
+   ```
+3. Use the dynamic model group:
+   ```
+   /model dynamic
+   ```
+
+### HINT-Override
+Override the automatic model selection:
+```
+HINT: use mistral-medium-3.5
+```
+or
+```
+HINT: use group tactical
+```
+
+---
+
+## Configuration
+
+### `router-config.json`
+Configure model groups, providers, and cost tiers:
+```json
+{
+  "providers": {
+    "openrouter": {
+      "billing": "pay_per_token",
+      "free_models": ["openrouter/qwen/qwen3-4b:free"]
+    }
+  },
+  "model_groups": {
+    "dynamic": {
+      "description": "Dynamic model selection based on content",
+      "method": "dynamic"
+    }
+  },
+  "cost_tiers": {
+    "free": {"max_cost_per_m": 0.01, "max_cost_per_request": 0.01},
+    "budget": {"max_cost_per_m": 0.75, "max_cost_per_request": 1.5},
+    "premium": {"max_cost_per_m": 10.0, "max_cost_per_request": 20.0}
+  }
+}
+```
+
+---
+
+## Development
+
+### Prerequisites
+- Node.js >= 20.11.0
+- Ollama (optional, for local classification)
+
+### Installation
+```bash
+npm install
+```
+
+### Tests
+```bash
+npm test
+```
+
+### Build
+```bash
+npm run build
+```
+
+---
+
+## Contributing
+- All documentation **MUST** be in English
+- All code comments **MUST** be in English
+- Follow the existing code style
+- Add tests for new features
