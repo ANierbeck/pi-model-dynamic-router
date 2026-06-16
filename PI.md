@@ -67,12 +67,12 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 |---------|-------|--------|
 | 1 | 1m | Try current key |
 | 2 | 2m | **Key rotation** — try next API key for the provider (1hr cooldown on current key) |
-| 3 | 4m | **Exponential backoff** — wait 4x previous delay |
-| 4 | 8m | **Exponential backoff** — wait 4x previous delay |
-| 5 | 16m | **Exponential backoff** — wait 4x previous delay |
-| 6 | 32m | **Exponential backoff** — wait 4x previous delay |
-| 7 | 64m | **Exponential backoff** — wait 4x previous delay |
-| 8 | 90m | **costMux** — on 4th consecutive 429, provider gets permanent cost penalty |
+| 3 | 4m | **Exponential backoff** — double previous delay |
+| 4 | 8m | **Exponential backoff + costMux** — double previous delay, on 4th consecutive 429 provider gets permanent cost penalty |
+| 5 | 16m | **Exponential backoff** — double previous delay |
+| 6 | 32m | **Exponential backoff** — double previous delay |
+| 7 | 64m | **Exponential backoff** — double previous delay (capped at 90m) |
+| 8 | 90m | **Exponential backoff** — capped at 90m |
 
 ### Cost Multiplier
 ```
