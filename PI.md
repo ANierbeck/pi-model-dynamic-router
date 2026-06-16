@@ -71,8 +71,8 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 | 4 | 8m | **Exponential backoff + costMux** — double previous delay, on 4th consecutive 429 provider gets permanent cost penalty |
 | 5 | 16m | **Exponential backoff** — double previous delay |
 | 6 | 32m | **Exponential backoff** — double previous delay |
-| 7 | 64m | **Exponential backoff** — double previous delay (capped at 90m) |
-| 8 | 90m | **Exponential backoff** — capped at 90m |
+| 7 | 64m | **Exponential backoff** — double previous delay |
+| 8 | 90m | **Exponential backoff** — would be 128m if doubled, but capped at 90m |
 
 ### Cost Multiplier
 ```
