@@ -29,9 +29,9 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and integr
 
 ### Requirements
 
-- **Ollama** must be installed and running (`ollama serve`).
-- The **gemma2:2b** model must be available (`ollama pull gemma2:2b`).
-- Ollama must be accessible from the system (default: `http://localhost:11434`).
+- **Ollama** must be installed and running (`ollama serve`)
+- The **gemma2:2b** model must be available (`ollama pull gemma2:2b`)
+- Ollama must be accessible from the system (default: `http://localhost:11434`)
 
 ## Architecture
 
@@ -48,120 +48,154 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 5. **Provider registration**: discovered providers registered with pi's modelRegistry (skip built-in + CLI OAuth providers)
 6. **Group registration**: virtual providers for each group that route through resolved models
 
-### Group Selection
+### Key Components
 
-| Group | Method | Description |
-|-------|--------|-------------|
-| **strategic** | `best` | Highest gdpval available, period |
-| **tactical** | `tiered` ≥75% | Top 25% quality, cheapest by billing preference |
-| **operational** | `tiered` ≥50% | Top 50% quality, cheapest by billing preference |
-| **scout** | `tiered` ≥25% | Top 25% quality, cheapest by billing preference |
-| **fallback** | `tiered` ≥0% | Any available, cheapest by billing preference |
-| **dynamic** | `dynamic` | Auto-classifies prompts via Ollama (gemma2:2b) and routes to the best group |
+| Component | Purpose | Implementation |
+|-----------|---------|----------------|
+| **DiscoveryManager** | API key and model discovery | `src/discovery.ts` |
+| **RateLimitManager** | Rate limit handling | `src/rate-limit.ts` |
+| **Metrics** | GDPval, cost, latency tracking | `src/metrics.ts` |
+| **CacheManager** | Persistent caching | `src/cache.ts` |
+| **Router** | Model group resolution | `src/routing.ts` |
+| **ContentClassifier** | Prompt classification | `src/content-classifier.ts` |
 
-**Billing preference order**: free → subscription (by rate-limit pressure + cost) → local → pay-per-token (by cost)
+## Rate Limits & Failover
 
-### Effective Cost
+### Rate Limit Strategy
 
+| Attempt | Delay | Action |
+|---------|-------|--------|
+| 1 | 0s | Try current key |
+| 2 | 1m | **Key rotation** — try next API key for the provider (1hr cooldown on current key) |
+| 3 | 4m | **Exponential backoff** — wait 4x previous delay |
+| 4 | 8m | **costMux** — on 4th consecutive 429, provider gets permanent cost penalty |
+
+### Cost Multiplier
 ```
 effectiveCost = (baseCost || 0.01) × subDiscount(0.5) × costMux[provider]
 ```
 
-### Rate Limit Handling
+- **subDiscount**: 0.5 for subscription providers (lower rate limit pressure)
+- **costMux**: Permanent multiplier (max 1/day, never decays) for providers with 4+ consecutive 429 errors
 
-On 429 (after key rotation exhausted): exponential backoff per model, immediate failover to next candidate.
+## Billing Preference
 
-| Hit | Cooldown | Effect |
-|-----|----------|--------|
-| 1-3 | 1m→4m | failover only |
-| 4 | 8m | **costMux[provider] += 1** (max 1/day, never decays) |
-| 5-7 | 16m→64m | |
-| 8+ | 90m cap | |
+**Order**: free → subscription (lowest rate-limit pressure) → local → pay-per-token (by cost)
 
-### Stream Retry
+- **Free models**: Always preferred (cost = 0)
+- **Subscription models**: Lower cost multiplier (0.5)
+- **Local models**: No cost multiplier (1.0)
+- **Pay-per-token models**: Full cost (1.0)
 
-Groups use proxy streams with soft-failure detection. On empty response or timeout, the router automatically retries with the next candidate model.
-
-## Data Flow
+## Startup Sequence
 
 ```
 session_start → load config + cache, async scan, register providers + groups, set footer
-turn_start    → record timestamp + model ref
-turn_end      → update throughput/latency EMA, record success
-tool_result   → detect 429 → key rotation → backoff + costMux at 4th hit
 ```
 
-## Key Functions
+1. **Load configuration**: Load `router-config.json` and cache
+2. **Async scan**: Scan for models and GDPval scores in background
+3. **Register providers**: Register all discovered providers with pi's modelRegistry
+4. **Register groups**: Register virtual providers for each model group
+5. **Set footer**: Display current model and group in pi's footer
 
-- `scan()` → async fetch GDPval + models + pricing from APIs
-- `allDiscoveredRefs()` → all models from API discovery + pinned
-- `resolve(name)` → quality filter + billing preference sort → {selected, candidates}
-- `effCost(ref)` → base × subDiscount × costMux
-- `lookupPrice(ref)` → config → exact cache → normalized backfill from OpenRouter
-- `billingTier(ref)` → 0:free, 1:subscription, 2:local, 3:payg
-- `filterByQualityPct(refs, pct)` → keep models at or above gdpval percentile
-- `groupStream()` → proxy stream with retry on soft failures
+## Configuration
 
-## Config Shape
+### `router-config.json`
 
-```jsonc
+```json
 {
   "providers": {
-    "anthropic": { "billing": "subscription", "keys": [{ "key": "!pass show api/claude/token", "label": "primary" }] },
-    "chutes": { "billing": "subscription" },
-    "openrouter": { "billing": "pay_per_token" },
-    "ollama": { "billing": "subscription" }  // Required for dynamic routing
+    "openrouter": {
+      "billing": "pay_per_token",
+      "free_models": ["openrouter/qwen/qwen3-4b:free"]
+    },
+    "anthropic": {
+      "billing": "pay_per_token"
+    }
   },
   "model_groups": {
-    "strategic": { "method": "best" },
-    "tactical": { "method": "tiered", "min_gdpval_pct": 75 },
-    "operational": { "method": "tiered", "min_gdpval_pct": 50 },
-    "scout": { "method": "tiered", "min_gdpval_pct": 25 },
-    "fallback": { "method": "tiered", "min_gdpval_pct": 0 },
-    "dynamic": { "method": "dynamic", "description": "Auto-classifies prompts via Ollama (gemma2:2b)" }
+    "strategic": {
+      "description": "High intelligence models",
+      "method": "best",
+      "min_gdpval": 700,
+      "models": ["anthropic/claude-3-opus", "openai/gpt-4o"]
+    },
+    "tactical": {
+      "description": "Medium intelligence models",
+      "method": "best",
+      "min_gdpval": 600,
+      "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"]
+    },
+    "operational": {
+      "description": "Cost-effective models",
+      "method": "tiered",
+      "min_gdpval": 300,
+      "max_cost_per_m": 0.5,
+      "models": ["anthropic/claude-3-haiku", "openai/gpt-4o-mini"]
+    },
+    "scout": {
+      "description": "Free models for simple tasks",
+      "method": "min_cost",
+      "max_cost": 0,
+      "models": ["qwen/qwen3-4b:free", "google/gemma-3-4b-it:free"]
+    },
+    "fallback": {
+      "description": "Fallback group",
+      "method": "best",
+      "models": ["anthropic/claude-3-haiku"]
+    },
+    "dynamic": {
+      "description": "Dynamic model selection based on content",
+      "method": "dynamic"
+    }
   },
-  "model_metrics": {}
+  "gdpval_builtin": {
+    "magistral-small": 665,
+    "magistral-medium": 669,
+    "mistral-medium-3.5": 665
+  },
+  "cost_tiers": {
+    "free": {"max_cost_per_m": 0.01, "max_cost_per_request": 0.01},
+    "budget": {"max_cost_per_m": 0.75, "max_cost_per_request": 1.5},
+    "premium": {"max_cost_per_m": 10.0, "max_cost_per_request": 20.0}
+  }
 }
 ```
 
-No curated model lists. Models auto-discovered. GDPval scores scraped + cached.
+### Files
 
-### Dynamic Routing Implementation Details
+| File | Purpose | Description |
+|------|---------|-------------|
+| `router-config.json` | Providers, groups, optional metric overrides | Main configuration file |
+| `.cache/scan-cache.json` | GDPval scores, model lists, pricing, costMux | Persistent cache |
+| `skills/router-login/` | Guided provider onboarding skill | Interactive setup |
 
-The **`dynamic`** group uses the following workflow:
+### Features
+- Auto-discovery of models and pricing
+- Dynamic routing based on content
+- Rate limit handling with key rotation
+- Cost optimization with billing preferences
+- Modular architecture for easy extension
 
-1. **Prompt Classification**: The `classifyPrompt` function in `src/content-classifier.ts` sends the user prompt to **Ollama (gemma2:2b)** for classification.
-2. **Category Mapping**: The classification result is mapped to a model group using `CATEGORY_TO_GROUP`.
-3. **Model Resolution**: The `resolve_model_group` tool is called to select the best model for the mapped group.
-4. **Model Switching**: The extension automatically switches to the resolved model using `pi.setModel()`.
+### Limitations
+- No curated model lists (auto-discover everything)
+- No token budget tracking (providers don't expose limits)
+- Requires Ollama for dynamic routing
 
-**Key Functions:**
-- `classifyPrompt(prompt, options)`: Classifies a prompt into a category.
-- `setupContentBasedRouting(pi)`: Sets up the `before_user_prompt` hook for real-time classification.
-- `CATEGORY_TO_GROUP`: Maps categories to model groups (e.g., `code_simple` → `operational`).
+## Commands
 
-**Fallback Behavior:**
-- If Ollama is unavailable or classification fails, the system falls back to the `tactical` group.
-- If the resolved model is unavailable, the system falls back to the next best candidate in the group.
+| Command | Description |
+|---------|-------------|
+| `/router` | Show status of all model groups |
+| `/router <group>` | Details for a specific group (e.g., `/router strategic`) |
+| `/router scan` | Re-scan models and GDPval scores |
+| `/router reload` | Reload config and cache |
 
-## Files
+## Tools
 
-| File | Purpose |
-|------|---------|
-| `index.ts` | Extension entry point (~1200 lines) |
-| `router-config.json` | Providers, groups, optional metric overrides |
-| `.cache/scan-cache.json` | GDPval scores, model lists, pricing, costMux |
-| `skills/router-login/` | Guided provider onboarding skill |
-| `src/content-classifier.ts` | Dynamic prompt classification and routing logic |
-| `src/ollama-utils.ts` | Ollama helper functions for classification |
-| `PI.md` | This file — design source of truth |
-| `README.md` | Quick-start reference |
-
-## What NOT to add
-
-- Curated model lists (auto-discover everything)
-- Token budget tracking (providers don't expose limits)
-- Proactive load balancing (429 is the signal)
-- Auto-switching mid-session (only via explicit tool call)
-- Complex health checks (backoff + costMux is sufficient)
-- Hardcoded pricing (scrape/backfill from APIs)
+| Tool | Description |
+|------|-------------|
+| `set_model_from_group` | Switch to the best model from a group |
+| `resolve_model_group` | Preview what a group resolves to |
+| `update_model_metrics` | Manually override model metrics |
