@@ -1131,24 +1131,28 @@ const defaultExport = function (pi: ExtensionAPI) {
       sessionHistory.push(currentTurn);
       
       // Detect loop and escalate if needed (check last 2 turns, every 3rd turn)
-      if (sessionHistory.length >= 2 && sessionHistory.length % 3 === 0) {
+      if (sessionHistory.length >= 2 && (sessionHistory.length - 2) % 3 === 0) {
         const recentHistory = sessionHistory.slice(-2);
         
-        // Try LLM-based loop detection first (fire-and-forget to avoid blocking)
-        let shouldEscalate = false;
-        let escalationReason = '';
+        // Use rule-based detection as primary (fast)
+        let shouldEscalate = detectLoop(recentHistory);
+        let escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
         
-        // Use rule-based detection as primary (fast), LLM as background enhancement
-        shouldEscalate = detectLoop(recentHistory);
-        escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
-        
-        // Fire-and-forget LLM detection in background
+        // Fire-and-forget LLM detection in background, but act on result
         detectLoopWithLLM(recentHistory, { 
           model: 'ollama/gemma2:2b',
           timeoutMs: 8000 
         }).then((result) => {
           if (result.shouldEscalate && !shouldEscalate) {
             console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
+            // Escalate if LLM detects loop but rule-based didn't
+            const currentLevel = escalationLevel;
+            escalationLevel = escalateModelGroup(escalationLevel);
+            if (currentLevel !== escalationLevel) {
+              console.log(
+                `[escalation] LLM escalation. Upgraded from ${currentLevel} to ${escalationLevel}`
+              );
+            }
           }
         }).catch((error) => {
           console.warn(`[escalation] LLM loop detection failed: ${error}`);
@@ -1628,7 +1632,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
         candidates = [...res.candidates];
         lastDynamicModel = res.selected;
-        dynamicLabel = `${normalClassification.category} → ${targetGroup} [${costTier}]`;
+        dynamicLabel = `${normalClassification.category} → ${targetGroup}${costTier ? ` [${costTier}]` : ''}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
         console.log(`[dynamic] ${logLine}`);
         
