@@ -572,15 +572,14 @@ async function callModelForClassification(
       const ollamaModel = model.startsWith('ollama/') ? model.slice(7) : model;
       return await callOllama(ollamaModel, prompt, { timeoutMs });
     } catch {
-      // Fall through to cloud
+      // Don't fall through to cloud for Ollama models - they won't work with CloudClient
+      throw new Error(`Ollama model ${model} failed and has no cloud fallback`);
     }
   }
   
-  // Try cloud models
+  // Try cloud models (only for non-Ollama models)
   try {
-    // Strip ollama/ prefix for CloudClient
-    const cloudModel = model.startsWith('ollama/') ? model.slice(7) : model;
-    return await CloudClient.callModel(cloudModel, prompt, { timeoutMs });
+    return await CloudClient.callModel(model, prompt, { timeoutMs });
   } catch (error) {
     throw new Error(`All classification methods failed: ${error}`);
   }
