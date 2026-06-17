@@ -1440,6 +1440,17 @@ const defaultExport = function (pi: ExtensionAPI) {
             }
             const resolvedTarget = resolved ?? shortName;
             candidates = [resolvedTarget];
+            // When the hint is a qualified ref like "mistral/mistral-medium-3.5" (contains '/'),
+            // resolveShortModelName returns it unchanged. But Pi may register the same model
+            // under a different provider prefix (e.g. "openrouter/mistral/mistral-medium-3.5").
+            // Add a short-name fallback so driveStream can try that variant if the primary fails.
+            if (shortName.includes('/')) {
+              const tail = shortName.slice(shortName.lastIndexOf('/') + 1);
+              const tailResolved = resolveShortModelName(tail, cfg.model_groups);
+              if (tailResolved && tailResolved !== resolvedTarget) {
+                candidates.push(tailResolved);
+              }
+            }
             lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;
             const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${resolvedTarget}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;

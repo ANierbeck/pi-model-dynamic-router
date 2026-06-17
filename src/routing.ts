@@ -276,7 +276,11 @@ export class Router {
 
       // Filtere Modelle nach Kostenstufe (Pool: g.models from allDiscoveredRefs)
       let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
-      
+
+      // Apply the same quality floor that resolve() applies (min_gdpval)
+      if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
+      else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
+
       const filtered = c.filter(ref => {
         return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
       });
