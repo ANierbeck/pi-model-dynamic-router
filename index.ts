@@ -79,18 +79,18 @@ const defaultExport = function (pi: ExtensionAPI) {
   let lastDynamicModel = '';
   let sessionCtx: any = null;
 
-// ── Session Escalation ─────────────────────────────────────────────────
-let sessionHistory: Array<{
-  turn: number;
-  prompt: string;
-  response: string;
-}> = [];
-let escalationLevel: 'operational' | 'tactical' | 'strategic' = 'operational';
-const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
-  'operational',
-  'tactical',
-  'strategic',
-];
+  // ── Session Escalation ─────────────────────────────────────────────────
+  let sessionHistory: Array<{
+    turn: number;
+    prompt: string;
+    response: string;
+  }> = [];
+  let escalationLevel: 'operational' | 'tactical' | 'strategic' = 'operational';
+  const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
+    'operational',
+    'tactical',
+    'strategic',
+  ];
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -136,7 +136,9 @@ const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
       extractErrorKeywords(turn.prompt).length > 0 || 
       extractErrorKeywords(turn.response).length > 0
     );
-    const hasCorrections = recentTurns.every(turn => 
+    // Only check user turns (where prompt is non-empty) for corrections
+    const userTurns = recentTurns.filter(turn => turn.prompt.trim().length > 0);
+    const hasCorrections = userTurns.length > 0 && userTurns.every(turn => 
       extractUserCorrections(turn.prompt).length > 0
     );
     
@@ -1092,7 +1094,10 @@ const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
   });
 
   pi.on('session_switch', async (ev) => {
-    if (ev.reason === 'new') sessionStart = Date.now();
+    if (ev.reason === 'new') {
+      sessionStart = Date.now();
+      resetEscalationLevel();
+    }
   });
   pi.on('model_select', async (ev) => {
     if (ev.source !== 'restore') activeGroup = null;
@@ -1125,27 +1130,29 @@ const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
       };
       sessionHistory.push(currentTurn);
       
-      // Detect loop and escalate if needed (check last 2 turns)
-      if (sessionHistory.length >= 2) {
+      // Detect loop and escalate if needed (check last 2 turns, every 3rd turn)
+      if (sessionHistory.length >= 2 && sessionHistory.length % 3 === 0) {
         const recentHistory = sessionHistory.slice(-2);
         
-        // Try LLM-based loop detection first
+        // Try LLM-based loop detection first (fire-and-forget to avoid blocking)
         let shouldEscalate = false;
         let escalationReason = '';
         
-        try {
-          const result = await detectLoopWithLLM(recentHistory, { 
-            model: 'ollama/gemma2:2b',
-            timeoutMs: 8000 
-          });
-          shouldEscalate = result.shouldEscalate;
-          escalationReason = result.reason;
-        } catch (error) {
-          console.warn(`[escalation] LLM loop detection failed, falling back to rule-based: ${error}`);
-          // Fallback to rule-based detection
-          shouldEscalate = detectLoop(recentHistory);
-          escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
-        }
+        // Use rule-based detection as primary (fast), LLM as background enhancement
+        shouldEscalate = detectLoop(recentHistory);
+        escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
+        
+        // Fire-and-forget LLM detection in background
+        detectLoopWithLLM(recentHistory, { 
+          model: 'ollama/gemma2:2b',
+          timeoutMs: 8000 
+        }).then((result) => {
+          if (result.shouldEscalate && !shouldEscalate) {
+            console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
+          }
+        }).catch((error) => {
+          console.warn(`[escalation] LLM loop detection failed: ${error}`);
+        });
         
         if (shouldEscalate) {
           const previousLevel = escalationLevel;
@@ -1597,6 +1604,7 @@ const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
         
         // ── Session Escalation: Override group with escalation level ────────
         let targetGroup: string;
+        let costTier: string | undefined;
         if (escalationLevel !== 'operational') {
           targetGroup = escalationLevel;
           console.log(
@@ -1604,12 +1612,12 @@ const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
           );
         } else {
           // Hole die Kostenstufe und Gruppe für diese Kategorie
-          const costTier = getCostTierForCategoryFunc(normalClassification.category);
+          costTier = getCostTierForCategoryFunc(normalClassification.category);
           targetGroup = getGroupForCategory(normalClassification.category);
         }
         
         // Versuche zuerst mit Kostenstufen-Filter
-        let res = resolveWithCostTier(targetGroup, costTier);
+        let res = costTier ? resolveWithCostTier(targetGroup, costTier) : resolve(targetGroup);
         
         // Fallback: Wenn keine Modelle zur Kostenstufe passen, versuche ohne Filter
         if (!res || res.candidates.length === 0) {

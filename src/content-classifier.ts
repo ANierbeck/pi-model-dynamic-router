@@ -569,7 +569,7 @@ async function callModelForClassification(
   // Try Ollama first
   if (model.startsWith('ollama/') || !model.includes('/')) {
     try {
-      const ollamaModel = model.startsWith('ollama/') ? model.slice(8) : model;
+      const ollamaModel = model.startsWith('ollama/') ? model.slice(7) : model;
       return await callOllama(ollamaModel, prompt, { timeoutMs });
     } catch {
       // Fall through to cloud
@@ -578,7 +578,9 @@ async function callModelForClassification(
   
   // Try cloud models
   try {
-    return await CloudClient.callModel(model, prompt, { timeoutMs });
+    // Strip ollama/ prefix for CloudClient
+    const cloudModel = model.startsWith('ollama/') ? model.slice(7) : model;
+    return await CloudClient.callModel(cloudModel, prompt, { timeoutMs });
   } catch (error) {
     throw new Error(`All classification methods failed: ${error}`);
   }
