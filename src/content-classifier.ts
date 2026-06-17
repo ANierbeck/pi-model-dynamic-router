@@ -61,13 +61,19 @@ const CONTINUATION_MAX_WORDS = 4;
 
 const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category:
 
-IMPORTANT HINT RULE: If the request contains a HINT instruction (in any language) like:
+IMPORTANT HINT RULE: If the request starts with "HINT:" (case-insensitive), ALWAYS return a hint category.
+CRITICAL: If the request begins with "HINT:", ignore the rest of the request and return:
+- For model hints: {"category": "hint:<model-name>", "reason": "User specified model via HINT", "confidence": 1.0}
+- For group hints: {"category": "hint:group:<group-name>", "reason": "User specified group via HINT", "confidence": 1.0}
+
+Examples of HINT instructions:
 - "HINT: use mistral-medium-3.5"
-- "HINT: use group tactical"  
+- "HINT: use group tactical"
 - "HINT: nutze mistral-medium-3.5"
 - "HINT: verwende Gruppe complex"
 - "HINT: benutz modell xyz"
-Then extract the model or group name and return it with the "hint:" prefix:
+
+If the request contains a HINT instruction (in any language), extract the model or group name and return it with the "hint:" prefix:
 - For models: {"category": "hint:mistral-medium-3.5", "reason": "User specified model via HINT", "confidence": 1.0}
 - For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
 
@@ -548,4 +554,94 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
       await applyModelGroup(group, context);
     }
   );
+}
+
+// ── Session Escalation Detection ────────────────────────────────────────
+
+/**
+ * Helper to call model for classification (supports Ollama and cloud fallback)
+ */
+async function callModelForClassification(
+  model: string,
+  prompt: string,
+  timeoutMs: number
+): Promise<string> {
+  // Try Ollama first
+  if (model.startsWith('ollama/') || !model.includes('/')) {
+    try {
+      const ollamaModel = model.startsWith('ollama/') ? model.slice(8) : model;
+      return await callOllama(ollamaModel, prompt, { timeoutMs });
+    } catch {
+      // Fall through to cloud
+    }
+  }
+  
+  // Try cloud models
+  try {
+    return await CloudClient.callModel(model, prompt, { timeoutMs });
+  } catch (error) {
+    throw new Error(`All classification methods failed: ${error}`);
+  }
+}
+
+/**
+ * Detect if a session is stuck in a loop using LLM analysis
+ * @param sessionHistory - Array of recent turns (user/assistant messages)
+ * @param options - Optional parameters including model override
+ * @returns Promise resolving to escalation decision
+ */
+export async function detectLoopWithLLM(
+  sessionHistory: Array<{ prompt: string; response: string }>,
+  options: { model?: string; timeoutMs?: number } = {}
+): Promise<{ shouldEscalate: boolean; reason: string }> {
+  const LOOP_DETECTION_PROMPT = `You are an expert at detecting session loops in AI conversations. 
+Analyze the following conversation history and determine if the session is stuck in a loop:
+
+1. A loop exists if the same problem is discussed multiple times without progress
+2. Look for repeated errors, identical questions, or user frustration signals
+3. User frustration signals include: "again", "still", "once more", "try again", "nochmal", "immer noch"
+
+If the session is stuck in a loop, respond with:
+{"shouldEscalate": true, "reason": "<brief explanation>"}
+
+If the session is progressing normally, respond with:
+{"shouldEscalate": false, "reason": "No loop detected"}
+
+Conversation history (most recent last):
+${sessionHistory
+    .map(
+      (turn, i) =>
+        `Turn ${i + 1}:
+User: ${turn.prompt.slice(0, 200)}
+Assistant: ${turn.response.slice(0, 200)}`
+    )
+    .join('\n\n')}
+
+Respond with valid JSON only:
+`;
+
+  try {
+    const model = options.model || 'ollama/gemma2:2b';
+    const response = await callModelForClassification(
+      model,
+      LOOP_DETECTION_PROMPT,
+      options.timeoutMs || 10000
+    );
+    
+    // Try to parse JSON response
+    try {
+      return JSON.parse(response);
+    } catch {
+      // Fallback: Check for escalation keywords in response
+      const lowerResponse = response.toLowerCase();
+      if (lowerResponse.includes('true') || lowerResponse.includes('escalate')) {
+        return { shouldEscalate: true, reason: 'LLM detected loop (non-JSON response)' };
+      }
+      return { shouldEscalate: false, reason: 'No loop detected (non-JSON response)' };
+    }
+  } catch (error) {
+    console.warn(`[escalation] LLM loop detection failed: ${error}`);
+    // Fallback to rule-based detection
+    return { shouldEscalate: false, reason: 'LLM unavailable, using rule-based detection' };
+  }
 }
