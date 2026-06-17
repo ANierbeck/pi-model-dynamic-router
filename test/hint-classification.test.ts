@@ -1,8 +1,8 @@
 // test/hint-classification.test.ts
-// Unit-Tests für LLM-basierte HINT-Klassifizierung
+// Unit tests for HINT classification — deterministic path and LLM fallback
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyPrompt, classifyStatically } from '../src/content-classifier.js';
+import { classifyPrompt, classifyStatically, detectHintDirectly } from '../src/content-classifier.js';
 import type { ClassificationResult, HintClassificationResult, FullClassificationResult } from '../src/content-classifier.js';
 import { resolveShortModelName } from '../src/utils.js';
 
@@ -16,7 +16,89 @@ vi.mock('../src/ollama-utils.js', async () => {
   };
 });
 
-// ── Tests ────────────────────────────────────────────────────────────────
+// ── detectHintDirectly unit tests ────────────────────────────────────────
+
+describe('detectHintDirectly()', () => {
+  it('returns null for prompts without HINT prefix', () => {
+    expect(detectHintDirectly('analyze this code')).toBeNull();
+    expect(detectHintDirectly('what is 2+2?')).toBeNull();
+  });
+
+  it('returns null for empty HINT payload ("HINT: ")', () => {
+    expect(detectHintDirectly('HINT: ')).toBeNull();
+    expect(detectHintDirectly('HINT:  ')).toBeNull();
+  });
+
+  describe('model hints', () => {
+    it('detects bare model name', () => {
+      const r = detectHintDirectly('HINT: mistral-medium-3.5');
+      expect(r).toMatchObject({ hintType: 'model', hintTarget: 'mistral-medium-3.5' });
+    });
+
+    it('detects "use <model>" (english)', () => {
+      const r = detectHintDirectly('HINT: use mistral-medium-3.5 and analyze this');
+      expect(r).toMatchObject({ hintType: 'model', hintTarget: 'mistral-medium-3.5' });
+    });
+
+    it('detects "nutze <model>" (german)', () => {
+      const r = detectHintDirectly('HINT: nutze mistral-medium-3.5 und analysiere');
+      expect(r).toMatchObject({ hintType: 'model', hintTarget: 'mistral-medium-3.5' });
+    });
+
+    it('detects qualified ref with provider prefix', () => {
+      const r = detectHintDirectly('HINT: mistral/mistral-medium-3.5');
+      expect(r).toMatchObject({ hintType: 'model', hintTarget: 'mistral/mistral-medium-3.5' });
+    });
+
+    it('strips trailing punctuation from model name', () => {
+      const r = detectHintDirectly('HINT: use mistral-medium-3.5,');
+      expect(r).toMatchObject({ hintType: 'model', hintTarget: 'mistral-medium-3.5' });
+    });
+  });
+
+  describe('group hints', () => {
+    it('detects "use group <name>" (english)', () => {
+      const r = detectHintDirectly('HINT: use group tactical for this task');
+      expect(r).toMatchObject({ hintType: 'group', hintTarget: 'tactical' });
+    });
+
+    it('detects "verwende Gruppe <name>" (german)', () => {
+      const r = detectHintDirectly('HINT: verwende Gruppe tactical');
+      expect(r).toMatchObject({ hintType: 'group', hintTarget: 'tactical' });
+    });
+
+    it('detects "nutze gruppe <name>" (german)', () => {
+      const r = detectHintDirectly('HINT: nutze gruppe complex');
+      expect(r).toMatchObject({ hintType: 'group', hintTarget: 'complex' });
+    });
+
+    it('detects "benutze Gruppe <name>" (german, benutz(e) form)', () => {
+      const r = detectHintDirectly('HINT: benutze Gruppe tactical');
+      expect(r).toMatchObject({ hintType: 'group', hintTarget: 'tactical' });
+    });
+
+    it('lowercases the group name', () => {
+      const r = detectHintDirectly('HINT: use group TACTICAL');
+      expect(r).toMatchObject({ hintType: 'group', hintTarget: 'tactical' });
+    });
+  });
+
+  describe('incomplete group hints — must return null', () => {
+    it('"HINT: use group" with no name → null (not misclassified as model "group")', () => {
+      expect(detectHintDirectly('HINT: use group')).toBeNull();
+    });
+
+    it('"HINT: verwende Gruppe" with no name → null', () => {
+      expect(detectHintDirectly('HINT: verwende Gruppe')).toBeNull();
+    });
+
+    it('"HINT: benutze Gruppe" with no name → null', () => {
+      expect(detectHintDirectly('HINT: benutze Gruppe')).toBeNull();
+    });
+  });
+});
+
+// ── classifyPrompt HINT integration tests ───────────────────────────────
 
 describe('HINT Classification', () => {
   beforeEach(() => {
@@ -24,117 +106,61 @@ describe('HINT Classification', () => {
   });
 
   describe('HINT Model Detection', () => {
-    it('erkennt HINT mit Modellname (englisch)', async () => {
+    it('detects model hint (english) without calling LLM', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      // Mock response mit HINT-Kategorie
-      vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:mistral-medium-3.5',
-          reason: 'User specified model via HINT',
-          confidence: 1.0
-        })
-      );
-
       const result = await classifyPrompt('HINT: use mistral-medium-3.5 and analyze this code');
-      
-      // Sollte ein HintClassificationResult sein
       expect(result).toHaveProperty('hintType', 'model');
       expect(result).toHaveProperty('hintTarget', 'mistral-medium-3.5');
       expect(result).toHaveProperty('confidence', 1.0);
       expect(result.reason).toContain('HINT');
+      expect(vi.mocked(callOllama)).not.toHaveBeenCalled();
     });
 
-    it('erkennt HINT mit Modellname (deutsch)', async () => {
+    it('detects model hint (german) without calling LLM', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:mistral-medium-3.5',
-          reason: 'User specified model via HINT',
-          confidence: 1.0
-        })
-      );
-
       const result = await classifyPrompt('HINT: nutze mistral-medium-3.5 und analysiere diesen Code');
-      
       expect(result).toHaveProperty('hintType', 'model');
       expect(result).toHaveProperty('hintTarget', 'mistral-medium-3.5');
+      expect(vi.mocked(callOllama)).not.toHaveBeenCalled();
     });
 
-    it('erkennt HINT mit Gruppenname', async () => {
+    it('detects group hint without calling LLM', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:group:tactical',
-          reason: 'User specified group via HINT',
-          confidence: 1.0
-        })
-      );
-
       const result = await classifyPrompt('HINT: use group tactical for this task');
-      
       expect(result).toHaveProperty('hintType', 'group');
       expect(result).toHaveProperty('hintTarget', 'tactical');
+      expect(vi.mocked(callOllama)).not.toHaveBeenCalled();
     });
 
-    it('erkennt HINT ohne use-Keyword', async () => {
+    it('detects bare model name without use-keyword', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:mistral-medium-3.5',
-          reason: 'User specified model via HINT',
-          confidence: 1.0
-        })
-      );
-
       const result = await classifyPrompt('HINT: mistral-medium-3.5 analyze this');
-      
       expect(result).toHaveProperty('hintType', 'model');
       expect(result).toHaveProperty('hintTarget', 'mistral-medium-3.5');
+      expect(vi.mocked(callOllama)).not.toHaveBeenCalled();
     });
   });
 
   describe('HINT Fallback Handling', () => {
-    it('behandelt leeren HINT-Target mit Fallback', async () => {
+    it('falls through to LLM for "HINT: " with empty payload', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      // Mock response mit leerem HINT-Target
       vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:',
-          reason: 'Empty HINT',
-          confidence: 1.0
-        })
+        JSON.stringify({ category: 'fallback', reason: 'Empty HINT', confidence: 0.5 })
       );
-
       const result = await classifyPrompt('HINT: ');
-      
-      // Sollte auf Fallback zurückgreifen
-      expect(result).toHaveProperty('category', 'fallback');
-      expect(result).toHaveProperty('reason', 'Empty HINT target from LLM');
-      expect(result).toHaveProperty('confidence', 0.5);
+      // detectHintDirectly returns null → classifyPrompt calls LLM
+      expect(vi.mocked(callOllama)).toHaveBeenCalled();
     });
 
-    it('behandelt leeren Gruppenname in HINT', async () => {
+    it('falls through to LLM for incomplete group hint "HINT: use group"', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
-      // Mock response mit leerem Gruppenname
       vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({
-          category: 'hint:group:',
-          reason: 'Empty group HINT',
-          confidence: 1.0
-        })
+        JSON.stringify({ category: 'fallback', reason: 'Incomplete group hint', confidence: 0.5 })
       );
-
       const result = await classifyPrompt('HINT: use group');
-      
-      // Sollte auf Fallback zurückgreifen
+      // detectHintDirectly returns null → classifyPrompt calls LLM
+      expect(vi.mocked(callOllama)).toHaveBeenCalled();
       expect(result).toHaveProperty('category', 'fallback');
-      expect(result).toHaveProperty('reason', 'Empty group name in HINT');
     });
   });
 

@@ -18,14 +18,12 @@ describe("classifyPrompt (Integration Tests mit Ollama-Mocks)", () => {
     vi.resetAllMocks();
   });
 
-  it("behandelt HINT-Override im Prompt", async () => {
-    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
-      '{"category": "code_simple", "reason": "Einfache Textersetzung", "confidence": 0.95}'
-    );
-    
+  it("erkennt HINT-Override deterministisch ohne LLM-Aufruf", async () => {
     const result = await classifyPrompt("HINT: use group tactical\nErsetze 'foo' mit 'bar' in Zeile 42");
-    expect(result.category).toBe("code_simple");
-    expect(result.reason).toContain("Einfache Textersetzung");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("operational");
+    // detectHintDirectly short-circuits before the LLM is called
+    expect(result).toHaveProperty('hintType', 'group');
+    expect(result).toHaveProperty('hintTarget', 'tactical');
+    expect(result).toHaveProperty('confidence', 1.0);
+    expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
   });
 });
