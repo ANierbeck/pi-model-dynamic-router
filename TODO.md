@@ -1,8 +1,8 @@
 # 🚀 pi-model-router - Current Tasks & Roadmap
 
-> **Status**: Updated with cost-efficient dynamic routing Phase 2 implementation
-> **Last Updated**: June 15, 2026
-> **Current State**: ✅ Migration complete, all tests green (194), Cloud-Fallback implemented, HINT-Override implemented, model boundaries improved, cost tiers system implemented
+> **Status**: Updated with cost-efficient dynamic routing Phase 2 implementation + Session Escalation
+> **Last Updated**: June 17, 2026
+> **Current State**: ✅ Migration complete, all tests green (207), Cloud-Fallback implemented, HINT-Override implemented, model boundaries improved, cost tiers system implemented, session escalation implemented
 
 ## 📌 **IMPORTANT RULES**
 
@@ -20,12 +20,23 @@
 
 ## ✅ **Completed Tasks**
 
+### Session Escalation System
+- [x] **Session escalation on loop detection** - Automatically upgrade model when session stagnates
+  - *Implementation*: Detection based on error keywords, repeated prompts, or user corrections
+  - *Signals*: same error message seen 2x, user writes "again", "still", "once more"
+  - *Escalation levels*: operational -> tactical -> strategic
+  - *LLM-based detection*: `detectLoopWithLLM()` using gemma2:2b
+  - *Rule-based fallback*: `detectLoop()` with keyword matching
+  - *Race condition fix*: `levelAtCallTime` + `llmEscalationInFlight` flag
+  - *Integration*: Override target group in dynamic routing when escalated
+  - *Session management*: Reset on new session via `session_switch` and `session_start` handlers
+
 ### Migration & Refactoring
 - [x] Implemented modular architecture (8 modules)
 - [x] Applied Strangler Fig Pattern (incremental migration)
 - [x] Moved all 40+ functions to modules
 - [x] Reduced index.ts from 1,528 to 1,047 lines (-481 lines)
-- [x] All 194 tests passing (191 unit + 3 integration)
+- [x] All 207 tests passing (204 unit + 3 integration)
 - [x] Updated documentation (README.md, SKILL.md, REFACTORING_SUMMARY.md)
 - [x] Archived outdated planning files
 
@@ -88,13 +99,6 @@
 
 ### 🔥 **Immediately Actionable** (Quick Wins - 1-2 hours)
 
-- [ ] **Session escalation on loop detection** - Automatically upgrade model when session stagnates
-  - *Problem*: When a model repeatedly fails to solve the same problem (session "goes in circles"), often only a stronger model helps
-  - *Idea*: Detection based on same error keywords, repeated short prompts, or user corrections in n consecutive turns
-  - *Signals*: same error message seen 2x, user writes "again", "still", "once more"
-  - *Impact*: **HIGH** - prevents frustration loops with weak models
-  - *Effort*: 3-4 hours
-
 ### Code Quality & Maintenance
 - [x] Perform code review - All modules checked for consistency
 - [x] Enable TypeScript Strict Mode - Already enabled in tsconfig.json
@@ -143,6 +147,10 @@
 - [ ] Improve provider detection - Better discovery of available models
 
 ### Intelligent Routing
+- [ ] **Multi-label classification** - Assign multiple categories to a single prompt for more precise routing
+  - *Idea*: Allow prompts to match multiple categories (e.g., "code_simple" + "explanation")
+  - *Benefit*: More accurate model selection based on combined requirements
+  - *Implementation*: Modify `CLASSIFICATION_PROMPT` to return array of categories
 - [ ] Implement learning from user feedback - Improve classification based on corrections
 - [ ] Add user-specific configurations - Personalized model preferences
 
@@ -182,7 +190,7 @@
 - [ ] Add more categories
 
 ### Week 3+: New Features
-- [ ] Session escalation on loop detection
+- [x] Session escalation on loop detection
 - [ ] Multi-label classification
 - [ ] Context-based classification
 
