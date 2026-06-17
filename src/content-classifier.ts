@@ -99,11 +99,57 @@ Respond with JSON only, no extra text:
 
 // ── Core Logic ───────────────────────────────────────────────────────────
 
+/**
+ * Deterministic HINT detection — bypasses the LLM entirely.
+ * Matches "HINT: ..." at the start of a prompt (case-insensitive, any language).
+ * Returns HintClassificationResult or null if no HINT prefix found.
+ */
+function detectHintDirectly(prompt: string): HintClassificationResult | null {
+  const match = prompt.match(/^\s*HINT\s*:\s*(.+)/i);
+  if (!match) return null;
+  const instruction = match[1].trim();
+
+  // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X"
+  const groupMatch = instruction.match(
+    /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe)\s+(\S+)/i
+  );
+  if (groupMatch) {
+    return {
+      reason: 'User specified group via HINT',
+      confidence: 1.0,
+      hintType: 'group',
+      hintTarget: groupMatch[1].toLowerCase(),
+    };
+  }
+
+  // Model hint: "use mistral-medium-3.5", "nutze mistral/mistral-medium-3.5", bare "mistral-medium-3.5"
+  const modelMatch = instruction.match(
+    /^(?:use\s+|nutze\s+|verwende\s+|benutz(?:e)?\s+(?:modell\s+)?)?(\S+)/i
+  );
+  if (modelMatch) {
+    const target = modelMatch[1].replace(/[,;.]$/, '');
+    if (target.length > 0) {
+      return {
+        reason: 'User specified model via HINT',
+        confidence: 1.0,
+        hintType: 'model',
+        hintTarget: target,
+      };
+    }
+  }
+
+  return null;
+}
+
 export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
   const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false, allowCloudFallback = false, cfg, cache } = options;
+
+  // Detect HINT prefix deterministically — no LLM needed, always correct.
+  const directHint = detectHintDirectly(prompt);
+  if (directHint) return directHint;
 
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
