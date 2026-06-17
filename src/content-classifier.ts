@@ -99,19 +99,25 @@ Respond with JSON only, no extra text:
 
 // ── Core Logic ───────────────────────────────────────────────────────────
 
+// Group-verb prefixes shared by groupMatch and the incomplete-group guard
+const GROUP_VERB_PREFIX = /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe|benutz(?:e)?\s+gruppe)/i;
+
 /**
  * Deterministic HINT detection — bypasses the LLM entirely.
  * Matches "HINT: ..." at the start of a prompt (case-insensitive, any language).
  * Returns HintClassificationResult or null if no HINT prefix found.
+ * Returns null for incomplete hints (e.g. "HINT: use group" with no name) so the
+ * caller can fall through to LLM classification rather than misclassifying the
+ * group-keyword as a model name.
  */
-function detectHintDirectly(prompt: string): HintClassificationResult | null {
+export function detectHintDirectly(prompt: string): HintClassificationResult | null {
   const match = prompt.match(/^\s*HINT\s*:\s*(.+)/i);
   if (!match) return null;
   const instruction = match[1].trim();
 
-  // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X"
+  // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X", "benutze Gruppe X"
   const groupMatch = instruction.match(
-    /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe)\s+(\S+)/i
+    new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
   );
   if (groupMatch) {
     return {
@@ -121,6 +127,9 @@ function detectHintDirectly(prompt: string): HintClassificationResult | null {
       hintTarget: groupMatch[1].toLowerCase(),
     };
   }
+
+  // Guard: group-verb prefix present but no name follows → incomplete hint, let LLM handle it
+  if (GROUP_VERB_PREFIX.test(instruction)) return null;
 
   // Model hint: "use mistral-medium-3.5", "nutze mistral/mistral-medium-3.5", bare "mistral-medium-3.5"
   const modelMatch = instruction.match(
