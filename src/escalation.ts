@@ -96,7 +96,7 @@ export type TurnRecord = { prompt: string; response: string };
 
 /**
  * Tracks per-session escalation state.
- * Create one instance per session; call reset() on session_switch.
+ * Create one instance per session; call reset() on session_start.
  *
  * Two-tier detection:
  *  1. Rule-based check (synchronous, immediate) — keyword matching.
