@@ -100,13 +100,16 @@ export type TurnRecord = { prompt: string; response: string };
  *
  * Two-tier detection:
  *  1. Rule-based check (synchronous, immediate) — keyword matching.
- *  2. LLM check (fire-and-forget, gemma2:2b) — fires when rule-based is clean,
- *     guards against stale-closure races with levelAtCallTime.
+ *  2. LLM check (fire-and-forget, gemma2:2b) — always fired, but its result is
+ *     ignored when rule-based already escalated, preventing double-escalation.
+ *     A monotonic _sessionId ensures stale promises from a previous session
+ *     cannot affect the new session even if they resolve after reset().
  */
 export class SessionEscalation {
   private _level: EscalationLevel = 'operational';
   private _history: TurnRecord[] = [];
   private _llmInFlight = false;
+  private _sessionId = 0;
 
   get level(): EscalationLevel {
     return this._level;
@@ -115,6 +118,7 @@ export class SessionEscalation {
   reset(): void {
     this._level = 'operational';
     this._history = [];
+    this._sessionId++;
   }
 
   /** Call once per turn_end event for both user and assistant messages. */
@@ -130,14 +134,19 @@ export class SessionEscalation {
     const recent = this._history.slice(-2);
     const ruleFired = detectLoopRuleBased(recent);
 
-    // Fire-and-forget LLM check — only adds signal when rule-based is quiet.
     if (!this._llmInFlight) {
       this._llmInFlight = true;
       const levelAtCallTime = this._level;
+      const sessionAtCallTime = this._sessionId;
       detectLoopWithLLM(recent, { model: 'ollama/gemma2:2b', timeoutMs: 8_000 })
         .then(result => {
           this._llmInFlight = false;
-          if (result.shouldEscalate && !ruleFired && this._level === levelAtCallTime) {
+          if (
+            result.shouldEscalate &&
+            !ruleFired &&
+            this._level === levelAtCallTime &&
+            this._sessionId === sessionAtCallTime
+          ) {
             const prev = this._level;
             this._level = nextLevel(this._level);
             if (prev !== this._level) {
