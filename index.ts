@@ -86,6 +86,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     response: string;
   }> = [];
   let escalationLevel: 'operational' | 'tactical' | 'strategic' = 'operational';
+  let llmEscalationInFlight = false;
   const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
     'operational',
     'tactical',
@@ -1139,24 +1140,30 @@ const defaultExport = function (pi: ExtensionAPI) {
         let escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
         
         // Fire-and-forget LLM detection in background, but act on result
-        detectLoopWithLLM(recentHistory, { 
-          model: 'ollama/gemma2:2b',
-          timeoutMs: 8000 
-        }).then((result) => {
-          if (result.shouldEscalate && !shouldEscalate) {
-            console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
-            // Escalate if LLM detects loop but rule-based didn't
-            const currentLevel = escalationLevel;
-            escalationLevel = escalateModelGroup(escalationLevel);
-            if (currentLevel !== escalationLevel) {
-              console.log(
-                `[escalation] LLM escalation. Upgraded from ${currentLevel} to ${escalationLevel}`
-              );
+        // Use flag to prevent concurrent escalations
+        if (!llmEscalationInFlight) {
+          llmEscalationInFlight = true;
+          detectLoopWithLLM(recentHistory, { 
+            model: 'ollama/gemma2:2b',
+            timeoutMs: 8000 
+          }).then((result) => {
+            llmEscalationInFlight = false;
+            if (result.shouldEscalate && !shouldEscalate) {
+              console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
+              // Escalate if LLM detects loop but rule-based didn't
+              const currentLevel = escalationLevel;
+              escalationLevel = escalateModelGroup(escalationLevel);
+              if (currentLevel !== escalationLevel) {
+                console.log(
+                  `[escalation] LLM escalation. Upgraded from ${currentLevel} to ${escalationLevel}`
+                );
+              }
             }
-          }
-        }).catch((error) => {
-          console.warn(`[escalation] LLM loop detection failed: ${error}`);
-        });
+          }).catch((error) => {
+            llmEscalationInFlight = false;
+            console.warn(`[escalation] LLM loop detection failed: ${error}`);
+          });
+        }
         
         if (shouldEscalate) {
           const previousLevel = escalationLevel;
