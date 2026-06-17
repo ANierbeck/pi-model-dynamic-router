@@ -95,6 +95,10 @@ describe('detectHintDirectly()', () => {
     it('"HINT: benutze Gruppe" with no name → null', () => {
       expect(detectHintDirectly('HINT: benutze Gruppe')).toBeNull();
     });
+
+    it('"HINT: nutze gruppe" with no name → null', () => {
+      expect(detectHintDirectly('HINT: nutze gruppe')).toBeNull();
+    });
   });
 });
 
