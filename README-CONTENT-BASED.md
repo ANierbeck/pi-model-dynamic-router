@@ -124,9 +124,9 @@ Example:
 - [x] **Cloud fallback** for classification
 - [x] **Cost tier system** (free/budget/premium)
 - [x] **HINT-Override** for manual model selection
+- [x] **Session escalation** on loop detection
 
 ### 🚀 Planned
-- [ ] **Session escalation** on loop detection
 - [ ] **Multi-label classification**
 - [ ] **Context-based classification**
 - [ ] **Performance metrics**
@@ -150,14 +150,45 @@ Example:
    ```
 
 ### HINT-Override
-Override the automatic model selection:
+Prefix your prompt with `HINT:` to bypass the automatic classifier and route directly to a specific model or group. Detection is deterministic (regex-based) — the LLM classifier is never called for HINT prompts.
+
+**Route to a model** (all forms are equivalent):
 ```
+HINT: mistral-medium-3.5
 HINT: use mistral-medium-3.5
+HINT: nutze mistral-medium-3.5
+HINT: verwende mistral-medium-3.5
+HINT: mistral/mistral-medium-3.5
 ```
-or
+
+**Route to a group** (English and German):
 ```
 HINT: use group tactical
+HINT: use group strategic
+HINT: verwende Gruppe tactical
+HINT: nutze gruppe complex
+HINT: benutze Gruppe operational
 ```
+
+The HINT is case-insensitive and may appear at the start of a multi-line prompt:
+```
+HINT: use group tactical
+Refactor the authentication module to use JWT tokens.
+```
+
+Qualified provider refs are also accepted (`provider/model-name`). If the exact ref is not found in any group, the router tries the short name as a fallback.
+
+### Session Escalation
+When the router detects that a session is stuck in a loop (repeated errors or correction keywords), it automatically upgrades the model group for subsequent requests.
+
+**Escalation ladder**: `operational` → `tactical` → `strategic`
+
+Detection runs every three turns and uses two complementary mechanisms:
+
+1. **Rule-based** (synchronous): checks the last 2 turns for error keywords (`error`, `failed`, `wrong`, …) and user correction phrases (`again`, `still`, `nochmal`, `immer noch`, …). Triggers immediately.
+2. **LLM-based** (fire-and-forget): sends the same history to `gemma2:2b` in the background for a semantic loop judgment. Only escalates if the rule-based check was quiet, to avoid double-escalation.
+
+The escalation level resets at the start of each new session.
 
 ---
 

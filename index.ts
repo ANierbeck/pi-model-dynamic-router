@@ -37,7 +37,8 @@ import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, getGroupForCategory, ClassificationResult, detectLoopWithLLM } from './src/content-classifier.ts';
+import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
+import { SessionEscalation } from './src/escalation.ts';
 import {
   getCostTierForCategory
 } from './src/cost-tiers.ts';
@@ -80,18 +81,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   let sessionCtx: any = null;
 
   // ── Session Escalation ─────────────────────────────────────────────────
-  let sessionHistory: Array<{
-    turn: number;
-    prompt: string;
-    response: string;
-  }> = [];
-  let escalationLevel: 'operational' | 'tactical' | 'strategic' = 'operational';
-  let llmEscalationInFlight = false;
-  const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
-    'operational',
-    'tactical',
-    'strategic',
-  ];
+  const escalation = new SessionEscalation();
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -103,65 +93,6 @@ const defaultExport = function (pi: ExtensionAPI) {
     for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
     s = stripDateSuffix(s);
     return s.replace(/[^a-z0-9]/g, '');
-  }
-
-  // ── Session Escalation Helpers ────────────────────────────────────────
-
-  /**
-   * Extract error keywords from text (case-insensitive)
-   */
-  function extractErrorKeywords(text: string): string[] {
-    const keywords = ['error', 'failed', 'wrong', 'incorrect', 'not working', 'does not work', 'broken', 'issue', 'problem'];
-    const lowerText = text.toLowerCase();
-    return keywords.filter(kw => lowerText.includes(kw));
-  }
-
-  /**
-   * Extract user correction keywords from text (case-insensitive)
-   */
-  function extractUserCorrections(text: string): string[] {
-    const corrections = ['again', 'still', 'once more', 'try again', 'nochmal', 'immer noch', 'wieder', 'erneut'];
-    const lowerText = text.toLowerCase();
-    return corrections.filter(c => lowerText.includes(c));
-  }
-
-  /**
-   * Detect if session is stuck in a loop based on last N turns
-   */
-  function detectLoop(history: Array<{ prompt: string; response: string }>, lookback: number = 2): boolean {
-    if (history.length < lookback) return false;
-    const recentTurns = history.slice(-lookback);
-    
-    // Check if all recent turns have error keywords or user corrections
-    const hasErrors = recentTurns.every(turn => 
-      extractErrorKeywords(turn.prompt).length > 0 || 
-      extractErrorKeywords(turn.response).length > 0
-    );
-    // Only check user turns (where prompt is non-empty) for corrections
-    const userTurns = recentTurns.filter(turn => turn.prompt.trim().length > 0);
-    const hasCorrections = userTurns.length > 0 && userTurns.every(turn => 
-      extractUserCorrections(turn.prompt).length > 0
-    );
-    
-    return hasErrors || hasCorrections;
-  }
-
-  /**
-   * Escalate to next model group tier
-   */
-  function escalateModelGroup(current: 'operational' | 'tactical' | 'strategic'): 'operational' | 'tactical' | 'strategic' {
-    const currentIndex = ESCALATION_GROUPS.indexOf(current);
-    return currentIndex < ESCALATION_GROUPS.length - 1 
-      ? ESCALATION_GROUPS[currentIndex + 1] 
-      : ESCALATION_GROUPS[ESCALATION_GROUPS.length - 1];
-  }
-
-  /**
-   * Reset escalation level for new sessions
-   */
-  function resetEscalationLevel(): void {
-    escalationLevel = 'operational';
-    sessionHistory = [];
   }
 
   // ── Model Map: authoritative model → GDPval slug mapping ────────────
@@ -1021,8 +952,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     loadCache();
     sessionStart = Date.now();
     
-    // Reset session escalation for new sessions
-    resetEscalationLevel();
+    escalation.reset();
     
     await discoverKeys();
 
@@ -1097,7 +1027,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   pi.on('session_switch', async (ev) => {
     if (ev.reason === 'new') {
       sessionStart = Date.now();
-      resetEscalationLevel();
+      escalation.reset();
     }
   });
   pi.on('model_select', async (ev) => {
@@ -1122,61 +1052,10 @@ const defaultExport = function (pi: ExtensionAPI) {
             .filter((b: any) => b.type === 'text')
             .map((b: any) => b.text)
             .join('');
-      
-      // Store turn in history
-      const currentTurn = {
-        turn: sessionHistory.length + 1,
-        prompt: msg.role === 'user' ? content : '',
-        response: msg.role === 'assistant' ? content : '',
-      };
-      sessionHistory.push(currentTurn);
-      
-      // Detect loop and escalate if needed (check last 2 turns, every 3rd turn)
-      if (sessionHistory.length >= 2 && (sessionHistory.length - 2) % 3 === 0) {
-        const recentHistory = sessionHistory.slice(-2);
-        
-        // Use rule-based detection as primary (fast)
-        let shouldEscalate = detectLoop(recentHistory);
-        let escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
-        
-        // Fire-and-forget LLM detection in background, but act on result
-        // Use flag to prevent concurrent escalations and levelAtCallTime to prevent stale closure
-        if (!llmEscalationInFlight) {
-          llmEscalationInFlight = true;
-          const levelAtCallTime = escalationLevel;
-          detectLoopWithLLM(recentHistory, { 
-            model: 'ollama/gemma2:2b',
-            timeoutMs: 8000 
-          }).then((result) => {
-            llmEscalationInFlight = false;
-            // Only escalate if LLM detects loop, rule-based didn't, AND level hasn't changed since call
-            if (result.shouldEscalate && !shouldEscalate && escalationLevel === levelAtCallTime) {
-              console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
-              // Escalate if LLM detects loop but rule-based didn't
-              const currentLevel = escalationLevel;
-              escalationLevel = escalateModelGroup(escalationLevel);
-              if (currentLevel !== escalationLevel) {
-                console.log(
-                  `[escalation] LLM escalation. Upgraded from ${currentLevel} to ${escalationLevel}`
-                );
-              }
-            }
-          }).catch((error) => {
-            llmEscalationInFlight = false;
-            console.warn(`[escalation] LLM loop detection failed: ${error}`);
-          });
-        }
-        
-        if (shouldEscalate) {
-          const previousLevel = escalationLevel;
-          escalationLevel = escalateModelGroup(escalationLevel);
-          if (previousLevel !== escalationLevel) {
-            console.log(
-              `[escalation] ${escalationReason}. Upgraded from ${previousLevel} to ${escalationLevel}`
-            );
-          }
-        }
-      }
+      escalation.recordTurn(
+        msg.role === 'user' ? content : '',
+        msg.role === 'assistant' ? content : ''
+      );
     }
     
     // ── Metrics & Usage Logging ─────────────────────────────────────────
@@ -1618,10 +1497,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         // ── Session Escalation: Override group with escalation level ────────
         let targetGroup: string;
         let costTier: string | undefined;
-        if (escalationLevel !== 'operational') {
-          targetGroup = escalationLevel;
+        if (escalation.level !== 'operational') {
+          targetGroup = escalation.level;
           console.log(
-            `[escalation] Using escalated group: ${targetGroup} (level: ${escalationLevel})`
+            `[escalation] Using escalated group: ${targetGroup} (level: ${escalation.level})`
           );
         } else {
           // Hole die Kostenstufe und Gruppe für diese Kategorie

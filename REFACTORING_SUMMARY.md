@@ -13,7 +13,7 @@ The **Strangler Fig Pattern** migration has been successfully completed. All mod
 
 ## ✅ **Achieved Goals**
 
-### 1. **All modules successfully integrated** (8/8 modules)
+### 1. **All modules successfully integrated** (9/9 modules)
 
 | Module | Size | Description | Status |
 |-------|------|-------------|--------|
@@ -26,6 +26,7 @@ The **Strangler Fig Pattern** migration has been successfully completed. All mod
 | `src/cache.ts` | 3 KB | Cache handling (CacheManager class) | ✅ **Integrated** |
 | `src/routing.ts` | 9 KB | Routing logic (Router class) | ✅ **Integrated** |
 | `src/content-classifier.ts` | 8 KB | Content classification (Ollama-based) | ✅ **Integrated** |
+| `src/escalation.ts` | 5 KB | Session loop detection and model-group escalation (SessionEscalation class) | ✅ **Integrated** |
 
 ### 2. **All tests passing**
 - ✅ **191/191 Unit tests** passing
@@ -107,7 +108,8 @@ index.ts (main entry point)
 ├── src/metrics.ts (metrics management)
 ├── src/cache.ts (cache management)
 ├── src/routing.ts (routing logic)
-└── src/content-classifier.ts (content classification)
+├── src/content-classifier.ts (content classification)
+└── src/escalation.ts (session loop detection & model-group escalation)
 ```
 
 ### **Import Structure**
@@ -166,7 +168,7 @@ index.ts (main entry point)
 - [ ] Optimize build process
 
 ### **Medium-term**
-- [ ] Implement session escalation on loop detection
+- [x] Implement session escalation on loop detection
 - [ ] Add multi-label classification
 - [ ] Add context-based classification
 
