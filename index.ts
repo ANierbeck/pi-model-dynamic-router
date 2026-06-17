@@ -37,7 +37,7 @@ import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
+import { classifyPrompt, getGroupForCategory, ClassificationResult, detectLoopWithLLM } from './src/content-classifier.ts';
 import {
   getCostTierForCategory
 } from './src/cost-tiers.ts';
@@ -79,6 +79,19 @@ const defaultExport = function (pi: ExtensionAPI) {
   let lastDynamicModel = '';
   let sessionCtx: any = null;
 
+// ── Session Escalation ─────────────────────────────────────────────────
+let sessionHistory: Array<{
+  turn: number;
+  prompt: string;
+  response: string;
+}> = [];
+let escalationLevel: 'operational' | 'tactical' | 'strategic' = 'operational';
+const ESCALATION_GROUPS: Array<'operational' | 'tactical' | 'strategic'> = [
+  'operational',
+  'tactical',
+  'strategic',
+];
+
   // ── Helpers ────────────────────────────────────────────────────────────
 
   function norm(s: string): string {
@@ -89,6 +102,63 @@ const defaultExport = function (pi: ExtensionAPI) {
     for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
     s = stripDateSuffix(s);
     return s.replace(/[^a-z0-9]/g, '');
+  }
+
+  // ── Session Escalation Helpers ────────────────────────────────────────
+
+  /**
+   * Extract error keywords from text (case-insensitive)
+   */
+  function extractErrorKeywords(text: string): string[] {
+    const keywords = ['error', 'failed', 'wrong', 'incorrect', 'not working', 'does not work', 'broken', 'issue', 'problem'];
+    const lowerText = text.toLowerCase();
+    return keywords.filter(kw => lowerText.includes(kw));
+  }
+
+  /**
+   * Extract user correction keywords from text (case-insensitive)
+   */
+  function extractUserCorrections(text: string): string[] {
+    const corrections = ['again', 'still', 'once more', 'try again', 'nochmal', 'immer noch', 'wieder', 'erneut'];
+    const lowerText = text.toLowerCase();
+    return corrections.filter(c => lowerText.includes(c));
+  }
+
+  /**
+   * Detect if session is stuck in a loop based on last N turns
+   */
+  function detectLoop(history: Array<{ prompt: string; response: string }>, lookback: number = 2): boolean {
+    if (history.length < lookback) return false;
+    const recentTurns = history.slice(-lookback);
+    
+    // Check if all recent turns have error keywords or user corrections
+    const hasErrors = recentTurns.every(turn => 
+      extractErrorKeywords(turn.prompt).length > 0 || 
+      extractErrorKeywords(turn.response).length > 0
+    );
+    const hasCorrections = recentTurns.every(turn => 
+      extractUserCorrections(turn.prompt).length > 0
+    );
+    
+    return hasErrors || hasCorrections;
+  }
+
+  /**
+   * Escalate to next model group tier
+   */
+  function escalateModelGroup(current: 'operational' | 'tactical' | 'strategic'): 'operational' | 'tactical' | 'strategic' {
+    const currentIndex = ESCALATION_GROUPS.indexOf(current);
+    return currentIndex < ESCALATION_GROUPS.length - 1 
+      ? ESCALATION_GROUPS[currentIndex + 1] 
+      : ESCALATION_GROUPS[ESCALATION_GROUPS.length - 1];
+  }
+
+  /**
+   * Reset escalation level for new sessions
+   */
+  function resetEscalationLevel(): void {
+    escalationLevel = 'operational';
+    sessionHistory = [];
   }
 
   // ── Model Map: authoritative model → GDPval slug mapping ────────────
@@ -947,6 +1017,10 @@ const defaultExport = function (pi: ExtensionAPI) {
     loadModelMap();
     loadCache();
     sessionStart = Date.now();
+    
+    // Reset session escalation for new sessions
+    resetEscalationLevel();
+    
     await discoverKeys();
 
     await registerGroupModels(ctx);
@@ -1033,6 +1107,59 @@ const defaultExport = function (pi: ExtensionAPI) {
     if (!curModel || !turnStart) return;
     const ms = Date.now() - turnStart,
       msg = ev.message;
+    
+    // ── Session Escalation Logic ────────────────────────────────────────
+    if (msg?.role === 'user' || msg?.role === 'assistant') {
+      const content = typeof msg.content === 'string'
+        ? msg.content
+        : (msg.content ?? [])
+            .filter((b: any) => b.type === 'text')
+            .map((b: any) => b.text)
+            .join('');
+      
+      // Store turn in history
+      const currentTurn = {
+        turn: sessionHistory.length + 1,
+        prompt: msg.role === 'user' ? content : '',
+        response: msg.role === 'assistant' ? content : '',
+      };
+      sessionHistory.push(currentTurn);
+      
+      // Detect loop and escalate if needed (check last 2 turns)
+      if (sessionHistory.length >= 2) {
+        const recentHistory = sessionHistory.slice(-2);
+        
+        // Try LLM-based loop detection first
+        let shouldEscalate = false;
+        let escalationReason = '';
+        
+        try {
+          const result = await detectLoopWithLLM(recentHistory, { 
+            model: 'ollama/gemma2:2b',
+            timeoutMs: 8000 
+          });
+          shouldEscalate = result.shouldEscalate;
+          escalationReason = result.reason;
+        } catch (error) {
+          console.warn(`[escalation] LLM loop detection failed, falling back to rule-based: ${error}`);
+          // Fallback to rule-based detection
+          shouldEscalate = detectLoop(recentHistory);
+          escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
+        }
+        
+        if (shouldEscalate) {
+          const previousLevel = escalationLevel;
+          escalationLevel = escalateModelGroup(escalationLevel);
+          if (previousLevel !== escalationLevel) {
+            console.log(
+              `[escalation] ${escalationReason}. Upgraded from ${previousLevel} to ${escalationLevel}`
+            );
+          }
+        }
+      }
+    }
+    
+    // ── Metrics & Usage Logging ─────────────────────────────────────────
     if (msg?.role === 'assistant') {
       const txt =
         typeof msg.content === 'string'
@@ -1468,9 +1595,18 @@ const defaultExport = function (pi: ExtensionAPI) {
         // Type assertion: if it's not a HINT, it must have a category
         const normalClassification = classification as ClassificationResult;
         
-        // Hole die Kostenstufe und Gruppe für diese Kategorie
-        const costTier = getCostTierForCategoryFunc(normalClassification.category);
-        const targetGroup = getGroupForCategory(normalClassification.category);
+        // ── Session Escalation: Override group with escalation level ────────
+        let targetGroup: string;
+        if (escalationLevel !== 'operational') {
+          targetGroup = escalationLevel;
+          console.log(
+            `[escalation] Using escalated group: ${targetGroup} (level: ${escalationLevel})`
+          );
+        } else {
+          // Hole die Kostenstufe und Gruppe für diese Kategorie
+          const costTier = getCostTierForCategoryFunc(normalClassification.category);
+          targetGroup = getGroupForCategory(normalClassification.category);
+        }
         
         // Versuche zuerst mit Kostenstufen-Filter
         let res = resolveWithCostTier(targetGroup, costTier);
