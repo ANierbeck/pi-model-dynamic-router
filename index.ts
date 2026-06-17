@@ -1140,15 +1140,17 @@ const defaultExport = function (pi: ExtensionAPI) {
         let escalationReason = shouldEscalate ? 'Rule-based loop detection' : 'No loop detected';
         
         // Fire-and-forget LLM detection in background, but act on result
-        // Use flag to prevent concurrent escalations
+        // Use flag to prevent concurrent escalations and levelAtCallTime to prevent stale closure
         if (!llmEscalationInFlight) {
           llmEscalationInFlight = true;
+          const levelAtCallTime = escalationLevel;
           detectLoopWithLLM(recentHistory, { 
             model: 'ollama/gemma2:2b',
             timeoutMs: 8000 
           }).then((result) => {
             llmEscalationInFlight = false;
-            if (result.shouldEscalate && !shouldEscalate) {
+            // Only escalate if LLM detects loop, rule-based didn't, AND level hasn't changed since call
+            if (result.shouldEscalate && !shouldEscalate && escalationLevel === levelAtCallTime) {
               console.log(`[escalation] LLM confirmed loop: ${result.reason}`);
               // Escalate if LLM detects loop but rule-based didn't
               const currentLevel = escalationLevel;
