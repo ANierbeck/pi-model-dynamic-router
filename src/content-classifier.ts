@@ -566,23 +566,14 @@ async function callModelForClassification(
   prompt: string,
   timeoutMs: number
 ): Promise<string> {
-  // Try Ollama first
+  // Only Ollama models are supported for loop detection
+  // CloudClient.callModel is an instance method, not static, so we can't use it here
   if (model.startsWith('ollama/') || !model.includes('/')) {
-    try {
-      const ollamaModel = model.startsWith('ollama/') ? model.slice(7) : model;
-      return await callOllama(ollamaModel, prompt, { timeoutMs });
-    } catch {
-      // Don't fall through to cloud for Ollama models - they won't work with CloudClient
-      throw new Error(`Ollama model ${model} failed and has no cloud fallback`);
-    }
+    const ollamaModel = model.startsWith('ollama/') ? model.slice(7) : model;
+    return await callOllama(ollamaModel, prompt, { timeoutMs });
   }
   
-  // Try cloud models (only for non-Ollama models)
-  try {
-    return await CloudClient.callModel(model, prompt, { timeoutMs });
-  } catch (error) {
-    throw new Error(`All classification methods failed: ${error}`);
-  }
+  throw new Error(`Only Ollama models are supported for loop detection, got: ${model}`);
 }
 
 /**
