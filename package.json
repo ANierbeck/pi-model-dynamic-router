@@ -17,7 +17,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc && cp src/*.js dist/ && cp index.js dist/ && cp router-defaults.yaml router-config.json model-map.yaml dist/",
+    "build": "tsc && cp router-defaults.yaml router-config.json model-map.yaml dist/",
     "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,15 +35,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/a-canary/pi-model-router.git"
+    "url": "git+https://github.com/ANierbeck/pi-model-dynamic-router.git"
   },
   "files": [
-    "index.ts",
+    "dist/",
     "router-config.json",
     "router-defaults.yaml",
     "model-map.yaml",
     "skills/",
-    "src/",
     "PI.md",
     "README.md"
   ],
