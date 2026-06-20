@@ -14,21 +14,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout default ref first (fetch-depth: 0 pulls all tags).
-      # For workflow_dispatch the validation step below switches to the
-      # validated tag before any build or test code runs.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Validate ref is a git tag
         if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ github.event.inputs.ref }}
         run: |
-          if ! git tag -l "${{ github.event.inputs.ref }}" | grep -q .; then
-            echo "Error: '${{ github.event.inputs.ref }}' is not a git tag"
+          if ! git tag -l "$TAG" | grep -q .; then
+            echo "Error: '$TAG' is not a git tag"
             exit 1
           fi
-          git checkout "${{ github.event.inputs.ref }}"
+          git checkout "$TAG"
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -54,8 +53,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
           fetch-depth: 0
+
+      - name: Switch to release tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ github.event.inputs.ref }}
+        run: git checkout "$TAG"
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
