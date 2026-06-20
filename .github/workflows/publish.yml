@@ -26,11 +26,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate ref is a git tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git fetch --tags
+          if ! git tag -l "${{ github.event.inputs.ref }}" | grep -q .; then
+            echo "Error: '${{ github.event.inputs.ref }}' is not a git tag"
+            exit 1
+          fi
+
       - name: Run TypeScript checks
         run: npx tsc --noEmit
 
       - name: Run tests
-        run: npm test
+        run: npm run test:coverage
 
   publish:
     needs: test
