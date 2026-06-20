@@ -8,6 +8,7 @@
     "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true,
     "noEmit": false,
+    "outDir": "dist",
     "esModuleInterop": true,
     
     /* Strict Type-Checking Options */
