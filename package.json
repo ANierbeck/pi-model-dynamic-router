@@ -1,5 +1,5 @@
 {
-  "name": "pi-model-dynamic-router",
+  "name": "@anierbeck/pi-model-dynamic-router",
   "version": "1.1.0",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
@@ -36,6 +36,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ANierbeck/pi-model-dynamic-router.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "dist/",
