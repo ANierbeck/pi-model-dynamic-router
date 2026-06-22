@@ -37,7 +37,7 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses **Ollama (gemma4:12b-mlx** primary, **gemma2:2b** fallback**)** for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback) for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
 
 #### Categories for Classification
 
@@ -65,7 +65,7 @@ Each category maps to a specific model group:
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that uses **Ollama (gemma4:12b-mlx** primary, **gemma2:2b** fallback**)** to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that uses Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback) to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 - **Ollama** must be installed and running locally.
@@ -177,7 +177,7 @@ To use the **`dynamic`** group, you need:
 - **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-If both Ollama models are unavailable, the classifier falls back to cloud models (if configured) and finally to static keyword-based classification.
+If both Ollama models are unavailable, the classifier falls back to cloud models (if configured), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
 
 ## Commands
 
