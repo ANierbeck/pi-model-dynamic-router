@@ -10,7 +10,7 @@ The router uses a **modular architecture** with the following components:
 
 | Module | Purpose | Key Features |
 |--------|---------|--------------|
-| **providers.ts** | Provider definitions and mappings | 24 supported providers, authentication patterns |
+| **providers.ts** | Provider definitions and mappings | 25 supported providers, authentication patterns |
 | **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
 | **utils.ts** | Utility functions | String manipulation, reference parsing |
 | **rate-limit.ts** | Rate limit management | Key rotation, backoff, cost multiplier |
@@ -18,7 +18,8 @@ The router uses a **modular architecture** with the following components:
 | **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
 | **cache.ts** | Cache management | Persistent caching, versioning |
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
-| **content-classifier.ts** | Content classification | Ollama-based prompt categorization |
+| **content-classifier.ts** | Content classification | gemma4:12b-mlx primary, gemma2:2b fallback, cloud fallback |
+| **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 
 This modular design enables better maintainability, testing, and extensibility.
 
@@ -36,7 +37,7 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses **Ollama (gemma2:2b)** for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses **Ollama (gemma4:12b-mlx** primary, **gemma2:2b** fallback**)** for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
 
 #### Categories for Classification
 
@@ -64,7 +65,7 @@ Each category maps to a specific model group:
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that uses **Ollama (gemma2:2b)** to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that uses **Ollama (gemma4:12b-mlx** primary, **gemma2:2b** fallback**)** to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 - **Ollama** must be installed and running locally.
@@ -100,14 +101,17 @@ No curated model lists. Groups draw from all discovered models automatically.
 
 #### GDPval
 
-GDPval is a composite quality score from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) that combines intelligence, throughput, and cost-efficiency into a single number. Higher = better overall value. The router scrapes current scores on startup and uses hardcoded fallbacks when the site is unavailable.
+GDPval is a composite quality score from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) that combines intelligence, throughput, and cost-efficiency into a single number. Higher = better overall value. The router scrapes scores **once** on first run and caches them; subsequent startups use the cache. Use `/router scan` to force a refresh. Hardcoded fallbacks from `gdpval_builtin` in the config are always loaded as a baseline.
 
 #### Price Routing — how `tiered` works
 
 1. **Filter** — discard any model below the group's GDPval percentile threshold.
-2. **Sort** — rank survivors by effective cost, adjusted by billing preference:
-   `free → subscription → local → pay-per-token (ascending cost)`
-3. **Select** — pick the cheapest model that clears the quality floor.
+2. **Sort** — rank survivors by billing tier first, then by effective cost within each tier:
+   - Tier 0: free models
+   - Tier 1: subscription (lowest rate-limit pressure first, then cost)
+   - Tier 2: local (Ollama / LM Studio)
+   - Tier 3: pay-per-token (ascending effective cost)
+3. **Select** — pick the top-ranked model (cheapest within the preferred billing tier that clears the quality floor).
 
 This means `operational` always uses the cheapest model that is at least median quality, while `strategic` always picks the single highest-scoring model regardless of cost.
 
@@ -161,16 +165,19 @@ Or manually:
 1. Set API key via env var, `pass`, or `pi auth <provider>`
 2. Restart pi — the router discovers keys and scans models automatically
 
-### Supported Providers (24)
+### Supported Providers (25)
 
-anthropic, openai, google, openrouter, chutes, mistral, groq, cerebras, xai, zai, huggingface, kimi-coding, minimax, minimax-cn, opencode, opencode-go, vercel-ai-gateway, azure-openai, deepseek, github-copilot, qwen-cli, gemini-cli, ollama, lm-studio
+anthropic, openai, google, openrouter, chutes, mistral, groq, cerebras, xai, zai, huggingface, kimi-coding, minimax, minimax-cn, opencode, opencode-go, vercel-ai-gateway, azure-openai, deepseek, github-copilot, qwen-cli, gemini-cli, antigravity, ollama, lm-studio
 
 ### Requirements for Dynamic Routing
 
 To use the **`dynamic`** group, you need:
 - **Ollama** installed and running locally (`ollama serve`)
-- The **gemma2:2b** model pulled (`ollama pull gemma2:2b`)
+- **gemma4:12b-mlx** pulled for best classification quality (`ollama pull gemma4:12b-mlx`)
+- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
+
+If both Ollama models are unavailable, the classifier falls back to cloud models (if configured) and finally to static keyword-based classification.
 
 ## Commands
 
