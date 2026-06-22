@@ -265,6 +265,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   function loadCache() {
     cache = cacheManager.loadCache();
     metricsModule.setCache(cache);
+    rateLimitManager.updateCache(cache);
   }
 
   function saveCache() {

@@ -205,6 +205,13 @@ export class RateLimitManager {
     this.cache.cost_mux_last_bump[prov] = new Date().toISOString();
   }
 
+  // ── Cache Sync ────────────────────────────────────────────────────────
+
+  /** Re-point the manager at the authoritative cache object after loadCache() replaces it. */
+  updateCache(newCache: Cache): void {
+    this.cache = newCache;
+  }
+
   // ── Getter ─────────────────────────────────────────────────────────────
 
   getActiveKeyIdx(): Record<string, number> {
