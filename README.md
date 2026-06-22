@@ -2,6 +2,8 @@
 
 > Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
 
+> **Fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router)** — adds content-based dynamic routing (prompt classification → model group) on top of the upstream's price/quality/availability routing.
+
 ## Architecture
 
 The router uses a **modular architecture** with the following components:
@@ -94,20 +96,38 @@ Each group auto-discovers available models, filters by quality, and selects by b
 | **fallback** | `tiered` | ≥0th percentile | Any available. Last resort. |
 | **dynamic** | `dynamic` | — | Auto-classifies prompts and routes to the best group. |
 
-**Billing preference**: free → subscription (lowest rate-limit pressure) → local → pay-per-token (by cost)
-
 No curated model lists. Groups draw from all discovered models automatically.
+
+#### GDPval
+
+GDPval is a composite quality score from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) that combines intelligence, throughput, and cost-efficiency into a single number. Higher = better overall value. The router scrapes current scores on startup and uses hardcoded fallbacks when the site is unavailable.
+
+#### Price Routing — how `tiered` works
+
+1. **Filter** — discard any model below the group's GDPval percentile threshold.
+2. **Sort** — rank survivors by effective cost, adjusted by billing preference:
+   `free → subscription → local → pay-per-token (ascending cost)`
+3. **Select** — pick the cheapest model that clears the quality floor.
+
+This means `operational` always uses the cheapest model that is at least median quality, while `strategic` always picks the single highest-scoring model regardless of cost.
+
+#### costMux
+
+After 4 consecutive HTTP 429s from a provider, the router applies a permanent **cost multiplier penalty** (`costMux`) to all its models. This pushes the provider to the back of the sorted list without blocking it entirely — useful when a provider is temporarily overloaded but still reachable. The penalty persists for the session and is reset on `/router reload`.
 
 ### Rate Limits & Failover
 
-On HTTP 429:
-1. **Key rotation** — try next API key for the provider (1hr cooldown on current key)
-2. **Model backoff** — exponential (1m→2m→4m→...→90m cap), immediate failover to next candidate
-3. **costMux** — on 4th consecutive 429, provider gets permanent cost penalty
+On HTTP 429 the router works through three escalating responses:
+
+1. **Key rotation** — immediately tries the next API key for the same provider; the exhausted key enters a 1-hour cooldown before rejoining the pool.
+2. **Model backoff** — if all keys for a provider are cooling down, the model enters exponential backoff (1 min → 2 → 4 → … → 90 min cap) and the group falls over to its next-ranked candidate for the current request.
+3. **costMux penalty** — after 4 consecutive 429s, the provider receives a permanent cost multiplier for the session (see [costMux](#costmux) above), demoting all its models in future selections.
+
+All three mechanisms are transparent to the user — the session continues with the next available model.
 
 ### Stream Retry
 
-Group streams detect soft failures (empty responses, timeouts) and automatically retry with the next candidate model.
+When a streaming response fails mid-stream (empty body, connection drop, timeout), the group automatically retries with the next ranked candidate without requiring the user to resend the prompt. Soft failures are distinguished from hard errors: a 4xx response is not retried, but an interrupted stream or empty response is.
 
 ## Configuration
 

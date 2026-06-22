@@ -5,14 +5,19 @@
 ---
 
 ## Why This Fork?
-The original [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) routes models based on:
-- **Model quality** (GDPval scores),
-- **Cost** (billing preferences),
-- **Availability** (rate limits, latency).
+The original [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) already handles:
+- **Model quality** — GDPval-based ranking (composite intelligence + throughput + cost score)
+- **Price routing** — tiered selection: cheapest model above a configurable quality floor
+- **Availability** — rate-limit failover, key rotation, exponential backoff, stream retry
+- **costMux** — automatic cost-penalty demotion after repeated 429s
 
-**Gap**: Missing **real-time content analysis** of the request. For example:
+See [README.md](./README.md) for a full description of these upstream features.
+
+**Gap**: The upstream has no **real-time content analysis** of the request itself. Every prompt hits the same group regardless of complexity. For example:
 - A simple code edit (`"Replace line 42"`) could be handled locally with Ollama.
 - A complex architecture question (`"Design a microservice architecture"`) should go to Claude Opus.
+
+This fork adds a **classification layer** that inspects the prompt *before* routing and selects the appropriate model group automatically.
 
 ---
 
