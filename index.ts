@@ -277,6 +277,8 @@ const defaultExport = function (pi: ExtensionAPI) {
   async function discoverKeys() {
     await discoveryManager.discoverKeys();
     cache = discoveryManager.getCache();
+    metricsModule.setCache(cache);
+    rateLimitManager.updateCache(cache);
   }
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
