@@ -207,7 +207,7 @@ export class RateLimitManager {
 
   // ── Cache Sync ────────────────────────────────────────────────────────
 
-  /** Re-point the manager at the authoritative cache object after loadCache() replaces it. */
+  /** Replace the managed cache reference. */
   updateCache(newCache: Cache): void {
     this.cache = newCache;
   }
