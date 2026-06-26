@@ -8,14 +8,6 @@ import type { Metrics, Config, Cache, Group, ModelRef } from './types.ts';
 import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 
-// Extended metrics interface for benchmark data
-interface ExtendedMetrics extends Metrics {
-  mmlu?: number;
-  gpqa?: number;
-  truthful?: number;
-  humaneval?: number;
-  swebench?: number;
-}
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -167,25 +159,18 @@ export function setMetrics(newMetrics: Record<string, Metrics>): void {
  * Returns the metrics for a reference
  * Including benchmark data if available
  */
-export function getM(ref: string): Metrics & ExtendedMetrics {
-  if (metrics[ref]) return metrics[ref] as Metrics & ExtendedMetrics;
-  
+export function getM(ref: string): Metrics {
+  if (metrics[ref]) return metrics[ref];
+
   const cm = cfg.model_metrics[ref] ?? {};
-  const benchmarks = cfg.model_benchmarks?.[ref] ?? {};
-  
+
   return (metrics[ref] = {
     gdpval: lookupGdp(ref) ?? cm.gdpval ?? 50,
     throughput_tps: cm.throughput_tps ?? 100,
     avg_latency_ms: cm.avg_latency_ms ?? 1000,
     cost_per_m: cm.cost_per_m ?? 0,
     last_updated: Date.now(),
-    // Benchmark data
-    mmlu: benchmarks.mmlu,
-    gpqa: benchmarks.gpqa,
-    truthful: benchmarks.truthful,
-    humaneval: benchmarks.humaneval,
-    swebench: benchmarks.swebench
-  } as Metrics & ExtendedMetrics);
+  });
 }
 
 /**
@@ -206,98 +191,12 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 // ── Multi-Metric Scoring ────────────────────────────────────────────────
 
 /**
- * Calculates a weighted score based on multiple metrics
- * Considers GDPval, generation, benchmarks, model type and release date
- * All metrics are normalized to the same scale (0-100)
- *
- * Weighting (sums to 100% base + up to 20% bonuses):
- * - Code tasks:  20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench
- * - General:     25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench
- * - Bonuses: Generation (+5 per gen >3, max +10) + Recency (+5/+3/+1) + Code model for code tasks (+5)
- *   Maximum bonus: +10 (Generation) + +5 (Recency) + +5 (Code) = +20
- *
- * @param ref - Model reference (e.g. "anthropic/claude-3-sonnet")
- * @param taskType - Optional task type for specific weighting (e.g. "code")
- * @param config - Configuration for accessing model_metadata and model_benchmarks
+ * Calculates a quality score for a model reference.
+ * Uses GDPval (composite intelligence + throughput + cost-efficiency score from
+ * artificialanalysis.ai), normalized to 0–100. Higher is better.
  */
-export function calculateScore(ref: string, taskType?: string, config?: Config): number {
-  const m = getM(ref);
-  const metadata = config?.model_metadata?.[ref] ?? cfg.model_metadata?.[ref] ?? {};
-  const benchmarks = config?.model_benchmarks?.[ref] ?? cfg.model_benchmarks?.[ref] ?? {};
-  
-  // Normalize GDPval from 0-1000 to 0-100 scale
-  const normalizedGdpval = Math.min(100, m.gdpval / 10);
-  
-  // Base score: Normalized GDPval
-  let score: number;
-  
-  // Determine the weighting based on taskType
-  // taskType takes precedence over modelType
-  const modelType = metadata.type ?? 'general';
-  const isCodeTask = taskType === 'code';
-  const isCodeModel = modelType === 'code';
-  
-  // Benchmark-based scores (0-100 scale)
-  // MMLU can exceed 100% (e.g. 110%), so we normalize to 100
-  const mmluScore = Math.min(100, (benchmarks.mmlu ?? m.mmlu ?? 0) / 1.1);
-  const gpqaScore = Math.min(100, benchmarks.gpqa ?? m.gpqa ?? 0);
-  const truthfulScore = Math.min(100, benchmarks.truthful ?? m.truthful ?? 0);
-  const humanevalScore = Math.min(100, (benchmarks.humaneval ?? m.humaneval ?? 0) * 100);
-  const swebenchScore = Math.min(100, (benchmarks.swebench ?? m.swebench ?? 0) * 100);
-  
-  // Task-specific weighting (sums to 100% base)
-  if (isCodeTask) {
-    // For code tasks: Strong weighting on code benchmarks
-    // 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench = 100%
-    score = normalizedGdpval * 0.20;
-    score += mmluScore * 0.10;
-    score += gpqaScore * 0.05;
-    score += truthfulScore * 0.05;
-    score += humanevalScore * 0.25;
-    score += swebenchScore * 0.35;
-  } else {
-    // For general tasks: Balanced weighting
-    // 25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench = 100%
-    score = normalizedGdpval * 0.25;
-    score += mmluScore * 0.20;
-    score += gpqaScore * 0.15;
-    score += truthfulScore * 0.10;
-    score += humanevalScore * 0.10;
-    score += swebenchScore * 0.20;
-  }
-  
-  // Generation bonus: +5 points per generation above 3 (max +10)
-  // Example: Claude 4 (Generation 4) gets +5 points, Claude 5 gets +10 points
-  const generation = metadata.generation ?? 0;
-  const generationBonus = Math.max(0, Math.min(10, (generation - 3) * 5));
-  score += generationBonus;
-  
-  // Release date bonus: Newer models get a slight bonus (max +5 points)
-  // Models from the last 6 months: +5, 6-12 months: +3, 12-18 months: +1
-  let recencyBonus = 0;
-  if (metadata.release_date) {
-    try {
-      const releaseDate = new Date(metadata.release_date);
-      const monthsOld = (Date.now() - releaseDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-      if (monthsOld < 6) recencyBonus = 5;
-      else if (monthsOld < 12) recencyBonus = 3;
-      else if (monthsOld < 18) recencyBonus = 1;
-    } catch {
-      // Ignore invalid date formats
-    }
-  }
-  score += recencyBonus;
-  
-  // Code model bonus: Code-specialised models get +5 points for code tasks
-  // (as they are optimised for code tasks)
-  if (isCodeModel && isCodeTask) {
-    score += 5;
-  }
-  
-  // Normalize the final score to 0-100 (if bonuses push it above)
-  // Maximum bonus: +10 (Generation) + +5 (Recency) + +5 (Code-Type) = +20
-  // So the score can reach up to 120 but is capped at 100
-  return Math.min(100, Math.max(0, score));
+export function calculateScore(ref: string, _taskType?: string, _config?: Config): number {
+  return Math.min(100, getM(ref).gdpval / 10);
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────

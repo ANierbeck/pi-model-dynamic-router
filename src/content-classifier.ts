@@ -121,7 +121,7 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   if (!match) return null;
   const instruction = match[1].trim();
 
-  // Group hint: "use group tactical", "use group X", "use group X", "use group X"
+  // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X", "benutze Gruppe X"
   const groupMatch = instruction.match(
     new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
   );
