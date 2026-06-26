@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories using **Ollama (gemma4:12b-mlx** primary, **gemma2:2b** fallback).
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories using Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback).
 2. **Group Mapping**: The category is mapped to a specific model group (`scout`, `operational`, `tactical`, or `strategic`).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
