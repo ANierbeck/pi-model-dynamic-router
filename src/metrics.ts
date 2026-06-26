@@ -1,5 +1,5 @@
 // src/metrics.ts
-// Metriken-Verwaltung für den pi-model-router
+// Metrics management for the pi-model-router
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -32,7 +32,7 @@ let gdpvalIndex: Map<string, number> | null = null;
 let lastIndexVersion = -1;
 
 /**
- * Lädt die Model-Map aus der YAML-Datei
+ * Loads the model map from the YAML file
  */
 export function loadModelMap(extDir: string): void {
   const yamlPath = path.join(extDir, 'model-map.yaml');
@@ -58,7 +58,7 @@ export function loadModelMap(extDir: string): void {
 }
 
 /**
- * Setzt die GDPval-Scores
+ * Sets the GDPval scores
  */
 export function setGdpval(scores: Record<string, number>): void {
   gdpval = { ...scores };
@@ -66,7 +66,7 @@ export function setGdpval(scores: Record<string, number>): void {
 }
 
 /**
- * Setzt die Model-Map
+ * Sets the model map
  */
 export function setModelMap(map: ModelMap, wildcards: [string, string | null][]): void {
   modelMap = map;
@@ -137,7 +137,7 @@ let cfg: Config = { model_groups: {}, model_metrics: {}, providers: {} };
 let cache: Cache = {};
 
 /**
- * Setzt die Konfiguration
+ * Sets the configuration
  */
 export function setConfig(config: Config): void {
   cfg = config;
@@ -147,7 +147,7 @@ export function setConfig(config: Config): void {
 }
 
 /**
- * Setzt den Cache
+ * Sets the cache
  */
 export function setCache(newCache: Cache): void {
   cache = newCache;
@@ -157,15 +157,15 @@ export function setCache(newCache: Cache): void {
 }
 
 /**
- * Setzt die Metriken
+ * Sets the metrics
  */
 export function setMetrics(newMetrics: Record<string, Metrics>): void {
   metrics = newMetrics;
 }
 
 /**
- * Gibt die Metriken für eine Referenz zurück
- * Inklusive Benchmark-Daten falls verfügbar
+ * Returns the metrics for a reference
+ * Including benchmark data if available
  */
 export function getM(ref: string): Metrics & ExtendedMetrics {
   if (metrics[ref]) return metrics[ref] as Metrics & ExtendedMetrics;
@@ -179,7 +179,7 @@ export function getM(ref: string): Metrics & ExtendedMetrics {
     avg_latency_ms: cm.avg_latency_ms ?? 1000,
     cost_per_m: cm.cost_per_m ?? 0,
     last_updated: Date.now(),
-    // Benchmark-Daten
+    // Benchmark data
     mmlu: benchmarks.mmlu,
     gpqa: benchmarks.gpqa,
     truthful: benchmarks.truthful,
@@ -189,7 +189,7 @@ export function getM(ref: string): Metrics & ExtendedMetrics {
 }
 
 /**
- * Aktualisiert die Metriken für eine Referenz
+ * Updates the metrics for a reference
  */
 export function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
   const m = getM(ref),
@@ -206,48 +206,48 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 // ── Multi-Metric Scoring ────────────────────────────────────────────────
 
 /**
- * Berechnet einen gewichteten Score basierend auf mehreren Metriken
- * Berücksichtigt GDPval, Generation, Benchmarks, Modell-Typ und Release-Datum
- * Alle Metriken werden auf die gleiche Skala (0-100) normalisiert
- * 
- * Gewichtung (summiert zu 100% Basis + bis zu 20% Bonuses):
- * - Code-Aufgaben: 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench
- * - Allgemein:    25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench
- * - Bonuses: Generation (+5 pro Gen >3, max +10) + Recency (+5/+3/+1) + Code-Modell für Code-Aufgaben (+5)
- *   Maximaler Bonus: +10 (Generation) + +5 (Recency) + +5 (Code) = +20
- * 
- * @param ref - Modell-Referenz (z.B. "anthropic/claude-3-sonnet")
- * @param taskType - Optionaler Aufgabentyp für spezifische Gewichtung (z.B. "code")
- * @param config - Konfiguration für Zugriff auf model_metadata und model_benchmarks
+ * Calculates a weighted score based on multiple metrics
+ * Considers GDPval, generation, benchmarks, model type and release date
+ * All metrics are normalized to the same scale (0-100)
+ *
+ * Weighting (sums to 100% base + up to 20% bonuses):
+ * - Code tasks:  20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench
+ * - General:     25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench
+ * - Bonuses: Generation (+5 per gen >3, max +10) + Recency (+5/+3/+1) + Code model for code tasks (+5)
+ *   Maximum bonus: +10 (Generation) + +5 (Recency) + +5 (Code) = +20
+ *
+ * @param ref - Model reference (e.g. "anthropic/claude-3-sonnet")
+ * @param taskType - Optional task type for specific weighting (e.g. "code")
+ * @param config - Configuration for accessing model_metadata and model_benchmarks
  */
 export function calculateScore(ref: string, taskType?: string, config?: Config): number {
   const m = getM(ref);
   const metadata = config?.model_metadata?.[ref] ?? cfg.model_metadata?.[ref] ?? {};
   const benchmarks = config?.model_benchmarks?.[ref] ?? cfg.model_benchmarks?.[ref] ?? {};
   
-  // Normalisiere GDPval von 0-1000 auf 0-100 Skala
+  // Normalize GDPval from 0-1000 to 0-100 scale
   const normalizedGdpval = Math.min(100, m.gdpval / 10);
   
-  // Basis-Score: Normalisierter GDPval
+  // Base score: Normalized GDPval
   let score: number;
   
-  // Bestimme die Gewichtung basierend auf taskType
-  // taskType hat Vorrang vor modelType
+  // Determine the weighting based on taskType
+  // taskType takes precedence over modelType
   const modelType = metadata.type ?? 'general';
   const isCodeTask = taskType === 'code';
   const isCodeModel = modelType === 'code';
   
-  // Benchmark-basierte Scores (0-100 Skala)
-  // MMLU kann über 100% gehen (z.B. 110%), also normalisieren wir auf 100
+  // Benchmark-based scores (0-100 scale)
+  // MMLU can exceed 100% (e.g. 110%), so we normalize to 100
   const mmluScore = Math.min(100, (benchmarks.mmlu ?? m.mmlu ?? 0) / 1.1);
   const gpqaScore = Math.min(100, benchmarks.gpqa ?? m.gpqa ?? 0);
   const truthfulScore = Math.min(100, benchmarks.truthful ?? m.truthful ?? 0);
   const humanevalScore = Math.min(100, (benchmarks.humaneval ?? m.humaneval ?? 0) * 100);
   const swebenchScore = Math.min(100, (benchmarks.swebench ?? m.swebench ?? 0) * 100);
   
-  // Aufgaben-spezifische Gewichtung (summiert zu 100% Basis)
+  // Task-specific weighting (sums to 100% base)
   if (isCodeTask) {
-    // Für Code-Aufgaben: Starke Gewichtung auf Code-Benchmarks
+    // For code tasks: Strong weighting on code benchmarks
     // 20% GDPval + 10% MMLU + 5% GPQA + 5% Truthful + 25% HumanEval + 35% SWE-bench = 100%
     score = normalizedGdpval * 0.20;
     score += mmluScore * 0.10;
@@ -256,7 +256,7 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
     score += humanevalScore * 0.25;
     score += swebenchScore * 0.35;
   } else {
-    // Für allgemeine Aufgaben: Ausgewogene Gewichtung
+    // For general tasks: Balanced weighting
     // 25% GDPval + 20% MMLU + 15% GPQA + 10% Truthful + 10% HumanEval + 20% SWE-bench = 100%
     score = normalizedGdpval * 0.25;
     score += mmluScore * 0.20;
@@ -266,14 +266,14 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
     score += swebenchScore * 0.20;
   }
   
-  // Generations-Bonus: +5 Punkte pro Generation über 3 (max +10)
-  // Beispiel: Claude 4 (Generation 4) bekommt +5 Punkte, Claude 5 bekommt +10 Punkte
+  // Generation bonus: +5 points per generation above 3 (max +10)
+  // Example: Claude 4 (Generation 4) gets +5 points, Claude 5 gets +10 points
   const generation = metadata.generation ?? 0;
   const generationBonus = Math.max(0, Math.min(10, (generation - 3) * 5));
   score += generationBonus;
   
-  // Release-Datum Bonus: Neuere Modelle bekommen leichten Bonus (max +5 Punkte)
-  // Modelle aus den letzten 6 Monaten: +5, 6-12 Monate: +3, 12-18 Monate: +1
+  // Release date bonus: Newer models get a slight bonus (max +5 points)
+  // Models from the last 6 months: +5, 6-12 months: +3, 12-18 months: +1
   let recencyBonus = 0;
   if (metadata.release_date) {
     try {
@@ -283,27 +283,27 @@ export function calculateScore(ref: string, taskType?: string, config?: Config):
       else if (monthsOld < 12) recencyBonus = 3;
       else if (monthsOld < 18) recencyBonus = 1;
     } catch {
-      // Ignoriere ungültige Datumsformate
+      // Ignore invalid date formats
     }
   }
   score += recencyBonus;
   
-  // Code-Modell-Bonus: Code-spezialisierte Modelle bekommen +5 Punkte für Code-Aufgaben
-  // (da sie für Code-Aufgaben optimiert sind)
+  // Code model bonus: Code-specialised models get +5 points for code tasks
+  // (as they are optimised for code tasks)
   if (isCodeModel && isCodeTask) {
     score += 5;
   }
   
-  // Normalisiere den finalen Score auf 0-100 (falls durch Bonuses darüber)
-  // Maximaler Bonus: +10 (Generation) + +5 (Recency) + +5 (Code-Type) = +20
-  // Also kann der Score bis zu 120 erreichen, wird aber auf 100 begrenzt
+  // Normalize the final score to 0-100 (if bonuses push it above)
+  // Maximum bonus: +10 (Generation) + +5 (Recency) + +5 (Code-Type) = +20
+  // So the score can reach up to 120 but is capped at 100
   return Math.min(100, Math.max(0, score));
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────
 
 /**
- * Gibt die Billing-Tier für eine Referenz zurück
+ * Returns the billing tier for a reference
  * 0=free, 1=subscription, 2=local, 3=payg
  */
 export function billingTier(ref: string): number {
@@ -323,7 +323,7 @@ export function billingTier(ref: string): number {
 }
 
 /**
- * Sucht den Preis für eine Referenz
+ * Looks up the price for a reference
  */
 export function lookupPrice(ref: string): { input: number; output: number } | null {
   // 1. Check config metrics first
@@ -345,7 +345,7 @@ export function lookupPrice(ref: string): { input: number; output: number } | nu
 }
 
 /**
- * Berechnet die effektiven Kosten für eine Referenz
+ * Calculates the effective cost for a reference
  */
 export function effCost(ref: string): number {
   const m = getM(ref),
@@ -365,7 +365,7 @@ export function effCost(ref: string): number {
 }
 
 /**
- * Gibt den Cost-Multiplikator für einen Provider zurück
+ * Returns the cost multiplier for a provider
  */
 export function costMux(prov: string): number {
   return cache.cost_mux?.[prov] ?? 1;
@@ -374,7 +374,7 @@ export function costMux(prov: string): number {
 // ── Usage Stats ──────────────────────────────────────────────────────────
 
 /**
- * Gibt die Token-Nutzung für eine Referenz in den letzten Tagen zurück
+ * Returns the token usage for a reference over the last days
  */
 export function getUsage(ref: string, days: number): number {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -384,7 +384,7 @@ export function getUsage(ref: string, days: number): number {
 }
 
 /**
- * Gibt die Token-Nutzung für alle Referenzen in den letzten Tagen zurück
+ * Returns the token usage for all references over the last days
  */
 export function getUsageAll(days: number): Record<string, number> {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;

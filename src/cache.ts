@@ -1,5 +1,5 @@
 // src/cache.ts
-// Cache-Handling für den pi-model-router
+// Cache handling for the pi-model-router
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -9,7 +9,7 @@ import type { Cache } from './types.js';
 // ── Cache Management ───────────────────────────────────────────────────────
 
 /**
- * Verwaltet den Cache für den pi-model-router
+ * Manages the cache for the pi-model-router
  */
 export class CacheManager {
   private cache: Cache;
@@ -21,7 +21,7 @@ export class CacheManager {
   }
 
   /**
-   * Lädt den Cache aus der Datei
+   * Loads the cache from the file
    */
   loadCache(): Cache {
     try {
@@ -36,7 +36,7 @@ export class CacheManager {
   }
 
   /**
-   * Speichert den Cache in die Datei
+   * Saves the cache to the file
    */
   saveCache(cache?: Cache): void {
     const dataToSave = cache ?? this.cache;
@@ -45,14 +45,14 @@ export class CacheManager {
   }
 
   /**
-   * Gibt den aktuellen Cache zurück
+   * Returns the current cache
    */
   getCache(): Cache {
     return this.cache;
   }
 
   /**
-   * Aktualisiert den Cache
+   * Updates the cache
    */
   updateCache(updates: Partial<Cache>): void {
     this.cache = { ...this.cache, ...updates };
@@ -60,28 +60,28 @@ export class CacheManager {
   }
 
   /**
-   * Setzt den Timestamp des letzten Scans
+   * Sets the timestamp of the last scan
    */
   setLastScanTimestamp(timestamp: number = Date.now()): void {
     this.updateCache({ lastScanTimestamp: timestamp });
   }
 
   /**
-   * Prüft, ob der Cache noch gültig ist (max. 30 Tage alt)
+   * Checks whether the cache is still valid (max. 30 days old)
    */
   isScanCacheValid(): boolean {
     const lastScan = this.cache.lastScanTimestamp;
     if (lastScan === undefined) return false;
     
-    const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 Tage in Millisekunden
+    const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
     const now = Date.now();
     const diff = now - lastScan;
-    // Prüfe Lower Bound: diff >= 0 (keine Future Timestamps) und < 30 Tage
+    // Check lower bound: diff >= 0 (no future timestamps) and < 30 days
     return diff >= 0 && diff < thirtyDaysInMs;
   }
 
   /**
-   * Setzt den Cache zurück
+   * Resets the cache
    */
   resetCache(): void {
     this.cache = {};
@@ -89,7 +89,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die GDPval-Scores im Cache
+   * Updates the GDPval scores in the cache
    */
   updateGdpvalScores(scores: Record<string, number>): void {
     this.cache.gdpval_scores = scores;
@@ -98,7 +98,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die verfügbaren Modelle im Cache
+   * Updates the available models in the cache
    */
   updateAvailableModels(models: { id: string; provider: string; cost_per_m: number }[]): void {
     this.cache.available_models = models;
@@ -107,7 +107,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die Benchmarks im Cache
+   * Updates the benchmarks in the cache
    */
   updateBenchmarks(benchmarks: Record<string, number>): void {
     this.cache.benchmarks = benchmarks;
@@ -115,7 +115,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die OpenRouter-Preisliste im Cache
+   * Updates the OpenRouter pricing list in the cache
    */
   updateOpenRouterPricing(pricing: Record<string, { input: number; output: number }>): void {
     this.cache.openrouter_pricing = pricing;
@@ -123,7 +123,7 @@ export class CacheManager {
   }
 
   /**
-   * Fügt einen neuen Eintrag zum Usage-Log hinzu
+   * Adds a new entry to the usage log
    */
   addUsageLogEntry(ref: string, tokens: number): void {
     if (!this.cache.usage_log) this.cache.usage_log = [];
@@ -135,7 +135,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die erschöpften Keys im Cache
+   * Updates the exhausted keys in the cache
    */
   updateExhaustedKeys(exhaustedKeys: Record<string, number>): void {
     this.cache.exhausted_keys = exhaustedKeys;
@@ -143,7 +143,7 @@ export class CacheManager {
   }
 
   /**
-   * Aktualisiert die Cost-Mux-Werte im Cache
+   * Updates the cost mux values in the cache
    */
   updateCostMux(costMux: Record<string, number>, costMuxLastBump: Record<string, string>): void {
     this.cache.cost_mux = costMux;

@@ -1,5 +1,5 @@
 // src/cloud-client.ts
-// Client für Cloud-Modell-Aufrufe (OpenRouter, etc.)
+// Client for cloud model calls (OpenRouter, etc.)
 
 import type { ProviderDef } from './types.js';
 import type { Config } from './types.js';
@@ -19,8 +19,8 @@ export interface CloudClientOptions {
 }
 
 /**
- * Client für Cloud-Modell-Aufrufe
- * Unterstützt aktuell: OpenRouter
+ * Client for cloud model calls
+ * Currently supports: OpenRouter
  */
 export class CloudClient {
   private cfg: Config;
@@ -36,10 +36,10 @@ export class CloudClient {
   }
 
   /**
-   * Führe einen Prompt mit einem Cloud-Modell aus
-   * @param modelRef - Modell-Referenz (z. B. "openai/gpt-oss-120b:free")
-   * @param prompt - User-Prompt
-   * @param systemPrompt - Optional: System-Prompt
+   * Execute a prompt with a cloud model
+   * @param modelRef - Model reference (e.g. "openai/gpt-oss-120b:free")
+   * @param prompt - User prompt
+   * @param systemPrompt - Optional: System prompt
    * @returns CloudModelResponse
    */
   async callModel(
@@ -54,13 +54,13 @@ export class CloudClient {
       throw new Error(`Unknown provider: ${providerId}`);
     }
 
-    // Hole API-Key aus Konfiguration
+    // Get API key from configuration
     const apiKey = this.getApiKey(providerId);
     if (!apiKey) {
       throw new Error(`No API key for provider: ${providerId}`);
     }
 
-    // Provider-spezifische Aufrufe
+    // Provider-specific calls
     switch (providerDef.api) {
       case 'openai-completions':
         return this.callOpenRouter(modelId, prompt, systemPrompt, apiKey, providerDef);
@@ -70,21 +70,21 @@ export class CloudClient {
   }
 
   /**
-   * Teile Modell-Referenz in Provider und Modell-ID
-   * Unterstützt Formate:
-   * - "provider/model-id" (z. B. "openrouter/qwen3-4b:free")
-   * - "provider/namespace/model-id" (z. B. "openrouter/qwen/qwen3-4b:free")
+   * Split model reference into provider and model ID
+   * Supports formats:
+   * - "provider/model-id" (e.g. "openrouter/qwen3-4b:free")
+   * - "provider/namespace/model-id" (e.g. "openrouter/qwen/qwen3-4b:free")
    */
   private splitModelRef(modelRef: string): [string, string] {
     const parts = modelRef.split('/');
     if (parts.length >= 2) {
-      // Provider + Modell-ID (z. B. "openrouter/qwen3-4b:free" oder "openrouter/qwen/qwen3-4b:free")
+      // Provider + model ID (e.g. "openrouter/qwen3-4b:free" or "openrouter/qwen/qwen3-4b:free")
       const providerId = parts[0];
       if (PROVIDER_MAP[providerId]) {
-        // Erster Teil ist der Provider
+        // First part is the provider
         return [providerId, parts.slice(1).join('/')];
       } else {
-        // Kein bekannter Provider
+        // No known provider
         throw new Error(`Unknown provider: ${providerId}`);
       }
     } else {
@@ -93,7 +93,7 @@ export class CloudClient {
   }
 
   /**
-   * Hole API-Key für einen Provider
+   * Get API key for a provider
    */
   private getApiKey(providerId: string): string | null {
     const providerConfig = this.cfg.providers?.[providerId];
@@ -101,8 +101,8 @@ export class CloudClient {
   }
 
   /**
-   * OpenRouter-spezifischer Aufruf
-   * (OpenRouter nutzt das OpenAI-Chat-Completions-Format)
+   * OpenRouter-specific call
+   * (OpenRouter uses the OpenAI chat completions format)
    */
   private async callOpenRouter(
     modelRef: string,
@@ -132,7 +132,7 @@ export class CloudClient {
       max_tokens: 2000,
     };
 
-    // Node.js fetch mit Timeout
+    // Node.js fetch with timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.options.timeoutMs);
 

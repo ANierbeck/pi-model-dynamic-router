@@ -1,5 +1,5 @@
 // src/routing.ts
-// Routing-Logik für den pi-model-router
+// Routing logic for the pi-model-router
 
 import type { ExtensionContext } from '@mariozechner/pi-coding-agent';
 import type {
@@ -32,7 +32,7 @@ const SUB_DISCOUNT = 0.5; // Subscription discount factor
 // ── Routing Logic ─────────────────────────────────────────────────────────
 
 /**
- * Verwaltet das Routing für Modellgruppen
+ * Manages routing for model groups
  */
 export class Router {
   private cfg: Config;
@@ -58,7 +58,7 @@ export class Router {
   // ── Model Discovery ─────────────────────────────────────────────────────
 
   /**
-   * Gibt alle entdeckten Modell-Referenzen zurück
+   * Returns all discovered model references
    */
   allDiscoveredRefs(): string[] {
     const refs = new Set<string>();
@@ -90,7 +90,7 @@ export class Router {
   // ── Filtering ─────────────────────────────────────────────────────────────
 
   /**
-   * Filtert Modelle nach Verfügbarkeit (nicht rate-limited)
+   * Filters models by availability (not rate-limited)
    */
   filterAvailable(refs: string[], activeKeyIdx: Record<string, number> = {}): string[] {
     return refs.filter((r) => {
@@ -108,7 +108,7 @@ export class Router {
   }
 
   /**
-   * Filtert Modelle nach GDPval-Prozentil
+   * Filters models by GDPval percentile
    */
   filterByQualityPct(refs: string[], pct: number): string[] {
     if (!refs.length || pct <= 0) return refs;
@@ -119,7 +119,7 @@ export class Router {
   }
 
   /**
-   * Filtert Modelle nach minimalem GDPval
+   * Filters models by minimum GDPval
    */
   filterByQualityMin(refs: string[], min: number): string[] {
     if (!refs.length || min <= 0) return refs;
@@ -130,8 +130,8 @@ export class Router {
   // ── Sorting ───────────────────────────────────────────────────────────────
 
   /**
-   * Sortiert Modelle nach verschiedenen Methoden
-   * Für 'best' wird Multi-Metrik-Scoring verwendet
+   * Sorts models by various methods
+   * For 'best', multi-metric scoring is used
    */
   sortBy(models: string[], method: string, taskType?: string): string[] {
     const s = [...models];
@@ -144,7 +144,7 @@ export class Router {
     if (method === 'max_gdpval') 
       return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
     if (method === 'best') {
-      // Multi-Metrik-Scoring für 'best'-Methode
+      // Multi-metric scoring for 'best' method
       return s.sort((a, b) => {
         const scoreB = calculateScore(b, taskType, this.cfg);
         const scoreA = calculateScore(a, taskType, this.cfg);
@@ -157,7 +157,7 @@ export class Router {
   }
 
   /**
-   * Sortiert Modelle nach Billing-Präferenz
+   * Sorts models by billing preference
    */
   sortByBillingPreference(refs: string[]): string[] {
     return [...refs].sort((a, b) => {
@@ -177,8 +177,8 @@ export class Router {
   // ── Resolution ────────────────────────────────────────────────────────
 
   /**
-   * Löst eine Modellgruppe auf
-   * Verwendet Multi-Metrik-Scoring für 'best'-Methode
+   * Resolves a model group
+   * Uses multi-metric scoring for 'best' method
    */
   resolve(name: string): GroupResolution | null {
     const g = this.cfg.model_groups[name];
@@ -198,11 +198,11 @@ export class Router {
     //   the post-restart fix (models in g.models are in the pool regardless of registry state).
     let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
     
-    // Filter nach Qualität
+    // Filter by quality
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
-    
-    // Filter nach Kosten (falls konfiguriert)
+
+    // Filter by cost (if configured)
     if (g.max_cost !== undefined) {
       c = c.filter(ref => effCost(ref) <= g.max_cost!);
     }
@@ -213,10 +213,10 @@ export class Router {
       });
     }
 
-    // Sortierung
+    // Sorting
     if (g.method === 'best') {
-      // Multi-Metrik-Scoring für 'best'-Methode
-      // taskType ist der Gruppenname - nur 'code' triggert Code-spezifische Gewichtung
+      // Multi-metric scoring for 'best' method
+      // taskType is the group name - only 'code' triggers code-specific weighting
       c = this.sortBy(c, 'best', name);
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
@@ -242,28 +242,28 @@ export class Router {
   // ── Cost Tier Methods ──────────────────────────────────────────────────
 
   /**
-   * Gibt die Kostenstufen-Konfiguration zurück
+   * Returns the cost tier configuration
    */
   getCostTiers(): Record<CostTier, CostTierConfig> {
     return getCostTiersFromConfig(this.cfg);
   }
 
   /**
-   * Löst eine Modellgruppe mit Kostenstufen-Filter auf
-   * @param name - Gruppenname
-   * @param costTier - Kostenstufe (optional, wird aus Gruppe extrahiert)
-   * @returns GroupResolution oder null
+   * Resolves a model group with cost tier filter
+   * @param name - Group name
+   * @param costTier - Cost tier (optional, extracted from group)
+   * @returns GroupResolution or null
    */
   resolveWithCostTier(name: string, costTier?: CostTier): GroupResolution | null {
     const g = this.cfg.model_groups[name];
     if (!g) return null;
 
-    // Wenn eine Kostenstufe angegeben ist, filtere nach dieser
+    // If a cost tier is specified, filter by it
     if (costTier) {
       const tierConfig = this.getCostTiers()[costTier];
       if (!tierConfig) return null;
 
-      // Extrahiere statische free_models aus der Konfiguration
+      // Extract static free_models from the configuration
       const staticFreeModels: string[] = [];
       for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
         if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
@@ -274,7 +274,7 @@ export class Router {
         }
       }
 
-      // Filtere Modelle nach Kostenstufe (Pool: g.models from allDiscoveredRefs)
+      // Filter models by cost tier (Pool: g.models from allDiscoveredRefs)
       let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
 
       // Apply the same quality floor that resolve() applies (min_gdpval)
@@ -290,7 +290,7 @@ export class Router {
         return null;
       }
 
-      // Sortiere nach Gruppen-Methode
+      // Sort by group method
       let sorted = [...filtered];
       if (g.method === 'best') {
         sorted = this.sortBy(sorted, 'best', name);
@@ -305,29 +305,29 @@ export class Router {
       return { selected: sorted[0], candidates: sorted };
     }
 
-    // Standard-Verhalten
+    // Default behavior
     return this.resolve(name);
   }
 
   /**
-   * Löst eine Gruppe basierend auf der Klassifizierungskategorie auf
-   * @param category - Klassifizierungskategorie
-   * @returns GroupResolution oder null
+   * Resolves a group based on the classification category
+   * @param category - Classification category
+   * @returns GroupResolution or null
    */
   resolveByCategory(category: string): GroupResolution | null {
-    // Hole die Kostenstufe und Gruppe für diese Kategorie
-    // HINWEIS: getCostTierForCategory und getGroupForCategory geben immer einen Wahrheit zurück
-    // (mit Fallback-Werten), also ist der !costTier || !groupName Check immer false
+    // Get the cost tier and group for this category
+    // NOTE: getCostTierForCategory and getGroupForCategory always return a truthy value
+    // (with fallback values), so the !costTier || !groupName check is always false
     const costTier = getCostTierForCategory(category as any);
     const groupName = getGroupForCategory(category as any);
 
-    // Versuche zuerst die spezifische Gruppe mit Kostenstufen-Filter
+    // Try the specific group with cost tier filter first
     const groupResolution = this.resolveWithCostTier(groupName, costTier);
     if (groupResolution) {
       return groupResolution;
     }
 
-    // Fallback: Versuche ohne Kostenstufen-Filter
+    // Fallback: Try without cost tier filter
     const fallbackResolution = this.resolve(groupName);
     if (fallbackResolution) {
       return fallbackResolution;
@@ -338,21 +338,21 @@ export class Router {
   }
 
   /**
-   * Gibt die Kostenstufe für eine Klassifizierungskategorie zurück
+   * Returns the cost tier for a classification category
    */
   getCostTierForCategory(category: string): CostTier {
     return getCostTierForCategory(category as any);
   }
 
   /**
-   * Gibt die Gruppe für eine Klassifizierungskategorie zurück
+   * Returns the group for a classification category
    */
   getGroupForCategory(category: string): string {
     return getGroupForCategory(category as any);
   }
 
   /**
-   * Gibt die Kostenstufe eines Modells zurück
+   * Returns the cost tier of a model
    */
   getModelCostTier(modelRef: string): CostTier {
     const staticFreeModels: string[] = [];
@@ -389,7 +389,7 @@ export class Router {
   // ── Rate Limit ─────────────────────────────────────────────────────────────
 
   /**
-   * Prüft, ob eine Referenz aktuell rate-limited ist
+   * Checks whether a reference is currently rate-limited
    */
   isLimited(ref: string): boolean {
     const limit = this.limits.get(ref);
@@ -402,7 +402,7 @@ export class Router {
   }
 
   /**
-   * Gibt die verbleibenden Sekunden der Rate-Limit zurück
+   * Returns the remaining seconds of the rate limit
    */
   limitSecs(ref: string): number {
     const limit = this.limits.get(ref);
@@ -412,7 +412,7 @@ export class Router {
   // ── Top Models ────────────────────────────────────────────────────────────
 
   /**
-   * Gibt die Top-Modelle für eine Gruppe zurück
+   * Returns the top models for a group
    */
   getTopModels(groupName: string, n: number): ModelWithLimits[] {
     const g = this.cfg.model_groups[groupName];
