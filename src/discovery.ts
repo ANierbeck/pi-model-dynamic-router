@@ -1,5 +1,5 @@
 // src/discovery.ts
-// Provider- und Modell-Erkennung für den pi-model-router
+// Provider and model discovery for the pi-model-router
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -16,7 +16,7 @@ const AUTH_PATH = path.join(homedir(), '.pi', 'agent', 'auth.json');
 // ── Discovery Manager ─────────────────────────────────────────────────────
 
 /**
- * Verwaltet die Erkennung von API-Keys und Modellen
+ * Manages discovery of API keys and models
  */
 export class DiscoveryManager {
   private cfg: Config;
@@ -32,7 +32,7 @@ export class DiscoveryManager {
   // ── Key Discovery ───────────────────────────────────────────────────────
 
   /**
-   * Lädt die Auth-Datei von PI
+   * Loads PI's auth file
    */
   loadAuth(): any {
     try {
@@ -43,14 +43,14 @@ export class DiscoveryManager {
   }
 
   /**
-   * Speichert die Auth-Datei
+   * Saves PI's auth file
    */
   saveAuth(auth: any): void {
     fs.writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2));
   }
 
   /**
-   * Parsed die Pass-Store-Einträge
+   * Parses pass store entries
    */
   parsePassTree(): string[] {
     if (this.passEntries !== null) return this.passEntries;
@@ -86,7 +86,7 @@ export class DiscoveryManager {
   }
 
   /**
-   * Löst einen Key-Wert auf (z.B. Pass-Store-Referenz oder CLI-Auth)
+   * Resolves a key value (e.g. pass store reference or CLI auth token)
    */
   resolveKeyValue(key: string): string {
     if (key.startsWith('!pass show ')) {
@@ -115,14 +115,14 @@ export class DiscoveryManager {
   }
 
   /**
-   * Entdeckt alle verfügbaren Keys für alle Provider
+   * Discovers all available keys across all providers
    */
   discoverKeys(): void {
     const auth = this.loadAuth();
     const entries = this.parsePassTree();
 
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
-      // Initialisiere Provider-Konfiguration
+      // Initialize provider configuration
       if (!this.cfg.providers) this.cfg.providers = {};
       if (!this.cfg.providers[provId]) {
         this.cfg.providers[provId] = { billing: def.billing ?? 'pay_per_token' };
@@ -218,12 +218,12 @@ export class DiscoveryManager {
         }
       }
 
-      // Track discovered providers
+      // Track providers with at least one key
       if (prov.keys.length > 0) {
         this.discoveredProviders.add(provId);
       }
 
-      // Clean up empty providers
+      // Remove providers with no usable keys
       if (prov.keys.length === 0) {
         delete this.cfg.providers[provId];
       }
@@ -233,7 +233,7 @@ export class DiscoveryManager {
   // ── Provider Health ─────────────────────────────────────────────────────
 
   /**
-   * Prüft den Gesundheitsstatus der Provider-Keys
+   * Checks the health status of provider keys
    */
   providerKeyHealth(
     prov: string,
@@ -258,7 +258,7 @@ export class DiscoveryManager {
   // ── Free Models Discovery ────────────────────────────────────────────
 
   /**
-   * Gibt alle verfügbaren kostenlosen Modelle zurück
+   * Returns all available free models
    * Nutzt free_models aus router-config.json (nicht aus PROVIDER_MAP)
    */
   getFreeModels(): string[] {
@@ -266,7 +266,7 @@ export class DiscoveryManager {
     
     // Durchsuche alle Provider in der Konfiguration
     for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
-      // Prüfe ob Provider free_models hat und Keys verfügbar sind
+      // Only include if provider has free_models configured and at least one key
       if (provConfig.free_models && provConfig.free_models.length > 0 && provConfig.keys?.length) {
         freeModels.push(...provConfig.free_models);
       }
@@ -276,7 +276,7 @@ export class DiscoveryManager {
   }
 
   /**
-   * Prüft ob kostenlose Modelle verfügbar sind
+   * Returns true if any free models are available
    */
   hasFreeModels(): boolean {
     return this.getFreeModels().length > 0;

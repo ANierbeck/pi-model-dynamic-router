@@ -1,5 +1,5 @@
 // src/rate-limit.ts
-// Rate-Limit-Handling für den pi-model-router
+// Rate limit handling for the pi-model-router
 
 import type { RateLimit, Cache } from './types.js';
 import { splitRef } from './utils.js';
@@ -11,7 +11,7 @@ const KEY_COOLDOWN = 3_600_000; // 1hr per exhausted key
 // ── Rate Limit Management ────────────────────────────────────────────────
 
 /**
- * Verwaltet Rate-Limits für Modelle und Provider
+ * Manages rate limits for models and providers
  */
 export class RateLimitManager {
   private limits: Map<string, RateLimit> = new Map();
@@ -36,7 +36,7 @@ export class RateLimitManager {
   // ── Public Accessors ────────────────────────────────────────────────────
 
   /**
-   * Gibt die Rate-Limit Map zurück (für Router-Integration)
+   * Returns the rate limit map (for router integration)
    */
   getLimits(): Map<string, RateLimit> {
     return this.limits;
@@ -45,7 +45,7 @@ export class RateLimitManager {
   // ── Key Management ─────────────────────────────────────────────────────
 
   /**
-   * Prüft, ob ein Key erschöpft ist
+   * Returns true if the key at the given index is in its cooldown period
    */
   isKeyExhausted(prov: string, idx: number): boolean {
     const until = this.cache.exhausted_keys?.[`${prov}:${idx}`];
@@ -58,7 +58,7 @@ export class RateLimitManager {
   }
 
   /**
-   * Markiert einen Key als erschöpft
+   * Marks a key as exhausted for KEY_COOLDOWN ms
    */
   exhaustKey(prov: string, idx: number): void {
     if (!this.cache.exhausted_keys) this.cache.exhausted_keys = {};
@@ -66,8 +66,8 @@ export class RateLimitManager {
   }
 
   /**
-   * Versucht, zum nächsten verfügbaren Key für einen Provider zu wechseln
-   * Gibt true zurück, wenn gewechselt wurde
+   * Attempts to rotate to the next available key for a provider.
+   * Returns true if rotation succeeded.
    */
   rotateKey(prov: string, keys: { key: string; label?: string }[]): boolean {
     if (!keys || keys.length <= 1) return false;
@@ -82,11 +82,11 @@ export class RateLimitManager {
         return true;
       }
     }
-    return false; // alle Keys erschöpft
+    return false; // all keys exhausted
   }
 
   /**
-   * Gibt das Label des aktuellen Keys zurück
+   * Returns the label of the currently active key for a provider
    */
   activeKeyLabel(prov: string, keys: { key: string; label?: string }[]): string | null {
     if (!keys || keys.length <= 1) return null;
@@ -97,7 +97,7 @@ export class RateLimitManager {
   // ── Rate Limit Tracking ────────────────────────────────────────────────
 
   /**
-   * Prüft, ob eine Referenz aktuell rate-limited ist
+   * Returns true if the given model reference is currently rate-limited
    */
   isLimited(ref: string): boolean {
     const limit = this.limits.get(ref);
@@ -110,8 +110,8 @@ export class RateLimitManager {
   }
 
   /**
-   * Zeichnet einen Rate-Limit-Fehler auf und versucht Key-Rotation
-   * Gibt zurück, ob rotiert wurde und ggf. den neuen Key
+   * Records a rate-limit error and attempts key rotation.
+   * Returns whether rotation succeeded and the new key label if so.
    */
   recordLimit(
     ref: string,
@@ -134,7 +134,7 @@ export class RateLimitManager {
 
     this.limits.set(ref, { cooldown_until: Date.now() + ms, backoff_ms: ms, hits });
 
-    // Nach einer bestimmten Anzahl von Hits den Cost-Mux erhöhen
+    // After enough consecutive hits, apply a costMux penalty to the provider
     if (hits === this.costMuxAtHit) {
       this.bumpMux(provider, splitRef(ref).modelId);
     }
@@ -143,7 +143,7 @@ export class RateLimitManager {
   }
 
   /**
-   * Zeichnet einen erfolgreichen Aufruf auf (setzt Hits zurück)
+   * Records a successful call (resets hit counter)
    */
   recordOk(ref: string): void {
     const limit = this.limits.get(ref);
@@ -151,7 +151,7 @@ export class RateLimitManager {
   }
 
   /**
-   * Zeichnet einen Soft-Failure auf (leere Antwort, Timeout)
+   * Records a soft failure (empty response, timeout)
    */
   recordSoftFailure(ref: string): void {
     const prev = this.limits.get(ref);
@@ -162,7 +162,7 @@ export class RateLimitManager {
   }
 
   /**
-   * Gibt die verbleibenden Sekunden der Rate-Limit zurück
+   * Returns the remaining cooldown seconds for a rate-limited reference
    */
   limitSecs(ref: string): number {
     const limit = this.limits.get(ref);
@@ -172,17 +172,17 @@ export class RateLimitManager {
   // ── Cost Mux Management ────────────────────────────────────────────────
 
   /**
-   * Gibt den aktuellen Cost-Multiplikator für einen Provider zurück
+   * Returns the current cost multiplier for a provider
    */
   costMux(prov: string): number {
     return this.cache.cost_mux?.[prov] ?? 1;
   }
 
   /**
-   * Erhöht den Cost-Multiplikator für einen Provider
+   * Increments the cost multiplier for a provider
    */
   bumpMux(prov: string, modelId: string): void {
-    // 1/Tag Guard
+    // at most one bump per calendar day
     const last = this.cache.cost_mux_last_bump?.[prov];
     if (
       last &&
@@ -191,7 +191,7 @@ export class RateLimitManager {
       return;
     }
 
-    // Verifiziere, dass das Modell noch gehostet wird
+    // Only bump if the model is still listed as available
     if (
       this.cache.available_models &&
       !this.cache.available_models.some((m) => m.provider === prov && m.id === modelId)

@@ -1,5 +1,5 @@
 // src/cost-tracker.ts
-// Cost-Tracking für das preisbasierte Routing
+// Cost tracking for price-based routing
 
 import type { CostMetrics, CostTier } from './types.js';
 import { lookupPrice } from './metrics.js';
@@ -7,13 +7,13 @@ import { getModelCostTier } from './cost-tiers.js';
 import fs from 'node:fs';
 
 /**
- * CostTracker - Verfolgt die Kosten von Modell-Anfragen für Monitoring
- * 
+ * CostTracker - Tracks the costs of model requests for monitoring
+ *
  * Features:
- * - Kosten pro Request basierend auf Modell und Token-Zahl
- * - Statistiken pro Kostenstufe (free/budget/premium)
- * - Statistiken pro Modell
- * - Tägliche Zusammenfassung
+ * - Cost per request based on model and token count
+ * - Statistics per cost tier (free/budget/premium)
+ * - Statistics per model
+ * - Daily summary
  */
 export class CostTracker {
   private metrics: CostMetrics;
@@ -22,20 +22,20 @@ export class CostTracker {
   private logFilePath: string;
 
   /**
-   * Erstellt einen neuen CostTracker
-   * @param logFilePath - Pfad zur Log-Datei für die tägliche Zusammenfassung
+   * Creates a new CostTracker
+   * @param logFilePath - Path to the log file for the daily summary
    */
   constructor(logFilePath: string = '') {
     this.metrics = this.createEmptyMetrics();
     this.startTime = new Date();
     this.logFilePath = logFilePath;
     
-    // Tägliche Zusammenfassung um Mitternacht
+    // Daily summary at midnight
     this.scheduleDailySummary();
   }
 
   /**
-   * Erstellt leere Metriken
+   * Creates empty metrics
    */
   private createEmptyMetrics(): CostMetrics {
     return {
@@ -50,29 +50,29 @@ export class CostTracker {
   }
 
   /**
-   * Plant die tägliche Zusammenfassung um Mitternacht
+   * Schedules the daily summary at midnight
    */
   private scheduleDailySummary(): void {
-    // Berechne Zeit bis Mitternacht
+    // Calculate time until midnight
     const now = new Date();
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     const msUntilMidnight = midnight.getTime() - now.getTime();
 
-    // Setze Timeout für Mitternacht (unref um Process-Exit zu ermöglichen)
+    // Set timeout for midnight (unref to allow process exit)
     this.logInterval = setTimeout(() => {
       this.logSummary();
-      // Plane nächste Zusammenfassung
+      // Schedule next summary
       this.scheduleDailySummary();
     }, msUntilMidnight);
     this.logInterval.unref();
   }
 
   /**
-   * Verfolgt eine Modell-Anfrage
-   * @param modelRef - Modell-Referenz (z.B. 'openrouter/qwen/qwen3-4b:free')
-   * @param inputTokens - Anzahl der Input-Tokens
-   * @param outputTokens - Anzahl der Output-Tokens
+   * Tracks a model request
+   * @param modelRef - Model reference (e.g. 'openrouter/qwen/qwen3-4b:free')
+   * @param inputTokens - Number of input tokens
+   * @param outputTokens - Number of output tokens
    */
   trackRequest(modelRef: string, inputTokens: number, outputTokens: number): void {
     const price = lookupPrice(modelRef);
@@ -81,38 +81,38 @@ export class CostTracker {
       return;
     }
 
-    // Berechne Kosten: (inputTokens * inputPrice + outputTokens * outputPrice) / 1.000.000
+    // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost = (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
     const tier = getModelCostTier(modelRef);
 
-    // Aktualisiere Metriken
+    // Update metrics
     this.metrics.totalCost += cost;
     this.metrics.totalInputTokens += inputTokens;
     this.metrics.totalOutputTokens += outputTokens;
     
-    // Pro Kostenstufe
+    // Per cost tier
     this.metrics.requestsByTier[tier] = (this.metrics.requestsByTier[tier] || 0) + 1;
     this.metrics.costByTier[tier] = (this.metrics.costByTier[tier] || 0) + cost;
     
-    // Pro Modell
+    // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
     this.metrics.costByModel[modelRef] = (this.metrics.costByModel[modelRef] || 0) + cost;
 
-    // Debug-Log (optional)
+    // Debug log (optional)
     if (process.env.DEBUG_COST_TRACKER === 'true') {
       console.log(`[cost-tracker] ${modelRef} [${tier}]: $${cost.toFixed(6)} (in: ${inputTokens}, out: ${outputTokens})`);
     }
   }
 
   /**
-   * Gibt die aktuellen Metriken zurück
+   * Returns the current metrics
    */
   getMetrics(): CostMetrics {
     return { ...this.metrics };
   }
 
   /**
-   * Setzt die Metriken zurück (z.B. für Tests)
+   * Resets the metrics (e.g. for tests)
    */
   resetMetrics(): void {
     this.metrics = this.createEmptyMetrics();
@@ -120,8 +120,8 @@ export class CostTracker {
   }
 
   /**
-   * Loggt eine Zusammenfassung der Metriken
-   * @param customMessage - Optionale benutzerdefinierte Nachricht
+   * Logs a summary of the metrics
+   * @param customMessage - Optional custom message
    */
   logSummary(customMessage: string = ''): void {
     const uptime = new Date().getTime() - this.startTime.getTime();
@@ -150,33 +150,33 @@ export class CostTracker {
 
     console.log(`[cost-tracker] ${summary}`);
 
-    // In Datei schreiben, falls Pfad angegeben
+    // Write to file if path is specified
     if (this.logFilePath) {
       try {
         fs.appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
       } catch {
-        // Ignoriere Fehler beim Schreiben
+        // Ignore errors during writing
       }
     }
 
-    // Metriken zurücksetzen
+    // Reset metrics
     this.resetMetrics();
   }
 
   /**
-   * Beendet den CostTracker und räumt auf
+   * Stops the CostTracker and cleans up
    */
   destroy(): void {
     if (this.logInterval) {
       clearTimeout(this.logInterval);
       this.logInterval = null;
     }
-    // Finale Zusammenfassung
+    // Final summary
     this.logSummary('Final');
   }
 
   /**
-   * Gibt eine Zusammenfassung als JSON zurück (für APIs)
+   * Returns a summary as JSON (for APIs)
    */
   getSummaryJson(): string {
     const uptime = new Date().getTime() - this.startTime.getTime();
@@ -188,5 +188,5 @@ export class CostTracker {
   }
 }
 
-// Singleton-Instanz für einfache Nutzung
+// Singleton instance for easy use
 export const costTracker = new CostTracker();

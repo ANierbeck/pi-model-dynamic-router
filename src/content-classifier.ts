@@ -121,7 +121,7 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   if (!match) return null;
   const instruction = match[1].trim();
 
-  // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X", "benutze Gruppe X"
+  // Group hint: "use group tactical", "use group X", "use group X", "use group X"
   const groupMatch = instruction.match(
     new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
   );
@@ -275,8 +275,8 @@ export async function classifyPrompt(
     }
   }
 
-  // Cloud-Fallback: Versuche kostenlose Cloud-Modelle
-  // Nur aktivieren wenn allowCloudFallback true ist UND cfg/cache verfügbar
+  // Cloud fallback: Try free cloud models
+  // Only activate when allowCloudFallback is true AND cfg/cache are available
   if (allowCloudFallback && cfg && cache) {
     try {
       const discovery = new DiscoveryManager(cfg, cache);
@@ -305,7 +305,7 @@ export async function classifyPrompt(
     }
   }
 
-  // Statischer Fallback
+  // Static fallback
   if (!allowStaticFallback) {
     console.warn('[classifier] Ollama models failed, static classifier disabled — returning fallback');
     return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
@@ -378,14 +378,14 @@ export function getGroupForCategory(category: string): string {
 // ── Static Classification Fallback ─────────────────────────────────────
 
 /**
- * Statische Klassifizierung als Fallback wenn Ollama/Cloud nicht verfügbar
- * Nutzt Keyword-Matching für einfache Kategorisierung
+ * Static classification as fallback when Ollama/Cloud is not available
+ * Uses keyword matching for simple categorization
  */
 export function classifyStatically(prompt: string): ClassificationResult {
   const lowerPrompt = prompt.toLowerCase();
 
-  // Trivial: Nur sehr spezifische file/list/todo-Kontext-Phrasen
-  // Die AND-Bedingung stellt sicher, dass die Keywords in einem relevanten Kontext stehen
+  // Trivial: Only very specific file/list/todo context phrases
+  // The AND condition ensures the keywords appear in a relevant context
   const trivialKeywords = [/what(?:'s| is) in\s/i];
   
   if (trivialKeywords.some(regex => regex.test(lowerPrompt)) &&
@@ -398,7 +398,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Simple: Einfache Fragen/Erklärungen
+  // Simple: Simple questions/explanations
   const simpleKeywords = [
     'explain', 'summarize', 'summary', 'what does', 'what is',
     'tell me', 'describe', 'briefly', 'short', 'quick',
@@ -413,7 +413,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Code Simple: Kleine Code-Änderungen
+  // Code Simple: Small code changes
   const codeSimpleKeywords = [
     'fix', 'rename', 'typo', 'syntax', 'import', 'export',
     'add a', 'remove', 'delete', 'change', 'update',
@@ -430,7 +430,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Standard: Standard-Anfragen
+  // Standard: Standard requests
   const standardKeywords = [
     'explain this', 'how does', 'why does', 'what are',
     'difference', 'compare', 'pro and con', 'advantage',
@@ -445,7 +445,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Code Complex: Komplexe Code-Aufgaben
+  // Code Complex: Complex code tasks
   const codeComplexKeywords = [
     'refactor', 'debug', 'architecture', 'design', 'implement',
     'new feature', 'complex', 'large', 'many lines',
@@ -460,7 +460,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Design: Architektur/Design
+  // Design: Architecture/Design
   const designKeywords = [
     'architecture', 'system design', 'api design', 'database',
     'schema', 'diagram', 'flowchart', 'uml', 'structure'
@@ -474,7 +474,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Planning: Planung/Roadmaps
+  // Planning: Planning/Roadmaps
   const planningKeywords = [
     'roadmap', 'plan', 'prioritize', 'prioritization',
     'task breakdown', 'tasks', 'steps', 'milestone',
@@ -489,7 +489,7 @@ export function classifyStatically(prompt: string): ClassificationResult {
     };
   }
 
-  // Exploration: Offene Fragen/Brainstorming
+  // Exploration: Open-ended questions/Brainstorming
   const explorationKeywords = [
     'what could', 'what should', 'brainstorm', 'ideas',
     'suggestions', 'options', 'possibilities', 'vague',

@@ -1,5 +1,5 @@
 // src/types.ts
-// TypeScript-Typdefinitionen für den pi-model-router
+// TypeScript type definitions for the pi-model-router
 
 import type { Model } from '@mariozechner/pi-ai';
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
@@ -83,7 +83,7 @@ export interface Config {
   gdpval_builtin?: Record<string, number>;
   model_metadata?: Record<string, ModelMetadata>;
   model_benchmarks?: Record<string, ModelBenchmarks>;
-  cost_tiers?: Partial<CostTiersConfig>; // Kostenstufen-Konfiguration (optional)
+  cost_tiers?: Partial<CostTiersConfig>;
 }
 
 // ── Cost Tiers Types ────────────────────────────────────────────────────
@@ -197,11 +197,11 @@ export interface PriceInfo {
 // ── Cost Tracking Types ────────────────────────────────────────────────
 
 export interface CostMetrics {
-  totalCost: number;                    // Gesamtkosten in $
-  totalInputTokens: number;            // Gesamt-Input-Tokens
-  totalOutputTokens: number;           // Gesamt-Output-Tokens
-  requestsByTier: Record<CostTier, number>;  // Anfragen pro Kostenstufe
-  costByTier: Record<CostTier, number>;      // Kosten pro Kostenstufe
-  requestsByModel: Record<string, number>;   // Anfragen pro Modell
-  costByModel: Record<string, number>;       // Kosten pro Modell
+  totalCost: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  requestsByTier: Record<CostTier, number>;
+  costByTier: Record<CostTier, number>;
+  requestsByModel: Record<string, number>;
+  costByModel: Record<string, number>;
 }

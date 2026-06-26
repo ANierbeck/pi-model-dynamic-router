@@ -1,5 +1,5 @@
 // src/ollama-utils.ts
-// Hilfsfunktionen für Ollama-Aufrufe (Klassifizierung, Fallback-Handling)
+// Utility functions for Ollama calls (classification, fallback handling)
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ interface OllamaOptions {
 // ── Core Function ────────────────────────────────────────────────────────
 
 /**
- * Ruft die Ollama HTTP API auf und gibt die Antwort zurück.
+ * Calls the Ollama HTTP API and returns the response.
  */
 export async function callOllama(
   model: string,
@@ -52,8 +52,8 @@ export async function callOllama(
 // ── Fallback Handling ───────────────────────────────────────────────────
 
 /**
- * Fallback-Strategie, wenn Ollama nicht verfügbar ist.
- * @returns Ein Standard-Ergebnis für den Fallback-Fall.
+ * Fallback strategy when Ollama is not available.
+ * @returns A default result for the fallback case.
  */
 export function getFallbackClassification(): {
   category: 'fallback';
@@ -61,6 +61,6 @@ export function getFallbackClassification(): {
 } {
   return {
     category: 'fallback',
-    reason: 'Ollama nicht verfügbar — nutze Standard-Routing.',
+    reason: 'Ollama unavailable — using default routing.',
   };
 }

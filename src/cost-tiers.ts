@@ -1,5 +1,5 @@
 // src/cost-tiers.ts
-// Kostenstufen-System für kosteneffizientes dynamisches Routing
+// Cost tier system for cost-efficient dynamic routing
 
 import type { 
   Config, 
@@ -10,19 +10,19 @@ import type {
 } from './types.js';
 import { lookupPrice, effCost } from './metrics.js';
 
-// Re-export der Typen für Kompatibilität
+// Re-export of types for compatibility
 export type { CostTier, CostTierConfig, CostTiersConfig };
 
 // ── Default Cost Tiers ─────────────────────────────────────────────────
 
 /**
- * Standard-Kostenstufen-Konfiguration
- * Kann durch router-config.json überschrieben werden
+ * Default cost tier configuration
+ * Can be overridden by router-config.json
  */
 export const DEFAULT_COST_TIERS: CostTiersConfig = {
   free: {
     id: 'free',
-    description: 'Kostenlose Modelle für einfache Aufgaben',
+    description: 'Free models for simple tasks',
     max_cost_per_m: 0,
     max_cost_per_request: 0,
     min_gdpval: 0,
@@ -30,7 +30,7 @@ export const DEFAULT_COST_TIERS: CostTiersConfig = {
   },
   budget: {
     id: 'budget',
-    description: 'Kosteneffiziente Modelle für Standard-Aufgaben',
+    description: 'Cost-effective models for standard tasks',
     max_cost_per_m: 0.5,
     max_cost_per_request: 0.1,
     min_gdpval: 300,
@@ -38,7 +38,7 @@ export const DEFAULT_COST_TIERS: CostTiersConfig = {
   },
   premium: {
     id: 'premium',
-    description: 'Hochwertige Modelle für komplexe Aufgaben',
+    description: 'High-quality models for complex tasks',
     max_cost_per_m: 2.0,
     max_cost_per_request: 1.0,
     min_gdpval: 600,
@@ -49,10 +49,10 @@ export const DEFAULT_COST_TIERS: CostTiersConfig = {
 // ── Cost Tier Detection ────────────────────────────────────────────────
 
 /**
- * Gibt die Kostenstufe eines Modells zurück
- * @param modelRef - Modell-Referenz (z.B. 'openrouter/qwen/qwen3-4b:free')
- * @param staticFreeModels - Liste der kostenlosen Modelle aus der Konfiguration
- * @returns Die Kostenstufe des Modells
+ * Returns the cost tier of a model
+ * @param modelRef - Model reference (e.g. 'openrouter/qwen/qwen3-4b:free')
+ * @param staticFreeModels - List of free models from the configuration
+ * @returns The cost tier of the model
  */
 export function getModelCostTier(
   modelRef: string,
@@ -60,38 +60,38 @@ export function getModelCostTier(
 ): CostTier {
   const price = lookupPrice(modelRef);
   
-  // 1. Prüfe ob Modell in den statischen free_models ist
+  // 1. Check whether model is in the static free_models
   if (staticFreeModels.includes(modelRef)) {
     return 'free';
   }
   
-  // 2. Prüfe ob Modell kostenlos ist (Preis = 0)
+  // 2. Check whether model is free (price = 0)
   if (price && price.input === 0 && price.output === 0) {
     return 'free';
   }
   
-  // 3. Prüfe ob Modell im Budget-Bereich ist (unter Budget-Schwellenwert)
+  // 3. Check whether model is in the budget range (below budget threshold)
   if (price && price.input <= DEFAULT_COST_TIERS.budget.max_cost_per_m) {
     return 'budget';
   }
   
-  // 4. Prüfe ob Modell im Premium-Bereich ist (über Budget-Schwellenwert)
+  // 4. Check whether model is in the premium range (above budget threshold)
   if (price && price.input > DEFAULT_COST_TIERS.budget.max_cost_per_m) {
     return 'premium';
   }
   
-  // 5. Ansonsten: Budget (konservativer Default für unbekannte Modelle oder Modelle ohne Preis)
-  // Unbekannte Modelle werden als Budget klassifiziert, um auf der sicheren Seite zu sein
+  // 5. Otherwise: Budget (conservative default for unknown models or models without a price)
+  // Unknown models are classified as budget to err on the safe side
   return 'budget';
 }
 
 /**
- * Prüft ob ein Modell zu einer Kostenstufe passt
- * @param modelRef - Modell-Referenz
- * @param tier - Kostenstufe
- * @param tierConfig - Kostenstufen-Konfiguration
- * @param staticFreeModels - Liste der kostenlosen Modelle
- * @returns true, wenn das Modell zur Kostenstufe passt
+ * Checks whether a model fits a cost tier
+ * @param modelRef - Model reference
+ * @param tier - Cost tier
+ * @param tierConfig - Cost tier configuration
+ * @param staticFreeModels - List of free models
+ * @returns true if the model fits the cost tier
  */
 export function modelFitsCostTier(
   modelRef: string,
@@ -104,61 +104,61 @@ export function modelFitsCostTier(
   const isFreeModel: boolean = staticFreeModels.includes(modelRef);
   const isZeroCost: boolean = price !== null && price.input === 0 && price.output === 0;
   
-  // 1. Kostenlose Modelle passen immer zu 'free'
+  // 1. Free models always fit 'free'
   if (tier === 'free') {
     return isFreeModel || isZeroCost;
   }
   
-  // 2. Budget-Modelle: Kostenlose Modelle + Modelle unter Budget-Schwelle
+  // 2. Budget models: Free models + models below the budget threshold
   if (tier === 'budget') {
-    // Kostenlose Modelle passen immer zu budget
+    // Free models always fit budget
     if (isFreeModel || isZeroCost) return true;
     
-    // Modelle unter Budget-Schwelle passen (input Preis pro 1M Tokens)
+    // Models below the budget threshold fit (input price per 1M tokens)
     if (price && price.input <= tierConfig.max_cost_per_m) return true;
     
     return false;
   }
   
-  // 3. Premium-Modelle: Alle Modelle, die nicht kostenlos sind
-  // Premium ist die höchste Stufe und akzeptiert alle Modelle
+  // 3. Premium models: All models that are not free
+  // Premium is the highest tier and accepts all models
   if (tier === 'premium') {
-    // Kostenlose und Budget-Modelle passen immer zu premium
+    // Free and budget models always fit premium
     if (isFreeModel || isZeroCost) return true;
     
-    // Alle anderen Modelle passen zu premium (keine Obergrenze)
-    // Premium ist die "catch-all" Stufe für teure Modelle
+    // All other models fit premium (no upper limit)
+    // Premium is the "catch-all" tier for expensive models
     return true;
   }
   
   return false;
 }
 
-// Re-Export aus content-classifier.ts für Kompatibilität
+// Re-export from content-classifier.ts for compatibility
 export { getGroupForCategory } from './content-classifier.js';
 
 /**
- * Gibt die Kostenstufe basierend auf der Klassifizierungskategorie zurück
+ * Returns the cost tier for a given classification category
  */
 
 /**
- * Mapping von Klassifizierungskategorien zu Kostenstufen
- * Dies ist die Kernlogik für das kosteneffiziente Routing
+ * Mapping of classification categories to cost tiers
+ * This is the core logic for cost-efficient routing
  */
 export const CATEGORY_TO_COST_TIER: Record<ClassificationCategory, CostTier> = {
-  trivial: 'free',       // $0 - Sehr einfache Anfragen
-  simple: 'free',        // $0 - Einfache Fragen
-  code_simple: 'free',   // $0 - Kleine Code-Änderungen
-  standard: 'budget',    // $ - Standard-Anfragen
-  code_complex: 'premium', // $$ - Komplexe Code-Änderungen
-  design: 'premium',     // $$ - Architektur/Design
-  planning: 'premium',   // $$ - Planung/Roadmaps
-  exploration: 'free',   // $0 - Brainstorming (kann günstig sein)
-  fallback: 'budget',    // $ - Fallback (Standard-Modell)
+  trivial: 'free',       // $0 - Very simple requests
+  simple: 'free',        // $0 - Simple questions
+  code_simple: 'free',   // $0 - Small code changes
+  standard: 'budget',    // $ - Standard requests
+  code_complex: 'premium', // $$ - Complex code changes
+  design: 'premium',     // $$ - Architecture/Design
+  planning: 'premium',   // $$ - Planning/Roadmaps
+  exploration: 'free',   // $0 - Brainstorming (can be cheap)
+  fallback: 'budget',    // $ - Fallback (default model)
 };
 
 /**
- * Gibt die Kostenstufe für eine Klassifizierungskategorie zurück
+ * Returns the cost tier for a classification category
  */
 export function getCostTierForCategory(category: ClassificationCategory): CostTier {
   return CATEGORY_TO_COST_TIER[category] || 'budget';
@@ -169,11 +169,11 @@ export function getCostTierForCategory(category: ClassificationCategory): CostTi
 // ── Cost Optimization Utilities ────────────────────────────────────────
 
 /**
- * Berechnet die geschätzten Einsparungen durch kostenlose Modelle
- * @param totalRequests - Gesamtzahl der Anfragen
- * @param freeRequests - Anzahl der kostenlosen Anfragen
- * @param avgCostPerRequest - Durchschnittskosten pro Anfrage (für nicht-kostenlose)
- * @returns Geschätzte Einsparungen
+ * Calculates estimated savings through free models
+ * @param totalRequests - Total number of requests
+ * @param freeRequests - Number of free requests
+ * @param avgCostPerRequest - Average cost per request (for non-free ones)
+ * @returns Estimated savings
  */
 export function calculateEstimatedSavings(
   totalRequests: number,
@@ -182,17 +182,17 @@ export function calculateEstimatedSavings(
 ): number {
   if (totalRequests === 0 || avgCostPerRequest === 0) return 0;
   
-  // Was die kostenlosen Anfragen gekostet hätten
+  // What the free requests would have cost
   const potentialCost = freeRequests * avgCostPerRequest;
   
   return potentialCost;
 }
 
 /**
- * Berechnet die Einsparrate
- * @param totalCost - Gesamtkosten
- * @param estimatedSavings - Geschätzte Einsparungen
- * @returns Einsparrate in Prozent
+ * Calculates the savings rate
+ * @param totalCost - Total cost
+ * @param estimatedSavings - Estimated savings
+ * @returns Savings rate in percent
  */
 export function calculateSavingsPercentage(
   totalCost: number,
@@ -206,7 +206,7 @@ export function calculateSavingsPercentage(
 // ── Validation ──────────────────────────────────────────────────────────
 
 /**
- * Validiert eine Kostenstufen-Konfiguration
+ * Validates a cost tier configuration
  */
 export function validateCostTiersConfig(config: Partial<CostTiersConfig>): string[] {
   const errors: string[] = [];
@@ -234,8 +234,8 @@ export function validateCostTiersConfig(config: Partial<CostTiersConfig>): strin
 }
 
 /**
- * Gibt die Kostenstufen-Konfiguration aus der Router-Konfiguration zurück
- * oder die Standard-Konfiguration, falls nicht definiert
+ * Returns the cost tier configuration from the router configuration
+ * or the default configuration if not defined
  */
 export function getCostTiersFromConfig(cfg: Config): CostTiersConfig {
   if (cfg.cost_tiers && isValidCostTiersConfig(cfg.cost_tiers)) {
@@ -246,7 +246,7 @@ export function getCostTiersFromConfig(cfg: Config): CostTiersConfig {
 }
 
 /**
- * Prüft ob eine Kostenstufen-Konfiguration gültig ist
+ * Checks whether a cost tier configuration is valid
  */
 export function isValidCostTiersConfig(config: any): config is CostTiersConfig {
   if (!config || typeof config !== 'object') return false;

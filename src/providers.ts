@@ -1,13 +1,13 @@
 // src/providers.ts
-// Provider-Definitionen für den pi-model-router
+// Provider definitions for the pi-model-router
 
 import type { ProviderDef } from './types.js';
 
 // ── Provider Discovery Map ────────────────────────────────────────────────
 
 /**
- * Definitionen aller unterstützten Provider mit ihren Eigenschaften
- * für die automatische Erkennung und Konfiguration.
+ * Definitions of all supported providers with their properties
+ * for automatic discovery and configuration.
  */
 export const PROVIDER_MAP: Record<string, ProviderDef> = {
   anthropic: {
@@ -216,7 +216,7 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
 
 /**
  * Liste der Provider, die nicht automatisch registriert werden sollen
- * (weil sie dedizierte Extensions oder eingebaute PI-Unterstützung haben)
+ * (because they have dedicated extensions or built-in PI support)
  */
 export const SKIP_REGISTRATION = new Set([
   'anthropic',
