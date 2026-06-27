@@ -7,7 +7,7 @@
     "ignoreDeprecations": "6.0",
     "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true,
-    "noEmit": false,
+    "noEmit": true,
     "outDir": "dist",
     "esModuleInterop": true,
     

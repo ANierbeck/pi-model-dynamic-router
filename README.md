@@ -26,7 +26,7 @@ This modular design enables better maintainability, testing, and extensibility.
 ## Install
 
 ```bash
-pi install git:github.com/ANierbeck/pi-model-dynamic-router
+pi install npm:@anierbeck/pi-model-dynamic-router
 # Or symlink for development
 ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
 ```
