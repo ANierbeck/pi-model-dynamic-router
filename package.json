@@ -48,9 +48,7 @@
     "PI.md",
     "README.md"
   ],
-  "dependencies": {
-    "yaml": "^2.0.0"
-  },
+  "dependencies": {},
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
@@ -59,6 +57,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "yaml": "^2.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.9.2",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
