@@ -1,6 +1,6 @@
 {
   "name": "@anierbeck/pi-model-dynamic-router",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
   "engines": {
