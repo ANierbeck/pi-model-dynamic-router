@@ -247,8 +247,8 @@ describe("CloudClient", () => {
             headers: expect.objectContaining({
               Authorization: "Bearer test-api-key",
               "Content-Type": "application/json",
-              "HTTP-Referer": "https://github.com/earendil-works/pi-model-router",
-              "X-Title": "pi-model-router",
+              "HTTP-Referer": "https://github.com/ANierbeck/pi-model-dynamic-router",
+              "X-Title": "pi-model-dynamic-router",
             }),
           })
         );

@@ -1,9 +1,9 @@
 ---
-name: pi-model-router
+name: pi-model-dynamic-router
 description: Dynamically routes model group names (strategic/tactical/operational/scout/fallback/dynamic) to concrete models. Balances intelligence, cost, and availability.
 ---
 
-# pi-model-router
+# pi-model-dynamic-router
 
 **Purpose**: Routes model group names (e.g., `strategic`, `tactical`, `operational`, `scout`, `fallback`, `dynamic`) to concrete provider/model pairs. Auto-discovers models, pricing, and GDPval scores to balance intelligence, cost, and availability.
 

@@ -1,4 +1,4 @@
-# pi-model-router
+# pi-model-dynamic-router
 
 > Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
 
