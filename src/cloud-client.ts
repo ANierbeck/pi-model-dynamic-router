@@ -115,8 +115,8 @@ export class CloudClient {
     const headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com/earendil-works/pi-model-router',
-      'X-Title': 'pi-model-router',
+      'HTTP-Referer': 'https://github.com/ANierbeck/pi-model-dynamic-router',
+      'X-Title': 'pi-model-dynamic-router',
     };
 
     const messages: Array<{ role: string; content: string }> = [];

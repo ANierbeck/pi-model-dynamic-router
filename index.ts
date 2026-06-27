@@ -355,7 +355,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     opts?: { headers?: Record<string, string>; timeoutMs?: number }
   ): Promise<any> {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'pi-model-router/1.0', ...opts?.headers },
+      headers: { 'User-Agent': 'pi-model-dynamic-router/1.0', ...opts?.headers },
       signal: AbortSignal.timeout(opts?.timeoutMs ?? 20_000),
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
