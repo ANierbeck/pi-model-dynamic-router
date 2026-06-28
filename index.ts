@@ -657,12 +657,14 @@ const defaultExport = function (pi: ExtensionAPI) {
           // Explicit model-map exclusion (mapped to null) — honour it
           if (origGdpval === null) continue;
 
-          // Apply min_gdpval only when the model actually has a score
-          if (origGdpval !== undefined && groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
+          // Apply min_gdpval filter
+          if (groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
             continue;
           }
 
-          const isFree = staticFreeModels.includes(origModel);
+          // Match against staticFreeModels regardless of openrouter/ prefix
+          const isFree = staticFreeModels.includes(origModel) ||
+                         staticFreeModels.includes(`openrouter/${origModel}`);
           // max_cost_per_m filter (skip for free models)
           if (groupConfig.max_cost_per_m !== undefined && !isFree) {
             const price = lookupPrice(origModel);
