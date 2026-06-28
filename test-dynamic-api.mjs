@@ -1,7 +1,7 @@
 // test-dynamic-api.mjs
 // Testet den dynamic-Modus des pi-model-routers über die PI-API
 
-import { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 async function testDynamicRouter() {
   try {
