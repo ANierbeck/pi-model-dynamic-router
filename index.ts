@@ -60,16 +60,22 @@ const GDPVAL_URL = _defaults.gdpval_url;
 // ── Extension ──────────────────────────────────────────────────────────────
 
 const LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
+let logDirEnsured = false;
+function ensureLogDir(): void {
+  if (logDirEnsured) return;
+  fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+  logDirEnsured = true;
+}
 function routerLog(msg: string, extra?: unknown): void {
   try {
-    fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
-    const suffix = extra ? ` ${extra instanceof Error ? extra.message : String(extra)}` : '';
+    ensureLogDir();
+    const suffix = extra ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}` : '';
     fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${msg}${suffix}\n`);
   } catch {}
 }
 function appendRawLog(line: string): void {
   try {
-    fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+    ensureLogDir();
     fs.appendFileSync(LOG_PATH, line + '\n');
   } catch {}
 }
