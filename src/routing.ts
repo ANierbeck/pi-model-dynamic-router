@@ -236,6 +236,7 @@ export class Router {
     }
     
 
+    if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
   }
 

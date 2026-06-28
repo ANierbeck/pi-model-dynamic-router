@@ -39,9 +39,6 @@ import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
-import {
-  getCostTierForCategory
-} from './src/cost-tiers.ts';
 import { costTracker } from './src/cost-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
@@ -310,64 +307,43 @@ const defaultExport = function (pi: ExtensionAPI) {
    */
   function extractGdpvalScores(html: string): Record<string, number> {
     const scores: Record<string, number> = {};
-    
-    // Try to extract JSON data from <script> tag (modern Artificial Analysis structure)
-    // Pattern: window.__MODELS_DATA__ = {...}
+
+    // Current AA format (2025+): RSC payload embeds structured data as
+    // {"label":"Model Name","gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":1769.15},...],"detailsUrl":"/models/slug"}
+    const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"/g;
+    let em;
+    let count = 0;
+    while ((em = entryRe.exec(html))) {
+      const label = em[1];
+      const score = parseFloat(em[2]);
+      const slug = em[3];
+      scores[slug] = score;
+      const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      if (labelKey && labelKey !== slug) scores[labelKey] = score;
+      count++;
+    }
+    if (count > 0) return scores;
+
+    // Legacy: window.__MODELS_DATA__ = {...} (pre-2025 AA structure)
     const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
-    
     if (scriptJsonMatch) {
       try {
         const modelsData = JSON.parse(scriptJsonMatch[1]);
-        let count = 0;
-        
         for (const [slug, model] of Object.entries(modelsData)) {
-          // Type assertion for the model object from Artificial Analysis
           const m = model as { gdpval?: number; shortName?: string; name?: string };
           if (m.gdpval !== undefined) {
             scores[slug] = m.gdpval;
-            
-            // Also add shortName and name as alternative keys
             if (m.shortName) scores[m.shortName] = m.gdpval;
             if (m.name) {
               const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
               scores[nameKey] = m.gdpval;
             }
-            count++;
           }
         }
-        
-        return scores;
-      } catch (e) {
-        // JSON parsing failed, will fall back to HTML table
-      }
+        if (Object.keys(scores).length > 0) return scores;
+      } catch {}
     }
-    
-    // Fallback to HTML table parsing (legacy)
-    
-    const slugMap: Record<string, string> = {};
-    const slugRe = /"([a-z0-9][a-z0-9._-]+)","name":"([^"]+)","shortName":"([^"]+)"/g;
-    let sm;
-    while ((sm = slugRe.exec(html))) {
-      if (sm[2]) {
-        slugMap[sm[2]] = sm[1];
-        if (sm[3] && sm[3] !== sm[2]) slugMap[sm[3]] = sm[1];
-      }
-    }
-    
-    const tableRe = /<div[^>]*>([^<]{3,80})<\/div><\/td>\s*<td[^>]*>(\d{3,4})<\/td>/g;
-    let m;
-    let matchCount = 0;
-    while ((m = tableRe.exec(html))) {
-      const nm = m[1].trim().replace(/&#x27;/g, "'").replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-      if (!nm || !/[A-Za-z]/.test(nm) || nm.startsWith('<')) continue;
-      const score = +m[2];
-      const slug = slugMap[nm];
-      const key = slug ?? nm;
-      if (!scores[key] || score > scores[key]) scores[key] = score;
-      matchCount++;
-    }
-    
+
     return scores;
   }
 
@@ -664,60 +640,50 @@ const defaultExport = function (pi: ExtensionAPI) {
           });
         }
         
-        // 8. Modelle für diese Gruppe sammeln - KORRIGIERT: Statische Modelle haben Priorität!
+        // 8. Collect models: static first (highest priority), then dynamic additions
         const modelsToInclude = new Set<string>();
-        
-        // 1. Zuerst die STATISCHEN Modelle aus router-config.json (höchste Priorität!)
+
+        // Token-signature set for deduplication: same base model = same signature
+        // (e.g. "mistral/mistral-medium-3.5" and "mistral/mistral-medium-3-5" share tokens {3,5,medium,mistral})
+        const includedSigs = new Set<string>();
+        const modelSig = (ref: string) => [...baseTokens(ref)].sort().join('|');
+
+        // 1. Static models from router-config.json — always preserved as-is
         const originalModels = groupConfig.models ?? [];
         for (const origModel of originalModels) {
-          // Normalisiere den Modell-Ref
-          // Füge 'openrouter/' Präfix hinzu, wenn nicht bereits vorhanden
-          const normalizedOrig = origModel.startsWith('openrouter/') 
-            ? origModel 
-            : `openrouter/${origModel}`;
-          
-          // Prüfe ob das Modell die Gruppen-Kriterien erfüllt
-          const origGdpval = lookupGdp(normalizedOrig);
-          if (origGdpval === null) {
-            // Modell explizit ausgeschlossen
+          // Keep ref exactly as configured — no openrouter/ prefix injection
+          const origGdpval = lookupGdp(origModel);
+
+          // Explicit model-map exclusion (mapped to null) — honour it
+          if (origGdpval === null) continue;
+
+          // Apply min_gdpval only when the model actually has a score
+          if (origGdpval !== undefined && groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
             continue;
           }
-          
-          let passesFilters = true;
-          
-          // GDPval Filter
-          if (groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
-            passesFilters = false;
+
+          const isFree = staticFreeModels.includes(origModel);
+          // max_cost_per_m filter (skip for free models)
+          if (groupConfig.max_cost_per_m !== undefined && !isFree) {
+            const price = lookupPrice(origModel);
+            if (price && price.input > groupConfig.max_cost_per_m) continue;
           }
-          
-          // Kosten Filter (max_cost_per_m)
-          if (passesFilters && groupConfig.max_cost_per_m !== undefined) {
-            const price = lookupPrice(normalizedOrig);
-            const isFree = staticFreeModels.includes(normalizedOrig);
-            if (!isFree && price && price.input > groupConfig.max_cost_per_m) {
-              passesFilters = false;
-            }
+          // max_cost filter (skip for free models)
+          if (groupConfig.max_cost !== undefined && !isFree) {
+            if (effCost(origModel) > groupConfig.max_cost) continue;
           }
-          
-          // Kosten Filter (max_cost)
-          if (passesFilters && groupConfig.max_cost !== undefined) {
-            const isFree = staticFreeModels.includes(normalizedOrig);
-            if (!isFree && effCost(normalizedOrig) > groupConfig.max_cost) {
-              passesFilters = false;
-            }
-          }
-          
-          if (passesFilters) {
-            modelsToInclude.add(normalizedOrig);
-          }
+
+          modelsToInclude.add(origModel);
+          includedSigs.add(modelSig(origModel));
         }
-        
-        // 2. Dann die GEFILTERTEN dynamischen Modelle hinzufügen
+
+        // 2. Add filtered dynamic models — deduplicate by token signature
         for (const model of sortedGroupModels) {
-          // Nur hinzufügen, wenn nicht schon in statischen Modellen
-          if (!modelsToInclude.has(model.ref)) {
-            modelsToInclude.add(model.ref);
-          }
+          if (modelsToInclude.has(model.ref)) continue;
+          const sig = modelSig(model.ref);
+          if (includedSigs.has(sig)) continue; // same base model already present
+          modelsToInclude.add(model.ref);
+          includedSigs.add(sig);
         }
         
         // 3. Konvertiere zu Array (Reihenfolge: statisch zuerst, dann dynamisch sortiert)
@@ -736,7 +702,27 @@ const defaultExport = function (pi: ExtensionAPI) {
         };
       }
       
-      // 9. Dynamische Konfiguration speichern
+      // 9. Auto-generate fallback_groups for each group based on quality ordering.
+      // Quality level: max_cost=0 → 0, min_gdpval=N → N, no constraint → 750 (highest).
+      // Fallback order: nearest higher quality first, then lower — so a failing group
+      // escalates before it degrades. Groups with no models are skipped.
+      const qualityOf = (g: typeof dynamicGroups[string]): number => {
+        if (g.method === 'dynamic') return -1;
+        if (g.max_cost === 0) return 0;
+        if (g.min_gdpval !== undefined) return g.min_gdpval;
+        return 750;
+      };
+      const eligibleGroups = Object.entries(dynamicGroups)
+        .filter(([, g]) => g.method !== 'dynamic' && (g.models?.length ?? 0) > 0)
+        .sort(([, a], [, b]) => qualityOf(a) - qualityOf(b));
+
+      for (const [myIdx, [name]] of eligibleGroups.entries()) {
+        const above = eligibleGroups.slice(myIdx + 1).map(([n]) => n);
+        const below = eligibleGroups.slice(0, myIdx).reverse().map(([n]) => n);
+        dynamicGroups[name].fallback_groups = [...above, ...below];
+      }
+
+      // 10. Dynamische Konfiguration speichern
       const dynamicConfig = {
         ...cfg,
         model_groups: dynamicGroups,
@@ -752,10 +738,17 @@ const defaultExport = function (pi: ExtensionAPI) {
       
       const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
-      
+
+      // Update in-memory cfg immediately so the new fallback_groups and model lists
+      // are available for the current session without requiring a restart.
+      cfg = dynamicConfig as Config;
+      router = new Router(cfg, cache, rateLimitManager.getLimits());
+      metricsModule.setConfig(cfg);
+      discoveryManager = new DiscoveryManager(cfg, cache);
+
       // Setze den Timestamp des letzten Scans
       cacheManager.setLastScanTimestamp();
-      
+
       routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
     } catch (error) {
@@ -852,42 +845,6 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   function resolve(name: string): { selected: string; candidates: string[] } | null {
     return router.resolve(name);
-  }
-
-  /**
-   * Löst eine Gruppe mit Kostenstufen-Filter auf
-   * @param name - Gruppenname
-   * @param costTier - Kostenstufe (optional)
-   * @returns GroupResolution oder null
-   */
-  function resolveWithCostTier(name: string, costTier?: string): { selected: string; candidates: string[] } | null {
-    // Wenn keine Kostenstufe angegeben, Standard-Resolve verwenden
-    if (!costTier) {
-      return resolve(name);
-    }
-    
-    // Kostenstufe in CostTier Typ umwandeln
-    const tier = costTier as 'free' | 'budget' | 'premium';
-    const result = router.resolveWithCostTier(name, tier);
-    return result;
-  }
-
-  /**
-   * Löst eine Gruppe basierend auf der Klassifizierungskategorie auf
-   * @param category - Klassifizierungskategorie
-   * @returns GroupResolution oder null
-   */
-  function resolveByCategory(category: string): { selected: string; candidates: string[] } | null {
-    return router.resolveByCategory(category);
-  }
-
-  /**
-   * Gibt die Kostenstufe für eine Klassifizierungskategorie zurück
-   * @param category - Klassifizierungskategorie
-   * @returns Kostenstufe
-   */
-  function getCostTierForCategoryFunc(category: string): string {
-    return getCostTierForCategory(category as any);
   }
 
 
@@ -1446,19 +1403,37 @@ const defaultExport = function (pi: ExtensionAPI) {
         const prompt = extractLastUserPrompt(context);
         const lastAssistantSnippet = extractLastAssistantSnippet(context);
         
-        const classification = await classifyPrompt(prompt, { 
-          allowStaticFallback: useStatic, 
-          allowCloudFallback: true, // Aktiviere Cloud-Fallback für dynamisches Routing
-          cfg, 
+        const dynamicGroupCfg = cfg.model_groups['dynamic'];
+        // Strip "ollama/" prefix — callOllama expects the bare model name
+        const stripOllama = (ref: string) => ref.replace(/^ollama\//, '');
+        const classifyOpts: Parameters<typeof classifyPrompt>[1] = {
+          allowStaticFallback: useStatic,
+          allowCloudFallback: true,
+          cfg,
           cache,
-          context: lastAssistantSnippet ? { lastAssistantSnippet } : {}
-        });
+          context: lastAssistantSnippet ? { lastAssistantSnippet } : {},
+        };
+        if (dynamicGroupCfg?.classifier_model)
+          classifyOpts.model = stripOllama(dynamicGroupCfg.classifier_model);
+        if (dynamicGroupCfg?.classifier_fallback)
+          classifyOpts.fallbackModel = stripOllama(dynamicGroupCfg.classifier_fallback);
+
+        const classification = await classifyPrompt(prompt, classifyOpts);
         
         // Check for HINT override
         if ('hintType' in classification) {
           if (classification.hintType === 'group') {
             const res = resolve(classification.hintTarget);
             if (res) {
+              const hintSeen = new Set<string>(res.candidates);
+              const hintFallbacks = cfg.model_groups[classification.hintTarget]?.fallback_groups ?? [];
+              for (const fbGroup of hintFallbacks) {
+                const fbRes = resolve(fbGroup);
+                if (!fbRes) continue;
+                for (const ref of fbRes.candidates) {
+                  if (!hintSeen.has(ref)) { hintSeen.add(ref); res.candidates.push(ref); }
+                }
+              }
               candidates = [...res.candidates];
               lastDynamicModel = res.selected;
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
@@ -1510,29 +1485,31 @@ const defaultExport = function (pi: ExtensionAPI) {
         
         // ── Session Escalation: Override group with escalation level ────────
         let targetGroup: string;
-        let costTier: string | undefined;
         if (escalation.level !== 'operational') {
           targetGroup = escalation.level;
           routerLog(`[escalation] Using escalated group: ${targetGroup} (level: ${escalation.level})`);
         } else {
-          // Hole die Kostenstufe und Gruppe für diese Kategorie
-          costTier = getCostTierForCategoryFunc(normalClassification.category);
           targetGroup = getGroupForCategory(normalClassification.category);
         }
-        
-        // Versuche zuerst mit Kostenstufen-Filter
-        let res = costTier ? resolveWithCostTier(targetGroup, costTier) : resolve(targetGroup);
-        
-        // Fallback: Wenn keine Modelle zur Kostenstufe passen, versuche ohne Filter
-        if (!res || res.candidates.length === 0) {
-          routerLog(`[dynamic] No models fit cost tier "${costTier}" for group "${targetGroup}", falling back to standard resolution`);
-          res = resolve(targetGroup) ?? resolve('fallback');
-        }
-        
+
+        // Collect candidates: target group first, then fallback_groups in order (deduped)
+        const res = resolve(targetGroup) ?? resolve('fallback');
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
-        candidates = [...res.candidates];
+
+        const seen = new Set<string>(res.candidates);
+        const fallbackCandidates: string[] = [];
+        const groupFallbacks = cfg.model_groups[targetGroup]?.fallback_groups ?? [];
+        for (const fbGroup of groupFallbacks) {
+          const fbRes = resolve(fbGroup);
+          if (!fbRes) continue;
+          for (const ref of fbRes.candidates) {
+            if (!seen.has(ref)) { seen.add(ref); fallbackCandidates.push(ref); }
+          }
+        }
+
+        candidates = [...res.candidates, ...fallbackCandidates];
         lastDynamicModel = res.selected;
-        dynamicLabel = `${normalClassification.category} → ${targetGroup}${costTier ? ` [${costTier}]` : ''}`;
+        dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
         appendRawLog(logLine);
         costTracker.trackRequest(res.selected, 1000, 500);
