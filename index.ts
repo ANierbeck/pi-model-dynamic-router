@@ -15,14 +15,14 @@ import type {
   Context,
   SimpleStreamOptions,
   AssistantMessageEventStream,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 import {
   streamSimple as piStreamSimple,
   createAssistantMessageEventStream,
-} from '@mariozechner/pi-ai';
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-ai';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
-import { truncateToWidth } from '@mariozechner/pi-tui';
+import { truncateToWidth } from '@earendil-works/pi-tui';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
