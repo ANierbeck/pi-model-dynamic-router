@@ -1,5 +1,5 @@
 // src/content-classifier.ts
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama } from './ollama-utils.js';
 import { CloudClient } from './cloud-client.js';
 import { DiscoveryManager } from './discovery.js';

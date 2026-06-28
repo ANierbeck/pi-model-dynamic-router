@@ -1,6 +1,6 @@
 {
   "name": "@anierbeck/pi-model-dynamic-router",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc && esbuild index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@mariozechner/pi-ai --external:@mariozechner/pi-coding-agent --external:@mariozechner/pi-tui --external:@sinclair/typebox && cp router-defaults.yaml router-config.json model-map.yaml dist/",
+    "build": "tsc && esbuild index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@earendil-works/pi-ai --external:@earendil-works/pi-coding-agent --external:@earendil-works/pi-tui --external:@sinclair/typebox && cp router-defaults.yaml router-config.json model-map.yaml dist/",
     "prepack": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,16 +48,17 @@
     "PI.md",
     "README.md"
   ],
-  "dependencies": {},
   "peerDependencies": {
-    "@mariozechner/pi-ai": "*",
-    "@mariozechner/pi-coding-agent": "*",
-    "@mariozechner/pi-tui": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
     "@sinclair/typebox": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.74.2",
+    "@earendil-works/pi-coding-agent": "^0.74.2",
+    "@earendil-works/pi-tui": "^0.74.2",
     "@eslint/js": "^10.0.1",
-    "yaml": "^2.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.9.2",
     "@typescript-eslint/eslint-plugin": "^8.61.0",
@@ -70,6 +71,7 @@
     "execa": "^9.6.1",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "yaml": "^2.0.0"
   }
 }

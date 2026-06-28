@@ -1,8 +1,8 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
-import type { Model } from '@mariozechner/pi-ai';
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent';
+import type { Model } from '@earendil-works/pi-ai';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
