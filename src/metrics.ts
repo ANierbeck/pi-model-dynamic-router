@@ -256,8 +256,11 @@ export function effCost(ref: string): number {
     const price = lookupPrice(ref);
     if (price) base = price.input; // use input price as representative
   }
-  // 3. Fallback to tiny base (costMux still differentiates free models)
-  if (!base) base = 0.01;
+  // 3. Subscription providers with no pricing data are truly free (local)
+  if (!base) {
+    if (cfg.providers?.[prov]?.billing === 'subscription') return 0;
+    base = 0.01;
+  }
   // Apply subscription discount
   if (cfg.providers?.[prov]?.billing === 'subscription') base *= SUB_DISCOUNT;
   return base * costMux(prov);

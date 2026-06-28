@@ -40,6 +40,8 @@ export interface ClassificationContext {
 interface ClassificationOptions {
   model?: string;
   timeoutMs?: number;
+  fallbackModel?: string;
+  fallbackTimeoutMs?: number;
   context?: ClassificationContext;
   allowStaticFallback?: boolean;
   cfg?: Config;
@@ -160,7 +162,17 @@ export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
-  const { model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT, context = {}, allowStaticFallback = false, allowCloudFallback = false, cfg, cache } = options;
+  const {
+    model = DEFAULT_MODEL,
+    timeoutMs = DEFAULT_TIMEOUT,
+    fallbackModel = FALLBACK_MODEL,
+    fallbackTimeoutMs = FALLBACK_TIMEOUT,
+    context = {},
+    allowStaticFallback = false,
+    allowCloudFallback = false,
+    cfg,
+    cache,
+  } = options;
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.
   const directHint = detectHintDirectly(prompt);
@@ -257,18 +269,18 @@ export async function classifyPrompt(
     return parsed;
   };
 
-  // Primary model (gemma4:12b-mlx) — may be slow on cold start
+  // Primary model — may be slow on cold start
   try {
     return await tryClassify(model, timeoutMs);
   } catch (primaryError) {
-    // Cold-start timeout or load error → retry immediately with the small model
-    if (model !== FALLBACK_MODEL) {
+    // Cold-start timeout or load error → retry immediately with the fallback model
+    if (model !== fallbackModel) {
       try {
         console.error(
-          `[classifier] Primary model "${model}" failed, retrying with ${FALLBACK_MODEL}:`,
+          `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}:`,
           (primaryError as Error).message
         );
-        return await tryClassify(FALLBACK_MODEL, FALLBACK_TIMEOUT);
+        return await tryClassify(fallbackModel, fallbackTimeoutMs);
       } catch (fallbackError) {
         console.error(`[classifier] Fallback model also failed:`, (fallbackError as Error).message);
       }

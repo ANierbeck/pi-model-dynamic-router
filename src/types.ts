@@ -48,6 +48,12 @@ export interface Group {
   min_gdpval?: number;
   max_cost?: number;
   max_cost_per_m?: number;
+  /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
+  classifier_model?: string;
+  /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
+  classifier_fallback?: string;
+  /** Groups to try (in order) when all candidates in this group fail. e.g. ["strategic", "operational"] */
+  fallback_groups?: string[];
 }
 
 export interface ProviderKey {
