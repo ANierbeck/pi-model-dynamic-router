@@ -59,6 +59,12 @@ const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
+const LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
+function routerLog(msg: string, extra?: unknown): void {
+  const suffix = extra ? ` ${extra instanceof Error ? extra.message : String(extra)}` : '';
+  fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${msg}${suffix}\n`);
+}
+
 const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
   const cfgPath = path.join(extDir, 'router-config.json');
@@ -234,7 +240,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
     } catch (error) {
-      console.warn('[router] Error loading dynamic configuration, falling back to static config:', error);
+      routerLog('[router] Error loading dynamic configuration, falling back to static config:', error);
     }
     
     // Falls keine dynamische Konfiguration, verwende die statische
@@ -381,7 +387,7 @@ const defaultExport = function (pi: ExtensionAPI) {
             cache.gdpval_scores = gdpval;
             cache.gdpval_scraped = true;
           } else {
-            console.warn('[scan] No GDPval scores extracted - table regex may be outdated');
+            routerLog('[scan] No GDPval scores extracted - table regex may be outdated');
           }
         } catch {
           /* scrape failed, use builtins */
@@ -509,7 +515,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     try {
       // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt)
       if (!force && cacheManager.isScanCacheValid()) {
-        console.log('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
+        routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }
       
@@ -533,7 +539,7 @@ const defaultExport = function (pi: ExtensionAPI) {
       const allModelRefs = [...new Set([...staticFreeModels, ...scannedModels.map(m => `${m.provider}/${m.id}`)])];
       
       if (!allModelRefs.length) {
-        console.log('[router] No models available, skipping dynamic config generation');
+        routerLog('[router] No models available, skipping dynamic config generation');
         return;
       }
       
@@ -551,11 +557,11 @@ const defaultExport = function (pi: ExtensionAPI) {
       }).filter(m => m.gdpval > 0); // Nur Modelle mit GDPval
       
       if (!modelsWithMetadata.length) {
-        console.log('[router] No models with GDPval scores, skipping dynamic config generation');
+        routerLog('[router] No models with GDPval scores, skipping dynamic config generation');
         return;
       }
       
-      console.log(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
+      routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
       
       // 5. Dynamische Gruppen-Konfiguration generieren
       const dynamicGroups: Record<string, any> = {};
@@ -704,8 +710,8 @@ const defaultExport = function (pi: ExtensionAPI) {
         
         // Debug-Logging
         if (groupName === 'trivial' || groupName === 'simple') {
-          console.log(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
-          console.log(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
+          routerLog(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
+          routerLog(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
         }
         
         // Erstelle die dynamische Gruppen-Konfiguration
@@ -735,10 +741,10 @@ const defaultExport = function (pi: ExtensionAPI) {
       // Setze den Timestamp des letzten Scans
       cacheManager.setLastScanTimestamp();
       
-      console.log(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
+      routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
     } catch (error) {
-      console.error('[router] Error generating dynamic configuration:', error);
+      routerLog('[router] Error generating dynamic configuration:', error);
     }
   }
 
