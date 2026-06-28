@@ -61,8 +61,17 @@ const GDPVAL_URL = _defaults.gdpval_url;
 
 const LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
 function routerLog(msg: string, extra?: unknown): void {
-  const suffix = extra ? ` ${extra instanceof Error ? extra.message : String(extra)}` : '';
-  fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${msg}${suffix}\n`);
+  try {
+    fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+    const suffix = extra ? ` ${extra instanceof Error ? extra.message : String(extra)}` : '';
+    fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${msg}${suffix}\n`);
+  } catch {}
+}
+function appendRawLog(line: string): void {
+  try {
+    fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+    fs.appendFileSync(LOG_PATH, line + '\n');
+  } catch {}
 }
 
 const defaultExport = function (pi: ExtensionAPI) {
@@ -1448,17 +1457,14 @@ const defaultExport = function (pi: ExtensionAPI) {
               lastDynamicModel = res.selected;
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
-              console.log(`[dynamic] ${logLine}`);
-              
+              appendRawLog(logLine);
+
               // Cost Tracking für HINT-Override
               costTracker.trackRequest(res.selected, 1000, 500);
-              try {
-                fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
-              } catch {}
               await driveStream(proxy, candidates, context, options, dynamicLabel);
               return;
             }
-            console.warn(`[dynamic] HINT group not found: ${classification.hintTarget}`);
+            routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
           } else if (classification.hintType === 'model') {
             // Direct model override — resolve short name (e.g. "mistral-medium-3.5") to
             // fully-qualified "provider/model" ref by searching all group models lists.
@@ -1467,7 +1473,7 @@ const defaultExport = function (pi: ExtensionAPI) {
             const shortName = classification.hintTarget;
             const resolved = resolveShortModelName(shortName, cfg.model_groups);
             if (!shortName.includes('/') && resolved === null) {
-              console.warn(`[dynamic] HINT model "${shortName}" not found in any group; using as-is`);
+              routerLog(`[dynamic] HINT model "${shortName}" not found in any group; using as-is`);
             }
             const resolvedTarget = resolved ?? shortName;
             candidates = [resolvedTarget];
@@ -1485,11 +1491,8 @@ const defaultExport = function (pi: ExtensionAPI) {
             lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;
             const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${resolvedTarget}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
-            console.log(`[dynamic] ${logLine}`);
+            appendRawLog(logLine);
             costTracker.trackRequest(resolvedTarget, 1000, 500);
-            try {
-              fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
-            } catch {}
             await driveStream(proxy, candidates, context, options, dynamicLabel);
             return;
           }
@@ -1504,9 +1507,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         let costTier: string | undefined;
         if (escalation.level !== 'operational') {
           targetGroup = escalation.level;
-          console.log(
-            `[escalation] Using escalated group: ${targetGroup} (level: ${escalation.level})`
-          );
+          routerLog(`[escalation] Using escalated group: ${targetGroup} (level: ${escalation.level})`);
         } else {
           // Hole die Kostenstufe und Gruppe für diese Kategorie
           costTier = getCostTierForCategoryFunc(normalClassification.category);
@@ -1518,7 +1519,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         
         // Fallback: Wenn keine Modelle zur Kostenstufe passen, versuche ohne Filter
         if (!res || res.candidates.length === 0) {
-          console.warn(`[dynamic] No models fit cost tier "${costTier}" for group "${targetGroup}", falling back to standard resolution`);
+          routerLog(`[dynamic] No models fit cost tier "${costTier}" for group "${targetGroup}", falling back to standard resolution`);
           res = resolve(targetGroup) ?? resolve('fallback');
         }
         
@@ -1527,16 +1528,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         lastDynamicModel = res.selected;
         dynamicLabel = `${normalClassification.category} → ${targetGroup}${costTier ? ` [${costTier}]` : ''}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
-        console.log(`[dynamic] ${logLine}`);
-        
-        // Cost Tracking: Annahme von 1000 Input- und 500 Output-Tokens pro Request
-        // (kann später durch tatsächliche Token-Zählung ersetzt werden)
+        appendRawLog(logLine);
         costTracker.trackRequest(res.selected, 1000, 500);
-        try {
-          fs.appendFileSync(path.join(homedir(), '.pi', 'logs', 'router.log'), logLine + '\n');
-        } catch {}
       } catch (err) {
-        console.error('[dynamic] classification failed, using fallback:', err);
+        routerLog('[dynamic] classification failed, using fallback:', err);
         const fb =
           resolve('fallback') ??
           resolve(
