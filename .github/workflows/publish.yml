@@ -62,6 +62,10 @@ jobs:
           TAG: ${{ github.event.inputs.ref }}
         run: git checkout "$TAG"
 
+      - name: Switch to release tag (release event)
+        if: github.event_name == 'release'
+        run: git checkout "${{ github.ref_name }}"
+
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
