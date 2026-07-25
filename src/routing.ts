@@ -24,6 +24,7 @@ import {
   getCostTiersFromConfig
 } from './cost-tiers.js';
 import { getGroupForCategory } from './content-classifier.js';
+import { BudgetTracker, initBudgetTracker } from './budget-tracker.js';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -44,11 +45,13 @@ export class Router {
   private lastDynamicModel: string = '';
   private lastDynamicCategory: string | undefined;
   private sessionCtx: ExtensionContext | null = null;
+  private budgetTracker: BudgetTracker | null = null;
 
   constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
     this.cfg = cfg;
     this.cache = cache;
     this.limits = limits;
+    this.budgetTracker = initBudgetTracker(cfg, cache);
   }
 
   setSessionCtx(ctx: ExtensionContext | null): void {
@@ -88,6 +91,69 @@ export class Router {
   }
 
   // ── Filtering ─────────────────────────────────────────────────────────────
+
+  /**
+   * Filters models by budget availability (subscription providers)
+   * Uses cached budget info for synchronous operation
+   */
+  filterByBudget(refs: string[]): string[] {
+    if (!this.budgetTracker || !this.cache.budget_cache) return refs;
+    
+    const result: string[] = [];
+    for (const ref of refs) {
+      const prov = ref.split('/')[0];
+      
+      // Local providers always have budget
+      if (PROVIDER_MAP[prov]?.local) {
+        result.push(ref);
+        continue;
+      }
+      
+      // Pay-per-token providers always have budget (limited by money, not tokens)
+      const billing = this.cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
+      if (billing === 'pay_per_token') {
+        result.push(ref);
+        continue;
+      }
+      
+      // Subscription providers: check cached budget
+      const budget = this.cache.budget_cache[prov];
+      if (!budget) {
+        // If no cached budget info, assume available (conservative)
+        result.push(ref);
+        continue;
+      }
+      
+      // Check if we're still in the same window
+      const now = Date.now();
+      if (budget.window_reset && now >= budget.window_reset) {
+        // Window has reset, but we haven't refreshed yet - assume available
+        result.push(ref);
+        continue;
+      }
+      
+      // Check remaining tokens
+      if ((budget.remaining_tokens ?? 0) > 0) {
+        result.push(ref);
+      }
+    }
+    return result;
+  }
+  
+  /**
+   * Async version that refreshes budget info from APIs
+   */
+  async filterByBudgetAsync(refs: string[]): Promise<string[]> {
+    if (!this.budgetTracker) return refs;
+    
+    const result: string[] = [];
+    for (const ref of refs) {
+      if (await this.budgetTracker.hasBudget(ref)) {
+        result.push(ref);
+      }
+    }
+    return result;
+  }
 
   /**
    * Filters models by availability (not rate-limited)
@@ -140,7 +206,9 @@ export class Router {
     if (method === 'max_throughput')
       return s.sort((a, b) => getM(b).throughput_tps - getM(a).throughput_tps);
     if (method === 'min_cost')
-      return s.sort((a, b) => effCost(a) - effCost(b) || getM(b).gdpval - getM(a).gdpval);
+      return this.sortByMinCost(s);
+    if (method === 'min_cost_if_all_priced')
+      return this.sortByMinCostIfAllPriced(s);
     if (method === 'max_gdpval') 
       return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
     if (method === 'best') {
@@ -170,8 +238,60 @@ export class Router {
           pb = this.limitSecs(b);
         if (pa !== pb) return pa - pb;
       }
-      return effCost(a) - effCost(b);
+      const costA = effCost(a);
+      const costB = effCost(b);
+      // Handle 'unknown' costs - treat them as equal
+      if (costA === 'unknown' && costB === 'unknown') return 0;
+      if (costA === 'unknown') return 1; // unknown costs go to the end
+      if (costB === 'unknown') return -1;
+      return costA - costB;
     });
+  }
+
+  /**
+   * Sorts models by minimum cost
+   * Models with unknown costs are sorted to the end
+   */
+  sortByMinCost(refs: string[]): string[] {
+    return [...refs].sort((a, b) => {
+      const costA = effCost(a);
+      const costB = effCost(b);
+      
+      // Handle 'unknown' costs - treat them as equal and sort by GDPval as tiebreaker
+      if (costA === 'unknown' && costB === 'unknown') {
+        return getM(b).gdpval - getM(a).gdpval;
+      }
+      if (costA === 'unknown') return 1; // unknown costs go to the end
+      if (costB === 'unknown') return -1;
+      
+      // Both have known costs
+      const diff = costA - costB;
+      if (diff !== 0) return diff;
+      // Tiebreaker: higher GDPval first
+      return getM(b).gdpval - getM(a).gdpval;
+    });
+  }
+
+  /**
+   * Sorts models by minimum cost only if ALL models have known prices
+   * Otherwise falls back to sorting by GDPval (best first)
+   */
+  sortByMinCostIfAllPriced(refs: string[]): string[] {
+    const s = [...refs];
+    
+    // Check if all models have known costs
+    const allPriced = s.every(ref => {
+      const cost = effCost(ref);
+      return cost !== 'unknown';
+    });
+    
+    if (allPriced) {
+      // All models have known costs - sort by cost
+      return this.sortByMinCost(s);
+    } else {
+      // Not all models have known costs - fall back to GDPval
+      return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
+    }
   }
 
   // ── Resolution ────────────────────────────────────────────────────────
@@ -202,14 +322,26 @@ export class Router {
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
 
+    // Filter by budget availability (subscription providers)
+    // This ensures we only use models with remaining tokens in their window
+    c = this.filterByBudget(c);
+
     // Filter by cost (if configured)
     if (g.max_cost !== undefined) {
-      c = c.filter(ref => effCost(ref) <= g.max_cost!);
+      c = c.filter(ref => {
+        const cost = effCost(ref);
+        // Exclude models with unknown costs when filtering by max_cost
+        if (cost === 'unknown') return false;
+        return cost <= g.max_cost!;
+      });
     }
     if (g.max_cost_per_m !== undefined) {
       c = c.filter(ref => {
         const price = lookupPrice(ref);
-        return price ? price.input <= g.max_cost_per_m! : true;
+        // Exclude models with unknown prices
+        if (!price) return false;
+        if (price.input === 'unknown' || price.output === 'unknown') return false;
+        return price.input <= g.max_cost_per_m!;
       });
     }
 
@@ -230,6 +362,9 @@ export class Router {
       const i = (this.rrCounters[name] ?? 0) % c.length;
       this.rrCounters[name] = i + 1;
       c = [...c.slice(i), ...c.slice(0, i)];
+    } else if (g.method === 'min_cost_if_all_priced') {
+      c = this.sortBy(c, 'min_cost_if_all_priced', name);
+      if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     } else {
       c = this.sortBy(c, g.method, name);
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
@@ -299,6 +434,8 @@ export class Router {
         sorted = this.sortByBillingPreference(sorted);
       } else if (g.method === 'min_cost') {
         sorted = this.sortBy(sorted, 'min_cost', name);
+      } else if (g.method === 'min_cost_if_all_priced') {
+        sorted = this.sortBy(sorted, 'min_cost_if_all_priced', name);
       } else {
         sorted = this.sortBy(sorted, g.method, name);
       }
@@ -439,6 +576,8 @@ export class Router {
         const isLastStep = i === g.pipeline.length - 1;
         if (step.top_k && step.top_k < c.length && !isLastStep) c = c.slice(0, step.top_k);
       }
+    } else if (g.method === 'min_cost_if_all_priced') {
+      c = this.sortBy(c, 'min_cost_if_all_priced');
     } else {
       c = this.sortBy(c, g.method);
     }

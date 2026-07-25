@@ -40,6 +40,7 @@ import { Router } from './src/routing.ts';
 import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { costTracker } from './src/cost-tracker.ts';
+import { BudgetTracker, initBudgetTracker } from './src/budget-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -89,6 +90,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   let discoveryManager: DiscoveryManager;
   let cacheManager: CacheManager;
   let router: Router;
+  let budgetTracker: BudgetTracker;
   let gdpval: Record<string, number> = {};
   let scanning = false;
   let sessionStart = Date.now();
@@ -278,15 +280,23 @@ const defaultExport = function (pi: ExtensionAPI) {
     cacheManager = new CacheManager(extDir);
     router = new Router(cfg, cache, rateLimitManager.getLimits());
     metricsModule.setCache(cache);
+    budgetTracker = initBudgetTracker(cfg, cache);
   }
 
   function loadCache() {
     cache = cacheManager.loadCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
+    if (budgetTracker) {
+      budgetTracker.updateCache(cache);
+    }
   }
 
   function saveCache() {
+    // Update cache with latest budget info before saving
+    if (budgetTracker) {
+      cache = budgetTracker.getCache();
+    }
     cacheManager.saveCache(cache);
   }
 
@@ -297,6 +307,64 @@ const defaultExport = function (pi: ExtensionAPI) {
     cache = discoveryManager.getCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
+  }
+
+  // ── Budget Tracking ─────────────────────────────────────────────────────
+
+  /**
+   * Refresh budget info for all subscription providers
+   */
+  async function refreshBudgets() {
+    if (!budgetTracker) return;
+    
+    const subscriptionProviders = Object.entries(cfg.providers ?? {})
+      .filter(([prov, config]) => config.billing === 'subscription')
+      .map(([prov]) => prov);
+    
+    // Refresh budget for each subscription provider
+    for (const prov of subscriptionProviders) {
+      try {
+        await budgetTracker.refreshBudget(prov);
+        routerLog(`[budget] Refreshed budget for ${prov}`);
+      } catch (error) {
+        routerLog(`[budget] Error refreshing budget for ${prov}:`, error);
+      }
+    }
+    
+    // Update cache with new budget info
+    cache = budgetTracker.getCache();
+    saveCache();
+  }
+
+  /**
+   * Check if a model has available budget (synchronous, uses cache)
+   */
+  function hasModelBudget(ref: string): boolean {
+    if (!budgetTracker) return true;
+    
+    const prov = ref.split('/')[0];
+    const billing = cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
+    
+    // Local and pay-per-token providers always have budget
+    if (PROVIDER_MAP[prov]?.local || billing === 'pay_per_token') {
+      return true;
+    }
+    
+    // Check cached budget
+    const budget = cache.budget_cache?.[prov];
+    if (!budget) {
+      // No cached info - assume available
+      return true;
+    }
+    
+    // Check if window has reset
+    const now = Date.now();
+    if (budget.window_reset && now >= budget.window_reset) {
+      // Window reset - need to refresh
+      return true; // Assume available until we can refresh
+    }
+    
+    return (budget.remaining_tokens ?? 0) > 0;
   }
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
@@ -504,8 +572,25 @@ const defaultExport = function (pi: ExtensionAPI) {
    */
   async function generateDynamicConfig(force = false): Promise<void> {
     try {
-      // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt)
-      if (!force && cacheManager.isScanCacheValid()) {
+      // Modelle, die Pi bereits registriert hat (z.B. über Provider ohne PROVIDER_MAP-Eintrag
+      // wie claude-bridge) — damit sie trotzdem als Routing-Kandidaten in Frage kommen.
+      const registryRefs: string[] = [];
+      if (sessionCtx?.modelRegistry) {
+        for (const m of sessionCtx.modelRegistry.getAvailable()) {
+          registryRefs.push(`${m.provider}/${m.id}`);
+        }
+      }
+
+      // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt) — aber nicht überspringen,
+      // wenn die Registry Refs enthält, die noch in keiner Gruppe gelistet sind (neuer
+      // Provider/neues Modell seit dem letzten Scan aufgetaucht).
+      const knownGroupRefs = new Set<string>();
+      for (const g of Object.values(cfg.model_groups ?? {})) {
+        for (const r of g.models ?? []) knownGroupRefs.add(r);
+      }
+      const hasNewRegistryRefs = registryRefs.some((r) => !knownGroupRefs.has(r));
+
+      if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid()) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }
@@ -526,26 +611,70 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
       
-      // 3. Alle Modelle kombinieren: statische free_models + gescannte Modelle
-      const allModelRefs = [...new Set([...staticFreeModels, ...scannedModels.map(m => `${m.provider}/${m.id}`)])];
+      // 2b. ALLE Modelle aus den statischen Gruppen-Konfigurationen laden
+      // Diese Modelle sind explizit konfiguriert und müssen immer verfügbar sein
+      const staticGroupModels: string[] = [];
+      for (const groupConfig of Object.values(staticCfg.model_groups ?? {})) {
+        if (groupConfig.models && Array.isArray(groupConfig.models)) {
+          for (const model of groupConfig.models) {
+            staticGroupModels.push(model);
+          }
+        }
+      }
+      
+      // 3. Alle Modelle kombinieren: statische free_models + statische Gruppen-Modelle + gescannte Modelle + registry-Refs
+      const allModelRefs = [...new Set([
+        ...staticFreeModels,
+        ...staticGroupModels,
+        ...scannedModels.map(m => `${m.provider}/${m.id}`),
+        ...registryRefs,
+      ])];
       
       if (!allModelRefs.length) {
         routerLog('[router] No models available, skipping dynamic config generation');
         return;
       }
+
+      // Registriere einen leichtgewichtigen Provider-Stub für jeden registry-entdeckten
+      // Provider, den der Router sonst nicht kennt (z.B. claude-bridge). Ohne diesen Eintrag
+      // erkennt stripProvider() das Prefix nicht und GDPval/Preis-Inferenz über den
+      // Basis-Modellnamen (z.B. "claude-sonnet-5") schlägt fehl.
+      for (const ref of registryRefs) {
+        const slash = ref.indexOf('/');
+        if (slash === -1) continue;
+        const prov = ref.slice(0, slash);
+        if (!PROVIDER_MAP[prov] && !cfg.providers?.[prov]) {
+          (cfg.providers ??= {})[prov] = { billing: 'subscription' };
+        }
+      }
       
       // 4. Modelle mit GDPval und Kosten anreichern
+      // Separate static models (always keep) from scanned/registry models (need GDPval)
+      const staticModelRefs = new Set([...staticFreeModels, ...staticGroupModels]);
+      
       const modelsWithMetadata = allModelRefs.map(ref => {
         const gdpval = lookupGdp(ref) ?? 0;
         const cost = effCost(ref);
         const price = lookupPrice(ref);
         
-        // Prüfe ob es ein kostenloses Modell ist (entweder Preis=0 oder in free_models)
+        // Prüfe ob ein Modell token-basiert ist (pay_per_token)
+        const prov = ref.split('/')[0];
+        const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
+        
+        // Prüfe ob es ein kostenloses Modell ist (NUR für token-basierte Modelle!)
+        // Subscription-Modelle sind NICHT "kostenlos" im Sinne von Cost-Routing
         const isFreeModel = staticFreeModels.includes(ref) || 
-                          (price && price.input === 0 && price.output === 0);
+                          (price && price.input === 0 && price.output === 0) ||
+                          ref.includes(':free') ||
+                          (cost === 0 && isTokenBased);
         
         return { ref, gdpval, cost, price, isFreeModel };
-      }).filter(m => m.gdpval > 0); // Nur Modelle mit GDPval
+      }).filter(m => {
+        // Always keep static models (they're explicitly configured in router-config.json)
+        if (staticModelRefs.has(m.ref)) return true;
+        // For other models, require GDPval > 0
+        return m.gdpval > 0;
+      });
       
       if (!modelsWithMetadata.length) {
         routerLog('[router] No models with GDPval scores, skipping dynamic config generation');
@@ -575,20 +704,42 @@ const defaultExport = function (pi: ExtensionAPI) {
         // Kosten Filter (max_cost_per_m) - KORRIGIERT: Berücksichtige auch free_models
         if (groupConfig.max_cost_per_m !== undefined) {
           filteredModels = filteredModels.filter(m => {
-            // Kostenlose Modelle immer erlauben
-            if (m.isFreeModel) return true;
+            const prov = m.ref.split('/')[0];
+            const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
+            
+            // Kostenlose token-basierte Modelle immer erlauben
+            if (m.isFreeModel && isTokenBased) return true;
+            
+            // Subscription-Modelle: Immer durchlassen (werden nach GDPval sortiert, nicht nach Kosten)
+            if (!isTokenBased) return true;
             
             const price = m.price;
-            return price ? price.input <= groupConfig.max_cost_per_m! : true;
+            // Exclude models with unknown prices
+            if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
+            // Only include if input price is a number and within limit
+            if (typeof price.input !== 'number') return false;
+            return price.input <= groupConfig.max_cost_per_m!;
           });
         }
         
         // Kosten Filter (max_cost) - KORRIGIERT: Berücksichtige auch free_models
+        // WICHTIG: Für max_cost=0 Gruppen (trivial, simple) NUR token-basierte kostenlose Modelle zulassen
+        // Subscription-Modelle sind NICHT kostenlos im Sinne von Cost-Routing
         if (groupConfig.max_cost !== undefined) {
           filteredModels = filteredModels.filter(m => {
-            // Kostenlose Modelle immer erlauben (max_cost=0)
-            if (m.isFreeModel && groupConfig.max_cost === 0) return true;
+            const prov = m.ref.split('/')[0];
+            const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
             
+            // Für max_cost=0: NUR token-basierte kostenlose Modelle
+            if (groupConfig.max_cost === 0) {
+              return m.isFreeModel && isTokenBased;
+            }
+            
+            // Für andere max_cost Werte: Kostenlose Modelle immer erlauben
+            if (m.isFreeModel) return true;
+            
+            // Exclude models with unknown costs
+            if (m.cost === 'unknown') return false;
             return m.cost <= groupConfig.max_cost!;
           });
         }
@@ -610,9 +761,17 @@ const defaultExport = function (pi: ExtensionAPI) {
             if (a.isFreeModel && !b.isFreeModel) return -1;
             if (!a.isFreeModel && b.isFreeModel) return 1;
             
-            // Dann nach Kosten
+            // Dann nach Kosten (handle 'unknown' costs)
             const costA = a.cost;
             const costB = b.cost;
+            if (costA === 'unknown' && costB === 'unknown') {
+              // Bei gleichen unbekannten Kosten: Verwende Multi-Metrik-Score
+              const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
+              const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
+              return scoreB - scoreA;
+            }
+            if (costA === 'unknown') return 1; // unknown costs go to the end
+            if (costB === 'unknown') return -1;
             if (costA !== costB) return costA - costB;
             
             // Bei gleichen Kosten: Verwende Multi-Metrik-Score
@@ -635,8 +794,13 @@ const defaultExport = function (pi: ExtensionAPI) {
             const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
             if (scoreB !== scoreA) return scoreB - scoreA;
             
-            // Dann nach Kosten
-            return a.cost - b.cost;
+            // Dann nach Kosten (handle 'unknown' costs)
+            const costA = a.cost;
+            const costB = b.cost;
+            if (costA === 'unknown' && costB === 'unknown') return 0;
+            if (costA === 'unknown') return 1; // unknown costs go to the end
+            if (costB === 'unknown') return -1;
+            return costA - costB;
           });
         }
         
@@ -657,22 +821,51 @@ const defaultExport = function (pi: ExtensionAPI) {
           // Explicit model-map exclusion (mapped to null) — honour it
           if (origGdpval === null) continue;
 
-          // Apply min_gdpval filter
-          if (groupConfig.min_gdpval !== undefined && origGdpval < groupConfig.min_gdpval) {
+          // Apply min_gdpval filter (only if GDPval is known and defined)
+          if (groupConfig.min_gdpval !== undefined && origGdpval !== undefined && origGdpval !== null && origGdpval < groupConfig.min_gdpval) {
             continue;
           }
 
           // Match against staticFreeModels regardless of openrouter/ prefix
           const isFree = staticFreeModels.includes(origModel) ||
                          staticFreeModels.includes(`openrouter/${origModel}`);
-          // max_cost_per_m filter (skip for free models)
-          if (groupConfig.max_cost_per_m !== undefined && !isFree) {
-            const price = lookupPrice(origModel);
-            if (price && price.input > groupConfig.max_cost_per_m) continue;
+          const origProv = origModel.split('/')[0];
+          const isTokenBased = (cfg.providers?.[origProv]?.billing ?? PROVIDER_MAP[origProv]?.billing) === 'pay_per_token';
+          
+          // max_cost_per_m filter (skip for non-token-based or non-free models)
+          if (groupConfig.max_cost_per_m !== undefined) {
+            // Token-basierte kostenlose Modelle immer erlauben
+            if (isFree && isTokenBased) {
+              // ok
+            } else if (!isTokenBased) {
+              // Subscription-Modelle immer durchlassen
+            } else {
+              // Token-basierte bezahlte Modelle: Preis prüfen
+              const price = lookupPrice(origModel);
+              if (price) {
+                // Skip if price contains unknown values
+                if (price.input === 'unknown' || price.output === 'unknown') continue;
+                if (typeof price.input === 'number' && price.input > groupConfig.max_cost_per_m) continue;
+              }
+            }
           }
-          // max_cost filter (skip for free models)
-          if (groupConfig.max_cost !== undefined && !isFree) {
-            if (effCost(origModel) > groupConfig.max_cost) continue;
+          // max_cost filter (skip for non-token-based or non-free models)
+          if (groupConfig.max_cost !== undefined) {
+            // Für max_cost=0: NUR token-basierte kostenlose Modelle
+            if (groupConfig.max_cost === 0) {
+              if (!(isFree && isTokenBased)) continue;
+            } else {
+              // Für andere max_cost Werte
+              if (isFree && isTokenBased) {
+                // ok
+              } else if (!isTokenBased) {
+                // Subscription-Modelle immer durchlassen
+              } else {
+                const cost = effCost(origModel);
+                // Skip if cost is unknown or exceeds max
+                if (cost === 'unknown' || (typeof cost === 'number' && cost > groupConfig.max_cost)) continue;
+              }
+            }
           }
 
           modelsToInclude.add(origModel);
@@ -811,13 +1004,13 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   // ── Price lookup (OpenRouter as oracle) ─────────────────────────────────
 
-  function lookupPrice(ref: string): { input: number; output: number } | null {
+  function lookupPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
     return metricsModule.lookupPrice(ref);
   }
 
   // ── Effective cost ─────────────────────────────────────────────────────
 
-  function effCost(ref: string): number {
+  function effCost(ref: string): number | 'unknown' {
     return metricsModule.effCost(ref);
   }
 
@@ -865,7 +1058,22 @@ const defaultExport = function (pi: ExtensionAPI) {
           : 'ppt';
     const muxS = mux > 1 ? ` ×${mux}` : '';
     const rl = isLimited(ref) ? ` ⛔${limitSecs(ref)}s` : '';
-    return `${i + 1}. ${ref}  gdp:${m.gdpval}  tps:${Math.round(m.throughput_tps)}  eff:$${effCost(ref).toFixed(3)}/M  [${billing}${muxS}]${rl}${sel ? ' ←' : ''}`;
+    const cost = effCost(ref);
+    const costStr = cost === 'unknown' ? 'unknown' : cost.toFixed(3);
+    
+    // Add budget info for subscription providers
+    const budgetInfo = cache.budget_cache?.[prov];
+    let budgetStr = '';
+    if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
+      const now = Date.now();
+      if (now < budgetInfo.window_reset) {
+        const remaining = budgetInfo.remaining_tokens;
+        const windowType = budgetInfo.window_type ?? 'monthly';
+        budgetStr = ` bud:${Math.round(remaining)}${windowType.substring(0, 1)}`;
+      }
+    }
+    
+    return `${i + 1}. ${ref}  gdp:${m.gdpval}  tps:${Math.round(m.throughput_tps)}  eff:$${costStr}/M  [${billing}${muxS}]${rl}${budgetStr}${sel ? ' ←' : ''}`;
   }
 
   // Get top N models for a group, including rate-limited ones (for display)
@@ -941,6 +1149,21 @@ const defaultExport = function (pi: ExtensionAPI) {
 
     await registerGroupModels(ctx);
     scan().catch(() => {});
+    
+    // Refresh budgets initially and then every 5 minutes
+    refreshBudgets().catch(() => {});
+    const budgetRefreshInterval = setInterval(() => {
+      refreshBudgets().catch(() => {});
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Store interval in session context for cleanup
+    if (!sessionCtx) {
+      sessionCtx = {};
+    }
+    if (!sessionCtx._budgetRefreshIntervals) {
+      sessionCtx._budgetRefreshIntervals = [];
+    }
+    sessionCtx._budgetRefreshIntervals.push(budgetRefreshInterval);
 
     // Footer
     ctx.ui.setFooter((tui, theme, fd) => {
@@ -1814,10 +2037,10 @@ const defaultExport = function (pi: ExtensionAPI) {
 
           // Table header
           lines.push(
-            `│ ${'#'.padEnd(3)} ${'Model'.padEnd(MW)}  ${'GDP'.padStart(4)}  ${'Lat'.padStart(5)}  ${'TPS'.padStart(4)}  ${'Cost I/O'.padStart(11)}  ${'Usage 1d/7d/30d'.padStart(15)}  Status`
+            `│ ${'#'.padEnd(3)} ${'Model'.padEnd(MW)}  ${'GDP'.padStart(4)}  ${'Lat'.padStart(5)}  ${'TPS'.padStart(4)}  ${'Cost I/O'.padStart(11)}  ${'Usage 1d/7d/30d'.padStart(15)}  ${'Budg'.padStart(6)}  Status`
           );
           lines.push(
-            `│ ${'─'.padEnd(3)} ${'─'.repeat(MW)}  ${'────'}  ${'─────'}  ${'────'}  ${'───────────'}  ${'───────────────'}  ──────`
+            `│ ${'─'.padEnd(3)} ${'─'.repeat(MW)}  ${'────'}  ${'─────'}  ${'────'}  ${'───────────'}  ${'───────────────'}  ${'──────'}  ──────`
           );
 
           for (const { ref, limited, rank } of top) {
@@ -1834,9 +2057,23 @@ const defaultExport = function (pi: ExtensionAPI) {
             if (isActive) statusParts.push('●');
             const status = statusParts.join(' ') || (limited ? '' : 'active');
 
-            const costDisplay = price
-              ? `$${price.input.toFixed(1)}/$${price.output.toFixed(1)}`
-              : `$${cost.toFixed(1)}`;
+            const costDisplay = price && price.input !== 'unknown' && price.output !== 'unknown'
+              ? `$${typeof price.input === 'number' ? price.input.toFixed(1) : '?'}/$${typeof price.output === 'number' ? price.output.toFixed(1) : '?'}`
+              : cost !== 'unknown' && typeof cost === 'number'
+                ? `$${cost.toFixed(1)}`
+                : 'unknown';
+
+            // Add budget info for subscription providers
+            const budgetInfo = cache.budget_cache?.[prov];
+            let budgetDisplay = '';
+            if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
+              const now = Date.now();
+              if (now < budgetInfo.window_reset) {
+                const remaining = budgetInfo.remaining_tokens;
+                const windowType = budgetInfo.window_type ?? 'monthly';
+                budgetDisplay = `${Math.round(remaining)}${windowType.substring(0, 1)}`;
+              }
+            }
 
             const u1 = getUsage(ref, 1),
               u7 = getUsage(ref, 7),
@@ -1845,7 +2082,7 @@ const defaultExport = function (pi: ExtensionAPI) {
 
             const sel = rank === 0 ? ' ←' : '';
             lines.push(
-              `│ ${String(rank + 1).padEnd(3)} ${modelShort.padEnd(MW)}  ${String(m.gdpval).padStart(4)}  ${String(Math.round(m.avg_latency_ms)).padStart(5)}  ${String(Math.round(m.throughput_tps)).padStart(4)}  ${costDisplay.padStart(11)}  ${usageDisplay.padStart(15)}  ${status}${sel}`
+              `│ ${String(rank + 1).padEnd(3)} ${modelShort.padEnd(MW)}  ${String(m.gdpval).padStart(4)}  ${String(Math.round(m.avg_latency_ms)).padStart(5)}  ${String(Math.round(m.throughput_tps)).padStart(4)}  ${costDisplay.padStart(11)}  ${usageDisplay.padStart(15)}  ${budgetDisplay.padStart(6)} ${status}${sel}`
             );
           }
         }

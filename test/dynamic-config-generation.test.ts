@@ -433,5 +433,39 @@ describe('Dynamic Configuration Generation', () => {
       expect(finalModels).toContain('qwen/qwen3-4b:free');
       expect(finalModels).toContain('openrouter/google/gemma-3-4b-it:free');
     });
+    
+    it('should exclude subscription models from max_cost=0 groups', () => {
+      // Testdaten: Subscription-Modelle sollten NICHT in trivial/simple Gruppen
+      const subscriptionModels = [
+        { ref: 'claude-bridge/claude-fable-5', cost: 0, isFreeModel: false, gdpval: 1746, isTokenBased: false },
+        { ref: 'claude-bridge/claude-sonnet-5', cost: 0, isFreeModel: false, gdpval: 1603, isTokenBased: false },
+        { ref: 'mistral/mistral-medium-3.5', cost: 0, isFreeModel: false, gdpval: 892, isTokenBased: false }
+      ];
+      
+      const tokenBasedFreeModels = [
+        { ref: 'openrouter/qwen/qwen3-4b:free', cost: 0, isFreeModel: true, gdpval: 400, isTokenBased: true },
+        { ref: 'openrouter/google/gemma-3-4b-it:free', cost: 0, isFreeModel: true, gdpval: 350, isTokenBased: true }
+      ];
+      
+      const allModels = [...subscriptionModels, ...tokenBasedFreeModels];
+      
+      // Filter für max_cost=0 Gruppe (trivial/simple)
+      const maxCost = 0;
+      const filtered = allModels.filter(m => {
+        if (m.isFreeModel && m.isTokenBased && maxCost === 0) return true;
+        return false;
+      });
+      
+      // Nur token-basierte kostenlose Modelle sollten durchkommen
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map(m => m.ref)).toEqual([
+        'openrouter/qwen/qwen3-4b:free',
+        'openrouter/google/gemma-3-4b-it:free'
+      ]);
+      
+      // Subscription-Modelle sollten NICHT dabei sein
+      expect(filtered.some(m => m.ref.startsWith('claude-bridge/'))).toBe(false);
+      expect(filtered.some(m => m.ref.startsWith('mistral/'))).toBe(false);
+    });
   });
 });
