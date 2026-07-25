@@ -833,9 +833,8 @@ const defaultExport = function (pi: ExtensionAPI) {
             continue;
           }
 
-          // Match against staticFreeModels regardless of openrouter/ prefix
-          const isFree = staticFreeModels.includes(origModel) ||
-                         staticFreeModels.includes(`openrouter/${origModel}`);
+          // Match against staticFreeModels regardless of provider prefix
+          const isFree = staticFreeModelsLookup.has(origModel);
           const origProv = origModel.split('/')[0];
           const isTokenBased = (cfg.providers?.[origProv]?.billing ?? PROVIDER_MAP[origProv]?.billing) === 'pay_per_token';
           
