@@ -26,7 +26,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     const result = await classifyPrompt("Ersetze 'foo' mit 'bar' in Zeile 42");
     expect(result.category).toBe("code_simple");
     expect(result.reason).toContain("Einfache Textersetzung");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("operational");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("simple");
   });
 
   it("klassifiziert komplexe Code-Änderungen als 'code_complex'", async () => {

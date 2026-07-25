@@ -81,6 +81,12 @@ export class CostTracker {
       return;
     }
 
+    // Check if price contains 'unknown' values
+    if (price.input === 'unknown' || price.output === 'unknown') {
+      console.warn(`[cost-tracker] Price is unknown for model: ${modelRef}`);
+      return;
+    }
+
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost = (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
     const tier = getModelCostTier(modelRef);

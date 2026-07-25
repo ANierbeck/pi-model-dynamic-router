@@ -20,22 +20,22 @@
   "model_groups": {
     "trivial": {
       "description": "Trivial tasks - free models only",
-      "method": "min_cost",
+      "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "models": [
-        "qwen/qwen3-4b:free",
-        "google/gemma-3-4b-it:free",
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/google/gemma-3-4b-it:free",
         "ollama/gemma4:12b-mlx"
       ]
     },
     "simple": {
       "description": "Simple tasks - free models only",
-      "method": "min_cost",
+      "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "models": [
-        "qwen/qwen3-4b:free",
-        "google/gemma-3-12b-it:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/google/gemma-3-12b-it:free",
+        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
         "ollama/gemma4:12b-mlx"
       ]
     },
@@ -79,10 +79,9 @@
       "description": "GDPval ≥300: broad quality pool, cheapest first",
       "method": "tiered",
       "min_gdpval": 300,
+      "max_cost": 0,
       "models": [
-        "mistral/mistral-medium-3.5",
-        "mistral/codestral-latest",
-        "anthropic/claude-3-haiku"
+        "openrouter/google/gemma-3-12b-it:free"
       ]
     },
     "scout": {

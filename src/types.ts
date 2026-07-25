@@ -22,7 +22,7 @@ export interface Metrics {
   gdpval: number;
   throughput_tps: number;
   avg_latency_ms: number;
-  cost_per_m: number;
+  cost_per_m: number | 'unknown';
   last_updated: number;
 }
 
@@ -109,6 +109,13 @@ export interface Cache {
   exhausted_keys?: Record<string, number>; // "provider:keyIdx" → exhausted_until timestamp
   openrouter_pricing?: Record<string, { input: number; output: number }>; // provider/modelId ref → $/1M
   usage_log?: { ref: string; tokens: number; ts: number }[]; // token usage history
+  // Budget tracking for subscription providers
+  budget_cache?: Record<string, { // provider → budget info
+    remaining_tokens?: number;
+    window_type?: 'hourly' | 'daily' | 'monthly';
+    window_reset?: number; // timestamp when window resets
+    last_checked?: number; // timestamp of last check
+  }>;
 }
 
 // ── Provider Discovery Types ────────────────────────────────────────────
@@ -180,8 +187,8 @@ export interface GroupResolution {
 }
 
 export interface PriceInfo {
-  input: number;
-  output: number;
+  input: number | 'unknown';
+  output: number | 'unknown';
 }
 
 // ── Cost Tracking Types ────────────────────────────────────────────────

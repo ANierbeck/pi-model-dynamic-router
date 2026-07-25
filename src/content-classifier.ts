@@ -374,7 +374,7 @@ function isValidFullClassification(obj: any): obj is FullClassificationResult {
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
   trivial:      'scout',       // any free model
   simple:       'operational', // GDPval ≥ 300
-  code_simple:  'operational', // GDPval ≥ 300
+  code_simple:  'simple',      // GDPval ≥ 300, max_cost=0 (free models only)
   standard:     'operational', // GDPval ≥ 300
   code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
   design:       'tactical',   // GDPval ≥ 600

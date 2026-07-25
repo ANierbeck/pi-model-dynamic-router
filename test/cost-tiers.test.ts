@@ -243,8 +243,8 @@ describe('Cost Tiers System', () => {
       expect(getGroupForCategory('simple')).toBe('operational');
     });
 
-    it('should map code_simple to operational group', () => {
-      expect(getGroupForCategory('code_simple')).toBe('operational');
+    it('should map code_simple to simple group', () => {
+      expect(getGroupForCategory('code_simple')).toBe('simple');
     });
 
     it('should map standard to operational group', () => {

@@ -72,7 +72,7 @@ export function stripProvider(ref: string): string {
   const i = ref.indexOf('/');
   if (i === -1) return ref;
   const prov = ref.slice(0, i);
-  if (PROVIDER_MAP[prov] || (global as any).cfg?.providers?.[prov]) return ref.slice(i + 1);
+  if (PROVIDER_MAP[prov] || cfg.providers?.[prov]) return ref.slice(i + 1);
   return ref;
 }
 
@@ -163,12 +163,40 @@ export function getM(ref: string): Metrics {
   if (metrics[ref]) return metrics[ref];
 
   const cm = cfg.model_metrics[ref] ?? {};
+  
+  // Check if cost_per_m is explicitly set to 'unknown' in config
+  let costPerM: number | 'unknown' = cm.cost_per_m ?? 0;
+  
+  // If cost is 0, check if it's a local provider (truly free) or unknown
+  if (costPerM === 0) {
+    const prov = ref.split('/')[0];
+    const provDef = PROVIDER_MAP[prov];
+    const provCfg = cfg.providers?.[prov];
+    
+    // Local providers are truly free
+    if (provDef?.local) {
+      costPerM = 0;
+    }
+    // Subscription providers with no pricing data are free
+    else if (provCfg?.billing === 'subscription') {
+      costPerM = 0;
+    }
+    // For discovered models, check if cost_per_m is explicitly 0
+    else {
+      const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+      if (discovered?.cost_per_m === 0) {
+        costPerM = 0;
+      } else {
+        costPerM = 'unknown';
+      }
+    }
+  }
 
   return (metrics[ref] = {
     gdpval: lookupGdp(ref) ?? cm.gdpval ?? 50,
     throughput_tps: cm.throughput_tps ?? 100,
     avg_latency_ms: cm.avg_latency_ms ?? 1000,
-    cost_per_m: cm.cost_per_m ?? 0,
+    cost_per_m: costPerM,
     last_updated: Date.now(),
   });
 }
@@ -223,14 +251,37 @@ export function billingTier(ref: string): number {
 
 /**
  * Looks up the price for a reference
+ * Returns null if not found, or { input: 'unknown', output: 'unknown' } if model exists but price is unknown
  */
-export function lookupPrice(ref: string): { input: number; output: number } | null {
+export function lookupPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
   // 1. Check config metrics first
   const cm = cfg.model_metrics[ref];
-  if (cm?.cost_per_m) return { input: cm.cost_per_m, output: cm.cost_per_m };
+  if (cm?.cost_per_m !== undefined) {
+    const cost = cm.cost_per_m;
+    if (cost === 'unknown') {
+      return { input: 'unknown', output: 'unknown' };
+    }
+    return { input: cost, output: cost };
+  }
 
   // 2. Check pricing cache by exact provider/model ref
-  if (cache.openrouter_pricing?.[ref]) return cache.openrouter_pricing[ref];
+  if (cache.openrouter_pricing?.[ref]) {
+    const price = cache.openrouter_pricing[ref];
+    // If price exists but is 0, check if it's explicitly free or unknown
+    if (price.input === 0 && price.output === 0) {
+      // Check if this is a known free model
+      const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+      const prov = ref.split('/')[0];
+      const freeModels = cfg.providers?.[prov]?.free_models ?? [];
+      
+      if (discovered?.cost_per_m === 0 || freeModels.includes(ref)) {
+        return { input: 0, output: 0 };
+      }
+      // Otherwise, it's unknown
+      return { input: 'unknown', output: 'unknown' };
+    }
+    return price;
+  }
 
   // 3. Backfill: find paid OpenRouter pricing for same model
   const { modelId } = splitRef(ref);
@@ -245,24 +296,49 @@ export function lookupPrice(ref: string): { input: number; output: number } | nu
 
 /**
  * Calculates the effective cost for a reference
+ * Returns 'unknown' if cost cannot be determined
  */
-export function effCost(ref: string): number {
+export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
+  
   // 1. Use metrics cost_per_m if set
-  let base = m.cost_per_m;
+  let base: number | 'unknown' | undefined = m.cost_per_m;
+  
   // 2. Look up in OpenRouter/Chutes pricing cache
-  if (!base) {
+  if (base === undefined || base === 0) {
     const price = lookupPrice(ref);
-    if (price) base = price.input; // use input price as representative
+    if (price) {
+      if (price.input === 'unknown' || price.output === 'unknown') {
+        return 'unknown';
+      }
+      base = price.input; // use input price as representative
+    }
   }
-  // 3. Subscription providers with no pricing data are truly free (local)
-  if (!base) {
+  
+  // 3. Check if base is still unknown/undefined
+  if (base === undefined || base === 0) {
+    // Local providers (ollama, lm-studio) are truly free
+    const provDef = PROVIDER_MAP[prov];
+    if (provDef?.local) return 0;
+    
+    // Subscription providers with no pricing data are free
     if (cfg.providers?.[prov]?.billing === 'subscription') return 0;
-    base = 0.01;
+    
+    // For all other cases, return 'unknown' instead of defaulting to 0.01
+    return 'unknown';
   }
+  
+  // At this point, base must be a number
+  if (typeof base !== 'number') {
+    return 'unknown';
+  }
+  
   // Apply subscription discount
-  if (cfg.providers?.[prov]?.billing === 'subscription') base *= SUB_DISCOUNT;
+  if (cfg.providers?.[prov]?.billing === 'subscription') {
+    base *= SUB_DISCOUNT;
+  }
+  
   return base * costMux(prov);
 }
 

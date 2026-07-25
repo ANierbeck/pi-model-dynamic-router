@@ -70,17 +70,28 @@ export function getModelCostTier(
     return 'free';
   }
   
-  // 3. Check whether model is in the budget range (below budget threshold)
-  if (price && price.input <= DEFAULT_COST_TIERS.budget.max_cost_per_m) {
+  // 3. Check if price contains 'unknown' values
+  if (price && (price.input === 'unknown' || price.output === 'unknown')) {
+    // For unknown prices, use effCost to check if it's a local/subscription model
+    const cost = effCost(modelRef);
+    if (cost === 0) {
+      return 'free';
+    }
+    // Unknown cost models default to budget tier
     return 'budget';
   }
   
-  // 4. Check whether model is in the premium range (above budget threshold)
-  if (price && price.input > DEFAULT_COST_TIERS.budget.max_cost_per_m) {
+  // 4. Check whether model is in the budget range (below budget threshold)
+  if (price && typeof price.input === 'number' && price.input <= DEFAULT_COST_TIERS.budget.max_cost_per_m) {
+    return 'budget';
+  }
+  
+  // 5. Check whether model is in the premium range (above budget threshold)
+  if (price && typeof price.input === 'number' && price.input > DEFAULT_COST_TIERS.budget.max_cost_per_m) {
     return 'premium';
   }
   
-  // 5. Otherwise: Budget (conservative default for unknown models or models without a price)
+  // 6. Otherwise: Budget (conservative default for unknown models or models without a price)
   // Unknown models are classified as budget to err on the safe side
   return 'budget';
 }
@@ -104,18 +115,26 @@ export function modelFitsCostTier(
   const isFreeModel: boolean = staticFreeModels.includes(modelRef);
   const isZeroCost: boolean = price !== null && price.input === 0 && price.output === 0;
   
+  // Check if price contains 'unknown' values
+  const hasUnknownPrice = price && (price.input === 'unknown' || price.output === 'unknown');
+  
   // 1. Free models always fit 'free'
   if (tier === 'free') {
+    // Also include local/subscription models with cost=0
+    if (cost === 0) return true;
     return isFreeModel || isZeroCost;
   }
   
   // 2. Budget models: Free models + models below the budget threshold
   if (tier === 'budget') {
     // Free models always fit budget
-    if (isFreeModel || isZeroCost) return true;
+    if (isFreeModel || isZeroCost || cost === 0) return true;
+    
+    // Models with unknown price fit budget (conservative)
+    if (hasUnknownPrice) return true;
     
     // Models below the budget threshold fit (input price per 1M tokens)
-    if (price && price.input <= tierConfig.max_cost_per_m) return true;
+    if (price && typeof price.input === 'number' && price.input <= tierConfig.max_cost_per_m) return true;
     
     return false;
   }
@@ -124,7 +143,10 @@ export function modelFitsCostTier(
   // Premium is the highest tier and accepts all models
   if (tier === 'premium') {
     // Free and budget models always fit premium
-    if (isFreeModel || isZeroCost) return true;
+    if (isFreeModel || isZeroCost || cost === 0) return true;
+    
+    // Models with unknown price fit premium (they might be expensive)
+    if (hasUnknownPrice) return true;
     
     // All other models fit premium (no upper limit)
     // Premium is the "catch-all" tier for expensive models
