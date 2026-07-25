@@ -1,15 +1,12 @@
 {
   "name": "@anierbeck/pi-model-dynamic-router",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "description": "Pi extension that routes model groups to concrete models. Balances intelligence, cost, and availability.",
   "type": "module",
   "engines": {
     "node": ">=20.11.0"
   },
   "main": "dist/index.js",
-  "bin": {
-    "pi-model-router": "./dist/index.js"
-  },
   "pi": {
     "extensions": [
       "./dist/index.js"
@@ -22,7 +19,7 @@
     "test:watch": "vitest",
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "if [ -z "$npm_package_gitHead"]; then echo 'No git tag found, skipping publish'; exit 1; fi"
+    "prepublishOnly": "if [ -z \"$npm_package_gitHead\"]; then echo 'No git tag found, skipping publish'; exit 1; fi"
   },
   "keywords": [
     "pi",
