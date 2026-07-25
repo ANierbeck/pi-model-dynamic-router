@@ -833,7 +833,7 @@ const defaultExport = function (pi: ExtensionAPI) {
             continue;
           }
 
-          // Match against staticFreeModels regardless of provider prefix
+          // Match against staticFreeModelsLookup (holds both prefixed and bare forms)
           const isFree = staticFreeModelsLookup.has(origModel);
           const origProv = origModel.split('/')[0];
           const isTokenBased = (cfg.providers?.[origProv]?.billing ?? PROVIDER_MAP[origProv]?.billing) === 'pay_per_token';
