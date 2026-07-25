@@ -601,12 +601,19 @@ const defaultExport = function (pi: ExtensionAPI) {
       // 2. STATISCHE free_models aus der Konfiguration laden (wichtig für kostenlose Modelle!)
       // Diese Modelle werden NICHT gescannt, sondern direkt aus router-config.json genommen
       const staticFreeModels: string[] = [];
+      const staticFreeModelsLookup = new Set<string>();
       for (const [provId, provConfig] of Object.entries(staticCfg.providers ?? {})) {
         if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
           for (const freeModel of provConfig.free_models) {
             // Normalisiere den Modell-Ref (Provider/Modell-Id)
             const normalizedModel = freeModel.startsWith(`${provId}/`) ? freeModel : `${provId}/${freeModel}`;
             staticFreeModels.push(normalizedModel);
+            staticFreeModelsLookup.add(normalizedModel);
+            // Füge auch die non-prefixed Version hinzu, falls vorhanden
+            if (normalizedModel.includes('/')) {
+              const nonPrefixed = normalizedModel.split('/').slice(1).join('/');
+              staticFreeModelsLookup.add(nonPrefixed);
+            }
           }
         }
       }
@@ -663,7 +670,7 @@ const defaultExport = function (pi: ExtensionAPI) {
         
         // Prüfe ob es ein kostenloses Modell ist (NUR für token-basierte Modelle!)
         // Subscription-Modelle sind NICHT "kostenlos" im Sinne von Cost-Routing
-        const isFreeModel = staticFreeModels.includes(ref) || 
+        const isFreeModel = staticFreeModelsLookup.has(ref) ||
                           (price && price.input === 0 && price.output === 0) ||
                           ref.includes(':free') ||
                           (cost === 0 && isTokenBased);
