@@ -19,7 +19,7 @@
     "test:watch": "vitest",
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "if [ -z \"$npm_package_gitHead\"]; then echo 'No git tag found, skipping publish'; exit 1; fi"
+    "prepublishOnly": "if [ -z \"$(git describe --tags --exact-match 2>/dev/null)\" ]; then echo 'No git tag found at current commit, skipping publish'; exit 1; fi"
   },
   "keywords": [
     "pi",
