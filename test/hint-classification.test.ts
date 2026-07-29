@@ -257,50 +257,46 @@ describe('HINT Classification', () => {
 });
 
 describe('resolveShortModelName()', () => {
-  const modelGroups = {
-    tactical: {
-      models: ['mistral/mistral-medium-3.5', 'chutes/Qwen/Qwen3-32B-TEE'],
-    },
-    strategic: {
-      models: ['anthropic/claude-3-sonnet', 'openrouter/meta-llama/llama-3.1-70b'],
-    },
-  };
+  // resolveShortModelName takes a flat list of discovered refs (router.allDiscoveredRefs()),
+  // not a model-groups object — group membership is resolved upstream by the caller.
+  const allRefs = [
+    'mistral/mistral-medium-3.5',
+    'chutes/Qwen/Qwen3-32B-TEE',
+    'anthropic/claude-3-sonnet',
+    'openrouter/meta-llama/llama-3.1-70b',
+  ];
 
   it('resolves short name to fully-qualified ref via endsWith match', () => {
-    const result = resolveShortModelName('mistral-medium-3.5', modelGroups);
+    const result = resolveShortModelName('mistral-medium-3.5', allRefs);
     expect(result).toBe('mistral/mistral-medium-3.5');
   });
 
   it('returns already-qualified ref unchanged', () => {
-    const result = resolveShortModelName('mistral/mistral-medium-3.5', modelGroups);
+    const result = resolveShortModelName('mistral/mistral-medium-3.5', allRefs);
     expect(result).toBe('mistral/mistral-medium-3.5');
   });
 
   it('returns null when short name is not found in any group', () => {
-    const result = resolveShortModelName('typo-model-name', modelGroups);
+    const result = resolveShortModelName('typo-model-name', allRefs);
     expect(result).toBeNull();
   });
 
   it('stops at first match (break-on-first-match behavior)', () => {
-    const groups = {
-      // Object.values() iterates in insertion order for non-integer string keys (ES2015+),
-      // so groupA is always searched before groupB — this is intentional and spec-compliant.
-      groupA: { models: ['providerA/same-model'] },
-      groupB: { models: ['providerB/same-model'] },
-    };
-    const result = resolveShortModelName('same-model', groups);
+    // Array.prototype.find() returns the first match in iteration order — intentional.
+    const refs = ['providerA/same-model', 'providerB/same-model'];
+    const result = resolveShortModelName('same-model', refs);
     expect(result).toBe('providerA/same-model');
   });
 
   it('resolves exact match (model stored without provider prefix)', () => {
-    const groups = { local: { models: ['ollama/gemma4:12b-mlx', 'llama3.1:latest'] } };
-    const result = resolveShortModelName('llama3.1:latest', groups);
+    const refs = ['ollama/gemma4:12b-mlx', 'llama3.1:latest'];
+    const result = resolveShortModelName('llama3.1:latest', refs);
     // Exact match on unqualified name — returns the stored ref, not null
     expect(result).toBe('llama3.1:latest');
   });
 
-  it('returns null for empty model groups', () => {
-    const result = resolveShortModelName('some-model', {});
+  it('returns null for empty ref list', () => {
+    const result = resolveShortModelName('some-model', []);
     expect(result).toBeNull();
   });
 });

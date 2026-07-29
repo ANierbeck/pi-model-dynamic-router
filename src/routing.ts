@@ -242,11 +242,16 @@ export class Router {
       }
       const costA = effCost(a);
       const costB = effCost(b);
-      // Handle 'unknown' costs - treat them as equal
-      if (costA === 'unknown' && costB === 'unknown') return 0;
-      if (costA === 'unknown') return 1; // unknown costs go to the end
-      if (costB === 'unknown') return -1;
-      return costA - costB;
+      // Handle 'unknown' costs - treat them as equal, fall through to gdpval tiebreaker
+      if (costA !== 'unknown' || costB !== 'unknown') {
+        if (costA === 'unknown') return 1; // unknown costs go to the end
+        if (costB === 'unknown') return -1;
+        if (costA !== costB) return costA - costB;
+      }
+      // Cost ties (e.g. all $0.0 subscription/local models) would otherwise fall
+      // through to Array.sort's stable order, i.e. registry insertion order — not
+      // a ranking. Prefer higher-quality models when cost cannot discriminate.
+      return getM(b).gdpval - getM(a).gdpval;
     });
   }
 

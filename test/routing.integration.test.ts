@@ -106,23 +106,24 @@ describe('Router Integration Tests', () => {
   });
 
   describe('allDiscoveredRefs()', () => {
-    it('should return all pinned models from config', () => {
+    // allDiscoveredRefs() sources from Pi's model registry (none in this unit test —
+    // no sessionCtx set), cache.available_models, and configured free_models. Group
+    // `models` pin lists are no longer a discovery source (dynamic model discovery).
+    it('should return all models from cache.available_models', () => {
       const refs = router.allDiscoveredRefs();
 
-      // Sollte alle gepinnten Modelle enthalten
       expect(refs).toContain('anthropic/claude-3-sonnet');
       expect(refs).toContain('openai/gpt-4');
       expect(refs).toContain('google/gemini-1.5-pro');
-      expect(refs).toContain('local/llama-3.2-1b');
+      expect(refs).toContain('anthropic/claude-3-haiku');
+      expect(refs).toContain('openai/gpt-3.5-turbo');
     });
 
-    it('should include models from cache', () => {
+    it('should not include models that are only pinned in group config, not in cache', () => {
       const refs = router.allDiscoveredRefs();
-
-      // Sollte auch Cache-Modelle enthalten
-      expect(refs).toContain('anthropic/claude-3-sonnet');
-      expect(refs).toContain('openai/gpt-4');
-      expect(refs).toContain('google/gemini-1.5-pro');
+      // 'local/llama-3.2-1b' is only listed in the fallback group's `models`, never
+      // seeded into cache.available_models or a session's model registry.
+      expect(refs).not.toContain('local/llama-3.2-1b');
     });
 
     it('should return unique references', () => {
@@ -132,9 +133,9 @@ describe('Router Integration Tests', () => {
       expect(refs.length).toBe(uniqueRefs.size);
     });
 
-    it('should have at least 10 references', () => {
+    it('should match the number of models seeded into cache.available_models', () => {
       const refs = router.allDiscoveredRefs();
-      expect(refs.length).toBeGreaterThanOrEqual(10);
+      expect(refs.length).toBe(cache.available_models!.length);
     });
   });
 
@@ -196,19 +197,21 @@ describe('Router Integration Tests', () => {
       expect(zeroModels).toEqual([]);
     });
 
-    it('should return only refs from the group explicit models list', () => {
-      const groupModels = testConfig.model_groups['strategic'].models!;
+    it('should return only refs from allDiscoveredRefs() (dynamic discovery, not the group pin list)', () => {
+      // getTopModels() ranks all discovered models by group criteria (min_gdpval, cost,
+      // method) — it no longer restricts candidates to the group's static `models` list.
+      const discovered = router.allDiscoveredRefs();
       const topModels = router.getTopModels('strategic', 10);
       for (const m of topModels) {
-        expect(groupModels).toContain(m.ref);
+        expect(discovered).toContain(m.ref);
       }
     });
 
-    it('should return only refs from tactical group models list', () => {
-      const groupModels = testConfig.model_groups['tactical'].models!;
+    it('should return only refs from allDiscoveredRefs() for tactical group', () => {
+      const discovered = router.allDiscoveredRefs();
       const topModels = router.getTopModels('tactical', 10);
       for (const m of topModels) {
-        expect(groupModels).toContain(m.ref);
+        expect(discovered).toContain(m.ref);
       }
     });
   });
