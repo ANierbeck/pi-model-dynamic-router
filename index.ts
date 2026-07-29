@@ -16,11 +16,7 @@ import type {
   SimpleStreamOptions,
   AssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
-import {
-  streamSimple as piStreamSimple,
-  createAssistantMessageEventStream,
-  getApiProvider,
-} from '@earendil-works/pi-ai';
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
 import { truncateToWidth } from '@earendil-works/pi-tui';
@@ -1162,6 +1158,14 @@ let previousTokenCount = 0;
     sessionCtx = ctx;
     router.setSessionCtx(ctx);
     setProjectLogDir(ctx.cwd);
+    try {
+      const piAiPath = fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'));
+      const providerIds = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
+      routerLog(`[diag] pi-ai resolved from: ${piAiPath}`);
+      routerLog(`[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`);
+    } catch (e) {
+      routerLog('[diag] version diagnostics failed:', e);
+    }
     load();
     loadModelMap();
     loadCache();
@@ -1444,6 +1448,92 @@ let previousTokenCount = 0;
 
   // ── Virtual model groups: register as real pi models ──────────────────
 
+  // ── Streaming helpers (hoisted for early group registration) ─────────
+
+  /**
+   * Resolve the host's own streamSimple for a model.
+   *
+   * pi-ai 0.82.1 removed the module-global API registry — streaming is now owned
+   * by the host's ModelRuntime/Provider objects. This is also what makes
+   * extension-registered providers (e.g. claude-bridge) visible to the router:
+   * calling through the host avoids ever depending on the router's own pi-ai
+   * module instance, which could diverge from the host's.
+   *
+   * Prefers the ModelRuntime (resolves auth, baseUrl and headers exactly like a
+   * native pi turn), falls back to the public Provider object.
+   */
+  function hostStreamSimple(
+    model: Model<any>,
+    context: Context,
+    options: SimpleStreamOptions | undefined
+  ): AssistantMessageEventStream | null {
+    const registry = sessionCtx?.modelRegistry as any;
+    if (!registry) return null;
+
+    const runtime = registry.runtime;
+    if (typeof runtime?.streamSimple === 'function') {
+      return runtime.streamSimple(model, context, options);
+    }
+
+    const provider = registry.getProvider?.(model.provider);
+    if (typeof provider?.streamSimple === 'function') {
+      return provider.streamSimple(model, context, options);
+    }
+
+    return null;
+  }
+
+  /**
+   * Whether a ref can actually be streamed right now: the model exists, the host
+   * has a stream handler for it, and credentials are satisfied.
+   *
+   * Mirrors the gates in tryStream() exactly, so a ref that passes here will not
+   * be rejected later for a reason we could have seen up front. Used to pick
+   * between providers that offer the same model name (e.g. "claude-sonnet-5" via
+   * both `anthropic` and `claude-bridge`) — a provider without a usable key must
+   * never win over one that can serve the request.
+   */
+  async function isRefUsable(ref: string): Promise<boolean> {
+    if (!sessionCtx) return false;
+    const { provider, modelId } = splitRef(ref);
+    if (cfg.model_groups[provider]) return false;
+    const model = sessionCtx.modelRegistry.find(provider, modelId);
+    if (!model) return false;
+    const registry = sessionCtx.modelRegistry as any;
+    const hasHandler =
+      typeof registry.runtime?.streamSimple === 'function' ||
+      typeof registry.getProvider?.(provider)?.streamSimple === 'function';
+    if (!hasHandler) return false;
+    // Providers the router does not manage (e.g. claude-bridge) carry their own
+    // auth — the extension registered the model, so it can serve it.
+    if (!(PROVIDER_MAP as any)[provider]) return true;
+    if ((PROVIDER_MAP as any)[provider]?.local) return true;
+    const apiKey = await sessionCtx.modelRegistry
+      .getApiKeyForProvider(provider)
+      .catch(() => null);
+    return Boolean(apiKey);
+  }
+
+  /**
+   * Order refs that all satisfy the same HINT: usable providers first, each tier
+   * sorted by gdpval. Keeps unusable refs as last-resort candidates rather than
+   * dropping them, so a wrong usability verdict cannot make the HINT unroutable.
+   */
+  async function rankHintCandidates(refs: string[]): Promise<string[]> {
+    const usable: string[] = [];
+    const unusable: string[] = [];
+    for (const ref of refs) {
+      ((await isRefUsable(ref)) ? usable : unusable).push(ref);
+    }
+    const byGdpval = (a: string, b: string) => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
+    usable.sort(byGdpval);
+    unusable.sort(byGdpval);
+    if (unusable.length) {
+      routerLog(`[dynamic] HINT: skipping unusable refs (no handler/credentials): ${unusable.join(', ')}`);
+    }
+    return [...usable, ...unusable];
+  }
+
   /**
    * Try streaming from a specific model ref. Returns the stream and a
    * promise that resolves to { ok, hadContent, error? } when the stream
@@ -1465,15 +1555,6 @@ let previousTokenCount = 0;
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
     routerLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
-    // If the model's declared api has no registered stream handler in Pi (e.g. an
-    // extension registers the model but never calls registerApiProvider for its api
-    // string), streaming will always fail. Fail fast here instead of waiting for a
-    // timeout on every candidate.
-    const hasHandler = Boolean(getApiProvider(realModel.api as any));
-    routerLog(`[diag] getApiProvider("${(realModel as any).api}") registered: ${hasHandler}`);
-    if (!hasHandler) {
-      throw new Error(`No API provider registered for api: ${realModel.api} (model "${ref}" is registered but its extension never registered a stream handler)`);
-    }
     const apiKey = await sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
@@ -1489,7 +1570,14 @@ let previousTokenCount = 0;
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = options ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
-    return { stream: piStreamSimple(realModel, context, streamOpts), ref };
+    const stream = hostStreamSimple(realModel, context, streamOpts);
+    if (!stream) {
+      throw new Error(
+        `No stream handler available for "${ref}" (provider=${realModel.provider}, api=${realModel.api})`
+      );
+    }
+    routerLog(`[diag] tryStream streaming "${ref}" via host runtime`);
+    return { stream, ref };
   }
 
   /**
@@ -1781,86 +1869,90 @@ let previousTokenCount = 0;
             // Direct model override — resolve short name (e.g. "mistral-medium-3.5") to
             // fully-qualified "provider/model" ref by searching all discovered models.
             const shortName = classification.hintTarget;
-            let resolved: string | null = null;
             let resolvedTarget: string;
-            
-            // Case 1: HINT already has provider prefix (e.g. "claude-bridge/claude-sonnet-5")
-            if (shortName.includes('/')) {
-              resolvedTarget = shortName;
-            } else {
-              // Case 2: Unqualified hint (e.g. "claude-sonnet-5") — need to resolve to full ref
-              
-              // First, try allDiscoveredRefs (Pi's registry + free models)
-              resolved = resolveShortModelName(shortName, router.allDiscoveredRefs());
-              
-              // If not found, try direct lookup in Pi's model registry for each known provider.
-              // This catches models that exist in the registry but getAvailable() filters out
-              // (e.g. models registered by other extensions). Provider list is derived from
-              // what's actually configured/known — never hardcoded, since the provider set
-              // differs per user/setup.
-              if (resolved === null && sessionCtx?.modelRegistry) {
-                const knownProviders = new Set<string>([
-                  ...Object.keys(PROVIDER_MAP),
-                  ...Object.keys(cfg.providers ?? {}),
-                  ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
-                ]);
-                for (const provider of knownProviders) {
-                  const model = sessionCtx.modelRegistry.find(provider, shortName);
-                  if (model) {
-                    resolved = `${provider}/${model.id}`;
-                    routerLog(`[dynamic] HINT: found "${shortName}" as ${resolved} via direct registry lookup`);
-                    break;
-                  }
-                }
-              }
-              
-              // If still not found, search across all groups' top models
-              if (resolved === null) {
-                const allGroupModels: string[] = [];
-                for (const [groupName] of Object.entries(cfg.model_groups)) {
-                  try {
-                    const top = router.getTopModels(groupName, 100);
-                    for (const item of top) {
-                      allGroupModels.push(item.ref);
-                    }
-                  } catch (e) {
-                    // Ignore errors for individual groups
-                  }
-                }
-                resolved = resolveShortModelName(shortName, allGroupModels);
-                if (resolved) {
-                  routerLog(`[dynamic] HINT: resolved "${shortName}" to "${resolved}" via group scan`);
-                }
-              }
-              
-              if (resolved === null) {
-                routerLog(`[dynamic] HINT model "${shortName}" not found in any source; will use as-is and rely on fallback`);
-                resolvedTarget = shortName;
-              } else {
-                resolvedTarget = resolved;
+            // Every ref that satisfies the hint, best first. The same model is often
+            // offered by several providers; they are siblings, not alternatives, so
+            // they are tried before we ever fall back to a *different* model.
+            let hintSiblings: string[] = [];
+
+            // The bare model name the hint refers to, with any provider prefix stripped
+            // ("claude-bridge/claude-sonnet-5" -> "claude-sonnet-5").
+            const bareName = shortName.includes('/')
+              ? shortName.slice(shortName.lastIndexOf('/') + 1)
+              : shortName;
+
+            // Collect *every* provider offering this model — never stop at the first
+            // match. Picking the first hit made an unusable provider (e.g. `anthropic`
+            // without a key) shadow a working one (e.g. `claude-bridge`).
+            const matches: string[] = [];
+            const addMatch = (ref: string) => {
+              if (ref && !matches.includes(ref)) matches.push(ref);
+            };
+            const namesMatch = (ref: string) =>
+              ref === shortName || ref.endsWith('/' + bareName) || ref.split('/').pop() === bareName;
+
+            for (const ref of router.allDiscoveredRefs()) {
+              if (namesMatch(ref)) addMatch(ref);
+            }
+
+            // Direct registry lookup catches models that getAvailable() filters out
+            // (e.g. registered by other extensions). Provider list is derived from what's
+            // actually configured/known — never hardcoded, since it differs per setup.
+            if (sessionCtx?.modelRegistry) {
+              const knownProviders = new Set<string>([
+                ...Object.keys(PROVIDER_MAP),
+                ...Object.keys(cfg.providers ?? {}),
+                ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
+              ]);
+              for (const provider of knownProviders) {
+                const model = sessionCtx.modelRegistry.find(provider, bareName);
+                if (model) addMatch(`${provider}/${model.id}`);
               }
             }
-            
-            // claude-bridge models need to be remapped to anthropic since Pi doesn't have
-            candidates = [resolvedTarget];
-            
+
+            // Last resort: scan every group's top models.
+            if (!matches.length) {
+              const allGroupModels: string[] = [];
+              for (const [groupName] of Object.entries(cfg.model_groups)) {
+                try {
+                  for (const item of router.getTopModels(groupName, 100)) allGroupModels.push(item.ref);
+                } catch (e) {
+                  // Ignore errors for individual groups
+                }
+              }
+              const viaGroups = resolveShortModelName(bareName, allGroupModels);
+              if (viaGroups) {
+                addMatch(viaGroups);
+                routerLog(`[dynamic] HINT: resolved "${shortName}" to "${viaGroups}" via group scan`);
+              }
+            }
+
+            if (matches.length) {
+              // A fully-qualified hint names an exact provider: honour it first if it
+              // works, but keep the siblings so a dead provider cannot kill the hint.
+              const ranked = await rankHintCandidates(matches);
+              if (shortName.includes('/') && matches.includes(shortName) && (await isRefUsable(shortName))) {
+                hintSiblings = [shortName, ...ranked.filter(r => r !== shortName)];
+              } else {
+                hintSiblings = ranked;
+              }
+              resolvedTarget = hintSiblings[0];
+              routerLog(
+                `[dynamic] HINT "${shortName}" -> ${resolvedTarget}` +
+                  (hintSiblings.length > 1 ? ` (siblings: ${hintSiblings.slice(1).join(', ')})` : '')
+              );
+            } else {
+              routerLog(`[dynamic] HINT model "${shortName}" not found in any source; will use as-is and rely on fallback`);
+              resolvedTarget = shortName;
+              hintSiblings = [shortName];
+            }
+
+            // Same model on another provider ranks ahead of any unrelated model.
+            candidates = [...hintSiblings];
+
             // The user explicitly requested this model via HINT — a stale cooldown from
             // an earlier, unrelated failure must not silently block this deliberate override.
-            // Clear cooldown for the primary target.
-            clearLimit(resolvedTarget);
-            
-            // When the hint is a qualified ref like "mistral/mistral-medium-3.5" (contains '/'),
-            // resolveShortModelName returns it unchanged. But Pi may register the same model
-            // under a different provider prefix (e.g. "openrouter/mistral/mistral-medium-3.5").
-            // Add a short-name fallback so driveStream can try that variant if the primary fails.
-            if (shortName.includes('/')) {
-              const tail = shortName.slice(shortName.lastIndexOf('/') + 1);
-              const tailResolved = resolveShortModelName(tail, router.allDiscoveredRefs());
-              if (tailResolved && tailResolved !== resolvedTarget) {
-                candidates.push(tailResolved);
-                clearLimit(tailResolved);
-              }
-            }
+            candidates.forEach(ref => clearLimit(ref));
             
             // Append fallback models from what's actually registered in Pi (no invented
             // provider prefixes — only real refs from the session's model registry).
@@ -1875,7 +1967,15 @@ let previousTokenCount = 0;
                 return gdpvalB - gdpvalA;
               });
 
-              const fallbackCandidates = sortedByGdpval.filter(m => !candidates.includes(m)).slice(0, 5);
+              // Only offer fallbacks that can actually serve the request, so a provider
+              // without credentials cannot consume a fallback slot ahead of a working one.
+              const usableFallbacks: string[] = [];
+              for (const ref of sortedByGdpval) {
+                if (candidates.includes(ref)) continue;
+                if (await isRefUsable(ref)) usableFallbacks.push(ref);
+                if (usableFallbacks.length === 5) break;
+              }
+              const fallbackCandidates = usableFallbacks;
               
               if (fallbackCandidates.length) {
                 routerLog(`[dynamic] HINT fallback candidates for "${resolvedTarget}": ${fallbackCandidates.join(', ')}`);
