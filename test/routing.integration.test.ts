@@ -274,4 +274,29 @@ describe('Router Integration Tests', () => {
       expect(sorted).toEqual([]);
     });
   });
+
+  describe('sortByBillingPreference()', () => {
+    // anthropic/claude-3-sonnet and anthropic/claude-3-haiku share billing tier
+    // (subscription) and have no explicit cost_per_m, so effCost() falls back to
+    // the same constant for both — a genuine cost tie. Before the gdpval
+    // tiebreaker, Array.sort's stable order (i.e. input order) decided ties,
+    // making `tiered` groups in /router effectively unsorted whenever every
+    // candidate shared a billing tier and cost (e.g. all $0.0 models).
+    it('breaks a same-tier cost tie by higher gdpval, not input order', () => {
+      const sorted = router.sortByBillingPreference(['anthropic/claude-3-haiku', 'anthropic/claude-3-sonnet']);
+      expect(sorted).toEqual(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
+    });
+
+    it('is insensitive to input order once tied on tier and cost', () => {
+      const sorted = router.sortByBillingPreference(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
+      expect(sorted).toEqual(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
+    });
+
+    it('still prefers billing tier over gdpval when tiers differ', () => {
+      // mistral/mistral-large is pay_per_token (tier 3); anthropic/claude-3-haiku
+      // is subscription (tier 1) despite the lower gdpval (0.85 vs 0.88).
+      const sorted = router.sortByBillingPreference(['mistral/mistral-large', 'anthropic/claude-3-haiku']);
+      expect(sorted).toEqual(['anthropic/claude-3-haiku', 'mistral/mistral-large']);
+    });
+  });
 });

@@ -29,6 +29,7 @@ import YAML from 'yaml';
 import type { Config, Cache, Metrics, Defaults } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
 import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts';
+import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
@@ -1480,58 +1481,12 @@ let previousTokenCount = 0;
       return provider.streamSimple(model, context, options);
     }
 
+    // Neither access path resolved — this is the exact interop mismatch this
+    // function exists to guard against (host renamed/removed `.runtime` or
+    // `.getProvider`). Log distinctly from tryStream's generic "not found"
+    // error so it isn't mistaken for an ordinary missing-credentials case.
+    routerLog(`[diag] hostStreamSimple: no runtime.streamSimple or getProvider(${model.provider}).streamSimple on modelRegistry — host interface may have changed`);
     return null;
-  }
-
-  /**
-   * Whether a ref can actually be streamed right now: the model exists, the host
-   * has a stream handler for it, and credentials are satisfied.
-   *
-   * Mirrors the gates in tryStream() exactly, so a ref that passes here will not
-   * be rejected later for a reason we could have seen up front. Used to pick
-   * between providers that offer the same model name (e.g. "claude-sonnet-5" via
-   * both `anthropic` and `claude-bridge`) — a provider without a usable key must
-   * never win over one that can serve the request.
-   */
-  async function isRefUsable(ref: string): Promise<boolean> {
-    if (!sessionCtx) return false;
-    const { provider, modelId } = splitRef(ref);
-    if (cfg.model_groups[provider]) return false;
-    const model = sessionCtx.modelRegistry.find(provider, modelId);
-    if (!model) return false;
-    const registry = sessionCtx.modelRegistry as any;
-    const hasHandler =
-      typeof registry.runtime?.streamSimple === 'function' ||
-      typeof registry.getProvider?.(provider)?.streamSimple === 'function';
-    if (!hasHandler) return false;
-    // Providers the router does not manage (e.g. claude-bridge) carry their own
-    // auth — the extension registered the model, so it can serve it.
-    if (!(PROVIDER_MAP as any)[provider]) return true;
-    if ((PROVIDER_MAP as any)[provider]?.local) return true;
-    const apiKey = await sessionCtx.modelRegistry
-      .getApiKeyForProvider(provider)
-      .catch(() => null);
-    return Boolean(apiKey);
-  }
-
-  /**
-   * Order refs that all satisfy the same HINT: usable providers first, each tier
-   * sorted by gdpval. Keeps unusable refs as last-resort candidates rather than
-   * dropping them, so a wrong usability verdict cannot make the HINT unroutable.
-   */
-  async function rankHintCandidates(refs: string[]): Promise<string[]> {
-    const usable: string[] = [];
-    const unusable: string[] = [];
-    for (const ref of refs) {
-      ((await isRefUsable(ref)) ? usable : unusable).push(ref);
-    }
-    const byGdpval = (a: string, b: string) => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
-    usable.sort(byGdpval);
-    unusable.sort(byGdpval);
-    if (unusable.length) {
-      routerLog(`[dynamic] HINT: skipping unusable refs (no handler/credentials): ${unusable.join(', ')}`);
-    }
-    return [...usable, ...unusable];
   }
 
   /**
@@ -1930,8 +1885,14 @@ let previousTokenCount = 0;
             if (matches.length) {
               // A fully-qualified hint names an exact provider: honour it first if it
               // works, but keep the siblings so a dead provider cannot kill the hint.
-              const ranked = await rankHintCandidates(matches);
-              if (shortName.includes('/') && matches.includes(shortName) && (await isRefUsable(shortName))) {
+              const ranked = await rankHintCandidates(
+                matches,
+                cfg.model_groups,
+                sessionCtx?.modelRegistry,
+                lookupGdp,
+                (unusable) => routerLog(`[dynamic] HINT: skipping unusable refs (no handler/credentials): ${unusable.join(', ')}`)
+              );
+              if (shortName.includes('/') && matches.includes(shortName) && (await isRefUsable(shortName, cfg.model_groups, sessionCtx?.modelRegistry))) {
                 hintSiblings = [shortName, ...ranked.filter(r => r !== shortName)];
               } else {
                 hintSiblings = ranked;
@@ -1969,13 +1930,13 @@ let previousTokenCount = 0;
 
               // Only offer fallbacks that can actually serve the request, so a provider
               // without credentials cannot consume a fallback slot ahead of a working one.
-              const usableFallbacks: string[] = [];
-              for (const ref of sortedByGdpval) {
-                if (candidates.includes(ref)) continue;
-                if (await isRefUsable(ref)) usableFallbacks.push(ref);
-                if (usableFallbacks.length === 5) break;
-              }
-              const fallbackCandidates = usableFallbacks;
+              // Usability checks run concurrently rather than one-by-one — each may hit
+              // the host's async getApiKeyForProvider, and candidates are independent.
+              const fallbackPool = sortedByGdpval.filter(ref => !candidates.includes(ref));
+              const fallbackUsability = await Promise.all(
+                fallbackPool.map(ref => isRefUsable(ref, cfg.model_groups, sessionCtx.modelRegistry))
+              );
+              const fallbackCandidates = fallbackPool.filter((_, i) => fallbackUsability[i]).slice(0, 5);
               
               if (fallbackCandidates.length) {
                 routerLog(`[dynamic] HINT fallback candidates for "${resolvedTarget}": ${fallbackCandidates.join(', ')}`);
