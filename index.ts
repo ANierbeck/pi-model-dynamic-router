@@ -19,6 +19,7 @@ import type {
 import {
   streamSimple as piStreamSimple,
   createAssistantMessageEventStream,
+  getApiProvider,
 } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from '@sinclair/typebox';
@@ -35,9 +36,10 @@ import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
+import { lookupGdp } from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
+import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { costTracker } from './src/cost-tracker.ts';
 import { BudgetTracker, initBudgetTracker } from './src/budget-tracker.ts';
@@ -57,25 +59,39 @@ const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
-const LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
-let logDirEnsured = false;
-function ensureLogDir(): void {
-  if (logDirEnsured) return;
-  fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
-  logDirEnsured = true;
+const HOME_LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
+// Project-local log path, mirrored under the current project's .pi/logs/ directory
+// (same convention the claude-bridge extension uses) so logs live alongside the
+// project instead of only in the global home directory.
+let projectLogPath: string | null = null;
+function setProjectLogDir(cwd: string | undefined): void {
+  projectLogPath = cwd ? path.join(cwd, '.pi', 'logs', 'router.log') : null;
+}
+const ensuredDirs = new Set<string>();
+function ensureLogDirFor(logPath: string): void {
+  const dir = path.dirname(logPath);
+  if (ensuredDirs.has(dir)) return;
+  fs.mkdirSync(dir, { recursive: true });
+  ensuredDirs.add(dir);
+}
+function writeLogLine(line: string): void {
+  try {
+    ensureLogDirFor(HOME_LOG_PATH);
+    fs.appendFileSync(HOME_LOG_PATH, line + '\n');
+  } catch {}
+  if (projectLogPath) {
+    try {
+      ensureLogDirFor(projectLogPath);
+      fs.appendFileSync(projectLogPath, line + '\n');
+    } catch {}
+  }
 }
 function routerLog(msg: string, extra?: unknown): void {
-  try {
-    ensureLogDir();
-    const suffix = extra ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}` : '';
-    fs.appendFileSync(LOG_PATH, `${new Date().toISOString()}  ${msg}${suffix}\n`);
-  } catch {}
+  const suffix = extra ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}` : '';
+  writeLogLine(`${new Date().toISOString()}  ${msg}${suffix}`);
 }
 function appendRawLog(line: string): void {
-  try {
-    ensureLogDir();
-    fs.appendFileSync(LOG_PATH, line + '\n');
-  } catch {}
+  writeLogLine(line);
 }
 
 const defaultExport = function (pi: ExtensionAPI) {
@@ -99,6 +115,10 @@ const defaultExport = function (pi: ExtensionAPI) {
   let activeGroup: string | null = null;
   let lastDynamicModel = '';
   let sessionCtx: any = null;
+
+// Compaction detection state
+let previousMessageCount = 0;
+let previousTokenCount = 0;
 
   // ── Session Escalation ─────────────────────────────────────────────────
   const escalation = new SessionEscalation();
@@ -276,11 +296,18 @@ const defaultExport = function (pi: ExtensionAPI) {
     // Initialize managers
     rateLimitManager = new RateLimitManager(BACKOFF, SOFT_BACKOFF, COST_MUX_AT_HIT, cache);
     discoveryManager = new DiscoveryManager(cfg, cache);
-    metricsModule.setConfig(cfg);
+    // Always use staticCfg for metrics to ensure provider costs are available
+    metricsModule.setConfig(staticCfg);
     cacheManager = new CacheManager(extDir);
     router = new Router(cfg, cache, rateLimitManager.getLimits());
     metricsModule.setCache(cache);
     budgetTracker = initBudgetTracker(cfg, cache);
+    // Keep escalation's loop-detection model in sync with the configured dynamic
+    // group's classifier_fallback — don't hardcode a specific local model.
+    const dynGroup = cfg.model_groups?.['dynamic'];
+    if (dynGroup?.classifier_fallback) {
+      escalation.setClassifierModel(dynGroup.classifier_fallback);
+    }
   }
 
   function loadCache() {
@@ -581,14 +608,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
 
-      // Prüfe, ob der Cache noch gültig ist (max. 30 Tage alt) — aber nicht überspringen,
-      // wenn die Registry Refs enthält, die noch in keiner Gruppe gelistet sind (neuer
-      // Provider/neues Modell seit dem letzten Scan aufgetaucht).
-      const knownGroupRefs = new Set<string>();
-      for (const g of Object.values(cfg.model_groups ?? {})) {
-        for (const r of g.models ?? []) knownGroupRefs.add(r);
-      }
-      const hasNewRegistryRefs = registryRefs.some((r) => !knownGroupRefs.has(r));
+      // With dynamic model discovery, we always consider all registry models as valid.
+      // No need to check against static group model lists anymore.
+      // Always regenerate if cache is invalid or force is true.
+      const hasNewRegistryRefs = false;
 
       if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid()) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
@@ -618,21 +641,10 @@ const defaultExport = function (pi: ExtensionAPI) {
         }
       }
       
-      // 2b. ALLE Modelle aus den statischen Gruppen-Konfigurationen laden
-      // Diese Modelle sind explizit konfiguriert und müssen immer verfügbar sein
-      const staticGroupModels: string[] = [];
-      for (const groupConfig of Object.values(staticCfg.model_groups ?? {})) {
-        if (groupConfig.models && Array.isArray(groupConfig.models)) {
-          for (const model of groupConfig.models) {
-            staticGroupModels.push(model);
-          }
-        }
-      }
-      
-      // 3. Alle Modelle kombinieren: statische free_models + statische Gruppen-Modelle + gescannte Modelle + registry-Refs
+      // 2b. Alle Modelle kombinieren: statische free_models + gescannte Modelle + registry-Refs
+      // (Gruppen-Modelle werden dynamisch aus allDiscoveredRefs() geholt, nicht mehr statisch)
       const allModelRefs = [...new Set([
         ...staticFreeModels,
-        ...staticGroupModels,
         ...scannedModels.map(m => `${m.provider}/${m.id}`),
         ...registryRefs,
       ])];
@@ -656,8 +668,8 @@ const defaultExport = function (pi: ExtensionAPI) {
       }
       
       // 4. Modelle mit GDPval und Kosten anreichern
-      // Separate static models (always keep) from scanned/registry models (need GDPval)
-      const staticModelRefs = new Set([...staticFreeModels, ...staticGroupModels]);
+      // All models are now dynamic, no separate static models
+      const staticModelRefs = new Set([...staticFreeModels]);
       
       const modelsWithMetadata = allModelRefs.map(ref => {
         const gdpval = lookupGdp(ref) ?? 0;
@@ -913,8 +925,9 @@ const defaultExport = function (pi: ExtensionAPI) {
         if (g.min_gdpval !== undefined) return g.min_gdpval;
         return 750;
       };
+      // With dynamic model discovery, all non-dynamic groups are eligible
       const eligibleGroups = Object.entries(dynamicGroups)
-        .filter(([, g]) => g.method !== 'dynamic' && (g.models?.length ?? 0) > 0)
+        .filter(([, g]) => g.method !== 'dynamic')
         .sort(([, a], [, b]) => qualityOf(a) - qualityOf(b));
 
       for (const [myIdx, [name]] of eligibleGroups.entries()) {
@@ -991,6 +1004,10 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   function recordOk(ref: string) {
     rateLimitManager.recordOk(ref);
+  }
+
+  function clearLimit(ref: string): void {
+    rateLimitManager.clearLimit(ref);
   }
 
   /** Record a soft failure (empty response, timeout) — lighter backoff than 429 */
@@ -1144,6 +1161,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   pi.on('session_start', async (_ev, ctx) => {
     sessionCtx = ctx;
     router.setSessionCtx(ctx);
+    setProjectLogDir(ctx.cwd);
     load();
     loadModelMap();
     loadCache();
@@ -1336,6 +1354,8 @@ const defaultExport = function (pi: ExtensionAPI) {
         const model = ctx.modelRegistry.find(provider, modelId);
         if (model && (await pi.setModel(model))) {
           activeGroup = name;
+          router.setActiveGroup(name);  // Set active group in router for display
+          router.setCurModel(ref);      // Set current model in router for status line
           const m = getM(ref);
           return {
             content: [
@@ -1424,8 +1444,6 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   // ── Virtual model groups: register as real pi models ──────────────────
 
-  // ── Streaming helpers (hoisted for early group registration) ─────────
-
   /**
    * Try streaming from a specific model ref. Returns the stream and a
    * promise that resolves to { ok, hadContent, error? } when the stream
@@ -1443,11 +1461,31 @@ const defaultExport = function (pi: ExtensionAPI) {
     const realModel = sessionCtx.modelRegistry.find(provider, modelId);
     if (!realModel) return null;
     if (cfg.model_groups[realModel.provider]) return null;
+    // Diagnostic: log exactly what the router resolved for this ref, so a failure
+    // (or success) can be correlated with the model's actual provider/api/baseUrl
+    // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
+    routerLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
+    // If the model's declared api has no registered stream handler in Pi (e.g. an
+    // extension registers the model but never calls registerApiProvider for its api
+    // string), streaming will always fail. Fail fast here instead of waiting for a
+    // timeout on every candidate.
+    const hasHandler = Boolean(getApiProvider(realModel.api as any));
+    routerLog(`[diag] getApiProvider("${(realModel as any).api}") registered: ${hasHandler}`);
+    if (!hasHandler) {
+      throw new Error(`No API provider registered for api: ${realModel.api} (model "${ref}" is registered but its extension never registered a stream handler)`);
+    }
     const apiKey = await sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
     const isLocal = (PROVIDER_MAP as any)[realModel.provider]?.local ?? false;
-    if (!apiKey && !isLocal) return null;
+    // Providers the router itself does not manage (not in PROVIDER_MAP — e.g. models
+    // registered by other extensions like claude-bridge) are not subject to the
+    // router-managed API-key requirement. The model was already found in Pi's own
+    // model registry, which means Pi/the extension can stream it on its own (same
+    // mechanism the /model command uses). Only enforce apiKey/local for providers
+    // the router actually registers itself.
+    const routerManaged = Boolean((PROVIDER_MAP as any)[realModel.provider]);
+    if (routerManaged && !apiKey && !isLocal) return null;
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = options ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
@@ -1480,6 +1518,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     });
 
     // Race: iterate the stream vs timeout
+    let rateLimited = false;
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -1499,14 +1538,27 @@ const defaultExport = function (pi: ExtensionAPI) {
               }
             }
           }
-          proxy.push(event);
           if (event.type === 'error') {
             if (timer) {
               clearTimeout(timer);
               timer = null;
             }
+            // Check if this is a rate limit or subscription error from claude-bridge
+            const errorMsg = String((event as any).error?.message || (event as any).error || '');
+            const isRateLimitError = errorMsg.toLowerCase().includes('rate limit') ||
+                                     errorMsg.toLowerCase().includes('usage credits') ||
+                                     errorMsg.toLowerCase().includes('out of') ||
+                                     errorMsg.toLowerCase().includes('limit hit') ||
+                                     errorMsg.toLowerCase().includes('claude code returned an error');
+            
+            if (isRateLimitError) {
+              rateLimited = true;
+            }
+            // Don't forward error events — treat as soft failure so driveStream
+            // can try the next candidate without showing an error to the user.
             return 'done';
           }
+          proxy.push(event);
         }
       } catch (err) {
         if (timer) {
@@ -1530,7 +1582,12 @@ const defaultExport = function (pi: ExtensionAPI) {
       return { ok: false, reason: 'empty_timeout' };
     }
 
-    // Stream completed — check if we actually got content
+    // Stream completed — check if we actually got content or hit a rate limit
+    if (rateLimited) {
+      // Rate limit or subscription error — soft failure, try next model
+      return { ok: false, reason: 'rate_limit_exceeded' };
+    }
+
     if (!hadContent) {
       return { ok: false, reason: 'empty_response' };
     }
@@ -1559,6 +1616,41 @@ const defaultExport = function (pi: ExtensionAPI) {
       /* context shape unknown */
     }
     return '';
+  }
+
+  function estimateContextTokens(context: Context): number {
+    let total = 0;
+    for (const msg of context.messages) {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      total += Math.ceil(content.length / 4); // Rough estimate: 4 chars ≈ 1 token
+    }
+    return total;
+  }
+
+  function isCompactionTurn(context: Context): boolean {
+    const currentMessageCount = context.messages.length;
+    const currentTokenCount = estimateContextTokens(context);
+
+    // Reset if no previous state (first turn)
+    if (previousMessageCount === 0) {
+      previousMessageCount = currentMessageCount;
+      previousTokenCount = currentTokenCount;
+      return false;
+    }
+
+    // Check for significant drop in either messages or tokens (>30% reduction)
+    const messageDrop = currentMessageCount < previousMessageCount * 0.7;
+    const tokenDrop = currentTokenCount < previousTokenCount * 0.7;
+
+    // Also check absolute thresholds for small contexts
+    const absoluteMessageDrop = previousMessageCount - currentMessageCount > 5;
+    const absoluteTokenDrop = previousTokenCount - currentTokenCount > 500;
+
+    // Update state
+    previousMessageCount = currentMessageCount;
+    previousTokenCount = currentTokenCount;
+
+    return messageDrop || tokenDrop || absoluteMessageDrop || absoluteTokenDrop;
   }
 
   function extractLastAssistantSnippet(context: Context): string | undefined {
@@ -1615,9 +1707,14 @@ const defaultExport = function (pi: ExtensionAPI) {
       let dynamicLabel: string | undefined;
       try {
         // If the last message is a tool result, we're mid-conversation — reuse the same
-        // model to avoid "unmatched tool result" errors from pi's bridge
+        // model to avoid "unmatched tool result" errors from pi's bridge. But a fresh
+        // HINT from the user must always take priority over this shortcut, otherwise
+        // any conversation that has used a tool gets stuck reusing one model forever
+        // and HINTs are silently ignored.
+        const prompt = extractLastUserPrompt(context);
         const lastMsg = context.messages[context.messages.length - 1];
-        const isToolFollowUp = lastMsg?.role === 'toolResult' && !!lastDynamicModel;
+        const isToolFollowUp =
+          lastMsg?.role === 'toolResult' && !!lastDynamicModel && !detectHintDirectly(prompt);
         if (isToolFollowUp) {
           const res =
             resolve('fallback') ??
@@ -1631,7 +1728,6 @@ const defaultExport = function (pi: ExtensionAPI) {
           return;
         }
 
-        const prompt = extractLastUserPrompt(context);
         const lastAssistantSnippet = extractLastAssistantSnippet(context);
         
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
@@ -1642,7 +1738,11 @@ const defaultExport = function (pi: ExtensionAPI) {
           allowCloudFallback: true,
           cfg,
           cache,
-          context: lastAssistantSnippet ? { lastAssistantSnippet } : {},
+          context: {
+            lastAssistantSnippet,
+            lastModel: lastDynamicModel || undefined,
+            isCompaction: isCompactionTurn(context),  // Pass context for detection
+          },
         };
         if (dynamicGroupCfg?.classifier_model)
           classifyOpts.model = stripOllama(dynamicGroupCfg.classifier_model);
@@ -1679,27 +1779,112 @@ const defaultExport = function (pi: ExtensionAPI) {
             routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
           } else if (classification.hintType === 'model') {
             // Direct model override — resolve short name (e.g. "mistral-medium-3.5") to
-            // fully-qualified "provider/model" ref by searching all group models lists.
-            // Without this, splitRef() would use the whole string as provider, which is
-            // never registered, causing "All candidates failed: no candidates".
+            // fully-qualified "provider/model" ref by searching all discovered models.
             const shortName = classification.hintTarget;
-            const resolved = resolveShortModelName(shortName, cfg.model_groups);
-            if (!shortName.includes('/') && resolved === null) {
-              routerLog(`[dynamic] HINT model "${shortName}" not found in any group; using as-is`);
+            let resolved: string | null = null;
+            let resolvedTarget: string;
+            
+            // Case 1: HINT already has provider prefix (e.g. "claude-bridge/claude-sonnet-5")
+            if (shortName.includes('/')) {
+              resolvedTarget = shortName;
+            } else {
+              // Case 2: Unqualified hint (e.g. "claude-sonnet-5") — need to resolve to full ref
+              
+              // First, try allDiscoveredRefs (Pi's registry + free models)
+              resolved = resolveShortModelName(shortName, router.allDiscoveredRefs());
+              
+              // If not found, try direct lookup in Pi's model registry for each known provider.
+              // This catches models that exist in the registry but getAvailable() filters out
+              // (e.g. models registered by other extensions). Provider list is derived from
+              // what's actually configured/known — never hardcoded, since the provider set
+              // differs per user/setup.
+              if (resolved === null && sessionCtx?.modelRegistry) {
+                const knownProviders = new Set<string>([
+                  ...Object.keys(PROVIDER_MAP),
+                  ...Object.keys(cfg.providers ?? {}),
+                  ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
+                ]);
+                for (const provider of knownProviders) {
+                  const model = sessionCtx.modelRegistry.find(provider, shortName);
+                  if (model) {
+                    resolved = `${provider}/${model.id}`;
+                    routerLog(`[dynamic] HINT: found "${shortName}" as ${resolved} via direct registry lookup`);
+                    break;
+                  }
+                }
+              }
+              
+              // If still not found, search across all groups' top models
+              if (resolved === null) {
+                const allGroupModels: string[] = [];
+                for (const [groupName] of Object.entries(cfg.model_groups)) {
+                  try {
+                    const top = router.getTopModels(groupName, 100);
+                    for (const item of top) {
+                      allGroupModels.push(item.ref);
+                    }
+                  } catch (e) {
+                    // Ignore errors for individual groups
+                  }
+                }
+                resolved = resolveShortModelName(shortName, allGroupModels);
+                if (resolved) {
+                  routerLog(`[dynamic] HINT: resolved "${shortName}" to "${resolved}" via group scan`);
+                }
+              }
+              
+              if (resolved === null) {
+                routerLog(`[dynamic] HINT model "${shortName}" not found in any source; will use as-is and rely on fallback`);
+                resolvedTarget = shortName;
+              } else {
+                resolvedTarget = resolved;
+              }
             }
-            const resolvedTarget = resolved ?? shortName;
+            
+            // claude-bridge models need to be remapped to anthropic since Pi doesn't have
             candidates = [resolvedTarget];
+            
+            // The user explicitly requested this model via HINT — a stale cooldown from
+            // an earlier, unrelated failure must not silently block this deliberate override.
+            // Clear cooldown for the primary target.
+            clearLimit(resolvedTarget);
+            
             // When the hint is a qualified ref like "mistral/mistral-medium-3.5" (contains '/'),
             // resolveShortModelName returns it unchanged. But Pi may register the same model
             // under a different provider prefix (e.g. "openrouter/mistral/mistral-medium-3.5").
             // Add a short-name fallback so driveStream can try that variant if the primary fails.
             if (shortName.includes('/')) {
               const tail = shortName.slice(shortName.lastIndexOf('/') + 1);
-              const tailResolved = resolveShortModelName(tail, cfg.model_groups);
+              const tailResolved = resolveShortModelName(tail, router.allDiscoveredRefs());
               if (tailResolved && tailResolved !== resolvedTarget) {
                 candidates.push(tailResolved);
+                clearLimit(tailResolved);
               }
             }
+            
+            // Append fallback models from what's actually registered in Pi (no invented
+            // provider prefixes — only real refs from the session's model registry).
+            // HINT overrides are user-driven: clear any stale cooldowns on fallbacks too,
+            // so a previous cascade failure does not silently prevent the HINT from working.
+            if (sessionCtx?.modelRegistry) {
+              const availableModels = sessionCtx.modelRegistry.getAvailable().map((m: any) => `${m.provider}/${m.id}` as string);
+              
+              const sortedByGdpval = [...availableModels].sort((a, b) => {
+                const gdpvalA = lookupGdp(a) ?? 0;
+                const gdpvalB = lookupGdp(b) ?? 0;
+                return gdpvalB - gdpvalA;
+              });
+
+              const fallbackCandidates = sortedByGdpval.filter(m => !candidates.includes(m)).slice(0, 5);
+              
+              if (fallbackCandidates.length) {
+                routerLog(`[dynamic] HINT fallback candidates for "${resolvedTarget}": ${fallbackCandidates.join(', ')}`);
+                candidates.push(...fallbackCandidates);
+                // Clear cooldowns for all fallback candidates as well
+                fallbackCandidates.forEach(fb => clearLimit(fb));
+              }
+            }
+            
             lastDynamicModel = resolvedTarget;
             dynamicLabel = `HINT: ${classification.hintTarget}`;
             const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${resolvedTarget}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
@@ -1787,54 +1972,117 @@ const defaultExport = function (pi: ExtensionAPI) {
     label?: string
   ): Promise<void> {
     return (async () => {
+      // Preserve the active group (e.g., 'dynamic') for display purposes
+      if (activeGroup) {
+        router.setActiveGroup(activeGroup);
+      }
       let lastError: string | undefined;
+      // Track every failure, not just the last one, so the final error message doesn't
+      // hide earlier (possibly more relevant) failures behind a random last candidate.
+      const allErrors: string[] = [];
 
       // Iterate every candidate in order; skip limited or unregistered ones without
       // consuming the remainder. This ensures all group models are tried even if some
       // are not yet in Pi's session registry or are temporarily rate-limited.
       for (let i = 0; i < candidates.length; i++) {
         const ref = candidates[i];
-        if (isLimited(ref)) continue;
-        const target = await tryStream(ref, context, options);
+        if (isLimited(ref)) {
+          allErrors.push(`${ref}: skipped, still in cooldown (${router.limitSecs(ref)}s remaining)`);
+          continue;
+        }
+        const target = await tryStream(ref, context, options).catch((err) => {
+          // Filter out expected/transient errors to reduce noise
+          const errorMsg = String(err.message || err);
+          const isExpectedError = errorMsg.toLowerCase().includes('no api provider registered') ||
+                                  errorMsg.toLowerCase().includes('rate limit') ||
+                                  errorMsg.toLowerCase().includes('usage credits') ||
+                                  errorMsg.toLowerCase().includes('out of') ||
+                                  errorMsg.toLowerCase().includes('limit hit');
+          if (!isExpectedError) {
+            console.log(`[router] Skipping ${ref}: ${errorMsg}`);
+          }
+          // Always record the real reason, even for "expected" errors, so the final
+          // error message reflects what actually happened instead of "no candidates".
+          lastError = `${ref}: ${errorMsg}`; allErrors.push(lastError);
+          recordSoftFailure(ref);
+          // Notify user about hard failures so they know we tried alternatives
+          proxy.push({
+            type: 'text_delta',
+            text: `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`,
+          } as any);
+          return null;
+        });
         if (!target) continue;
 
         // Show which model is actually being used
         const prefix = label ? `${label} · ${ref}` : ref;
         proxy.push({ type: 'text_delta', text: `> [router] ${prefix}\n\n` } as any);
 
-        const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
-
-        if (result.ok) {
-          // Success — record healthy, finalize proxy
-          recordOk(ref);
-          // The stream's done/error event was already forwarded via push()
-          // The proxy will complete naturally via the pushed "done" event
-          return;
+        // Update the status line as soon as the stream was created successfully —
+        // waiting for the stream to finish would leave the previous model displayed
+        // for the whole turn. Candidates that fail in tryStream never get here, so
+        // the line still never shows a model that was skipped outright.
+        router.setCurModel(ref);
+        router.setActiveGroup(activeGroup);
+        {
+          const { provider, modelId } = splitRef(ref);
+          const model = sessionCtx?.modelRegistry?.find(provider, modelId);
+          if (model) {
+            await pi.setModel(model);
+          }
         }
 
-        // Soft failure — record and try next candidate
-        lastError = `${ref}: ${result.reason}`;
-        recordSoftFailure(ref);
+        try {
+          const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
 
-        // Notify the user about the empty response, with next candidate hint if available
-        const reason = result.reason === 'empty_timeout'
-          ? 'keine Antwort innerhalb des Timeouts'
-          : 'leere Antwort vom Modell';
-        const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-        const suffix = nextRef ? `, versuche ${nextRef} …` : '';
-        proxy.push({
-          type: 'text_delta',
-          text: `> [router] ${ref} — ${reason}${suffix}\n\n`,
-        } as any);
+          if (result.ok) {
+            // Success — record healthy, proxy completes via the pushed "done" event
+            recordOk(ref);
+            return;
+          }
+
+          // Soft failure — record and try next candidate
+          lastError = `${ref}: ${result.reason}`; allErrors.push(lastError);
+          recordSoftFailure(ref);
+
+          // Notify the user about the empty response, with next candidate hint if available
+          const reason = result.reason === 'empty_timeout'
+            ? 'keine Antwort innerhalb des Timeouts'
+            : 'leere Antwort vom Modell';
+          const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+          const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+          proxy.push({
+            type: 'text_delta',
+            text: `> [router] ${ref} — ${reason}${suffix}\n\n`,
+          } as any);
+        } catch (streamError) {
+          // Hard failure (e.g., "No API provider registered") — treat as soft failure
+          const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+          lastError = `${ref}: ${errorMsg}`; allErrors.push(lastError);
+          recordSoftFailure(ref);
+          const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+          const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+          proxy.push({
+            type: 'text_delta',
+            text: `> [router] ${ref} — Fehler: ${errorMsg}${suffix}\n\n`,
+          } as any);
+        }
       }
 
-      // All retries exhausted — push an error event
+      // All retries exhausted — push an error event listing every failure so the
+      // real cause isn't hidden behind whichever candidate happened to fail last.
+      const availableModels = router.allDiscoveredRefs().slice(0, 10).join(', ');
+      const modelSuffix = router.allDiscoveredRefs().length > 10 ? '...' : '';
+      const hintInfo = label ? `[HINT] ${label}\n` : '';
+      const failureList = allErrors.length
+        ? allErrors.map((e) => `  - ${e}`).join('\n')
+        : '  (no candidates attempted)';
       const errMsg: AssistantMessage = {
         role: 'assistant',
         content: [
           {
             type: 'text',
-            text: `[router] All candidates failed. Last: ${lastError ?? 'no candidates'}`,
+            text: `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`,
           },
         ],
         usage: {
@@ -1972,18 +2220,25 @@ const defaultExport = function (pi: ExtensionAPI) {
           return;
         }
         if (arg === 'reset') {
+          // Reset dynamic config
           const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
           try {
             if (fs.existsSync(dynamicConfigPath)) {
               fs.unlinkSync(dynamicConfigPath);
-              load();
-              ctx.ui.notify('Dynamic config removed. Reverted to static router-config.json');
-            } else {
-              ctx.ui.notify('No dynamic config found to reset');
             }
           } catch (error) {
-            ctx.ui.notify('Error resetting config: ' + error);
+            ctx.ui.notify('Error resetting dynamic config: ' + error);
           }
+          // Reset cache (clears rate-limit cooldowns, GDPval cache, etc.)
+          try {
+            cacheManager.resetCache();
+            loadCache(); // Reload fresh cache
+            ctx.ui.notify('Router cache cleared (cooldowns, GDPval, metrics reset)');
+          } catch (error) {
+            ctx.ui.notify('Error resetting cache: ' + error);
+          }
+          load();
+          ctx.ui.notify('Router reset complete');
           return;
         }
 
@@ -2022,8 +2277,14 @@ const defaultExport = function (pi: ExtensionAPI) {
         const active = curModel && allDiscoveredRefs().includes(curModel);
         const activeMarker = active ? ' ◀' : '';
 
+
+        // Add fallback groups info if present
+        const fallbackInfo = g.fallback_groups && g.fallback_groups.length > 0 
+          ? ` (\u2192 ${g.fallback_groups.join(' \u2192 ')})`
+          : '';
+
         // Group header
-        lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method} ─`);
+        lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`);
 
         if (top.length === 0 && g.method === 'dynamic') {
           const cats = [

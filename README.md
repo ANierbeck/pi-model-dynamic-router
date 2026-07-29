@@ -10,7 +10,7 @@ The router uses a **modular architecture** with the following components:
 
 | Module | Purpose | Key Features |
 |--------|---------|--------------|
-| **providers.ts** | Provider definitions and mappings | 25 supported providers, authentication patterns |
+| **providers.ts** | Provider definitions and mappings | 26 supported providers, authentication patterns |
 | **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
 | **utils.ts** | Utility functions | String manipulation, reference parsing |
 | **rate-limit.ts** | Rate limit management | Key rotation, backoff, cost multiplier |
@@ -43,7 +43,7 @@ The **dynamic routing** feature automatically classifies user prompts and select
 
 The system classifies prompts into the following categories:
 
-- `code_simple`: Simple code changes (1–10 lines, syntax fixes, typos)
+- `code_simple`: Simple code changes (1-10 lines, syntax fixes, typos)
 - `code_complex`: Complex code changes (refactoring, debugging, >50 lines)
 - `design`: Architecture, system design, API design
 - `planning`: Project planning, roadmaps, task breakdown
@@ -71,7 +71,118 @@ The **`dynamic`** group is a special group that uses Ollama (**gemma4:12b-mlx** 
 - **Ollama** must be installed and running locally.
 - The **gemma2:2b** model must be available in Ollama (`ollama pull gemma2:2b`).
 
-### Auto-Discovery
+---
+
+### Cascading Fallback & Intelligent Routing
+
+The router implements a **multi-layer fallback system** that automatically recovers from model failures, rate limits, and unavailability.
+
+#### How it works
+
+When a model fails (API error, rate limit, empty response, or usage limit exceeded), the router:
+
+1. **Tries the next model in the same group**
+2. **If all models in the group fail → cascades to fallback groups** in this order:
+   ```
+   strategic → tactical → operational → scout → fallback
+   ```
+3. **Continues until a working model is found**
+
+**Example:** You select `dynamic` group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries `strategic` → then `tactical` → etc.
+
+#### Configuration
+
+Each group can define its fallback chain in `router-config.json`:
+
+```json
+{
+  "strategic": {
+    "description": "Best models by GDPval",
+    "method": "best",
+    "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"],
+    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
+  }
+}
+```
+
+**Note:** The `dynamic` group automatically inherits the full cascade chain.
+
+---
+
+### Cost Tier System
+
+Models are automatically classified into **cost tiers** for intelligent routing based on task complexity. This ensures optimal cost-quality balance for each task.
+
+| Tier | Cost | Models | Typical Use Cases |
+|------|------|--------|-------------------|
+| **Cheap** | Free/Low | Ollama, Mistral Small | Simple questions, exploration, low-priority tasks |
+| **Medium** | Moderate | Mistral Medium, Claude Sonnet | Code review, standard tasks, research |
+| **Expensive** | High | Claude Opus, Fable | Complex reasoning, design, planning, high-priority tasks |
+
+#### Multi-Tier Escalation
+
+The router **automatically escalates** to higher tiers for complex tasks and **descends** to cheaper tiers for simple tasks:
+
+- **After expensive model:** Simple tasks use cheaper models (cost optimization)
+- **After cheap model:** Complex tasks use expensive models (quality optimization)
+
+#### Task Complexity Mapping
+
+| Complexity Level | Categories | Tier |
+|-----------------|------------|------|
+| **Low** | trivial, simple, exploration | Cheap |
+| **Medium** | standard, code_simple, research | Medium |
+| **High** | code_complex, design, planning | Expensive |
+
+This ensures **optimal cost-quality balance** for each task.
+
+---
+
+### Model Momentum
+
+After **context compaction** (when >30% of tokens are removed or >5 messages/500 tokens are dropped), the router **reuses the previous model** for the next turn.
+
+#### Why?
+
+- **Consistency:** Maintains the same model's "thinking style" after major context changes
+- **Efficiency:** Avoids unnecessary model switching
+- **Stability:** Reduces variation in responses during long conversations
+
+#### Detection
+
+Compaction is automatically detected when:
+- Token count drops by >30% compared to previous turn
+- More than 5 messages are removed
+- More than 500 tokens are removed
+
+**Note:** Model momentum only forces reuse during compaction. For similar tasks, it provides a **hint** to the classifier.
+
+---
+
+### Status Line Integration
+
+The router now **synchronizes with Pi's status line** to display the **actually active model** (not failed candidates).
+
+#### Behavior
+
+- Status line updates **as soon as a model's stream is established** (before the first token)
+- Only shows models that **successfully started streaming**
+- Failed candidates (API errors, rate limits) **never appear** in the status line
+- After successful completion, the model remains displayed until the next turn
+
+#### Example
+
+```
+# Before (incorrect):
+scout/dynamic→claude-bridge/claude-fable-5  # ← Failed, but shown!
+
+# After (correct):
+scout/dynamic→mistral/mistral-medium-3.5   # ← Actually active model
+```
+
+This provides **accurate feedback** about which model is currently generating responses.
+
+---
 
 ### Auto-Discovery
 
@@ -84,6 +195,8 @@ On startup, the router automatically:
 
 All scanning is async and non-blocking.
 
+---
+
 ### Group Selection
 
 Each group auto-discovers available models, filters by quality, and selects by billing preference:
@@ -91,10 +204,10 @@ Each group auto-discovers available models, filters by quality, and selects by b
 | Group | Method | Quality Filter | Use For |
 |-------|--------|---------------|---------|
 | **strategic** | `best` | — | Best model available. Critical decisions. |
-| **tactical** | `tiered` | ≥75th percentile | Top quality, cost-optimized. Planning. |
-| **operational** | `tiered` | ≥50th percentile | Good quality, cheapest. Daily coding. |
-| **scout** | `tiered` | ≥25th percentile | Acceptable quality, cheapest. Exploration. |
-| **fallback** | `tiered` | ≥0th percentile | Any available. Last resort. |
+| **tactical** | `tiered` | >=75th percentile | Top quality, cost-optimized. Planning. |
+| **operational** | `tiered` | >=50th percentile | Good quality, cheapest. Daily coding. |
+| **scout** | `tiered` | >=25th percentile | Acceptable quality, cheapest. Exploration. |
+| **fallback** | `tiered` | >=0th percentile | Any available. Last resort. |
 | **dynamic** | `dynamic` | — | Auto-classifies prompts and routes to the best group. |
 
 No curated model lists. Groups draw from all discovered models automatically.
@@ -119,15 +232,81 @@ This means `operational` always uses the cheapest model that is at least median 
 
 After 4 consecutive HTTP 429s from a provider, the router applies a permanent **cost multiplier penalty** (`costMux`) to all its models. This pushes the provider to the back of the sorted list without blocking it entirely — useful when a provider is temporarily overloaded but still reachable. The penalty persists for the session and is reset on `/router reload`.
 
+---
+
 ### Rate Limits & Failover
 
 On HTTP 429 the router works through three escalating responses:
 
 1. **Key rotation** — immediately tries the next API key for the same provider; the exhausted key enters a 1-hour cooldown before rejoining the pool.
-2. **Model backoff** — if all keys for a provider are cooling down, the model enters exponential backoff (1 min → 2 → 4 → … → 90 min cap) and the group falls over to its next-ranked candidate for the current request.
+2. **Model backoff** — if all keys for a provider are cooling down, the model enters exponential backoff (1 min → 2 → 4 → ... → 90 min cap) and the group falls over to its next-ranked candidate for the current request.
 3. **costMux penalty** — after 4 consecutive 429s, the provider receives a permanent cost multiplier for the session (see [costMux](#costmux) above), demoting all its models in future selections.
 
 All three mechanisms are transparent to the user — the session continues with the next available model.
+
+#### Rate Limit & Subscription Handling
+
+The router automatically handles **rate limits, usage limits, and subscription errors** from all providers, including third-party extensions like **claude-bridge**.
+
+##### Supported Error Patterns
+
+| Error Type | Detection | Behavior |
+|------------|-----------|----------|
+| **Rate Limit (429)** | HTTP 429 response | Soft failure → try next model |
+| **Usage Limit Exceeded** | "out of usage credits", "rate limit hit" | Soft failure → try next model |
+| **API Provider Not Found** | "No API provider registered" | Soft failure → try next model |
+| **Empty Response** | No tokens within timeout | Soft failure → try next model |
+| **Hard API Error** | Connection refused, timeout | Soft failure → try next model |
+
+##### Example: Claude Subscription Limits
+
+If you hit your Claude subscription limit:
+
+```
+Warning: [rate-limit] Claude unknown rate limit hit — resets unknown
+You're out of usage credits. Run /usage-credits to keep using Fable 5
+```
+
+**The router will:**
+1. Detect the "out of usage credits" message
+2. Treat it as a **soft failure** (not a hard error)
+3. **Automatically try the next model** in the group
+4. If all models in the group fail → cascade to fallback groups
+
+##### Important Notes
+
+- **Claude-bridge:** Different subscription tiers have different model access:
+  - **Pro:** Claude 3.5 Sonnet, Haiku
+  - **Max:** All models including Fable 5, Opus 5
+- **The router cannot know your subscription tier** — it tries models and falls back on errors
+- **This is intentional:** It allows graceful degradation when limits are hit
+
+##### Best Practices
+
+1. **Order models by preference** in your groups (most preferred first)
+2. **Include fallback models** from different providers
+3. **Use cascading fallback groups** for maximum reliability
+4. **Check `/usage-credits`** if you consistently hit limits
+
+**Example configuration for reliability:**
+
+```json
+{
+  "strategic": {
+    "models": [
+      "claude-bridge/claude-opus-5",    // First choice (Max only)
+      "claude-bridge/claude-sonnet-5",  // Fallback (Pro/Max)
+      "anthropic/claude-3-5-sonnet",    // Cloud fallback
+      "mistral/mistral-medium-3.5"     // Final fallback
+    ],
+    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
+  }
+}
+```
+
+This ensures **automatic recovery** when subscription limits are hit.
+
+---
 
 ### Stream Retry
 
@@ -142,20 +321,43 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
 ```jsonc
 {
   "providers": {
-    "anthropic": { "billing": "subscription", "keys": [{ "key": "!pass show api/claude/token" }] },
-    "chutes": { "billing": "subscription" },
-    "openrouter": { "billing": "pay_per_token" }
+    "openrouter": {
+      "billing": "pay_per_token",
+      "free_models": [
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/openai/gpt-4o-mini:free"
+      ]
+    }
   },
   "model_groups": {
     "strategic": { "method": "best" },
     "tactical": { "method": "tiered", "min_gdpval_pct": 75 },
     "scout": { "method": "tiered", "min_gdpval_pct": 25 }
   },
-  "model_metrics": {}
+  "model_metrics": {
+    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 }
+  },
+  "gdpval_builtin": {
+    "mistral-medium-3-5": 933,
+    "claude-sonnet-5": 1603
+  }
 }
 ```
 
-Groups need no `models` arrays — everything is auto-discovered.
+#### Provider Configuration
+
+**Note:** The router **only registers providers that Pi doesn't already know**. Built-in providers (anthropic, openai, google) and extension-based providers (ollama, lm-studio, claude-bridge) are **skipped** to avoid conflicts. The router only registers OpenRouter (for free tier models).
+
+#### New Configuration Options
+
+| Option | Purpose | Example |
+|--------|---------|---------|
+| **`fallback_groups`** | Define cascade chain for fallback | `["tactical", "operational", "scout"]` |
+| **`cost_per_m`** | Cost per million tokens (for estimates) | `0.0000015` |
+| **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
+| **`gdpval_builtin`** | GDPval overrides for new models | `{ "mistral-medium-3-5": 933 }` |
+
+Groups need no `models` arrays — everything is auto-discovered **plus** any explicitly listed models.
 
 ### Adding a Provider
 
@@ -165,9 +367,30 @@ Or manually:
 1. Set API key via env var, `pass`, or `pi auth <provider>`
 2. Restart pi — the router discovers keys and scans models automatically
 
-### Supported Providers (25)
+### Supported Providers
 
-anthropic, openai, google, openrouter, chutes, mistral, groq, cerebras, xai, zai, huggingface, kimi-coding, minimax, minimax-cn, opencode, opencode-go, vercel-ai-gateway, azure-openai, deepseek, github-copilot, qwen-cli, gemini-cli, antigravity, ollama, lm-studio
+**Total: 26 providers**
+
+| Provider | Type | Registration | Notes |
+|----------|------|--------------|-------|
+| **anthropic** | Built-in | Pi | Token-based (via claude-bridge extension for subscription) |
+| **openai** | Built-in | Pi | Standard OpenAI |
+| **google** | Built-in | Pi | Google AI |
+| **mistral** | Built-in | Pi | Mistral Cloud |
+| **openrouter** | Router | Router | **Free tier models available** |
+| **ollama** | Extension | Extension | Local models |
+| **lm-studio** | Extension | Extension | Local models |
+| **claude-bridge** | Extension | Extension | **Claude subscription via local proxy** |
+| **qwen-cli** | Extension | Extension | Qwen CLI |
+| **gemini-cli** | Extension | Extension | Google Gemini CLI |
+| **antigravity** | Extension | Extension | - |
+| ... | ... | ... | 20+ more |
+
+**Claude-bridge Support:**
+- **Important:** Claude-bridge is a **separate Pi extension** that must be installed to use Claude models with a subscription.
+- **How it works:** The extension registers `claude-bridge/*` models with Pi. The router **discovers and uses** them automatically.
+- **Model availability** depends on your Claude subscription plan (Pro, Max, etc.).
+- **No double registration:** The router **does not** register claude-bridge providers itself — it only uses models already registered by the extension.
 
 ### Requirements for Dynamic Routing
 

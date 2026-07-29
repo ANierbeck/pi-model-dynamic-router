@@ -28,6 +28,22 @@ claude-haiku-4-5-*:                       claude-4-5-haiku
 claude-3-haiku-*:                         claude-3-haiku
 claude-3-5-haiku-*:                       claude-3-5-haiku
 
+# ── Claude Bridge (local Anthropic proxy) ────────────────────────────────
+claude-bridge/claude-3-haiku:              claude-3-haiku
+claude-bridge/claude-3-sonnet:             claude-3-sonnet
+claude-bridge/claude-3-5-sonnet:           claude-3-5-sonnet
+claude-bridge/claude-sonnet-4-5-*:         claude-4-5-sonnet
+claude-bridge/claude-sonnet-4-6:           claude-sonnet-4-6
+claude-bridge/claude-sonnet-4:             claude-4-sonnet
+claude-bridge/claude-opus-4-5-*:           claude-opus-4-5
+claude-bridge/claude-opus-4-6:             claude-opus-4-6
+claude-bridge/claude-fable-5:              claude-fable-5
+claude-bridge/claude-sonnet-5:            claude-sonnet-5
+claude-bridge/claude-opus-5:              claude-opus-5
+claude-bridge/claude-opus-4-8:            claude-opus-4-8
+claude-bridge/claude-haiku-4-5-*:         claude-4-5-haiku
+claude-bridge/claude-3-5-haiku:           claude-3-5-haiku
+
 # ── DeepSeek ───────────────────────────────────────────────────────────
 deepseek-ai/DeepSeek-V3:                  deepseek-v3-0324         # Chutes hosts 0324 build
 deepseek-ai/DeepSeek-V3-0324-TEE:         deepseek-v3-0324

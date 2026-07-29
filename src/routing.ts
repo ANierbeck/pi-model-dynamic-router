@@ -79,14 +79,16 @@ export class Router {
       }
     }
     
-    // Also include explicitly pinned group models (for backwards compatibility)
-    // These might not be in the registry (e.g., free cloud models)
-    for (const g of Object.values(this.cfg.model_groups)) {
-      for (const r of g.models ?? []) {
-        refs.add(r);
+    // Also include free models from configuration (e.g., openrouter free tier)
+    // These might not be in the registry but are available via the provider
+    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+      if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
+        for (const freeModel of provConfig.free_models) {
+          refs.add(freeModel);
+        }
       }
     }
-
+    
     return [...refs];
   }
 
@@ -307,16 +309,99 @@ export class Router {
     // Dynamic group is handled by the hook, not here
     if (g.method === 'dynamic') return null;
 
-    // Start from allDiscoveredRefs() (which unconditionally includes all g.models
-    // entries across all groups, preserving the post-restart fix), then filter to
-    // only this group's g.models for strict isolation.
-    //
-    // Intentional asymmetry with getTopModels():
-    //   getTopModels() uses g.models for DISPLAY so /router shows the configured list.
-    //   resolve() uses allDiscoveredRefs() for ROUTING which already includes all g.models
-    //   entries (lines 81-85), so filtering to g.models preserves both group isolation and
-    //   the post-restart fix (models in g.models are in the pool regardless of registry state).
-    let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
+    // Try primary group first
+    let result = this.resolveGroup(g, name);
+    if (result) return result;
+
+    // Kaskadierender Fallback zu fallback_groups
+    for (const fbGroupName of g.fallback_groups ?? []) {
+      const fbGroup = this.cfg.model_groups[fbGroupName];
+      if (!fbGroup) continue;
+      const fbResult = this.resolveGroup(fbGroup, fbGroupName);
+      if (fbResult) return fbResult;
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolves a group with cost tier filter and fallback cascade
+   */
+  private resolveGroupWithCostTier(g: Group, name: string, costTier: CostTier, tierConfig: CostTierConfig, staticFreeModels: string[]): GroupResolution | null {
+    // Get models for this group
+    let c: string[];
+    if (g.models?.length) {
+      c = this.allDiscoveredRefs().filter(ref => g.models!.includes(ref));
+    } else {
+      c = this.allDiscoveredRefs();
+    }
+    
+    // Filter out excluded providers
+    if (g.exclude_providers?.length) {
+      c = c.filter(ref => {
+        const provider = ref.split('/')[0];
+        return !g.exclude_providers!.includes(provider);
+      });
+    }
+    
+    // Filter out excluded models
+    if (g.exclude_models?.length) {
+      c = c.filter(ref => !g.exclude_models!.includes(ref));
+    }
+
+    // Apply the same quality floor that resolve() applies (min_gdpval)
+    if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
+    else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
+
+    // Apply cost tier filter
+    const filtered = c.filter(ref => {
+      return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
+    });
+
+    if (filtered.length === 0) return null;
+
+    // Sort by group method
+    let sorted = [...filtered];
+    if (g.method === 'best') {
+      sorted = this.sortBy(sorted, 'best', name);
+    } else if (g.method === 'tiered') {
+      sorted = this.sortByBillingPreference(sorted);
+    } else if (g.method === 'min_cost') {
+      sorted = this.sortBy(sorted, 'min_cost', name);
+    } else if (g.method === 'min_cost_if_all_priced') {
+      sorted = this.sortBy(sorted, 'min_cost_if_all_priced', name);
+    } else {
+      sorted = this.sortBy(sorted, g.method, name);
+    }
+    return { selected: sorted[0], candidates: sorted };
+  }
+
+  /**
+   * Resolves a single group (without fallback cascade)
+   */
+  private resolveGroup(g: Group, name: string): GroupResolution | null {
+    // When a group has an explicit models list, use only those models.
+    // Fall back to allDiscoveredRefs() for groups without an explicit list.
+    // This matches getTopModels() behavior for consistency.
+    let c: string[];
+    if (g.models?.length) {
+      c = this.allDiscoveredRefs().filter(ref => g.models!.includes(ref));
+    } else {
+      c = this.allDiscoveredRefs();
+    }
+    
+    // Filter out excluded providers
+    if (g.exclude_providers?.length) {
+      c = c.filter(ref => {
+        const provider = ref.split('/')[0];
+        return !g.exclude_providers!.includes(provider);
+      });
+    }
+    
+    // Filter out excluded models
+    if (g.exclude_models?.length) {
+      c = c.filter(ref => !g.exclude_models!.includes(ref));
+    }
     
     // Filter by quality
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
@@ -370,7 +455,6 @@ export class Router {
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
     
-
     if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
   }
@@ -410,40 +494,22 @@ export class Router {
         }
       }
 
-      // Filter models by cost tier (Pool: g.models from allDiscoveredRefs)
-      let c = this.allDiscoveredRefs().filter(ref => g.models?.includes(ref));
+      // Try primary group with cost tier filter
+      let result = this.resolveGroupWithCostTier(g, name, costTier, tierConfig, staticFreeModels);
+      if (result) return result;
 
-      // Apply the same quality floor that resolve() applies (min_gdpval)
-      if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
-      else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
-
-      const filtered = c.filter(ref => {
-        return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
-      });
-
-      if (filtered.length === 0) {
-        console.warn(`[router] No models fit cost tier "${costTier}" for group "${name}"`);
-        return null;
+      // Kaskadierender Fallback zu fallback_groups (MIT cost tier filter)
+      for (const fbGroupName of g.fallback_groups ?? []) {
+        const fbGroup = this.cfg.model_groups[fbGroupName];
+        if (!fbGroup) continue;
+        const fbResult = this.resolveGroupWithCostTier(fbGroup, fbGroupName, costTier, tierConfig, staticFreeModels);
+        if (fbResult) return fbResult;
       }
 
-      // Sort by group method
-      let sorted = [...filtered];
-      if (g.method === 'best') {
-        sorted = this.sortBy(sorted, 'best', name);
-      } else if (g.method === 'tiered') {
-        sorted = this.sortByBillingPreference(sorted);
-      } else if (g.method === 'min_cost') {
-        sorted = this.sortBy(sorted, 'min_cost', name);
-      } else if (g.method === 'min_cost_if_all_priced') {
-        sorted = this.sortBy(sorted, 'min_cost_if_all_priced', name);
-      } else {
-        sorted = this.sortBy(sorted, g.method, name);
-      }
-
-      return { selected: sorted[0], candidates: sorted };
+      console.warn(`[router] No models fit cost tier "${costTier}" for group "${name}" (including fallback groups)`);
     }
 
-    // Default behavior
+    // No cost tier specified - use regular resolve with fallback cascade
     return this.resolve(name);
   }
 
@@ -508,19 +574,36 @@ export class Router {
   // ── Group Detection ─────────────────────────────────────────────────────
 
   /**
-   * Detects the group for a model reference
+   * Detects the group for a model reference based on GDPval thresholds
    */
   detectGroup(ref: string): string | null {
     if (this.activeGroup) return this.activeGroup;
-    for (const [n, g] of Object.entries(this.cfg.model_groups))
-      if (g.models?.includes(ref)) return n;
-    // With auto-discovery, any available model belongs to any group — return lowest tier that includes it
-    const refs = this.allDiscoveredRefs();
-    if (refs.includes(ref)) {
-      for (const name of ['scout', 'operational', 'tactical', 'strategic']) {
-        if (this.cfg.model_groups[name]) return name;
+    
+    // With dynamic model discovery, detect group based on GDPval thresholds
+    const gdpval = lookupGdp(ref);
+    
+    // Check groups by GDPval threshold (highest first)
+    const groupsByThreshold = Object.entries(this.cfg.model_groups)
+      .filter(([_, g]) => g.method !== 'dynamic')
+      .sort(([, a], [, b]) => (b.min_gdpval ?? 0) - (a.min_gdpval ?? 0));
+    
+    if (gdpval !== null) {
+      for (const [name, g] of groupsByThreshold) {
+        const minGdpval = g.min_gdpval ?? 0;
+        if (gdpval >= minGdpval) {
+          return name;
+        }
       }
     }
+    
+    // Fallback: return lowest tier that has no min_gdpval requirement
+    for (const name of ['scout', 'operational', 'tactical', 'strategic', 'fallback']) {
+      const g = this.cfg.model_groups[name];
+      if (g && (g.min_gdpval === undefined || g.min_gdpval === 0)) {
+        return name;
+      }
+    }
+    
     return null;
   }
 
@@ -557,13 +640,43 @@ export class Router {
     if (!g) return [];
     if (g.method === 'dynamic') return []; // resolved at prompt-time via classifier
 
-    // When a group has an explicit models list (e.g. from dynamic config), use it as the
-    // display pool so /router reflects what the config actually intends to route to —
-    // not just whatever Pi's session registry happens to have discovered.
-    // Fall back to allDiscoveredRefs() only for groups without an explicit list.
-    let c = g.models?.length ? [...g.models] : this.allDiscoveredRefs();
+    // Use all discovered models (from Pi's registry + free_models + cached)
+    // Groups are filtered by min_gdpval and other criteria, not by explicit model lists.
+    // This ensures /router reflects all available models dynamically.
+    let c = this.allDiscoveredRefs();
+    
+    // Filter out excluded providers
+    if (g.exclude_providers?.length) {
+      c = c.filter(ref => {
+        const provider = ref.split('/')[0];
+        return !g.exclude_providers!.includes(provider);
+      });
+    }
+    
+    // Filter out excluded models
+    if (g.exclude_models?.length) {
+      c = c.filter(ref => !g.exclude_models!.includes(ref));
+    }
+    
     if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
     else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
+
+    // Filter by cost constraints (same logic as resolveGroup)
+    if (g.max_cost !== undefined) {
+      c = c.filter(ref => {
+        const cost = effCost(ref);
+        if (cost === 'unknown') return false;
+        return cost <= g.max_cost!;
+      });
+    }
+    if (g.max_cost_per_m !== undefined) {
+      c = c.filter(ref => {
+        const price = lookupPrice(ref);
+        if (!price) return false;
+        if (price.input === 'unknown' || price.output === 'unknown') return false;
+        return price.input <= g.max_cost_per_m!;
+      });
+    }
 
     if (g.method === 'best') {
       c = this.sortBy(c, 'max_gdpval');

@@ -1,11 +1,5 @@
 {
   "providers": {
-    "mistral": {
-      "billing": "pay_per_token"
-    },
-    "ollama": {
-      "billing": "subscription"
-    },
     "openrouter": {
       "billing": "pay_per_token",
       "free_models": [
@@ -22,90 +16,102 @@
       "description": "Trivial tasks - free models only",
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
-      "models": [
-        "openrouter/qwen/qwen3-4b:free",
-        "openrouter/google/gemma-3-4b-it:free",
-        "ollama/gemma4:12b-mlx"
-      ]
+      "min_gdpval": 0,
+      "fallback_groups": []
     },
     "simple": {
       "description": "Simple tasks - free models only",
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
-      "models": [
-        "openrouter/qwen/qwen3-4b:free",
-        "openrouter/google/gemma-3-12b-it:free",
-        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-        "ollama/gemma4:12b-mlx"
-      ]
+      "min_gdpval": 0,
+      "fallback_groups": ["trivial"]
     },
     "standard": {
       "description": "Standard tasks - cost-effective models",
       "method": "tiered",
       "min_gdpval": 500,
-      "max_cost_per_m": 0.5,
-      "models": [
-        "openai/gpt-4o-mini",
-        "anthropic/claude-3-haiku"
-      ]
+      "fallback_groups": ["complex", "operational", "scout", "fallback"]
     },
     "complex": {
-      "description": "Complex tasks - GDPval ≥600 (mistral-medium tier), best available",
+      "description": "Complex tasks - GDPval >=600 (mistral-medium tier), best available",
       "method": "best",
       "min_gdpval": 600,
-      "models": [
-        "anthropic/claude-3-sonnet",
-        "openai/gpt-4o",
-        "mistral/mistral-medium-3.5"
-      ]
+      "fallback_groups": ["strategic", "tactical", "operational", "scout", "fallback"]
     },
     "strategic": {
       "description": "Best available model by intelligence (max GDPval)",
       "method": "best",
-      "models": [
-        "anthropic/claude-3-sonnet",
-        "mistral/mistral-medium-3.5"
+      "min_gdpval": 700,
+      "fallback_groups": [
+        "tactical",
+        "operational",
+        "scout",
+        "fallback"
       ]
     },
     "tactical": {
-      "description": "GDPval ≥600: magistral/mistral-medium tier, best available",
+      "description": "GDPval >=600: mistral-medium tier, best available",
       "method": "best",
       "min_gdpval": 600,
-      "models": [
-        "mistral/mistral-medium-3.5"
+      "fallback_groups": [
+        "operational",
+        "scout",
+        "fallback"
       ]
     },
     "operational": {
-      "description": "GDPval ≥300: broad quality pool, cheapest first",
+      "description": "GDPval >=300: broad quality pool, cheapest first",
       "method": "tiered",
       "min_gdpval": 300,
-      "max_cost": 0,
-      "models": [
-        "openrouter/google/gemma-3-12b-it:free"
+      "fallback_groups": [
+        "scout",
+        "fallback"
       ]
     },
     "scout": {
       "description": "Any available model, cheapest first",
       "method": "tiered",
-      "min_gdpval": 0
+      "min_gdpval": 0,
+      "fallback_groups": [
+        "fallback"
+      ]
     },
     "fallback": {
       "description": "Any available, cheapest first",
       "method": "tiered",
-      "min_gdpval": 0
+      "min_gdpval": 0,
+      "fallback_groups": []
     },
     "dynamic": {
       "description": "Classifies each prompt via Ollama and routes to the appropriate group",
       "method": "dynamic",
       "classifier_model": "ollama/gemma4:12b-mlx",
-      "classifier_fallback": "ollama/gemma2:2b"
+      "classifier_fallback": "ollama/gemma2:2b",
+      "fallback_groups": [
+        "strategic",
+        "tactical",
+        "operational",
+        "scout",
+        "fallback"
+      ]
     }
   },
-  "model_metrics": {},
+  "model_metrics": {
+    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-opus-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-fable-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-3-sonnet": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-3-haiku": { "cost_per_m": 0.0000015 }
+  },
   "gdpval_builtin": {
     "magistral-small": 665,
     "magistral-medium": 669,
-    "mistral-medium-3-5": 665,
+    "mistral-medium-3-5": 933,
+    "claude-4-5-sonnet": 720,
+    "claude-4-sonnet": 710,
+    "claude-sonnet-5": 1603,
+    "claude-fable-5": 1747,
+    "claude-opus-5": 1860,
     "devstral": 585,
     "codestral-latest": 520,
     "mistral-small-3-2": 478,

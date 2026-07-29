@@ -3,6 +3,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama } from './ollama-utils.js';
 import { CloudClient } from './cloud-client.js';
 import { DiscoveryManager } from './discovery.js';
+import { lookupGdp } from './metrics.js';
 import type { Config, Cache } from './types.js';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -22,19 +23,88 @@ export interface ClassificationResult {
   confidence?: number;
 }
 
-export interface HintClassificationResult {
-  reason: string;
-  confidence: 1.0;
-  hintType: 'model' | 'group';
-  hintTarget: string;
-}
-
 export type FullClassificationResult = ClassificationResult | HintClassificationResult;
 
 export interface ClassificationContext {
   lastCategory?: ClassificationResult['category'];
   previousUserMessage?: string;
-  lastAssistantSnippet?: string;
+  lastAssistantSnippet?: string | undefined;
+  lastModel?: string | undefined;  // Model to reuse (e.g., after compaction)
+  isCompaction?: boolean;  // NEW: Explicit compaction flag
+}
+
+export interface HintClassificationResult {
+  reason: string;
+  confidence: number;
+  hintType: 'model' | 'group' | 'tier';
+  hintTarget: string;
+}
+
+// Cost tiers for escalation logic. Derived from GDPval, not hardcoded model names —
+// the router config's model set differs per user/setup, so tiering must be dynamic.
+// Thresholds mirror the min_gdpval values of the scout/tactical/strategic groups
+// in router-config.json, keeping escalation consistent with actual group routing.
+const TIER_TO_GROUP: Record<string, string> = {
+  'cheap': 'scout',
+  'medium': 'tactical',
+  'expensive': 'strategic',
+};
+
+const TIER_GDPVAL_THRESHOLDS: { tier: string; min: number }[] = [
+  { tier: 'expensive', min: 700 },
+  { tier: 'medium', min: 300 },
+  { tier: 'cheap', min: 0 },
+];
+
+const TASK_COMPLEXITY_TIER: Record<string, string> = {
+  'trivial': 'cheap',
+  'simple': 'cheap',
+  'code_simple': 'medium',
+  'standard': 'medium',
+  'code_complex': 'expensive',
+  'design': 'expensive',
+  'planning': 'expensive',
+  'exploration': 'medium',
+};
+
+function getModelCostTier(modelRef: string): string {
+  const gdpval = lookupGdp(modelRef) ?? 0;
+  for (const { tier, min } of TIER_GDPVAL_THRESHOLDS) {
+    if (gdpval >= min) return tier;
+  }
+  return 'cheap';
+}
+
+/**
+ * Apply escalation logic: if the task complexity suggests a different cost tier
+ * than the last model used, return a hint to switch groups.
+ */
+function applyEscalationLogic(
+  classification: FullClassificationResult,
+  lastModel: string
+): HintClassificationResult | null {
+  // Only apply to ClassificationResult (not already a hint)
+  if ('hintType' in classification) {
+    return null;
+  }
+
+  const lastTier = getModelCostTier(lastModel);
+  const targetTier = TASK_COMPLEXITY_TIER[classification.category] || 'medium';
+
+  // If the target tier differs from the last model's tier, escalate/de-escalate
+  if (targetTier !== lastTier) {
+    const targetGroup = TIER_TO_GROUP[targetTier];
+    if (targetGroup) {
+      return {
+        reason: `Escalation: ${lastTier} → ${targetTier} for ${classification.category} task`,
+        confidence: 0.95,
+        hintType: 'group',
+        hintTarget: targetGroup,
+      };
+    }
+  }
+
+  return null;
 }
 
 interface ClassificationOptions {
@@ -178,6 +248,16 @@ export async function classifyPrompt(
   const directHint = detectHintDirectly(prompt);
   if (directHint) return directHint;
 
+  // Model momentum: FORCE reuse of last model ONLY during compaction
+  if (context.isCompaction && context.lastModel) {
+    return {
+      reason: 'Model continuity during compaction',
+      confidence: 1.0,
+      hintType: 'model',
+      hintTarget: context.lastModel,
+    };
+  }
+
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
   const wordCount = prompt.trim().split(/\s+/).length;
@@ -213,7 +293,15 @@ export async function classifyPrompt(
     // Extract first JSON object in case of surrounding text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as ClassificationResult;
-    if (!isValidFullClassification(parsed)) throw new Error(`Invalid format: ${response}`);
+    if (!isValidFullClassification(parsed)) {
+      // If category is invalid but structure is valid, map to fallback
+      const rawParsed = parsed as any;
+      if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
+        console.warn(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
+        return { category: 'fallback', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
+      }
+      throw new Error(`Invalid format: ${response}`);
+    }
     
     // Check for HINT override in the classification result
     if (parsed.category && parsed.category.startsWith('hint:')) {
@@ -248,12 +336,22 @@ export async function classifyPrompt(
           hintTarget: groupName,
         };
       } else {
-        // This is a model hint
+        // This is a model hint - clean up common prefixes like "use ", "nutze ", etc.
+        // Extract just the model name by removing common verbs
+        let cleanHintTarget = hintTarget.trim();
+        const verbPrefixes = ['use ', 'use:', 'nutze ', 'nutze:', 'utilise ', 'utilise:', 'utilizar ', 'utilizar:'];
+        for (const prefix of verbPrefixes) {
+          if (cleanHintTarget.toLowerCase().startsWith(prefix)) {
+            cleanHintTarget = cleanHintTarget.slice(prefix.length).trim();
+            break;
+          }
+        }
+        
         return {
           reason: parsed.reason || 'User specified model via HINT',
           confidence: 1.0,
           hintType: 'model',
-          hintTarget: hintTarget,
+          hintTarget: cleanHintTarget,
         };
       }
     }
@@ -270,8 +368,9 @@ export async function classifyPrompt(
   };
 
   // Primary model — may be slow on cold start
+  let classificationResult: FullClassificationResult | null = null;
   try {
-    return await tryClassify(model, timeoutMs);
+    classificationResult = await tryClassify(model, timeoutMs);
   } catch (primaryError) {
     // Cold-start timeout or load error → retry immediately with the fallback model
     if (model !== fallbackModel) {
@@ -280,11 +379,23 @@ export async function classifyPrompt(
           `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}:`,
           (primaryError as Error).message
         );
-        return await tryClassify(fallbackModel, fallbackTimeoutMs);
+        classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
       } catch (fallbackError) {
         console.error(`[classifier] Fallback model also failed:`, (fallbackError as Error).message);
       }
     }
+  }
+
+  // Escalation logic: if we have a classification and lastModel, check if we need to escalate
+  if (classificationResult && context.lastModel && !context.isCompaction) {
+    const result = applyEscalationLogic(classificationResult, context.lastModel);
+    if (result) {
+      return result;
+    }
+  }
+
+  if (classificationResult) {
+    return classificationResult;
   }
 
   // Cloud fallback: Try free cloud models
@@ -305,6 +416,13 @@ export async function classifyPrompt(
             const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
             if (isValidFullClassification(parsed)) {
               console.log(`[classifier] Cloud model ${modelRef} succeeded`);
+              // Apply escalation logic to cloud result
+              if (context.lastModel && !context.isCompaction) {
+                const result = applyEscalationLogic(parsed, context.lastModel);
+                if (result) {
+                  return result;
+                }
+              }
               return parsed;
             }
           } catch (cloudError) {
@@ -325,7 +443,15 @@ export async function classifyPrompt(
 
   console.warn('[classifier] Ollama and cloud models failed, falling back to static classification');
 
-  return classifyStatically(prompt);
+  const staticResult = classifyStatically(prompt);
+  // Apply escalation logic to static result
+  if (context.lastModel && !context.isCompaction) {
+    const result = applyEscalationLogic(staticResult, context.lastModel);
+    if (result) {
+      return result;
+    }
+  }
+  return staticResult;
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {
