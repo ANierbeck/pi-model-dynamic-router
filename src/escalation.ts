@@ -110,9 +110,24 @@ export class SessionEscalation {
   private _history: TurnRecord[] = [];
   private _llmInFlight = false;
   private _sessionId = 0;
+  private _classifierModel: string;
+
+  /**
+   * @param classifierModel Ollama ref used for LLM-based loop detection. Should come
+   *   from the dynamic group's classifier_fallback in router-config.json — the local
+   *   model set differs per setup, so this must not be hardcoded.
+   */
+  constructor(classifierModel = 'ollama/gemma2:2b') {
+    this._classifierModel = classifierModel;
+  }
 
   get level(): EscalationLevel {
     return this._level;
+  }
+
+  /** Update the classifier model after config load (constructor runs before config is available). */
+  setClassifierModel(classifierModel: string): void {
+    this._classifierModel = classifierModel;
   }
 
   reset(): void {
@@ -138,7 +153,7 @@ export class SessionEscalation {
       this._llmInFlight = true;
       const levelAtCallTime = this._level;
       const sessionAtCallTime = this._sessionId;
-      detectLoopWithLLM(recent, { model: 'ollama/gemma2:2b', timeoutMs: 8_000 })
+      detectLoopWithLLM(recent, { model: this._classifierModel, timeoutMs: 8_000 })
         .then(result => {
           this._llmInFlight = false;
           if (

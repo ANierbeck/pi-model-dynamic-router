@@ -48,6 +48,8 @@ export interface Group {
   min_gdpval?: number;
   max_cost?: number;
   max_cost_per_m?: number;
+  exclude_providers?: string[];
+  exclude_models?: string[];
   /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
   classifier_model?: string;
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
@@ -66,6 +68,7 @@ export interface ProviderConfig {
   monthly_cost_usd?: number;
   keys?: ProviderKey[];
   free_models?: string[];
+  cost_per_m?: number;  // Cost per million tokens (for subscription providers)
 }
 
 export interface Config {

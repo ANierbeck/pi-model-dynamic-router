@@ -96,16 +96,13 @@ export function baseTokens(s: string): Set<string> {
  */
 export function resolveShortModelName(
   target: string,
-  modelGroups: Record<string, { models?: string[] }>
+  allDiscoveredRefs: string[]
 ): string | null {
   if (target.includes('/')) return target;
-  for (const groupConfig of Object.values(modelGroups)) {
-    const match = groupConfig.models?.find(
-      (m) => m.endsWith('/' + target) || m === target
-    );
-    if (match) return match;
-  }
-  return null;
+  const match = allDiscoveredRefs.find(
+    (m: string) => m === target || m.endsWith('/' + target) || m.split('/').pop() === target
+  );
+  return match || null;
 }
 
 // ── Validation Utilities ──────────────────────────────────────────────────

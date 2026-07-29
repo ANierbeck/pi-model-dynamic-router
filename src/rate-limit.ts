@@ -151,6 +151,15 @@ export class RateLimitManager {
   }
 
   /**
+   * Fully clears any cooldown/backoff state for a ref — used when the user
+   * explicitly overrides the router (e.g. via HINT), so a stale cooldown from
+   * an earlier, unrelated failure doesn't silently block a deliberate choice.
+   */
+  clearLimit(ref: string): void {
+    this.limits.delete(ref);
+  }
+
+  /**
    * Records a soft failure (empty response, timeout)
    */
   recordSoftFailure(ref: string): void {

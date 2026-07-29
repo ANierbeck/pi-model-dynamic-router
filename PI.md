@@ -16,7 +16,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 | Category | Model Group | Description |
 |----------|-------------|-------------|
-| `code_simple` | operational | Simple code changes (1–10 lines, syntax fixes, typos) |
+| `code_simple` | operational | Simple code changes (1-10 lines, syntax fixes, typos) |
 | `code_complex` | tactical | Complex code changes (refactoring, debugging, >50 lines) |
 | `design` | strategic | Architecture, system design, API design |
 | `planning` | tactical | Project planning, roadmaps, task breakdown |
@@ -42,7 +42,7 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and integr
 startup → discoverKeys() → scan() → registerProviders → registerGroups
 ```
 
-1. **Key discovery**: env vars, auth.json, pass store, CLI OAuth files across 24+ providers
+1. **Key discovery**: env vars, auth.json, pass store, CLI OAuth files across 26+ providers
 2. **Model scan** (async, non-blocking): Chutes API, OpenRouter API, direct provider /v1/models endpoints
 3. **GDPval scrape**: intelligence scores from artificialanalysis.ai, cached with builtin fallbacks
 4. **Pricing**: per-provider/model from APIs, OpenRouter backfill for providers without pricing endpoints
@@ -76,6 +76,7 @@ startup → discoverKeys() → scan() → registerProviders → registerGroups
 | 8 | 90m | **Exponential backoff** — would be 128m if doubled, but capped at 90m |
 
 ### Cost Multiplier
+
 ```
 effectiveCost = (baseCost || 0.01) × subDiscount(0.5) × costMux[provider]
 ```
@@ -115,13 +116,10 @@ The actual configuration file contains provider definitions, model groups, and c
   "providers": {
     "openrouter": {
       "billing": "pay_per_token",
-      "free_models": ["openrouter/qwen/qwen3-4b:free", "openrouter/google/gemma-3-4b-it:free"]
-    },
-    "anthropic": {
-      "billing": "pay_per_token"
-    },
-    "mistral": {
-      "billing": "pay_per_token"
+      "free_models": [
+        "openrouter/qwen/qwen3-4b:free",
+        "openrouter/google/gemma-3-4b-it:free"
+      ]
     }
   },
   "model_groups": {
@@ -175,6 +173,108 @@ The actual configuration file contains provider definitions, model groups, and c
 
 Note: The actual configuration may contain additional fields and values. See `router-config.json` for the complete and up-to-date configuration.
 
+### New Configuration Options
+
+#### Provider Configuration
+
+**Important:** The router **only registers providers that Pi doesn't already know**. This prevents conflicts with built-in providers and extensions.
+
+| Provider Type | Registration | Notes |
+|---------------|--------------|-------|
+| **Built-in Pi** (anthropic, openai, google, mistral) | Skipped | Handled by Pi itself |
+| **Extensions** (ollama, lm-studio, claude-bridge, qwen-cli, gemini-cli) | Skipped | Handled by respective extensions |
+| **Router-only** (openrouter) | Registered by router | For free tier models |
+
+**`SKIP_REGISTRATION` in `src/providers.ts`:**
+```typescript
+export const SKIP_REGISTRATION = new Set([
+  'anthropic',    // Built-in Pi provider
+  'openai',        // Built-in Pi provider
+  'google',        // Built-in Pi provider
+  'qwen-cli',      // Extension
+  'gemini-cli',    // Extension
+  'ollama',        // Extension
+  'lm-studio',     // Extension
+  'antigravity',   // Extension
+  'claude-bridge', // Extension (user must install)
+]);
+```
+
+#### Fallback Groups
+
+Define a **cascade chain** for automatic fallback when all models in a group fail:
+
+```json
+{
+  "strategic": {
+    "method": "best",
+    "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"],
+    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
+  },
+  "tactical": {
+    "method": "best",
+    "min_gdpval": 600,
+    "models": ["mistral/mistral-medium-3.5"],
+    "fallback_groups": ["operational", "scout", "fallback"]
+  }
+}
+```
+
+**Cascade order:** `strategic → tactical → operational → scout → fallback`
+
+When a model fails (API error, rate limit, empty response), the router automatically tries the next model in the same group, then descends to the fallback groups in order.
+
+#### Model Metrics
+
+Override cost per million tokens for specific models:
+
+```json
+{
+  "model_metrics": {
+    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-opus-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-fable-5": { "cost_per_m": 0.0000015 }
+  }
+}
+```
+
+**Purpose:** Provide cost estimates for models not in the OpenRouter pricing database.
+
+#### GDPval Builtins
+
+Override GDPval scores for new or unranked models:
+
+```json
+{
+  "gdpval_builtin": {
+    "mistral-medium-3-5": 933,    // Was 665, corrected to 933
+    "claude-sonnet-5": 1603,
+    "claude-fable-5": 1747,
+    "claude-opus-5": 1860
+  }
+}
+```
+
+**Purpose:** Ensure new Claude models have correct GDPval scores for proper ranking.
+
+#### Exclude Providers/Models
+
+Filter out specific providers or models from selection:
+
+```json
+{
+  "model_groups": {
+    "strategic": {
+      "exclude_providers": ["openai"],
+      "exclude_models": ["anthropic/claude-3-haiku"],
+      "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"]
+    }
+  }
+}
+```
+
+**Note:** Currently not actively used in the default config, but available for custom configurations.
+
 ### Files
 
 | File | Purpose | Description |
@@ -184,14 +284,21 @@ Note: The actual configuration may contain additional fields and values. See `ro
 | `skills/router-login/` | Guided provider onboarding skill | Interactive setup |
 
 ### Features
+
 - Auto-discovery of models and pricing
 - Dynamic routing based on content
 - Rate limit handling with key rotation
 - Cost optimization with billing preferences
+- **Cascading fallback groups** for automatic recovery
+- **Cost tier system** for intelligent model selection
+- **Model momentum** for consistency after compaction
+- **Status line integration** for accurate model display
+- **Claude-bridge support** via extension
 - Modular architecture for easy extension
 
 ### Limitations
-- No curated model lists (auto-discover everything)
+
+- No curated model lists (auto-discover everything plus explicit models)
 - No token budget tracking (providers don't expose limits)
 - Requires Ollama for dynamic routing
 

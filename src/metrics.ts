@@ -144,7 +144,13 @@ export function setConfig(config: Config): void {
 export function setCache(newCache: Cache): void {
   cache = newCache;
   if (cache.gdpval_scores) {
-    setGdpval(cache.gdpval_scores);
+    // Merge cached scores with gdpval_builtin overrides (builtin takes precedence)
+    const merged: Record<string, number> = { ...cache.gdpval_scores };
+    // Apply any gdpval_builtin overrides from config
+    if (cfg.gdpval_builtin) {
+      Object.assign(merged, cfg.gdpval_builtin);
+    }
+    setGdpval(merged);
   }
 }
 
@@ -284,13 +290,20 @@ export function lookupPrice(ref: string): { input: number | 'unknown'; output: n
   }
 
   // 3. Backfill: find paid OpenRouter pricing for same model
-  const { modelId } = splitRef(ref);
+  const { provider, modelId } = splitRef(ref);
   const n = norm(modelId);
   for (const [k, v] of Object.entries(cache.openrouter_pricing ?? {})) {
     if (v.input <= 0) continue; // skip free-tier
     const kModel = k.indexOf('/') >= 0 ? k.slice(k.indexOf('/') + 1) : k;
     if (norm(kModel) === n) return v;
   }
+
+  // 4. Fallback: use provider-based cost estimate if available
+  if (cfg.providers?.[provider]?.cost_per_m !== undefined) {
+    const cost = cfg.providers[provider].cost_per_m;
+    return { input: cost, output: cost };
+  }
+
   return null;
 }
 
@@ -322,11 +335,14 @@ export function effCost(ref: string): number | 'unknown' {
     const provDef = PROVIDER_MAP[prov];
     if (provDef?.local) return 0;
     
-    // Subscription providers with no pricing data are free
-    if (cfg.providers?.[prov]?.billing === 'subscription') return 0;
+    // Try provider-based cost estimate
+    const provCost = cfg.providers?.[prov]?.cost_per_m;
+    if (provCost !== undefined) {
+      return provCost;
+    }
     
-    // For all other cases, return 'unknown' instead of defaulting to 0.01
-    return 'unknown';
+    // Unknown cost — assume high to be safe
+    return 0.000020; // ~$20/Mio Tokens
   }
   
   // At this point, base must be a number
