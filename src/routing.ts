@@ -88,6 +88,18 @@ export class Router {
         }
       }
     }
+
+    // Honour the user's explicit --models/enabledModels scoping (pi-ai 0.83.0+).
+    // Without this, the router could route to a model the user deliberately
+    // excluded from the session. Empty scopedModels means no scoping is
+    // configured, so every discovered ref stays eligible.
+    const scoped = this.sessionCtx?.scopedModels;
+    if (scoped && scoped.length > 0) {
+      const allowed = new Set(scoped.map((s) => `${s.model.provider}/${s.model.id}`));
+      for (const ref of refs) {
+        if (!allowed.has(ref)) refs.delete(ref);
+      }
+    }
     
     return [...refs];
   }
