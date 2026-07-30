@@ -297,6 +297,14 @@ let previousTokenCount = 0;
     metricsModule.setConfig(staticCfg);
     cacheManager = new CacheManager(extDir);
     router = new Router(cfg, cache, rateLimitManager.getLimits());
+    // load() runs on every session_start (and other reload paths) and replaces
+    // the Router instance wholesale, which drops its private sessionCtx field.
+    // Without this, group resolution silently falls back to the stale on-disk
+    // cache for the rest of the session instead of Pi's live model registry —
+    // dynamic discovery would never actually engage. sessionCtx (the module-level
+    // variable, set in session_start/session_shutdown) is the source of truth to
+    // re-apply here; callers must never need to remember to redo this themselves.
+    if (sessionCtx) router.setSessionCtx(sessionCtx);
     metricsModule.setCache(cache);
     budgetTracker = initBudgetTracker(cfg, cache);
     // Keep escalation's loop-detection model in sync with the configured dynamic
@@ -954,6 +962,7 @@ let previousTokenCount = 0;
       // are available for the current session without requiring a restart.
       cfg = dynamicConfig as Config;
       router = new Router(cfg, cache, rateLimitManager.getLimits());
+      if (sessionCtx) router.setSessionCtx(sessionCtx);
       metricsModule.setConfig(cfg);
       discoveryManager = new DiscoveryManager(cfg, cache);
 
@@ -1206,12 +1215,18 @@ let previousTokenCount = 0;
         invalidate() {},
         render(w: number): string[] {
           const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
-          const grp = ref ? detectGroup(ref) : null;
-          const isDynamic = ctx.model?.id === 'dynamic';
-          const m = ref ? getM(isDynamic && lastDynamicModel ? lastDynamicModel : ref) : null;
+          // The router never swaps the session's active model (see driveStream) —
+          // ctx.model stays the virtual group model (e.g. "standard/standard") for
+          // the whole session. Detect that here so the footer can show the actually
+          // resolved model (lastDynamicModel, updated by driveStream on every
+          // successful stream) instead of the static virtual model id.
+          const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
+          const isGroupModel = groupBase ? Object.prototype.hasOwnProperty.call(cfg.model_groups, groupBase) : false;
+          const grp = isGroupModel ? groupBase! : ref ? detectGroup(ref) : null;
+          const m = ref ? getM(isGroupModel && lastDynamicModel ? lastDynamicModel : ref) : null;
           const modelDisplay =
-            isDynamic && lastDynamicModel
-              ? `dynamic→${lastDynamicModel}`
+            isGroupModel && lastDynamicModel
+              ? lastDynamicModel
               : `${ctx.model?.provider ?? '?'}/${ctx.model?.id ?? '?'}`;
           const rStr = theme.fg('accent', `${grp ?? '—'}/${modelDisplay}`);
           const iStr = m ? theme.fg('warning', `int:${m.gdpval}`) : '';
@@ -2083,15 +2098,19 @@ let previousTokenCount = 0;
         // waiting for the stream to finish would leave the previous model displayed
         // for the whole turn. Candidates that fail in tryStream never get here, so
         // the line still never shows a model that was skipped outright.
+        //
+        // Deliberately never call pi.setModel() here: that replaces the *session's*
+        // active model, which for group routing is the virtual group model (e.g.
+        // "standard/standard"). Swapping it for the resolved concrete model fires
+        // model_select, which clears activeGroup and permanently routes future
+        // turns straight to that one model instead of back through groupStream —
+        // group routing then silently stops after the first request. Track the
+        // resolved ref only in the router's own state and the module-level
+        // curModel/lastDynamicModel used for metrics attribution and the footer.
         router.setCurModel(ref);
         router.setActiveGroup(activeGroup);
-        {
-          const { provider, modelId } = splitRef(ref);
-          const model = sessionCtx?.modelRegistry?.find(provider, modelId);
-          if (model) {
-            await pi.setModel(model);
-          }
-        }
+        curModel = ref;
+        lastDynamicModel = ref;
 
         try {
           const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);

@@ -137,6 +137,49 @@ describe('Router Integration Tests', () => {
       const refs = router.allDiscoveredRefs();
       expect(refs.length).toBe(cache.available_models!.length);
     });
+
+    // pi-ai/pi-coding-agent 0.83.0 added ExtensionContext.scopedModels, reflecting
+    // the user's --models/enabledModels session restriction. The router must
+    // honour it so it never routes to a model the user explicitly excluded.
+    it('should restrict discovered refs to scopedModels when the session has scoping configured', () => {
+      router.setSessionCtx({
+        modelRegistry: {
+          getAvailable: () => [
+            { provider: 'anthropic', id: 'claude-3-sonnet' },
+            { provider: 'openai', id: 'gpt-4' },
+          ],
+        },
+        scopedModels: [
+          { model: { provider: 'anthropic', id: 'claude-3-sonnet' } },
+        ],
+      } as any);
+
+      const refs = router.allDiscoveredRefs();
+
+      expect(refs).toContain('anthropic/claude-3-sonnet');
+      expect(refs).not.toContain('openai/gpt-4');
+
+      router.setSessionCtx(null);
+    });
+
+    it('should not restrict discovered refs when scopedModels is empty (no scoping configured)', () => {
+      router.setSessionCtx({
+        modelRegistry: {
+          getAvailable: () => [
+            { provider: 'anthropic', id: 'claude-3-sonnet' },
+            { provider: 'openai', id: 'gpt-4' },
+          ],
+        },
+        scopedModels: [],
+      } as any);
+
+      const refs = router.allDiscoveredRefs();
+
+      expect(refs).toContain('anthropic/claude-3-sonnet');
+      expect(refs).toContain('openai/gpt-4');
+
+      router.setSessionCtx(null);
+    });
   });
 
   describe('resolve()', () => {
