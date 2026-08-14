@@ -532,8 +532,17 @@ export class Router {
     if (g.max_cost !== undefined) {
       c = c.filter(ref => {
         const cost = effCost(ref);
-        // Exclude models with unknown costs when filtering by max_cost
-        if (cost === 'unknown') return false;
+        // Models with unknown cost: include them if their provider is NOT
+        // pay_per_token (i.e. subscription or local — effectively free/sunk cost).
+        // This prevents max_cost: 0 from filtering out ALL Mistral models,
+        // which have no OpenRouter price but are covered by subscription.
+        // For pay_per_token providers (openrouter), unknown cost means we
+        // genuinely don't know the price → exclude to be safe.
+        if (cost === 'unknown') {
+          const prov = ref.split('/')[0];
+          const billing = this.cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
+          return billing !== 'pay_per_token';
+        }
         return cost <= g.max_cost!;
       });
     }

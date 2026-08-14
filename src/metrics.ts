@@ -400,11 +400,15 @@ export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
   
-  // 1. Use metrics cost_per_m if set
+  // 1. Use metrics cost_per_m if set to a non-zero value.
+  //    cost_per_m: 0 is a valid value (free model) and must NOT trigger
+  //    the fallback to lookupPrice or the 0.000020 default — that would
+  //    cause max_cost: 0 groups to exclude free models!
   let base: number | 'unknown' | undefined = m.cost_per_m;
+  if (base === 0) return 0; // explicitly free
   
   // 2. Look up in OpenRouter/Chutes pricing cache
-  if (base === undefined || base === 0) {
+  if (base === undefined) {
     const price = lookupPrice(ref);
     if (price) {
       if (price.input === 'unknown' || price.output === 'unknown') {
@@ -415,7 +419,7 @@ export function effCost(ref: string): number | 'unknown' {
   }
   
   // 3. Check if base is still unknown/undefined
-  if (base === undefined || base === 0) {
+  if (base === undefined) {
     // Local providers (ollama, lm-studio) are truly free
     const provDef = PROVIDER_MAP[prov];
     if (provDef?.local) return 0;
