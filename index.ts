@@ -2160,9 +2160,20 @@ let previousTokenCount = 0;
   ];
 
   function getFallbackGroup(currentGroup: string): string | null {
+    // Prefer the group's configured fallback_groups (from router-config.json).
+    // This allows per-group fallback chains like trivial → [scout, operational, fallback].
+    const g = cfg.model_groups[currentGroup];
+    if (g?.fallback_groups?.length) {
+      for (const fb of g.fallback_groups) {
+        if (cfg.model_groups[fb]) return fb;
+      }
+      // If no configured fallback groups exist in config, fall through to
+      // the global order below.
+    }
+    // Fallback: use the global FALLBACK_GROUP_ORDER for groups without
+    // explicit fallback_groups, or if none of the configured ones exist.
     const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
     if (idx === -1) return null;
-    // Try next groups in priority order
     for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
       const group = FALLBACK_GROUP_ORDER[i];
       if (cfg.model_groups[group]) {
