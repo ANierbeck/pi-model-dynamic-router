@@ -17,3 +17,5 @@ router-config.dynamic.*.json
 
 # Coverage-Berichte
 coverage/
+.pi/
+*.tgz
