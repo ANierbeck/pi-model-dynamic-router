@@ -7,6 +7,7 @@ import YAML from 'yaml';
 import type { Metrics, Config, Cache, Group, ModelRef } from './types.ts';
 import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { matchSlug } from './slug-matcher.ts';
 
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -128,30 +129,37 @@ export function setLlmMatches(matches: Record<string, string>): void {
 
 export function lookupGdp(id: string): number | null {
   // SELBSTHEILEND: stelle sicher, dass gdpval die gescrapten Scores enthält.
-  // Die Race-Condition (load() während scan()) kann gdpval leeren — das
-  // beheben wir hier an der Wurzel, indem wir bei Bedarf aus dem Cache
-  // nachladen. Ohne das fehlen Modelle wie glm-5-2 in der /router-Tabelle.
   if (Object.keys(gdpval).length === 0 && cache.gdpval_scores) {
     Object.assign(gdpval, cache.gdpval_scores);
     gdpvalVersion++;
   }
-  // Primary: model-map.yaml explicit mapping
+
+  // Stage 0: model-map.yaml explicit override (highest priority)
+  // Explicit null means "exclude this model" — must be checked BEFORE the
+  // algorithmic matcher, otherwise Turbo/Flash variants get matched to
+  // their base model (e.g. GLM-5-Turbo → glm-5-2).
   const mapped = mapLookup(id);
   if (mapped === null) return null; // explicitly no score
   if (mapped !== undefined) {
-    // Find the slug's score (take highest across parameter variants)
     if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
     const key = [...baseTokens(mapped)].sort().join('|');
     return gdpvalIndex!.get(key) ?? null;
   }
-  // Fallback 1: automatic token-set matching
-  if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
-  const key = [...baseTokens(id)].sort().join('|');
-  const tokenScore = gdpvalIndex!.get(key);
-  if (tokenScore !== undefined) return tokenScore;
 
-  // Fallback 2: LLM-assisted match (semantic; covers vendor prefixes the
-  // token-set matcher can't, e.g. "zai-glm-5-2" → slug "glm-5-2").
+  // Stage 1: algorithmic slug-matcher (replaces manual model-map.yaml for
+  // common cases: vendor prefixes, date suffixes, -latest, etc.)
+  const slugKeys = Object.keys(gdpval);
+  const matchedSlug = matchSlug(id, slugKeys);
+  if (matchedSlug === null) return null; // explicitly excluded (small/special model)
+  if (matchedSlug !== undefined) {
+    const score = gdpval[matchedSlug];
+    if (score !== undefined) return score;
+    if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
+    const key = [...baseTokens(matchedSlug)].sort().join('|');
+    return gdpvalIndex!.get(key) ?? null;
+  }
+
+  // Stage 2: LLM-assisted match (semantic)
   const llmSlug = llmModelMatches[id];
   if (llmSlug) {
     const slugKey = [...baseTokens(llmSlug)].sort().join('|');
