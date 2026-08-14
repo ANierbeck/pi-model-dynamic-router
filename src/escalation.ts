@@ -2,7 +2,7 @@
 // Session loop detection and model-group escalation.
 // Owns all escalation state so index.ts stays clean.
 
-import { callOllama } from './ollama-utils.js';
+import { callOllama } from './ollama-utils.ts';
 
 export type EscalationLevel = 'operational' | 'tactical' | 'strategic';
 

@@ -4,7 +4,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { Cache } from './types.js';
+import type { Cache } from './types.ts';
 
 // ── Cache Management ───────────────────────────────────────────────────────
 

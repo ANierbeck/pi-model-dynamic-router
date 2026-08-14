@@ -5,9 +5,9 @@
 // first name match" logic can be unit tested without instantiating the full
 // Pi extension (session context, streaming, etc).
 
-import { splitRef } from './utils.js';
-import { PROVIDER_MAP } from './providers.js';
-import type { Group } from './types.js';
+import { splitRef } from './utils.ts';
+import { PROVIDER_MAP } from './providers.ts';
+import type { Group } from './types.ts';
 
 /**
  * The subset of Pi's ModelRegistry that usability checks depend on. Kept

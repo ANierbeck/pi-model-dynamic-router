@@ -7,8 +7,8 @@ import type {
   CostTier,
   CostTierConfig,
   CostTiersConfig 
-} from './types.js';
-import { lookupPrice, effCost } from './metrics.js';
+} from './types.ts';
+import { lookupPrice, effCost } from './metrics.ts';
 
 // Re-export of types for compatibility
 export type { CostTier, CostTierConfig, CostTiersConfig };
@@ -157,7 +157,7 @@ export function modelFitsCostTier(
 }
 
 // Re-export from content-classifier.ts for compatibility
-export { getGroupForCategory } from './content-classifier.js';
+export { getGroupForCategory } from './content-classifier.ts';
 
 /**
  * Returns the cost tier for a given classification category

@@ -1,9 +1,9 @@
 // src/cost-tracker.ts
 // Cost tracking for price-based routing
 
-import type { CostMetrics, CostTier } from './types.js';
-import { lookupPrice } from './metrics.js';
-import { getModelCostTier } from './cost-tiers.js';
+import type { CostMetrics, CostTier } from './types.ts';
+import { lookupPrice } from './metrics.ts';
+import { getModelCostTier } from './cost-tiers.ts';
 import fs from 'node:fs';
 
 /**

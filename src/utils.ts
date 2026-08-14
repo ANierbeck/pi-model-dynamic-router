@@ -1,8 +1,8 @@
 // src/utils.ts
 // Utility functions for the pi-model-router
 
-import { STRIP_SUFFIXES, PARAM_SUFFIXES } from './providers.js';
-import type { ModelRef } from './types.js';
+import { STRIP_SUFFIXES, PARAM_SUFFIXES } from './providers.ts';
+import type { ModelRef } from './types.ts';
 
 // ── String Utilities ──────────────────────────────────────────────────────
 

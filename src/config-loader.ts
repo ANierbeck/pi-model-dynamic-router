@@ -17,7 +17,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
-import type { Config } from './types.js';
+import type { Config } from './types.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
