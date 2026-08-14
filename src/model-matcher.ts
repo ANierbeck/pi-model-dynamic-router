@@ -65,6 +65,75 @@ export interface ResolveScoresInput {
  * - Tells the LLM to OMIT a model if it is not confident — partial responses
  *   are fine; hallucinated slugs are rejected by parseMatchResponse anyway.
  */
+import { candidateSlugs } from './slug-matcher.ts';
+
+/**
+ * Build a PER-MODEL prompt where each model only sees its top-K candidate slugs
+ * (pre-filtered by the algorithmic slug-matcher). This dramatically shortens
+ * the prompt and makes the LLM's job a VERIFICATION task, not a search.
+ *
+ * If a model has no candidates (unknown family), it's included in a separate
+ * "no candidates" section so the LLM knows it exists but can't match it.
+ */
+export function buildMatchPromptWithCandidates(
+  modelIds: string[],
+  gdpvalEntries: GdpvalEntry[],
+  maxKCandidates: number = 5
+): string {
+  const gdpvalMap = new Map(gdpvalEntries.map(g => [g.slug, g]));
+  const allSlugs = gdpvalEntries.map(g => g.slug);
+
+  // For each model, get its top-K candidates
+  const perModel: { modelId: string; candidates: GdpvalEntry[] }[] = [];
+  const noCandidates: string[] = [];
+
+  for (const id of modelIds) {
+    const slugs = candidateSlugs(id, allSlugs, maxKCandidates);
+    if (slugs.length === 0) {
+      noCandidates.push(id);
+    } else {
+      perModel.push({
+        modelId: id,
+        candidates: slugs
+          .map(s => gdpvalMap.get(s))
+          .filter((g): g is GdpvalEntry => g !== undefined),
+      });
+    }
+  }
+
+  // Build the per-model block
+  const perModelBlock = perModel.map(({ modelId, candidates }) => {
+    const cands = candidates
+      .map(g => `  - slug: "${g.slug}"  (display: "${g.label}", score: ${g.score})`)
+      .join('\n');
+    return `- Model ID: "${modelId}"\n  Candidates:\n${cands}`;
+  }).join('\n\n');
+
+  const noCandidatesBlock = noCandidates.length > 0
+    ? `\n\n# Models with no algorithmic candidates ( OMIT these — no match possible)\n${noCandidates.map(m => `- ${m}`).join('\n')}`
+    : '';
+
+  return `You are a model-name matcher. For each model ID, VERIFY which candidate slug refers to the SAME model, or OMIT if unsure.
+
+# Models and their pre-filtered candidates
+${perModelBlock || '(no models with candidates)'}${noCandidatesBlock}
+
+# Rules
+- Output ONLY a JSON object mapping model ID → slug.
+- Use the EXACT model ID string from above as the key.
+- Use the EXACT slug string from the candidates as the value.
+- Match the VERSION NUMBER precisely: "glm-5-2" ≠ "glm-5-3" ≠ "glm-4".
+  Different version numbers mean different models.
+  Exception: date-versioned models (YYMM like 2604, 2505) map to their named
+  version: mistral-medium-2604 = mistral-medium-3-5 (April 2026 release).
+- Match MODEL SIZE/TIER: a 3b/7b/8b model must NOT match a medium/large slug.
+- If unsure, OMIT the model from the output (don't guess).
+- Do NOT invent slugs. Do NOT use markdown fences.
+
+# Output
+{"<model-id>": "<slug>", ...}`;
+}
+
 export function buildMatchPrompt(
   modelIds: string[],
   gdpvalEntries: GdpvalEntry[]
@@ -370,7 +439,7 @@ export async function matchModelsWithLLMBatched(
 
   for (let i = 0; i < plausible.length; i += batchSize) {
     const batch = plausible.slice(i, i + batchSize);
-    const prompt = buildMatchPrompt(batch, gdpvalEntries);
+    const prompt = buildMatchPromptWithCandidates(batch, gdpvalEntries);
 
     let raw: string;
     try {

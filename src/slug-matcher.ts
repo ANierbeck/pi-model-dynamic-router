@@ -205,3 +205,59 @@ export function matchSlug(
 
   return undefined;
 }
+
+/**
+ * Return the TOP-K candidate GDPval slugs for a model ref, sorted by score.
+ * This is used as a PRE-FILTER for the LLM matcher: instead of sending all
+ * 60+ GDPval slugs to the LLM, we send only the 3-5 most plausible candidates.
+ * The LLM then only needs to VERIFY or CORRECT, not search from scratch.
+ *
+ * Returns up to `maxK` slugs, sorted by descending score.
+ * Returns empty array if the model is excluded or no candidates found.
+ */
+export function candidateSlugs(
+  ref: string,
+  gdpvalSlugs: string[],
+  maxK: number = 5
+): string[] {
+  // Check exclusion first
+  if (shouldExclude(ref)) return [];
+
+  const normalized = normalizeModelId(ref);
+  const extractTokens = (s: string) => {
+    const letters = new Set((s.match(/[a-z]+/g) ?? []));
+    const numbers = (s.match(/\d+/g) ?? []).map(Number);
+    return { letters, numbers };
+  };
+
+  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalized);
+
+  const candidates: { slug: string; score: number; tokenCount: number }[] = [];
+
+  for (const slug of gdpvalSlugs) {
+    const normalizedSlug = normalizeModelId(slug);
+    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizedSlug);
+
+    // Rule 1: All slug letter-tokens must be in ref
+    const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
+    if (!refHasAllSlugLetters) continue;
+
+    // Rule 2: If both have version numbers, major version must match
+    if (slugNumbers.length > 0 && refNumbers.length > 0) {
+      const slugMajor = slugNumbers[0];
+      const refMajor = refNumbers[0];
+      if (slugMajor !== refMajor) continue;
+    }
+
+    // Score: how many slug letter-tokens are in the ref?
+    const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
+    const score = overlap / slugLetters.size;
+
+    candidates.push({ slug, score, tokenCount: slugLetters.size });
+  }
+
+  // Sort by score descending, then by token count (more specific = higher)
+  candidates.sort((a, b) => b.score - a.score || b.tokenCount - a.tokenCount);
+
+  return candidates.slice(0, maxK).map(c => c.slug);
+}
