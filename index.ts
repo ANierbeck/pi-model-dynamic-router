@@ -1594,8 +1594,34 @@ let previousTokenCount = 0;
       }, timeoutMs);
     });
 
+    // Patterns that indicate a rate-limit / spend-limit / subscription error.
+    // These can arrive as error events OR as text_delta content (claude-bridge
+    // pushes rate-limit warnings as text via piUI.notify, and some error
+    // results with non-success subtype fall through without an error event).
+    const RATE_LIMIT_PATTERNS = [
+      'rate limit',
+      'spend limit',
+      'usage credits',
+      'out of',
+      'limit hit',
+      'claude code returned an error',
+      'monthly spend',
+      'five_hour',
+      'five hour',
+      'quota',
+      'credits',
+      'exceeded',
+      'overloaded',
+      'rate_limit',
+    ];
+    const isRateLimitText = (text: string): boolean => {
+      const lower = text.toLowerCase();
+      return RATE_LIMIT_PATTERNS.some((p) => lower.includes(p));
+    };
+
     // Race: iterate the stream vs timeout
     let rateLimited = false;
+    let accumulatedText = ''; // Accumulate text_delta to check for rate-limit text
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -1622,19 +1648,30 @@ let previousTokenCount = 0;
             }
             // Check if this is a rate limit or subscription error from claude-bridge
             const errorMsg = String((event as any).error?.message || (event as any).error || '');
-            const isRateLimitError = errorMsg.toLowerCase().includes('rate limit') ||
-                                     errorMsg.toLowerCase().includes('usage credits') ||
-                                     errorMsg.toLowerCase().includes('spend limit') ||
-                                     errorMsg.toLowerCase().includes('out of') ||
-                                     errorMsg.toLowerCase().includes('limit hit') ||
-                                     errorMsg.toLowerCase().includes('claude code returned an error');
-            
-            if (isRateLimitError) {
+            if (isRateLimitText(errorMsg)) {
               rateLimited = true;
             }
             // Don't forward error events — treat as soft failure so driveStream
             // can try the next candidate without showing an error to the user.
             return 'done';
+          }
+          // Check text_delta content for rate-limit text. claude-bridge
+          // sometimes pushes rate-limit/spend-limit messages as text content
+          // (via piUI.notify or as result text), not as error events.
+          // When detected, mark rateLimited and DON'T forward the text —
+          // driveStream will show a proper 'trying next model' message instead.
+          if (event.type === 'text_delta') {
+            const delta = String((event as any).delta || (event as any).text || '');
+            accumulatedText += delta;
+            if (isRateLimitText(delta) || isRateLimitText(accumulatedText)) {
+              rateLimited = true;
+              if (timer) {
+                clearTimeout(timer);
+                timer = null;
+              }
+              // Stop consuming — don't forward rate-limit text to the user
+              return 'done';
+            }
           }
           proxy.push(event);
         }
