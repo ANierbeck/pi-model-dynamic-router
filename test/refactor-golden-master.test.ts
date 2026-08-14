@@ -201,8 +201,10 @@ describe('golden master: exclude rules in allDiscoveredRefs', () => {
 });
 
 // ── 5. GLM-5-2 end-to-end regression ──────────────────────────────────────
+// RUN ONLY LOCALLY: TEST_INTEGRATION=true npm test test/refactor-golden-master.test.ts
+// (needs local dist/.cache/scan-cache.json, dist/router-config.json, ~/.pi/agent/router-config.user.json)
 
-describe('golden master: GLM-5-2 end-to-end regression', () => {
+describe.skipIf(!process.env.TEST_INTEGRATION)('golden master: GLM-5-2 end-to-end regression', () => {
   // The bug: GLM-5-2 must appear in strategic (≥700) with ~1506, not vanish
   // or get mis-matched to glm-4 (400).
   const cache: Cache = {
