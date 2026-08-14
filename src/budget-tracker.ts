@@ -1,8 +1,8 @@
 // src/budget-tracker.ts
 // Budget tracking for subscription-based providers (Claude, Mistral)
 
-import type { Cache, Config } from './types.js';
-import { PROVIDER_MAP } from './providers.js';
+import type { Cache, Config } from './types.ts';
+import { PROVIDER_MAP } from './providers.ts';
 
 /**
  * Budget information for a subscription provider

@@ -1,7 +1,7 @@
 // src/providers.ts
 // Provider definitions for the pi-model-router
 
-import type { ProviderDef } from './types.js';
+import type { ProviderDef } from './types.ts';
 
 // ── Provider Discovery Map ────────────────────────────────────────────────
 

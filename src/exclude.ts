@@ -10,8 +10,8 @@
 // Applied in generateDynamicConfig BEFORE per-group filtering, so excluded
 // models never enter any group's candidate list.
 
-import type { ExcludeRules, Config, Cache } from './types.js';
-import { PROVIDER_MAP } from './providers.js';
+import type { ExcludeRules, Config, Cache } from './types.ts';
+import { PROVIDER_MAP } from './providers.ts';
 
 export interface ExcludeContext {
   rules: ExcludeRules;

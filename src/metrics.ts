@@ -133,10 +133,16 @@ export function setLlmMatches(matches: Record<string, string>): void {
  * (e.g. mistral-medium-2604 and mistral-medium-latest both → mistral-medium-3-5).
  */
 export function getMatchedSlug(ref: string): string | null {
-  // Check LLM match first
+  // Check LLM match first (from in-memory state)
   if (llmModelMatches[ref]) return llmModelMatches[ref];
-  // Check slug-matcher
-  const slugKeys = Object.keys(gdpval);
+  // Check cached LLM matches (from cache.model_score_cache)
+  // This is needed because esbuild may bundle two instances of this module,
+  // and the routing.ts instance doesn't share in-memory state with index.ts.
+  const cached = (cache as any)?.model_score_cache?.[ref];
+  if (cached && typeof cached === 'string') return cached;
+  // Check slug-matcher — use cache.gdpval_scores as fallback if gdpval is empty
+  const scores = Object.keys(gdpval).length > 0 ? gdpval : (cache.gdpval_scores ?? {});
+  const slugKeys = Object.keys(scores);
   const matched = matchSlug(ref, slugKeys);
   return matched ?? null;
 }

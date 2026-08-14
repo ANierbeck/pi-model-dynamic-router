@@ -10,11 +10,11 @@ import type {
   Metrics,
   ModelWithLimits,
   GroupResolution,
-} from './types.js';
-import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
-import { PROVIDER_MAP } from './providers.js';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
-import { isExcluded } from './exclude.js';
+} from './types.ts';
+import { splitRef, stripProvider, norm, baseTokens } from './utils.ts';
+import { PROVIDER_MAP } from './providers.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.ts';
+import { isExcluded } from './exclude.ts';
 import {
   CostTier,
   CostTierConfig,
@@ -23,9 +23,9 @@ import {
   getCostTierForCategory,
   DEFAULT_COST_TIERS,
   getCostTiersFromConfig
-} from './cost-tiers.js';
-import { getGroupForCategory } from './content-classifier.js';
-import { BudgetTracker, initBudgetTracker } from './budget-tracker.js';
+} from './cost-tiers.ts';
+import { getGroupForCategory } from './content-classifier.ts';
+import { BudgetTracker, initBudgetTracker } from './budget-tracker.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 

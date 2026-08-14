@@ -18,7 +18,7 @@
 // All dependencies (PROVIDER_MAP, cache, config) are injected so the module
 // is fully unit-testable with a mocked fetch and no network.
 
-import type { ProviderDef, Config, Cache } from './types.js';
+import type { ProviderDef, Config, Cache } from './types.ts';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

@@ -1,9 +1,9 @@
 // src/cloud-client.ts
 // Client for cloud model calls (OpenRouter, etc.)
 
-import type { ProviderDef } from './types.js';
-import type { Config } from './types.js';
-import { PROVIDER_MAP } from './providers.js';
+import type { ProviderDef } from './types.ts';
+import type { Config } from './types.ts';
+import { PROVIDER_MAP } from './providers.ts';
 
 export interface CloudModelResponse {
   content: string;

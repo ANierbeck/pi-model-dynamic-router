@@ -6,8 +6,8 @@ import * as path from 'node:path';
 import { execSync } from 'node:child_process';
 import { homedir } from 'node:os';
 
-import type { Config, Cache, ProviderConfig, ProviderKey } from './types.js';
-import { PROVIDER_MAP } from './providers.js';
+import type { Config, Cache, ProviderConfig, ProviderKey } from './types.ts';
+import { PROVIDER_MAP } from './providers.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 

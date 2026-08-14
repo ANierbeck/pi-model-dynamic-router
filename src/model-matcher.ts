@@ -16,8 +16,8 @@
 // score resolution) plus the orchestrator that drives a single LLM call.
 // The LLM caller itself is injected so tests need no network.
 
-import { baseTokens } from './utils.js';
-import { stripDateSuffix } from './utils.js';
+import { baseTokens } from './utils.ts';
+import { stripDateSuffix } from './utils.ts';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 

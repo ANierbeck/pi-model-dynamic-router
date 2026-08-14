@@ -1,8 +1,8 @@
 // src/rate-limit.ts
 // Rate limit handling for the pi-model-router
 
-import type { RateLimit, Cache } from './types.js';
-import { splitRef } from './utils.js';
+import type { RateLimit, Cache } from './types.ts';
+import { splitRef } from './utils.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 

@@ -1,10 +1,10 @@
 // src/content-classifier.ts
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { callOllama } from './ollama-utils.js';
-import { CloudClient } from './cloud-client.js';
-import { DiscoveryManager } from './discovery.js';
-import { lookupGdp } from './metrics.js';
-import type { Config, Cache } from './types.js';
+import { callOllama } from './ollama-utils.ts';
+import { CloudClient } from './cloud-client.ts';
+import { DiscoveryManager } from './discovery.ts';
+import { lookupGdp } from './metrics.ts';
+import type { Config, Cache } from './types.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
