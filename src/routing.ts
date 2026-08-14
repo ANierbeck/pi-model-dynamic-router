@@ -430,7 +430,7 @@ export class Router {
    * remove different VERSIONS of the same model from the same provider.
    */
   private dedupByModelIdentity(refs: string[]): string[] {
-    const seen = new Map<string, string>(); // slug → first ref
+    const seen = new Map<string, string>(); // provider:slug → best ref
     const result: string[] = [];
     for (const ref of refs) {
       const slug = getMatchedSlug(ref);
@@ -438,8 +438,18 @@ export class Router {
         // Same slug + same provider = duplicate (different version of same model)
         const provider = ref.split('/')[0];
         const key = `${provider}:${slug}`;
-        if (seen.has(key)) {
-          // Already have this model from this provider — skip
+        const existing = seen.get(key);
+        if (existing) {
+          // Already have this model — keep the BETTER variant.
+          // Prefer versioned (e.g. mistral-medium-2604) over -latest,
+          // because -latest is an alias that changes when a new version is
+          // released, while the versioned ID stays reproducible.
+          if (this.isBetterModelVariant(ref, existing)) {
+            // Replace the existing entry with the better variant
+            const idx = result.indexOf(existing);
+            if (idx !== -1) result[idx] = ref;
+            seen.set(key, ref);
+          }
           continue;
         }
         seen.set(key, ref);
@@ -447,6 +457,38 @@ export class Router {
       result.push(ref);
     }
     return result;
+  }
+
+  /**
+   * Determine if a model ref is a BETTER variant than another.
+   * Used by dedupByModelIdentity to pick the best among duplicates.
+   *
+   * Preference order (highest first):
+   * 1. Versioned (has a date or version number): mistral-medium-2604
+   * 2. Explicit version name: mistral-medium-3.5
+   * 3. -latest (alias, least preferred): mistral-medium-latest
+   */
+  private isBetterModelVariant(ref: string, than: string): boolean {
+    const refModel = ref.split('/').pop() ?? ref;
+    const thanModel = than.split('/').pop() ?? than;
+    const refScore = this.modelVariantPreference(refModel);
+    const thanScore = this.modelVariantPreference(thanModel);
+    return refScore > thanScore;
+  }
+
+  /**
+   * Score a model variant by preference (higher = better to keep).
+   * 3 = versioned (date or number suffix), 2 = explicit version name, 1 = -latest
+   */
+  private modelVariantPreference(modelId: string): number {
+    // -latest suffix = alias, least preferred (changes when new version released)
+    if (/-(latest|preview)$/i.test(modelId)) return 1;
+    // Date suffix (YYMM or YYYYMMDD) = versioned, most preferred (reproducible)
+    if (/-(?:\d{4}|\d{6}|\d{8})$/i.test(modelId)) return 3;
+    // Version number (e.g. -3.5, -3-5, -5-2) = explicit version name
+    if (/[-.]\d/i.test(modelId)) return 2;
+    // No version info = keep as-is (score 0)
+    return 0;
   }
 
   private resolveGroup(g: Group, name: string): GroupResolution | null {
