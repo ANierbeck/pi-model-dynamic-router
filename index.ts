@@ -2115,6 +2115,28 @@ let previousTokenCount = 0;
     return proxy;
   }
 
+  /**
+   * Push a router info message as proper text_delta events with the required
+   * `contentIndex` and `partial` fields. Without `partial` (which must be a
+   * valid AssistantMessage with `role`), Pi's compaction crashes with:
+   *   'Cannot read properties of undefined (reading role)'
+   * Every text_delta MUST be wrapped in text_start/text_end to form a complete
+   * content block, otherwise the proxy stream produces malformed messages.
+   */
+  function pushRouterInfo(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
+    const partial: AssistantMessage = {
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'end_turn',
+      timestamp: Date.now(),
+    } as unknown as AssistantMessage;
+    proxy.push({ type: 'text_start', contentIndex, partial } as any);
+    proxy.push({ type: 'text_delta', contentIndex, delta: text, partial } as any);
+    proxy.push({ type: 'text_end', contentIndex, content: text, partial } as any);
+  }
+
   // Rate-limit error detection for fallback logic
   function isRateLimitError(errorMsg: string): boolean {
     const lower = errorMsg.toLowerCase();
@@ -2201,17 +2223,14 @@ let previousTokenCount = 0;
           lastError = `${ref}: ${errorMsg}`; allErrors.push(lastError);
           recordSoftFailure(ref);
           // Notify user about hard failures so they know we tried alternatives
-          proxy.push({
-            type: 'text_delta',
-            text: `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`,
-          } as any);
+          pushRouterInfo(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
           return null;
         });
         if (!target) continue;
 
         // Show which model is actually being used
         const prefix = label ? `${label} · ${ref}` : ref;
-        proxy.push({ type: 'text_delta', text: `> [router] ${prefix}\n\n` } as any);
+        pushRouterInfo(proxy, `> [router] ${prefix}\n\n`);
 
         // Update the status line as soon as the stream was created successfully —
         // waiting for the stream to finish would leave the previous model displayed
@@ -2251,14 +2270,34 @@ let previousTokenCount = 0;
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, versuche ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            proxy.push({
-              type: 'text_delta',
-              text: `> [router] ${ref} — Rate-Limit/Spend-Limit erreicht${keyMsg}${suffix}\n\n`,
-            } as any);
+            pushRouterInfo(proxy, `> [router] ${ref} — Rate-Limit/Spend-Limit erreicht${keyMsg}${suffix}\n\n`);
             continue;
           }
 
           // Soft failure — record and try next candidate
+          //
+          // IMPORTANT: For cloud providers (openrouter, etc.), an empty_response
+          // or empty_timeout is almost always a rate-limit or auth error — the
+          // stream starts but returns no content because the API rejected the
+          // request (429, 401, 403, etc.). Treating this as a soft failure only
+          // gives a short backoff, which means the same model gets retried
+          // immediately on the next turn — causing the "stuck on working..."
+          // loop. Instead, treat empty responses from cloud providers as hard
+          // rate-limits so they get a proper cooldown.
+          const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
+          const isEmptyFailure = result.reason === 'empty_response' || result.reason === 'empty_timeout';
+          if (isCloudProvider && isEmptyFailure) {
+            // Treat as rate-limit for cloud providers — hard cooldown
+            const rlResult = recordLimit(ref);
+            lastError = `${ref}: ${result.reason} (treated as rate-limit)`; allErrors.push(lastError);
+            const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
+            pushRouterInfo(proxy, `> [router] ${ref} — leere Antwort (vermutlich Rate-Limit)${keyMsg}${suffix}\n\n`);
+            continue;
+          }
+
+          // Local model soft failure — short backoff only
           lastError = `${ref}: ${result.reason}`; allErrors.push(lastError);
           recordSoftFailure(ref);
 
@@ -2268,10 +2307,7 @@ let previousTokenCount = 0;
             : 'leere Antwort vom Modell';
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, versuche ${nextRef} …` : '';
-          proxy.push({
-            type: 'text_delta',
-            text: `> [router] ${ref} — ${reason}${suffix}\n\n`,
-          } as any);
+          pushRouterInfo(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
         } catch (streamError) {
           // Hard failure (e.g., "No API provider registered") — treat as soft failure
           const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
@@ -2279,10 +2315,7 @@ let previousTokenCount = 0;
           recordSoftFailure(ref);
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, versuche ${nextRef} …` : '';
-          proxy.push({
-            type: 'text_delta',
-            text: `> [router] ${ref} — Fehler: ${errorMsg}${suffix}\n\n`,
-          } as any);
+          pushRouterInfo(proxy, `> [router] ${ref} — Fehler: ${errorMsg}${suffix}\n\n`);
         }
       }
 
@@ -2296,10 +2329,7 @@ let previousTokenCount = 0;
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
-            proxy.push({
-              type: 'text_delta',
-              text: `> [router] All models in ${label} rate-limited, trying ${fallbackGroup}...\n\n`,
-            } as any);
+            pushRouterInfo(proxy, `> [router] All models in ${label} rate-limited, trying ${fallbackGroup}...\n\n`);
             // Recursively try the fallback group
             await driveStream(proxy, fb.candidates, context, options, `${label}→${fallbackGroup}`);
             return;
