@@ -248,13 +248,31 @@ export async function classifyPrompt(
   const directHint = detectHintDirectly(prompt);
   if (directHint) return directHint;
 
-  // Model momentum: FORCE reuse of last model ONLY during compaction
-  if (context.isCompaction && context.lastModel) {
+  // Model momentum: during compaction we need a model with enough context
+  // window. If the last model was a large cloud model, reuse it. If it was a
+  // small local model (which can't handle the full compacted context), route
+  // to 'strategic' instead — the context-window guard in driveStream will
+  // skip any model that's too small.
+  if (context.isCompaction) {
+    // Check if the last model has a large enough context window for compaction.
+    // Local models (ollama, lm-studio) often have small windows (4K-8K).
+    if (context.lastModel) {
+      const isSmallLocal = /ollama\/|lm-studio\//i.test(context.lastModel) ||
+                          /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
+      if (!isSmallLocal) {
+        return {
+          reason: 'Model continuity during compaction (large model)',
+          confidence: 1.0,
+          hintType: 'model',
+          hintTarget: context.lastModel,
+        };
+      }
+    }
+    // Last model was small or unknown — route to strategic for compaction.
     return {
-      reason: 'Model continuity during compaction',
-      confidence: 1.0,
-      hintType: 'model',
-      hintTarget: context.lastModel,
+      category: 'code_complex',
+      reason: 'Compaction — routing to strategic for large context window',
+      confidence: 0.9,
     };
   }
 
