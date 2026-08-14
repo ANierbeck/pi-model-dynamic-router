@@ -1705,6 +1705,24 @@ let previousTokenCount = 0;
     return total;
   }
 
+  /**
+   * Returns the context window (in tokens) for a model ref, or null if unknown.
+   * Uses the model registry's contextWindow property (default 128K in Pi).
+   * Small local models (e.g. gemma4:12b @ 8K) will return their actual limit.
+   */
+  function getModelContextWindow(ref: string): number | null {
+    if (!sessionCtx) return null;
+    const { provider, modelId } = splitRef(ref);
+    try {
+      const model = sessionCtx.modelRegistry.find(provider, modelId);
+      if (!model) return null;
+      const cw = (model as any).contextWindow;
+      return typeof cw === 'number' && cw > 0 ? cw : null;
+    } catch {
+      return null;
+    }
+  }
+
   function isCompactionTurn(context: Context): boolean {
     const currentMessageCount = context.messages.length;
     const currentTokenCount = estimateContextTokens(context);
@@ -2107,6 +2125,11 @@ let previousTokenCount = 0;
       // hide earlier (possibly more relevant) failures behind a random last candidate.
       const allErrors: string[] = [];
 
+      // Estimate the conversation token count ONCE — used to skip models whose
+      // context window is too small for the current context (e.g. an 8K local
+      // model can't compact a 30K-token conversation).
+      const contextTokens = estimateContextTokens(context);
+
       // Iterate every candidate in order; skip limited or unregistered ones without
       // consuming the remainder. This ensures all group models are tried even if some
       // are not yet in Pi's session registry or are temporarily rate-limited.
@@ -2114,6 +2137,14 @@ let previousTokenCount = 0;
         const ref = candidates[i];
         if (isLimited(ref)) {
           allErrors.push(`${ref}: skipped, still in cooldown (${router.limitSecs(ref)}s remaining)`);
+          continue;
+        }
+        // Context-window guard: skip models whose context window is smaller than
+        // the current conversation. This prevents timeout/failure when compacting
+        // large conversations with small-context models (e.g. gemma4:12b @ 8K).
+        const ctxWindow = getModelContextWindow(ref);
+        if (ctxWindow && contextTokens > ctxWindow) {
+          allErrors.push(`${ref}: skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
           continue;
         }
         const target = await tryStream(ref, context, options).catch((err) => {
