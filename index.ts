@@ -2138,6 +2138,8 @@ let previousTokenCount = 0;
   }
 
   // Rate-limit error detection for fallback logic
+  // Includes empty_response/empty_timeout because cloud providers return
+  // empty streams on rate-limit/auth errors (HTTP 429/401/403 → no content).
   function isRateLimitError(errorMsg: string): boolean {
     const lower = errorMsg.toLowerCase();
     return lower.includes('rate limit') ||
@@ -2146,7 +2148,11 @@ let previousTokenCount = 0;
            lower.includes('quota') ||
            lower.includes('limit hit') ||
            lower.includes('out of') ||
-           lower.includes('credits');
+           lower.includes('credits') ||
+           lower.includes('rate_limit_exceeded') ||
+           lower.includes('empty_response') ||
+           lower.includes('empty_timeout') ||
+           lower.includes('overloaded');
   }
 
   // Fallback group priority: try lower tiers when rate-limited
@@ -2400,11 +2406,24 @@ let previousTokenCount = 0;
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
       if (!def.baseUrl || !def.api) continue;
       if (SKIP_REGISTRATION.has(provId)) continue;
+      // Keys can come from router-config.json OR from auth.json (via authKey).
+      // Providers like mistral-zai have an authKey but no explicit keys in
+      // router-config.json — without this fallback they would never register.
       const keys = cfg.providers?.[provId]?.keys;
-      if (!keys?.length) continue;
-      const rawKey = keys[activeKeyIdx[provId] ?? 0].key;
-      const apiKey = resolveKeyValue(rawKey);
-      if (!apiKey || (apiKey === rawKey && rawKey.startsWith('__local__'))) continue;
+      let rawKey: string | undefined;
+      let apiKey: string | undefined;
+      if (keys?.length) {
+        rawKey = keys[activeKeyIdx[provId] ?? 0].key;
+        apiKey = resolveKeyValue(rawKey);
+        if (!apiKey || (apiKey === rawKey && rawKey.startsWith('__local__'))) continue;
+      } else if (def.authKey) {
+        // Try to get key from Pi's auth store (auth.json)
+        apiKey = await sessionCtx?.modelRegistry?.getApiKeyForProvider?.(def.authKey)
+          .catch(() => null) ?? undefined;
+        if (!apiKey) continue;
+      } else {
+        continue;
+      }
 
       // Collect models for this provider from available_models + model_metrics
       const provModels: string[] = [];
