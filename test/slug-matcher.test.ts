@@ -8,7 +8,9 @@ import {
   normalizeModelId,
   shouldExclude,
   matchSlug,
+  candidateSlugs,
 } from '../src/slug-matcher.js';
+import { buildMatchPromptWithCandidates } from '../src/model-matcher.js';
 
 // The GDPval slugs from the real cache
 const GDPVAL_SLUGS = [
@@ -172,5 +174,97 @@ describe('matchSlug', () => {
     expect(matchSlug('ollama/gemma2:2b', GDPVAL_SLUGS)).toBe('gemma2-2b');
     expect(matchSlug('ollama/llama3.1:latest', GDPVAL_SLUGS)).toBe('llama3-1');
     expect(matchSlug('ollama/qwen3.5:latest', GDPVAL_SLUGS)).toBe('qwen3-5');
+  });
+});
+describe('candidateSlugs', () => {
+  it('returns top-K candidates sorted by score', () => {
+    const candidates = candidateSlugs('mistral/devstral-2512', GDPVAL_SLUGS, 5);
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.length).toBeLessThanOrEqual(5);
+    // devstral should be the top candidate
+    expect(candidates[0]).toBe('devstral');
+  });
+
+  it('returns empty for excluded models', () => {
+    expect(candidateSlugs('mistral/ministral-3b-latest', GDPVAL_SLUGS)).toEqual([]);
+    expect(candidateSlugs('mistral/mistral-ocr-2512', GDPVAL_SLUGS)).toEqual([]);
+  });
+
+  it('returns glm-5-2 (not glm-4) for zai-glm-5-2', () => {
+    const candidates = candidateSlugs('mistral-zai/zai-glm-5-2', GDPVAL_SLUGS, 5);
+    expect(candidates).toContain('glm-5-2');
+    // glm-4 should NOT be in candidates (different major version)
+    expect(candidates).not.toContain('glm-4');
+  });
+
+  it('returns glm-4 (not glm-5-2) for glm-4', () => {
+    const candidates = candidateSlugs('mistral/glm-4', GDPVAL_SLUGS, 5);
+    expect(candidates).toContain('glm-4');
+    // glm-5-2 should NOT be in candidates (different major version)
+    expect(candidates).not.toContain('glm-5-2');
+  });
+
+  it('limits to maxK candidates', () => {
+    const candidates = candidateSlugs('ollama/gemma4:12b-mlx', GDPVAL_SLUGS, 3);
+    expect(candidates.length).toBeLessThanOrEqual(3);
+    expect(candidates[0]).toBe('gemma4-12b');
+  });
+
+  it('returns mistral-medium-3-5 for mistral-medium-2604', () => {
+    const candidates = candidateSlugs('mistral/mistral-medium-2604', GDPVAL_SLUGS, 5);
+    expect(candidates).toContain('mistral-medium-3-5');
+  });
+
+  it('returns empty array for models with no matching family', () => {
+    const candidates = candidateSlugs('some-unknown-vendor/unknown-model', GDPVAL_SLUGS, 5);
+    expect(candidates).toEqual([]);
+  });
+});
+
+describe('buildMatchPromptWithCandidates', () => {
+  const gdpvalEntries = [
+    { slug: 'glm-5-2', label: 'GLM 5.2', score: 1506 },
+    { slug: 'glm-4', label: 'GLM 4', score: 400 },
+    { slug: 'mistral-medium-3-5', label: 'Mistral Medium 3.5', score: 933 },
+    { slug: 'devstral', label: 'Devstral', score: 585 },
+    { slug: 'claude-opus-5', label: 'Claude Opus 5', score: 1860 },
+  ];
+
+  it('only includes per-model candidates (not all slugs)', () => {
+    const prompt = buildMatchPromptWithCandidates(
+      ['mistral-zai/zai-glm-5-2'],
+      gdpvalEntries,
+      5
+    );
+    // Should contain glm-5-2 as candidate
+    expect(prompt).toContain('slug: "glm-5-2"');
+    // Should NOT contain glm-4 as a candidate (it may appear in rules text)
+    // Check the candidates section specifically
+    expect(prompt).not.toContain('slug: "glm-4"');
+    // Should NOT contain devstral as a candidate (different family)
+    expect(prompt).not.toContain('slug: "devstral"');
+  });
+
+  it('separates models with no candidates', () => {
+    const prompt = buildMatchPromptWithCandidates(
+      ['mistral/ministral-3b-latest', 'mistral/devstral-2512'],
+      gdpvalEntries,
+      5
+    );
+    // ministral-3b should be in "no candidates" section
+    expect(prompt).toContain('no algorithmic candidates');
+    expect(prompt).toContain('ministral-3b-latest');
+    // devstral should have candidates
+    expect(prompt).toContain('devstral-2512');
+    expect(prompt).toContain('devstral');
+  });
+
+  it('instructs LLM to VERIFY, not search', () => {
+    const prompt = buildMatchPromptWithCandidates(
+      ['mistral/mistral-medium-2604'],
+      gdpvalEntries,
+      5
+    );
+    expect(prompt).toContain('VERIFY');
   });
 });
