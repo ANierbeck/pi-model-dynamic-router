@@ -149,14 +149,24 @@ export function matchSlug(
   // Stage 2: Exclusion — only for models NOT in the GDPval DB
   if (shouldExclude(ref)) return null;
 
-  // Stage 4: Token-set fuzzy match
-  // Split into tokens: "mistralmedium2604" → {mistral, medium, 2604}
-  // For the slug: "mistralmedium35" → {mistral, medium, 3, 5}
-  // Match if ALL slug letter-tokens are in ref letter-tokens.
-  // Numbers are ignored for matching (versions change), letters must match.
-  const refLetterTokens = new Set(
-    (normalized.match(/[a-z]+/g) ?? [])
-  );
+  // Stage 4: Token-set fuzzy match with version-awareness
+  //
+  // Token extraction: split into letters and numbers.
+  // "mistralmedium2604" → letters {mistral, medium}, numbers [2604]
+  // "glm52" → letters {glm}, numbers [5, 2]
+  //
+  // Matching rules:
+  // 1. All letter-tokens of the slug must be in the ref (e.g. "medium" must match)
+  // 2. If both slug and ref have version numbers, the major version must match
+  //    (e.g. glm-5-x must NOT match glm-4-x — different model family)
+  // 3. If the ref has no version number, accept any version (e.g. "mistral-medium-latest")
+  const extractTokens = (s: string) => {
+    const letters = new Set((s.match(/[a-z]+/g) ?? []));
+    const numbers = (s.match(/\d+/g) ?? []).map(Number);
+    return { letters, numbers };
+  };
+
+  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalized);
 
   let bestSlug: string | undefined;
   let bestScore = 0;
@@ -164,23 +174,29 @@ export function matchSlug(
 
   for (const slug of gdpvalSlugs) {
     const normalizedSlug = normalizeModelId(slug);
-    const slugLetterTokens = new Set(
-      (normalizedSlug.match(/[a-z]+/g) ?? [])
-    );
+    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizedSlug);
 
-    // Skip if slug has letter-tokens the ref doesn't
-    const refHasAllSlugTokens = [...slugLetterTokens].every(t => refLetterTokens.has(t));
-    if (!refHasAllSlugTokens) continue;
+    // Rule 1: All slug letter-tokens must be in ref
+    const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
+    if (!refHasAllSlugLetters) continue;
 
-    // Score: how many slug letter-tokens are in the ref letter-tokens?
-    const overlap = [...slugLetterTokens].filter(t => refLetterTokens.has(t)).length;
-    const score = overlap / slugLetterTokens.size;
+    // Rule 2: If both have version numbers, major version must match
+    // e.g. slug "glm-5-2" (major 5) must not match ref "glm-4" (major 4)
+    if (slugNumbers.length > 0 && refNumbers.length > 0) {
+      const slugMajor = slugNumbers[0];
+      const refMajor = refNumbers[0];
+      if (slugMajor !== refMajor) continue;
+    }
+
+    // Score: how many slug letter-tokens are in the ref?
+    const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
+    const score = overlap / slugLetters.size;
 
     // Prefer longer matches (more tokens = more specific)
-    if (score > bestScore || (score === bestScore && slugLetterTokens.size > bestSlugTokenCount)) {
+    if (score > bestScore || (score === bestScore && slugLetters.size > bestSlugTokenCount)) {
       bestScore = score;
       bestSlug = slug;
-      bestSlugTokenCount = slugLetterTokens.size;
+      bestSlugTokenCount = slugLetters.size;
     }
   }
 

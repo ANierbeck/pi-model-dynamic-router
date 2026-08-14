@@ -151,6 +151,14 @@ describe('matchSlug', () => {
     expect(result === null || result === undefined).toBe(true);
   });
 
+  it('does NOT match glm-4 to glm-5-2 (different major version)', () => {
+    // glm-4 (GDPval 400) must NOT be matched to glm-5-2 (GDPval 1506)
+    // This is critical — matching across major versions causes wrong routing.
+    expect(matchSlug('mistral/glm-4', GDPVAL_SLUGS)).toBe('glm-4');
+    expect(matchSlug('mistral/glm-4-2507', GDPVAL_SLUGS)).toBe('glm-4');
+    expect(matchSlug('mistral/glm-5-2', GDPVAL_SLUGS)).toBe('glm-5-2');
+  });
+
   it('matches claude-bridge models', () => {
     expect(matchSlug('claude-bridge/claude-opus-5', GDPVAL_SLUGS)).toBe('claude-opus-5');
     expect(matchSlug('claude-bridge/claude-sonnet-5', GDPVAL_SLUGS)).toBe('claude-sonnet-5');
