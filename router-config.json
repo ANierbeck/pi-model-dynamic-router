@@ -17,14 +17,14 @@
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": []
+      "fallback_groups": ["scout", "operational", "fallback"]
     },
     "simple": {
       "description": "Simple tasks - free models only",
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": ["trivial"]
+      "fallback_groups": ["trivial", "scout", "operational", "fallback"]
     },
     "standard": {
       "description": "Standard tasks - cost-effective models",
