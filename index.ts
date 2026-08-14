@@ -2137,9 +2137,12 @@ let previousTokenCount = 0;
     proxy.push({ type: 'text_end', contentIndex, content: text, partial } as any);
   }
 
-  // Rate-limit error detection for fallback logic
-  // Includes empty_response/empty_timeout because cloud providers return
-  // empty streams on rate-limit/auth errors (HTTP 429/401/403 → no content).
+  // Rate-limit error detection for fallback logic.
+  // Only treat REAL rate-limit errors as triggering fallback.
+  // empty_response/empty_timeout are NOT included here because they can
+  // be transient overloads (especially for free models) — triggering a
+  // fallback cascade on every empty response would exhaust all tiers
+  // when a simple retry would suffice.
   function isRateLimitError(errorMsg: string): boolean {
     const lower = errorMsg.toLowerCase();
     return lower.includes('rate limit') ||
@@ -2147,11 +2150,7 @@ let previousTokenCount = 0;
            lower.includes('spend limit') ||
            lower.includes('quota') ||
            lower.includes('limit hit') ||
-           lower.includes('out of') ||
-           lower.includes('credits') ||
            lower.includes('rate_limit_exceeded') ||
-           lower.includes('empty_response') ||
-           lower.includes('empty_timeout') ||
            lower.includes('overloaded');
   }
 
@@ -2283,17 +2282,20 @@ let previousTokenCount = 0;
           // Soft failure — record and try next candidate
           //
           // IMPORTANT: For cloud providers (openrouter, etc.), an empty_response
-          // or empty_timeout is almost always a rate-limit or auth error — the
-          // stream starts but returns no content because the API rejected the
-          // request (429, 401, 403, etc.). Treating this as a soft failure only
-          // gives a short backoff, which means the same model gets retried
-          // immediately on the next turn — causing the "stuck on working..."
-          // loop. Instead, treat empty responses from cloud providers as hard
-          // rate-limits so they get a proper cooldown.
+          // or empty_timeout can be a rate-limit, auth error, or just a
+          // transient overload. The right response depends on the model type:
+          //
+          // - FREE models (":free" suffix): These are often just overloaded
+          //   (free tier has low priority). Use a SHORT soft backoff so they
+          //   get retried on the next turn without permanently blocking them.
+          //
+          // - PAID cloud models: An empty response is more likely a real
+          //   rate-limit (429) or auth error. Use a HARD cooldown.
           const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
           const isEmptyFailure = result.reason === 'empty_response' || result.reason === 'empty_timeout';
-          if (isCloudProvider && isEmptyFailure) {
-            // Treat as rate-limit for cloud providers — hard cooldown
+          const isFreeModel = ref.includes(':free');
+          if (isCloudProvider && isEmptyFailure && !isFreeModel) {
+            // Paid cloud model — treat as rate-limit (hard cooldown)
             const rlResult = recordLimit(ref);
             lastError = `${ref}: ${result.reason} (treated as rate-limit)`; allErrors.push(lastError);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
@@ -2325,17 +2327,22 @@ let previousTokenCount = 0;
         }
       }
 
-      // All retries exhausted — check if all failures are rate-limit related
-      // and try a fallback group if so
-      const allRateLimited = allErrors.length > 0 && allErrors.every(e => isRateLimitError(e));
+      // All retries exhausted — try a fallback group if one is configured.
+      // Previously, fallback only fired when ALL errors were rate-limit related.
+      // But that's too narrow: if mixed errors (empty_response, rate_limit,
+      // soft failures) all fail, the user still needs a working model. Now we
+      // fire the fallback cascade whenever ALL candidates failed, regardless
+      // of the specific error type. The fallback group's own candidates will
+      // be filtered by isLimited() so rate-limited models are still skipped.
+      const allFailed = allErrors.length > 0;
       
-      if (allRateLimited && label) {
+      if (allFailed && label) {
         // Try to fall back to a lower-tier group
         const fallbackGroup = getFallbackGroup(label);
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
-            pushRouterInfo(proxy, `> [router] All models in ${label} rate-limited, trying ${fallbackGroup}...\n\n`);
+            pushRouterInfo(proxy, `> [router] All models in ${label} failed, trying ${fallbackGroup}...\n\n`);
             // Recursively try the fallback group
             await driveStream(proxy, fb.candidates, context, options, `${label}→${fallbackGroup}`);
             return;
