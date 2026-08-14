@@ -18,6 +18,7 @@ import type {
 } from '@earendil-works/pi-ai';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import { Type } from '@sinclair/typebox';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import * as fs from 'node:fs';
@@ -28,13 +29,17 @@ import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
-import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts';
+import { splitRef, stripDateSuffix, resolveShortModelName, baseTokens } from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
 import { lookupGdp } from './src/metrics.ts';
 import { CacheManager } from './src/cache.ts';
+import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
+import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
+import { isExcluded, type ExcludeContext } from './src/exclude.ts';
+import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
@@ -104,7 +109,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   let cacheManager: CacheManager;
   let router: Router;
   let budgetTracker: BudgetTracker;
-  let gdpval: Record<string, number> = {};
+  // gdpval/modelMap/lookupGdp state lives in metrics.ts (single source of truth).
   let scanning = false;
   let sessionStart = Date.now();
   let turnStart = 0;
@@ -122,120 +127,99 @@ let previousTokenCount = 0;
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
-  function norm(s: string): string {
-    s = s.toLowerCase();
-    // Strip to last path segment — "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-v3"
-    const slash = s.lastIndexOf('/');
-    if (slash !== -1 && slash < s.length - 1) s = s.slice(slash + 1);
-    for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
-    s = stripDateSuffix(s);
-    return s.replace(/[^a-z0-9]/g, '');
-  }
+  async function populateLlmMatches(allModelRefs: string[]): Promise<void> {
+    metricsModule.setLlmMatches({});
+    const gdpval = metricsModule.getGdpval();
+    if (!allModelRefs.length || Object.keys(gdpval).length === 0) return;
 
-  // ── Model Map: authoritative model → GDPval slug mapping ────────────
+    // Only ask the LLM about models the first two tiers can't resolve.
+    const unscored = allModelRefs.filter((ref) => metricsModule.lookupGdp(ref) === null);
+    if (!unscored.length) return;
 
-  // Load model-map.yaml: maps "modelId" → "gdpval-slug" (or null)
-  type ModelMap = Record<string, string | null>;
-  let modelMap: ModelMap = {};
-  let modelMapWildcards: [string, string | null][] = []; // [prefix, slug]
-
-  function loadModelMap() {
-    const mapPath = path.join(extDir, 'model-map.yaml');
-    try {
-      const raw = YAML.parse(fs.readFileSync(mapPath, 'utf-8')) as Record<string, string | null>;
-      modelMap = {};
-      modelMapWildcards = [];
-      for (const [key, slug] of Object.entries(raw)) {
-        if (key === null || typeof key !== 'string') continue;
-        if (key.endsWith('*')) {
-          modelMapWildcards.push([key.slice(0, -1), slug]);
-        } else {
-          modelMap[key] = slug;
-        }
+    // Serve from cache first (avoid repeat LLM calls for the same models).
+    // BUT validate cached matches with isPlausibleMatch — old cached entries
+    // from a weaker model (e.g. gemma2:2b) may contain cross-family
+    // hallucinations that must not be trusted.
+    const cachedMatches = cache.model_score_cache ?? {};
+    const cachedHits: Record<string, string> = {};
+    const stillUnscored: string[] = [];
+    for (const ref of unscored) {
+      const cached = cachedMatches[ref];
+      if (cached && typeof cached === 'string' && isPlausibleMatch(ref, cached)) {
+        cachedHits[ref] = cached;
+      } else {
+        // Cached match is implausible (or missing) → re-match.
+        stillUnscored.push(ref);
       }
-      // Sort wildcards longest-first for most specific match
-      modelMapWildcards.sort((a, b) => b[0].length - a[0].length);
-    } catch {
-      /* no map file, use fallback only */
+    }
+    if (cachedHits) metricsModule.setLlmMatches(cachedHits);
+    if (!stillUnscored.length) return;
+
+    // Build the gdpval candidate list (slug + label + score) for the prompt.
+    const gdpvalEntries: GdpvalEntry[] = Object.entries(gdpval).map(([slug, score]) => ({
+      slug,
+      label: slugToLabel(slug),
+      score,
+    }));
+
+    // LLM caller: provider-agnostic local, else free OpenRouter cloud.
+    const deps: LocalLlmDeps = {
+      providers: PROVIDER_MAP,
+      cache,
+      cfg,
+      timeoutMs: 90_000, // large models need time; if the local model is too
+      // slow it fails and the cloud fallback (free OpenRouter) fires.
+    };
+    const callLlm = (prompt: string) => callLocalLlm(prompt, deps);
+
+    try {
+      const result = await matchModelsWithLLMBatched({
+        modelIds: stillUnscored,
+        gdpvalEntries,
+        callLlm,
+        batchSize: 40,
+      });
+
+      // Merge cached plausible hits + fresh matches, persist.
+      // (cachedMatches may contain implausible entries from a weaker model —
+      // only persist the plausible cachedHits + fresh result.matches.)
+      const merged = { ...cachedHits, ...result.matches };
+      cache.model_score_cache = merged;
+      cacheManager.saveCache();
+      metricsModule.setLlmMatches(merged);
+
+      // Distinguish "LLM call failed" (error) from "LLM answered but no matches".
+      if (result.error) {
+        routerLog(
+          `[router] LLM matcher call failed (${result.error}); ${stillUnscored.length} model(s) remain unscored. Check that a local model (Ollama gemma2:2b) or a free OpenRouter model is available.`
+        );
+      } else if (result.matches && Object.keys(result.matches).length) {
+        routerLog(
+          `[router] LLM matcher resolved ${Object.keys(result.matches).length} model(s) to gdpval slugs`
+        );
+        if (result.unmatched.length) {
+          routerLog(
+            `[router] LLM matcher could not match ${result.unmatched.length} model(s): ${result.unmatched.slice(0, 20).join(', ')}${result.unmatched.length > 20 ? ' ...' : ''}`
+          );
+        }
+      } else if (result.unmatched.length) {
+        routerLog(
+          `[router] LLM matcher returned no matches; ${result.unmatched.length} model(s) remain unscored`
+        );
+      }
+    } catch (err) {
+      // Fail-open: keep whatever cached hits we had; log the gap.
+      routerLog(
+        `[router] LLM matcher unavailable (${err instanceof Error ? err.message : String(err)}); ${stillUnscored.length} model(s) remain unscored`
+      );
     }
   }
 
-  /** Strip provider prefix from ref: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3" */
-  function stripProvider(ref: string): string {
-    const i = ref.indexOf('/');
-    if (i === -1) return ref;
-    const prov = ref.slice(0, i);
-    if (PROVIDER_MAP[prov] || cfg?.providers?.[prov]) return ref.slice(i + 1);
-    return ref;
-  }
-
-  /** Look up GDPval slug for a model ref using model-map.yaml */
-  function mapLookup(ref: string): string | null | undefined {
-    const modelId = stripProvider(ref);
-    // Exact match
-    if (modelId in modelMap) return modelMap[modelId];
-    // Wildcard match (longest prefix first)
-    for (const [prefix, slug] of modelMapWildcards) {
-      if (modelId.startsWith(prefix)) return slug;
-    }
-    return undefined; // not in map
-  }
-
-  // ── GDPval token-set fallback (for models not in model-map.yaml) ───
-
-  // GDPval parameter suffixes — same base model, different inference params
-  const PARAM_SUFFIXES = [
-    '-non-reasoning-low-effort',
-    '-non-reasoning-high-effort',
-    '-adaptive',
-    '-non-reasoning',
-    '-reasoning',
-    '-thinking',
-    '-low-effort',
-    '-high-effort',
-    '-max-effort',
-  ];
-
-  /** Extract base model tokens: strip params, suffixes, dates, then split to sorted token set */
-  function baseTokens(s: string): Set<string> {
-    s = s.toLowerCase();
-    const slash = s.lastIndexOf('/');
-    if (slash !== -1 && slash < s.length - 1) s = s.slice(slash + 1);
-    for (const ps of PARAM_SUFFIXES) s = s.replace(ps, '');
-    for (const x of STRIP_SUFFIXES) s = s.replace(x, '');
-    s = stripDateSuffix(s);
-    return new Set(s.match(/[a-z]+|\d+/g) ?? []);
-  }
-
-  // Lazily-built token index for fallback matching
-  let gdpvalIndex: Map<string, number> | null = null;
-  let gdpvalVersion = 0;
-  let lastIndexVersion = -1;
-
-  function buildGdpvalIndex() {
-    gdpvalIndex = new Map();
-    for (const [slug, score] of Object.entries(gdpval)) {
-      const key = [...baseTokens(slug)].sort().join('|');
-      const existing = gdpvalIndex.get(key);
-      if (existing === undefined || score > existing) gdpvalIndex.set(key, score);
-    }
-    lastIndexVersion = gdpvalVersion;
-  }
-
-  function lookupGdp(id: string): number | null {
-    // Primary: model-map.yaml explicit mapping
-    const mapped = mapLookup(id);
-    if (mapped === null) return null; // explicitly no score
-    if (mapped !== undefined) {
-      // Find the slug's score (take highest across parameter variants)
-      if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
-      const key = [...baseTokens(mapped)].sort().join('|');
-      return gdpvalIndex!.get(key) ?? null;
-    }
-    // Fallback: automatic token-set matching
-    if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
-    const key = [...baseTokens(id)].sort().join('|');
-    return gdpvalIndex!.get(key) ?? null;
+  /** Best-effort human-readable label for a gdpval slug (slug → Title Case). */
+  function slugToLabel(slug: string): string {
+    return slug
+      .replace(/[-_]/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   function fmt(n: number) {
@@ -254,10 +238,15 @@ let previousTokenCount = 0;
   // ── Config + Cache ─────────────────────────────────────────────────────
 
   function load() {
-    // Lade IMMER die statische Konfiguration (für Fallback in generateDynamicConfig)
-    staticCfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-    
-    // Versuche, die dynamische Konfiguration zu laden
+    // Layered config: embedded defaults → global user override → project override.
+    // Deep-merge so users only specify the keys they want to change.
+    const { config: layeredCfg, sources } = loadLayeredConfig(extDir, process.cwd(), routerLog);
+    staticCfg = layeredCfg;
+    if (sources.length > 1) {
+      routerLog(`[router] Config loaded from ${sources.length} layer(s): ${sources.join(' → ')}`);
+    }
+
+    // Versuche die dynamische Konfiguration zu laden
     const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
     
@@ -279,22 +268,28 @@ let previousTokenCount = 0;
       cfg = staticCfg;
     }
     
-    // Lade gdpval_builtin aus der statischen Konfiguration (immer)
-    if (staticCfg.gdpval_builtin) {
-      Object.assign(gdpval, staticCfg.gdpval_builtin);
-      gdpvalVersion++;
-    }
+    // gdpval state lives in metrics.ts (single source of truth).
+    // setConfig + setCache below populate it correctly, including self-healing
+    // from cache.gdpval_scores when needed.
     
-    // Falls dynamische Konfiguration geladen wurde und eigene gdpval_builtin hat, füge sie hinzu
-    if (loadedFromDynamic && cfg.gdpval_builtin) {
-      Object.assign(gdpval, cfg.gdpval_builtin);
-      gdpvalVersion++;
-    }
     // Initialize managers
     rateLimitManager = new RateLimitManager(BACKOFF, SOFT_BACKOFF, COST_MUX_AT_HIT, cache);
     discoveryManager = new DiscoveryManager(cfg, cache);
     // Always use staticCfg for metrics to ensure provider costs are available
     metricsModule.setConfig(staticCfg);
+    // CRITICAL: load the model-map into the metrics module too. Without this,
+    // metrics.ts's mapLookup() has an EMPTY modelMap, so the live /router
+    // table (which uses metrics.lookupGdp via routing.ts) cannot resolve
+    // vendor-prefixed models like zai-glm-5-2 → glm-5-2, and GLM-5-2
+    // vanishes from the TUI even though generateDynamicConfig found it.
+    metricsModule.loadModelMap(extDir);
+    metricsModule.setCache(cache);
+    // Falls dynamische Konfiguration geladen wurde und eigene gdpval_builtin hat,
+    // füge sie hinzu (NACH setConfig/setCache, damit sie nicht überschrieben werden)
+    if (loadedFromDynamic && cfg.gdpval_builtin) {
+      const currentScores = metricsModule.getGdpval();
+      metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
+    }
     cacheManager = new CacheManager(extDir);
     router = new Router(cfg, cache, rateLimitManager.getLimits());
     // load() runs on every session_start (and other reload paths) and replaces
@@ -473,15 +468,15 @@ let previousTokenCount = 0;
           const scores = extractGdpvalScores(html);
 
           if (Object.keys(scores).length) {
-            gdpval = { ...scores };
-            gdpvalVersion++;
-            cache.gdpval_scores = gdpval;
+            metricsModule.setGdpval(scores);
+            cache.gdpval_scores = metricsModule.getGdpval();
             cache.gdpval_scraped = true;
           } else {
             routerLog('[scan] No GDPval scores extracted - table regex may be outdated');
           }
-        } catch {
+        } catch (err) {
           /* scrape failed, use builtins */
+          routerLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : String(err)}); using builtins only`);
         }
       }
       const age = cache.models_cached
@@ -659,6 +654,22 @@ let previousTokenCount = 0;
         return;
       }
 
+      // 2c. Globale Ausschluss-Regeln anwenden (personalisierte Support-Liste).
+      // Schließt Provider, Modell-Muster und bezahlte Modelle bestimmter
+      // Provider aus — auf ALLE Gruppen wirkend, vor dem Scoring.
+      let effectiveModelRefs = allModelRefs;
+      if (staticCfg.exclude) {
+        const exCtx: ExcludeContext = { rules: staticCfg.exclude, cfg, cache };
+        const excluded: string[] = [];
+        effectiveModelRefs = allModelRefs.filter((ref) => {
+          if (isExcluded(ref, exCtx)) { excluded.push(ref); return false; }
+          return true;
+        });
+        if (excluded.length) {
+          routerLog(`[router] Exclude rules removed ${excluded.length} model(s): ${excluded.slice(0, 15).join(', ')}${excluded.length > 15 ? ' ...' : ''}`);
+        }
+      }
+
       // Registriere einen leichtgewichtigen Provider-Stub für jeden registry-entdeckten
       // Provider, den der Router sonst nicht kennt (z.B. claude-bridge). Ohne diesen Eintrag
       // erkennt stripProvider() das Prefix nicht und GDPval/Preis-Inferenz über den
@@ -675,8 +686,16 @@ let previousTokenCount = 0;
       // 4. Modelle mit GDPval und Kosten anreichern
       // All models are now dynamic, no separate static models
       const staticModelRefs = new Set([...staticFreeModels]);
-      
-      const modelsWithMetadata = allModelRefs.map(ref => {
+
+      // 4a. LLM-assisted matching for models the model-map + token-fallback can't
+      // resolve (e.g. vendor-prefixed ids like "mistral-zai/zai-glm-5-2" whose
+      // token set {zai,glm,5,2} doesn't equal the gdpval slug's {glm,5,2}).
+      // Runs ONCE per scan (not per prompt) and results are cached. Fail-open:
+      // if no local/cloud LLM is available, matching silently degrades to the
+      // existing two-tier fallback and unscored models are logged + dropped.
+      await populateLlmMatches(effectiveModelRefs);
+
+      const modelsWithMetadata = effectiveModelRefs.map(ref => {
         const gdpval = lookupGdp(ref) ?? 0;
         const cost = effCost(ref);
         const price = lookupPrice(ref);
@@ -1160,7 +1179,7 @@ let previousTokenCount = 0;
   // ── Events ─────────────────────────────────────────────────────────────
 
   load();
-  loadModelMap();
+  metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
 
@@ -1177,7 +1196,7 @@ let previousTokenCount = 0;
       routerLog('[diag] version diagnostics failed:', e);
     }
     load();
-    loadModelMap();
+    metricsModule.loadModelMap(extDir);
     loadCache();
     sessionStart = Date.now();
     
@@ -2040,6 +2059,36 @@ let previousTokenCount = 0;
     return proxy;
   }
 
+  // Rate-limit error detection for fallback logic
+  function isRateLimitError(errorMsg: string): boolean {
+    const lower = errorMsg.toLowerCase();
+    return lower.includes('rate limit') ||
+           lower.includes('usage credits') ||
+           lower.includes('spend limit') ||
+           lower.includes('quota') ||
+           lower.includes('limit hit') ||
+           lower.includes('out of') ||
+           lower.includes('credits');
+  }
+
+  // Fallback group priority: try lower tiers when rate-limited
+  const FALLBACK_GROUP_ORDER: string[] = [
+    'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback'
+  ];
+
+  function getFallbackGroup(currentGroup: string): string | null {
+    const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
+    if (idx === -1) return null;
+    // Try next groups in priority order
+    for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
+      const group = FALLBACK_GROUP_ORDER[i];
+      if (cfg.model_groups[group]) {
+        return group;
+      }
+    }
+    return null;
+  }
+
   function driveStream(
     proxy: AssistantMessageEventStream,
     candidates: string[],
@@ -2146,6 +2195,27 @@ let previousTokenCount = 0;
             type: 'text_delta',
             text: `> [router] ${ref} — Fehler: ${errorMsg}${suffix}\n\n`,
           } as any);
+        }
+      }
+
+      // All retries exhausted — check if all failures are rate-limit related
+      // and try a fallback group if so
+      const allRateLimited = allErrors.length > 0 && allErrors.every(e => isRateLimitError(e));
+      
+      if (allRateLimited && label) {
+        // Try to fall back to a lower-tier group
+        const fallbackGroup = getFallbackGroup(label);
+        if (fallbackGroup) {
+          const fb = resolve(fallbackGroup);
+          if (fb?.candidates?.length) {
+            proxy.push({
+              type: 'text_delta',
+              text: `> [router] All models in ${label} rate-limited, trying ${fallbackGroup}...\n\n`,
+            } as any);
+            // Recursively try the fallback group
+            await driveStream(proxy, fb.candidates, context, options, `${label}→${fallbackGroup}`);
+            return;
+          }
         }
       }
 
@@ -2263,7 +2333,25 @@ let previousTokenCount = 0;
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan|reload|reset]',
+    description: 'Model router status. Usage: /router [group|scan]',
+    getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
+      // Sub-command + group name completion (TAB-friendly).
+      const subcommands: AutocompleteItem[] = [
+        { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
+      ];
+      const groupNames: AutocompleteItem[] = Object.keys(cfg.model_groups ?? {}).map((g) => {
+        const desc = cfg.model_groups?.[g]?.description;
+        return desc
+          ? { value: g, label: g, description: desc }
+          : { value: g, label: g };
+      });
+      const all = [...subcommands, ...groupNames];
+      const prefix = argumentPrefix.toLowerCase();
+      const filtered = prefix
+        ? all.filter((a) => a.value.toLowerCase().startsWith(prefix))
+        : all;
+      return filtered.length ? filtered : null;
+    },
     handler: async (args, ctx) => {
       load();
       const arg = args?.trim();
@@ -2278,47 +2366,12 @@ let previousTokenCount = 0;
           router.setSessionCtx(ctx);
         }
         
-        if (arg === 'reload') {
-          load();
-          loadModelMap();
-          loadCache();
-          ctx.ui.notify('Reloaded');
-          return;
-        }
         if (arg === 'scan') {
           ctx.ui.notify('Scanning...');
           await scan(true);
           ctx.ui.notify(
-            `Done. ${Object.keys(gdpval).length} scores, ${cache.available_models?.length ?? 0} models.`
+            `Done. ${Object.keys(metricsModule.getGdpval()).length} scores, ${cache.available_models?.length ?? 0} models.`
           );
-          return;
-        }
-        if (arg === 'sync') {
-          load();
-          registerGroupModels(ctx);
-          ctx.ui.notify('Re-registered group models');
-          return;
-        }
-        if (arg === 'reset') {
-          // Reset dynamic config
-          const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
-          try {
-            if (fs.existsSync(dynamicConfigPath)) {
-              fs.unlinkSync(dynamicConfigPath);
-            }
-          } catch (error) {
-            ctx.ui.notify('Error resetting dynamic config: ' + error);
-          }
-          // Reset cache (clears rate-limit cooldowns, GDPval cache, etc.)
-          try {
-            cacheManager.resetCache();
-            loadCache(); // Reload fresh cache
-            ctx.ui.notify('Router cache cleared (cooldowns, GDPval, metrics reset)');
-          } catch (error) {
-            ctx.ui.notify('Error resetting cache: ' + error);
-          }
-          load();
-          ctx.ui.notify('Router reset complete');
           return;
         }
 
@@ -2447,7 +2500,7 @@ let previousTokenCount = 0;
       }
 
       lines.push('└' + '─'.repeat(71));
-      lines.push('', '/router <group> | scan | reload | reset | sync');
+      lines.push('', '/router <group> | scan');
       ctx.ui.notify(lines.join('\n'), 'info');
       } finally {
         // Always restore previous session context

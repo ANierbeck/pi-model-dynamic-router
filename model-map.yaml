@@ -54,6 +54,11 @@ deepseek-ai/DeepSeek-R1-0528-TEE:         deepseek-r1              # R1 0528 upd
 deepseek-ai/DeepSeek-R1-Distill-Llama-70B: ~
 
 # ── GLM (Zhipu/Z-AI) ──────────────────────────────────────────────────
+# Mistral-hosted GLM-5.2 ids — explicit mapping as an authoritative override,
+# because the LLM matcher sometimes mis-matches these to the older "glm-4" slug.
+glm-5-2:                                 glm-5-2
+zai-glm-5-2:                              glm-5-2
+glm-5-2-tee:                             glm-5-2
 zai-org/GLM-5-TEE:                        glm-5
 zai-org/GLM-5-Turbo:                      ~                        # Turbo = weaker variant
 zai-org/GLM-4.7-TEE:                      glm-4-7
@@ -166,7 +171,6 @@ codestral-2501:                          codestral-latest
 mistral/codestral-latest:                codestral-latest
 mistral/mistral-medium-3.5:             mistral-medium-3-5
 mistral/mistral-medium-3-5:             mistral-medium-3-5
-mistral/codestral-latest:                codestral-latest
 
 # ── Misc / Not benchmarked ────────────────────────────────────────────
 rednote-hilab/dots.ocr:                  ~

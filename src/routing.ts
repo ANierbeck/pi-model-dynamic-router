@@ -14,6 +14,7 @@ import type {
 import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
 import { PROVIDER_MAP } from './providers.js';
 import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
+import { isExcluded } from './exclude.js';
 import {
   CostTier,
   CostTierConfig,
@@ -61,6 +62,16 @@ export class Router {
   // ── Model Discovery ─────────────────────────────────────────────────────
 
   /**
+   * Apply the global exclude rules to a list of refs. Delegates to
+   * src/exclude.ts so the live /router table reflects the same filtering
+   * as generateDynamicConfig.
+   */
+  private applyExcludes(refs: string[]): string[] {
+    if (!this.cfg.exclude) return refs;
+    return refs.filter((ref) => !isExcluded(ref, { rules: this.cfg.exclude!, cfg: this.cfg, cache: this.cache }));
+  }
+
+  /**
    * Returns all discovered model references
    */
   allDiscoveredRefs(): string[] {
@@ -101,7 +112,13 @@ export class Router {
       }
     }
     
-    return [...refs];
+    // Apply global exclude rules (paid OpenRouter models, *fable*, etc.)
+    // so the live /router table matches generateDynamicConfig output.
+    let result = [...refs];
+    if (this.cfg.exclude) {
+      result = this.applyExcludes(result);
+    }
+    return result;
   }
 
   // ── Filtering ─────────────────────────────────────────────────────────────

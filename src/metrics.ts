@@ -42,8 +42,12 @@ export function loadModelMap(extDir: string): void {
     }
     // Sort wildcards longest-first for most specific match
     modelMapWildcards.sort((a, b) => b[0].length - a[0].length);
-  } catch {
-    // no map file, use fallback only
+  } catch (err) {
+    // CRITICAL: a parse error (e.g. duplicate YAML keys) leaves modelMap EMPTY,
+    // so ALL model-map overrides silently stop working and every model falls
+    // through to the lossy token-set + LLM fallback. Log loudly so this is
+    // never silent again.
+    console.warn(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : String(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
     modelMap = {};
     modelMapWildcards = [];
   }
@@ -55,6 +59,11 @@ export function loadModelMap(extDir: string): void {
 export function setGdpval(scores: Record<string, number>): void {
   gdpval = { ...scores };
   gdpvalVersion++;
+}
+
+/** Read-only access to the current gdpval scores (for the LLM matcher prompt). */
+export function getGdpval(): Record<string, number> {
+  return gdpval;
 }
 
 /**
@@ -106,7 +115,26 @@ function buildGdpvalIndex(): void {
 /**
  * Lookup GDPval score for a model
  */
+// ── LLM-assisted matches (3rd-tier fallback) ─────────────────────────────
+// Populated by index.ts (populateLlmMatches) once per scan. Maps a model
+// ref (e.g. "mistral-zai/zai-glm-5-2") to a gdpval slug that an LLM
+// confidently matched. lookupGdp consults this AFTER the token-set fallback.
+let llmModelMatches: Record<string, string> = {};
+
+/** Set the LLM-derived model→slug matches (called from index.ts populateLlmMatches). */
+export function setLlmMatches(matches: Record<string, string>): void {
+  llmModelMatches = { ...matches };
+}
+
 export function lookupGdp(id: string): number | null {
+  // SELBSTHEILEND: stelle sicher, dass gdpval die gescrapten Scores enthält.
+  // Die Race-Condition (load() während scan()) kann gdpval leeren — das
+  // beheben wir hier an der Wurzel, indem wir bei Bedarf aus dem Cache
+  // nachladen. Ohne das fehlen Modelle wie glm-5-2 in der /router-Tabelle.
+  if (Object.keys(gdpval).length === 0 && cache.gdpval_scores) {
+    Object.assign(gdpval, cache.gdpval_scores);
+    gdpvalVersion++;
+  }
   // Primary: model-map.yaml explicit mapping
   const mapped = mapLookup(id);
   if (mapped === null) return null; // explicitly no score
@@ -116,10 +144,22 @@ export function lookupGdp(id: string): number | null {
     const key = [...baseTokens(mapped)].sort().join('|');
     return gdpvalIndex!.get(key) ?? null;
   }
-  // Fallback: automatic token-set matching
+  // Fallback 1: automatic token-set matching
   if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
   const key = [...baseTokens(id)].sort().join('|');
-  return gdpvalIndex!.get(key) ?? null;
+  const tokenScore = gdpvalIndex!.get(key);
+  if (tokenScore !== undefined) return tokenScore;
+
+  // Fallback 2: LLM-assisted match (semantic; covers vendor prefixes the
+  // token-set matcher can't, e.g. "zai-glm-5-2" → slug "glm-5-2").
+  const llmSlug = llmModelMatches[id];
+  if (llmSlug) {
+    const slugKey = [...baseTokens(llmSlug)].sort().join('|');
+    const llmScore = gdpvalIndex!.get(slugKey);
+    if (llmScore !== undefined) return llmScore;
+  }
+
+  return null;
 }
 
 // ── Metrics Management ──────────────────────────────────────────────────
@@ -134,7 +174,11 @@ let cache: Cache = {};
 export function setConfig(config: Config): void {
   cfg = config;
   if (config.gdpval_builtin) {
-    setGdpval(config.gdpval_builtin);
+    // Additive merge (like the original closure): add builtins to EXISTING
+    // gdpval scores, don't replace them. Builtins override scraped scores
+    // for the same slug (manual correction takes precedence).
+    Object.assign(gdpval, config.gdpval_builtin);
+    gdpvalVersion++;
   }
 }
 
@@ -144,13 +188,15 @@ export function setConfig(config: Config): void {
 export function setCache(newCache: Cache): void {
   cache = newCache;
   if (cache.gdpval_scores) {
-    // Merge cached scores with gdpval_builtin overrides (builtin takes precedence)
+    // Additive merge: add scraped scores to EXISTING gdpval (which may have
+    // builtins from setConfig). Builtins take precedence (manual overrides
+    // win over scraped values).
     const merged: Record<string, number> = { ...cache.gdpval_scores };
-    // Apply any gdpval_builtin overrides from config
     if (cfg.gdpval_builtin) {
       Object.assign(merged, cfg.gdpval_builtin);
     }
-    setGdpval(merged);
+    Object.assign(gdpval, merged);
+    gdpvalVersion++;
   }
 }
 
@@ -166,7 +212,12 @@ export function setMetrics(newMetrics: Record<string, Metrics>): void {
  * Including benchmark data if available
  */
 export function getM(ref: string): Metrics {
-  if (metrics[ref]) return metrics[ref];
+  if (metrics[ref]) {
+    // gdpval is NOT cached — it can change as model-map / scraped scores
+    // load. Always recompute it so the TUI reflects the current state.
+    metrics[ref].gdpval = lookupGdp(ref) ?? cfg.model_metrics?.[ref]?.gdpval ?? 50;
+    return metrics[ref];
+  }
 
   const cm = cfg.model_metrics[ref] ?? {};
   

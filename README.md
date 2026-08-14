@@ -20,8 +20,33 @@ The router uses a **modular architecture** with the following components:
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
 | **content-classifier.ts** | Content classification | gemma4:12b-mlx primary, gemma2:2b fallback, cloud fallback |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
+| **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
+| **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |
+| **exclude.ts** | Personalized exclude rules | Provider/pattern/paid-model filtering for all groups |
+| **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
 
 This modular design enables better maintainability, testing, and extensibility.
+
+### GDPval model matching pipeline
+
+When a model needs a GDPval score, the router resolves it in three tiers:
+
+1. **model-map.yaml** (authoritative) — explicit model-id → slug mapping
+2. **Token-set fallback** (deterministic) — fuzzy token matching
+3. **LLM-assisted matching** (semantic) — a local LLM matches model ids to
+   GDPval slugs, with cross-family and size-tier guards
+
+See [`docs/architecture.md`](docs/architecture.md) for details.
+
+### Personalized configuration
+
+Users can override the embedded defaults without editing extension files:
+
+- **Global**: `~/.pi/agent/router-config.user.json`
+- **Project-local**: `<project>/.pi/router-config.json`
+
+Supports `exclude` rules (no paid OpenRouter models, no Fable, etc.).
+See [`docs/config-override.md`](docs/config-override.md) for details.
 
 ## Install
 
