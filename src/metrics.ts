@@ -127,6 +127,20 @@ export function setLlmMatches(matches: Record<string, string>): void {
   llmModelMatches = { ...matches };
 }
 
+/**
+ * Returns the GDPval slug that was matched for a model ref, or null.
+ * Used for deduplication: models that match the same slug are the same model
+ * (e.g. mistral-medium-2604 and mistral-medium-latest both → mistral-medium-3-5).
+ */
+export function getMatchedSlug(ref: string): string | null {
+  // Check LLM match first
+  if (llmModelMatches[ref]) return llmModelMatches[ref];
+  // Check slug-matcher
+  const slugKeys = Object.keys(gdpval);
+  const matched = matchSlug(ref, slugKeys);
+  return matched ?? null;
+}
+
 export function lookupGdp(id: string): number | null {
   // SELBSTHEILEND: stelle sicher, dass gdpval die gescrapten Scores enthält.
   if (Object.keys(gdpval).length === 0 && cache.gdpval_scores) {

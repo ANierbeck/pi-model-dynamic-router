@@ -13,7 +13,7 @@ import type {
 } from './types.js';
 import { splitRef, stripProvider, norm, baseTokens } from './utils.js';
 import { PROVIDER_MAP } from './providers.js';
-import { getM, lookupGdp, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.js';
 import { isExcluded } from './exclude.js';
 import {
   CostTier,
@@ -394,8 +394,11 @@ export class Router {
 
     if (filtered.length === 0) return null;
 
+    // Deduplicate: remove models that are the SAME underlying model
+    const deduped = this.dedupByModelIdentity(filtered);
+
     // Sort by group method
-    let sorted = [...filtered];
+    let sorted = [...deduped];
     if (g.method === 'best') {
       sorted = this.sortBy(sorted, 'best', name);
     } else if (g.method === 'tiered') {
@@ -413,6 +416,39 @@ export class Router {
   /**
    * Resolves a single group (without fallback cascade)
    */
+  /**
+   * Deduplicate model refs that refer to the SAME underlying model.
+   * Models that match the same GDPval slug (via LLM or slug-matcher) are
+   * the same model — e.g. mistral-medium-2604, mistral-medium-latest, and
+   * mistral-medium-3-5 are all the same model. Keep only the best one
+   * (highest priority by current sort order = first occurrence).
+   *
+   * Also deduplicates cross-provider: if mistral-zai/glm-5-2 and
+   * mistral/glm-5-2 both match slug glm-5-2, keep both (they're different
+   * providers offering the same model — useful for failover).
+   * Wait — actually for dedup we want to keep different PROVIDERS but
+   * remove different VERSIONS of the same model from the same provider.
+   */
+  private dedupByModelIdentity(refs: string[]): string[] {
+    const seen = new Map<string, string>(); // slug → first ref
+    const result: string[] = [];
+    for (const ref of refs) {
+      const slug = getMatchedSlug(ref);
+      if (slug) {
+        // Same slug + same provider = duplicate (different version of same model)
+        const provider = ref.split('/')[0];
+        const key = `${provider}:${slug}`;
+        if (seen.has(key)) {
+          // Already have this model from this provider — skip
+          continue;
+        }
+        seen.set(key, ref);
+      }
+      result.push(ref);
+    }
+    return result;
+  }
+
   private resolveGroup(g: Group, name: string): GroupResolution | null {
     // When a group has an explicit models list, use only those models.
     // Fall back to allDiscoveredRefs() for groups without an explicit list.
@@ -444,6 +480,11 @@ export class Router {
     // Filter by budget availability (subscription providers)
     // This ensures we only use models with remaining tokens in their window
     c = this.filterByBudget(c);
+
+    // Deduplicate: remove models that are the SAME underlying model
+    // (e.g. mistral-medium-2604 and mistral-medium-latest both match
+    // slug mistral-medium-3-5 — keep only the first one)
+    c = this.dedupByModelIdentity(c);
 
     // Filter by cost (if configured)
     if (g.max_cost !== undefined) {
