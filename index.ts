@@ -1624,6 +1624,7 @@ let previousTokenCount = 0;
             const errorMsg = String((event as any).error?.message || (event as any).error || '');
             const isRateLimitError = errorMsg.toLowerCase().includes('rate limit') ||
                                      errorMsg.toLowerCase().includes('usage credits') ||
+                                     errorMsg.toLowerCase().includes('spend limit') ||
                                      errorMsg.toLowerCase().includes('out of') ||
                                      errorMsg.toLowerCase().includes('limit hit') ||
                                      errorMsg.toLowerCase().includes('claude code returned an error');
@@ -2121,6 +2122,7 @@ let previousTokenCount = 0;
           const isExpectedError = errorMsg.toLowerCase().includes('no api provider registered') ||
                                   errorMsg.toLowerCase().includes('rate limit') ||
                                   errorMsg.toLowerCase().includes('usage credits') ||
+                                  errorMsg.toLowerCase().includes('spend limit') ||
                                   errorMsg.toLowerCase().includes('out of') ||
                                   errorMsg.toLowerCase().includes('limit hit');
           if (!isExpectedError) {
@@ -2168,6 +2170,24 @@ let previousTokenCount = 0;
             // Success — record healthy, proxy completes via the pushed "done" event
             recordOk(ref);
             return;
+          }
+
+          // Rate-limit / spend-limit failure — record a HARD limit (not soft)
+          // so the model is properly skipped in future attempts and API keys
+          // are rotated. Without this, the router only records a short soft
+          // backoff and keeps retrying the same rate-limited model.
+          if (result.reason === 'rate_limit_exceeded') {
+            const rlResult = recordLimit(ref);
+            lastError = `${ref}: rate_limit_exceeded`;
+            allErrors.push(lastError);
+            const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
+            proxy.push({
+              type: 'text_delta',
+              text: `> [router] ${ref} — Rate-Limit/Spend-Limit erreicht${keyMsg}${suffix}\n\n`,
+            } as any);
+            continue;
           }
 
           // Soft failure — record and try next candidate
