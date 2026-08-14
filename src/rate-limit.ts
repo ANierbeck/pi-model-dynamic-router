@@ -130,7 +130,11 @@ export class RateLimitManager {
     const prev = this.limits.get(ref);
     const hits = (prev?.hits ?? 0) + 1;
     const backoffIndex = Math.min(hits - 1, this.backoffMinutes.length - 1);
-    const ms = this.backoffMinutes[backoffIndex] * 60_000;
+    // this.backoffMinutes is ALREADY in milliseconds (converted from minutes
+    // in index.ts via .map(m => m * 60_000)). Do NOT multiply by 60_000 again!
+    // Bug history: the double multiplication produced 60.000 * 60.000 = 3.6B ms
+    // = 41.67 days cooldown — blocking ALL models for over a month.
+    const ms = this.backoffMinutes[backoffIndex];
 
     this.limits.set(ref, { cooldown_until: Date.now() + ms, backoff_ms: ms, hits });
 
