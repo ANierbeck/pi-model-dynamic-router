@@ -163,14 +163,51 @@ PolyoxyDev/granite4-macos-micro:latest:  ~
 ollama/gemma4:12b-mlx:                   gemma-4-12b
 
 # ── Mistral (cloud) ────────────────────────────────────────────────────
+# Mistral-hosted models (provider: mistral, mistral-zai)
+# Both providers serve the same model IDs — entries are provider-agnostic.
 mistral-medium-3-5:                      mistral-medium-3-5
 mistral-medium-3.5:                      mistral-medium-3-5
-mistral-medium-3:                       mistral-medium-3
+mistral-medium-3:                        mistral-medium-3
+mistral-medium-2604:                     mistral-medium-3-5   # 2604 = Medium 3.5 update
+mistral-medium-2505:                     mistral-medium-3     # 2505 = Medium 3
+mistral-medium-2508:                     mistral-medium-3     # 2508 = Medium 3 patch
+mistral-medium-latest:                   mistral-medium-3-5
+mistral-medium:                          mistral-medium-3-5
 codestral-latest:                        codestral-latest
 codestral-2501:                          codestral-latest
+codestral-2508:                          codestral-latest
+devstral-2512:                           devstral
+devstral-latest:                         devstral
+devstral-medium-latest:                  devstral
+mistral-small-3-2:                       mistral-small-3-2
+mistral-small-3-1:                       mistral-small-3-1
+mistral-small-2603:                      mistral-small-3-1   # 2603 = Small 3.1 update
+mistral-small-latest:                    mistral-small-3-2
+magistral-medium-latest:                 magistral-medium
+magistral-small-latest:                  magistral-small
+ministral-3b-latest:                     ~                    # 3B — too small for benchmark
+ministral-3b-2512:                       ~
+ministral-8b-latest:                     ~                    # 8B — too small for benchmark
+ministral-8b-2512:                       ~
+ministral-14b-latest:                    ~                    # 14B — not benchmarked
+ministral-14b-2512:                      ~
+mistral-large-latest:                    ~                    # Large — not benchmarked
+mistral-large-2512:                      ~
+# Provider-prefixed variants (mistral/ and mistral-zai/)
 mistral/codestral-latest:                codestral-latest
-mistral/mistral-medium-3.5:             mistral-medium-3-5
-mistral/mistral-medium-3-5:             mistral-medium-3-5
+mistral/mistral-medium-3.5:              mistral-medium-3-5
+mistral/mistral-medium-3-5:              mistral-medium-3-5
+mistral-zai/codestral-latest:             codestral-latest
+mistral-zai/mistral-medium-3.5:          mistral-medium-3-5
+mistral-zai/mistral-medium-3-5:          mistral-medium-3-5
+mistral-zai/zai-glm-5-2:                 glm-5-2
+mistral/zai-glm-5-2:                     glm-5-2
+# OCR / Voxtral / Vibe-CLI / Code models — not benchmarked, exclude from routing
+mistral-ocr-*:                           ~
+voxtral-*:                               ~
+mistral-vibe-cli-*:                      ~
+mistral-code-*:                          ~
+labs-leanstral-*:                       ~
 
 # ── Misc / Not benchmarked ────────────────────────────────────────────
 rednote-hilab/dots.ocr:                  ~
