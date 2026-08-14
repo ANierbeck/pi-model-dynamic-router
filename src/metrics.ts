@@ -146,8 +146,22 @@ export function lookupGdp(id: string): number | null {
     return gdpvalIndex!.get(key) ?? null;
   }
 
-  // Stage 1: algorithmic slug-matcher (replaces manual model-map.yaml for
-  // common cases: vendor prefixes, date suffixes, -latest, etc.)
+  // Stage 1: LLM-assisted match (PRIMARY — semantically understands versions)
+  // The LLM can distinguish glm-5-2 from glm-5-3, and knows that
+  // mistral-medium-2604 = mistral-medium-3-5 (date-versioned).
+  // Much more accurate than algorithmic token-set matching.
+  const llmSlug = llmModelMatches[id];
+  if (llmSlug) {
+    const score = gdpval[llmSlug];
+    if (score !== undefined) return score;
+    if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
+    const slugKey = [...baseTokens(llmSlug)].sort().join('|');
+    const llmScore = gdpvalIndex!.get(slugKey);
+    if (llmScore !== undefined) return llmScore;
+  }
+
+  // Stage 2: algorithmic slug-matcher (FALLBACK — only if LLM didn't match)
+  // Less accurate but better than nothing. Uses version-aware token matching.
   const slugKeys = Object.keys(gdpval);
   const matchedSlug = matchSlug(id, slugKeys);
   if (matchedSlug === null) return null; // explicitly excluded (small/special model)
@@ -157,14 +171,6 @@ export function lookupGdp(id: string): number | null {
     if (lastIndexVersion !== gdpvalVersion) buildGdpvalIndex();
     const key = [...baseTokens(matchedSlug)].sort().join('|');
     return gdpvalIndex!.get(key) ?? null;
-  }
-
-  // Stage 2: LLM-assisted match (semantic)
-  const llmSlug = llmModelMatches[id];
-  if (llmSlug) {
-    const slugKey = [...baseTokens(llmSlug)].sort().join('|');
-    const llmScore = gdpvalIndex!.get(slugKey);
-    if (llmScore !== undefined) return llmScore;
   }
 
   return null;
