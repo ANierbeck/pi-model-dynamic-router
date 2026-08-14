@@ -77,6 +77,32 @@ export interface Config {
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
   cost_tiers?: Partial<CostTiersConfig>;
+  /**
+   * Global model exclusion rules — applied to EVERY group before per-group
+   * filtering. Lets a user opt out of paid OpenRouter models, specific costly
+   * models (e.g. claude-fable-5), or whole providers, regardless of group.
+   */
+  exclude?: ExcludeRules;
+}
+
+/**
+ * Personalized support/exclude rules.
+ *
+ * All fields are optional; omitted fields exclude nothing.
+ * Patterns are glob-style ("openrouter/*", "*fable*"); "*" matches any.
+ */
+export interface ExcludeRules {
+  /** Provider prefixes to exclude entirely (e.g. "openrouter" drops all OR/* refs). */
+  providers?: string[];
+  /** Model-ref patterns to exclude (e.g. "openrouter/*" drops all OR models,
+   *  "claude-bridge/claude-fable-5" drops one specific model). */
+  models?: string[];
+  /**
+   * Exclude all PAY-AS-YOU-GO (non-free) models from the given providers.
+   * "openrouter" → keep only openrouter/*:free models, drop the rest.
+   * Unlike excluding the provider outright, this preserves free tier models.
+   */
+  paid_models_from?: string[];
 }
 
 // ── Cost Tiers Types ────────────────────────────────────────────────────
@@ -119,6 +145,8 @@ export interface Cache {
     window_reset?: number; // timestamp when window resets
     last_checked?: number; // timestamp of last check
   }>;
+  /** LLM-assisted model→gdpval-slug matches (3rd-tier fallback in lookupGdp). */
+  model_score_cache?: Record<string, string>;
 }
 
 // ── Provider Discovery Types ────────────────────────────────────────────

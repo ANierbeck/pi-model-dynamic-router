@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this file to ~/.pi/agent/router-config.user.json (global) or <project>/.pi/router-config.json (per-project). Delete the _comment field. Only include keys you want to override — everything else comes from the embedded defaults.",
+
+  "exclude": {
+    "paid_models_from": ["openrouter"],
+    "models": ["*fable*"]
+  }
+}

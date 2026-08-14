@@ -72,6 +72,20 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
     api: 'openai-completions',
   },
 
+  // mistral-zai: Zhipu/Z-AI GLM models hosted on Mistral "Le Platform".
+  // Same OpenAI-compatible endpoint, separate API key (auth.json: mistral-zai).
+  // Without this entry the scanner never discovers GLM and stripProvider()
+  // fails to recognise the 'mistral-zai/' prefix, so GDPval lookup breaks.
+  'mistral-zai': {
+    authKey: 'mistral-zai',
+    passPatterns: ['api/mistral-zai'],
+    billing: 'pay_per_token',
+    modelsUrl: 'https://api.mistral.ai/v1/models',
+    authHeader: (k) => ({ Authorization: `Bearer ${k}` }),
+    baseUrl: 'https://api.mistral.ai/v1',
+    api: 'openai-completions',
+  },
+
   groq: {
     envVar: 'GROQ_API_KEY',
     authKey: 'groq',
