@@ -94,15 +94,23 @@ ${candidatesBlock}
   a slug from a different vendor. E.g. a Mistral model matches a Mistral slug,
   a Claude model matches a Claude slug, an OpenAI model matches a GPT slug.
   Never cross-match across vendors (mistral → claude, qwen → gpt, etc.).
-- Match the VERSION NUMBER precisely: "glm-5-2" matches "glm-5-2", NOT "glm-4".
-  Different version numbers mean different models.
+- Match the VERSION NUMBER precisely: "glm-5-2" matches "glm-5-2", NOT "glm-4"
+  or "glm-5-3". Different version numbers mean different models.
+  Exception: date-versioned models (YYMM suffixes like 2604, 2505, 2508)
+  are the same model as their named version. For example:
+  - mistral-medium-2604 = mistral-medium-3-5 (2604 = April 2026 release of 3.5)
+  - mistral-medium-2505 = mistral-medium-3 (2505 = May 2025 release of 3.0)
+  - mistral-medium-2508 = mistral-medium-3 (2508 = Aug 2025 patch of 3.0)
+  Use your knowledge of model release history to map date versions to named versions.
 - Match the MODEL SIZE/TIER: a small model (parameter counts like 3b, 7b, 8b,
   or small-tier names like "mini", "nano", "haiku") must NOT match a slug for a
   larger tier ("medium", "large", "opus", "ultra", "max", "pro").
+  Exception: if the slug and model both have the SAME size tag (e.g. gemma4-12b
+  matches gemma4-12b), they are the same model.
 - If you are not confident a model ID matches any entry, OMIT it from the output.
 - Do NOT invent slugs. Do NOT include commentary. Do NOT use markdown fences.
 - Ignore vendor prefixes (e.g. "zai-", "mistral/", "chutes/"), quantization tags
-  (-FP8), TEE suffixes, and date/version tags when matching.
+  (-FP8, -mlx, :q4_0), TEE suffixes, and -latest/-preview tags when matching.
 
 # Output
 {"<model-id>": "<slug>", ...}`;
