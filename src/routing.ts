@@ -15,6 +15,7 @@ import { splitRef, stripProvider, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.ts';
 import { isExcluded } from './exclude.ts';
+import { demoteUnhealthy } from './model-health.ts';
 import {
   CostTier,
   CostTierConfig,
@@ -57,6 +58,21 @@ export class Router {
 
   setSessionCtx(ctx: ExtensionContext | null): void {
     this.sessionCtx = ctx;
+  }
+
+  /**
+   * Point the router at a new cache object.
+   *
+   * index.ts REPLACES its `cache` variable on every reload path (loadCache,
+   * discoverKeys, saveCache/budget refresh) and notifies metrics, the rate-limit
+   * manager and the budget tracker. The router was never notified, so it kept
+   * reading the object it was constructed with — discovered models, exclude
+   * lookups, dedup and health data all silently went stale for the rest of the
+   * session. Every place that reassigns index.ts's cache must call this.
+   */
+  updateCache(cache: Cache): void {
+    this.cache = cache;
+    this.budgetTracker = initBudgetTracker(this.cfg, cache);
   }
 
   // ── Model Discovery ─────────────────────────────────────────────────────
@@ -410,6 +426,9 @@ export class Router {
     } else {
       sorted = this.sortBy(sorted, g.method, name);
     }
+    // Push models that keep failing below working ones. Purely quality-based
+    // ranking otherwise puts a broken free model back at rank 1 every turn.
+    sorted = demoteUnhealthy(this.cache, sorted);
     return { selected: sorted[0], candidates: sorted };
   }
 
@@ -581,6 +600,9 @@ export class Router {
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
     
+    // Push models that keep failing below working ones (see resolveGroupWithCostTier).
+    c = demoteUnhealthy(this.cache, c);
+
     if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
   }
@@ -821,7 +843,7 @@ export class Router {
       c = this.sortBy(c, g.method);
     }
 
-    const avail = c.filter((ref) => !this.isLimited(ref));
+    const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
     return ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));

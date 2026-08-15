@@ -39,6 +39,7 @@ import { CacheManager } from './src/cache.ts';
 import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
+import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
@@ -314,6 +315,7 @@ let previousTokenCount = 0;
     cache = cacheManager.loadCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
+    router?.updateCache(cache);
     if (budgetTracker) {
       budgetTracker.updateCache(cache);
     }
@@ -323,6 +325,7 @@ let previousTokenCount = 0;
     // Update cache with latest budget info before saving
     if (budgetTracker) {
       cache = budgetTracker.getCache();
+      router?.updateCache(cache);
     }
     cacheManager.saveCache(cache);
   }
@@ -334,6 +337,7 @@ let previousTokenCount = 0;
     cache = discoveryManager.getCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
+    router?.updateCache(cache);
   }
 
   // ── Budget Tracking ─────────────────────────────────────────────────────
@@ -360,6 +364,7 @@ let previousTokenCount = 0;
     
     // Update cache with new budget info
     cache = budgetTracker.getCache();
+    router?.updateCache(cache);
     saveCache();
   }
 
@@ -1024,11 +1029,13 @@ let previousTokenCount = 0;
   }
 
   function recordLimit(ref: string): { rotated: boolean; newKey?: string } {
+    recordModelFailure(cache, ref);
     return rateLimitManager.recordLimit(ref, cfg.providers ?? {});
   }
 
   function recordOk(ref: string) {
     rateLimitManager.recordOk(ref);
+    recordModelSuccess(cache, ref);
   }
 
   function clearLimit(ref: string): void {
@@ -1038,6 +1045,7 @@ let previousTokenCount = 0;
   /** Record a soft failure (empty response, timeout) — lighter backoff than 429 */
   function recordSoftFailure(ref: string): void {
     rateLimitManager.recordSoftFailure(ref);
+    recordModelFailure(cache, ref);
   }
 
   function limitSecs(ref: string) {
@@ -1528,18 +1536,32 @@ let previousTokenCount = 0;
    * promise that resolves to { ok, hadContent, error? } when the stream
    * finishes or fails.
    */
+  // Why a candidate was skipped by tryStream, keyed by ref. driveStream reads
+  // this so a silently skipped candidate still shows up in the failure list —
+  // otherwise "All 9 candidates failed" lists only 4 and the real reason (model
+  // not in Pi's registry, no API key) stays invisible.
+  const skipReasons = new Map<string, string>();
+
   async function tryStream(
     ref: string,
     context: Context,
     options: SimpleStreamOptions | undefined
   ): Promise<{ stream: AssistantMessageEventStream; ref: string } | null> {
-    if (!sessionCtx) return null;
+    const skip = (reason: string): null => {
+      skipReasons.set(ref, reason);
+      routerLog(`[diag] tryStream skipped "${ref}": ${reason}`);
+      return null;
+    };
+    skipReasons.delete(ref);
+    if (!sessionCtx) return skip('no session context');
     const { provider, modelId } = splitRef(ref);
     // Skip group virtual models to prevent recursion
-    if (cfg.model_groups[provider]) return null;
+    if (cfg.model_groups[provider]) return skip(`"${provider}" is a group, not a provider`);
     const realModel = sessionCtx.modelRegistry.find(provider, modelId);
-    if (!realModel) return null;
-    if (cfg.model_groups[realModel.provider]) return null;
+    if (!realModel)
+      return skip(`not registered in Pi's model registry (provider=${provider}, id=${modelId})`);
+    if (cfg.model_groups[realModel.provider])
+      return skip(`resolved provider "${realModel.provider}" is a group`);
     // Diagnostic: log exactly what the router resolved for this ref, so a failure
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
@@ -1555,7 +1577,8 @@ let previousTokenCount = 0;
     // mechanism the /model command uses). Only enforce apiKey/local for providers
     // the router actually registers itself.
     const routerManaged = Boolean((PROVIDER_MAP as any)[realModel.provider]);
-    if (routerManaged && !apiKey && !isLocal) return null;
+    if (routerManaged && !apiKey && !isLocal)
+      return skip(`no API key for provider "${realModel.provider}"`);
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = options ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
@@ -2242,7 +2265,17 @@ let previousTokenCount = 0;
           pushRouterInfo(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
           return null;
         });
-        if (!target) continue;
+        if (!target) {
+          // tryStream returned null without throwing — record WHY, otherwise this
+          // candidate vanishes from the failure list and the user sees
+          // "All 9 candidates failed" with only 4 entries.
+          const why = skipReasons.get(ref);
+          if (why) {
+            lastError = `${ref}: ${why}`;
+            allErrors.push(lastError);
+          }
+          continue;
+        }
 
         // Show which model is actually being used
         const prefix = label ? `${label} · ${ref}` : ref;
@@ -2366,8 +2399,17 @@ let previousTokenCount = 0;
       const availableModels = router.allDiscoveredRefs().slice(0, 10).join(', ');
       const modelSuffix = router.allDiscoveredRefs().length > 10 ? '...' : '';
       const hintInfo = label ? `[HINT] ${label}\n` : '';
+      // Annotate each failure with the model's recent failure streak, so a
+      // persistently broken provider is obvious instead of looking like a
+      // one-off glitch.
       const failureList = allErrors.length
-        ? allErrors.map((e) => `  - ${e}`).join('\n')
+        ? allErrors
+            .map((e) => {
+              const ref = e.slice(0, e.indexOf(':'));
+              const streak = ref ? failureStreak(cache, ref) : 0;
+              return `  - ${e}${streak > 1 ? ` [${streak}× in Folge]` : ''}`;
+            })
+            .join('\n')
         : '  (no candidates attempted)';
       const errMsg: AssistantMessage = {
         role: 'assistant',
