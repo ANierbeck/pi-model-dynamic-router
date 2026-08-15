@@ -35,6 +35,21 @@ describe.skipIf(!process.env.TEST_INTEGRATION)('glm-live-debug (Integration)', (
       ...userOverride,
       exclude: { ...baseCfg.exclude, ...userOverride.exclude },
     } as Config;
+
+    // Populate the metrics module's state. lookupGdp/getM read module-level
+    // gdpval/modelMap/cfg/cache in src/metrics.ts, and vitest isolates module
+    // state per file (no setupFiles, no isolate:false), so it starts empty here.
+    //
+    // Without this the file is worse than useless: the lookupGdp assertion
+    // fails outright because every branch falls through to null, and the three
+    // getTopModels assertions pass VACUOUSLY — getM() defaults every model to
+    // gdpval 50, filterByQualityMin then finds nothing above the threshold and
+    // returns the unfiltered list, so GLM-5-2 "appears" in every group
+    // regardless of whether its score is wired up correctly.
+    metricsModule.setConfig(cfg);
+    metricsModule.setCache(cache);
+    metricsModule.setGdpval(cache.gdpval_scores ?? {});
+    metricsModule.loadModelMap(path.resolve(__dirname, '..', 'dist'));
   });
 
   it('Router loads GLM-5-2 in strategic group', () => {
@@ -68,5 +83,18 @@ describe.skipIf(!process.env.TEST_INTEGRATION)('glm-live-debug (Integration)', (
     const score = metricsModule.lookupGdp('mistral/zai-glm-5-2');
     expect(score).toBeGreaterThan(1000);
     expect(score).not.toBe(400);
+  });
+
+  it('the group assertions above are not passing vacuously', () => {
+    // Guard for the failure mode described in beforeAll: if metrics state were
+    // empty, every model would default to gdpval 50, filterByQualityMin would
+    // match nothing and fall back to the unfiltered list — making the GLM-5-2
+    // group assertions meaningless. A real score here proves they mean something.
+    const router = new Router(cfg, cache, new Map());
+    const glmRef = router
+      .allDiscoveredRefs()
+      .find((r) => r.toLowerCase().includes('glm-5-2'));
+    expect(glmRef).toBeDefined();
+    expect(metricsModule.lookupGdp(glmRef!)).toBeGreaterThan(50);
   });
 });
