@@ -1852,7 +1852,7 @@ let previousTokenCount = 0;
       // Cost Tracking für statisches Routing
       costTracker.trackRequest(res.selected, 1000, 500);
       
-      driveStream(proxy, candidates, context, options);
+      driveStream(proxy, candidates, context, options, undefined, groupName);
       return proxy;
     }
 
@@ -1861,6 +1861,9 @@ let previousTokenCount = 0;
     (async () => {
       let candidates: string[];
       let dynamicLabel: string | undefined;
+      // Bare group name the candidates came from, kept separate from the decorated
+      // dynamicLabel so driveStream can resolve the fallback cascade.
+      let resolvedGroup: string | undefined;
       try {
         // If the last message is a tool result, we're mid-conversation — reuse the same
         // model to avoid "unmatched tool result" errors from pi's bridge. But a fresh
@@ -1872,15 +1875,21 @@ let previousTokenCount = 0;
         const isToolFollowUp =
           lastMsg?.role === 'toolResult' && !!lastDynamicModel && !detectHintDirectly(prompt);
         if (isToolFollowUp) {
-          const res =
-            resolve('fallback') ??
-            resolve(
-              Object.keys(cfg.model_groups).find((k) => cfg.model_groups[k].method !== 'dynamic')!
-            );
+          // Track which group actually resolved — driveStream needs the bare name
+          // to walk the fallback cascade.
+          let followUpGroup = 'fallback';
+          let res = resolve(followUpGroup);
+          if (!res) {
+            const alt = Object.keys(cfg.model_groups).find(
+              (k) => cfg.model_groups[k].method !== 'dynamic'
+            )!;
+            followUpGroup = alt;
+            res = resolve(alt);
+          }
           if (!res) throw new Error('No fallback model for tool follow-up');
           // Prefer the exact model used in the previous turn
           candidates = [lastDynamicModel, ...res.candidates.filter((r) => r !== lastDynamicModel)];
-          await driveStream(proxy, candidates, context, options);
+          await driveStream(proxy, candidates, context, options, undefined, followUpGroup);
           return;
         }
 
@@ -1929,7 +1938,14 @@ let previousTokenCount = 0;
 
               // Cost Tracking für HINT-Override
               costTracker.trackRequest(res.selected, 1000, 500);
-              await driveStream(proxy, candidates, context, options, dynamicLabel);
+              await driveStream(
+                proxy,
+                candidates,
+                context,
+                options,
+                dynamicLabel,
+                classification.hintTarget
+              );
               return;
             }
             routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
@@ -2097,7 +2113,12 @@ let previousTokenCount = 0;
         }
 
         // Collect candidates: target group first, then fallback_groups in order (deduped)
-        const res = resolve(targetGroup) ?? resolve('fallback');
+        let res = resolve(targetGroup);
+        resolvedGroup = targetGroup;
+        if (!res) {
+          res = resolve('fallback');
+          resolvedGroup = 'fallback';
+        }
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
 
         const seen = new Set<string>(res.candidates);
@@ -2119,11 +2140,15 @@ let previousTokenCount = 0;
         costTracker.trackRequest(res.selected, 1000, 500);
       } catch (err) {
         routerLog('[dynamic] classification failed, using fallback:', err);
-        const fb =
-          resolve('fallback') ??
-          resolve(
-            Object.keys(cfg.model_groups).find((k) => cfg.model_groups[k].method !== 'dynamic')!
-          );
+        resolvedGroup = 'fallback';
+        let fb = resolve('fallback');
+        if (!fb) {
+          const alt = Object.keys(cfg.model_groups).find(
+            (k) => cfg.model_groups[k].method !== 'dynamic'
+          )!;
+          resolvedGroup = alt;
+          fb = resolve(alt);
+        }
         if (!fb) {
           proxy.push({
             type: 'error',
@@ -2147,7 +2172,7 @@ let previousTokenCount = 0;
         }
         candidates = [...fb.candidates];
       }
-      await driveStream(proxy, candidates, context, options, dynamicLabel);
+      await driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup);
     })();
     return proxy;
   }
@@ -2225,7 +2250,13 @@ let previousTokenCount = 0;
     candidates: string[],
     context: Context,
     options: SimpleStreamOptions | undefined,
-    label?: string
+    label?: string,
+    // The raw group name the candidates came from. MUST be kept separate from
+    // `label`, which is a decorated display string ("code_complex → tactical",
+    // "HINT: tactical → openrouter/x:free"). getFallbackGroup needs a bare group
+    // name; feeding it the label made every lookup miss and left the whole
+    // fallback cascade unreachable.
+    groupName?: string
   ): Promise<void> {
     return (async () => {
       // Preserve the active group (e.g., 'dynamic') for display purposes
@@ -2235,7 +2266,15 @@ let previousTokenCount = 0;
       let lastError: string | undefined;
       // Track every failure, not just the last one, so the final error message doesn't
       // hide earlier (possibly more relevant) failures behind a random last candidate.
-      const allErrors: string[] = [];
+      // The ref is carried alongside the message rather than re-parsed out of it:
+      // refs legitimately contain colons (openrouter/qwen/qwen3-4b:free), so any
+      // split on the first ':' loses exactly the free-model refs we most need to
+      // report on.
+      const allErrors: { ref: string; message: string }[] = [];
+      const pushError = (ref: string, message: string): void => {
+        lastError = `${ref}: ${message}`;
+        allErrors.push({ ref, message });
+      };
 
       // Estimate the conversation token count ONCE — used to skip models whose
       // context window is too small for the current context (e.g. an 8K local
@@ -2248,7 +2287,7 @@ let previousTokenCount = 0;
       for (let i = 0; i < candidates.length; i++) {
         const ref = candidates[i];
         if (isLimited(ref)) {
-          allErrors.push(`${ref}: skipped, still in cooldown (${router.limitSecs(ref)}s remaining)`);
+          pushError(ref, `skipped, still in cooldown (${router.limitSecs(ref)}s remaining)`);
           continue;
         }
         // Context-window guard: skip models whose context window is smaller than
@@ -2256,7 +2295,7 @@ let previousTokenCount = 0;
         // large conversations with small-context models (e.g. gemma4:12b @ 8K).
         const ctxWindow = getModelContextWindow(ref);
         if (ctxWindow && contextTokens > ctxWindow) {
-          allErrors.push(`${ref}: skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
+          pushError(ref, `skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
           continue;
         }
         const target = await tryStream(ref, context, options).catch((err) => {
@@ -2273,7 +2312,7 @@ let previousTokenCount = 0;
           }
           // Always record the real reason, even for "expected" errors, so the final
           // error message reflects what actually happened instead of "no candidates".
-          lastError = `${ref}: ${errorMsg}`; allErrors.push(lastError);
+          pushError(ref, errorMsg);
           recordSoftFailure(ref);
           // Notify user about hard failures so they know we tried alternatives
           pushRouterInfo(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
@@ -2284,10 +2323,7 @@ let previousTokenCount = 0;
           // candidate vanishes from the failure list and the user sees
           // "All 9 candidates failed" with only 4 entries.
           const why = skipReasons.get(ref);
-          if (why) {
-            lastError = `${ref}: ${why}`;
-            allErrors.push(lastError);
-          }
+          if (why) pushError(ref, why);
           continue;
         }
 
@@ -2328,8 +2364,7 @@ let previousTokenCount = 0;
           // backoff and keeps retrying the same rate-limited model.
           if (result.reason === 'rate_limit_exceeded') {
             const rlResult = recordLimit(ref);
-            lastError = `${ref}: rate_limit_exceeded`;
-            allErrors.push(lastError);
+            pushError(ref, 'rate_limit_exceeded');
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, versuche ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
@@ -2355,7 +2390,7 @@ let previousTokenCount = 0;
           if (isCloudProvider && isEmptyFailure && !isFreeModel) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
             const rlResult = recordLimit(ref);
-            lastError = `${ref}: ${result.reason} (treated as rate-limit)`; allErrors.push(lastError);
+            pushError(ref, `${result.reason} (treated as rate-limit)`);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, versuche ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
@@ -2364,7 +2399,7 @@ let previousTokenCount = 0;
           }
 
           // Local model soft failure — short backoff only
-          lastError = `${ref}: ${result.reason}`; allErrors.push(lastError);
+          pushError(ref, String(result.reason));
           recordSoftFailure(ref);
 
           // Notify the user about the empty response, with next candidate hint if available
@@ -2377,7 +2412,7 @@ let previousTokenCount = 0;
         } catch (streamError) {
           // Hard failure (e.g., "No API provider registered") — treat as soft failure
           const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
-          lastError = `${ref}: ${errorMsg}`; allErrors.push(lastError);
+          pushError(ref, errorMsg);
           recordSoftFailure(ref);
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, versuche ${nextRef} …` : '';
@@ -2393,16 +2428,26 @@ let previousTokenCount = 0;
       // of the specific error type. The fallback group's own candidates will
       // be filtered by isLimited() so rate-limited models are still skipped.
       const allFailed = allErrors.length > 0;
-      
-      if (allFailed && label) {
-        // Try to fall back to a lower-tier group
-        const fallbackGroup = getFallbackGroup(label);
+
+      // Resolve the cascade from the RAW group name, never from `label`.
+      // `label` is a display string ("code_complex → tactical") that matches no
+      // group, so keying off it made getFallbackGroup return null every single
+      // time and the cascade below was unreachable dead code.
+      if (allFailed && groupName) {
+        const fallbackGroup = getFallbackGroup(groupName);
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
-            pushRouterInfo(proxy, `> [router] All models in ${label} failed, trying ${fallbackGroup}...\n\n`);
+            pushRouterInfo(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
             // Recursively try the fallback group
-            await driveStream(proxy, fb.candidates, context, options, `${label}→${fallbackGroup}`);
+            await driveStream(
+              proxy,
+              fb.candidates,
+              context,
+              options,
+              `${label ?? groupName}→${fallbackGroup}`,
+              fallbackGroup
+            );
             return;
           }
         }
@@ -2418,10 +2463,9 @@ let previousTokenCount = 0;
       // one-off glitch.
       const failureList = allErrors.length
         ? allErrors
-            .map((e) => {
-              const ref = e.slice(0, e.indexOf(':'));
-              const streak = ref ? failureStreak(cache, ref) : 0;
-              return `  - ${e}${streak > 1 ? ` [${streak}× in Folge]` : ''}`;
+            .map(({ ref, message }) => {
+              const streak = failureStreak(cache, ref);
+              return `  - ${ref}: ${message}${streak > 1 ? ` [${streak}× in Folge]` : ''}`;
             })
             .join('\n')
         : '  (no candidates attempted)';

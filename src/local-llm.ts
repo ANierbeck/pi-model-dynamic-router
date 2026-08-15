@@ -18,6 +18,7 @@
 // All dependencies (PROVIDER_MAP, cache, config) are injected so the module
 // is fully unit-testable with a mocked fetch and no network.
 
+import { execSync } from 'node:child_process';
 import type { ProviderDef, Config, Cache } from './types.ts';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -266,7 +267,11 @@ function collectFreeCloudModels(
     if (!def || !def.baseUrl || def.api !== 'openai-completions') continue;
     const keys = provConfig.keys ?? [];
     if (keys.length === 0) continue;
+    // Skip the provider entirely when its key cannot be resolved — an
+    // unusable key would otherwise produce free-model entries that always
+    // fail auth and crowd out working fallbacks.
     const apiKey = resolveKeyValue(keys[0].key);
+    if (!apiKey) continue;
 
     for (const freeRef of freeModels) {
       // free_models entries may be "provider/modelId" or bare "modelId".
@@ -284,16 +289,29 @@ function collectFreeCloudModels(
 }
 
 /**
- * Resolve a key value that may be a pass-store reference or env-var name.
+ * Resolve a key value that may be a pass-store reference.
  * Mirrors DiscoveryManager.resolveKeyValue() but kept local to avoid a
  * circular import. For direct keys, returns as-is.
+ *
+ * Returns null when the key is a marker this function cannot resolve. The
+ * previous version returned such markers verbatim, so a pass-managed key was
+ * sent as `Authorization: Bearer !pass show ...` — the request failed auth and
+ * was silently swallowed per-model, quietly disabling the cloud fallback for
+ * anyone using pass. Returning null lets the caller skip the provider instead
+ * of issuing a request that cannot succeed.
  */
-function resolveKeyValue(key: string): string {
+function resolveKeyValue(key: string): string | null {
   if (key.startsWith('!pass show ')) {
-    // pass store — not resolved here (would need child_process). Return as-is;
-    // callers that use pass must pre-resolve. For cloud fallback in tests this
-    // path is never hit because keys are plain strings.
-    return key;
+    try {
+      const out = execSync(key.slice(1) + ' 2>/dev/null', { encoding: 'utf-8' }).trim();
+      return out || null;
+    } catch {
+      return null;
+    }
   }
+  // Other internal marker formats (CLI OAuth, local placeholders) are resolved
+  // by DiscoveryManager, which owns the file/keychain access. Treat them as
+  // unavailable here rather than sending them as a bearer token.
+  if (key.startsWith('!') || key.startsWith('__')) return null;
   return key;
 }

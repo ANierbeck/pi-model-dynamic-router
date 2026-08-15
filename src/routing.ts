@@ -72,7 +72,12 @@ export class Router {
    */
   updateCache(cache: Cache): void {
     this.cache = cache;
-    this.budgetTracker = initBudgetTracker(this.cfg, cache);
+    // Swap the tracker's cache reference rather than constructing a new one.
+    // initBudgetTracker() also reassigns the module-level budgetTracker
+    // singleton in budget-tracker.ts — an unrelated side effect to trigger up
+    // to four times per reload cycle. Only construct when none exists yet.
+    if (this.budgetTracker) this.budgetTracker.updateCache(cache);
+    else this.budgetTracker = initBudgetTracker(this.cfg, cache);
   }
 
   // ── Model Discovery ─────────────────────────────────────────────────────
@@ -575,33 +580,38 @@ export class Router {
       });
     }
 
-    // Sorting
+    // Sorting.
+    //
+    // Health demotion runs as part of ranking, BEFORE any top_k truncation.
+    // Order matters: slicing first can leave a window that contains only
+    // unhealthy models, and demoting within an already-broken subset merely
+    // reorders it — the same failing model still ends up at rank 0, which is
+    // exactly what health tracking exists to prevent.
+    const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, refs);
+
     if (g.method === 'best') {
       // Multi-metric scoring for 'best' method
       // taskType is the group name - only 'code' triggers code-specific weighting
-      c = this.sortBy(c, 'best', name);
+      c = rank(this.sortBy(c, 'best', name));
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
-      c = this.sortByBillingPreference(c);
+      c = rank(this.sortByBillingPreference(c));
     } else if (g.method === 'pipeline' && g.pipeline) {
       for (const step of g.pipeline) {
-        c = this.sortBy(c, step.method, name);
+        c = rank(this.sortBy(c, step.method, name));
         if (step.top_k && step.top_k < c.length) c = c.slice(0, step.top_k);
       }
     } else if (g.method === 'roundrobin') {
       const i = (this.rrCounters[name] ?? 0) % c.length;
       this.rrCounters[name] = i + 1;
-      c = [...c.slice(i), ...c.slice(0, i)];
+      c = rank([...c.slice(i), ...c.slice(0, i)]);
     } else if (g.method === 'min_cost_if_all_priced') {
-      c = this.sortBy(c, 'min_cost_if_all_priced', name);
+      c = rank(this.sortBy(c, 'min_cost_if_all_priced', name));
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     } else {
-      c = this.sortBy(c, g.method, name);
+      c = rank(this.sortBy(c, g.method, name));
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
-    
-    // Push models that keep failing below working ones (see resolveGroupWithCostTier).
-    c = demoteUnhealthy(this.cache, c);
 
     if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
@@ -833,7 +843,8 @@ export class Router {
     } else if (g.method === 'pipeline' && g.pipeline) {
       for (let i = 0; i < g.pipeline.length; i++) {
         const step = g.pipeline[i];
-        c = this.sortBy(c, step.method);
+        // Demote before the step's top_k slice — see resolveGroup for why.
+        c = demoteUnhealthy(this.cache, this.sortBy(c, step.method));
         const isLastStep = i === g.pipeline.length - 1;
         if (step.top_k && step.top_k < c.length && !isLastStep) c = c.slice(0, step.top_k);
       }
