@@ -2033,8 +2033,22 @@ let previousTokenCount = 0;
             // HINT overrides are user-driven: clear any stale cooldowns on fallbacks too,
             // so a previous cascade failure does not silently prevent the HINT from working.
             if (sessionCtx?.modelRegistry) {
-              const availableModels = sessionCtx.modelRegistry.getAvailable().map((m: any) => `${m.provider}/${m.id}` as string);
-              
+              // Pi's registry is NOT pre-filtered — it contains models the user
+              // excluded (exclude.models / providers / paid_models_from). Because
+              // this pool is sorted by GDPval descending, an excluded top-tier
+              // model (e.g. claude-opus-5 at 1860) would otherwise land in slot 1
+              // of every HINT fallback and quietly burn the very budget the
+              // exclude rule was meant to protect. The explicit HINT target itself
+              // is honoured regardless — that is a deliberate user choice — but
+              // auto-appended fallbacks must respect the exclude rules.
+              const exCtx: ExcludeContext | null = cfg.exclude
+                ? { rules: cfg.exclude, cfg, cache }
+                : null;
+              const availableModels = sessionCtx.modelRegistry
+                .getAvailable()
+                .map((m: any) => `${m.provider}/${m.id}` as string)
+                .filter((ref: string) => !exCtx || !isExcluded(ref, exCtx));
+
               const sortedByGdpval = [...availableModels].sort((a, b) => {
                 const gdpvalA = lookupGdp(a) ?? 0;
                 const gdpvalB = lookupGdp(b) ?? 0;
