@@ -2311,6 +2311,15 @@ let previousTokenCount = 0;
       // ever reaches a provider, so no provider ever returns an overflow error,
       // so Pi never compacts, so nothing ever fits — an infinite skip loop.
       let contextOverflowSkips = 0;
+      // Track candidates skipped ONLY because they're in cooldown. If EVERY
+      // candidate across EVERY group in the cascade is in cooldown (total
+      // cooldown collapse), there is no useful fallback — every group draws
+      // from overlapping candidate pools. Rather than emit a generic "All N
+      // candidates failed" that surfaces as Pi's opaque "Unknown error", we pick
+      // the candidate with the shortest remaining cooldown and try it anyway
+      // (the cooldown is a heuristic, not a hard provider-side limit). This
+      // keeps the session responsive instead of hard-failing.
+      let cooldownSkips = 0;
 
       // Estimate the conversation token count ONCE — used to skip models whose
       // context window is too small for the current context (e.g. an 8K local
@@ -2324,6 +2333,7 @@ let previousTokenCount = 0;
         const ref = candidates[i];
         if (isLimited(ref)) {
           pushError(ref, `skipped, still in cooldown (${router.limitSecs(ref)}s remaining)`);
+          cooldownSkips++;
           continue;
         }
         // Context-window guard: skip models whose context window is smaller than
@@ -2542,6 +2552,72 @@ let previousTokenCount = 0;
             );
             return;
           }
+        }
+      }
+
+      // Total cooldown collapse: every candidate across every group tried in
+      // this cascade is in cooldown, and no other (non-cooldown) error occurred.
+      // Walking further groups is pointless — they share the same candidate
+      // pool. Instead of hard-failing with an opaque "Unknown error", pick the
+      // candidate with the shortest remaining cooldown and try it anyway: the
+      // cooldown is a router-internal heuristic, not a hard provider limit, so
+      // the request may well succeed. This keeps long sessions responsive
+      // instead of deadlocking until the longest cooldown expires.
+      //
+      // Also logs the collapse for post-hoc analysis (how often, which refs).
+      if (allFailed && cooldownSkips > 0 && cooldownSkips === allErrors.length) {
+        // Find the candidate with the shortest remaining cooldown across the
+        // whole candidate list (not just allErrors — same content here, but be
+        // explicit about scanning the source of truth).
+        let bestRef: string | null = null;
+        let bestSecs = Number.POSITIVE_INFINITY;
+        for (const ref of candidates) {
+          const secs = router.limitSecs(ref);
+          if (secs < bestSecs) {
+            bestSecs = secs;
+            bestRef = ref;
+          }
+        }
+        if (bestRef) {
+          routerLog(
+            `[router] Total cooldown collapse — all ${candidates.length} candidate(s) in ` +
+              `cooldown. Force-retrying ${bestRef} (${bestSecs}s remaining, shortest). `
+          );
+          pushRouterInfo(
+            proxy,
+            `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`
+          );
+          // Bypass the isLimited() guard by calling tryStream directly. If it
+          // succeeds, consume the stream exactly like the main loop does —
+          // otherwise we'd return a target that nobody consumes and Pi would
+          // hang waiting for output that never arrives.
+          router.setCurModel(bestRef);
+          router.setActiveGroup(activeGroup);
+          curModel = bestRef;
+          lastDynamicModel = bestRef;
+          const target = await tryStream(bestRef, context, options).catch((err) => {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            pushError(bestRef!, errorMsg);
+            recordSoftFailure(bestRef!);
+            return null;
+          });
+          if (target) {
+            try {
+              const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
+              if (result.ok) {
+                recordOk(bestRef);
+                return;
+              }
+              pushError(bestRef, String(result.reason));
+              recordSoftFailure(bestRef);
+            } catch (streamError) {
+              const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+              pushError(bestRef, errorMsg);
+              recordSoftFailure(bestRef);
+            }
+          }
+          // If the force-retry failed, fall through to the normal error-emit
+          // below — no worse than the current behaviour.
         }
       }
 
