@@ -15,6 +15,7 @@ export interface Defaults {
   models_ttl_ms: number;
   max_stream_retries: number;
   empty_response_timeout_ms: number;
+  reasoning_empty_response_timeout_ms: number;
   strip_suffixes: string[];
 }
 
@@ -77,6 +78,10 @@ export interface Config {
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
   cost_tiers?: Partial<CostTiersConfig>;
+  /** Override the default first-token empty-response timeout (ms). */
+  empty_response_timeout_ms?: number;
+  /** Override the first-token timeout for reasoning/thinking models (ms). */
+  reasoning_empty_response_timeout_ms?: number;
   /**
    * Global model exclusion rules — applied to EVERY group before per-group
    * filtering. Lets a user opt out of paid OpenRouter models, specific costly
