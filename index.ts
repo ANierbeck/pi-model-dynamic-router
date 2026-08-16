@@ -2589,8 +2589,14 @@ let previousTokenCount = 0;
           // so the model is properly skipped in future attempts and API keys
           // are rotated. Without this, the router only records a short soft
           // backoff and keeps retrying the same rate-limited model.
+          //
+          // The actual recording (hard cooldown + key rotation vs. short soft
+          // backoff) is delegated to the shared recordStreamFailure() helper,
+          // which the force-retry path also uses — so the two paths can't drift
+          // apart on escalation policy. Each branch still owns its own
+          // user-facing message.
           if (result.reason === 'rate_limit_exceeded') {
-            const rlResult = recordLimit(ref);
+            const rlResult = recordStreamFailure(ref, String(result.reason));
             pushError(ref, 'rate_limit_exceeded');
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, versuche ${nextRef} …` : '';
@@ -2648,12 +2654,17 @@ let previousTokenCount = 0;
           //
           // - PAID cloud models: An empty response is more likely a real
           //   rate-limit (429) or auth error. Use a HARD cooldown.
+          //
+          // The escalation decision (hard cooldown + key rotation for a paid
+          // cloud empty response, short soft backoff otherwise) is delegated
+          // to the shared recordStreamFailure() helper used by the force-retry
+          // path too. This branch keeps its own user-facing message.
           const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
           const isEmptyFailure = result.reason === 'empty_response' || result.reason === 'empty_timeout';
           const isFreeModel = ref.includes(':free');
           if (isCloudProvider && isEmptyFailure && !isFreeModel) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
-            const rlResult = recordLimit(ref);
+            const rlResult = recordStreamFailure(ref, String(result.reason));
             pushError(ref, `${result.reason} (treated as rate-limit)`);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, versuche ${nextRef} …` : '';
@@ -2833,14 +2844,58 @@ let previousTokenCount = 0;
                 return;
               }
               pushError(bestRef, String(result.reason));
+              // The provider rejected the force-retried prompt as too large for
+              // its context window. Mirror the main loop's context_overflow
+              // branch: emit the native-style overflow error (the pattern Pi's
+              // isContextOverflow() recognises) and return, so compaction fires —
+              // instead of falling through to the generic "All candidates failed"
+              // emit, which has no overflow-pattern errorMessage and so would
+              // never trigger compaction even though the provider definitively
+              // measured the prompt as oversized.
+              if (result.reason === 'context_overflow') {
+                pushError(bestRef, 'context_overflow (provider rejected prompt as too large)');
+                recordSoftFailure(bestRef);
+                const overflowMsg: AssistantMessage = {
+                  role: 'assistant',
+                  content: [
+                    {
+                      type: 'text',
+                      text: `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
+                    },
+                  ],
+                  errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+                  usage: {
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    totalTokens: 0,
+                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                  },
+                  stopReason: 'error',
+                  timestamp: Date.now(),
+                } as AssistantMessage;
+                proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+                return;
+              }
               // Escalate exactly like the main loop: a real rate-limit or an
               // empty response from a paid cloud model gets a hard cooldown +
               // key rotation, not just a short soft backoff. Without this, a
               // force-retried candidate that's still genuinely rate-limited
               // gets re-force-retried almost immediately on the next total
               // collapse, defeating the hard-cooldown/key-rotation policy the
-              // rest of the router relies on.
-              recordStreamFailure(bestRef, String(result.reason));
+              // rest of the router relies on. Capture the result so a key
+              // rotation is surfaced to the user, mirroring the main loop's
+              // "(key rotated to X)" router-info lines.
+              const frResult = recordStreamFailure(bestRef, String(result.reason));
+              if (frResult.hardLimited) {
+                const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
+                const reasonTxt = String(result.reason);
+                const labelTxt = reasonTxt === 'rate_limit_exceeded'
+                  ? 'Rate-Limit/Spend-Limit erreicht'
+                  : 'leere Antwort (vermutlich Rate-Limit)';
+                pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
+              }
             } catch (streamError) {
               const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
               pushError(bestRef, errorMsg);
