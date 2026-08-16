@@ -1657,9 +1657,35 @@ let previousTokenCount = 0;
       return RATE_LIMIT_PATTERNS.some((p) => lower.includes(p));
     };
 
+    // Patterns that indicate the prompt exceeded the model's context window.
+    // Mirrors @earendil-works/pi-ai/utils/overflow OVERFLOW_PATTERNS — when a
+    // provider rejects an oversized prompt, it returns one of these strings
+    // (as an error event OR as text_delta content). Detecting it here lets the
+    // router emit a native-style overflow error so Pi runs compaction, instead
+    // of hanging for minutes on a stream that will never produce useful output
+    // (observed: mistral-medium-3.5 hung 7+ minutes after switching from a 1M-
+    // context model, because the context-window guard in driveStream relied on
+    // a token estimate that ignored tool-result content blocks and so
+    // massively underestimated the real token count).
+    const OVERFLOW_PATTERNS = [
+      'prompt is too long',
+      'maximum context length',
+      'context length is',
+      'too large for model with',
+      'maximum context',
+      'context window',
+      'token count exceeds',
+      'exceeds the context',
+    ];
+    const isOverflowText = (text: string): boolean => {
+      const lower = text.toLowerCase();
+      return OVERFLOW_PATTERNS.some((p) => lower.includes(p));
+    };
+
     // Race: iterate the stream vs timeout
     let rateLimited = false;
-    let accumulatedText = ''; // Accumulate text_delta to check for rate-limit text
+    let overflowDetected = false; // Provider rejected oversized prompt (overflow text)
+    let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow text
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -1689,6 +1715,10 @@ let previousTokenCount = 0;
             if (isRateLimitText(errorMsg)) {
               rateLimited = true;
             }
+            // Check if this is a context-overflow rejection (Mistral/OpenAI/etc.)
+            if (isOverflowText(errorMsg)) {
+              overflowDetected = true;
+            }
             // Don't forward error events — treat as soft failure so driveStream
             // can try the next candidate without showing an error to the user.
             return 'done';
@@ -1708,6 +1738,18 @@ let previousTokenCount = 0;
                 timer = null;
               }
               // Stop consuming — don't forward rate-limit text to the user
+              return 'done';
+            }
+            // Some providers return overflow rejections as text content rather
+            // than as an error event. Detect it so driveStream can emit the
+            // native overflow error and trigger Pi compaction instead of hanging.
+            if (isOverflowText(delta) || isOverflowText(accumulatedText)) {
+              overflowDetected = true;
+              if (timer) {
+                clearTimeout(timer);
+                timer = null;
+              }
+              // Stop consuming — don't forward the raw provider error text
               return 'done';
             }
           }
@@ -1736,6 +1778,15 @@ let previousTokenCount = 0;
     }
 
     // Stream completed — check if we actually got content or hit a rate limit
+    if (overflowDetected) {
+      // Provider rejected the prompt as too large for its context window.
+      // This is the runtime counterpart to the pre-flight context-window guard
+      // (which relies on a token estimate that can undercount when messages
+      // carry tool-result content blocks). Surface it so driveStream can emit
+      // the native overflow error and let Pi run compaction, instead of trying
+      // every remaining candidate (they share the same oversized prompt).
+      return { ok: false, reason: 'context_overflow' };
+    }
     if (rateLimited) {
       // Rate limit or subscription error — soft failure, try next model
       return { ok: false, reason: 'rate_limit_exceeded' };
@@ -1774,8 +1825,28 @@ let previousTokenCount = 0;
   function estimateContextTokens(context: Context): number {
     let total = 0;
     for (const msg of context.messages) {
-      const content = typeof msg.content === 'string' ? msg.content : '';
-      total += Math.ceil(content.length / 4); // Rough estimate: 4 chars ≈ 1 token
+      // Content may be a string OR an array of content blocks (text, tool_use,
+      // tool_result, image, etc.). For arrays, sum the text representation of
+      // every block — a tool_result block can easily carry tens of thousands of
+      // tokens (a full file read, a command's stdout). Treating arrays as ''
+      // silently produced a 0-token estimate for every tool message, which made
+      // the context-window guard in driveStream think a 300K-token conversation
+      // (after a 1M-context model) was small enough for a 256K model. The
+      // provider then hung for minutes trying to ingest an oversized prompt.
+      const c = msg.content;
+      let text: string;
+      if (typeof c === 'string') {
+        text = c;
+      } else if (Array.isArray(c)) {
+        text = c.map((b: any) =>
+          typeof b === 'string'
+            ? b
+            : b?.text ?? b?.content ?? (b != null ? JSON.stringify(b) : '')
+        ).join('');
+      } else {
+        text = c != null ? String(c) : '';
+      }
+      total += Math.ceil(text.length / 4); // Rough estimate: 4 chars ≈ 1 token
     }
     return total;
   }
@@ -2472,6 +2543,43 @@ let previousTokenCount = 0;
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
             pushRouterInfo(proxy, `> [router] ${ref} — Rate-Limit/Spend-Limit erreicht${keyMsg}${suffix}\n\n`);
             continue;
+          }
+
+          // The provider itself rejected the prompt as too large for its context
+          // window (detected in consumeWithDetection from the error/text content,
+          // not from the pre-flight token estimate). This is a definitive signal —
+          // unlike the pre-flight guard's estimate, which can undercount when
+          // messages carry tool-result content blocks, the provider has actually
+          // measured the real prompt size. Emit the native overflow error right
+          // away instead of burning time on the remaining candidates (they were
+          // ranked by GDPval/cost, not context window, so trying them in order
+          // could mean minutes of hangs on more undersized models before reaching
+          // one — if any — that's actually large enough).
+          if (result.reason === 'context_overflow') {
+            pushError(ref, 'context_overflow (provider rejected prompt as too large)');
+            recordSoftFailure(ref);
+            const overflowMsg: AssistantMessage = {
+              role: 'assistant',
+              content: [
+                {
+                  type: 'text',
+                  text: `[router] ${ref} rejected the prompt as too large for its context window — triggering compaction.`,
+                },
+              ],
+              errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+              stopReason: 'error',
+              timestamp: Date.now(),
+            } as AssistantMessage;
+            proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+            return;
           }
 
           // Soft failure — record and try next candidate
