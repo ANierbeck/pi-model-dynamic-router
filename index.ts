@@ -1955,6 +1955,7 @@ let previousTokenCount = 0;
             lastAssistantSnippet,
             lastModel: lastDynamicModel || undefined,
             isCompaction: isCompactionTurn(context),  // Pass context for detection
+            lastModelLimited: lastDynamicModel ? isLimited(lastDynamicModel) : false,
           },
         };
         if (dynamicGroupCfg?.classifier_model)
@@ -2088,14 +2089,27 @@ let previousTokenCount = 0;
             // Same model on another provider ranks ahead of any unrelated model.
             candidates = [...hintSiblings];
 
-            // The user explicitly requested this model via HINT — a stale cooldown from
-            // an earlier, unrelated failure must not silently block this deliberate override.
-            candidates.forEach(ref => clearLimit(ref));
+            // The user explicitly requested this model via HINT (or selected it directly
+            // in Pi's model picker, which resolves to the same HINT path on every turn) —
+            // a stale cooldown from an earlier, unrelated failure must not silently block
+            // this deliberate choice. Auto-generated hints (e.g. compaction model
+            // continuity, which the router invents on its own) are a preference, not a
+            // deliberate choice, so any cooldown on the target is respected instead.
+            const isExplicitHint = classification.origin !== 'auto';
+            if (isExplicitHint) {
+              candidates.forEach(ref => clearLimit(ref));
+            }
             
             // Append fallback models from what's actually registered in Pi (no invented
             // provider prefixes — only real refs from the session's model registry).
-            // HINT overrides are user-driven: clear any stale cooldowns on fallbacks too,
-            // so a previous cascade failure does not silently prevent the HINT from working.
+            // Their cooldowns are NEVER cleared, explicit hint or not: unlike the HINT
+            // target itself, these are auto-appended by the router, not a deliberate
+            // choice, so a fresh cooldown from a failure moments ago must still apply.
+            // Every turn re-runs HINT resolution (a UI-selected model resolves to a HINT
+            // on every message), so clearing fallback cooldowns here used to wipe out the
+            // router's own protection on every single turn — the observed symptom was a
+            // model that had just hard-failed being retried again within seconds, over
+            // and over, looking like the whole session had hung.
             if (sessionCtx?.modelRegistry) {
               // Pi's registry is NOT pre-filtered — it contains models the user
               // excluded (exclude.models / providers / paid_models_from). Because
@@ -2132,8 +2146,6 @@ let previousTokenCount = 0;
               if (fallbackCandidates.length) {
                 routerLog(`[dynamic] HINT fallback candidates for "${resolvedTarget}": ${fallbackCandidates.join(', ')}`);
                 candidates.push(...fallbackCandidates);
-                // Clear cooldowns for all fallback candidates as well
-                fallbackCandidates.forEach(fb => clearLimit(fb));
               }
             }
             
