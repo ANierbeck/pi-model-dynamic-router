@@ -45,6 +45,43 @@
   by the pre-flight guard — short-circuiting immediately instead of trying
   (and hanging on) further candidates.
 
+### Fixed (roborev)
+- **Direct-model HINT overrides had a dead fallback cascade.** The
+  `hintType === 'model'` `driveStream` call was the one call site never
+  updated to pass a `groupName`, so once a HINT-resolved model and all its
+  auto-appended fallbacks failed, the cascade to a lower-tier group
+  (`getFallbackGroup`) was unreachable — straight to "All N candidates
+  failed". Now passes a group approximated from the resolved model's GDPval
+  tier (expensive→strategic, medium→tactical, cheap→scout), mirroring the
+  classifier's own escalation tiering.
+- **Context-window overflow short-circuit could fire before the fallback
+  cascade got a chance.** Groups are filtered by cost tier, not context
+  window, so a lower-priority fallback group can contain a model with a
+  larger context window than anything in the current group. The cascade
+  attempt now runs first; the synthetic overflow signal only fires once the
+  cascade is exhausted.
+- **Total-cooldown-collapse force-retry always used the short soft-backoff,
+  even for real rate-limit failures.** Factored the main loop's reason-based
+  escalation (hard cooldown + key rotation for rate-limit/paid-empty-
+  response, short soft backoff otherwise) into a shared `recordStreamFailure`
+  helper and reused it in the force-retry path, so a still-rate-limited
+  force-retried candidate can't be force-retried again almost immediately.
+- **`empty_response_timeout_ms`/`reasoning_empty_response_timeout_ms` had the
+  same dynamic-config staleness bug already fixed for `exclude`.** Once
+  `router-config.dynamic.json` exists on disk, `load()` only re-synced
+  `exclude` from `staticCfg`; the two timeout overrides were not, so editing
+  them in `router-config.json` had no effect in the common steady state.
+  Both fields are now forced from `staticCfg` on the load path and the
+  generate/save path, same as `exclude`.
+- **Regenerated `package-lock.json`** (stale version field, unrelated `diff`
+  lockfile-entry drift) and restored the trailing newline in `package.json`.
+
+### Tests
+- `test/dynamic-config-staleness.test.ts` — regression coverage for the
+  `exclude`/timeout dynamic-config staleness fix (previously untested).
+- `test/reasoning-timeout.test.ts` — mock now uses `reasoning: true` (the
+  real pi-ai `Model.reasoning` type), not the string `'default'`.
+
 ## [1.4.0] — 2026-08-16 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout
 
 ### Added
