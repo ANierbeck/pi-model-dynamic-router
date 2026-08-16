@@ -257,12 +257,17 @@ let previousTokenCount = 0;
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
         // Prüfe ob die dynamische Konfiguration gültig ist (hat _dynamic Metadaten)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
-          // WICHTIG: Exclude-Regeln aus staticCfg (layered config) erzwingen.
-          // Die dynamische Config kann veraltete Exclude-Regeln enthalten,
-          // wenn der User zwischenzeitlich router-config.user.json geändert hat.
-          // Die Exclude-Regeln kommen IMMER aus staticCfg (der einzigen Quelle
-          // der Wahrheit für User-Overrides).
+          // WICHTIG: Exclude-Regeln UND die Timeout-Overrides aus staticCfg
+          // (layered config) erzwingen. Die dynamische Config kann veraltete
+          // Werte enthalten, wenn der User zwischenzeitlich router-config.json
+          // oder router-config.user.json geändert hat. Diese Felder kommen
+          // IMMER aus staticCfg (der einzigen Quelle der Wahrheit für
+          // User-Overrides) — sonst hat eine Änderung von z.B.
+          // reasoning_empty_response_timeout_ms keinerlei Wirkung, solange
+          // schon eine router-config.dynamic.json auf der Platte liegt.
           dynamicCfg.exclude = staticCfg.exclude;
+          dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
+          dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
@@ -973,16 +978,22 @@ let previousTokenCount = 0;
       }
 
       // 10. Dynamische Konfiguration speichern
-      // WICHTIG: Verwende staticCfg als Basis, NICHT cfg!
-      // cfg ist zu diesem Punkt die (potenziell veraltete) dynamische Config,
-      // die die Exclude-Regeln aus der User-Override (router-config.user.json)
-      // verloren hat. staticCfg ist die layered Config (defaults + user override),
-      // die die korrekten Exclude-Regeln enthaelt.
+      // WICHTIG: Der Objekt-Literal spreadet weiterhin von `cfg` (der
+      // potenziell veralteten dynamischen Config), NICHT von staticCfg — nur
+      // die einzelnen User-Override-Felder unten (exclude, die beiden Timeout-
+      // Werte) werden explizit aus staticCfg erzwungen. staticCfg ist die
+      // layered Config (defaults + user override) und damit die einzige Quelle
+      // der Wahrheit fuer diese Felder; cfg kann sie verloren haben, wenn der
+      // User zwischenzeitlich router-config.json/router-config.user.json
+      // geaendert hat, seit die zuletzt persistierte dynamische Config
+      // geschrieben wurde.
       const dynamicConfig = {
         ...cfg,
         // Preserve critical global config from staticCfg (layered config).
-        // cfg may be a stale dynamic config missing user-overridden exclude rules.
+        // cfg may be a stale dynamic config missing user-overridden values.
         exclude: staticCfg.exclude,
+        empty_response_timeout_ms: staticCfg.empty_response_timeout_ms,
+        reasoning_empty_response_timeout_ms: staticCfg.reasoning_empty_response_timeout_ms,
         model_groups: dynamicGroups,
         _dynamic: {
           generated_at: new Date().toISOString(),
@@ -1061,6 +1072,34 @@ let previousTokenCount = 0;
   function recordSoftFailure(ref: string): void {
     rateLimitManager.recordSoftFailure(ref);
     recordModelFailure(cache, ref);
+  }
+
+  /**
+   * Escalates a stream failure to the right backoff tier, exactly like the
+   * main driveStream loop does: a real rate-limit, or an empty response from
+   * a PAID cloud model (which is much more likely a masked 429/auth error
+   * than a fluke), gets a hard cooldown + key rotation via recordLimit(). A
+   * FREE-model or local-model empty response gets only the short soft-backoff
+   * ladder, since those are commonly just transient overload.
+   *
+   * Used both by the main candidate loop and by the total-cooldown-collapse
+   * force-retry, so a force-retried candidate that turns out to still be
+   * rate-limited escalates the same way instead of getting a token-cheap
+   * soft cooldown that lets it be force-retried again almost immediately.
+   */
+  function recordStreamFailure(
+    ref: string,
+    reason: string
+  ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
+    const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
+    const isEmptyFailure = reason === 'empty_response' || reason === 'empty_timeout';
+    const isFreeModel = ref.includes(':free');
+    if (reason === 'rate_limit_exceeded' || (isCloudProvider && isEmptyFailure && !isFreeModel)) {
+      const rlResult = recordLimit(ref);
+      return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
+    }
+    recordSoftFailure(ref);
+    return { hardLimited: false, rotated: false, newKey: undefined };
   }
 
   function limitSecs(ref: string) {
@@ -1886,8 +1925,10 @@ let previousTokenCount = 0;
     try {
       const model = sessionCtx.modelRegistry.find(provider, modelId) as any;
       if (!model) return false;
-      // pi-ai's Model type carries `reasoning?: ThinkingLevel` when the model
-      // supports thinking. Some custom providers may expose it as a boolean
+      // pi-ai's Model type carries `reasoning?: boolean` when the model
+      // supports thinking (not to be confused with SimpleStreamOptions.reasoning,
+      // which is a `ThinkingLevel` string on the request side, not the model
+      // capability flag read here). Some custom providers may expose it as a
       // `thinking` flag instead, so accept either.
       return Boolean(model.reasoning) || Boolean(model.thinking);
     } catch {
@@ -2225,7 +2266,20 @@ let previousTokenCount = 0;
             const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${resolvedTarget}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
             appendRawLog(logLine);
             costTracker.trackRequest(resolvedTarget, 1000, 500);
-            await driveStream(proxy, candidates, context, options, dynamicLabel);
+            // Every other driveStream call site passes a bare group name so that,
+            // if every candidate fails, getFallbackGroup() can cascade to a
+            // lower tier instead of just hard-failing. This one used to pass
+            // none (groupName undefined), so a direct-model HINT override (the
+            // resolved model + its siblings + up to 5 auto-appended fallbacks)
+            // had NO cascade at all once all of those failed — dead end straight
+            // to "All N candidates failed". Approximate the model's natural
+            // group from its GDPval, mirroring the tiering the classifier uses
+            // for escalation (expensive→strategic, medium→tactical, cheap→scout),
+            // so the cascade still lands somewhere sensible for this model.
+            const resolvedGdpval = lookupGdp(resolvedTarget) ?? 0;
+            const hintStartGroup =
+              resolvedGdpval >= 700 ? 'strategic' : resolvedGdpval >= 300 ? 'tactical' : 'scout';
+            await driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup);
             return;
           }
         }
@@ -2639,21 +2693,54 @@ let previousTokenCount = 0;
       // be filtered by isLimited() so rate-limited models are still skipped.
       const allFailed = allErrors.length > 0;
 
-      // Context-overflow short-circuit: if EVERY candidate was skipped because
-      // its context window is too small for the current conversation, walking
-      // the fallback cascade is pointless — those groups draw from the same
-      // candidate pool with the same context limits, so they'll all skip too,
-      // and we'd recurse through every group without ever sending a request to
-      // a provider. That means Pi never sees a provider-side overflow error,
-      // so its native compaction never fires, so the conversation never shrinks
-      // — the session freezes on switch from a large-context model (e.g. 170K
-      // tokens gathered under a 1M model like Gemini 2.5 Pro).
+      // Resolve the cascade from the RAW group name, never from `label`.
+      // `label` is a display string ("code_complex → tactical") that matches no
+      // group, so keying off it made getFallbackGroup return null every single
+      // time and the cascade below was unreachable dead code.
       //
-      // Instead, emit a native-style overflow error (the "prompt is too long"
-      // pattern that @earendil-works/pi-ai/utils/overflow recognises). Pi will
-      // detect it, run its own compaction with an appropriate model, and retry —
-      // exactly the path that already works when a provider returns a real
-      // overflow error.
+      // This MUST run before the context-overflow short-circuit below. A
+      // group's own candidate list is filtered by min_gdpval/cost tier, not by
+      // context window, so it's entirely possible for a lower-priority
+      // fallback group to contain a model with a larger context window than
+      // anything in the current group — walking the cascade first gives that
+      // model a chance before giving up and asking Pi to compact.
+      if (allFailed && groupName) {
+        const visited = visitedGroups ?? new Set<string>();
+        visited.add(groupName);
+        const fallbackGroup = getFallbackGroup(groupName, visited);
+        if (fallbackGroup) {
+          const fb = resolve(fallbackGroup);
+          if (fb?.candidates?.length) {
+            pushRouterInfo(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
+            // Recursively try the fallback group
+            await driveStream(
+              proxy,
+              fb.candidates,
+              context,
+              options,
+              `${label ?? groupName}→${fallbackGroup}`,
+              fallbackGroup,
+              visited
+            );
+            return;
+          }
+        }
+      }
+
+      // Context-overflow short-circuit: if EVERY candidate was skipped because
+      // its context window is too small for the current conversation, AND the
+      // fallback cascade above is exhausted (no further group to try, or none
+      // configured), asking the user to wait for yet more failures is
+      // pointless. Emit a native-style overflow error (the "prompt is too
+      // long" pattern that @earendil-works/pi-ai/utils/overflow recognises).
+      // Pi will detect it, run its own compaction with an appropriate model,
+      // and retry — exactly the path that already works when a provider
+      // returns a real overflow error. Without this, a session that grew
+      // under a large-context model (e.g. 170K tokens gathered under a 1M
+      // model like Gemini 2.5 Pro) would otherwise freeze on switch to a
+      // Dynamic group: every candidate in every group gets skipped before any
+      // request ever reaches a provider, so no provider ever returns an
+      // overflow error, so Pi's native compaction never fires.
       if (allFailed && contextOverflowSkips > 0 && contextOverflowSkips === allErrors.length) {
         const overflowMsg: AssistantMessage = {
           role: 'assistant',
@@ -2682,41 +2769,19 @@ let previousTokenCount = 0;
         return;
       }
 
-      // Resolve the cascade from the RAW group name, never from `label`.
-      // `label` is a display string ("code_complex → tactical") that matches no
-      // group, so keying off it made getFallbackGroup return null every single
-      // time and the cascade below was unreachable dead code.
-      if (allFailed && groupName) {
-        const visited = visitedGroups ?? new Set<string>();
-        visited.add(groupName);
-        const fallbackGroup = getFallbackGroup(groupName, visited);
-        if (fallbackGroup) {
-          const fb = resolve(fallbackGroup);
-          if (fb?.candidates?.length) {
-            pushRouterInfo(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
-            // Recursively try the fallback group
-            await driveStream(
-              proxy,
-              fb.candidates,
-              context,
-              options,
-              `${label ?? groupName}→${fallbackGroup}`,
-              fallbackGroup,
-              visited
-            );
-            return;
-          }
-        }
-      }
-
-      // Total cooldown collapse: every candidate across every group tried in
-      // this cascade is in cooldown, and no other (non-cooldown) error occurred.
-      // Walking further groups is pointless — they share the same candidate
-      // pool. Instead of hard-failing with an opaque "Unknown error", pick the
-      // candidate with the shortest remaining cooldown and try it anyway: the
-      // cooldown is a router-internal heuristic, not a hard provider limit, so
-      // the request may well succeed. This keeps long sessions responsive
-      // instead of deadlocking until the longest cooldown expires.
+      // Total cooldown collapse: this check runs per driveStream invocation,
+      // i.e. per group — in a multi-group cascade it only fires for the LAST
+      // group actually reached (the fallback-cascade block above already
+      // returned if an earlier group had somewhere left to fall back to). By
+      // the time we get here, every candidate in THIS group's list is in
+      // cooldown and no other (non-cooldown) error occurred, and there is no
+      // further group to try. Retrying within this same group is still useful
+      // — they share the same candidate pool as any later group would have
+      // anyway — pick the candidate with the shortest remaining cooldown and
+      // try it anyway: the cooldown is a router-internal heuristic, not a hard
+      // provider limit, so the request may well succeed. This keeps long
+      // sessions responsive instead of deadlocking until the longest cooldown
+      // expires.
       //
       // Also logs the collapse for post-hoc analysis (how often, which refs).
       if (allFailed && cooldownSkips > 0 && cooldownSkips === allErrors.length) {
@@ -2752,6 +2817,11 @@ let previousTokenCount = 0;
           const target = await tryStream(bestRef, context, options).catch((err) => {
             const errorMsg = err instanceof Error ? err.message : String(err);
             pushError(bestRef!, errorMsg);
+            // A hard failure here isn't necessarily a soft cooldown-worthy issue
+            // (could well be a real rate-limit/auth error that just didn't come
+            // through as a normal result.reason) — same escalation as the main
+            // loop's stream-error branch below, which also has no result.reason
+            // to branch on and falls back to recordSoftFailure. Kept consistent.
             recordSoftFailure(bestRef!);
             return null;
           });
@@ -2763,7 +2833,14 @@ let previousTokenCount = 0;
                 return;
               }
               pushError(bestRef, String(result.reason));
-              recordSoftFailure(bestRef);
+              // Escalate exactly like the main loop: a real rate-limit or an
+              // empty response from a paid cloud model gets a hard cooldown +
+              // key rotation, not just a short soft backoff. Without this, a
+              // force-retried candidate that's still genuinely rate-limited
+              // gets re-force-retried almost immediately on the next total
+              // collapse, defeating the hard-cooldown/key-rotation policy the
+              // rest of the router relies on.
+              recordStreamFailure(bestRef, String(result.reason));
             } catch (streamError) {
               const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
               pushError(bestRef, errorMsg);

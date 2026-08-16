@@ -92,7 +92,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
         id: 'glm-5-2',
         api: 'openai-completions',
         contextWindow: 1_000_000,
-        reasoning: 'default', // marks this as a thinking-capable model
+        reasoning: true, // pi-ai's Model.reasoning is a boolean, not a ThinkingLevel string
       };
       const streamSimple = vi.fn((model: any) => {
         return (async function* () {
