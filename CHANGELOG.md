@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — Reliability: cycles, runaway retries, externalized deps, context-overflow
+## [1.4.0] — 2026-08-16 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout
 
 ### Added
 - **LLM-assisted model matching** (`src/model-matcher.ts`): when the
