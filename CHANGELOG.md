@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — Model matching & config overhaul
+## [Unreleased] — Reliability: cycles, runaway retries, externalized deps, context-overflow
 
 ### Added
 - **LLM-assisted model matching** (`src/model-matcher.ts`): when the
@@ -45,3 +45,51 @@
 - `metrics.ts` `modelMap` never loaded (only the closure version was)
 - Exclude rules not applied to live TUI table (only to dynamic config)
 - `/router reset` deleting GDPval scores (command removed)
+
+### Added (this iteration)
+- **Context-overflow → native compaction.** When switching from a
+  large-context model (e.g. Gemini 2.5 Pro @ 1M) to a Dynamic group, the
+  conversation can exceed every candidate's context window. Previously,
+  `driveStream` skipped each candidate before the request ever reached a
+  provider — so no provider returned an overflow error, so Pi's native
+  compaction never fired, so the conversation never shrank, so the session
+  froze in an infinite skip loop on every turn. Now, when ALL candidates fail
+  ONLY because of context-window size, `driveStream` emits a native-style
+  overflow error (the Anthropic "prompt is too long" pattern that
+  `@earendil-works/pi-ai/utils/overflow` recognises). Pi detects it, runs its
+  own compaction with an appropriate model, and retries.
+
+### Changed (this iteration)
+- **`@earendil-works/pi-ai` is no longer bundled.** esbuild now marks it
+  `--external`, and it stays in `peerDependencies` + `devDependencies` (types
+  only). This was the root cause of `host pi-ai lacks createProvider; refusing
+  to register` — the router shipped a stale bundled copy of pi-ai (pre-
+  `createProvider`) that shadowed the host's newer one, breaking extensions
+  like `@vanillagreen/pi-claude-bridge` that rely on `piAi.createProvider`.
+
+### Fixed (this iteration)
+- **Fallback-group recursion → `Maximum call stack size exceeded`.** The
+  auto-generated `fallback_groups` form a full permutation of all groups, so
+  e.g. `tactical`'s first fallback is `strategic` and `strategic`'s first
+  fallback is `tactical`. `getFallbackGroup` always returned the first
+  unfiltered entry, so when every candidate in both groups failed, `driveStream`
+  bounced between them forever. `driveStream` now threads a `visitedGroups`
+  set and `getFallbackGroup` accepts a `visited` set to skip already-tried
+  groups — cycle-safe regardless of how `fallback_groups` is configured.
+- **Skip path (null return from `tryStream`) never accrued a malus.** When
+  `tryStream` returned `null` instead of throwing — "not registered in Pi's
+  model registry", "no API key", "provider is a group" — `driveStream` recorded
+  the reason for the error message but never called `recordSoftFailure()`. A
+  structurally-broken candidate (one that can't become usable mid-session) was
+  therefore re-attempted from scratch on **every single request**, with no
+  cooldown and no model-health demotion. In one long subagent session this
+  produced 1.3M+ identical "not registered" log lines over ~17h. The skip
+  branch now calls `recordSoftFailure(ref)`, so these candidates enter the
+  normal soft-backoff ladder (30s → 60s → 2min → 5min) and get demoted by
+  `model-health.ts`'s `failureStreak` scoring — exactly the persistent malus
+  that already existed for thrown errors.
+- **Exclude rules lost in dynamic config.** `generateDynamicConfig()` used the
+  previously-generated dynamic config as its base (`...cfg`) instead of the
+  layered static config (`staticCfg`), so stale `exclude.models` (e.g. missing
+  `*opus*`) silently persisted. Both the generation path and the load path now
+  force `exclude = staticCfg.exclude` — `staticCfg` is the single authority.
