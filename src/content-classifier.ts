@@ -31,6 +31,14 @@ export interface ClassificationContext {
   lastAssistantSnippet?: string | undefined;
   lastModel?: string | undefined;  // Model to reuse (e.g., after compaction)
   isCompaction?: boolean;  // NEW: Explicit compaction flag
+  /**
+   * Whether `lastModel` is currently in the router's rate-limit/soft-failure
+   * cooldown. When true, compaction-continuity must NOT hint back to it —
+   * doing so would resolve straight through the HINT override path, which
+   * clears the very cooldown that was protecting against a model that just
+   * failed, and retry it immediately on every subsequent turn.
+   */
+  lastModelLimited?: boolean;
 }
 
 export interface HintClassificationResult {
@@ -38,6 +46,15 @@ export interface HintClassificationResult {
   confidence: number;
   hintType: 'model' | 'group' | 'tier';
   hintTarget: string;
+  /**
+   * 'user' (default) — the user explicitly named this model/group via a
+   * "HINT: ..." prefix; a stale cooldown must not block a deliberate choice,
+   * so the router clears it.
+   * 'auto' — the router generated this hint itself (e.g. compaction model
+   * continuity). It is a preference, not a deliberate override, so any
+   * existing cooldown on the target must be respected rather than cleared.
+   */
+  origin?: 'user' | 'auto';
 }
 
 // Cost tiers for escalation logic. Derived from GDPval, not hardcoded model names —
@@ -256,7 +273,7 @@ export async function classifyPrompt(
   if (context.isCompaction) {
     // Check if the last model has a large enough context window for compaction.
     // Local models (ollama, lm-studio) often have small windows (4K-8K).
-    if (context.lastModel) {
+    if (context.lastModel && !context.lastModelLimited) {
       const isSmallLocal = /ollama\/|lm-studio\//i.test(context.lastModel) ||
                           /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
       if (!isSmallLocal) {
@@ -265,13 +282,17 @@ export async function classifyPrompt(
           confidence: 1.0,
           hintType: 'model',
           hintTarget: context.lastModel,
+          origin: 'auto',
         };
       }
     }
-    // Last model was small or unknown — route to strategic for compaction.
+    // Last model was small, unknown, or currently in cooldown (just failed) —
+    // route to strategic for compaction instead of hammering the same model.
     return {
       category: 'code_complex',
-      reason: 'Compaction — routing to strategic for large context window',
+      reason: context.lastModelLimited
+        ? 'Compaction — last model is in cooldown, routing to strategic'
+        : 'Compaction — routing to strategic for large context window',
       confidence: 0.9,
     };
   }

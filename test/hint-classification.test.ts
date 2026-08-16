@@ -300,3 +300,60 @@ describe('resolveShortModelName()', () => {
     expect(result).toBeNull();
   });
 });
+
+// ── Compaction model-continuity hints ────────────────────────────────────
+//
+// During compaction, classifyPrompt() hints back to context.lastModel for
+// continuity. That hint resolves through the same HINT-override path as an
+// explicit user "HINT: <model>" prefix, which clears rate-limit cooldowns on
+// the target so a deliberate user choice isn't silently blocked. But this
+// hint is NOT a deliberate user choice — it's the router guessing. If
+// lastModel just failed and is sitting in cooldown, hinting back to it would
+// immediately clear that cooldown and retry the same broken/overloaded model
+// again, every single compaction turn — observed in production as a tight
+// repeated-retry loop that looked like the whole session had hung.
+describe('compaction model-continuity hint', () => {
+  it('hints back to lastModel when it is not in cooldown, tagged as auto', async () => {
+    const result = await classifyPrompt('summarize the conversation', {
+      context: {
+        isCompaction: true,
+        lastModel: 'mistral-zai/zai-glm-5-2',
+        lastModelLimited: false,
+      },
+    });
+    expect(result).toMatchObject({
+      hintType: 'model',
+      hintTarget: 'mistral-zai/zai-glm-5-2',
+      origin: 'auto',
+    });
+  });
+
+  it('does NOT hint back to lastModel when it is currently in cooldown', async () => {
+    const result = await classifyPrompt('summarize the conversation', {
+      context: {
+        isCompaction: true,
+        lastModel: 'mistral-zai/zai-glm-5-2',
+        lastModelLimited: true,
+      },
+    });
+    expect('hintType' in result).toBe(false);
+    expect(result).toMatchObject({ category: 'code_complex' });
+  });
+
+  it('still routes small local models to strategic during compaction, regardless of cooldown', async () => {
+    const result = await classifyPrompt('summarize the conversation', {
+      context: {
+        isCompaction: true,
+        lastModel: 'ollama/gemma4:12b',
+        lastModelLimited: false,
+      },
+    });
+    expect('hintType' in result).toBe(false);
+    expect(result).toMatchObject({ category: 'code_complex' });
+  });
+
+  it('an explicit user "HINT: <model>" prefix is not tagged as auto', () => {
+    const r = detectHintDirectly('HINT: mistral-medium-3.5');
+    expect(r?.origin).not.toBe('auto');
+  });
+});

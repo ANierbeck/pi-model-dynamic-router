@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] — HINT cooldown-clearing fix
+
+### Fixed
+- **HINT resolution no longer clears cooldowns it shouldn't.** Two related
+  bugs, both causing the same symptom — a model that had just hard-failed
+  being retried again within seconds, over and over, looking like the whole
+  session had hung:
+  - Pi's client re-sends every message with a `HINT: <currently selected
+    model/group>` prefix reflecting the model/group picked in the UI. When
+    that resolves to a model-type hint, the router used to clear rate-limit
+    cooldowns not just for the hinted model, but for its up-to-5
+    auto-appended fallback candidates too — on every single turn. Those
+    fallbacks were never a deliberate user choice, so wiping their cooldowns
+    defeated the router's own backoff protection every turn. Fallback
+    cooldowns are no longer cleared; only the literal HINT target's cooldown
+    is (that one *is* a deliberate choice).
+  - During compaction, `classifyPrompt()` hints back to `context.lastModel`
+    for model continuity. If `lastModel` had just failed and was sitting in
+    cooldown, this hint resolved through the same clear-cooldown path and
+    retried the broken model immediately, every compaction turn. The
+    classifier now receives `lastModelLimited` and skips the continuity hint
+    (routing to `strategic` instead) when the last model is currently in
+    cooldown. `HintClassificationResult` gained an `origin: 'user' | 'auto'`
+    field so the router can tell a deliberate user/UI selection from a
+    router-generated preference.
+
 ## [1.4.0] — 2026-08-16 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout
 
 ### Added
