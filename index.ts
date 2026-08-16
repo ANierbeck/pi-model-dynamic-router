@@ -256,6 +256,12 @@ let previousTokenCount = 0;
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
         // Prüfe ob die dynamische Konfiguration gültig ist (hat _dynamic Metadaten)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
+          // WICHTIG: Exclude-Regeln aus staticCfg (layered config) erzwingen.
+          // Die dynamische Config kann veraltete Exclude-Regeln enthalten,
+          // wenn der User zwischenzeitlich router-config.user.json geändert hat.
+          // Die Exclude-Regeln kommen IMMER aus staticCfg (der einzigen Quelle
+          // der Wahrheit für User-Overrides).
+          dynamicCfg.exclude = staticCfg.exclude;
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
@@ -966,8 +972,16 @@ let previousTokenCount = 0;
       }
 
       // 10. Dynamische Konfiguration speichern
+      // WICHTIG: Verwende staticCfg als Basis, NICHT cfg!
+      // cfg ist zu diesem Punkt die (potenziell veraltete) dynamische Config,
+      // die die Exclude-Regeln aus der User-Override (router-config.user.json)
+      // verloren hat. staticCfg ist die layered Config (defaults + user override),
+      // die die korrekten Exclude-Regeln enthaelt.
       const dynamicConfig = {
         ...cfg,
+        // Preserve critical global config from staticCfg (layered config).
+        // cfg may be a stale dynamic config missing user-overridden exclude rules.
+        exclude: staticCfg.exclude,
         model_groups: dynamicGroups,
         _dynamic: {
           generated_at: new Date().toISOString(),
