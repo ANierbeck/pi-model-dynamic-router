@@ -12,13 +12,21 @@
  * pattern that @earendil-works/pi-ai/utils/overflow recognises). Pi detects
  * it and runs its own compaction with an appropriate model.
  *
+ * The overflow short-circuit only fires once the fallback-group cascade is
+ * exhausted: groups are filtered by min_gdpval/cost tier, not by context
+ * window, so a lower-priority fallback group can legitimately contain a
+ * model with more room than the current group's candidates.
+ *
  * This test sets up a group whose only candidate has a small context window,
  * feeds it a conversation larger than that window, and asserts:
  *   1. The emitted error message contains the overflow pattern
  *      ("prompt is too long").
  *   2. The emitted AssistantMessage carries stopReason "error" + errorMessage
  *      (the fields Pi's isContextOverflow() inspects).
- *   3. The normal fallback cascade is NOT walked (no "trying <group>" info).
+ *   3. No fallback cascade was walked (none is configured in this test).
+ *
+ * A third test (below) verifies the cascade actually gets first refusal when
+ * one IS configured and contains a model with enough context.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
@@ -186,6 +194,106 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       expect(text).toContain('All');
       expect(text).toContain('failed');
       expect(text).not.toMatch(/prompt is too long/i);
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+    }
+  });
+
+  it('tries a configured fallback group BEFORE emitting the overflow signal, and succeeds if it has enough context', async () => {
+    // Groups are filtered by min_gdpval/cost tier, not by context window, so
+    // a lower-priority fallback group can legitimately contain a
+    // large-context model that the current group's (small-context) candidate
+    // list doesn't have. The overflow short-circuit must not preempt that —
+    // it may only fire once the cascade itself is exhausted.
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow-cascade-'));
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.pi', 'router-config.json'),
+      JSON.stringify({
+        free_models: [],
+        model_groups: {
+          standard: { fallback_groups: ['big'] },
+          big: { fallback_groups: [] },
+        },
+      })
+    );
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+    if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const defaultExport = mod.default as any;
+
+      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+      const pi: any = {
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn((event: string, handler: any) => {
+          onHandlers[event] = handler;
+        }),
+      };
+      defaultExport(pi);
+
+      // 'standard' group's only candidate is too small for the conversation.
+      // 'big' group's only candidate has plenty of room.
+      const smallCtxModel = {
+        provider: 'small-ctx-provider',
+        id: 'small-model',
+        api: 'small-api',
+        contextWindow: 8_000,
+      };
+      const bigCtxModel = {
+        provider: 'big-ctx-provider',
+        id: 'big-model',
+        api: 'big-api',
+        contextWindow: 1_000_000,
+      };
+      const modelsByRef: Record<string, any> = {
+        'small-ctx-provider/small-model': smallCtxModel,
+        'big-ctx-provider/big-model': bigCtxModel,
+      };
+      const streamSimple = vi.fn((model: any) => {
+        if (model.id === 'big-model') {
+          return (async function* () {
+            yield { type: 'text_delta', delta: 'served by the big-context fallback' };
+            yield { type: 'done' };
+          })();
+        }
+        return (async function* () {})();
+      });
+      const modelRegistry = {
+        getAvailable: () => [smallCtxModel, bigCtxModel],
+        find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+        getApiKeyForProvider: async () => null,
+        runtime: { streamSimple },
+      };
+      const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+      await onHandlers['session_start']?.({}, ctx);
+
+      // ~30K-token conversation — over the small model's 8K window, well under
+      // the big model's 1M window.
+      const bigMessage = 'x '.repeat(60_000);
+      const groupModel = { provider: 'standard', id: 'standard' };
+      const context: any = { messages: [{ role: 'user', content: bigMessage }] };
+
+      const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+      // Must NOT have emitted the synthetic overflow signal — the cascade
+      // found a model with enough room.
+      const errEvent = events.find((e: any) => e.type === 'error') as any;
+      expect(errEvent).toBeUndefined();
+
+      const text = events
+        .filter((e: any) => e.type === 'text_delta')
+        .map((e: any) => e.delta ?? '')
+        .join('');
+      expect(text).toContain('served by the big-context fallback');
+      expect(streamSimple).toHaveBeenCalled();
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
