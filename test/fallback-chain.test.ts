@@ -18,21 +18,41 @@ const FALLBACK_GROUP_ORDER = [
 
 function getFallbackGroup(
   currentGroup: string,
-  modelGroups: Record<string, { fallback_groups?: string[] }>
+  modelGroups: Record<string, { fallback_groups?: string[] }>,
+  visited: ReadonlySet<string> = new Set()
 ): string | null {
   const g = modelGroups[currentGroup];
   if (g?.fallback_groups?.length) {
     for (const fb of g.fallback_groups) {
-      if (modelGroups[fb]) return fb;
+      if (modelGroups[fb] && !visited.has(fb)) return fb;
     }
   }
   const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
   if (idx === -1) return null;
   for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
     const group = FALLBACK_GROUP_ORDER[i];
-    if (modelGroups[group]) return group;
+    if (modelGroups[group] && !visited.has(group)) return group;
   }
   return null;
+}
+
+// Simulates driveStream's cascade loop: repeatedly resolve the next fallback
+// group, marking each visited group so it can never be revisited, until no
+// unvisited fallback remains. Returns the sequence of groups tried.
+function simulateCascade(
+  startGroup: string,
+  modelGroups: Record<string, { fallback_groups?: string[] }>,
+  maxSteps = 50
+): string[] {
+  const visited = new Set<string>();
+  const sequence: string[] = [];
+  let current: string | null = startGroup;
+  while (current && sequence.length < maxSteps) {
+    sequence.push(current);
+    visited.add(current);
+    current = getFallbackGroup(current, modelGroups, visited);
+  }
+  return sequence;
 }
 
 describe('getFallbackGroup respects configured fallback_groups', () => {
@@ -90,5 +110,49 @@ describe('getFallbackGroup: trivial → scout cascade', () => {
     expect(fb).toBe('scout');
     // scout should exist in modelGroups
     expect(modelGroups[fb!]).toBeDefined();
+  });
+});
+
+describe('getFallbackGroup: cycle protection (regression)', () => {
+  // Regression for a stack overflow crash: auto-generated fallback_groups can
+  // form mutual references (tactical's first pick is strategic, strategic's
+  // first pick is tactical). Without tracking visited groups, driveStream's
+  // recursive cascade bounced between the two forever until "Maximum call
+  // stack size exceeded". This mirrors the real dynamic config that triggered
+  // it (dist/router-config.dynamic.json: complex→tactical→strategic→tactical→...).
+  const cyclicGroups = {
+    complex: { fallback_groups: ['tactical', 'strategic', 'standard'] },
+    tactical: { fallback_groups: ['strategic', 'complex', 'standard'] },
+    strategic: { fallback_groups: ['tactical', 'complex', 'standard'] },
+    standard: {},
+  };
+
+  it('a two-group mutual cycle does not recurse forever', () => {
+    const sequence = simulateCascade('complex', cyclicGroups);
+    // Must terminate well before the maxSteps guard would ever trigger,
+    // and must never repeat a group.
+    expect(sequence.length).toBe(new Set(sequence).size);
+    expect(sequence.length).toBeLessThan(10);
+  });
+
+  it('the cascade still reaches standard despite the tactical/strategic cycle', () => {
+    const sequence = simulateCascade('complex', cyclicGroups);
+    expect(sequence).toContain('standard');
+  });
+
+  it('visited groups are never revisited within one cascade', () => {
+    const visited = new Set<string>(['tactical']);
+    // strategic's first configured pick is 'tactical', which is already visited
+    // — it must be skipped in favor of the next entry ('complex').
+    expect(getFallbackGroup('strategic', cyclicGroups, visited)).toBe('complex');
+  });
+
+  it('a self-referencing group does not return itself', () => {
+    const selfRef = {
+      a: { fallback_groups: ['a', 'b'] },
+      b: {},
+    };
+    const visited = new Set<string>(['a']);
+    expect(getFallbackGroup('a', selfRef, visited)).toBe('b');
   });
 });

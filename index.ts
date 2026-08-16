@@ -2235,13 +2235,18 @@ let previousTokenCount = 0;
     'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback'
   ];
 
-  function getFallbackGroup(currentGroup: string): string | null {
+  // `visited` excludes groups already tried in this cascade. The auto-generated
+  // fallback_groups lists are a full ordering over every group, which routinely
+  // produces mutual references (e.g. tactical's first pick is strategic, and
+  // strategic's first pick is tactical). Without skipping already-visited groups,
+  // two groups that both fail recurse into each other forever and blow the stack.
+  function getFallbackGroup(currentGroup: string, visited: ReadonlySet<string>): string | null {
     // Prefer the group's configured fallback_groups (from router-config.json).
     // This allows per-group fallback chains like trivial → [scout, operational, fallback].
     const g = cfg.model_groups[currentGroup];
     if (g?.fallback_groups?.length) {
       for (const fb of g.fallback_groups) {
-        if (cfg.model_groups[fb]) return fb;
+        if (cfg.model_groups[fb] && !visited.has(fb)) return fb;
       }
       // If no configured fallback groups exist in config, fall through to
       // the global order below.
@@ -2252,7 +2257,7 @@ let previousTokenCount = 0;
     if (idx === -1) return null;
     for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
       const group = FALLBACK_GROUP_ORDER[i];
-      if (cfg.model_groups[group]) {
+      if (cfg.model_groups[group] && !visited.has(group)) {
         return group;
       }
     }
@@ -2270,7 +2275,12 @@ let previousTokenCount = 0;
     // "HINT: tactical → openrouter/x:free"). getFallbackGroup needs a bare group
     // name; feeding it the label made every lookup miss and left the whole
     // fallback cascade unreachable.
-    groupName?: string
+    groupName?: string,
+    // Groups already tried earlier in this cascade — prevents infinite recursion
+    // when two groups' auto-generated fallback_groups reference each other
+    // (e.g. tactical ⇄ strategic), which previously crashed with "Maximum call
+    // stack size exceeded" whenever both groups' candidates failed.
+    visitedGroups?: Set<string>
   ): Promise<void> {
     return (async () => {
       // Preserve the active group (e.g., 'dynamic') for display purposes
@@ -2289,6 +2299,18 @@ let previousTokenCount = 0;
         lastError = `${ref}: ${message}`;
         allErrors.push({ ref, message });
       };
+
+      // Track how many candidates were skipped ONLY because their context window
+      // is smaller than the current conversation. If EVERY failure is a
+      // context-window skip (no other error types), the conversation overflowed
+      // every available model — we emit a native-style overflow error so Pi's
+      // own compaction kicks in (it recognises the "prompt is too long" pattern
+      // via @earendil-works/pi-ai/utils/overflow). Without this, a session that
+      // grew under a 1M-context model (e.g. 170K tokens, 17% of 1M) freezes on
+      // switch to a Dynamic group: every candidate is skipped before the request
+      // ever reaches a provider, so no provider ever returns an overflow error,
+      // so Pi never compacts, so nothing ever fits — an infinite skip loop.
+      let contextOverflowSkips = 0;
 
       // Estimate the conversation token count ONCE — used to skip models whose
       // context window is too small for the current context (e.g. an 8K local
@@ -2310,6 +2332,7 @@ let previousTokenCount = 0;
         const ctxWindow = getModelContextWindow(ref);
         if (ctxWindow && contextTokens > ctxWindow) {
           pushError(ref, `skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
+          contextOverflowSkips++;
           continue;
         }
         const target = await tryStream(ref, context, options).catch((err) => {
@@ -2338,6 +2361,15 @@ let previousTokenCount = 0;
           // "All 9 candidates failed" with only 4 entries.
           const why = skipReasons.get(ref);
           if (why) pushError(ref, why);
+          // A skip is a failure too — without this, structurally-broken candidates
+          // (not in Pi's registry, no API key, provider is a group) never accrue a
+          // cooldown or a model-health malus. They get re-tried on literally every
+          // single request forever, which at high request volume (long subagent
+          // sessions) turned into over a million repeated "not registered" log
+          // lines in one session. recordSoftFailure both starts the isLimited()
+          // cooldown ladder (so the next request skips this ref instantly, before
+          // ever calling tryStream again) and demotes it via model-health scoring.
+          recordSoftFailure(ref);
           continue;
         }
 
@@ -2443,12 +2475,57 @@ let previousTokenCount = 0;
       // be filtered by isLimited() so rate-limited models are still skipped.
       const allFailed = allErrors.length > 0;
 
+      // Context-overflow short-circuit: if EVERY candidate was skipped because
+      // its context window is too small for the current conversation, walking
+      // the fallback cascade is pointless — those groups draw from the same
+      // candidate pool with the same context limits, so they'll all skip too,
+      // and we'd recurse through every group without ever sending a request to
+      // a provider. That means Pi never sees a provider-side overflow error,
+      // so its native compaction never fires, so the conversation never shrinks
+      // — the session freezes on switch from a large-context model (e.g. 170K
+      // tokens gathered under a 1M model like Gemini 2.5 Pro).
+      //
+      // Instead, emit a native-style overflow error (the "prompt is too long"
+      // pattern that @earendil-works/pi-ai/utils/overflow recognises). Pi will
+      // detect it, run its own compaction with an appropriate model, and retry —
+      // exactly the path that already works when a provider returns a real
+      // overflow error.
+      if (allFailed && contextOverflowSkips > 0 && contextOverflowSkips === allErrors.length) {
+        const overflowMsg: AssistantMessage = {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: `[router] Conversation (${contextTokens} tokens) exceeds every available model's context window — triggering compaction.`,
+            },
+          ],
+          // errorMessage is what Pi's isContextOverflow() inspects. The exact
+          // phrasing matches the Anthropic overflow pattern, which is the most
+          // reliably-detected one in @earendil-works/pi-ai/utils/overflow.
+          errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length of available models`,
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'error',
+          timestamp: Date.now(),
+        } as AssistantMessage;
+        proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+        return;
+      }
+
       // Resolve the cascade from the RAW group name, never from `label`.
       // `label` is a display string ("code_complex → tactical") that matches no
       // group, so keying off it made getFallbackGroup return null every single
       // time and the cascade below was unreachable dead code.
       if (allFailed && groupName) {
-        const fallbackGroup = getFallbackGroup(groupName);
+        const visited = visitedGroups ?? new Set<string>();
+        visited.add(groupName);
+        const fallbackGroup = getFallbackGroup(groupName, visited);
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
@@ -2460,7 +2537,8 @@ let previousTokenCount = 0;
               context,
               options,
               `${label ?? groupName}→${fallbackGroup}`,
-              fallbackGroup
+              fallbackGroup,
+              visited
             );
             return;
           }
