@@ -25,6 +25,25 @@
     cooldown. `HintClassificationResult` gained an `origin: 'user' | 'auto'`
     field so the router can tell a deliberate user/UI selection from a
     router-generated preference.
+- **Context-window guard undercounted array-shaped message content.**
+  `estimateContextTokens()` only summed `string` message content; messages
+  whose content is an array of blocks (tool_result, tool_use, image — the
+  shape Pi actually uses for tool turns) counted as 0 tokens. After a long
+  session under a 1M-context model, switching to a smaller group massively
+  undercounted the real token total, so the pre-flight context-window guard
+  in `driveStream` never fired and every candidate was tried and hung for
+  minutes instead of being skipped. Array content is now serialised
+  block-by-block before estimating.
+- **Runtime context-overflow detection.** Even with the token estimate
+  fixed, a provider can still reject an oversized prompt at request time
+  (Mistral: "too large for model with N maximum context length"). This used
+  to surface as a generic `empty_response`/soft failure, so `driveStream`
+  ground through the rest of the (equally oversized) candidate list instead
+  of triggering compaction. `consumeWithDetection` now recognises overflow
+  patterns in error/text content and reports `reason: 'context_overflow'`,
+  which `driveStream` turns into the same native-style overflow signal used
+  by the pre-flight guard — short-circuiting immediately instead of trying
+  (and hanging on) further candidates.
 
 ## [1.4.0] — 2026-08-16 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout
 
