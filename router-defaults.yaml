@@ -22,6 +22,16 @@ models_ttl_ms: 86400000
 # Stream retry config
 max_stream_retries: 2
 empty_response_timeout_ms: 30000
+# First-token timeout for reasoning models (models with a `reasoning`/
+# `thinking` capability). Reasoning models think internally before emitting
+# the first output token, so a 30s first-token timeout (fine for instant
+# chat models) aborts them mid-thought when the provider is under load —
+# producing a false "empty response" and a soft-failure cooldown. The router
+# then re-picks the same model on the next turn (it's still the best-ranked),
+# and the same timeout fires again: a silent infinite loop that looks like
+# "model never succeeds" even though the model was just slow. 90s gives an
+# overloaded reasoning provider room to emit its first token.
+reasoning_empty_response_timeout_ms: 90000
 
 # Model ID normalization — stripped suffixes (prefixes handled by lastIndexOf("/"))
 strip_suffixes:

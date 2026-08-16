@@ -58,6 +58,7 @@ const SOFT_BACKOFF = _defaults.soft_backoff_ms;
 const COST_MUX_AT_HIT = _defaults.cost_mux_at_hit;
 const MODELS_TTL = _defaults.models_ttl_ms;
 const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
+const REASONING_EMPTY_RESPONSE_TIMEOUT_MS = _defaults.reasoning_empty_response_timeout_ms;
 const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
@@ -1797,6 +1798,39 @@ let previousTokenCount = 0;
     }
   }
 
+  /**
+   * Whether the model at `ref` advertises a reasoning/thinking capability.
+   * Reasoning models think internally before emitting the first output token,
+   * so they need a longer first-token timeout than instant chat models —
+   * otherwise an overloaded provider (e.g. Mistral serving glm-5-2) gets
+   * aborted mid-thought, producing a false "empty response" and a soft-failure
+   * cooldown. The router then re-picks the same model on the next turn (it's
+   * still the best-ranked) and the timeout fires again — a silent infinite
+   * loop that looks like "model never succeeds" even though the model was
+   * just slow.
+   */
+  function isReasoningModel(ref: string): boolean {
+    if (!sessionCtx) return false;
+    const { provider, modelId } = splitRef(ref);
+    try {
+      const model = sessionCtx.modelRegistry.find(provider, modelId) as any;
+      if (!model) return false;
+      // pi-ai's Model type carries `reasoning?: ThinkingLevel` when the model
+      // supports thinking. Some custom providers may expose it as a boolean
+      // `thinking` flag instead, so accept either.
+      return Boolean(model.reasoning) || Boolean(model.thinking);
+    } catch {
+      return false;
+    }
+  }
+
+  /** First-token timeout to use for a given model ref. */
+  function getEmptyResponseTimeout(ref: string): number {
+    const base = cfg.empty_response_timeout_ms ?? EMPTY_RESPONSE_TIMEOUT_MS;
+    const reasoning = cfg.reasoning_empty_response_timeout_ms ?? REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
+    return isReasoningModel(ref) ? reasoning : base;
+  }
+
   function isCompactionTurn(context: Context): boolean {
     const currentMessageCount = context.messages.length;
     const currentTokenCount = estimateContextTokens(context);
@@ -2406,7 +2440,7 @@ let previousTokenCount = 0;
         lastDynamicModel = ref;
 
         try {
-          const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
+          const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(ref));
 
           if (result.ok) {
             // Success — record healthy, proxy completes via the pushed "done" event
@@ -2603,7 +2637,7 @@ let previousTokenCount = 0;
           });
           if (target) {
             try {
-              const result = await consumeWithDetection(target.stream, proxy, EMPTY_RESPONSE_TIMEOUT_MS);
+              const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(bestRef));
               if (result.ok) {
                 recordOk(bestRef);
                 return;

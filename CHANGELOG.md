@@ -67,6 +67,17 @@
   router-internal `isLimited()` guard (the cooldown is a heuristic, not a
   hard provider limit, so the request may well succeed). The collapse is
   logged for post-hoc analysis (`Total cooldown collapse — ...`).
+- **Longer first-token timeout for reasoning models.** Reasoning/thinking
+  models (those advertising a `reasoning` capability) think internally before
+  emitting the first output token, so a 30s first-token timeout (fine for
+  instant chat models) aborts them mid-thought when the provider is under
+  load — producing a false "empty response" and a soft-failure cooldown. The
+  router then re-picks the same model on the next turn (it's still the
+  best-ranked) and the same timeout fires again: a silent infinite loop that
+  looks like "model never succeeds" even though the model was just slow.
+  Reasoning models now get 90s by default. Both timeouts are configurable in
+  `router-config.json` (`empty_response_timeout_ms`,
+  `reasoning_empty_response_timeout_ms`).
 
 ### Changed (this iteration)
 - **`@earendil-works/pi-ai` is no longer bundled.** esbuild now marks it
