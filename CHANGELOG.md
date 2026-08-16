@@ -58,6 +58,15 @@
   overflow error (the Anthropic "prompt is too long" pattern that
   `@earendil-works/pi-ai/utils/overflow` recognises). Pi detects it, runs its
   own compaction with an appropriate model, and retries.
+- **Total cooldown collapse → force-retry shortest.** When every candidate
+  across every group in the fallback cascade is in cooldown (no other error
+  types), the router used to hard-fail with a generic "All N candidates
+  failed" that surfaced as Pi's opaque "Unknown error" — the session froze
+  until the longest cooldown expired. Now `driveStream` picks the candidate
+  with the shortest remaining cooldown and retries it directly, bypassing the
+  router-internal `isLimited()` guard (the cooldown is a heuristic, not a
+  hard provider limit, so the request may well succeed). The collapse is
+  logged for post-hoc analysis (`Total cooldown collapse — ...`).
 
 ### Changed (this iteration)
 - **`@earendil-works/pi-ai` is no longer bundled.** esbuild now marks it
