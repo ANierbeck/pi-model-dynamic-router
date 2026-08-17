@@ -241,4 +241,69 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       }
     );
   });
+
+  it('does not false-positive on legitimate assistant prose about context windows (roborev job 203)', async () => {
+    // This router's own domain is context windows/compaction, so a real
+    // response can legitimately contain broad phrases like "context window"
+    // or "maximum context length" without being a provider rejection. Only
+    // highly-specific provider rejection phrasings should trip detection.
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        model_groups: { standard: { fallback_groups: [] } },
+      },
+      async (defaultExport) => {
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const pi: any = {
+          registerTool: vi.fn(),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn(),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => {
+            onHandlers[event] = handler;
+          }),
+        };
+        defaultExport(pi);
+
+        const model = {
+          provider: 'mistral',
+          id: 'mistral-medium-3.5',
+          api: 'mistral-conversations',
+          contextWindow: 262_144,
+        };
+        const streamSimple = vi.fn(() => {
+          return (async function* () {
+            yield {
+              type: 'text_delta',
+              delta:
+                'This router adds a context window guard: it estimates the ' +
+                'maximum context length before dispatching, and falls back to ' +
+                'compaction if the conversation is too large.',
+            };
+            yield { type: 'done' };
+          })();
+        });
+        const modelRegistry = {
+          getAvailable: () => [model],
+          find: () => model,
+          getApiKeyForProvider: async () => 'fake-key',
+          runtime: { streamSimple },
+        };
+        const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'hi' }] };
+
+        const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+        const errEvent = events.find((e: any) => e.type === 'error') as any;
+        // No overflow (or any) error — the legitimate response must pass
+        // through untouched.
+        expect(errEvent).toBeUndefined();
+        const textEvents = events.filter((e: any) => e.type === 'text_delta');
+        expect(textEvents.length).toBeGreaterThan(0);
+      }
+    );
+  });
 });
