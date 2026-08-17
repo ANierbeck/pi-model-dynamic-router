@@ -18,15 +18,34 @@ import path from 'node:path';
 
 const LOCK_DIR = path.join(os.tmpdir(), 'pi-router-test-shared-state.lock');
 
+// A lock dir older than this was almost certainly left behind by a run that
+// got killed between acquire and release (Ctrl-C, CI timeout, OOM) rather
+// than a legitimately slow holder — no single test body here runs anywhere
+// near this long. Treat it as abandoned and reclaim it instead of making
+// every future run pay the full acquire timeout.
+const STALE_LOCK_MS = 5 * 60_000;
+
+let holdingLock = false;
+
 /** Blocks until the shared-state lock is held by this test. */
 export async function acquireRouterStateLock(timeoutMs = 60_000): Promise<void> {
   const start = Date.now();
   for (;;) {
     try {
       fs.mkdirSync(LOCK_DIR);
+      holdingLock = true;
       return;
     } catch (err: any) {
       if (err?.code !== 'EEXIST') throw err;
+      try {
+        const { mtimeMs } = fs.statSync(LOCK_DIR);
+        if (Date.now() - mtimeMs > STALE_LOCK_MS) {
+          fs.rmdirSync(LOCK_DIR);
+          continue;
+        }
+      } catch {
+        continue; // lock vanished between the failed mkdir and this stat — retry immediately
+      }
       if (Date.now() - start > timeoutMs) {
         throw new Error(`Timed out waiting for router test state lock at ${LOCK_DIR}`);
       }
@@ -37,12 +56,28 @@ export async function acquireRouterStateLock(timeoutMs = 60_000): Promise<void> 
 
 /** Releases the shared-state lock. Safe to call even if not currently held. */
 export function releaseRouterStateLock(): void {
+  holdingLock = false;
   try {
     fs.rmdirSync(LOCK_DIR);
   } catch {
     /* already released, or never acquired */
   }
 }
+
+// Best-effort cleanup so a killed test run doesn't leave a lock that every
+// future run has to wait out or manually delete.
+function releaseOnExit(): void {
+  if (holdingLock) releaseRouterStateLock();
+}
+process.once('exit', releaseOnExit);
+process.once('SIGINT', () => {
+  releaseOnExit();
+  process.exit(130);
+});
+process.once('SIGTERM', () => {
+  releaseOnExit();
+  process.exit(143);
+});
 
 /**
  * Runs `fn` with exclusive access to the shared router-config.dynamic.json /

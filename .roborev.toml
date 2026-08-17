@@ -1,0 +1,8 @@
+agent = "pi"
+review_model = "zai-glm-5-2"
+fix_model    = "claude-sonnet-5"
+
+[auto_design_review]
+enabled = false   # opt this repo out of a globally-enabled router
+hook_enabled = true  # still allow post-commit hook routing for this repo
+

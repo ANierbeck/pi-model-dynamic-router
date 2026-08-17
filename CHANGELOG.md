@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — HINT cooldown-clearing fix
+## [1.4.0] — 2026-08-17 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout, HINT cooldowns, force-retry escalation
 
 ### Fixed
 - **HINT resolution no longer clears cooldowns it shouldn't.** Two related
@@ -75,14 +75,34 @@
   generate/save path, same as `exclude`.
 - **Regenerated `package-lock.json`** (stale version field, unrelated `diff`
   lockfile-entry drift) and restored the trailing newline in `package.json`.
+- **Force-retry path had no `context_overflow` branch and its own escalation
+  logic drifted from the main loop.** The total-cooldown-collapse force-retry
+  path fell through to the generic "All N candidates failed" message when a
+  provider rejected the force-retried prompt as too large — that message
+  lacks the pattern Pi's `isContextOverflow()` recognises, so compaction
+  never fired even though the provider had definitively measured the prompt
+  as oversized. The force-retry path now mirrors the main loop's
+  `context_overflow` branch (native overflow message + return). The main
+  loop's `rate_limit_exceeded` and paid-cloud-empty-response branches now
+  also go through the shared `recordStreamFailure` helper instead of calling
+  `recordLimit` directly, so both paths can no longer drift apart on
+  escalation policy, and the force-retry caller emits a "(key rotated to X)"
+  info line on key rotation, matching the main loop.
 
 ### Tests
 - `test/dynamic-config-staleness.test.ts` — regression coverage for the
   `exclude`/timeout dynamic-config staleness fix (previously untested).
 - `test/reasoning-timeout.test.ts` — mock now uses `reasoning: true` (the
   real pi-ai `Model.reasoning` type), not the string `'default'`.
-
-## [1.4.0] — 2026-08-16 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout
+- `test/context-overflow.test.ts` — regression coverage for the
+  overflow-vs-cascade ordering fix.
+- Several shared-state test files (scan-cache/dynamic-config) raced each
+  other when run concurrently, producing spurious failures unrelated to the
+  code under test. Added `test/helpers/router-state-lock.ts`, a cross-process
+  file lock, and applied it across all affected test files. The lock now
+  also reclaims itself if left stale by a killed run (5 min threshold) and
+  cleans up on `SIGINT`/`SIGTERM`/`exit`, instead of hanging every future run
+  for the full acquire timeout.
 
 ### Added
 - **LLM-assisted model matching** (`src/model-matcher.ts`): when the
