@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { acquireRouterStateLock, releaseRouterStateLock } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
@@ -65,6 +66,9 @@ describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
+    // Held until the finally block restores router-config.dynamic.json — see
+    // router-state-lock.ts for why this must span the whole test.
+    await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
     try {
       vi.resetModules();
@@ -118,6 +122,7 @@ describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
       if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+      releaseRouterStateLock();
     }
   });
 });

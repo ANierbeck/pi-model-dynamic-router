@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { acquireRouterStateLock, releaseRouterStateLock } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
@@ -47,6 +48,9 @@ async function withIsolatedRouter(
 
   const dynBak = `${dynamicConfigPath}.overflow2-bak`;
   const cacheBak = `${scanCachePath}.overflow2-bak`;
+  // Held until the finally block restores both shared files — see
+  // router-state-lock.ts for why this must span the whole test.
+  await acquireRouterStateLock();
   const hadDyn = fs.existsSync(dynamicConfigPath);
   const hadCache = fs.existsSync(scanCachePath);
   if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
@@ -61,6 +65,7 @@ async function withIsolatedRouter(
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
     if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+    releaseRouterStateLock();
   }
 }
 
