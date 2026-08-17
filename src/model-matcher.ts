@@ -54,17 +54,6 @@ export interface ResolveScoresInput {
 
 // ── Prompt building ───────────────────────────────────────────────────────
 
-/**
- * Build the prompt sent to the LLM to match unscored model ids to GDPval slugs.
- *
- * Design:
- * - Lists every unscored model id verbatim (the LLM must echo these as keys).
- * - Lists every known GDPval entry as slug + label so the LLM can do semantic
- *   matching (e.g. "zai-glm-5-2" ↔ "GLM 5.2" / "glm-5-2").
- * - Demands strict JSON keyed by the input model id, value = slug.
- * - Tells the LLM to OMIT a model if it is not confident — partial responses
- *   are fine; hallucinated slugs are rejected by parseMatchResponse anyway.
- */
 import { candidateSlugs } from './slug-matcher.ts';
 
 /**
@@ -122,64 +111,18 @@ ${perModelBlock || '(no models with candidates)'}${noCandidatesBlock}
 - Output ONLY a JSON object mapping model ID → slug.
 - Use the EXACT model ID string from above as the key.
 - Use the EXACT slug string from the candidates as the value.
+- Match the MODEL FAMILY and VENDOR: never match a model to a slug from a
+  different vendor (mistral → claude, qwen → gpt, etc.), even if it appears
+  among the candidates.
 - Match the VERSION NUMBER precisely: "glm-5-2" ≠ "glm-5-3" ≠ "glm-4".
   Different version numbers mean different models.
-  Exception: date-versioned models (YYMM like 2604, 2505) map to their named
-  version: mistral-medium-2604 = mistral-medium-3-5 (April 2026 release).
+  Exception: date-versioned models (YYMM like 2604, 2505, 2508) map to their
+  named version (e.g. mistral-medium-2604 = mistral-medium-3-5, April 2026
+  release). Use your knowledge of model release history for other date
+  suffixes among the candidates.
 - Match MODEL SIZE/TIER: a 3b/7b/8b model must NOT match a medium/large slug.
 - If unsure, OMIT the model from the output (don't guess).
 - Do NOT invent slugs. Do NOT use markdown fences.
-
-# Output
-{"<model-id>": "<slug>", ...}`;
-}
-
-export function buildMatchPrompt(
-  modelIds: string[],
-  gdpvalEntries: GdpvalEntry[]
-): string {
-  const modelsBlock =
-    modelIds.length === 0
-      ? '(no models to match)'
-      : modelIds.map((m) => `- ${m}`).join('\n');
-
-  const candidatesBlock = gdpvalEntries
-    .map((g) => `- slug: "${g.slug}"  (display name: "${g.label}", score: ${g.score})`)
-    .join('\n');
-
-  return `You are a model-name matcher. Match each provider model ID to the benchmark slug that refers to the SAME underlying model.
-
-# Model IDs to match
-${modelsBlock}
-
-# Known benchmark entries (slug | display name | GDPval score)
-${candidatesBlock}
-
-# Matching rules
-- Output ONLY a JSON object mapping model ID → slug.
-- Use the EXACT model ID string from the list above as the key.
-- Use the EXACT slug string from the list above as the value.
-- Match the MODEL FAMILY and VENDOR: a model from one vendor must NOT match
-  a slug from a different vendor. E.g. a Mistral model matches a Mistral slug,
-  a Claude model matches a Claude slug, an OpenAI model matches a GPT slug.
-  Never cross-match across vendors (mistral → claude, qwen → gpt, etc.).
-- Match the VERSION NUMBER precisely: "glm-5-2" matches "glm-5-2", NOT "glm-4"
-  or "glm-5-3". Different version numbers mean different models.
-  Exception: date-versioned models (YYMM suffixes like 2604, 2505, 2508)
-  are the same model as their named version. For example:
-  - mistral-medium-2604 = mistral-medium-3-5 (2604 = April 2026 release of 3.5)
-  - mistral-medium-2505 = mistral-medium-3 (2505 = May 2025 release of 3.0)
-  - mistral-medium-2508 = mistral-medium-3 (2508 = Aug 2025 patch of 3.0)
-  Use your knowledge of model release history to map date versions to named versions.
-- Match the MODEL SIZE/TIER: a small model (parameter counts like 3b, 7b, 8b,
-  or small-tier names like "mini", "nano", "haiku") must NOT match a slug for a
-  larger tier ("medium", "large", "opus", "ultra", "max", "pro").
-  Exception: if the slug and model both have the SAME size tag (e.g. gemma4-12b
-  matches gemma4-12b), they are the same model.
-- If you are not confident a model ID matches any entry, OMIT it from the output.
-- Do NOT invent slugs. Do NOT include commentary. Do NOT use markdown fences.
-- Ignore vendor prefixes (e.g. "zai-", "mistral/", "chutes/"), quantization tags
-  (-FP8, -mlx, :q4_0), TEE suffixes, and -latest/-preview tags when matching.
 
 # Output
 {"<model-id>": "<slug>", ...}`;
@@ -216,8 +159,8 @@ const MODEL_FAMILIES: { tokens: string[]; family: string }[] = [
  * but "mistral/..." → "claude-..." is NOT plausible.
  *
  * This is a SAFETY NET only — the primary rules (size-tier, version
- * precision) are conveyed to the LLM via buildMatchPrompt(). This guard
- * catches cross-family hallucinations the LLM might still produce.
+ * precision) are conveyed to the LLM via buildMatchPromptWithCandidates().
+ * This guard catches cross-family hallucinations the LLM might still produce.
  */
 export function isPlausibleMatch(modelId: string, slug: string): boolean {
   const lowerModel = modelId.toLowerCase();
@@ -302,57 +245,6 @@ export interface MatchWithLlmInput {
   modelIds: string[];
   gdpvalEntries: GdpvalEntry[];
   callLlm: LlmCaller;
-}
-
-/**
- * Drive a single batched LLM call to match model ids → gdpval slugs.
- *
- * - Batches ALL model ids into ONE call (regardless of count).
- * - Rejects any slug not present in gdpvalEntries (hallucination guard).
- * - Fail-open: if callLlm throws, returns { matches: {}, unmatched: all, error }.
- * - If modelIds is empty, does not call the LLM at all.
- */
-export async function matchModelsWithLLM(
-  input: MatchWithLlmInput
-): Promise<MatchResult> {
-  const { modelIds, gdpvalEntries, callLlm } = input;
-
-  if (modelIds.length === 0) {
-    return { matches: {}, unmatched: [] };
-  }
-
-  const validSlugs = new Set(gdpvalEntries.map((g) => g.slug));
-  const prompt = buildMatchPrompt(modelIds, gdpvalEntries);
-
-  let raw: string;
-  try {
-    raw = await callLlm(prompt);
-  } catch (err) {
-    return {
-      matches: {},
-      unmatched: [...modelIds],
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  const parsed = parseMatchResponse(raw, validSlugs);
-
-  // Only keep matches for ids we actually asked about AND that are plausible
-  // (same model family — prevents cross-family hallucinations like
-  // mistral-medium → claude-opus-5).
-  const requestedSet = new Set(modelIds);
-  const matches: Record<string, string> = {};
-  const unmatched: string[] = [];
-  for (const id of modelIds) {
-    const slug = parsed[id];
-    if (slug && requestedSet.has(id) && isPlausibleMatch(id, slug)) {
-      matches[id] = slug;
-    } else {
-      unmatched.push(id);
-    }
-  }
-
-  return { matches, unmatched };
 }
 
 // ── Batched LLM matching (for large model sets) ───────────────────────────

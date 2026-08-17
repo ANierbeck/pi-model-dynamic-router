@@ -267,4 +267,18 @@ describe('buildMatchPromptWithCandidates', () => {
     );
     expect(prompt).toContain('VERIFY');
   });
+
+  it('includes an explicit vendor/family rule as defense-in-depth', () => {
+    // Vendor/family is already enforced structurally by candidateSlugs()
+    // pre-filtering + isPlausibleMatch() post-check, but the prompt should
+    // still state the rule explicitly for the LLM (ported from the retired
+    // buildMatchPrompt()).
+    const prompt = buildMatchPromptWithCandidates(
+      ['mistral/mistral-medium-2604'],
+      gdpvalEntries,
+      5
+    );
+    expect(prompt).toContain('VENDOR');
+    expect(prompt).toContain('different vendor');
+  });
 });
