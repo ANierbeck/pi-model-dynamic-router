@@ -1658,7 +1658,7 @@ let previousTokenCount = 0;
     upstream: AssistantMessageEventStream,
     proxy: AssistantMessageEventStream,
     timeoutMs: number
-  ): Promise<{ ok: boolean; reason?: string }> {
+  ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let timedOut = false;
@@ -1706,7 +1706,12 @@ let previousTokenCount = 0;
     // context model, because the context-window guard in driveStream relied on
     // a token estimate that ignored tool-result content blocks and so
     // massively underestimated the real token count).
-    const OVERFLOW_PATTERNS = [
+    //
+    // These broad phrases are safe for `error` EVENTS ONLY: an error event
+    // comes from provider/transport infrastructure, never from the model's
+    // own generated prose, so a generic phrase like "context window" can't
+    // false-positive there.
+    const ERROR_OVERFLOW_PATTERNS = [
       'prompt is too long',
       'maximum context length',
       'context length is',
@@ -1716,14 +1721,32 @@ let previousTokenCount = 0;
       'token count exceeds',
       'exceeds the context',
     ];
-    const isOverflowText = (text: string): boolean => {
+    const isOverflowErrorText = (text: string): boolean => {
       const lower = text.toLowerCase();
-      return OVERFLOW_PATTERNS.some((p) => lower.includes(p));
+      return ERROR_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
+    };
+
+    // Narrower patterns for TEXT_DELTA content — this router's own domain is
+    // context windows/compaction, so a legitimate assistant response can
+    // plausibly contain broad phrases like "context window" or "maximum
+    // context length" while discussing the router itself (roborev job 203
+    // High finding). Only match phrasings a provider actually uses to reject
+    // an oversized prompt, which ordinary assistant prose won't reproduce.
+    const TEXT_DELTA_OVERFLOW_PATTERNS = [
+      'too large for model with',
+      'prompt is too long',
+      'exceeds the maximum context length',
+      'exceeds the context window',
+    ];
+    const isOverflowDeltaText = (text: string): boolean => {
+      const lower = text.toLowerCase();
+      return TEXT_DELTA_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
     };
 
     // Race: iterate the stream vs timeout
     let rateLimited = false;
     let overflowDetected = false; // Provider rejected oversized prompt (overflow text)
+    let overflowDetail = ''; // Raw provider text that triggered overflow detection
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow text
     const iterPromise = (async (): Promise<'done'> => {
       try {
@@ -1755,8 +1778,9 @@ let previousTokenCount = 0;
               rateLimited = true;
             }
             // Check if this is a context-overflow rejection (Mistral/OpenAI/etc.)
-            if (isOverflowText(errorMsg)) {
+            if (isOverflowErrorText(errorMsg)) {
               overflowDetected = true;
+              overflowDetail = errorMsg;
             }
             // Don't forward error events — treat as soft failure so driveStream
             // can try the next candidate without showing an error to the user.
@@ -1782,8 +1806,9 @@ let previousTokenCount = 0;
             // Some providers return overflow rejections as text content rather
             // than as an error event. Detect it so driveStream can emit the
             // native overflow error and trigger Pi compaction instead of hanging.
-            if (isOverflowText(delta) || isOverflowText(accumulatedText)) {
+            if (isOverflowDeltaText(delta) || isOverflowDeltaText(accumulatedText)) {
               overflowDetected = true;
+              overflowDetail = accumulatedText;
               if (timer) {
                 clearTimeout(timer);
                 timer = null;
@@ -1824,7 +1849,7 @@ let previousTokenCount = 0;
       // carry tool-result content blocks). Surface it so driveStream can emit
       // the native overflow error and let Pi run compaction, instead of trying
       // every remaining candidate (they share the same oversized prompt).
-      return { ok: false, reason: 'context_overflow' };
+      return { ok: false, reason: 'context_overflow', detail: overflowDetail || undefined };
     }
     if (rateLimited) {
       // Rate limit or subscription error — soft failure, try next model
@@ -2626,7 +2651,12 @@ let previousTokenCount = 0;
                   text: `[router] ${ref} rejected the prompt as too large for its context window — triggering compaction.`,
                 },
               ],
-              errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+              // Prefer the provider's own overflow text (it has the real measured
+              // token count) over the router's estimate, which can be inaccurate
+              // for the reasons documented on estimateContextTokens().
+              errorMessage: result.detail
+                ? `prompt is too long: ${result.detail}`
+                : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
               usage: {
                 input: 0,
                 output: 0,
@@ -2863,7 +2893,9 @@ let previousTokenCount = 0;
                       text: `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
                     },
                   ],
-                  errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+                  errorMessage: result.detail
+                    ? `prompt is too long: ${result.detail}`
+                    : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
                   usage: {
                     input: 0,
                     output: 0,

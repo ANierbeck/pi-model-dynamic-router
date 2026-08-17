@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Runtime context-overflow detection could false-positive on legitimate
+  assistant prose.** Several `OVERFLOW_PATTERNS` entries (`'context window'`,
+  `'maximum context'`, `'context length is'`) are generic English phrases,
+  not provider error signatures, and were matched against the model's own
+  streamed *answer* text, not just error content. Since this router's own
+  domain is context-window/compaction, a legitimate response discussing "the
+  context window guard" or "maximum context length" could trip detection,
+  truncating a valid response and triggering unwanted compaction. Overflow
+  detection on `text_delta` content now uses a narrow set of highly-specific
+  provider rejection phrasings (`'too large for model with'`, `'prompt is too
+  long'`, `'exceeds the maximum context length'`, `'exceeds the context
+  window'`); the broad pattern list is still used for `error` events, which
+  come from provider/transport infrastructure and can't contain assistant
+  prose. (roborev job 203)
+- **Runtime overflow error message now surfaces the provider's own reported
+  numbers** (e.g. Mistral's "300000 tokens ... 262144 maximum") instead of
+  only the router's own token estimate, which can be inaccurate. (roborev job
+  203)
+
+### Tests
+- `test/runtime-overflow-detection.test.ts` — added a regression test for
+  the false-positive scenario: a legitimate assistant response containing
+  "context window"/"maximum context length" phrasing must pass through
+  untouched.
+
 ## [1.4.0] — 2026-08-17 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout, HINT cooldowns, force-retry escalation
 
 ### Fixed
