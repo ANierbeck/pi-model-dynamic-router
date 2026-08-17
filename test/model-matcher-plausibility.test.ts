@@ -39,7 +39,7 @@ describe('isPlausibleMatch — cross-family hallucination guard', () => {
   });
 
   it('allows same-family matches even across size tiers (size-tier is a PROMPT rule, not a guard)', () => {
-    // The size-tier rule is conveyed to the LLM via buildMatchPrompt(),
+    // The size-tier rule is conveyed to the LLM via buildMatchPromptWithCandidates(),
     // NOT enforced by isPlausibleMatch(). The guard only checks family.
     // So ministral-3b → mistral-medium-3-5 IS plausible (same family) —
     // the LLM is trusted to follow the size-tier rule in the prompt.

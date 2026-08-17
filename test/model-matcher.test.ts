@@ -2,17 +2,16 @@
 // Unit-Tests for the LLM-assisted model → GDPval matching.
 //
 // These tests cover the PURE parts of the matching pipeline:
-//   - buildMatchPrompt:   constructs the prompt sent to the LLM
 //   - parseMatchResponse: validates + constrains the LLM output to known slugs
 //   - resolveModelScores: merges model-map → token-fallback → LLM matches into
 //                         a final { modelRef → score | null } map
 //
-// The LLM call itself (matchModelsWithLLM) is tested separately with an
-// injectable caller so no network is required.
+// The LLM call itself (matchModelsWithLLMBatched) is tested separately in
+// test/model-matcher-batched.test.ts with an injectable caller so no network
+// is required.
 
 import { describe, it, expect } from 'vitest';
 import {
-  buildMatchPrompt,
   parseMatchResponse,
   resolveModelScores,
   type GdpvalEntry,
@@ -35,43 +34,6 @@ const MODEL_MAP: Record<string, string | null> = {
   'claude-sonnet-4-5-*': 'claude-sonnet-5', // wildcard alias
   'zai-org/GLM-5-Turbo': null, // explicitly excluded
 };
-
-// ── buildMatchPrompt ───────────────────────────────────────────────────────
-
-describe('buildMatchPrompt', () => {
-  it('includes every unscored model id', () => {
-    const ids = ['zai-glm-5-2', 'mistral/glm-5-2', 'unknown-model-x'];
-    const prompt = buildMatchPrompt(ids, GDPVAL);
-    for (const id of ids) {
-      expect(prompt).toContain(id);
-    }
-  });
-
-  it('includes every GDPval slug and label as candidates', () => {
-    const prompt = buildMatchPrompt(['some-model'], GDPVAL);
-    expect(prompt).toContain('glm-5-2');
-    expect(prompt).toContain('GLM 5.2');
-    expect(prompt).toContain('mistral-medium-3-5');
-    expect(prompt).toContain('Mistral Medium 3.5');
-  });
-
-  it('includes size-tier and vendor-family rules in the prompt', () => {
-    const prompt = buildMatchPrompt(['mistral/ministral-3b-latest'], GDPVAL);
-    // The prompt must tell the LLM about size-tier mismatches (generic, not hardcoded).
-    expect(prompt).toContain('MODEL SIZE/TIER');
-    expect(prompt).toContain('small');
-    expect(prompt).toContain('large');
-    // The prompt must tell the LLM about vendor/family mismatches.
-    expect(prompt).toContain('VENDOR');
-    expect(prompt).toContain('cross-match');
-  });
-
-  it('is empty-safe: handles an empty model list without throwing', () => {
-    expect(() => buildMatchPrompt([], GDPVAL)).not.toThrow();
-    const prompt = buildMatchPrompt([], GDPVAL);
-    expect(prompt).toContain('no models');
-  });
-});
 
 // ── parseMatchResponse ────────────────────────────────────────────────────
 

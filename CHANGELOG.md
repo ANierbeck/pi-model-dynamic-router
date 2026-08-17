@@ -28,6 +28,19 @@
   "context window"/"maximum context length" phrasing must pass through
   untouched.
 
+### Removed
+- **Dead `buildMatchPrompt()` / `matchModelsWithLLM()` code path.** Never
+  called from `index.ts` — only `matchModelsWithLLMBatched()` (via
+  `buildMatchPromptWithCandidates()`) is wired into the LLM model-matching
+  pipeline. Before removal, the still-useful parts of the retired prompt
+  (an explicit vendor/family rule, and a generalized instruction for
+  date-suffix → named-version reasoning) were ported into
+  `buildMatchPromptWithCandidates()` as defense-in-depth on top of the
+  existing structural enforcement (`candidateSlugs()` pre-filtering +
+  `isPlausibleMatch()`). Also removed the test file that exclusively
+  exercised the dead function; equivalent coverage already exists in
+  `test/model-matcher-batched.test.ts` for the live path.
+
 ## [1.4.0] — 2026-08-17 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout, HINT cooldowns, force-retry escalation
 
 ### Fixed
