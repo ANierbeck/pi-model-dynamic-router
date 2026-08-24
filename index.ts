@@ -236,16 +236,16 @@ let previousTokenCount = 0;
     try {
       if (fs.existsSync(dynamicConfigPath)) {
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
-        // Prüfe ob die dynamische Konfiguration gültig ist (hat _dynamic Metadaten)
+        // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
-          // WICHTIG: Exclude-Regeln UND die Timeout-Overrides aus staticCfg
-          // (layered config) erzwingen. Die dynamische Config kann veraltete
-          // Werte enthalten, wenn der User zwischenzeitlich router-config.json
-          // oder router-config.user.json geändert hat. Diese Felder kommen
-          // IMMER aus staticCfg (der einzigen Quelle der Wahrheit für
-          // User-Overrides) — sonst hat eine Änderung von z.B.
-          // reasoning_empty_response_timeout_ms keinerlei Wirkung, solange
-          // schon eine router-config.dynamic.json auf der Platte liegt.
+          // IMPORTANT: Exclude rules AND the timeout overrides from staticCfg
+          // (layered config) must be enforced. The dynamic config can contain
+          // stale values if the user changed router-config.json or
+          // router-config.user.json in the meantime. These fields ALWAYS
+          // come from staticCfg (the single source of truth for user
+          // overrides) — otherwise changing e.g.
+          // reasoning_empty_response_timeout_ms has no effect as long as a
+          // router-config.dynamic.json exists on disk.
           dynamicCfg.exclude = staticCfg.exclude;
           dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
           dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
@@ -278,8 +278,8 @@ let previousTokenCount = 0;
     // vanishes from the TUI even though generateDynamicConfig found it.
     metricsModule.loadModelMap(extDir);
     metricsModule.setCache(cache);
-    // Falls dynamische Konfiguration geladen wurde und eigene gdpval_builtin hat,
-    // füge sie hinzu (NACH setConfig/setCache, damit sie nicht überschrieben werden)
+    // If a dynamic configuration was loaded and has its own gdpval_builtin,
+    // add it (AFTER setConfig/setCache so it isn't overwritten)
     if (loadedFromDynamic && cfg.gdpval_builtin) {
       const currentScores = metricsModule.getGdpval();
       metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
@@ -621,12 +621,12 @@ let previousTokenCount = 0;
           }
         } catch {}
         // Scan direct API providers with modelsUrl (anthropic, openai, etc.)
-        // Generisch (Ü1-konsistent): überspringe Provider, die Pi schon kennt.
-        // Wenn Pi einen Provider aus models.json, einer Extension oder nativ
-        // kennt, braucht der Router ihn nicht zu scannen — das würde nur
-        // Duplikate in cache.available_models erzeugen (z.B. mistral-zai mit
-        // 46 identischen Modellen wie mistral). Der Router registriert ihn
-        // dann eh nicht mehr (Ü1 in registerGroupModels). Also: nicht scannen.
+        // Generic (Ü1-consistent): skip providers Pi already knows.
+        // If Pi knows a provider from models.json, an extension, or natively,
+        // the router doesn't need to scan it — that would only create
+        // duplicates in cache.available_models (e.g. mistral-zai with 46
+        // identical models like mistral). The router wouldn't register it
+        // anyway (Ü1 in registerGroupModels). So: don't scan.
         const piKnownProviders = new Set<string>();
         if (sessionCtx?.modelRegistry) {
           try {
@@ -759,8 +759,8 @@ let previousTokenCount = 0;
    */
   async function generateDynamicConfig(force = false): Promise<void> {
     try {
-      // Modelle, die Pi bereits registriert hat (z.B. über Provider ohne PROVIDER_MAP-Eintrag
-      // wie claude-bridge) — damit sie trotzdem als Routing-Kandidaten in Frage kommen.
+      // Models Pi has already registered (e.g. via providers without PROVIDER_MAP entry
+      // like claude-bridge) — so they still qualify as routing candidates.
       const registryRefs: string[] = [];
       if (sessionCtx?.modelRegistry) {
         for (const m of sessionCtx.modelRegistry.getAvailable()) {
@@ -778,11 +778,11 @@ let previousTokenCount = 0;
         return;
       }
       
-      // 1. Alle verfügbaren Modelle holen (aus Cache)
+      // 1. Get all available models (from cache)
       const scannedModels = cache.available_models ?? [];
       
-      // 2. STATISCHE free_models aus der Konfiguration laden (wichtig für kostenlose Modelle!)
-      // Diese Modelle werden NICHT gescannt, sondern direkt aus router-config.json genommen
+      // 2. Load STATIC free_models from config (important for free models!)
+      // These models are NOT scanned but taken directly from router-config.json
       const staticFreeModels: string[] = [];
       const staticFreeModelsLookup = new Set<string>();
       for (const [provId, provConfig] of Object.entries(staticCfg.providers ?? {})) {
@@ -792,7 +792,7 @@ let previousTokenCount = 0;
             const normalizedModel = freeModel.startsWith(`${provId}/`) ? freeModel : `${provId}/${freeModel}`;
             staticFreeModels.push(normalizedModel);
             staticFreeModelsLookup.add(normalizedModel);
-            // Füge auch die non-prefixed Version hinzu, falls vorhanden
+            // Also add the non-prefixed version if present
             if (normalizedModel.includes('/')) {
               const nonPrefixed = normalizedModel.split('/').slice(1).join('/');
               staticFreeModelsLookup.add(nonPrefixed);
@@ -814,9 +814,9 @@ let previousTokenCount = 0;
         return;
       }
 
-      // 2c. Globale Ausschluss-Regeln anwenden (personalisierte Support-Liste).
-      // Schließt Provider, Modell-Muster und bezahlte Modelle bestimmter
-      // Provider aus — auf ALLE Gruppen wirkend, vor dem Scoring.
+      // 2c. Apply global exclusion rules (personalized support list).
+      // Excludes providers, model patterns, and paid models from certain
+      // providers — applying to ALL groups, before scoring.
       let effectiveModelRefs = allModelRefs;
       if (staticCfg.exclude) {
         const exCtx: ExcludeContext = { rules: staticCfg.exclude, cfg, cache };
@@ -830,10 +830,10 @@ let previousTokenCount = 0;
         }
       }
 
-      // Registriere einen leichtgewichtigen Provider-Stub für jeden registry-entdeckten
-      // Provider, den der Router sonst nicht kennt (z.B. claude-bridge). Ohne diesen Eintrag
-      // erkennt stripProvider() das Prefix nicht und GDPval/Preis-Inferenz über den
-      // Basis-Modellnamen (z.B. "claude-sonnet-5") schlägt fehl.
+      // Register a lightweight provider stub for each registry-discovered
+      // provider the router doesn't know yet (e.g. claude-bridge). Without this entry
+      // stripProvider() won't recognize the prefix and GDPval/price inference via
+      // the base model name (e.g. "claude-sonnet-5") would fail.
       for (const ref of registryRefs) {
         const slash = ref.indexOf('/');
         if (slash === -1) continue;
@@ -860,12 +860,12 @@ let previousTokenCount = 0;
         const cost = effCost(ref);
         const price = lookupPrice(ref);
         
-        // Prüfe ob ein Modell token-basiert ist (pay_per_token)
+        // Check whether a model is token-based (pay_per_token)
         const prov = ref.split('/')[0];
         const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
         
-        // Prüfe ob es ein kostenloses Modell ist (NUR für token-basierte Modelle!)
-        // Subscription-Modelle sind NICHT "kostenlos" im Sinne von Cost-Routing
+        // Check whether this is a free model (ONLY for token-based models!)
+        // Subscription models are NOT "free" in the cost-routing sense
         const isFreeModel = staticFreeModelsLookup.has(ref) ||
                           (price && price.input === 0 && price.output === 0) ||
                           ref.includes(':free') ||
@@ -945,16 +945,16 @@ let previousTokenCount = 0;
           filteredModels = filteredModels.filter(m => m.gdpval >= groupConfig.min_gdpval!);
         }
         
-        // Kosten Filter (max_cost_per_m) - KORRIGIERT: Berücksichtige auch free_models
+        // Cost filter (max_cost_per_m) - FIXED: Also considers free_models
         if (groupConfig.max_cost_per_m !== undefined) {
           filteredModels = filteredModels.filter(m => {
             const prov = m.ref.split('/')[0];
             const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
             
-            // Kostenlose token-basierte Modelle immer erlauben
+            // Always allow free token-based models
             if (m.isFreeModel && isTokenBased) return true;
             
-            // Subscription-Modelle: Immer durchlassen (werden nach GDPval sortiert, nicht nach Kosten)
+            // Subscription models: Always pass through (sorted by GDPval, not by cost)
             if (!isTokenBased) return true;
             
             const price = m.price;
@@ -966,20 +966,20 @@ let previousTokenCount = 0;
           });
         }
         
-        // Kosten Filter (max_cost) - KORRIGIERT: Berücksichtige auch free_models
-        // WICHTIG: Für max_cost=0 Gruppen (trivial, simple) NUR token-basierte kostenlose Modelle zulassen
-        // Subscription-Modelle sind NICHT kostenlos im Sinne von Cost-Routing
+        // Cost filter (max_cost) - FIXED: Also considers free_models
+        // IMPORTANT: For max_cost=0 groups (trivial, simple) ONLY allow token-based free models
+        // Subscription models are NOT free in the cost-routing sense
         if (groupConfig.max_cost !== undefined) {
           filteredModels = filteredModels.filter(m => {
             const prov = m.ref.split('/')[0];
             const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
             
-            // Für max_cost=0: NUR token-basierte kostenlose Modelle
+            // For max_cost=0: ONLY token-based free models
             if (groupConfig.max_cost === 0) {
               return m.isFreeModel && isTokenBased;
             }
             
-            // Für andere max_cost Werte: Kostenlose Modelle immer erlauben
+            // For other max_cost values: Always allow free models
             if (m.isFreeModel) return true;
             
             // Exclude models with unknown costs
@@ -992,7 +992,7 @@ let previousTokenCount = 0;
         let sortedGroupModels = [...filteredModels];
         
         if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
-          // Verwende Multi-Metrik-Scoring für 'best'-Methode
+          // Use multi-metric scoring for 'best' method
           sortedGroupModels.sort((a, b) => {
             const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
             const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
@@ -1001,7 +1001,7 @@ let previousTokenCount = 0;
         } else if (groupConfig.method === 'min_cost') {
           // KORRIGIERT: Kostenlose Modelle zuerst, dann nach Kosten sortieren
           sortedGroupModels.sort((a, b) => {
-            // Kostenlose Modelle haben Priorität
+            // Free models take priority
             if (a.isFreeModel && !b.isFreeModel) return -1;
             if (!a.isFreeModel && b.isFreeModel) return 1;
             
@@ -1009,7 +1009,7 @@ let previousTokenCount = 0;
             const costA = a.cost;
             const costB = b.cost;
             if (costA === 'unknown' && costB === 'unknown') {
-              // Bei gleichen unbekannten Kosten: Verwende Multi-Metrik-Score
+              // For equal unknown costs: Use multi-metric score
               const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
               const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
               return scoreB - scoreA;
@@ -1018,13 +1018,13 @@ let previousTokenCount = 0;
             if (costB === 'unknown') return -1;
             if (costA !== costB) return costA - costB;
             
-            // Bei gleichen Kosten: Verwende Multi-Metrik-Score
+            // For equal costs: Use multi-metric score
             const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
             const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
             return scoreB - scoreA;
           });
         } else if (groupConfig.method === 'tiered') {
-          // Quality-gated + Multi-Metrik-Scoring
+          // Quality-gated + multi-metric scoring
           sortedGroupModels.sort((a, b) => {
             // Erst nach GDPval (Quality Gate)
             if (b.gdpval !== a.gdpval) return b.gdpval - a.gdpval;
@@ -1081,9 +1081,9 @@ let previousTokenCount = 0;
             if (isFree && isTokenBased) {
               // ok
             } else if (!isTokenBased) {
-              // Subscription-Modelle immer durchlassen
+              // Subscription models always pass through
             } else {
-              // Token-basierte bezahlte Modelle: Preis prüfen
+              // Token-based paid models: Check price
               const price = lookupPrice(origModel);
               if (price) {
                 // Skip if price contains unknown values
@@ -1094,15 +1094,15 @@ let previousTokenCount = 0;
           }
           // max_cost filter (skip for non-token-based or non-free models)
           if (groupConfig.max_cost !== undefined) {
-            // Für max_cost=0: NUR token-basierte kostenlose Modelle
+            // For max_cost=0: ONLY token-based free models
             if (groupConfig.max_cost === 0) {
               if (!(isFree && isTokenBased)) continue;
             } else {
-              // Für andere max_cost Werte
+              // For other max_cost values
               if (isFree && isTokenBased) {
                 // ok
               } else if (!isTokenBased) {
-                // Subscription-Modelle immer durchlassen
+                // Subscription models always pass through
               } else {
                 const cost = effCost(origModel);
                 // Skip if cost is unknown or exceeds max
@@ -2145,8 +2145,8 @@ let previousTokenCount = 0;
   }
 
   function extractLastAssistantSnippet(context: Context): string | undefined {
-    // Extrahiere die letzte Assistenz-Antwort (kompakt für schnelle Klassifizierung)
-    // Max. 150 Zeichen (matcht die Begrenzung in classifyPrompt)
+    // Extract the last assistant response (compact for fast classification)
+    // Max 150 chars (matches the limit in classifyPrompt)
     try {
       const assistantMsgs = context.messages.filter((m) => m.role === 'assistant');
       const last = assistantMsgs[assistantMsgs.length - 1];
@@ -2184,7 +2184,7 @@ let previousTokenCount = 0;
       const proxy = createAssistantMessageEventStream();
       const candidates = [...res.candidates];
       
-      // Cost Tracking für statisches Routing
+      // Cost tracking for static routing
       costTracker.trackRequest(res.selected, 1000, 500);
       
       driveStream(proxy, candidates, context, options, undefined, groupName);
@@ -2272,7 +2272,7 @@ let previousTokenCount = 0;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${prompt.slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
 
-              // Cost Tracking für HINT-Override
+              // Cost tracking for HINT override
               costTracker.trackRequest(res.selected, 1000, 500);
               await driveStream(
                 proxy,
@@ -3319,7 +3319,7 @@ let previousTokenCount = 0;
     // omits options.num_ctx; many models support far more (qwen3.5→262K,
     // gemma4→131K), so prompts >32K truncate unless num_ctx is sent.
     //
-    // Per Leitplanke 3 + Ü1, this must NOT overwrite an existing Ollama
+    // Per Guardrail 3 + Ü1, this must NOT overwrite an existing Ollama
     // registration. If Pi already knows Ollama — from ANY source (another
     // extension, or models.json) — we assume that registration is
     // authoritative. We only register when Pi does NOT know Ollama at all
