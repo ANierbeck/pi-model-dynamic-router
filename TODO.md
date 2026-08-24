@@ -163,6 +163,47 @@ exclude_providers, exclude_models, min_gdpval/pct, max_cost, max_cost_per_m.
 - Tests: `test/apply-group-filters.test.ts` (12), updated 8 driveStream tests
   to set `min_gdpval: 0` explicitly (they relied on the old fallback).
 
+### ✅ **F1 — Ollama module cleanup (DONE 2026-08-24)**
+
+Removed dead `estimateOllamaModelsGdpval` (non-slug variant) export from
+`src/ollama-gdpval.ts` — nothing consumed it, only
+`estimateOllamaModelsGdpvalAsSlugs` is wired into the cache. Evaluated
+consolidating the three Ollama modules (`ollama-gdpval.ts`,
+`ollama-context.ts`, `ollama-utils.ts`) and declined: distinct concerns
+(pure scoring math / context-window resolution / live HTTP client), distinct
+consumers. Documented the decision in each file header instead.
+
+### ✅ **A2 — Single GDPval resolution pipeline (DONE 2026-08-24)**
+
+`src/metrics.ts` is now the sole owner of GDPval resolution, documented as a
+file-header block answering two questions: **Q1** "which slug does a ref
+mean?" (`resolveSlug`: model-map.yaml → LLM-assisted match → algorithmic
+fuzzy matcher) and **Q2** "what score does that slug have?" (`lookupGdp`:
+`gdpval_builtin` wins, merged additively over `cache.gdpval_scores`,
+self-healing against `setGdpval()`'s replace-semantics wipe). Removed a
+dead, drifted duplicate pipeline in `src/model-matcher.ts`
+(`resolveModelScores`/etc.) that was never called from `index.ts`. Fixed a
+same-scan visibility gap: newly-discovered Ollama models are now visible to
+`generateDynamicConfig()` within the same scan cycle via a `setCache()`
+resync.
+
+### ✅ **F3 — German→English comment translation (DONE 2026-08-24)**
+
+All German prose comments in `index.ts` translated to English (1:1, no code
+changes). `Ü1`/similar short code-names kept as-is (project shorthand, not
+prose).
+
+### ✅ **C1 — index.ts oversized-function extraction (DONE 2026-08-24)**
+
+`index.ts`: 3583 → 3254 lines (-329, -9.2%), pure code motion. Extracted
+`src/dynamic-config.ts` (pure computational core of `generateDynamicConfig`:
+filter/sort/collect/fallback-group logic) and `src/stream-driver.ts`
+(`pushStreamError`/`buildErrorAssistantMessage`, the zero-cost error-envelope
+boilerplate duplicated 6x across `driveStream`/`groupStream`, plus
+`isExpectedTransientError`). `groupStream`'s HINT model-target resolution
+(~130 lines) was intentionally left in place — too entangled with mutable
+session state to extract safely in this pass.
+
 ### 🔥 **Immediately Actionable** (Quick Wins - 1-2 hours)
 
 #### ✅ D2 — Shared logger (DONE 2026-08-23)
@@ -206,7 +247,7 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - [ ] **Context-based classification** - Consider session context
 
 ### Code Quality
-- [ ] **Refactor resolveGroup() and getTopModels()** - Reduce code duplication between the live selection and display paths
+- [x] **Refactor resolveGroup() and getTopModels()** - DONE as A1 (see above): both call `applyGroupFilters()` in `src/routing.ts`
 - [ ] **Fix resolve() for dynamic groups** - Currently returns null for method: 'dynamic'
 - [ ] **Improve error handling** - Better error messages and recovery
 - [ ] **Add more unit tests** - Increase coverage for edge cases
@@ -305,7 +346,7 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - ✅ **Filtered Error Messages** - Expected errors suppressed to reduce noise
 
 ### Known Issues
-- [ ] Code duplication in `resolveGroup()` and `getTopModels()` (both re-implement the filter+sort pipeline)
+- [x] ~~Code duplication in `resolveGroup()` and `getTopModels()`~~ - FIXED by A1 (`applyGroupFilters()`)
 - [ ] `resolve()` returns null for dynamic groups
 - [ ] No intelligent failure tracking (recordFailure/recordSuccess)
 
