@@ -1,5 +1,9 @@
 // src/ollama-utils.ts
 // Utility functions for Ollama calls (classification, fallback handling)
+//
+// NOT merged with ollama-gdpval.ts / ollama-context.ts (F1 evaluation): this
+// module is the live Ollama HTTP client (fetch + fallback), unrelated to
+// GDPval scoring math or context-window resolution. Kept separate.
 
 // ── Types ────────────────────────────────────────────────────────────────
 

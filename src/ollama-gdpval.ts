@@ -5,6 +5,13 @@
 // scores they default to 50, making them eligible only for "scout" groups.
 // This module provides reasonable estimates so Ollama models can compete in
 // operational/tactical groups based on their actual capabilities.
+//
+// NOT merged with ollama-context.ts / ollama-utils.ts (F1 evaluation): this
+// module is pure scoring math with no I/O, ollama-context.ts resolves
+// context-window options from scan capabilities, and ollama-utils.ts wraps
+// the live Ollama HTTP API. Different concerns, different consumers
+// (index.ts, escalation.ts/content-classifier.ts) — merging would just move
+// code around without shrinking the API surface.
 
 /**
  * Known model families and their typical GDPval ranges.
@@ -190,24 +197,6 @@ export function estimateOllamaGdpval(modelName: string): number | null {
 }
 
 /**
- * Estimates GDPval for all discovered Ollama models and returns a mapping.
- * @param ollamaModels - List of Ollama model names
- * @returns Record of model name to estimated GDPval score
- */
-export function estimateOllamaModelsGdpval(ollamaModels: string[]): Record<string, number> {
-  const estimates: Record<string, number> = {};
-  
-  for (const model of ollamaModels) {
-    const score = estimateOllamaGdpval(model);
-    if (score !== null) {
-      estimates[model] = score;
-    }
-  }
-  
-  return estimates;
-}
-
-/**
  * Derive a GDPval-style slug from an Ollama model name.
  * "qwen3.8:27b-mlx" → "qwen3-8-27b"
  * "gemma4:12b-mlx-q4_k_m" → "gemma4-12b"
@@ -248,9 +237,8 @@ export function ollamaModelSlug(modelName: string): string {
  * Estimates GDPval for all discovered Ollama models and returns a mapping
  * of GDPval-SLUG → score (compatible with cache.gdpval_scores, which the
  * lookup pipeline consumes as slug keys — NOT raw "ollama/<id>" refs).
- *
- * Use this (not estimateOllamaModelsGdpval) when wiring into the cache so
- * the scores are actually consumed by lookupGdp/resolveSlug.
+ * This is the only batch estimator — always wire scores into the cache as
+ * slugs, never as raw model names.
  */
 export function estimateOllamaModelsGdpvalAsSlugs(ollamaModels: string[]): Record<string, number> {
   const estimates: Record<string, number> = {};
