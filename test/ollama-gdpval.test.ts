@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   estimateOllamaGdpval,
-  estimateOllamaModelsGdpval,
   ollamaModelSlug,
   estimateOllamaModelsGdpvalAsSlugs,
 } from '../src/ollama-gdpval.ts';
@@ -48,13 +47,13 @@ describe('estimateOllamaGdpval', () => {
     expect(score).toBeNull();
   });
 
-  it('estimates multiple models at once', () => {
+  it('estimates multiple models at once (via slug-keyed batch estimator)', () => {
     const models = ['qwen3.8:27b-mlx', 'gemma4:27b', 'llama3.2:14b'];
-    const estimates = estimateOllamaModelsGdpval(models);
-    
-    expect(estimates['qwen3.8:27b-mlx']).toBe(630); // 580 base * 1.4 for 27b
-    expect(estimates['gemma4:27b']).toBe(560); // 500 base * 1.4 for 27b
-    expect(estimates['llama3.2:14b']).toBeGreaterThan(500); // Should be around 500 * 1.2
+    const estimates = estimateOllamaModelsGdpvalAsSlugs(models);
+
+    expect(estimates['qwen3-8-27b']).toBe(630); // 580 base * 1.4 for 27b
+    expect(estimates['gemma4-27b']).toBe(560); // 500 base * 1.4 for 27b
+    expect(estimates['llama3-2-14b']).toBeGreaterThan(500); // Should be around 500 * 1.2
   });
 
   it('handles models with different naming conventions', () => {

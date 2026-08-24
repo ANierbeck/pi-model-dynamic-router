@@ -1,6 +1,11 @@
 // src/ollama-context.ts
 // Resolve Ollama num_ctx (context window) for model registration.
 //
+// NOT merged with ollama-gdpval.ts / ollama-utils.ts (F1 evaluation): this
+// module derives providerOptions from scan-captured capabilities, a
+// distinct concern from GDPval scoring math and the live Ollama HTTP
+// client. Kept separate — no shared state or call graph to consolidate.
+//
 // WHY (architecture problem B1, setup-independent): Ollama defaults to
 // num_ctx=32768 when the request omits options.num_ctx. Many models support
 // far more (qwen3.5→262K, gemma4→131K), so prompts >32K get truncated
