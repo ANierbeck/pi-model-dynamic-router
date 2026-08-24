@@ -28,7 +28,7 @@ import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
-import { splitRef, stripDateSuffix, resolveShortModelName, baseTokens } from './src/utils.ts';
+import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
@@ -44,6 +44,15 @@ import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
+import {
+  buildStaticFreeModelsLookup,
+  buildModelsWithMetadata,
+  filterModelsForGroup,
+  sortModelsForGroup,
+  collectGroupModels,
+  computeFallbackGroups,
+} from './src/dynamic-config.ts';
+import { pushStreamError, isExpectedTransientError } from './src/stream-driver.ts';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -792,23 +801,7 @@ let previousTokenCount = 0;
       
       // 2. Load STATIC free_models from config (important for free models!)
       // These models are NOT scanned but taken directly from router-config.json
-      const staticFreeModels: string[] = [];
-      const staticFreeModelsLookup = new Set<string>();
-      for (const [provId, provConfig] of Object.entries(staticCfg.providers ?? {})) {
-        if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
-          for (const freeModel of provConfig.free_models) {
-            // Normalisiere den Modell-Ref (Provider/Modell-Id)
-            const normalizedModel = freeModel.startsWith(`${provId}/`) ? freeModel : `${provId}/${freeModel}`;
-            staticFreeModels.push(normalizedModel);
-            staticFreeModelsLookup.add(normalizedModel);
-            // Also add the non-prefixed version if present
-            if (normalizedModel.includes('/')) {
-              const nonPrefixed = normalizedModel.split('/').slice(1).join('/');
-              staticFreeModelsLookup.add(nonPrefixed);
-            }
-          }
-        }
-      }
+      const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(staticCfg);
       
       // 2b. Alle Modelle kombinieren: statische free_models + gescannte Modelle + registry-Refs
       // (Gruppen-Modelle werden dynamisch aus allDiscoveredRefs() geholt, nicht mehr statisch)
@@ -864,29 +857,7 @@ let previousTokenCount = 0;
       // existing two-tier fallback and unscored models are logged + dropped.
       await populateLlmMatches(effectiveModelRefs);
 
-      const modelsWithMetadata = effectiveModelRefs.map(ref => {
-        const gdpval = lookupGdp(ref) ?? 0;
-        const cost = effCost(ref);
-        const price = lookupPrice(ref);
-        
-        // Check whether a model is token-based (pay_per_token)
-        const prov = ref.split('/')[0];
-        const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
-        
-        // Check whether this is a free model (ONLY for token-based models!)
-        // Subscription models are NOT "free" in the cost-routing sense
-        const isFreeModel = staticFreeModelsLookup.has(ref) ||
-                          (price && price.input === 0 && price.output === 0) ||
-                          ref.includes(':free') ||
-                          (cost === 0 && isTokenBased);
-        
-        return { ref, gdpval, cost, price, isFreeModel };
-      }).filter(m => {
-        // Always keep static models (they're explicitly configured in router-config.json)
-        if (staticModelRefs.has(m.ref)) return true;
-        // For other models, require GDPval > 0
-        return m.gdpval > 0;
-      });
+      const modelsWithMetadata = buildModelsWithMetadata(effectiveModelRefs, cfg, staticFreeModelsLookup, staticModelRefs);
       
       if (!modelsWithMetadata.length) {
         routerLog('[router] No models with GDPval scores, skipping dynamic config generation');
@@ -947,194 +918,14 @@ let previousTokenCount = 0;
         // trivial/simple groups' free-only guarantee. Only min_gdpval and
         // the group-level exclude_providers/exclude_models (applied earlier
         // via the global staticCfg.exclude) are shared in spirit.
-        let filteredModels = [...modelsWithMetadata];
-        
-        // GDPval Filter
-        if (groupConfig.min_gdpval !== undefined) {
-          filteredModels = filteredModels.filter(m => m.gdpval >= groupConfig.min_gdpval!);
-        }
-        
-        // Cost filter (max_cost_per_m) - FIXED: Also considers free_models
-        if (groupConfig.max_cost_per_m !== undefined) {
-          filteredModels = filteredModels.filter(m => {
-            const prov = m.ref.split('/')[0];
-            const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
-            
-            // Always allow free token-based models
-            if (m.isFreeModel && isTokenBased) return true;
-            
-            // Subscription models: Always pass through (sorted by GDPval, not by cost)
-            if (!isTokenBased) return true;
-            
-            const price = m.price;
-            // Exclude models with unknown prices
-            if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
-            // Only include if input price is a number and within limit
-            if (typeof price.input !== 'number') return false;
-            return price.input <= groupConfig.max_cost_per_m!;
-          });
-        }
-        
-        // Cost filter (max_cost) - FIXED: Also considers free_models
-        // IMPORTANT: For max_cost=0 groups (trivial, simple) ONLY allow token-based free models
-        // Subscription models are NOT free in the cost-routing sense
-        if (groupConfig.max_cost !== undefined) {
-          filteredModels = filteredModels.filter(m => {
-            const prov = m.ref.split('/')[0];
-            const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
-            
-            // For max_cost=0: ONLY token-based free models
-            if (groupConfig.max_cost === 0) {
-              return m.isFreeModel && isTokenBased;
-            }
-            
-            // For other max_cost values: Always allow free models
-            if (m.isFreeModel) return true;
-            
-            // Exclude models with unknown costs
-            if (m.cost === 'unknown') return false;
-            return m.cost <= groupConfig.max_cost!;
-          });
-        }
+        let filteredModels = filterModelsForGroup(modelsWithMetadata, groupConfig, cfg);
         
         // 7. Sortierung basierend auf Gruppen-Methode
-        let sortedGroupModels = [...filteredModels];
-        
-        if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
-          // Use multi-metric scoring for 'best' method
-          sortedGroupModels.sort((a, b) => {
-            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
-            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
-            return scoreB - scoreA;
-          });
-        } else if (groupConfig.method === 'min_cost') {
-          // KORRIGIERT: Kostenlose Modelle zuerst, dann nach Kosten sortieren
-          sortedGroupModels.sort((a, b) => {
-            // Free models take priority
-            if (a.isFreeModel && !b.isFreeModel) return -1;
-            if (!a.isFreeModel && b.isFreeModel) return 1;
-            
-            // Dann nach Kosten (handle 'unknown' costs)
-            const costA = a.cost;
-            const costB = b.cost;
-            if (costA === 'unknown' && costB === 'unknown') {
-              // For equal unknown costs: Use multi-metric score
-              const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
-              const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
-              return scoreB - scoreA;
-            }
-            if (costA === 'unknown') return 1; // unknown costs go to the end
-            if (costB === 'unknown') return -1;
-            if (costA !== costB) return costA - costB;
-            
-            // For equal costs: Use multi-metric score
-            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
-            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
-            return scoreB - scoreA;
-          });
-        } else if (groupConfig.method === 'tiered') {
-          // Quality-gated + multi-metric scoring
-          sortedGroupModels.sort((a, b) => {
-            // Erst nach GDPval (Quality Gate)
-            if (b.gdpval !== a.gdpval) return b.gdpval - a.gdpval;
-            
-            // Kostenlose Modelle haben Vorrang bei gleichem GDPval
-            if (a.isFreeModel && !b.isFreeModel) return -1;
-            if (!a.isFreeModel && b.isFreeModel) return 1;
-            
-            // Dann nach Multi-Metrik-Score
-            const scoreB = metricsModule.calculateScore(b.ref, groupName, cfg);
-            const scoreA = metricsModule.calculateScore(a.ref, groupName, cfg);
-            if (scoreB !== scoreA) return scoreB - scoreA;
-            
-            // Dann nach Kosten (handle 'unknown' costs)
-            const costA = a.cost;
-            const costB = b.cost;
-            if (costA === 'unknown' && costB === 'unknown') return 0;
-            if (costA === 'unknown') return 1; // unknown costs go to the end
-            if (costB === 'unknown') return -1;
-            return costA - costB;
-          });
-        }
+        let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, groupName, cfg, metricsModule.calculateScore);
         
         // 8. Collect models: static first (highest priority), then dynamic additions
-        const modelsToInclude = new Set<string>();
-
-        // Token-signature set for deduplication: same base model = same signature
-        // (e.g. "mistral/mistral-medium-3.5" and "mistral/mistral-medium-3-5" share tokens {3,5,medium,mistral})
-        const includedSigs = new Set<string>();
-        const modelSig = (ref: string) => [...baseTokens(ref)].sort().join('|');
-
-        // 1. Static models from router-config.json — always preserved as-is
+        const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, cfg, staticFreeModelsLookup);
         const originalModels = groupConfig.models ?? [];
-        for (const origModel of originalModels) {
-          // Keep ref exactly as configured — no openrouter/ prefix injection
-          const origGdpval = lookupGdp(origModel);
-
-          // Explicit model-map exclusion (mapped to null) — honour it
-          if (origGdpval === null) continue;
-
-          // Apply min_gdpval filter (only if GDPval is known and defined)
-          if (groupConfig.min_gdpval !== undefined && origGdpval !== undefined && origGdpval !== null && origGdpval < groupConfig.min_gdpval) {
-            continue;
-          }
-
-          // Match against staticFreeModelsLookup (holds both prefixed and bare forms)
-          const isFree = staticFreeModelsLookup.has(origModel);
-          const origProv = origModel.split('/')[0];
-          const isTokenBased = (cfg.providers?.[origProv]?.billing ?? PROVIDER_MAP[origProv]?.billing) === 'pay_per_token';
-          
-          // max_cost_per_m filter (skip for non-token-based or non-free models)
-          if (groupConfig.max_cost_per_m !== undefined) {
-            // Token-basierte kostenlose Modelle immer erlauben
-            if (isFree && isTokenBased) {
-              // ok
-            } else if (!isTokenBased) {
-              // Subscription models always pass through
-            } else {
-              // Token-based paid models: Check price
-              const price = lookupPrice(origModel);
-              if (price) {
-                // Skip if price contains unknown values
-                if (price.input === 'unknown' || price.output === 'unknown') continue;
-                if (typeof price.input === 'number' && price.input > groupConfig.max_cost_per_m) continue;
-              }
-            }
-          }
-          // max_cost filter (skip for non-token-based or non-free models)
-          if (groupConfig.max_cost !== undefined) {
-            // For max_cost=0: ONLY token-based free models
-            if (groupConfig.max_cost === 0) {
-              if (!(isFree && isTokenBased)) continue;
-            } else {
-              // For other max_cost values
-              if (isFree && isTokenBased) {
-                // ok
-              } else if (!isTokenBased) {
-                // Subscription models always pass through
-              } else {
-                const cost = effCost(origModel);
-                // Skip if cost is unknown or exceeds max
-                if (cost === 'unknown' || (typeof cost === 'number' && cost > groupConfig.max_cost)) continue;
-              }
-            }
-          }
-
-          modelsToInclude.add(origModel);
-          includedSigs.add(modelSig(origModel));
-        }
-
-        // 2. Add filtered dynamic models — deduplicate by token signature
-        for (const model of sortedGroupModels) {
-          if (modelsToInclude.has(model.ref)) continue;
-          const sig = modelSig(model.ref);
-          if (includedSigs.has(sig)) continue; // same base model already present
-          modelsToInclude.add(model.ref);
-          includedSigs.add(sig);
-        }
-        
-        // 3. Konvertiere zu Array (Reihenfolge: statisch zuerst, dann dynamisch sortiert)
-        const finalModels = Array.from(modelsToInclude);
         
         // Debug-Logging
         if (groupName === 'trivial' || groupName === 'simple') {
@@ -1153,22 +944,7 @@ let previousTokenCount = 0;
       // Quality level: max_cost=0 → 0, min_gdpval=N → N, no constraint → 750 (highest).
       // Fallback order: nearest higher quality first, then lower — so a failing group
       // escalates before it degrades. Groups with no models are skipped.
-      const qualityOf = (g: typeof dynamicGroups[string]): number => {
-        if (g.method === 'dynamic') return -1;
-        if (g.max_cost === 0) return 0;
-        if (g.min_gdpval !== undefined) return g.min_gdpval;
-        return 750;
-      };
-      // With dynamic model discovery, all non-dynamic groups are eligible
-      const eligibleGroups = Object.entries(dynamicGroups)
-        .filter(([, g]) => g.method !== 'dynamic')
-        .sort(([, a], [, b]) => qualityOf(a) - qualityOf(b));
-
-      for (const [myIdx, [name]] of eligibleGroups.entries()) {
-        const above = eligibleGroups.slice(myIdx + 1).map(([n]) => n);
-        const below = eligibleGroups.slice(0, myIdx).reverse().map(([n]) => n);
-        dynamicGroups[name].fallback_groups = [...above, ...below];
-      }
+      computeFallbackGroups(dynamicGroups);
 
       // 10. Dynamische Konfiguration speichern
       // WICHTIG: Der Objekt-Literal spreadet weiterhin von `cfg` (der
@@ -2521,24 +2297,7 @@ let previousTokenCount = 0;
           fb = resolve(alt);
         }
         if (!fb) {
-          proxy.push({
-            type: 'error',
-            reason: 'error',
-            error: {
-              role: 'assistant',
-              content: [{ type: 'text', text: `[router] Dynamic routing failed: ${err}` }],
-              usage: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 0,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
-              stopReason: 'error',
-              timestamp: Date.now(),
-            } as AssistantMessage,
-          } as AssistantMessageEvent);
+          pushStreamError(proxy, `[router] Dynamic routing failed: ${err}`);
           return;
         }
         candidates = [...fb.candidates];
@@ -2700,12 +2459,7 @@ let previousTokenCount = 0;
         const target = await tryStream(ref, context, options).catch((err) => {
           // Filter out expected/transient errors to reduce noise
           const errorMsg = String(err.message || err);
-          const isExpectedError = errorMsg.toLowerCase().includes('no api provider registered') ||
-                                  errorMsg.toLowerCase().includes('rate limit') ||
-                                  errorMsg.toLowerCase().includes('usage credits') ||
-                                  errorMsg.toLowerCase().includes('spend limit') ||
-                                  errorMsg.toLowerCase().includes('out of') ||
-                                  errorMsg.toLowerCase().includes('limit hit');
+          const isExpectedError = isExpectedTransientError(errorMsg);
           if (!isExpectedError) {
             console.log(`[router] Skipping ${ref}: ${errorMsg}`);
           }
@@ -2799,32 +2553,16 @@ let previousTokenCount = 0;
           if (result.reason === 'context_overflow') {
             pushError(ref, 'context_overflow (provider rejected prompt as too large)');
             recordSoftFailure(ref);
-            const overflowMsg: AssistantMessage = {
-              role: 'assistant',
-              content: [
-                {
-                  type: 'text',
-                  text: `[router] ${ref} rejected the prompt as too large for its context window — triggering compaction.`,
-                },
-              ],
+            pushStreamError(
+              proxy,
+              `[router] ${ref} rejected the prompt as too large for its context window — triggering compaction.`,
               // Prefer the provider's own overflow text (it has the real measured
               // token count) over the router's estimate, which can be inaccurate
               // for the reasons documented on estimateContextTokens().
-              errorMessage: result.detail
+              result.detail
                 ? `prompt is too long: ${result.detail}`
-                : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
-              usage: {
-                input: 0,
-                output: 0,
-                cacheRead: 0,
-                cacheWrite: 0,
-                totalTokens: 0,
-                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-              },
-              stopReason: 'error',
-              timestamp: Date.now(),
-            } as AssistantMessage;
-            proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+                : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`
+            );
             return;
           }
 
@@ -2956,30 +2694,14 @@ let previousTokenCount = 0;
       // request ever reaches a provider, so no provider ever returns an
       // overflow error, so Pi's native compaction never fires.
       if (allFailed && contextOverflowSkips > 0 && contextOverflowSkips === allErrors.length) {
-        const overflowMsg: AssistantMessage = {
-          role: 'assistant',
-          content: [
-            {
-              type: 'text',
-              text: `[router] Conversation (${contextTokens} tokens) exceeds every available model's context window — triggering compaction.`,
-            },
-          ],
+        pushStreamError(
+          proxy,
+          `[router] Conversation (${contextTokens} tokens) exceeds every available model's context window — triggering compaction.`,
           // errorMessage is what Pi's isContextOverflow() inspects. The exact
           // phrasing matches the Anthropic overflow pattern, which is the most
           // reliably-detected one in @earendil-works/pi-ai/utils/overflow.
-          errorMessage: `prompt is too long: ${contextTokens} tokens exceeds the maximum context length of available models`,
-          usage: {
-            input: 0,
-            output: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            totalTokens: 0,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-          },
-          stopReason: 'error',
-          timestamp: Date.now(),
-        } as AssistantMessage;
-        proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+          `prompt is too long: ${contextTokens} tokens exceeds the maximum context length of available models`
+        );
         return;
       }
 
@@ -3058,29 +2780,13 @@ let previousTokenCount = 0;
               if (result.reason === 'context_overflow') {
                 pushError(bestRef, 'context_overflow (provider rejected prompt as too large)');
                 recordSoftFailure(bestRef);
-                const overflowMsg: AssistantMessage = {
-                  role: 'assistant',
-                  content: [
-                    {
-                      type: 'text',
-                      text: `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
-                    },
-                  ],
-                  errorMessage: result.detail
+                pushStreamError(
+                  proxy,
+                  `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
+                  result.detail
                     ? `prompt is too long: ${result.detail}`
-                    : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
-                  usage: {
-                    input: 0,
-                    output: 0,
-                    cacheRead: 0,
-                    cacheWrite: 0,
-                    totalTokens: 0,
-                    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-                  },
-                  stopReason: 'error',
-                  timestamp: Date.now(),
-                } as AssistantMessage;
-                proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
+                    : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`
+                );
                 return;
               }
               if (result.reason === 'repetition_loop') {
@@ -3137,48 +2843,13 @@ let previousTokenCount = 0;
             })
             .join('\n')
         : '  (no candidates attempted)';
-      const errMsg: AssistantMessage = {
-        role: 'assistant',
-        content: [
-          {
-            type: 'text',
-            text: `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`,
-          },
-        ],
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: 'error',
-        timestamp: Date.now(),
-      } as AssistantMessage;
-      proxy.push({ type: 'error', reason: 'error', error: errMsg } as AssistantMessageEvent);
+      pushStreamError(
+        proxy,
+        `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`
+      );
     })().catch((err) => {
       // Unhandled error in the async driver — surface it
-      const errMsg: AssistantMessage = {
-        role: 'assistant',
-        content: [
-          {
-            type: 'text',
-            text: `[router] Stream error: ${err instanceof Error ? err.message : String(err)}`,
-          },
-        ],
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: 'error',
-        timestamp: Date.now(),
-      } as AssistantMessage;
-      proxy.push({ type: 'error', reason: 'error', error: errMsg } as AssistantMessageEvent);
+      pushStreamError(proxy, `[router] Stream error: ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 
