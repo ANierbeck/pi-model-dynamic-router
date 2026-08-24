@@ -65,7 +65,7 @@ describe('driveStream: total cooldown collapse', () => {
         providers: { openrouter: { free_models: [] } },
         // Empty fallback_groups so the cascade doesn't pull in other groups'
         // candidate pools — keeps the test to a single candidate.
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);

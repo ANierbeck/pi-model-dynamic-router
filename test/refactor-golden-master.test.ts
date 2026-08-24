@@ -280,7 +280,9 @@ describe('golden master: load() → lookupGdp consistency', () => {
   it('lookupGdp is consistent after full setup (no drift between calls)', () => {
     const cache: Cache = {
       available_models: [{ id: 'glm-5-2', provider: 'mistral', cost_per_m: 0 }],
-      gdpval_scores: { 'glm-5-2': 1506, 'mistral-medium-3-5': 924 },
+      // GLM-5-2 maps to the glm-5-3 slug in model-map.yaml (the current AA
+      // slug; glm-5-2 was deprecated). The score is 1769 (AA-scraped).
+      gdpval_scores: { 'glm-5-3': 1769, 'mistral-medium-3-5': 924 },
     };
     const cfg: Config = {
       model_groups: {},
@@ -296,6 +298,6 @@ describe('golden master: load() → lookupGdp consistency', () => {
     // Second call (must be identical — no state drift).
     const s2 = metricsModule.lookupGdp('mistral/glm-5-2');
     expect(s1).toBe(s2);
-    expect(s1).toBe(1506);
+    expect(s1).toBe(1769); // via glm-5-2 → glm-5-3 map → 1769
   });
 });

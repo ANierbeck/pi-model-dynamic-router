@@ -4,6 +4,7 @@ import { callOllama } from './ollama-utils.ts';
 import { CloudClient } from './cloud-client.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
+import { routerLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ function getModelCostTier(modelRef: string): string {
 }
 
 /**
- * Apply escalation logic: if the task complexity suggests a different cost tier
+ * Apply escalation logic: if the task complexity suggests a different group
  * than the last model used, return a hint to switch groups.
  */
 function applyEscalationLogic(
@@ -336,7 +337,7 @@ export async function classifyPrompt(
       // If category is invalid but structure is valid, map to fallback
       const rawParsed = parsed as any;
       if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
-        console.warn(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
+        routerLog('[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to \'fallback\'');
         return { category: 'fallback', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
       }
       throw new Error(`Invalid format: ${response}`);
@@ -349,7 +350,7 @@ export async function classifyPrompt(
       
       // Guard: if hintTarget is empty, return explicit fallback
       if (!hintTarget || hintTarget.length === 0) {
-        console.warn(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
+        routerLog('[classifier] Empty HINT target received from LLM: ${parsed.category}');
         return { 
           category: 'fallback', 
           reason: 'Empty HINT target from LLM', 
@@ -361,7 +362,7 @@ export async function classifyPrompt(
         // This is a group hint
         const groupName = hintTarget.slice(6); // Remove 'group:' prefix
         if (!groupName || groupName.length === 0) {
-          console.warn(`[classifier] Empty group name in HINT: ${parsed.category}`);
+          routerLog('[classifier] Empty group name in HINT: ${parsed.category}');
           return { 
             category: 'fallback', 
             reason: 'Empty group name in HINT', 
@@ -414,13 +415,13 @@ export async function classifyPrompt(
     // Cold-start timeout or load error → retry immediately with the fallback model
     if (model !== fallbackModel) {
       try {
-        console.error(
-          `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}:`,
+        routerLog(
+          '[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}',
           (primaryError as Error).message
         );
         classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
       } catch (fallbackError) {
-        console.error(`[classifier] Fallback model also failed:`, (fallbackError as Error).message);
+        routerLog('[classifier] Fallback model also failed', (fallbackError as Error).message);
       }
     }
   }
@@ -454,7 +455,7 @@ export async function classifyPrompt(
             const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
             const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
             if (isValidFullClassification(parsed)) {
-              console.log(`[classifier] Cloud model ${modelRef} succeeded`);
+              routerLog('[classifier] Cloud model ${modelRef} succeeded');
               // Apply escalation logic to cloud result
               if (context.lastModel && !context.isCompaction) {
                 const result = applyEscalationLogic(parsed, context.lastModel);
@@ -465,22 +466,22 @@ export async function classifyPrompt(
               return parsed;
             }
           } catch (cloudError) {
-            console.warn(`[classifier] Cloud model ${modelRef} failed:`, (cloudError as Error).message);
+            routerLog('[classifier] Cloud model ${modelRef} failed', (cloudError as Error).message);
           }
         }
       }
     } catch (cloudFallbackError) {
-      console.warn('[classifier] Cloud fallback failed:', (cloudFallbackError as Error).message);
+      routerLog('[classifier] Cloud fallback failed', (cloudFallbackError as Error).message);
     }
   }
 
   // Static fallback
   if (!allowStaticFallback) {
-    console.warn('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+    routerLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
     return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
   }
 
-  console.warn('[classifier] Ollama and cloud models failed, falling back to static classification');
+  routerLog('[classifier] Ollama and cloud models failed, falling back to static classification');
 
   const staticResult = classifyStatically(prompt);
   // Apply escalation logic to static result
@@ -721,7 +722,7 @@ export function setupContentBasedRouting(pi: ExtensionAPI) {
       // Handle HINT classification
       if ('hintType' in classification) {
         // HINT overrides are not supported in this hook context
-        console.warn(`[classifier] HINT override not supported in hook context, falling back to static classification`);
+        routerLog('[classifier] HINT override not supported in hook context, falling back to static classification');
         const staticResult = classifyStatically(prompt);
         const group = CATEGORY_TO_GROUP[staticResult.category];
         await applyModelGroup(group, context);

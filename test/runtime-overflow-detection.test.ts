@@ -75,7 +75,7 @@ describe('estimateContextTokens: array message content', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
@@ -139,7 +139,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
@@ -200,7 +200,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
@@ -251,7 +251,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};

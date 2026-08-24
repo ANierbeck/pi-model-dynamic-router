@@ -93,8 +93,14 @@ Each category maps to a specific model group:
 The **`dynamic`** group is a special group that uses Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback) to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
-- **Ollama** must be installed and running locally.
-- The **gemma2:2b** model must be available in Ollama (`ollama pull gemma2:2b`).
+
+To use the **`dynamic`** group, you need:
+- **Ollama** installed and running locally (`ollama serve`)
+- **gemma4:12b-mlx** pulled for best classification quality (`ollama pull gemma4:12b-mlx`)
+- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
+- Ollama accessible from your system (default: `http://localhost:11434`)
+
+If both Ollama models are unavailable, the classifier falls back to cloud models (if configured), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
 
 ---
 
@@ -134,32 +140,20 @@ Each group can define its fallback chain in `router-config.json`:
 
 ---
 
-### Cost Tier System
+### Group-Based Cost/Quality Routing
 
-Models are automatically classified into **cost tiers** for intelligent routing based on task complexity. This ensures optimal cost-quality balance for each task.
+The router encodes cost-quality tradeoffs directly in **model groups** rather than a
+separate tier overlay. Each group's `min_gdpval` and `max_cost` settings act as the
+cost tier: `trivial`/`simple` use `max_cost: 0` (free models only), `scout`/`fallback`
+use `min_gdpval: 0` (anything), `tactical`/`strategic` raise the GDPval floor to
+600/700. A classified prompt maps to a group via `CATEGORY_TO_GROUP`
+(content-classifier.ts), and the group's own filters do the rest.
 
-| Tier | Cost | Models | Typical Use Cases |
-|------|------|--------|-------------------|
-| **Cheap** | Free/Low | Ollama, Mistral Small | Simple questions, exploration, low-priority tasks |
-| **Medium** | Moderate | Mistral Medium, Claude Sonnet | Code review, standard tasks, research |
-| **Expensive** | High | Claude Opus, Fable | Complex reasoning, design, planning, high-priority tasks |
-
-#### Multi-Tier Escalation
-
-The router **automatically escalates** to higher tiers for complex tasks and **descends** to cheaper tiers for simple tasks:
-
-- **After expensive model:** Simple tasks use cheaper models (cost optimization)
-- **After cheap model:** Complex tasks use expensive models (quality optimization)
-
-#### Task Complexity Mapping
-
-| Complexity Level | Categories | Tier |
-|-----------------|------------|------|
-| **Low** | trivial, simple, exploration | Cheap |
-| **Medium** | standard, code_simple, research | Medium |
-| **High** | code_complex, design, planning | Expensive |
-
-This ensures **optimal cost-quality balance** for each task.
+> **Historical note:** an earlier separate "Cost Tier System" (free/budget/premium
+> buckets, `src/cost-tiers.ts`) existed as a second filter layer on top of groups,
+> but was removed — it was redundant with the group thresholds and conflicted
+> with local models and the fallback cascade (see git history, commit that
+> removed it: "remove cost-tier overlay from dynamic routing").
 
 ---
 
@@ -364,14 +358,35 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
   },
   "gdpval_builtin": {
     "mistral-medium-3-5": 933,
-    "claude-sonnet-5": 1603
+    "claude-sonnet-5": 1603,
+    "qwen3-8-27b": 580
   }
+}
+```
+
+#### Billing Preference (per-group tier override)
+
+By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local $0-Modelle conceptually belong on top.
+
+Set `billing_preference: "local_first"` on a group to rank **local models ahead of subscription** (but still after truly-free $0 models). payg stays last. This is opt-in per group — other groups keep the default ordering.
+
+```json
+"scout": {
+  "method": "tiered",
+  "billing_preference": "local_first",
+  "min_gdpval": 0
 }
 ```
 
 #### Provider Configuration
 
-**Note:** The router **only registers providers that Pi doesn't already know**. Built-in providers (anthropic, openai, google) and extension-based providers (ollama, lm-studio, claude-bridge) are **skipped** to avoid conflicts. The router only registers OpenRouter (for free tier models).
+**Provider registration is conservative (never overwrites):** the router only registers a provider with Pi when Pi does **not** know it yet — i.e. when `modelRegistry.find(provider, modelId)` returns nothing for every model of that provider. This protects `models.json` entries (with `compat` flags), extension-provided providers, and Pi-native providers from being clobbered. If Pi already knows the provider from any source, the router does not touch the registration.
+
+**Real per-model capabilities (not hardcoded):** when the router does register a provider, it uses the **real** capabilities the scan captured from the provider's `/v1/models` (Mistral `capabilities.vision/reasoning`/`max_context_length`, OpenRouter `architecture.input_modalities`/`context_length`) — never a hardcoded `reasoning: true / input: ['text','image']` blanket. Unknown fields fall back to conservative defaults (`vision: false` unless confirmed, `reasoning: false` unless confirmed), so a model is never falsely advertised as vision-capable (which caused 422 errors for GLM-5-2).
+
+**Ollama is setup-independent:** the router scrapes Ollama's `/api/show` per model to get the real context length (`model_info.*.context_length`) and capabilities, and registers Ollama with `providerOptions.num_ctx` set to that real value — so prompts >32K don't get truncated. This works for **every** user, with or without any specific Ollama extension. The router only registers Ollama when Pi doesn't know it; if another extension or `models.json` already registered Ollama, the router doesn't overwrite.
+
+**Per-provider model filter (optional, generic):** a `PROVIDER_MAP` entry may set `modelFilter: "<regex>"` to constrain which scanned model ids are kept. Generic and user-configurable — not a hardcoded special case. Useful when a key sees a broad catalog (e.g. a provider key that returns all of a vendor's models when the provider is meant for a subset).
 
 #### New Configuration Options
 
@@ -380,7 +395,9 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
 | **`fallback_groups`** | Define cascade chain for fallback | `["tactical", "operational", "scout"]` |
 | **`cost_per_m`** | Cost per million tokens (for estimates) | `0.0000015` |
 | **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
-| **`gdpval_builtin`** | GDPval overrides for new models | `{ "mistral-medium-3-5": 933 }` |
+| **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933, "qwen3-8-27b": 580 }` |
+| **`billing_preference`** | Per-group tier ordering override (`"local_first"` ranks local models ahead of subscription) | `"local_first"` |
+| **`modelFilter`** (PROVIDER_MAP) | Regex to constrain scanned model ids per provider | `"^(zai-)?glm"` |
 
 Groups need no `models` arrays — everything is auto-discovered **plus** any explicitly listed models.
 

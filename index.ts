@@ -23,11 +23,10 @@ import { Type } from '@sinclair/typebox';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
-import type { Config, Cache, Metrics, Defaults } from './src/types.ts';
+import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
 import { splitRef, stripDateSuffix, resolveShortModelName, baseTokens } from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
@@ -35,11 +34,22 @@ import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
 import { lookupGdp } from './src/metrics.ts';
+import { estimateOllamaModelsGdpvalAsSlugs } from './src/ollama-gdpval.ts';
+import { buildOllamaProviderModels } from './src/ollama-context.ts';
+import { checkScanSanity } from './src/scan-sanity.ts';
+import { extractCapabilities } from './src/capabilities.ts';
 import { CacheManager } from './src/cache.ts';
 import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
+import { detectDegenerateRepetition } from './src/repetition-guard.ts';
+import {
+  isRateLimitText,
+  isOverflowErrorText,
+  isOverflowDeltaText,
+} from './src/detection.ts';
+import { hasBudget } from './src/budget.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
@@ -63,40 +73,11 @@ const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
-const HOME_LOG_PATH = path.join(homedir(), '.pi', 'logs', 'router.log');
-// Project-local log path, mirrored under the current project's .pi/logs/ directory
-// (same convention the claude-bridge extension uses) so logs live alongside the
-// project instead of only in the global home directory.
-let projectLogPath: string | null = null;
-function setProjectLogDir(cwd: string | undefined): void {
-  projectLogPath = cwd ? path.join(cwd, '.pi', 'logs', 'router.log') : null;
-}
-const ensuredDirs = new Set<string>();
-function ensureLogDirFor(logPath: string): void {
-  const dir = path.dirname(logPath);
-  if (ensuredDirs.has(dir)) return;
-  fs.mkdirSync(dir, { recursive: true });
-  ensuredDirs.add(dir);
-}
-function writeLogLine(line: string): void {
-  try {
-    ensureLogDirFor(HOME_LOG_PATH);
-    fs.appendFileSync(HOME_LOG_PATH, line + '\n');
-  } catch {}
-  if (projectLogPath) {
-    try {
-      ensureLogDirFor(projectLogPath);
-      fs.appendFileSync(projectLogPath, line + '\n');
-    } catch {}
-  }
-}
-function routerLog(msg: string, extra?: unknown): void {
-  const suffix = extra ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}` : '';
-  writeLogLine(`${new Date().toISOString()}  ${msg}${suffix}`);
-}
-function appendRawLog(line: string): void {
-  writeLogLine(line);
-}
+// Shared router logger (D2): writeLogLine / routerLog / appendRawLog /
+// setProjectLogDir live in src/logger.ts so every src/ module can log without
+// reaching for console.* (which bypasses Pi's TUI and can land in the user's
+// input field). Re-imported here for index.ts's own use.
+import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
 
 const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
@@ -384,31 +365,10 @@ let previousTokenCount = 0;
    * Check if a model has available budget (synchronous, uses cache)
    */
   function hasModelBudget(ref: string): boolean {
-    if (!budgetTracker) return true;
-    
-    const prov = ref.split('/')[0];
-    const billing = cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
-    
-    // Local and pay-per-token providers always have budget
-    if (PROVIDER_MAP[prov]?.local || billing === 'pay_per_token') {
-      return true;
-    }
-    
-    // Check cached budget
-    const budget = cache.budget_cache?.[prov];
-    if (!budget) {
-      // No cached info - assume available
-      return true;
-    }
-    
-    // Check if window has reset
-    const now = Date.now();
-    if (budget.window_reset && now >= budget.window_reset) {
-      // Window reset - need to refresh
-      return true; // Assume available until we can refresh
-    }
-    
-    return (budget.remaining_tokens ?? 0) > 0;
+    // Delegate to the single source of truth in budget.ts.
+    // Previously this duplicated filterByBudget (routing.ts) with identical logic;
+    // both now go through hasBudget() so the rule lives in one place.
+    return hasBudget(ref, cfg.providers, cache.budget_cache);
   }
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
@@ -461,16 +421,72 @@ let previousTokenCount = 0;
 
   async function fetchJson(
     url: string,
-    opts?: { headers?: Record<string, string>; timeoutMs?: number }
+    opts?: { headers?: Record<string, string>; timeoutMs?: number; method?: string; body?: string }
   ): Promise<any> {
-    const res = await fetch(url, {
+    const init: RequestInit = {
+      method: opts?.method ?? 'GET',
       headers: { 'User-Agent': 'pi-model-dynamic-router/1.0', ...opts?.headers },
       signal: AbortSignal.timeout(opts?.timeoutMs ?? 20_000),
-    });
+    };
+    if (opts?.body !== undefined) init.body = opts.body;
+    const res = await fetch(url, init);
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
   }
 
+  /**
+   * Discovers all available models across providers and scrapes GDPval scores.
+   *
+   * RESPONSIBILITY: populate `cache.available_models` (the router's own
+   * model discovery, separate from Pi's ~/.pi/agent/models.json) and
+   * `cache.gdpval_scores` (scraped from Artificial Analysis + builtin
+   * overrides + Ollama GDPval heuristics). Runs on session_start and on
+   * `/router scan`. Result feeds generateDynamicConfig (which writes the
+   * dynamic group config) and registerGroupModels (which registers models
+   * with Pi).
+   *
+   * PER-MODEL CAPABILITIES (resolved architecture problem B1): each provider's
+   *   /v1/models response is parsed for real capabilities via
+   *   src/capabilities.ts (Mistral `capabilities.vision/reasoning`/
+   *   `max_context_length`, OpenRouter `architecture.input_modalities`/
+   *   `context_length`). For Ollama, /api/show is fetched per model (parallel,
+   *   bounded) to get `model_info.*.context_length` + the capabilities array —
+   *   setup-independent (no hardcoded table, no dependency on any specific
+   *   Ollama extension). Results land in cache.available_models[].capabilities
+   *   (see AvailableModel/ModelCapabilities types) and flow through to
+   *   registerGroupModels, which registers with the real values (conservative
+   *   defaults for unreported fields) instead of the old hardcoded blanket.
+   *
+   * PER-PROVIDER MODEL FILTER (resolved architecture problem B2): PROVIDER_MAP
+   *   entries may set `modelFilter: "<regex>"` to constrain which scanned model
+   *   ids are kept. Generic and user-configurable (not a hardcoded special
+   *   case, per Leitplanke 1). Applied here in the scan; absent = keep all
+   *   non-embed/tts/etc. models (legacy behaviour).
+   *
+   * INPUT CONTRACT: `force` bypasses the GDPval-scrape and model-TTL gates.
+   * Without force, GDPval is scraped once (cache.gdpval_scraped flag) and
+   * models are re-scanned only if older than MODELS_TTL or a configured
+   * provider has keys but zero cached models.
+   *
+   * OUTPUT CONTRACT: side-effect only — mutates cache (gdpval_scores,
+   * available_models, openrouter_pricing, models_cached timestamp). Returns
+   * nothing. Then calls generateDynamicConfig(force) to regenerate the
+   * dynamic group config from the fresh scan.
+   *
+   * SIDE EFFECTS: network I/O (fetches GDPval page + each provider's
+   * /v1/models + Ollama /api/tags AND /api/show per model). Mutates cache.
+   * Triggers generateDynamicConfig (which writes router-config.dynamic.json).
+   *
+   * INVARIANTS:
+   *   - Re-entrant guard: if `scanning` is already true, returns immediately
+   *     (prevents overlapping scans from a rapid `/router scan` +
+   *     session_start race).
+   *   - Per-provider failures are swallowed (the `catch {}` blocks) — a
+   *     provider whose /v1/models is down doesn't block the others.
+   *   - OpenRouter free models (pricing.prompt === '0') are included; paid
+   *     OpenRouter models are NOT pushed to available_models (only their
+   *     pricing is recorded) — the router only uses OpenRouter's free tier.
+   */
   async function scan(force = false) {
     if (scanning) return;
     scanning = true;
@@ -547,19 +563,89 @@ let previousTokenCount = 0;
         }
         try {
           const d = await fetchJson('http://localhost:11434/api/tags', { timeoutMs: 5_000 });
+          const ollamaModelNames = (d.models ?? []).map((m: any) => m.name).filter((id: string) => id);
+          // Estimate GDPval for Ollama models as SLUG → score (compatible with
+          // cache.gdpval_scores, which the lookup pipeline consumes as slug
+          // keys — NOT raw "ollama/<id>" refs). These are FALLBACK scores only;
+          // explicit model-map.yaml + gdpval_builtin entries take precedence
+          // (setCache merges builtins on top of scraped/estimated scores).
+          const ollamaGdpvalEstimates = estimateOllamaModelsGdpvalAsSlugs(ollamaModelNames);
+
+          // B1 (setup-independent Ollama capabilities): for each Ollama model,
+          // fetch /api/show to get the REAL context length (model_info.*.context_length)
+          // and capabilities array (vision/thinking/tools). /api/tags alone doesn't
+          // carry context length; /api/show does. Parallel + bounded so 11 models
+          // don't stall the scan. Failures per-model are swallowed (conservative:
+          // the model just gets no capabilities and the caller falls back to
+          // defaults). This replaces the previous hardcoded num_ctx table
+          // (ollama-context.ts) which was setup-specific (mirrored gsd-pi).
+          const ollamaShowResults = await Promise.all(
+            ollamaModelNames.map(async (name: string) => {
+              try {
+                const show = await fetchJson('http://localhost:11434/api/show', {
+                  method: 'POST',
+                  body: JSON.stringify({ name }),
+                  headers: { 'Content-Type': 'application/json' },
+                  timeoutMs: 8_000,
+                });
+                return { name, show };
+              } catch {
+                return { name, show: null };
+              }
+            })
+          );
           for (const m of d.models ?? []) {
             const id = m.name;
             if (!id) continue;
+            const showData = ollamaShowResults.find((r) => r.name === id)?.show;
+            const caps = extractCapabilities('ollama', showData ?? m);
             const existing = models.find((x) => x.provider === 'ollama' && x.id === id);
-            if (!existing) models.push({ id, provider: 'ollama', cost_per_m: 0 });
+            if (existing) {
+              if (!existing.capabilities && caps) existing.capabilities = caps;
+            } else {
+              const entry: { id: string; provider: string; cost_per_m: number; capabilities?: ModelCapabilities } =
+                { id, provider: 'ollama', cost_per_m: 0 };
+              if (caps) entry.capabilities = caps;
+              models.push(entry);
+            }
+          }
+          // Store estimated GDPval scores under their SLUG keys (not raw refs)
+          if (Object.keys(ollamaGdpvalEstimates).length > 0) {
+            cache.gdpval_scores = cache.gdpval_scores ?? {};
+            for (const [slug, score] of Object.entries(ollamaGdpvalEstimates)) {
+              // Don't overwrite an existing authoritative score
+              if (cache.gdpval_scores[slug] === undefined) {
+                cache.gdpval_scores[slug] = score;
+              }
+            }
           }
         } catch {}
         // Scan direct API providers with modelsUrl (anthropic, openai, etc.)
+        // Generisch (Ü1-konsistent): überspringe Provider, die Pi schon kennt.
+        // Wenn Pi einen Provider aus models.json, einer Extension oder nativ
+        // kennt, braucht der Router ihn nicht zu scannen — das würde nur
+        // Duplikate in cache.available_models erzeugen (z.B. mistral-zai mit
+        // 46 identischen Modellen wie mistral). Der Router registriert ihn
+        // dann eh nicht mehr (Ü1 in registerGroupModels). Also: nicht scannen.
+        const piKnownProviders = new Set<string>();
+        if (sessionCtx?.modelRegistry) {
+          try {
+            for (const model of sessionCtx.modelRegistry.getAvailable()) {
+              piKnownProviders.add(model.provider);
+            }
+          } catch {}
+        }
         const providerScans = Object.entries(PROVIDER_MAP)
           .filter(([, def]) => def.modelsUrl && def.authHeader)
+          .filter(([provId]) => !piKnownProviders.has(provId))
           .map(async ([provId, def]) => {
             const keys = cfg.providers?.[provId]?.keys;
             if (!keys?.length) return;
+            // Optional per-provider model filter (B2): a provider whose key sees
+            // a broad catalog can be constrained to a subset via a regex in
+            // PROVIDER_MAP. Generic, user-configurable — not a hardcoded
+            // special case (per Leitplanke 1). Empty/absent = keep all.
+            const filterRe = def.modelFilter ? new RegExp(def.modelFilter, 'i') : null;
             // Try each key until one succeeds (first may be stale)
             for (let ki = 0; ki < keys.length; ki++) {
               try {
@@ -577,8 +663,19 @@ let previousTokenCount = 0;
                     )
                   )
                     continue;
+                  if (filterRe && !filterRe.test(id)) continue;
                   const existing = models.find((x) => x.provider === provId && x.id === id);
-                  if (!existing) models.push({ id, provider: provId, cost_per_m: 0 });
+                  if (existing) {
+                    // Backfill capabilities if the earlier entry lacked them.
+                    const c = extractCapabilities(provId, m);
+                    if (!existing.capabilities && c) existing.capabilities = c;
+                    continue;
+                  }
+                  const entry: { id: string; provider: string; cost_per_m: number; capabilities?: ModelCapabilities } =
+                    { id, provider: provId, cost_per_m: 0 };
+                  const c = extractCapabilities(provId, m);
+                  if (c) entry.capabilities = c;
+                  models.push(entry);
                 }
                 break; // success, stop trying keys
               } catch {
@@ -607,12 +704,58 @@ let previousTokenCount = 0;
   }
 
   /**
-   * Generiert eine dynamische Router-Konfiguration basierend auf den gescanten Modellen
-   * und den Einstellungen aus router-config.json
-   * 
-   * KORRIGIERT: Behebt das Problem, dass kostenlose Modelle (free_models) nicht in die
-   * dynamische Konfiguration aufgenommen wurden, was dazu führte, dass immer das gleiche
-   * Modell (Qwen3-32B-TEE) verwendet wurde.
+   * Generates and persists the dynamic router config (router-config.dynamic.json)
+   * from the scanned model set + the static config.
+   *
+   * RESPONSIBILITY: the SNAPSHOT writer — the third of the three group-
+   * candidate paths (A1) and the only one that PERSISTS a result. Builds, per
+   * group, a `models` array baked into a JSON file on disk; the live resolver
+   * ({@link resolveGroup}) later treats that
+   * array as an allow-list when it exists. This is structurally different
+   * from the live paths: they decide in the moment, this one freezes a
+   * decision for up to 30 days (see CacheManager.isScanCacheValid). That
+   * asymmetry is why a bad generation (scoring collapse, missing models)
+   * can silently distort routing for weeks — guarded by {@link checkScanSanity}
+   * which refuses to persist a broken snapshot.
+   *
+   * INPUT CONTRACT: reads `cache.available_models` (the scan result), the
+   * static config (layered: embedded defaults → user override → project), and
+   * the model-map. `force` bypasses the cache-freshness check; otherwise the
+   * scan cache must be invalid (older than 30 days / never run) to regenerate.
+   *
+   * OUTPUT CONTRACT: writes `router-config.dynamic.json` next to the static
+   * config and reassigns the in-memory `cfg` to it. Returns early WITHOUT
+   * writing if no models scored (sanity check: total collapse) — in that case
+   * the on-disk file (if any) is left untouched and lastScanTimestamp is NOT
+   * bumped, so the next session retries instead of freezing the bad snapshot.
+   *
+   * SIDE EFFECTS (significant — the live paths have none of these):
+   *   - WRITES `dist/router-config.dynamic.json` (the only path that writes a
+   *     config file).
+   *   - Updates in-memory `cfg`, `router`, `discoveryManager` to the new config.
+   *   - Bumps `lastScanTimestamp` on success (NOT on sanity-check failure).
+   *   - Calls {@link populateLlmMatches} which may call an LLM (Ollama/free
+   *     OpenRouter) — network I/O, can be slow.
+   *
+   * INPUT CONTRACT — `g.models` semantics (the orthogonal bit): unlike the live
+   * paths where `g.models` is an allow-list, here `groupConfig.models` (the
+   * EXISTING models array from the static config) is MERGED IN FIRST, as a
+   * priority list — static models are always preserved, then dynamic additions
+   * are appended after dedup by token signature. This is why this path cannot
+   * simply call the live resolvers: it has a different job (build a durable
+   * pinned list including explicit user choices) not a live query.
+   *
+   * INVARIANTS:
+   *   - Static (router-config.json-pinned) models are ALWAYS included, even if
+   *     their GDPval is below the group floor (the floor only filters dynamic
+   *     additions). This is a deliberate override so user-pinned models survive.
+   *   - Dedup uses TOKEN SIGNATURES ({@link baseTokens}), NOT model-identity
+   *     slugs — a different dedup method from the live paths. This is because
+   *     the snapshot must reconcile static-pinned refs with discovered refs
+   *     that may share a base model, and slug resolution isn't available at
+   *     snapshot-write time the same way it is at live-resolve time.
+   *   - A `model-map.yaml` entry mapping to `null` (explicit exclusion) is
+   *     honoured: the model is dropped even if statically pinned.
    */
   async function generateDynamicConfig(force = false): Promise<void> {
     try {
@@ -740,7 +883,36 @@ let previousTokenCount = 0;
         routerLog('[router] No models with GDPval scores, skipping dynamic config generation');
         return;
       }
-      
+
+      // Sanity check BEFORE persisting: a bad scan (e.g. gdpval/model-map state
+      // not fully loaded at the moment of scoring) must never get frozen into
+      // router-config.dynamic.json, since resolveGroup() treats a non-empty
+      // `models` array as a hard allow-list that persists for up to 30 days
+      // (isScanCacheValid). Observed 2026-08-22: a scan scored only 13/125
+      // models instead of the normal ~60+, silently dropping mistral-medium
+      // (933 GDPval) from "tactical" for hours across many session restarts.
+      const explicitlyMappedRefs = effectiveModelRefs.filter((ref) => typeof metricsModule.mapLookup(ref) === 'string');
+      const explicitlyMappedScoredRefs = explicitlyMappedRefs.filter((ref) => (lookupGdp(ref) ?? 0) > 0);
+      const sanity = checkScanSanity({
+        scannedRefs: effectiveModelRefs,
+        survivorRefs: modelsWithMetadata.map((m) => m.ref),
+        explicitlyMappedRefs,
+        explicitlyMappedScoredRefs,
+      });
+      if (!sanity.ok) {
+        routerLog(
+          `[router] Scan sanity check FAILED, refusing to persist dynamic config: ${sanity.reason}`
+        );
+        // Deliberately do NOT call cacheManager.setLastScanTimestamp() here —
+        // leaving it unset (or stale) means the next session/scan retries
+        // instead of freezing this broken snapshot for up to 30 days. Any
+        // existing router-config.dynamic.json on disk is left untouched
+        // (better a previous good snapshot than a freshly broken one); if
+        // none exists, load() falls back to staticCfg, which resolves groups
+        // via live discovery (verified safe).
+        return;
+      }
+
       routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
       
       // 5. Dynamische Gruppen-Konfiguration generieren
@@ -754,6 +926,18 @@ let previousTokenCount = 0;
         }
         
         // 6. Filter Modelle basierend auf Gruppen-Kriterien
+        //
+        // NOTE (A1): The live path (Router.resolveGroup) and the display path
+        // (Router.getTopModels) share the method-independent filters via
+        // applyGroupFilters() in routing.ts. This persist path does NOT use
+        // that helper, DELIBERATELY: its max_cost/max_cost_per_m semantics
+        // diverge (max_cost=0 groups admit ONLY genuine $0 token-based free
+        // models, excluding subscription models that cost real money; the
+        // live path instead treats max_cost=0 like max_cost=N and keeps
+        // unknown-cost subscription/local). Consolidating would break the
+        // trivial/simple groups' free-only guarantee. Only min_gdpval and
+        // the group-level exclude_providers/exclude_models (applied earlier
+        // via the global staticCfg.exclude) are shared in spirit.
         let filteredModels = [...modelsWithMetadata];
         
         // GDPval Filter
@@ -1160,12 +1344,14 @@ let previousTokenCount = 0;
     const m = getM(ref),
       prov = ref.split('/')[0],
       mux = costMux(prov);
-    const billing =
-      cfg.providers?.[prov]?.billing === 'subscription'
-        ? 'sub'
-        : m.cost_per_m === 0
-          ? 'free'
-          : 'ppt';
+    // Billing label now derives from billingTier() (single source of truth).
+    // Previously this inlined `cfg.providers?.[prov]?.billing === 'subscription'`,
+    // which IGNORED PROVIDER_MAP built-in defaults — a built-in subscription
+    // provider without a user config entry would display as 'ppt' instead of
+    // 'sub'. Also, 'free' only checked cost_per_m===0, missing the :free tag
+    // and the free_models config list. billingTier() unifies all three.
+    const tier = metricsModule.billingTier(ref);
+    const billing = tier === 1 ? 'sub' : tier === 0 ? 'free' : 'ppt';
     const muxS = mux > 1 ? ` ×${mux}` : '';
     const rl = isLimited(ref) ? ` ⛔${limitSecs(ref)}s` : '';
     const cost = effCost(ref);
@@ -1671,83 +1857,19 @@ let previousTokenCount = 0;
       }, timeoutMs);
     });
 
-    // Patterns that indicate a rate-limit / spend-limit / subscription error.
-    // These can arrive as error events OR as text_delta content (claude-bridge
-    // pushes rate-limit warnings as text via piUI.notify, and some error
-    // results with non-success subtype fall through without an error event).
-    const RATE_LIMIT_PATTERNS = [
-      'rate limit',
-      'spend limit',
-      'usage credits',
-      'out of',
-      'limit hit',
-      'claude code returned an error',
-      'monthly spend',
-      'five_hour',
-      'five hour',
-      'quota',
-      'credits',
-      'exceeded',
-      'overloaded',
-      'rate_limit',
-    ];
-    const isRateLimitText = (text: string): boolean => {
-      const lower = text.toLowerCase();
-      return RATE_LIMIT_PATTERNS.some((p) => lower.includes(p));
-    };
-
-    // Patterns that indicate the prompt exceeded the model's context window.
-    // Mirrors @earendil-works/pi-ai/utils/overflow OVERFLOW_PATTERNS — when a
-    // provider rejects an oversized prompt, it returns one of these strings
-    // (as an error event OR as text_delta content). Detecting it here lets the
-    // router emit a native-style overflow error so Pi runs compaction, instead
-    // of hanging for minutes on a stream that will never produce useful output
-    // (observed: mistral-medium-3.5 hung 7+ minutes after switching from a 1M-
-    // context model, because the context-window guard in driveStream relied on
-    // a token estimate that ignored tool-result content blocks and so
-    // massively underestimated the real token count).
+    // Rate-limit + overflow detection now live in src/detection.ts (single
+    // source of truth). Previously isRateLimitText (here, 15 patterns) and
+    // isRateLimitError (driveStream, 7 patterns) diverged; both now go through
+    // the unified RATE_LIMIT_PATTERNS table imported above.
     //
-    // These broad phrases are safe for `error` EVENTS ONLY: an error event
-    // comes from provider/transport infrastructure, never from the model's
-    // own generated prose, so a generic phrase like "context window" can't
-    // false-positive there.
-    const ERROR_OVERFLOW_PATTERNS = [
-      'prompt is too long',
-      'maximum context length',
-      'context length is',
-      'too large for model with',
-      'maximum context',
-      'context window',
-      'token count exceeds',
-      'exceeds the context',
-    ];
-    const isOverflowErrorText = (text: string): boolean => {
-      const lower = text.toLowerCase();
-      return ERROR_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
-    };
-
-    // Narrower patterns for TEXT_DELTA content — this router's own domain is
-    // context windows/compaction, so a legitimate assistant response can
-    // plausibly contain broad phrases like "context window" or "maximum
-    // context length" while discussing the router itself (roborev job 203
-    // High finding). Only match phrasings a provider actually uses to reject
-    // an oversized prompt, which ordinary assistant prose won't reproduce.
-    const TEXT_DELTA_OVERFLOW_PATTERNS = [
-      'too large for model with',
-      'prompt is too long',
-      'exceeds the maximum context length',
-      'exceeds the context window',
-    ];
-    const isOverflowDeltaText = (text: string): boolean => {
-      const lower = text.toLowerCase();
-      return TEXT_DELTA_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
-    };
-
     // Race: iterate the stream vs timeout
     let rateLimited = false;
     let overflowDetected = false; // Provider rejected oversized prompt (overflow text)
     let overflowDetail = ''; // Raw provider text that triggered overflow detection
-    let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow text
+    let repetitionLoop = false; // Model is stuck regenerating the same phrase
+    let repetitionDetail = ''; // The repeating unit + count, for the router-info message
+    let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
+    let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -1816,6 +1938,29 @@ let previousTokenCount = 0;
               // Stop consuming — don't forward the raw provider error text
               return 'done';
             }
+            // Some models (observed with devstral variants) get stuck
+            // regenerating the same sentence/phrase verbatim instead of
+            // finishing the turn. Left alone this burns the whole context
+            // window and surfaces as a hard overflow error, after which the
+            // router would just retry the same unhealthy model again. Catch
+            // it early as a soft failure instead so the group falls over to
+            // the next candidate. Throttled — only rescan once enough new
+            // text has arrived, so a long healthy stream isn't rescanned on
+            // every single delta.
+            if (accumulatedText.length - lastRepetitionCheckLen >= 100) {
+              lastRepetitionCheckLen = accumulatedText.length;
+              const rep = detectDegenerateRepetition(accumulatedText);
+              if (rep.detected) {
+                repetitionLoop = true;
+                repetitionDetail = `"${(rep.unit ?? '').trim().slice(0, 80)}" x${rep.repeats}`;
+                if (timer) {
+                  clearTimeout(timer);
+                  timer = null;
+                }
+                // Stop consuming — don't forward more of the repeated text
+                return 'done';
+              }
+            }
           }
           proxy.push(event);
         }
@@ -1854,6 +1999,11 @@ let previousTokenCount = 0;
     if (rateLimited) {
       // Rate limit or subscription error — soft failure, try next model
       return { ok: false, reason: 'rate_limit_exceeded' };
+    }
+    if (repetitionLoop) {
+      // Model is stuck regenerating the same phrase — soft failure, try next
+      // model instead of letting it burn the whole context window.
+      return { ok: false, reason: 'repetition_loop', detail: repetitionDetail || undefined };
     }
 
     if (!hadContent) {
@@ -2309,7 +2459,9 @@ let previousTokenCount = 0;
           }
         }
         
-        // For normal classification (not HINT), get the group with cost tier
+        // For normal classification (not HINT), map the category to a group.
+        // (The earlier separate cost-tier overlay was removed; the group's own
+        // min_gdpval/max_cost settings are the cost/quality gate.)
         // Type assertion: if it's not a HINT, it must have a category
         const normalClassification = classification as ClassificationResult;
         
@@ -2411,20 +2563,15 @@ let previousTokenCount = 0;
 
   // Rate-limit error detection for fallback logic.
   // Only treat REAL rate-limit errors as triggering fallback.
-  // empty_response/empty_timeout are NOT included here because they can
+  // Rate-limit detection now uses the unified isRateLimitText from
+  // src/detection.ts. Previously this was a SECOND, divergent scanner
+  // (7 patterns) that disagreed with consumeWithDetection's scanner (15
+  // patterns). Both paths now share one pattern table — no more divergence.
+  //
+  // empty_response/empty_timeout are NOT rate limits because they can
   // be transient overloads (especially for free models) — triggering a
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
-  function isRateLimitError(errorMsg: string): boolean {
-    const lower = errorMsg.toLowerCase();
-    return lower.includes('rate limit') ||
-           lower.includes('usage credits') ||
-           lower.includes('spend limit') ||
-           lower.includes('quota') ||
-           lower.includes('limit hit') ||
-           lower.includes('rate_limit_exceeded') ||
-           lower.includes('overloaded');
-  }
 
   // Fallback group priority: try lower tiers when rate-limited
   const FALLBACK_GROUP_ORDER: string[] = [
@@ -2672,6 +2819,23 @@ let previousTokenCount = 0;
             return;
           }
 
+          // Model got stuck regenerating the same phrase instead of finishing
+          // the turn. Unlike context_overflow this isn't a prompt-size problem —
+          // there's no point signalling compaction — so just demote the model
+          // via the normal soft-failure health penalty and move to the next
+          // candidate, same as an empty response.
+          if (result.reason === 'repetition_loop') {
+            pushError(ref, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
+            recordSoftFailure(ref);
+            const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
+            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            pushRouterInfo(
+              proxy,
+              `> [router] ${ref} — wiederholt sich in einer Schleife (${result.detail ?? 'Loop erkannt'})${suffix}\n\n`
+            );
+            continue;
+          }
+
           // Soft failure — record and try next candidate
           //
           // IMPORTANT: For cloud providers (openrouter, etc.), an empty_response
@@ -2740,7 +2904,7 @@ let previousTokenCount = 0;
       // time and the cascade below was unreachable dead code.
       //
       // This MUST run before the context-overflow short-circuit below. A
-      // group's own candidate list is filtered by min_gdpval/cost tier, not by
+      // group's own candidate list is filtered by min_gdpval/max_cost, not by
       // context window, so it's entirely possible for a lower-priority
       // fallback group to contain a model with a larger context window than
       // anything in the current group — walking the cascade first gives that
@@ -2910,23 +3074,32 @@ let previousTokenCount = 0;
                 proxy.push({ type: 'error', reason: 'error', error: overflowMsg } as AssistantMessageEvent);
                 return;
               }
-              // Escalate exactly like the main loop: a real rate-limit or an
-              // empty response from a paid cloud model gets a hard cooldown +
-              // key rotation, not just a short soft backoff. Without this, a
-              // force-retried candidate that's still genuinely rate-limited
-              // gets re-force-retried almost immediately on the next total
-              // collapse, defeating the hard-cooldown/key-rotation policy the
-              // rest of the router relies on. Capture the result so a key
-              // rotation is surfaced to the user, mirroring the main loop's
-              // "(key rotated to X)" router-info lines.
-              const frResult = recordStreamFailure(bestRef, String(result.reason));
-              if (frResult.hardLimited) {
-                const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
-                const reasonTxt = String(result.reason);
-                const labelTxt = reasonTxt === 'rate_limit_exceeded'
-                  ? 'Rate-Limit/Spend-Limit erreicht'
-                  : 'leere Antwort (vermutlich Rate-Limit)';
-                pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
+              if (result.reason === 'repetition_loop') {
+                pushError(bestRef, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
+                recordSoftFailure(bestRef);
+                pushRouterInfo(
+                  proxy,
+                  `> [router] ${bestRef} — wiederholt sich in einer Schleife (${result.detail ?? 'Loop erkannt'})\n\n`
+                );
+              } else {
+                // Escalate exactly like the main loop: a real rate-limit or an
+                // empty response from a paid cloud model gets a hard cooldown +
+                // key rotation, not just a short soft backoff. Without this, a
+                // force-retried candidate that's still genuinely rate-limited
+                // gets re-force-retried almost immediately on the next total
+                // collapse, defeating the hard-cooldown/key-rotation policy the
+                // rest of the router relies on. Capture the result so a key
+                // rotation is surfaced to the user, mirroring the main loop's
+                // "(key rotated to X)" router-info lines.
+                const frResult = recordStreamFailure(bestRef, String(result.reason));
+                if (frResult.hardLimited) {
+                  const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
+                  const reasonTxt = String(result.reason);
+                  const labelTxt = reasonTxt === 'rate_limit_exceeded'
+                    ? 'Rate-Limit/Spend-Limit erreicht'
+                    : 'leere Antwort (vermutlich Rate-Limit)';
+                  pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
+                }
               }
             } catch (streamError) {
               const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
@@ -3000,19 +3173,84 @@ let previousTokenCount = 0;
     });
   }
 
+  /**
+   * Registers discovered model providers with Pi's model registry.
+   *
+   * RESPONSIBILITY: bridge the router's discovery (cache.available_models +
+   * PROVIDER_MAP) into Pi by calling `pi.registerProvider` for each provider
+   * the router knows about but Pi doesn't yet. Runs on session_start, after
+   * the scan has populated cache.available_models.
+   *
+   * DESIGN (resolved architecture problems B1, Ü1, B2):
+   *
+   * B1 — real per-model capabilities, not hardcoded. Each model is
+   *   registered with the REAL capabilities the scan captured (in
+   *   cache.available_models[].capabilities — see src/capabilities.ts):
+   *   Mistral `capabilities.vision/reasoning`/`max_context_length`, OpenRouter
+   *   `architecture.input_modalities`/`context_length`, Ollama `/api/show`
+   *   `model_info.*.context_length` + capabilities array. Conservative defaults
+   *   apply when a field wasn't reported (vision: false unless confirmed —
+   *   never claim what we don't know; this prevented the GLM-5-2 422 "Image
+   *   input is not enabled" failure). Previously every model got
+   *   `reasoning:true, input:['text','image'], contextWindow:200_000` — wrong.
+   *
+   * Ü1 — never overwrites an existing Pi registration. A provider is only
+   *   registered when Pi does NOT know it yet (`modelRegistry.find` returns
+   *   nothing for every model of that provider). Protects `models.json`
+   *   entries (with `compat` flags), extension providers, and Pi-native
+   *   providers from being clobbered. Previously the router silently
+   *   overwrote `models.json` entries, destroying user-curated `compat` flags.
+   *
+   * B2 — optional per-provider model filter. PROVIDER_MAP entries may set
+   *   `modelFilter: "<regex>"` to constrain which scanned model ids are kept.
+   *   Generic and user-configurable (not a hardcoded special case, per
+   *   Leitplanke 1). Applied in the scan, not here.
+   *
+   * INPUT CONTRACT: `ctx` is Pi's session context (carries modelRegistry).
+   * Reads `cfg.providers` (keys), PROVIDER_MAP (baseUrl/api/authKey), and
+   * `cache.available_models` (the scan result, including per-model
+   * capabilities).
+   *
+   * OUTPUT CONTRACT: side-effect only — calls `pi.registerProvider`. Returns
+   * nothing. Failures are swallowed per-provider (the `catch {}` around each
+   * registerProvider call) — a broken provider does not block the others.
+   *
+   * SIDE EFFECTS: mutates Pi's model registry (registerProvider). Does NOT
+   * mutate cfg/cache. The Ollama block (below) registers Ollama with real
+   * `num_ctx` from `/api/show` ONLY when Pi doesn't know Ollama — consistent
+   * with Ü1 (never overwrites).
+   * prior Ollama registration with one carrying providerOptions.num_ctx —
+   * intentional (see that block's comment) but inconsistent with Ü1.
+   *
+   * INVARIANTS:
+   *   - Providers in SKIP_REGISTRATION (anthropic/openai/google + any added
+   *     at runtime) are never registered by this function.
+   *   - Providers without baseUrl+api in PROVIDER_MAP are skipped (Ollama,
+   *     lm-studio — they're registered by their own extensions or by the
+   *     dedicated Ollama block below).
+   *   - A provider with no resolvable API key (neither cfg.keys nor auth.json
+   *     authKey) is skipped.
+   */
   async function registerGroupModels(ctx: any) {
-    // Register discovered providers with pi's model registry.
-    // Skip providers that have dedicated extensions (CLI OAuth), built-in pi support,
-    // or are already registered by another extension.
-    // Also skip providers pi knows natively (have built-in models)
-    for (const prov of ['anthropic', 'openai', 'google']) SKIP_REGISTRATION.add(prov);
+    // B1/Ü1 fix: previously this registered every discovered provider with
+    // hardcoded, same-for-all-models capabilities (reasoning: true,
+    // input: ['text','image'], contextWindow: 200_000, maxTokens: 64_000) and
+    // SILENTLY OVERWROTE any registration Pi already had (from models.json or
+    // another extension) — destroying user-curated compat flags like the
+    // mistral-zai/glm-5-2 entry that had supportsStore:false / maxTokensField.
+    // That overwrite caused the 422 compaction failures.
+    //
+    // Now: (Ü1) only register a provider when Pi does NOT know it yet —
+    // never overwrite an existing registration (per Leitplanke 3: don't touch
+    // Pi's models.json). (B1) use the REAL per-model capabilities the scan
+    // captured into cache.available_models.capabilities, with conservative
+    // defaults (vision: false, reasoning: false) when the provider didn't
+    // report them — so a model is never falsely advertised as vision-capable.
 
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
       if (!def.baseUrl || !def.api) continue;
       if (SKIP_REGISTRATION.has(provId)) continue;
       // Keys can come from router-config.json OR from auth.json (via authKey).
-      // Providers like mistral-zai have an authKey but no explicit keys in
-      // router-config.json — without this fallback they would never register.
       const keys = cfg.providers?.[provId]?.keys;
       let rawKey: string | undefined;
       let apiKey: string | undefined;
@@ -3021,7 +3259,6 @@ let previousTokenCount = 0;
         apiKey = resolveKeyValue(rawKey);
         if (!apiKey || (apiKey === rawKey && rawKey.startsWith('__local__'))) continue;
       } else if (def.authKey) {
-        // Try to get key from Pi's auth store (auth.json)
         apiKey = await sessionCtx?.modelRegistry?.getApiKeyForProvider?.(def.authKey)
           .catch(() => null) ?? undefined;
         if (!apiKey) continue;
@@ -3029,42 +3266,97 @@ let previousTokenCount = 0;
         continue;
       }
 
-      // Collect models for this provider from available_models + model_metrics
-      const provModels: string[] = [];
-      const seen = new Set<string>();
-      for (const m of cache.available_models ?? []) {
-        if (m.provider === provId && !seen.has(m.id)) {
-          provModels.push(m.id);
-          seen.add(m.id);
-        }
-      }
+      // Collect this provider's models (with capabilities) from the scan cache.
+      const provModels = (cache.available_models ?? [])
+        .filter((m) => m.provider === provId);
       if (!provModels.length) continue;
 
-      // Skip if provider already has models AND a working API key
-      const alreadyRegistered = provModels.some((id) => ctx.modelRegistry.find(provId, id));
-      if (alreadyRegistered) {
-        const existingKey = await ctx.modelRegistry.getApiKeyForProvider(provId).catch(() => null);
-        if (existingKey) continue;
-      }
+      // Ü1: if Pi already knows ANY of this provider's models, do NOT register.
+      // This protects models.json entries (with compat flags) and
+      // extension-provided providers from being overwritten. The previous
+      // "alreadyRegistered + existingKey" check only protected providers with
+      // a resolvable key; it missed models.json entries using env-var
+      // placeholder keys. "Pi knows it" is the correct, conservative gate.
+      const piKnowsProvider = provModels.some((m) =>
+        Boolean(ctx.modelRegistry.find(provId, m.id))
+      );
+      if (piKnowsProvider) continue;
 
       try {
         (pi as any).registerProvider(provId, {
           baseUrl: def.baseUrl,
           apiKey,
           api: def.api,
-          models: provModels.map((id) => ({
-            id,
-            name: `${provId}/${id}`,
-            reasoning: true,
-            input: ['text', 'image'] as any,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: 200_000,
-            maxTokens: 64_000,
-          })),
+          // B1: use REAL per-model capabilities from the scan, with conservative
+          // defaults when the provider didn't report a field. Previously every
+          // model got reasoning:true + input:['text','image'] + 200k ctx — which
+          // falsely advertised vision on glm-5-2 (causing 422) and a wrong ctx
+          // window on every model. Now: vision only when the provider confirms
+          // it (default false — never claim what we don't know), reasoning only
+          // when confirmed, contextWindow/maxTokens only when reported (Pi's
+          // own defaults apply otherwise, which are saner than our old 200k/64k).
+          models: provModels.map((m) => {
+            const caps = m.capabilities ?? {};
+            const input: string[] = caps.vision === true ? ['text', 'image'] : ['text'];
+            const entry: Record<string, unknown> = {
+              id: m.id,
+              name: `${provId}/${m.id}`,
+              reasoning: caps.reasoning === true,
+              input,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            };
+            if (typeof caps.contextWindow === 'number') entry.contextWindow = caps.contextWindow;
+            if (typeof caps.maxTokens === 'number') entry.maxTokens = caps.maxTokens;
+            return entry;
+          }),
         });
       } catch {
         /* provider already registered or config error */
       }
+    }
+
+    // Ollama registration. Ollama defaults to num_ctx=32768 when the request
+    // omits options.num_ctx; many models support far more (qwen3.5→262K,
+    // gemma4→131K), so prompts >32K truncate unless num_ctx is sent.
+    //
+    // Per Leitplanke 3 + Ü1, this must NOT overwrite an existing Ollama
+    // registration. If Pi already knows Ollama — from ANY source (another
+    // extension, or models.json) — we assume that registration is
+    // authoritative. We only register when Pi does NOT know Ollama at all
+    // (e.g. a setup where no other extension provides Ollama, or Ollama wasn't
+    // running at their session_start). num_ctx comes from the REAL
+    // capabilities the scan captured live from Ollama's /api/show (see
+    // src/ollama-context.ts + src/capabilities.ts) — no hardcoded table, no
+    // dependency on any specific Ollama extension.
+    //
+    // KNOWN EFFECT: if some OTHER extension registered Ollama WITHOUT
+    // num_ctx, the truncation bug returns for that setup. The proper fix is
+    // then in that extension (or the user's models.json), not in the router
+    // overwriting Pi's registry. The router refuses to paper over another
+    // extension's bug by clobbering Pi's registration.
+    try {
+      const ollamaModels = (cache.available_models ?? [])
+        .filter((m) => m.provider === 'ollama');
+      if (ollamaModels.length > 0) {
+        const piKnowsOllama = ollamaModels.some((m) =>
+          Boolean(ctx.modelRegistry.find('ollama', m.id))
+        );
+        if (!piKnowsOllama) {
+          // Pass the full models (with capabilities) so num_ctx comes from
+          // the real /api/show values, not a hardcoded table.
+          const providerModels = buildOllamaProviderModels(ollamaModels);
+          (pi as any).registerProvider('ollama', {
+            name: 'Ollama (local)',
+            baseUrl: 'http://localhost:11434/v1',
+            apiKey: 'ollama',
+            api: 'openai-completions',
+            models: providerModels,
+          });
+          routerLog(`[router] Registered Ollama with providerOptions.num_ctx for ${providerModels.length} model(s) (Pi did not know Ollama)`);
+        }
+      }
+    } catch (e) {
+      routerLog('[router] Ollama registration failed:', e);
     }
 
     // Re-register group providers with updated resolution info
@@ -3074,11 +3366,12 @@ let previousTokenCount = 0;
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan]',
+    description: 'Model router status. Usage: /router [group|scan|cost]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
         { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
+        { value: 'cost', label: 'cost', description: 'Show accumulated cost-tracker summary' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(cfg.model_groups ?? {}).map((g) => {
         const desc = cfg.model_groups?.[g]?.description;
@@ -3113,6 +3406,19 @@ let previousTokenCount = 0;
           ctx.ui.notify(
             `Done. ${Object.keys(metricsModule.getGdpval()).length} scores, ${cache.available_models?.length ?? 0} models.`
           );
+          return;
+        }
+
+        if (arg === 'cost') {
+          // On-demand snapshot via ctx.ui.notify — same channel as the rest of
+          // /router's output. Previously cost-tracker.ts printed unconditional
+          // console.log/warn on every request and on the daily/exit summary,
+          // which bypasses ctx.ui.notify entirely and corrupts the TUI's input
+          // prompt rendering. That automatic output is now opt-in only (via
+          // DEBUG_COST_TRACKER=true); this command is the supported way to see
+          // costs on demand, and formatSummary() does NOT reset metrics, so
+          // repeated calls keep showing the same accumulating totals.
+          ctx.ui.notify(costTracker.formatSummary(), 'info');
           return;
         }
 
@@ -3241,7 +3547,7 @@ let previousTokenCount = 0;
       }
 
       lines.push('└' + '─'.repeat(71));
-      lines.push('', '/router <group> | scan');
+      lines.push('', '/router <group> | scan | cost');
       ctx.ui.notify(lines.join('\n'), 'info');
       } finally {
         // Always restore previous session context

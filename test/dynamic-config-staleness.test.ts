@@ -87,7 +87,7 @@ describe('load(): exclude rules are re-synced from staticCfg, not the stale dyna
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         // The current, authoritative user preference.
         exclude: { models: ['*blocked*'] },
       },
@@ -155,7 +155,7 @@ describe('load(): timeout overrides are re-synced from staticCfg, not the stale 
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         // The current, authoritative user preference: a short timeout that
         // WILL abort a 500ms-delayed non-reasoning stream.
         empty_response_timeout_ms: 100,
