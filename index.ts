@@ -618,6 +618,15 @@ let previousTokenCount = 0;
                 cache.gdpval_scores[slug] = score;
               }
             }
+            // A2: this only mutated cache.gdpval_scores, NOT metrics.ts's
+            // in-memory `gdpval` map that lookupGdp()/resolveSlug() actually
+            // read from. Without re-syncing, generateDynamicConfig() (called
+            // at the end of this same scan()) would score newly-discovered
+            // Ollama models as unscored (gdpval=0) and drop them — they'd
+            // only pick up their estimate on the NEXT session's setCache()
+            // call. setCache() is additive (Object.assign), so re-calling it
+            // here is safe and makes the estimates visible immediately.
+            metricsModule.setCache(cache);
           }
         } catch {}
         // Scan direct API providers with modelsUrl (anthropic, openai, etc.)

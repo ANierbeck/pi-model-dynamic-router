@@ -1,5 +1,36 @@
 // src/metrics.ts
 // Metrics management for the pi-model-router
+//
+// ── GDPval: the SINGLE resolution pipeline (A2) ─────────────────────────
+//
+// GDPval scores come from THREE sources that answer TWO different questions.
+// This module is the ONLY place that resolves both, so no other code may
+// re-implement this merge (a second, drifted copy in src/model-matcher.ts
+// was removed for exactly this reason — see its file header).
+//
+// Q1: "which GDPval SLUG does this model ref mean?" — resolveSlug()
+//   Stage 0: model-map.yaml explicit override (mapLookup) — authoritative,
+//            curated by hand; an explicit `null` means "exclude this model".
+//   Stage 1: LLM-assisted match (setLlmMatches, cached in
+//            cache.model_score_cache) — semantic fallback for vendor-
+//            prefixed / renamed ids the map doesn't cover yet.
+//   Stage 2: algorithmic fuzzy matcher (slug-matcher.ts matchSlug) — cheap,
+//            deterministic last resort.
+//
+// Q2: "what SCORE does that slug have?" — the `gdpval` map (lookupGdp)
+//   cfg.gdpval_builtin   (highest — our own curated overrides, e.g.
+//                         mistral-medium-3-5:933; AA's scrape never has
+//                         these slugs) always wins for a given slug.
+//   cache.gdpval_scores  (scraped from Artificial Analysis + Ollama
+//                         heuristic estimates) fills in everything else.
+//   These two merge ADDITIVELY into the in-memory `gdpval` map (setConfig/
+//   setCache: Object.assign, builtin applied last → wins on conflict).
+//   Self-healing (see resolveSlug below) guards against setGdpval()'s
+//   REPLACE semantics wiping builtins mid-session.
+//
+// model-map.yaml is NOT a score source — it only answers Q1. Conflating it
+// with a "third score source" was the root of the original confusion; it
+// always defers to the `gdpval` map (Q2) for the actual number.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';

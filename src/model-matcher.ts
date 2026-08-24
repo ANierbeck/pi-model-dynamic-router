@@ -16,9 +16,6 @@
 // score resolution) plus the orchestrator that drives a single LLM call.
 // The LLM caller itself is injected so tests need no network.
 
-import { baseTokens } from './utils.ts';
-import { stripDateSuffix } from './utils.ts';
-
 // ── Types ─────────────────────────────────────────────────────────────────
 
 export interface GdpvalEntry {
@@ -41,15 +38,6 @@ export interface MatchResult {
   unmatched: string[];
   /** Error message if the LLM call itself failed (e.g. Ollama down). */
   error?: string | undefined;
-}
-
-export interface ResolveScoresInput {
-  modelRefs: string[];
-  gdpvalScores: Record<string, number>;
-  modelMap: Record<string, string | null>;
-  modelMapWildcards: [string, string | null][];
-  /** LLM matches: modelRef → gdpval slug (already validated to exist). */
-  llmMatches?: Record<string, string>;
 }
 
 // ── Prompt building ───────────────────────────────────────────────────────
@@ -362,109 +350,16 @@ export async function matchModelsWithLLMBatched(
   return { matches: allMatches, unmatched: allUnmatched, error: batchError ?? undefined };
 }
 
-// ── Score resolution (merge pipeline) ────────────────────────────────────
-
-/**
- * Resolve GDPval scores for a list of model refs by merging three sources.
- *
- * Precedence (first non-undefined wins; null means "deliberately excluded"):
- *   1. model-map.yaml (exact match, then wildcard)  — authoritative
- *   2. token-set fallback                            — cheap, deterministic
- *   3. LLM matches                                    — semantic safety net
- *
- * Returns a map: modelRef → score (number) | null (excluded/unknown).
- */
-export function resolveModelScores(input: ResolveScoresInput): Record<string, number | null> {
-  const { modelRefs, gdpvalScores, modelMap, modelMapWildcards, llmMatches = {} } = input;
-  const result: Record<string, number | null> = {};
-
-  for (const ref of modelRefs) {
-    result[ref] = resolveOneScore(ref, gdpvalScores, modelMap, modelMapWildcards, llmMatches);
-  }
-  return result;
-}
-
-function resolveOneScore(
-  ref: string,
-  gdpvalScores: Record<string, number>,
-  modelMap: Record<string, string | null>,
-  modelMapWildcards: [string, string | null][],
-  llmMatches: Record<string, string>
-): number | null {
-  // 1. model-map.yaml (authoritative). Try BOTH the full ref and the
-  // provider-stripped form, because map keys may be either shape
-  // (e.g. "zai-org/GLM-5-TEE" keeps its namespace; "glm-5-2" is bare).
-  const stripped = stripProviderForMap(ref);
-  for (const candidate of [ref, stripped]) {
-    if (candidate in modelMap) {
-      const mapped = modelMap[candidate];
-      if (mapped === null) return null; // explicitly excluded
-      return scoreForSlug(mapped, gdpvalScores);
-    }
-    for (const [prefix, slug] of modelMapWildcards) {
-      if (candidate.startsWith(prefix)) {
-        if (slug === null) return null; // explicitly excluded
-        return scoreForSlug(slug, gdpvalScores);
-      }
-    }
-  }
-
-  // 2. token-set fallback
-  const tokenScore = tokenSetScore(ref, gdpvalScores);
-  if (tokenScore !== null) return tokenScore;
-
-  // 3. LLM match
-  const llmSlug = llmMatches[ref];
-  if (llmSlug) {
-    return scoreForSlug(llmSlug, gdpvalScores);
-  }
-
-  return null; // unknown
-}
-
-/**
- * Score lookup by slug: build token-set key for the slug and look it up.
- * Mirrors the existing lookupGdp index semantics (highest score across variants).
- */
-function scoreForSlug(slug: string, gdpvalScores: Record<string, number>): number | null {
-  // Direct slug hit first (most common case).
-  if (slug in gdpvalScores) return gdpvalScores[slug];
-  // Fall back to token-set match against all scores (handles slug variants).
-  const key = [...baseTokens(slug)].sort().join('|');
-  let best: number | null = null;
-  for (const [s, score] of Object.entries(gdpvalScores)) {
-    if ([...baseTokens(s)].sort().join('|') === key) {
-      if (best === null || score > best) best = score;
-    }
-  }
-  return best;
-}
-
-/**
- * Token-set fallback: match the model ref directly against all gdpval slugs.
- */
-function tokenSetScore(ref: string, gdpvalScores: Record<string, number>): number | null {
-  const key = [...baseTokens(ref)].sort().join('|');
-  let best: number | null = null;
-  for (const [slug, score] of Object.entries(gdpvalScores)) {
-    if ([...baseTokens(slug)].sort().join('|') === key) {
-      if (best === null || score > best) best = score;
-    }
-  }
-  return best;
-}
-
-/**
- * Strip the provider prefix for model-map lookup.
- * Mirrors the index.ts stripProvider() semantics: only strip the first segment
- * if it looks like a known provider, otherwise keep the ref as-is.
- *
- * NOTE: model-map.yaml keys are model ids WITHOUT provider prefix
- * (e.g. "glm-5-2", "zai-org/GLM-5-TEE"), so we must match the key shape.
- * We strip a single leading "provider/" segment if present.
- */
-function stripProviderForMap(ref: string): string {
-  const i = ref.indexOf('/');
-  if (i === -1) return ref;
-  return ref.slice(i + 1);
-}
+// NOTE (A2, 2026-08-24): this module used to also export a second, parallel
+// GDPval score-resolution pipeline (resolveModelScores/resolveOneScore/
+// scoreForSlug/tokenSetScore) that merged model-map.yaml -> token-fallback ->
+// LLM matches on its own. It was dead code - index.ts never called it, only
+// tests did - and it had DRIFTED from the real production pipeline
+// (src/metrics.ts resolveSlug/lookupGdp): stage order was reversed (LLM
+// before token-fallback in metrics.ts vs. after in the dead code) and its
+// token-set matcher was a weaker, separate implementation than
+// src/slug-matcher.ts's matchSlug. Removed to leave exactly ONE resolution
+// pipeline: src/metrics.ts resolveSlug() (see its docstring for the
+// authoritative stage order). The LLM-matching orchestration in this file
+// (matchModelsWithLLMBatched et al.) is unaffected - it still feeds
+// resolveSlug's Stage 1 via setLlmMatches().

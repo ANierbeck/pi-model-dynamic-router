@@ -207,3 +207,43 @@ describe('metrics.resolveSlug/lookupGdp — self-healing from missing gdpval_bui
     expect(lookupGdp('ollama/gemma4:latest')).toBe(520);
   });
 });
+
+describe('metrics.setCache — additive merge (A2: same-scan Ollama estimate visibility)', () => {
+  // BACKGROUND (A2, 2026-08-24): scan() in index.ts estimates GDPval scores
+  // for newly-discovered Ollama models and writes them directly into
+  // cache.gdpval_scores (a plain object mutation), WITHOUT going through
+  // metrics.ts. Because lookupGdp()/resolveSlug() only ever read the
+  // in-memory `gdpval` map (populated by setConfig/setCache/setGdpval), a
+  // model whose score was added to cache.gdpval_scores this way stayed
+  // invisible to lookupGdp() until the NEXT setCache() call (i.e. the next
+  // session_start) — so generateDynamicConfig(), which runs at the end of
+  // the SAME scan(), would score the model as unscored (gdpval=0) and drop
+  // it. Fixed by having index.ts call setCache(cache) again right after
+  // mutating cache.gdpval_scores. This test locks the contract that fix
+  // depends on: setCache() must ADDITIVELY merge gdpval_scores into the
+  // existing in-memory gdpval map (Object.assign, not replace), so calling
+  // it a second time with newly-added keys makes them immediately visible
+  // without clobbering scores already resolved earlier in the same scan.
+
+  it('a second setCache() call with new gdpval_scores keys makes them visible without clobbering existing scores', () => {
+    setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
+    setModelMap({ 'glm-5-3': 'glm-5-3', 'ornith:9b': 'ornith-9b' }, []);
+
+    // First setCache: only the AA-scraped score is present.
+    const cache: Cache = { gdpval_scores: { 'glm-5-3': 1769 } };
+    setCache(cache);
+    expect(lookupGdp('glm-5-3')).toBe(1769);
+    expect(lookupGdp('ollama/ornith:9b')).toBeNull(); // not estimated yet
+
+    // Simulate scan()'s Ollama-estimate merge: a NEW slug is added directly
+    // to cache.gdpval_scores (mutating the SAME object, mirroring index.ts),
+    // then setCache() is called again to sync it into metrics.ts.
+    cache.gdpval_scores!['ornith-9b'] = 610;
+    setCache(cache);
+
+    // The new Ollama estimate must be visible immediately (same scan cycle)...
+    expect(lookupGdp('ollama/ornith:9b')).toBe(610);
+    // ...without wiping the score resolved before the second setCache() call.
+    expect(lookupGdp('glm-5-3')).toBe(1769);
+  });
+});

@@ -1,13 +1,23 @@
 // test/model-map-live.test.ts
 // Regression guard against the original GLM bug, run against the REAL
-// model-map.yaml (not a fixture). Proves that vendor-prefixed Mistral-hosted
-// GLM model ids are resolved ONLY by the LLM tier — i.e. tiers 1+2 miss,
-// and tier 3 is what makes them appear in the router table.
+// model-map.yaml (not a fixture) AND the REAL production resolution
+// pipeline (src/metrics.ts resolveSlug/lookupGdp — see its docstring for
+// the authoritative precedence). Proves that vendor-prefixed Mistral-hosted
+// GLM model ids are resolved by the model-map tier — i.e. the map entries
+// are authoritative and don't need the LLM tier to appear in the router
+// table.
+//
+// NOTE (A2): this test used to exercise src/model-matcher.ts's
+// resolveModelScores, a second, dead GDPval-resolution pipeline that had
+// drifted from the real one (different stage order, weaker token matcher).
+// It was removed; this file now goes through the SAME pipeline production
+// code actually uses (metrics.ts), so a pass here means the real router
+// behaves this way — not just a parallel reimplementation.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolveModelScores } from '../src/model-matcher.js';
+import { lookupGdp, setConfig, setCache, setGdpval, setModelMap, setLlmMatches } from '../src/metrics.js';
 
 // Load the actual model-map.yaml shipped with the extension.
 // Parse line-by-line (tolerant of duplicate keys, mirroring the router's intent)
@@ -33,6 +43,14 @@ const gdpvalScores: Record<string, number> = {
   'mistral-medium-3-5': 924.55,
 };
 
+beforeEach(() => {
+  setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
+  setGdpval({});
+  setLlmMatches({});
+  setModelMap(modelMap, modelMapWildcards);
+  setCache({ gdpval_scores: gdpvalScores });
+});
+
 describe('model-map.yaml (live) — GLM regression guard', () => {
   it('CONTAINS authoritative map entries for the Mistral-hosted glm-5-2 ids (override the LLM)', () => {
     // The LLM matcher sometimes mis-matches glm-5-2 → glm-4 (older slug).
@@ -43,40 +61,19 @@ describe('model-map.yaml (live) — GLM regression guard', () => {
     expect(modelMap['glm-5-2-tee']).toBe('glm-5-3');
   });
 
-  it('the model-map resolves zai-glm-5-2 → glm-5-3 → 1769 (tier 1, no LLM needed)', () => {
-    const result = resolveModelScores({
-      modelRefs: ['mistral-zai/zai-glm-5-2'],
-      gdpvalScores,
-      modelMap,
-      modelMapWildcards,
-      llmMatches: {}, // no LLM tier needed — map is authoritative
-    });
-    expect(result['mistral-zai/zai-glm-5-2']).toBe(1769);
+  it('the model-map resolves zai-glm-5-2 → glm-5-3 → 1769 (tier 0, no LLM needed)', () => {
+    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1769);
   });
 
   it('the model-map override beats a WRONG LLM match (e.g. LLM says glm-4)', () => {
     // If the LLM incorrectly matched zai-glm-5-2 → glm-4, the map entry
-    // (glm-5-3) must win because tier 1 > tier 3.
-    const result = resolveModelScores({
-      modelRefs: ['mistral-zai/zai-glm-5-2'],
-      gdpvalScores,
-      modelMap,
-      modelMapWildcards,
-      llmMatches: { 'mistral-zai/zai-glm-5-2': 'glm-4' }, // wrong LLM match
-    });
-    expect(result['mistral-zai/zai-glm-5-2']).toBe(1769); // map wins, not glm-4 (400)
+    // (glm-5-3) must win because the model-map tier is checked BEFORE the
+    // LLM tier in resolveSlug().
+    setLlmMatches({ 'mistral-zai/zai-glm-5-2': 'glm-4' }); // wrong LLM match
+    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1769); // map wins, not glm-4
   });
 
-  it('without the LLM tier, glm-5-2 (no zai prefix) STILL resolves via token fallback', () => {
-    // This one should NOT need the LLM — token set {glm,5,3} matches directly
-    // via the map (glm-5-2 → glm-5-3).
-    const result = resolveModelScores({
-      modelRefs: ['mistral/glm-5-2'],
-      gdpvalScores,
-      modelMap,
-      modelMapWildcards,
-      llmMatches: {},
-    });
-    expect(result['mistral/glm-5-2']).toBe(1769);
+  it('without the LLM tier, glm-5-2 (no zai prefix) STILL resolves via the map', () => {
+    expect(lookupGdp('mistral/glm-5-2')).toBe(1769);
   });
 });
