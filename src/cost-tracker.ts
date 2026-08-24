@@ -1,9 +1,9 @@
 // src/cost-tracker.ts
 // Cost tracking for price-based routing
 
-import type { CostMetrics, CostTier } from './types.ts';
+import type { CostMetrics } from './types.ts';
 import { lookupPrice } from './metrics.ts';
-import { getModelCostTier } from './cost-tiers.ts';
+import { routerLog } from './logger.ts';
 import fs from 'node:fs';
 
 /**
@@ -11,7 +11,7 @@ import fs from 'node:fs';
  *
  * Features:
  * - Cost per request based on model and token count
- * - Statistics per cost tier (free/budget/premium)
+ * - Statistics per model
  * - Statistics per model
  * - Daily summary
  */
@@ -42,8 +42,6 @@ export class CostTracker {
       totalCost: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
-      requestsByTier: { free: 0, budget: 0, premium: 0 },
-      costByTier: { free: 0, budget: 0, premium: 0 },
       requestsByModel: {},
       costByModel: {},
     };
@@ -77,36 +75,39 @@ export class CostTracker {
   trackRequest(modelRef: string, inputTokens: number, outputTokens: number): void {
     const price = lookupPrice(modelRef);
     if (!price) {
-      console.warn(`[cost-tracker] No price info for model: ${modelRef}`);
+      // Routine, not actionable — many models (subscription, local, newly
+      // discovered) legitimately have no resolvable price yet. Spamming this
+      // to stdout on every request corrupts the TUI's input prompt rendering
+      // (raw console.* writes bypass ctx.ui.notify entirely). Opt-in only.
+      if (process.env.DEBUG_COST_TRACKER === 'true') {
+        routerLog('[cost-tracker] No price info for model', modelRef);
+      }
       return;
     }
 
     // Check if price contains 'unknown' values
     if (price.input === 'unknown' || price.output === 'unknown') {
-      console.warn(`[cost-tracker] Price is unknown for model: ${modelRef}`);
+      if (process.env.DEBUG_COST_TRACKER === 'true') {
+        routerLog('[cost-tracker] Price is unknown for model', modelRef);
+      }
       return;
     }
 
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost = (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
-    const tier = getModelCostTier(modelRef);
 
     // Update metrics
     this.metrics.totalCost += cost;
     this.metrics.totalInputTokens += inputTokens;
     this.metrics.totalOutputTokens += outputTokens;
-    
-    // Per cost tier
-    this.metrics.requestsByTier[tier] = (this.metrics.requestsByTier[tier] || 0) + 1;
-    this.metrics.costByTier[tier] = (this.metrics.costByTier[tier] || 0) + cost;
-    
+
     // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
     this.metrics.costByModel[modelRef] = (this.metrics.costByModel[modelRef] || 0) + cost;
 
     // Debug log (optional)
     if (process.env.DEBUG_COST_TRACKER === 'true') {
-      console.log(`[cost-tracker] ${modelRef} [${tier}]: $${cost.toFixed(6)} (in: ${inputTokens}, out: ${outputTokens})`);
+      routerLog(`[cost-tracker] ${modelRef}: $${cost.toFixed(6)} (in: ${inputTokens}, out: ${outputTokens})`);
     }
   }
 
@@ -126,23 +127,22 @@ export class CostTracker {
   }
 
   /**
-   * Logs a summary of the metrics
+   * Builds a human-readable summary of the current metrics WITHOUT any side
+   * effects (no console output, no file write, no reset). Used both by
+   * logSummary() (which adds those side effects) and by callers that want
+   * an on-demand snapshot, e.g. the `/router cost` command — which must NOT
+   * reset accumulated metrics just because someone looked at them.
    * @param customMessage - Optional custom message
    */
-  logSummary(customMessage: string = ''): void {
+  formatSummary(customMessage: string = ''): string {
     const uptime = new Date().getTime() - this.startTime.getTime();
     const uptimeHours = (uptime / (1000 * 60 * 60)).toFixed(2);
 
-    const summary = [
+    return [
       `=== Cost Tracker Summary ${customMessage ? `(${customMessage})` : ''} ===`,
       `Uptime: ${uptimeHours}h`,
       `Total Cost: $${this.metrics.totalCost.toFixed(6)}`,
       `Total Tokens: ${this.metrics.totalInputTokens + this.metrics.totalOutputTokens} (in: ${this.metrics.totalInputTokens}, out: ${this.metrics.totalOutputTokens})`,
-      ``,
-      `--- By Tier ---`,
-      ...Object.entries(this.metrics.requestsByTier).map(([tier, count]) => 
-        `  ${tier}: ${count} requests, $${this.metrics.costByTier[tier as CostTier].toFixed(6)}`
-      ),
       ``,
       `--- By Model (Top 5) ---`,
       ...Object.entries(this.metrics.costByModel)
@@ -153,8 +153,25 @@ export class CostTracker {
         ),
       `==========================`,
     ].join('\n');
+  }
 
-    console.log(`[cost-tracker] ${summary}`);
+  /**
+   * Logs a summary of the metrics (daily scheduled summary + process-exit
+   * final summary). Only prints to console when DEBUG_COST_TRACKER=true —
+   * an unconditional console.log here would surface mid-session (or right
+   * as the process exits) and corrupt the TUI's input prompt, since raw
+   * console writes bypass ctx.ui.notify entirely. File logging (when
+   * logFilePath is configured) is unconditional since it doesn't touch the
+   * terminal. Always resets metrics afterward (this is the periodic-reset
+   * path; use formatSummary() for a non-resetting on-demand snapshot).
+   * @param customMessage - Optional custom message
+   */
+  logSummary(customMessage: string = ''): void {
+    const summary = this.formatSummary(customMessage);
+
+    if (process.env.DEBUG_COST_TRACKER === 'true') {
+      routerLog(`[cost-tracker] ${summary}`);
+    }
 
     // Write to file if path is specified
     if (this.logFilePath) {

@@ -3,6 +3,7 @@
 // Owns all escalation state so index.ts stays clean.
 
 import { callOllama } from './ollama-utils.ts';
+import { routerLog } from './logger.ts';
 
 export type EscalationLevel = 'operational' | 'tactical' | 'strategic';
 
@@ -85,7 +86,7 @@ export async function detectLoopWithLLM(
       return { shouldEscalate: false, reason: 'No loop detected (non-JSON response)' };
     }
   } catch (err) {
-    console.warn(`[escalation] LLM loop detection failed: ${err}`);
+    routerLog('[escalation] LLM loop detection failed', err);
     return { shouldEscalate: false, reason: 'LLM unavailable, using rule-based detection' };
   }
 }
@@ -165,13 +166,13 @@ export class SessionEscalation {
             const prev = this._level;
             this._level = nextLevel(this._level);
             if (prev !== this._level) {
-              console.log(`[escalation] LLM escalation. Upgraded from ${prev} to ${this._level}`);
+              routerLog(`[escalation] LLM escalation. Upgraded from ${prev} to ${this._level}`);
             }
           }
         })
         .catch(err => {
           this._llmInFlight = false;
-          console.warn(`[escalation] LLM loop detection failed: ${err}`);
+          routerLog('[escalation] LLM loop detection failed', err);
         });
     }
 
@@ -179,7 +180,7 @@ export class SessionEscalation {
       const prev = this._level;
       this._level = nextLevel(this._level);
       if (prev !== this._level) {
-        console.log(`[escalation] Rule-based loop detection. Upgraded from ${prev} to ${this._level}`);
+        routerLog(`[escalation] Rule-based loop detection. Upgraded from ${prev} to ${this._level}`);
       }
     }
   }

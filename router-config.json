@@ -3,11 +3,11 @@
     "openrouter": {
       "billing": "pay_per_token",
       "free_models": [
-        "openrouter/qwen/qwen3-4b:free",
-        "openrouter/openai/gpt-4o-mini:free",
-        "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-        "openrouter/google/gemma-3-4b-it:free",
-        "openrouter/google/gemma-3-12b-it:free"
+        "openrouter/google/gemma-4-31b-it:free",
+        "openrouter/google/gemma-4-26b-a4b-it:free",
+        "openrouter/z-ai/glm-5.2:free",
+        "openrouter/cohere/north-mini-code:free",
+        "openrouter/liquid/lfm-2.5-2.6b:free"
       ]
     }
   },
@@ -69,8 +69,9 @@
       ]
     },
     "scout": {
-      "description": "Any available model, cheapest first",
+      "description": "Any available model, cheapest first — local $0-Modelle bevorzugt",
       "method": "tiered",
+      "billing_preference": "local_first",
       "min_gdpval": 0,
       "fallback_groups": [
         "fallback"
@@ -124,16 +125,21 @@
     "gemma4-27b": 520,
     "gemma3-12b": 440,
     "gemma3-27b": 510,
+    "qwen3-8-27b": 580,
+    "qwen3-6-35b": 620,
+    "qwen3-5": 400,
+    "qwen3-5-7b": 540,
     "gemma2-2b": 250,
     "gemma2-9b": 380,
     "llama3-1": 390,
+    "llama3-1-8b": 390,
     "llama3-2": 410,
     "llama3-3": 430,
-    "qwen3-5": 400,
     "qwen3": 420,
     "mistral-nemo": 430,
     "ornith-9b": 390,
-    "granite4": 300,
-    "glm-4": 400
+    "granite-4-micro": 280,
+    "glm-4": 400,
+    "glm-4-6": 520
   }
 }

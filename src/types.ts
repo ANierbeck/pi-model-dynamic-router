@@ -51,6 +51,16 @@ export interface Group {
   max_cost_per_m?: number;
   exclude_providers?: string[];
   exclude_models?: string[];
+  /**
+   * Override the default billing-tier ordering used by `method: "tiered"".
+   * Default ordering is free(0) → subscription(1) → local(2) → payg(3),
+   * i.e. already-paid subscription models rank ahead of local compute.
+   * Set to "local_first" to rank local models AHEAD of subscription models
+   * (but still after truly-free $0 models). Useful for scout/operational
+   * groups where local $0-Modelle should be preferred over cloud
+   * subscription models when their GDPval qualifies.
+   */
+  billing_preference?: 'default' | 'local_first';
   /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
   classifier_model?: string;
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
@@ -77,7 +87,6 @@ export interface Config {
   model_groups: Record<string, Group>;
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
-  cost_tiers?: Partial<CostTiersConfig>;
   /** Override the default first-token empty-response timeout (ms). */
   empty_response_timeout_ms?: number;
   /** Override the first-token timeout for reasoning/thinking models (ms). */
@@ -110,32 +119,13 @@ export interface ExcludeRules {
   paid_models_from?: string[];
 }
 
-// ── Cost Tiers Types ────────────────────────────────────────────────────
-
-export type CostTier = 'free' | 'budget' | 'premium';
-
-export interface CostTierConfig {
-  id: CostTier;
-  description: string;
-  max_cost_per_m: number;
-  max_cost_per_request: number;
-  min_gdpval: number;
-  preferred_providers: string[];
-}
-
-export interface CostTiersConfig {
-  free: CostTierConfig;
-  budget: CostTierConfig;
-  premium: CostTierConfig;
-}
-
 // ── Cache Types ───────────────────────────────────────────────────────────
 
 export interface Cache {
   gdpval_scores?: Record<string, number>;
   gdpval_scraped?: boolean;
   models_cached?: string;
-  available_models?: { id: string; provider: string; cost_per_m: number }[];
+  available_models?: AvailableModel[];
   benchmarks?: Record<string, number>;
   cost_mux?: Record<string, number>;
   cost_mux_last_bump?: Record<string, string>;
@@ -168,6 +158,16 @@ export interface ProviderDef {
   authHeader?: (key: string) => Record<string, string>; // how to authenticate
   baseUrl?: string; // API base URL for pi provider registration
   api?: string; // pi API type (e.g. "anthropic", "openai-responses", "qwen")
+  /**
+   * Optional regex a scanned model id must match to be kept for this provider.
+   * Generic per-provider filter (architecture problem B2): lets a provider
+   * whose key sees a broad catalog (e.g. mistral-zai now sees all 56 Mistral
+   * models) be constrained to the subset the provider is meant for — WITHOUT
+   * hardcoding a setup-specific special case. Empty/absent = keep all
+   * non-embed/tts/etc. models (current behaviour). Not a glob; a JS regex
+   * string, matched case-insensitive against the full id.
+   */
+  modelFilter?: string;
 }
 
 // ── Classification Types ───────────────────────────────────────────────
@@ -211,6 +211,39 @@ export interface ModelRef {
   modelId: string;
 }
 
+/**
+ * Real capabilities of a discovered model, as reported by the provider's
+ * /v1/models (or Ollama /api/tags) endpoint. Normalized from the various
+ * provider-specific shapes (Mistral capabilities.vision, OpenRouter
+ * architecture.input_modalities, etc.) into one common form.
+ *
+ * All fields optional — providers don't all report every capability.
+ * Consumers (registerGroupModels) fall back to conservative defaults when
+ * a field is absent, so a partially-populated record is always usable.
+ */
+export interface ModelCapabilities {
+  /** Supports image input. False is authoritative (provider says no); undefined = unknown. */
+  vision?: boolean;
+  /** Supports reasoning/thinking output. */
+  reasoning?: boolean;
+  /** Max context window in tokens, if the provider reports one. */
+  contextWindow?: number;
+  /** Max output tokens per request, if reported. */
+  maxTokens?: number;
+}
+
+/**
+ * One discovered model. `cost_per_m` is always present (0 for local/free);
+ * `capabilities` is optional and populated only when the scan could extract
+ * real values from the provider's models endpoint.
+ */
+export interface AvailableModel {
+  id: string;
+  provider: string;
+  cost_per_m: number;
+  capabilities?: ModelCapabilities;
+}
+
 export interface ModelWithLimits {
   ref: string;
   limited: boolean;
@@ -233,8 +266,6 @@ export interface CostMetrics {
   totalCost: number;
   totalInputTokens: number;
   totalOutputTokens: number;
-  requestsByTier: Record<CostTier, number>;
-  costByTier: Record<CostTier, number>;
   requestsByModel: Record<string, number>;
   costByModel: Record<string, number>;
 }

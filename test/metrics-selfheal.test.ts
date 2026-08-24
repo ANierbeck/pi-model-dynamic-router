@@ -123,3 +123,87 @@ describe('metrics.lookupGdp — model-map precedence (no regression)', () => {
     expect(lookupGdp('mistral/zai-glm-5-2')).toBe(1506.11);
   });
 });
+
+describe('metrics.resolveSlug/lookupGdp — self-healing from missing gdpval_builtin entries', () => {
+  // BACKGROUND (2026-08-23): scan()'s AA scrape calls setGdpval(freshlyScrapedScores),
+  // which REPLACES the entire gdpval map (`gdpval = {...scores}`). This wipes
+  // whatever setConfig() had merged in earlier from gdpval_builtin — OUR OWN
+  // curated overrides (e.g. mistral-medium-3-5:933) that Artificial Analysis's
+  // scrape never contains. Nothing re-applies gdpval_builtin before
+  // generateDynamicConfig runs, so every model that ONLY resolves through a
+  // builtin silently loses its score. The old self-heal (empty-gdpval check)
+  // doesn't catch this — gdpval isn't EMPTY after the scrape, just incomplete.
+  // This caused a real scoring collapse (13/148 scored, caught by
+  // scan-sanity.ts) on a live /router scan.
+
+  it('reproduces the exact bug: setGdpval() after setConfig() wipes builtins, breaking a builtin-only slug', () => {
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: { 'mistral-medium-3-5': 933 }, // OUR OWN curated score, AA never has this
+    });
+    setModelMap({ 'mistral-medium-latest': 'mistral-medium-3-5' }, []);
+    // Before the scrape: builtin resolves fine.
+    expect(lookupGdp('mistral/mistral-medium-latest')).toBe(933);
+
+    // scan()'s AA scrape replaces gdpval with ONLY freshly-scraped slugs —
+    // none of which include our builtin "mistral-medium-3-5".
+    setGdpval({ 'glm-5-3': 1769 }); // simulates a real AA scrape result
+
+    // Self-heal must restore the builtin so the model still scores.
+    expect(lookupGdp('mistral/mistral-medium-latest')).toBe(933);
+    // The freshly-scraped slug must ALSO still be usable (not wiped by the heal).
+    setModelMap({ 'mistral-medium-latest': 'mistral-medium-3-5', 'some-glm': 'glm-5-3' }, []);
+    expect(lookupGdp('some-glm')).toBe(1769);
+  });
+
+  it('self-heals even when gdpval_scores cache is ALSO wiped (the real failure mode)', () => {
+    // In the real bug, scan() ALSO does `cache.gdpval_scores = getGdpval()`
+    // immediately after setGdpval() — so cache.gdpval_scores is corrupted
+    // (missing builtins) too. The heal must NOT rely on cache.gdpval_scores
+    // for this case — it must use cfg.gdpval_builtin directly.
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: { 'qwen3-8-27b': 580 },
+    });
+    setModelMap({ 'qwen3.8:27b-mlx': 'qwen3-8-27b' }, []);
+
+    // Simulate scan(): setGdpval(scraped) then cache.gdpval_scores mirrors the
+    // now-wiped gdpval — i.e. the cache is ALSO missing the builtin.
+    setGdpval({ 'some-ai-model': 1000 });
+    setCache({ gdpval_scores: { 'some-ai-model': 1000 } }); // NOTE: no qwen3-8-27b here either
+
+    // Must still resolve via cfg.gdpval_builtin, not cache.gdpval_scores.
+    expect(lookupGdp('ollama/qwen3.8:27b-mlx')).toBe(580);
+  });
+
+  it('does not re-trigger the heal once builtins are already present (idempotent, no version churn)', () => {
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: { 'glm-4': 400 },
+    });
+    setModelMap({ 'glm-4': 'glm-4' }, []);
+    expect(lookupGdp('glm-4')).toBe(400);
+    // A second lookup after builtins are already merged must not need to heal
+    // again — still returns the correct (builtin) value, not overwritten by
+    // anything else.
+    expect(lookupGdp('glm-4')).toBe(400);
+  });
+
+  it('a later, unrelated setGdpval() call still triggers healing again (not a one-shot fix)', () => {
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: { 'gemma4-27b': 520 },
+    });
+    setModelMap({ 'gemma4:latest': 'gemma4-27b' }, []);
+    expect(lookupGdp('ollama/gemma4:latest')).toBe(520);
+
+    // Simulate a SECOND scan cycle (e.g. /router scan run twice) that wipes
+    // gdpval again.
+    setGdpval({ 'unrelated-slug': 1 });
+    expect(lookupGdp('ollama/gemma4:latest')).toBe(520);
+  });
+});

@@ -140,7 +140,47 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
+
+`applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
+single source of truth for the method-independent filter pipeline:
+exclude_providers, exclude_models, min_gdpval/pct, max_cost, max_cost_per_m.
+
+- **`resolveGroup`** (live selection) and **`getTopModels`** (display) both
+  call it — the display path no longer diverges (the old display path dropped
+  ALL unknown-cost models, so `/router` showed models the live path kept —
+  now billing-aware: subscription/local = sunk cost = kept, payg = dropped).
+- **`generateDynamicConfig`** (persist) deliberately does NOT use it: its
+  `max_cost`/`max_cost_per_m` semantics diverge (`max_cost=0` groups admit
+  ONLY genuine $0 free models, excluding subscription models that cost real
+  money). Documented inline. Only the truly shared bits (exclude, min_gdpval)
+  match in spirit.
+- **min_gdpval <= 0** = "no gate" (unscored models pass); **strict positive**
+  threshold drops unscored models (`lookupGdp null`). This is the fix for the
+  13/148-style collapse where unscored models leaked past the gate via the
+  old `filterByQualityMin` `return filtered.length ? filtered : refs` fallback
+  (that fallback was removed — it was error-masking, not a feature).
+- Tests: `test/apply-group-filters.test.ts` (12), updated 8 driveStream tests
+  to set `min_gdpval: 0` explicitly (they relied on the old fallback).
+
 ### 🔥 **Immediately Actionable** (Quick Wins - 1-2 hours)
+
+#### ✅ D2 — Shared logger (DONE 2026-08-23)
+
+`src/logger.ts` is the SINGLE source of truth for router log output:
+`routerLog`, `writeLogLine`, `appendRawLog`, `setProjectLogDir`. `index.ts`
+re-imports them (no longer defines them locally). All four `src/` modules
+that used `console.*` now route through `routerLog`:
+- `content-classifier.ts` (11 → 0)
+- `cost-tracker.ts` (6 → 0, still gated by `DEBUG_COST_TRACKER`)
+- `escalation.ts` (4 → 0)
+- `metrics.ts` (1 → 0)
+
+Why: `console.*` bypasses Pi's TUI (`ctx.ui.notify`) and can land in the
+user's input field, corrupting the prompt. The file logger writes to both
+`~/.pi/logs/router.log` and the project-local `.pi/logs/router.log` — never
+to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
+`routerLog` is called and `console.*` is NOT (the D2 goal).
 
 #### Code Quality & Maintenance
 - [ ] **Increase test coverage** - Currently ~80%, target: 90%+
@@ -166,7 +206,7 @@
 - [ ] **Context-based classification** - Consider session context
 
 ### Code Quality
-- [ ] **Refactor resolveGroup() and resolveGroupWithCostTier()** - Reduce ~80 lines of code duplication
+- [ ] **Refactor resolveGroup() and getTopModels()** - Reduce code duplication between the live selection and display paths
 - [ ] **Fix resolve() for dynamic groups** - Currently returns null for method: 'dynamic'
 - [ ] **Improve error handling** - Better error messages and recovery
 - [ ] **Add more unit tests** - Increase coverage for edge cases
@@ -217,7 +257,7 @@
 - [ ] Increase test coverage to 90%+
 - [ ] Improve mock data for unit tests
 - [ ] Optimize build process
-- [ ] Refactor resolveGroup() and resolveGroupWithCostTier()
+- [ ] Refactor resolveGroup() and getTopModels() (display path) to share a common candidate-builder helper
 - [ ] Fix resolve() for dynamic groups
 
 ### Phase 2: Resilience (2-3 days)
@@ -247,7 +287,7 @@
 
 ### New Features
 - ✅ **Cascading Fallback Groups** - Automatic recovery from model failures
-- ✅ **Cost Tier System** - Intelligent model selection based on task complexity
+- ✅ ~~**Cost Tier System**~~ - Intelligent model selection based on task complexity → REMOVED (redundant with group thresholds, conflicted with local models + fallback cascade)
 - ✅ **Model Momentum** - Model reuse after context compaction
 - ✅ **Status Line Integration** - Accurate display of active model
 - ✅ **Claude-bridge Support** - Works with claude-bridge Pi extension
@@ -265,7 +305,7 @@
 - ✅ **Filtered Error Messages** - Expected errors suppressed to reduce noise
 
 ### Known Issues
-- [ ] Code duplication in `resolveGroup()` and `resolveGroupWithCostTier()`
+- [ ] Code duplication in `resolveGroup()` and `getTopModels()` (both re-implement the filter+sort pipeline)
 - [ ] `resolve()` returns null for dynamic groups
 - [ ] No intelligent failure tracking (recordFailure/recordSuccess)
 

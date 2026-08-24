@@ -73,7 +73,7 @@ describe('Sticky model regression (driveStream must never call pi.setModel)', ()
     fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpDir, '.pi', 'router-config.json'),
-      JSON.stringify({ model_groups: { standard: { fallback_groups: [] } } })
+      JSON.stringify({ model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } } })
     );
     cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 

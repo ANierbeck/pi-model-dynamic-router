@@ -12,6 +12,7 @@
 
 import type { ExcludeRules, Config, Cache } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { isFreeModelRef } from './metrics.ts';
 
 export interface ExcludeContext {
   rules: ExcludeRules;
@@ -69,38 +70,12 @@ export function isExcluded(ref: string, ctx: ExcludeContext): boolean {
     if (rules.paid_models_from.includes(prov)) {
       // A model is "free" if it's in the provider's free_models list, OR its
       // ref contains ":free", OR its discovered cost_per_m is 0.
-      if (!isFreeModel(ref, prov, cfg, cache)) return true;
+      // Delegates to isFreeModelRef (pure helper, single source of truth in
+      // metrics.ts) so exclude.ts and billingTier() can never disagree on
+      // "free". Passes the ctx's own cfg/cache — NOT global module state.
+      if (!isFreeModelRef(ref, ctx.cfg.providers, ctx.cache.available_models)) return true;
     }
   }
-
-  return false;
-}
-
-/**
- * Determine if a model ref is "free" (cost = 0) for the paid_models_from rule.
- * Mirrors the isFreeModel logic in generateDynamicConfig.
- */
-function isFreeModel(ref: string, prov: string, cfg: Config, cache: Cache): boolean {
-  // Explicit :free tag in the ref
-  if (ref.includes(':free')) return true;
-
-  // Listed in the provider's free_models config
-  const provConfig = cfg.providers?.[prov];
-  if (provConfig?.free_models) {
-    const freeSet = new Set(provConfig.free_models);
-    if (freeSet.has(ref)) return true;
-    // Also check the non-prefixed form
-    const bare = ref.includes('/') ? ref.split('/').slice(1).join('/') : ref;
-    if (freeSet.has(bare)) return true;
-    // And the "provider/bare" normalized form
-    if (freeSet.has(`${prov}/${bare}`)) return true;
-  }
-
-  // Discovered cost_per_m == 0
-  const discovered = (cache.available_models ?? []).find(
-    (m) => m.provider === prov && (m.id === ref.slice(prov.length + 1) || `${m.provider}/${m.id}` === ref)
-  );
-  if (discovered && discovered.cost_per_m === 0) return true;
 
   return false;
 }

@@ -24,11 +24,10 @@ description: Dynamically routes model group names (strategic/tactical/operationa
 - **Transparent to user**: Session continues with next available model
 - **Configurable**: Each group can define its own fallback chain via `fallback_groups`
 
-#### 💰 Cost Tier System
-- **Three tiers**: Cheap (Ollama, Mistral Small), Medium (Mistral Medium, Claude Sonnet), Expensive (Claude Opus, Fable)
-- **Multi-tier escalation**: Direct jumps between tiers based on task complexity
-- **Task complexity mapping**: Low (trivial/simple), Medium (standard/code_simple), High (code_complex/design/planning)
-- **Automatic optimization**: After expensive model → cheaper models for simple tasks; after cheap model → expensive models for complex tasks
+#### 💰 Cost/Quality Routing via Groups
+- **Group thresholds ARE the cost tiers**: `trivial`/`simple` use `max_cost: 0` (free only), `scout`/`fallback` use `min_gdpval: 0` (anything), `tactical`/`strategic` raise the GDPval floor to 600/700
+- **Classification maps to a group**: `CATEGORY_TO_GROUP` (content-classifier.ts) maps each prompt category to a group; the group's own filters do the cost/quality gating
+- **Removed**: an earlier separate free/budget/premium tier overlay (`src/cost-tiers.ts`) was redundant with group thresholds and conflicted with local models + fallback cascades
 
 #### ⚡ Model Momentum
 - **Consistency after compaction**: Reuses previous model after context compaction (>30% token drop or >5 messages/500 tokens removed)
@@ -72,7 +71,9 @@ The router uses a **modular architecture** with the following components:
 | **metrics.ts** | Metrics management (GDPval, throughput, latency tracking) |
 | **cache.ts** | Cache management (persistent caching, versioning) |
 | **routing.ts** | Routing logic (model selection, filtering, sorting, cascading fallback) |
-| **content-classifier.ts** | Content classification (Ollama-based prompt categorization, cost-tier escalation) |
+| **capabilities.ts** | Per-provider model-capability normalizer (Mistral/OpenRouter/Ollama → ModelCapabilities) |
+| **ollama-context.ts** | Resolve Ollama `num_ctx` from real `/api/show` capabilities (conservative 32768 fallback) |
+| **content-classifier.ts** | Content classification (Ollama-based prompt categorization, group escalation) |
 
 ## Commands
 | Command | Description |
@@ -80,6 +81,7 @@ The router uses a **modular architecture** with the following components:
 | `/router` | Show status of all model groups with cascading fallback info. |
 | `/router <group>` | Details for a specific group including fallback chain (e.g., `/router strategic`). |
 | `/router scan` | Re-scan models and GDPval scores. |
+| `/router cost` | Show accumulated cost-tracker summary (on-demand, doesn't reset). |
 | `/router reload` | Reload config and cache. |
 
 ## Tools
@@ -109,7 +111,7 @@ The **`dynamic`** group automatically classifies user prompts using **Ollama (ge
 - `index.ts`: Core router logic and extension entry point (~1,800 lines)
 - `router-config.json`: Provider and group configuration with fallback groups
 - `model-map.yaml`: Model to GDPval slug mappings (100+ models)
-- `src/content-classifier.ts`: Content-based prompt classification with cost-tier escalation
+- `src/content-classifier.ts`: Content-based prompt classification with group escalation
 - `src/ollama-utils.ts`: Ollama helper functions
 - `src/types.ts`: Type definitions (Group, Provider, Config, etc.)
 - `src/providers.ts`: Provider definitions with SKIP_REGISTRATION for built-in/extension providers
@@ -123,13 +125,24 @@ The **`dynamic`** group automatically classifies user prompts using **Ollama (ge
 ## Configuration Highlights
 
 ### Provider Registration Philosophy
-- **Skip all known providers**: Built-in Pi providers (anthropic, openai, google, mistral) and extension-based providers (ollama, lm-studio, claude-bridge) are **skipped**
-- **Only register what Pi doesn't know**: Currently only OpenRouter (for free tier models)
-- **Prevent conflicts**: No double registration of providers
+- **Never overwrite**: the router only registers a provider when Pi does **not** know it (`modelRegistry.find` returns nothing for its models). Protects `models.json`, extensions, native providers.
+- **Real capabilities, not hardcoded**: when registering, uses the real per-model capabilities the scan captured (Mistral `capabilities.*`, OpenRouter `architecture.input_modalities`, Ollama `/api/show` `model_info.*.context_length`). Conservative defaults (`vision: false` unless confirmed) — never falsely advertises a capability.
+- **Ollama is setup-independent**: scrapes `/api/show` live for real `num_ctx`; only registers when Pi doesn't know Ollama (works with or without any specific Ollama extension).
+- **Optional per-provider `modelFilter`**: a regex in `PROVIDER_MAP` to constrain the scanned catalog (generic, user-configurable — not a hardcoded special case).
 
 ### New Configuration Options
 - **`fallback_groups`**: Define cascade chain for automatic fallback
 - **`cost_per_m`**: Provider-based cost estimates for subscription models
 - **`model_metrics`**: Per-model cost overrides
 - **`gdpval_builtin`**: GDPval score overrides for new models
+- **`billing_preference`**: Per-group tier ordering override (`"local_first"`)
+- **`modelFilter`** (PROVIDER_MAP): regex to constrain scanned model ids per provider
 - **`exclude_providers` / `exclude_models`**: Filter specific providers/models (available but not used in default config)
+
+## Additional Documentation
+
+- **AGENT.md**: Quick reference guide for AI agents using this extension
+- **CLAUDE.md**: Specific information about Claude model support and claude-bridge integration
+- **README.md**: Complete documentation with architecture, features, and configuration details
+- **docs/architecture.md**: Detailed architecture documentation
+- **docs/config-override.md**: Guide for custom configuration overrides

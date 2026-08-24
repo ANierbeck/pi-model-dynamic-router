@@ -109,7 +109,7 @@ session_start → load config + cache, async scan, register providers + groups, 
 
 ### `router-config.json`
 
-The actual configuration file contains provider definitions, model groups, and cost tiers. Below is a simplified example based on the real configuration:
+The actual configuration file contains provider definitions and model groups. Below is a simplified example based on the real configuration:
 
 ```json
 {
@@ -318,3 +318,11 @@ Filter out specific providers or models from selection:
 | `set_model_from_group` | Switch to the best model from a group |
 | `resolve_model_group` | Preview what a group resolves to |
 | `update_model_metrics` | Manually override model metrics |
+
+## Additional Documentation
+
+- **AGENT.md**: Quick reference guide for AI agents using this extension
+- **CLAUDE.md**: Specific information about Claude model support and claude-bridge integration
+- **README.md**: Complete documentation with architecture, features, and configuration details
+- **docs/architecture.md**: Detailed architecture documentation
+- **docs/config-override.md**: Guide for custom configuration overrides

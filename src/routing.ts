@@ -16,21 +16,127 @@ import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
-import {
-  CostTier,
-  CostTierConfig,
-  getModelCostTier,
-  modelFitsCostTier,
-  getCostTierForCategory,
-  DEFAULT_COST_TIERS,
-  getCostTiersFromConfig
-} from './cost-tiers.ts';
+import { hasBudget } from './budget.ts';
 import { getGroupForCategory } from './content-classifier.ts';
 import { BudgetTracker, initBudgetTracker } from './budget-tracker.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
+
+// ── Shared group filters (A1 consolidation) ─────────────────────────────────
+
+/**
+ * Resolves the billing mode for a provider ref's provider: the per-provider
+ * override in `cfg.providers[..].billing` wins over the PROVIDER_MAP default,
+ * falling back to 'pay_per_token' when neither is known.
+ */
+function billingFor(cfg: Config, prov: string): string {
+  return cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
+}
+
+/**
+ * Applies the method-independent group filters to a candidate list.
+ *
+ * This is the shared filter pipeline (A1) used by all three group-candidate
+ * paths — {@link Router.resolveGroup} (live selection),
+ * {@link Router.getTopModels} (display), and `generateDynamicConfig` in
+ * index.ts (persisted config). It encodes ONLY the filters that must behave
+ * identically across the three paths; method-specific sorting, health
+ * demotion, budget filtering, rate-limit splitting, static-model
+ * preservation, and persistence stay in their respective callers.
+ *
+ * Filter order (matters for correctness, not just performance):
+ *   1. exclude_providers  — drop whole providers (group-level override)
+ *   2. exclude_models     — drop exact model refs (group-level override)
+ *   3. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
+ *   4. max_cost           — total cost cap; unknown-cost handling is
+ *                           billing-aware (see INVARIANTS)
+ *   5. max_cost_per_m     — per-million input-price cap
+ *
+ * INPUT CONTRACT: `refs` are provider/id strings; `g` is the group config;
+ * `cfg` is the live Config (for per-provider billing overrides). `dedup` is
+ * optional and, when true, runs {@link Router.dedupByModelIdentity} after the
+ * filters — the live and display paths dedup, the persist path uses its own
+ * token-signature dedup (which also preserves pinned static models), so it
+ * passes `dedup: false` and handles dedup itself.
+ *
+ * OUTPUT CONTRACT: returns a NEW filtered array (does not mutate input).
+ *
+ * SIDE EFFECTS: none. Pure w.r.t. the in-memory metrics/cost lookups.
+ *
+ * INVARIANTS (must be preserved across all callers):
+ *   - `max_cost` with unknown cost: included iff the provider is NOT
+ *     pay_per_token (subscription/local = sunk cost), excluded for
+ *     pay_per_token (genuinely unknown price). This is the live-path
+ *     semantics; the display path historically diverged (dropped all
+ *     unknowns) which made `/router` show models the live path would never
+ *     pick — the consolidation fixes that divergence.
+ *   - `max_cost_per_m` with unknown price: always excluded (neither path can
+ *     make a good decision without a concrete price).
+ *   - `min_gdpval` uses `lookupGdp(ref) ?? null`; a null score (unscored
+ *     model) fails the quality gate, matching filterByQualityMin.
+ */
+export function applyGroupFilters(
+  refs: string[],
+  g: Group,
+  cfg: Config,
+  dedup: boolean = false,
+  dedupFn?: (refs: string[]) => string[],
+): string[] {
+  let c = refs;
+
+  // 1. exclude_providers
+  if (g.exclude_providers?.length) {
+    c = c.filter(ref => !g.exclude_providers!.includes(ref.split('/')[0]));
+  }
+  // 2. exclude_models
+  if (g.exclude_models?.length) {
+    c = c.filter(ref => !g.exclude_models!.includes(ref));
+  }
+  // 3. min_gdpval / min_gdpval_pct
+  // min_gdpval <= 0 means "no quality gate" — pass everything through (matches
+  // the historical filterByQualityMin guard against min <= 0). A null score
+  // (unscored model) fails a STRICT positive threshold; this is the fix for
+  // the 13/148-style collapse where unscored models leaked past the gate via
+  // the old `return filtered.length ? filtered : refs` fallback.
+  if (g.min_gdpval != null && g.min_gdpval > 0) {
+    c = c.filter(ref => { const v = lookupGdp(ref); return v !== null && v >= g.min_gdpval!; });
+  } else if (g.min_gdpval_pct != null && g.min_gdpval_pct > 0) {
+    // delegate to the existing quality-pct filter for identical semantics
+    // (compute max once; filterByQualityPct is on the Router instance, so
+    // replicate the simple percentile gate here for the module function)
+    const all = refs.map(r => lookupGdp(r)).filter((v): v is number => v !== null);
+    if (all.length) {
+      const max = Math.max(...all);
+      const thresh = (g.min_gdpval_pct! / 100) * max;
+      c = c.filter(ref => { const v = lookupGdp(ref); return v !== null && v >= thresh; });
+    }
+  }
+  // 4. max_cost (billing-aware unknown handling)
+  if (g.max_cost !== undefined) {
+    c = c.filter(ref => {
+      const cost = effCost(ref);
+      if (cost === 'unknown') {
+        // subscription/local = sunk cost → keep; pay_per_token → drop
+        return billingFor(cfg, ref.split('/')[0]) !== 'pay_per_token';
+      }
+      return cost <= g.max_cost!;
+    });
+  }
+  // 5. max_cost_per_m (unknown price → always drop)
+  if (g.max_cost_per_m !== undefined) {
+    c = c.filter(ref => {
+      const price = lookupPrice(ref);
+      if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
+      return price.input <= g.max_cost_per_m!;
+    });
+  }
+
+  // Optional dedup (live + display paths); persist path handles its own.
+  if (dedup && dedupFn) c = dedupFn(c);
+  return c;
+}
 
 // ── Routing Logic ─────────────────────────────────────────────────────────
 
@@ -149,47 +255,13 @@ export class Router {
    * Uses cached budget info for synchronous operation
    */
   filterByBudget(refs: string[]): string[] {
+    // Delegate to the single source of truth in budget.ts.
+    // Previously this duplicated hasModelBudget (index.ts) with identical logic;
+    // both now go through hasBudget() so the rule lives in one place.
     if (!this.budgetTracker || !this.cache.budget_cache) return refs;
-    
-    const result: string[] = [];
-    for (const ref of refs) {
-      const prov = ref.split('/')[0];
-      
-      // Local providers always have budget
-      if (PROVIDER_MAP[prov]?.local) {
-        result.push(ref);
-        continue;
-      }
-      
-      // Pay-per-token providers always have budget (limited by money, not tokens)
-      const billing = this.cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
-      if (billing === 'pay_per_token') {
-        result.push(ref);
-        continue;
-      }
-      
-      // Subscription providers: check cached budget
-      const budget = this.cache.budget_cache[prov];
-      if (!budget) {
-        // If no cached budget info, assume available (conservative)
-        result.push(ref);
-        continue;
-      }
-      
-      // Check if we're still in the same window
-      const now = Date.now();
-      if (budget.window_reset && now >= budget.window_reset) {
-        // Window has reset, but we haven't refreshed yet - assume available
-        result.push(ref);
-        continue;
-      }
-      
-      // Check remaining tokens
-      if ((budget.remaining_tokens ?? 0) > 0) {
-        result.push(ref);
-      }
-    }
-    return result;
+    return refs.filter((ref) =>
+      hasBudget(ref, this.cfg.providers, this.cache.budget_cache)
+    );
   }
   
   /**
@@ -279,11 +351,16 @@ export class Router {
   /**
    * Sorts models by billing preference
    */
-  sortByBillingPreference(refs: string[]): string[] {
+  sortByBillingPreference(refs: string[], billingPreference: 'default' | 'local_first' = 'default'): string[] {
     return [...refs].sort((a, b) => {
       const ta = billingTier(a),
         tb = billingTier(b);
-      if (ta !== tb) return ta - tb;
+      // "local_first" override: rank local models (tier 2) AHEAD of
+      // subscription models (tier 1), but keep truly-free models (tier 0)
+      // on top. payg (tier 3) stays last. Only affects this group's sort.
+      const ra = billingPreference === 'local_first' ? (ta === 2 ? 0.5 : ta) : ta;
+      const rb = billingPreference === 'local_first' ? (tb === 2 ? 0.5 : tb) : tb;
+      if (ra !== rb) return ra - rb;
       // Within subscription tier, prefer lower rate-limit pressure first, then cost
       if (ta === 1) {
         const pa = this.limitSecs(a),
@@ -354,8 +431,36 @@ export class Router {
   // ── Resolution ────────────────────────────────────────────────────────
 
   /**
-   * Resolves a model group
-   * Uses multi-metric scoring for 'best' method
+   * Resolves a model group to a single selected model + ordered candidate list,
+   * with cascading fallback to the group's `fallback_groups`.
+   *
+   * RESPONSIBILITY: the public entry point for "which model should answer this
+   * prompt, for a named group". Handles the dynamic-group short-circuit (the
+   * dynamic group is resolved at prompt time by the classifier hook, not here)
+   * and the fallback cascade — but delegates the per-group candidate
+   * building to {@link resolveGroup}.
+   *
+   * INPUT CONTRACT: `name` must be a key in `cfg.model_groups`. The group's
+   * own `fallback_groups` (if any) are tried in order after the primary group
+   * returns no usable candidates. Cycles in fallback_groups are the caller's
+   * responsibility to prevent (auto-generated lists include every group, so
+   * mutual references are common — resolved by the `visited` set in
+   * driveStream, NOT here).
+   *
+   * OUTPUT CONTRACT: returns `{ selected, candidates }` for the FIRST group
+   * (primary or fallback) that yields a non-empty candidate list, or `null` if
+   * every group in the cascade is empty. `selected` is `candidates[0]`.
+   *
+   * SIDE EFFECTS: none directly. {@link resolveGroup} reads/writes rate-limit
+   * state, budget cache, and model-health state via the shared modules.
+   *
+   * INVARIANTS:
+   *   - `method: 'dynamic'` groups always return `null` here (never selected
+   *     via this path).
+   *   - A non-null result is always the primary group's result if the primary
+   *     group had candidates; fallback groups are only consulted on empty.
+   *
+   * Uses multi-metric scoring for 'best' method (via resolveGroup).
    */
   resolve(name: string): GroupResolution | null {
     const g = this.cfg.model_groups[name];
@@ -368,7 +473,7 @@ export class Router {
     let result = this.resolveGroup(g, name);
     if (result) return result;
 
-    // Kaskadierender Fallback zu fallback_groups
+    // Cascading fallback to fallback_groups
     for (const fbGroupName of g.fallback_groups ?? []) {
       const fbGroup = this.cfg.model_groups[fbGroupName];
       if (!fbGroup) continue;
@@ -379,67 +484,6 @@ export class Router {
     return null;
   }
 
-  /**
-   * Resolves a group with cost tier filter and fallback cascade
-   */
-  private resolveGroupWithCostTier(g: Group, name: string, costTier: CostTier, tierConfig: CostTierConfig, staticFreeModels: string[]): GroupResolution | null {
-    // Get models for this group
-    let c: string[];
-    if (g.models?.length) {
-      c = this.allDiscoveredRefs().filter(ref => g.models!.includes(ref));
-    } else {
-      c = this.allDiscoveredRefs();
-    }
-    
-    // Filter out excluded providers
-    if (g.exclude_providers?.length) {
-      c = c.filter(ref => {
-        const provider = ref.split('/')[0];
-        return !g.exclude_providers!.includes(provider);
-      });
-    }
-    
-    // Filter out excluded models
-    if (g.exclude_models?.length) {
-      c = c.filter(ref => !g.exclude_models!.includes(ref));
-    }
-
-    // Apply the same quality floor that resolve() applies (min_gdpval)
-    if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
-    else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
-
-    // Apply cost tier filter
-    const filtered = c.filter(ref => {
-      return modelFitsCostTier(ref, costTier, tierConfig, staticFreeModels);
-    });
-
-    if (filtered.length === 0) return null;
-
-    // Deduplicate: remove models that are the SAME underlying model
-    const deduped = this.dedupByModelIdentity(filtered);
-
-    // Sort by group method
-    let sorted = [...deduped];
-    if (g.method === 'best') {
-      sorted = this.sortBy(sorted, 'best', name);
-    } else if (g.method === 'tiered') {
-      sorted = this.sortByBillingPreference(sorted);
-    } else if (g.method === 'min_cost') {
-      sorted = this.sortBy(sorted, 'min_cost', name);
-    } else if (g.method === 'min_cost_if_all_priced') {
-      sorted = this.sortBy(sorted, 'min_cost_if_all_priced', name);
-    } else {
-      sorted = this.sortBy(sorted, g.method, name);
-    }
-    // Push models that keep failing below working ones. Purely quality-based
-    // ranking otherwise puts a broken free model back at rank 1 every turn.
-    sorted = demoteUnhealthy(this.cache, sorted);
-    return { selected: sorted[0], candidates: sorted };
-  }
-
-  /**
-   * Resolves a single group (without fallback cascade)
-   */
   /**
    * Deduplicate model refs that refer to the SAME underlying model.
    * Models that match the same GDPval slug (via LLM or slug-matcher) are
@@ -515,6 +559,36 @@ export class Router {
     return 0;
   }
 
+  /**
+   * Builds the ordered candidate list for ONE group, applying the group's raw
+   * cost constraints (max_cost / max_cost_per_m).
+   *
+   * RESPONSIBILITY: the per-group candidate builder used by the live selection
+   * path ({@link resolve}). Builds the ordered candidate list for a single
+   * group, applying exclude rules → min_gdpval floor → budget availability →
+   * dedup by model identity → cost constraints → sort by the group's method.
+   * One of the three group-candidate paths (A1) — the live selection path. The
+   * display path ({@link getTopModels}) and the snapshot path
+   * (generateDynamicConfig) are the other two. (A fourth path,
+   * resolveGroupWithCostTier, was removed with the cost-tier system.)
+   *
+   * INPUT CONTRACT: `g` is a single group config. `g.models`, if present, is an
+   * ALLOW-LIST (only those refs considered), NOT a priority list — this is the
+   * opposite of generateDynamicConfig's use of `g.models`.
+   *
+   * OUTPUT CONTRACT: `{ selected, candidates }` ordered by `g.method`, or
+   * `null` if no model fits. `selected` is `candidates[0]`.
+   *
+   * SIDE EFFECTS: reads rate-limit state, budget cache (via {@link filterBudget}),
+   * and model-health (demoteUnhealthy). Does NOT mutate them.
+   *
+   * INVARIANTS:
+   *   - Deduplicated by model identity (versioned variants win over -latest).
+   *   - `max_cost` with unknown cost: included iff provider is NOT pay_per_token
+   *     (subscription/local = sunk cost), excluded for pay_per_token (genuinely
+   *     unknown price). This handling must be preserved on consolidation.
+   *   - Unhealthy models demoted to the end, after healthy candidates.
+   */
   private resolveGroup(g: Group, name: string): GroupResolution | null {
     // When a group has an explicit models list, use only those models.
     // Fall back to allDiscoveredRefs() for groups without an explicit list.
@@ -525,23 +599,12 @@ export class Router {
     } else {
       c = this.allDiscoveredRefs();
     }
-    
-    // Filter out excluded providers
-    if (g.exclude_providers?.length) {
-      c = c.filter(ref => {
-        const provider = ref.split('/')[0];
-        return !g.exclude_providers!.includes(provider);
-      });
-    }
-    
-    // Filter out excluded models
-    if (g.exclude_models?.length) {
-      c = c.filter(ref => !g.exclude_models!.includes(ref));
-    }
-    
-    // Filter by quality
-    if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
-    else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
+
+    // Shared method-independent filters (A1): exclude_providers, exclude_models,
+    // min_gdpval/pct, max_cost, max_cost_per_m. Unknown-cost handling is
+    // billing-aware (subscription/local kept, payg dropped) — see
+    // applyGroupFilters INVARIANTS.
+    c = applyGroupFilters(c, g, this.cfg, false);
 
     // Filter by budget availability (subscription providers)
     // This ensures we only use models with remaining tokens in their window
@@ -551,34 +614,6 @@ export class Router {
     // (e.g. mistral-medium-2604 and mistral-medium-latest both match
     // slug mistral-medium-3-5 — keep only the first one)
     c = this.dedupByModelIdentity(c);
-
-    // Filter by cost (if configured)
-    if (g.max_cost !== undefined) {
-      c = c.filter(ref => {
-        const cost = effCost(ref);
-        // Models with unknown cost: include them if their provider is NOT
-        // pay_per_token (i.e. subscription or local — effectively free/sunk cost).
-        // This prevents max_cost: 0 from filtering out ALL Mistral models,
-        // which have no OpenRouter price but are covered by subscription.
-        // For pay_per_token providers (openrouter), unknown cost means we
-        // genuinely don't know the price → exclude to be safe.
-        if (cost === 'unknown') {
-          const prov = ref.split('/')[0];
-          const billing = this.cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing ?? 'pay_per_token';
-          return billing !== 'pay_per_token';
-        }
-        return cost <= g.max_cost!;
-      });
-    }
-    if (g.max_cost_per_m !== undefined) {
-      c = c.filter(ref => {
-        const price = lookupPrice(ref);
-        // Exclude models with unknown prices
-        if (!price) return false;
-        if (price.input === 'unknown' || price.output === 'unknown') return false;
-        return price.input <= g.max_cost_per_m!;
-      });
-    }
 
     // Sorting.
     //
@@ -595,7 +630,7 @@ export class Router {
       c = rank(this.sortBy(c, 'best', name));
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
-      c = rank(this.sortByBillingPreference(c));
+      c = rank(this.sortByBillingPreference(c, g.billing_preference));
     } else if (g.method === 'pipeline' && g.pipeline) {
       for (const step of g.pipeline) {
         c = rank(this.sortBy(c, step.method, name));
@@ -615,118 +650,6 @@ export class Router {
 
     if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
-  }
-
-  // ── Cost Tier Methods ──────────────────────────────────────────────────
-
-  /**
-   * Returns the cost tier configuration
-   */
-  getCostTiers(): Record<CostTier, CostTierConfig> {
-    return getCostTiersFromConfig(this.cfg);
-  }
-
-  /**
-   * Resolves a model group with cost tier filter
-   * @param name - Group name
-   * @param costTier - Cost tier (optional, extracted from group)
-   * @returns GroupResolution or null
-   */
-  resolveWithCostTier(name: string, costTier?: CostTier): GroupResolution | null {
-    const g = this.cfg.model_groups[name];
-    if (!g) return null;
-
-    // If a cost tier is specified, filter by it
-    if (costTier) {
-      const tierConfig = this.getCostTiers()[costTier];
-      if (!tierConfig) return null;
-
-      // Extract static free_models from the configuration
-      const staticFreeModels: string[] = [];
-      for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
-        if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
-          for (const model of provConfig.free_models) {
-            const normalized = model.startsWith(`${provId}/`) ? model : `${provId}/${model}`;
-            staticFreeModels.push(normalized);
-          }
-        }
-      }
-
-      // Try primary group with cost tier filter
-      let result = this.resolveGroupWithCostTier(g, name, costTier, tierConfig, staticFreeModels);
-      if (result) return result;
-
-      // Kaskadierender Fallback zu fallback_groups (MIT cost tier filter)
-      for (const fbGroupName of g.fallback_groups ?? []) {
-        const fbGroup = this.cfg.model_groups[fbGroupName];
-        if (!fbGroup) continue;
-        const fbResult = this.resolveGroupWithCostTier(fbGroup, fbGroupName, costTier, tierConfig, staticFreeModels);
-        if (fbResult) return fbResult;
-      }
-
-      console.warn(`[router] No models fit cost tier "${costTier}" for group "${name}" (including fallback groups)`);
-    }
-
-    // No cost tier specified - use regular resolve with fallback cascade
-    return this.resolve(name);
-  }
-
-  /**
-   * Resolves a group based on the classification category
-   * @param category - Classification category
-   * @returns GroupResolution or null
-   */
-  resolveByCategory(category: string): GroupResolution | null {
-    // Get the cost tier and group for this category
-    // NOTE: getCostTierForCategory and getGroupForCategory always return a truthy value
-    // (with fallback values), so the !costTier || !groupName check is always false
-    const costTier = getCostTierForCategory(category as any);
-    const groupName = getGroupForCategory(category as any);
-
-    // Try the specific group with cost tier filter first
-    const groupResolution = this.resolveWithCostTier(groupName, costTier);
-    if (groupResolution) {
-      return groupResolution;
-    }
-
-    // Fallback: Try without cost tier filter
-    const fallbackResolution = this.resolve(groupName);
-    if (fallbackResolution) {
-      return fallbackResolution;
-    }
-
-    // Ultimate Fallback
-    return this.resolve('fallback');
-  }
-
-  /**
-   * Returns the cost tier for a classification category
-   */
-  getCostTierForCategory(category: string): CostTier {
-    return getCostTierForCategory(category as any);
-  }
-
-  /**
-   * Returns the group for a classification category
-   */
-  getGroupForCategory(category: string): string {
-    return getGroupForCategory(category as any);
-  }
-
-  /**
-   * Returns the cost tier of a model
-   */
-  getModelCostTier(modelRef: string): CostTier {
-    const staticFreeModels: string[] = [];
-    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
-      if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
-        for (const model of provConfig.free_models) {
-          const normalized = model.startsWith(`${provId}/`) ? model : `${provId}/${model}`;
-          staticFreeModels.push(normalized);
-        }
-      }
-    }
-    return getModelCostTier(modelRef, staticFreeModels);
   }
 
   // ── Group Detection ─────────────────────────────────────────────────────
@@ -791,7 +714,42 @@ export class Router {
   // ── Top Models ────────────────────────────────────────────────────────────
 
   /**
-   * Returns the top models for a group
+   * Returns the top-N models for a group, for DISPLAY only (the `/router` table).
+   *
+   * RESPONSIBILITY: feed the `/router <group>` and `/router` overview UI.
+   * This is NOT the live selection path — {@link resolveGroup} decides which
+   * model actually answers a prompt. getTopModels exists to show the
+   * user what WOULD be picked, in display order. It is the second of the three
+   * group-candidate paths (A1) — the display path. It historically diverged from the live paths (it
+   * missed dedup, billing_preference, and the unknown-cost handling) — those
+   * were reconciled in earlier sessions, but the structural duplication
+   * remains: it re-implements the filter+sort pipeline instead of calling the
+   * live resolvers. Consolidation pending.
+   *
+   * INPUT CONTRACT: `groupName` is a group key; `n` is the display cap (top N).
+   * `g.models` is IGNORED here (unlike the live paths) — the display always
+   * reflects allDiscoveredRefs() filtered by the group's criteria, never a
+   * pinned allow-list, so newly-discovered models show up immediately even
+   * before generateDynamicConfig rewrites dynamic.json. This is intentional:
+   * the display should be live, the persisted file may be stale.
+   *
+   * OUTPUT CONTRACT: returns `{ ref, limited, rank }[]` capped at `n`, empty
+   * array on unknown group or dynamic group. `rank` is 0-based display rank.
+   * Unlike the live resolvers, this NEVER returns null — an empty group shows
+   * as an empty table.
+   *
+   * SIDE EFFECTS: reads rate-limit state (isLimited → marks `limited: true` in
+   * the result, and splits available/limited into two buckets). Does NOT
+   * mutate any state.
+   *
+   * INVARIANTS:
+   *   - Available (non-limited) models come first, then limited ones, so the
+   *     display highlights what's actually usable right now.
+   *   - Deduplicated by model identity, same as the live paths (this was the
+   *     bug fixed in an earlier session — display showed every alias as a
+   *     separate row even though live selection had deduped).
+   *   - `method: 'dynamic'` groups return `[]` (they're resolved at prompt
+   *     time by the classifier, not enumerable as a static list).
    */
   getTopModels(groupName: string, n: number): ModelWithLimits[] {
     const g = this.cfg.model_groups[groupName];
@@ -802,44 +760,18 @@ export class Router {
     // Groups are filtered by min_gdpval and other criteria, not by explicit model lists.
     // This ensures /router reflects all available models dynamically.
     let c = this.allDiscoveredRefs();
-    
-    // Filter out excluded providers
-    if (g.exclude_providers?.length) {
-      c = c.filter(ref => {
-        const provider = ref.split('/')[0];
-        return !g.exclude_providers!.includes(provider);
-      });
-    }
-    
-    // Filter out excluded models
-    if (g.exclude_models?.length) {
-      c = c.filter(ref => !g.exclude_models!.includes(ref));
-    }
-    
-    if (g.min_gdpval != null) c = this.filterByQualityMin(c, g.min_gdpval);
-    else if (g.min_gdpval_pct != null) c = this.filterByQualityPct(c, g.min_gdpval_pct);
 
-    // Filter by cost constraints (same logic as resolveGroup)
-    if (g.max_cost !== undefined) {
-      c = c.filter(ref => {
-        const cost = effCost(ref);
-        if (cost === 'unknown') return false;
-        return cost <= g.max_cost!;
-      });
-    }
-    if (g.max_cost_per_m !== undefined) {
-      c = c.filter(ref => {
-        const price = lookupPrice(ref);
-        if (!price) return false;
-        if (price.input === 'unknown' || price.output === 'unknown') return false;
-        return price.input <= g.max_cost_per_m!;
-      });
-    }
+    // Shared method-independent filters (A1): same pipeline as resolveGroup and
+    // generateDynamicConfig. The display path previously diverged here — it
+    // dropped ALL unknown-cost models, so `/router` showed models the live path
+    // would keep (subscription/local = sunk cost). Now billing-aware, matching
+    // the live resolver. Dedup runs here (display path dedups, like live).
+    c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r));
 
     if (g.method === 'best') {
       c = this.sortBy(c, 'max_gdpval');
     } else if (g.method === 'tiered') {
-      c = this.sortByBillingPreference(c);
+      c = this.sortByBillingPreference(c, g.billing_preference);
     } else if (g.method === 'pipeline' && g.pipeline) {
       for (let i = 0; i < g.pipeline.length; i++) {
         const step = g.pipeline[i];

@@ -54,7 +54,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       path.join(tmpDir, '.pi', 'router-config.json'),
       JSON.stringify({
         free_models: [],
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
@@ -143,7 +143,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       path.join(tmpDir, '.pi', 'router-config.json'),
       JSON.stringify({
         free_models: [],
-        model_groups: { standard: { fallback_groups: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
