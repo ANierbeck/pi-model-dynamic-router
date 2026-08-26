@@ -1,7 +1,7 @@
 # 🚀 pi-model-dynamic-router - Current Tasks & Roadmap
 
-> **Status**: Updated with cascading fallback, cost tiers, model momentum, and status line integration
-> **Last Updated**: June 2026
+> **Status**: Updated with cascading fallback, group-based cost/quality routing, model momentum, and status line integration
+> **Last Updated**: August 2026
 > **Current State**: ✅ All critical fixes implemented and verified
 
 ## 📌 **IMPORTANT RULES**
@@ -61,7 +61,7 @@ to be listed here._
   - Categories: trivial, simple, code_simple, standard, code_complex, design, planning, exploration, fallback
 
 ### Cost-Efficient Routing (Phase 2)
-- [x] **Cost tier system** - Three tiers (cheap, medium, expensive)
+- [x] ~~**Cost tier system** - Three tiers (cheap, medium, expensive)~~ → REMOVED (redundant with group thresholds, conflicted with local models + fallback cascade)
 - [x] **Multi-tier escalation** - Direct jumps based on task complexity
 - [x] **Task complexity mapping** - Low/Medium/High tiers
 - [x] **Cost optimization** - After expensive model → cheaper models for simple tasks
@@ -78,7 +78,7 @@ to be listed here._
 
 ---
 
-## ✅ **NEW: Recently Completed Tasks (v1.1.8)**
+## ✅ **Recently Completed Tasks (v1.1.8 through v1.4.0)**
 
 ### Provider Registration & Architecture
 - [x] **Skip all known providers** - SKIP_REGISTRATION extended to all built-in and extension providers
@@ -125,7 +125,7 @@ to be listed here._
 - [x] **Smart hints** - Model hint provided to classifier for similar tasks
 
 ### Documentation
-- [x] **README.md updated** - New sections for cascading fallback, cost tiers, model momentum, status line, claude-bridge support, rate limit handling
+- [x] **README.md updated** - New sections for cascading fallback, group-based cost/quality routing, model momentum, status line, claude-bridge support, rate limit handling
 - [x] **PI.md updated** - SKIP_REGISTRATION, fallback_groups, model_metrics, gdpval_builtin, claude-bridge support
 - [x] **SKILL.md updated** - New features listed
 - [x] **TODO.md updated** - This file
@@ -398,4 +398,4 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 
 ---
 
-*Last updated: After v1.1.8 implementation and verification*
+*Last updated: August 2026 (post-cleanup of dead files and doc consistency pass)*

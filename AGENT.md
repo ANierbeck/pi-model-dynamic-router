@@ -8,7 +8,7 @@ This Pi extension dynamically routes model group names to concrete provider/mode
 
 - **Dynamic Routing**: Automatically classifies prompts and selects optimal models
 - **Cascading Fallback**: Automatic recovery from model failures, rate limits, and unavailability
-- **Cost Optimization**: Intelligent model selection based on task complexity
+- **Cost Optimization**: Group-based cost/quality routing (cost-quality tradeoffs encoded in each group's thresholds)
 - **Model Momentum**: Maintains consistency after context compaction
 - **Status Line Integration**: Shows accurate active model in real-time
 

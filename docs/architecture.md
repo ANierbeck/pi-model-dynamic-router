@@ -72,8 +72,7 @@ See `docs/config-override.md` for the layered config system and exclude rules.
 
 ## Testing
 
-- `test/refactor-golden-master.test.ts` — pins behaviour across refactors
+- `test/refactor-golden-master.test.ts` — pins behaviour across refactors (includes the GLM-5-2 end-to-end regression block)
 - `test/metrics-selfheal.test.ts` — self-healing + model-map precedence
 - `test/model-matcher-plausibility.test.ts` — cross-family hallucination guard
 - `test/routing-exclude.test.ts` — exclude rules in live table
-- `test/glm-live-debug.test.ts` — GLM-5-2 end-to-end regression
