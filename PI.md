@@ -290,7 +290,7 @@ Filter out specific providers or models from selection:
 - Rate limit handling with key rotation
 - Cost optimization with billing preferences
 - **Cascading fallback groups** for automatic recovery
-- **Cost tier system** for intelligent model selection
+- **Group-based cost/quality routing** — cost-quality tradeoffs encoded directly in each group's `min_gdpval`/`max_cost` thresholds (no separate tier overlay)
 - **Model momentum** for consistency after compaction
 - **Status line integration** for accurate model display
 - **Claude-bridge support** via extension

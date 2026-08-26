@@ -16,7 +16,7 @@ description: Dynamically routes model group names (strategic/tactical/operationa
 - **Cost Optimization**: Prefers subscription models and applies cost multipliers to rate-limited providers.
 - **Modular Architecture**: Code is organized into reusable modules (types, providers, utils, rate-limit, discovery, metrics, cache, routing, content-classifier).
 
-### New Features (v1.1.8)
+### Features (v1.1.8 onwards)
 
 #### ✨ Cascading Fallback Groups
 - **Automatic recovery** from model failures, rate limits, and unavailability
