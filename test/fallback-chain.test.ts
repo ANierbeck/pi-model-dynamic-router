@@ -1,158 +1,100 @@
 // test/fallback-chain.test.ts
-// Tests that getFallbackGroup respects the configured fallback_groups
-// from router-config.json, instead of using a hardcoded global order.
+// Unit tests for getFallbackGroup() (src/routing.ts) — the cascade the
+// router walks when every candidate in a group fails.
 //
-// Bug: getFallbackGroup() ignored the per-group fallback_groups config
-// and used FALLBACK_GROUP_ORDER. This meant trivial (fallback_groups: [scout,
-// operational, fallback]) never fell back to scout — it fell through to
-// the global order which didn't include scout before operational.
+// Bug this guards against: getFallbackGroup() ignored a group's configured
+// fallback_groups and always used the hardcoded global FALLBACK_GROUP_ORDER.
+// This meant a group configured to skip ahead in the cascade (e.g. trivial
+// → fallback, bypassing scout) would silently fall through to whatever the
+// global order put next instead.
+//
+// getFallbackGroup() used to be a closure-private function inside index.ts's
+// activate(), which forced tests to either spin up the full extension harness
+// (fragile here — dynamic config generation pools candidates across groups by
+// design, defeating any attempt to isolate one group's candidate list) or
+// hand-copy the function into the test file (the previous version of this
+// file, which asserted the copy against itself and would never notice a real
+// regression). Extracting it as a pure exported function makes it directly
+// and reliably testable.
 
 import { describe, it, expect } from 'vitest';
+import { getFallbackGroup, FALLBACK_GROUP_ORDER } from '../src/routing.ts';
+import type { Group } from '../src/types.ts';
 
-// Test the fallback group resolution logic in isolation.
-// This mirrors the getFallbackGroup function in index.ts.
-
-const FALLBACK_GROUP_ORDER = [
-  'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback'
-];
-
-function getFallbackGroup(
-  currentGroup: string,
-  modelGroups: Record<string, { fallback_groups?: string[] }>,
-  visited: ReadonlySet<string> = new Set()
-): string | null {
-  const g = modelGroups[currentGroup];
-  if (g?.fallback_groups?.length) {
-    for (const fb of g.fallback_groups) {
-      if (modelGroups[fb] && !visited.has(fb)) return fb;
-    }
-  }
-  const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
-  if (idx === -1) return null;
-  for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
-    const group = FALLBACK_GROUP_ORDER[i];
-    if (modelGroups[group] && !visited.has(group)) return group;
-  }
-  return null;
-}
-
-// Simulates driveStream's cascade loop: repeatedly resolve the next fallback
-// group, marking each visited group so it can never be revisited, until no
-// unvisited fallback remains. Returns the sequence of groups tried.
-function simulateCascade(
-  startGroup: string,
-  modelGroups: Record<string, { fallback_groups?: string[] }>,
-  maxSteps = 50
-): string[] {
-  const visited = new Set<string>();
-  const sequence: string[] = [];
-  let current: string | null = startGroup;
-  while (current && sequence.length < maxSteps) {
-    sequence.push(current);
-    visited.add(current);
-    current = getFallbackGroup(current, modelGroups, visited);
-  }
-  return sequence;
-}
-
-describe('getFallbackGroup respects configured fallback_groups', () => {
-  const modelGroups = {
-    trivial: { fallback_groups: ['scout', 'operational', 'fallback'] },
-    simple: { fallback_groups: ['trivial', 'scout', 'operational', 'fallback'] },
-    scout: { fallback_groups: ['fallback'] },
-    operational: { fallback_groups: ['scout', 'fallback'] },
-    fallback: {},
-    tactical: { fallback_groups: ['operational', 'scout', 'fallback'] },
-  };
-
-  it('trivial falls back to scout (first configured fallback)', () => {
-    expect(getFallbackGroup('trivial', modelGroups)).toBe('scout');
-  });
-
-  it('simple falls back to trivial (first configured fallback)', () => {
-    expect(getFallbackGroup('simple', modelGroups)).toBe('trivial');
-  });
-
-  it('scout falls back to fallback', () => {
-    expect(getFallbackGroup('scout', modelGroups)).toBe('fallback');
-  });
-
-  it('operational falls back to scout (not fallback, per config)', () => {
-    expect(getFallbackGroup('operational', modelGroups)).toBe('scout');
-  });
-
-  it('tactical falls back to operational', () => {
-    expect(getFallbackGroup('tactical', modelGroups)).toBe('operational');
-  });
-
-  it('group without fallback_groups uses global order', () => {
-    // 'fallback' has no fallback_groups → use global order → null (last in order)
-    expect(getFallbackGroup('fallback', modelGroups)).toBeNull();
-  });
-
-  it('group not in config returns null', () => {
-    expect(getFallbackGroup('nonexistent', modelGroups)).toBeNull();
-  });
-});
-
-describe('getFallbackGroup: trivial → scout cascade', () => {
-  // The actual bug scenario: trivial has max_cost: 0, all free models fail.
-  // It should fall back to scout (which has no max_cost, includes mistral).
-  const modelGroups = {
-    trivial: { fallback_groups: ['scout', 'operational', 'fallback'] },
-    scout: { fallback_groups: ['fallback'] },
-    operational: { fallback_groups: ['scout', 'fallback'] },
-    fallback: {},
-  };
-
-  it('trivial → scout (has mistral models, no max_cost)', () => {
-    const fb = getFallbackGroup('trivial', modelGroups);
-    expect(fb).toBe('scout');
-    // scout should exist in modelGroups
-    expect(modelGroups[fb!]).toBeDefined();
-  });
-});
-
-describe('getFallbackGroup: cycle protection (regression)', () => {
-  // Regression for a stack overflow crash: auto-generated fallback_groups can
-  // form mutual references (tactical's first pick is strategic, strategic's
-  // first pick is tactical). Without tracking visited groups, driveStream's
-  // recursive cascade bounced between the two forever until "Maximum call
-  // stack size exceeded". This mirrors the real dynamic config that triggered
-  // it (dist/router-config.dynamic.json: complex→tactical→strategic→tactical→...).
-  const cyclicGroups = {
-    complex: { fallback_groups: ['tactical', 'strategic', 'standard'] },
-    tactical: { fallback_groups: ['strategic', 'complex', 'standard'] },
-    strategic: { fallback_groups: ['tactical', 'complex', 'standard'] },
-    standard: {},
-  };
-
-  it('a two-group mutual cycle does not recurse forever', () => {
-    const sequence = simulateCascade('complex', cyclicGroups);
-    // Must terminate well before the maxSteps guard would ever trigger,
-    // and must never repeat a group.
-    expect(sequence.length).toBe(new Set(sequence).size);
-    expect(sequence.length).toBeLessThan(10);
-  });
-
-  it('the cascade still reaches standard despite the tactical/strategic cycle', () => {
-    const sequence = simulateCascade('complex', cyclicGroups);
-    expect(sequence).toContain('standard');
-  });
-
-  it('visited groups are never revisited within one cascade', () => {
-    const visited = new Set<string>(['tactical']);
-    // strategic's first configured pick is 'tactical', which is already visited
-    // — it must be skipped in favor of the next entry ('complex').
-    expect(getFallbackGroup('strategic', cyclicGroups, visited)).toBe('complex');
-  });
-
-  it('a self-referencing group does not return itself', () => {
-    const selfRef = {
-      a: { fallback_groups: ['a', 'b'] },
-      b: {},
+describe('getFallbackGroup', () => {
+  it('prefers a configured fallback_groups entry over the global order', () => {
+    // Global order has 'scout' immediately after 'trivial'. A configured
+    // fallback_groups pointing straight to 'fallback' must win instead.
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best', fallback_groups: ['fallback'] },
+      scout: { method: 'best' },
+      fallback: { method: 'best' },
     };
-    const visited = new Set<string>(['a']);
-    expect(getFallbackGroup('a', selfRef, visited)).toBe('b');
+    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('fallback');
+  });
+
+  it('skips configured fallback_groups entries that do not exist in config', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best', fallback_groups: ['nonexistent', 'fallback'] },
+      fallback: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('fallback');
+  });
+
+  it('skips already-visited groups from the configured list', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best', fallback_groups: ['scout', 'fallback'] },
+      scout: { method: 'best' },
+      fallback: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set(['scout']))).toBe('fallback');
+  });
+
+  it('falls through to the global order when fallback_groups is unset', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best' },
+      scout: { method: 'best' },
+      fallback: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+  });
+
+  it('falls through to the global order when fallback_groups is empty', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best', fallback_groups: [] },
+      scout: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+  });
+
+  it('falls through to the global order when every configured entry is unusable', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best', fallback_groups: ['nonexistent'] },
+      scout: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+  });
+
+  it('skips already-visited groups in the global order too', () => {
+    const modelGroups: Record<string, Group> = {
+      trivial: { method: 'best' },
+      scout: { method: 'best' },
+      fallback: { method: 'best' },
+    };
+    expect(getFallbackGroup('trivial', modelGroups, new Set(['scout']))).toBe('fallback');
+  });
+
+  it('returns null when the current group is not in the global order and has no config', () => {
+    const modelGroups: Record<string, Group> = { custom: { method: 'best' } };
+    expect(getFallbackGroup('custom', modelGroups, new Set())).toBeNull();
+  });
+
+  it('returns null when every remaining group in the global order is visited or undefined', () => {
+    const modelGroups: Record<string, Group> = { fallback: { method: 'best' } };
+    expect(getFallbackGroup('fallback', modelGroups, new Set())).toBeNull();
+  });
+
+  it('FALLBACK_GROUP_ORDER ends with fallback (last resort)', () => {
+    expect(FALLBACK_GROUP_ORDER[FALLBACK_GROUP_ORDER.length - 1]).toBe('fallback');
   });
 });

@@ -48,6 +48,35 @@ export function pushStreamError(
 }
 
 /**
+ * Pushes a router-status line ("> [router] Trying next model...") as a
+ * complete text_start/text_delta/text_end triplet, each carrying a `partial`
+ * AssistantMessage with `role: 'assistant'`. Pi's compaction path reads
+ * `partial.role` off in-flight events; a text_delta without a `partial`
+ * (or with a shape that omits `role`) crashes compaction with "Cannot read
+ * properties of undefined (reading 'role')". Emitting all three event types
+ * (not just text_delta) matches what a real streamed text block looks like.
+ */
+export function pushRouterInfo(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
+  const partial: AssistantMessage = {
+    role: 'assistant',
+    content: [{ type: 'text', text }],
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: 'end_turn',
+    timestamp: Date.now(),
+  } as unknown as AssistantMessage;
+  proxy.push({ type: 'text_start', contentIndex, partial } as any);
+  proxy.push({ type: 'text_delta', contentIndex, delta: text, partial } as any);
+  proxy.push({ type: 'text_end', contentIndex, content: text, partial } as any);
+}
+
+/**
  * Whether a tryStream() rejection is a known/expected transient condition
  * (missing provider registration, rate limit, credits/spend exhaustion) —
  * used to suppress noisy logging for errors the router already handles via

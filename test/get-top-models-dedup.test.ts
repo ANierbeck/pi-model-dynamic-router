@@ -83,7 +83,51 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
   it('prefers the versioned variant over -latest when deduping', () => {
     const top = router.getTopModels('tactical', 10);
     const mistralEntry = top.find((m) => m.ref.startsWith('mistral/'));
-    // mistral-medium-2604 (date-versioned) must win over mistral-medium-latest
+    // mistral-medium-2604 (date-versioned, score 3) must win over
+    // mistral-medium-latest (alias, score 1)
     expect(mistralEntry?.ref).toBe('mistral/mistral-medium-2604');
+  });
+
+  it('prefers an explicit version name over -latest', () => {
+    // mistral-medium-3.5 (explicit version, score 2) must win over
+    // mistral-medium-latest (alias, score 1) — the middle rung of the
+    // preference order that the same-provider cases above don't exercise.
+    const explicitVsLatestConfig: Config = {
+      model_groups: { tactical: { method: 'best', min_gdpval: 0 } },
+      model_metrics: {},
+      providers: { mistral: { billing: 'pay_per_token' } },
+      gdpval_builtin: { 'mistral-medium-3-5': 933 },
+    };
+    const explicitVsLatestCache: Cache = {
+      available_models: [
+        { id: 'mistral-medium-latest', provider: 'mistral', cost_per_m: 0 },
+        { id: 'mistral-medium-3.5', provider: 'mistral', cost_per_m: 1.5 },
+      ],
+    };
+    metricsModule.setConfig(explicitVsLatestConfig);
+    metricsModule.setModelMap(
+      {
+        'mistral-medium-latest': 'mistral-medium-3-5',
+        'mistral-medium-3.5': 'mistral-medium-3-5',
+      },
+      []
+    );
+    metricsModule.setCache(explicitVsLatestCache);
+    const explicitRouter = new Router(explicitVsLatestConfig, explicitVsLatestCache, new Map());
+    const result = explicitRouter.getTopModels('tactical', 10);
+    expect(result.map((m) => m.ref)).toEqual(['mistral/mistral-medium-3.5']);
+
+    // Restore the outer suite's shared state for subsequent tests.
+    metricsModule.setConfig(testConfig);
+    metricsModule.setModelMap(
+      {
+        'mistral-medium-2604': 'mistral-medium-3-5',
+        'mistral-medium-3.5': 'mistral-medium-3-5',
+        'mistral-medium-latest': 'mistral-medium-3-5',
+        'mistral-medium': 'mistral-medium-3-5',
+      },
+      []
+    );
+    metricsModule.setCache(cache);
   });
 });

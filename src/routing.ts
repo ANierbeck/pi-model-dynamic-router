@@ -138,6 +138,54 @@ export function applyGroupFilters(
   return c;
 }
 
+// ── Fallback-group cascade ────────────────────────────────────────────────
+
+/**
+ * Global fallback order used when a group has no (or exhausted) configured
+ * `fallback_groups`. Coarsest tiers first, cheapest/local last.
+ */
+export const FALLBACK_GROUP_ORDER: readonly string[] = [
+  'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+];
+
+/**
+ * Resolves the next group to try when every candidate in `currentGroup` has
+ * failed. Prefers the group's configured `fallback_groups` (from
+ * router-config.json) over the global {@link FALLBACK_GROUP_ORDER} — this
+ * allows per-group fallback chains like trivial → [scout, operational,
+ * fallback] instead of always walking the hardcoded order. Falls through to
+ * the global order when `fallback_groups` is unset, empty, or every entry
+ * in it is either unknown or already visited.
+ *
+ * `visited` excludes groups already tried in this cascade. The auto-generated
+ * `fallback_groups` lists are a full ordering over every group, which
+ * routinely produces mutual references (e.g. tactical's first pick is
+ * strategic, and strategic's first pick is tactical). Without skipping
+ * already-visited groups, two groups that both fail recurse into each other
+ * forever and blow the stack.
+ */
+export function getFallbackGroup(
+  currentGroup: string,
+  modelGroups: Record<string, Group>,
+  visited: ReadonlySet<string>,
+): string | null {
+  const g = modelGroups[currentGroup];
+  if (g?.fallback_groups?.length) {
+    for (const fb of g.fallback_groups) {
+      if (modelGroups[fb] && !visited.has(fb)) return fb;
+    }
+    // If no configured fallback groups exist in config, fall through to
+    // the global order below.
+  }
+  const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
+  if (idx === -1) return null;
+  for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
+    const group = FALLBACK_GROUP_ORDER[i];
+    if (modelGroups[group] && !visited.has(group)) return group;
+  }
+  return null;
+}
+
 // ── Routing Logic ─────────────────────────────────────────────────────────
 
 /**

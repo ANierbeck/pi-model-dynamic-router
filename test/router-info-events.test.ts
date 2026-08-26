@@ -1,74 +1,75 @@
 // test/router-info-events.test.ts
-// Tests for the pushRouterInfo helper that creates proper text_delta events.
-// Without contentIndex and partial (a valid AssistantMessage with role),
-// Pi's compaction crashes with: "Cannot read properties of undefined (reading 'role')"
+// Unit tests for pushRouterInfo() (src/stream-driver.ts) — emits the
+// "> [router] ..." status lines (trying next model, cooldown collapse, etc.)
+// onto the proxy stream.
+//
+// Bug this guards against: an earlier version pushed a bare
+// { type: 'text_delta', text } event with no `partial` field. Pi's
+// compaction path reads `partial.role` off in-flight events, so that shape
+// crashed compaction with "Cannot read properties of undefined (reading
+// 'role')". The fix emits a full text_start/text_delta/text_end triplet,
+// each carrying a `partial` AssistantMessage with `role: 'assistant'`.
+//
+// pushRouterInfo() used to be a closure-private function inside index.ts's
+// activate(). The previous version of this file hand-copied its shape into
+// a local `createRouterInfoEvent` helper and asserted that copy against
+// itself — it would keep passing even if the real pushRouterInfo regressed
+// back to the broken format. Extracting it as a pure exported function
+// (alongside pushStreamError, C1) makes it directly testable.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { pushRouterInfo } from '../src/stream-driver.ts';
+import type { AssistantMessageEventStream } from '@earendil-works/pi-ai';
 
-// The event structure that Pi expects (from pi-ai types):
-// { type: 'text_delta', contentIndex: number, delta: string, partial: AssistantMessage }
-// The partial MUST have role: 'assistant' or compaction crashes.
-
-interface ValidTextDelta {
-  type: 'text_delta';
-  contentIndex: number;
-  delta: string;
-  partial: { role: string; [key: string]: unknown };
-}
-
-// Simulate what pushRouterInfo does:
-function createRouterInfoEvent(text: string, contentIndex: number = 0): ValidTextDelta {
+function fakeProxy() {
+  const events: any[] = [];
   return {
-    type: 'text_delta',
-    contentIndex,
-    delta: text,
-    partial: {
-      role: 'assistant',
-      content: [{ type: 'text', text }],
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: 'end_turn',
-      timestamp: Date.now(),
-    },
+    proxy: { push: vi.fn((ev: any) => events.push(ev)) } as unknown as AssistantMessageEventStream,
+    events,
   };
 }
 
-// Simulate the OLD broken format that caused the crash:
-function createBrokenTextDelta(text: string): { type: string; text: string } {
-  return { type: 'text_delta', text };
-}
-
-describe('router info event structure', () => {
-  it('creates events with contentIndex', () => {
-    const event = createRouterInfoEvent('> [router] hello\n');
-    expect(event.contentIndex).toBe(0);
-    expect(event.contentIndex).toBeTypeOf('number');
+describe('pushRouterInfo', () => {
+  it('emits a text_start / text_delta / text_end triplet', () => {
+    const { proxy, events } = fakeProxy();
+    pushRouterInfo(proxy, '> [router] hello\n');
+    expect(events.map((e) => e.type)).toEqual(['text_start', 'text_delta', 'text_end']);
   });
 
-  it('creates events with partial containing role', () => {
-    const event = createRouterInfoEvent('> [router] hello\n');
-    expect(event.partial).toBeDefined();
-    expect(event.partial.role).toBe('assistant');
+  it('every event carries a partial AssistantMessage with role "assistant"', () => {
+    const { proxy, events } = fakeProxy();
+    pushRouterInfo(proxy, '> [router] hello\n');
+    for (const ev of events) {
+      expect(ev.partial).toBeDefined();
+      expect(ev.partial.role).toBe('assistant');
+    }
+    // Accessing partial.role must never throw — this is exactly what
+    // crashed Pi's compaction under the old broken format.
+    expect(() => events.map((e) => e.partial.role)).not.toThrow();
   });
 
-  it('creates events with delta (not text) field', () => {
-    const event = createRouterInfoEvent('> [router] hello\n');
-    expect(event.delta).toBe('> [router] hello\n');
-    // The old broken format used 'text' instead of 'delta'
-    expect(event).not.toHaveProperty('text');
+  it('the text_delta event carries the text on `delta`, not `text`', () => {
+    const { proxy, events } = fakeProxy();
+    pushRouterInfo(proxy, '> [router] hello\n');
+    const delta = events.find((e) => e.type === 'text_delta');
+    expect(delta.delta).toBe('> [router] hello\n');
+    expect(delta).not.toHaveProperty('text');
   });
 
-  it('the old broken format would crash compaction', () => {
-    const broken = createBrokenTextDelta('> [router] hello\n') as any;
-    // The broken format has no 'partial' field, so accessing partial.role
-    // would throw "Cannot read properties of undefined (reading 'role')"
-    expect(broken.partial).toBeUndefined();
-    expect(() => broken.partial.role).toThrow();
+  it('uses contentIndex 0 by default and forwards a custom contentIndex', () => {
+    const { proxy, events } = fakeProxy();
+    pushRouterInfo(proxy, '> [router] hello\n');
+    expect(events.every((e) => e.contentIndex === 0)).toBe(true);
+
+    const { proxy: proxy2, events: events2 } = fakeProxy();
+    pushRouterInfo(proxy2, '> [router] hello\n', 3);
+    expect(events2.every((e) => e.contentIndex === 3)).toBe(true);
   });
 
-  it('the new format does not crash when accessing role', () => {
-    const event = createRouterInfoEvent('> [router] hello\n');
-    expect(() => event.partial.role).not.toThrow();
-    expect(event.partial.role).toBe('assistant');
+  it('text_end carries the full text on `content`', () => {
+    const { proxy, events } = fakeProxy();
+    pushRouterInfo(proxy, '> [router] All models in standard failed, trying scout...\n\n');
+    const end = events.find((e) => e.type === 'text_end');
+    expect(end.content).toBe('> [router] All models in standard failed, trying scout...\n\n');
   });
 });
