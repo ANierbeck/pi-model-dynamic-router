@@ -52,7 +52,7 @@ import {
   collectGroupModels,
   computeFallbackGroups,
 } from './src/dynamic-config.ts';
-import { pushStreamError, isExpectedTransientError } from './src/stream-driver.ts';
+import { pushStreamError, pushRouterInfo, isExpectedTransientError } from './src/stream-driver.ts';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -60,7 +60,7 @@ import {
 } from './src/detection.ts';
 import { hasBudget } from './src/budget.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
-import { Router } from './src/routing.ts';
+import { Router, getFallbackGroup } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { costTracker } from './src/cost-tracker.ts';
@@ -2334,20 +2334,6 @@ let previousTokenCount = 0;
    * Every text_delta MUST be wrapped in text_start/text_end to form a complete
    * content block, otherwise the proxy stream produces malformed messages.
    */
-  function pushRouterInfo(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
-    const partial: AssistantMessage = {
-      role: 'assistant',
-      content: [{ type: 'text', text }],
-      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-      stopReason: 'end_turn',
-      timestamp: Date.now(),
-    } as unknown as AssistantMessage;
-    proxy.push({ type: 'text_start', contentIndex, partial } as any);
-    proxy.push({ type: 'text_delta', contentIndex, delta: text, partial } as any);
-    proxy.push({ type: 'text_end', contentIndex, content: text, partial } as any);
-  }
-
   // Rate-limit error detection for fallback logic.
   // Only treat REAL rate-limit errors as triggering fallback.
   // Rate-limit detection now uses the unified isRateLimitText from
@@ -2359,40 +2345,6 @@ let previousTokenCount = 0;
   // be transient overloads (especially for free models) — triggering a
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
-
-  // Fallback group priority: try lower tiers when rate-limited
-  const FALLBACK_GROUP_ORDER: string[] = [
-    'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback'
-  ];
-
-  // `visited` excludes groups already tried in this cascade. The auto-generated
-  // fallback_groups lists are a full ordering over every group, which routinely
-  // produces mutual references (e.g. tactical's first pick is strategic, and
-  // strategic's first pick is tactical). Without skipping already-visited groups,
-  // two groups that both fail recurse into each other forever and blow the stack.
-  function getFallbackGroup(currentGroup: string, visited: ReadonlySet<string>): string | null {
-    // Prefer the group's configured fallback_groups (from router-config.json).
-    // This allows per-group fallback chains like trivial → [scout, operational, fallback].
-    const g = cfg.model_groups[currentGroup];
-    if (g?.fallback_groups?.length) {
-      for (const fb of g.fallback_groups) {
-        if (cfg.model_groups[fb] && !visited.has(fb)) return fb;
-      }
-      // If no configured fallback groups exist in config, fall through to
-      // the global order below.
-    }
-    // Fallback: use the global FALLBACK_GROUP_ORDER for groups without
-    // explicit fallback_groups, or if none of the configured ones exist.
-    const idx = FALLBACK_GROUP_ORDER.indexOf(currentGroup);
-    if (idx === -1) return null;
-    for (let i = idx + 1; i < FALLBACK_GROUP_ORDER.length; i++) {
-      const group = FALLBACK_GROUP_ORDER[i];
-      if (cfg.model_groups[group] && !visited.has(group)) {
-        return group;
-      }
-    }
-    return null;
-  }
 
   function driveStream(
     proxy: AssistantMessageEventStream,
@@ -2678,7 +2630,7 @@ let previousTokenCount = 0;
       if (allFailed && groupName) {
         const visited = visitedGroups ?? new Set<string>();
         visited.add(groupName);
-        const fallbackGroup = getFallbackGroup(groupName, visited);
+        const fallbackGroup = getFallbackGroup(groupName, cfg.model_groups, visited);
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
