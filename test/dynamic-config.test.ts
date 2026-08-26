@@ -1,651 +1,335 @@
-import { describe, test, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// test/dynamic-config.test.ts
+//
+// Unit tests for src/dynamic-config.ts — the pure computational core of
+// generateDynamicConfig(), extracted in C1 specifically so this logic could
+// be tested without spinning up the full Pi extension. It shipped without
+// direct tests (only exercised indirectly via index.ts integration tests),
+// so this file closes that gap.
+//
+// This file REPLACES a pre-existing test/dynamic-config.test.ts (added by an
+// earlier roborev-findings pass) that never imported src/dynamic-config.ts
+// at all — it mocked metrics.ts and re-implemented the sort/filter logic
+// inline inside each test, asserting the reimplementation against itself.
+// That gave zero regression coverage for the real exported functions below
+// despite superficially looking like tests for "dynamic config generation".
 
-// Mock für die globale Konfiguration und Cache
-import type { Config, Cache } from '../src/types.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  buildStaticFreeModelsLookup,
+  buildModelsWithMetadata,
+  filterModelsForGroup,
+  sortModelsForGroup,
+  collectGroupModels,
+  computeFallbackGroups,
+  type ModelWithMetadata,
+} from '../src/dynamic-config.ts';
+import { setConfig, setCache, setGdpval, setModelMap, setMetrics, calculateScore } from '../src/metrics.ts';
+import type { Config, Group } from '../src/types.ts';
 
-// Mock für die Metrics-Module
-import * as metricsModule from '../src/metrics.js';
-
-// Mock für die Router-Klasse
-import { Router } from '../src/routing.js';
-
-// Mock für die GDPval-Lookup-Funktion
-vi.mock('../src/metrics.js', async () => {
-  const actual = await vi.importActual('../src/metrics.js');
-  return {
-    ...actual,
-    lookupGdp: vi.fn(),
-    effCost: vi.fn(),
-    lookupPrice: vi.fn(),
-    getM: vi.fn(),
-    updateMetrics: vi.fn()
-  };
-});
-
-// Mock für die RateLimitManager-Klasse
-vi.mock('../src/rate-limit.js', () => ({
-  RateLimitManager: class {
-    constructor() {}
-    getLimits() {
-      return new Map();
-    }
-    isLimited() {
-      return false;
-    }
-    limitSecs() {
-      return 0;
-    }
-    recordLimit() {
-      return { rotated: false };
-    }
-    recordOk() {}
-    recordSoftFailure() {}
-    costMux() {
-      return 1;
-    }
-  }
-}));
-
-// Mock für die DiscoveryManager-Klasse
-vi.mock('../src/discovery.js', () => ({
-  DiscoveryManager: class {
-    constructor() {}
-    resolveKeyValue() {
-      return undefined;
-    }
-    getCache() {
-      return {};
-    }
-  }
-}));
-
-// Mock für die CacheManager-Klasse
-vi.mock('../src/cache.js', () => ({
-  CacheManager: class {
-    constructor() {}
-    loadCache() {
-      return {};
-    }
-    saveCache() {}
-  }
-}));
-
-// Test-Daten
-const mockConfig: Config = {
-  providers: {
-    mistral: { billing: 'pay_per_token' },
-    ollama: { billing: 'subscription' },
-    openrouter: { billing: 'pay_per_token', free_models: [] }
-  },
-  model_groups: {
-    trivial: {
-      description: 'Trivial tasks - free models only',
-      method: 'min_cost',
-      max_cost: 0,
-      models: ['qwen/qwen3-4b:free', 'google/gemma-3-4b-it:free']
-    },
-    simple: {
-      description: 'Simple tasks - free models only',
-      method: 'min_cost',
-      max_cost: 0,
-      models: ['qwen/qwen3-4b:free', 'google/gemma-3-12b-it:free']
-    },
-    standard: {
-      description: 'Standard tasks - cost-effective models',
-      method: 'tiered',
-      min_gdpval: 500,
-      max_cost_per_m: 0.5,
-      models: ['openai/gpt-4o-mini', 'anthropic/claude-3-haiku']
-    },
-    complex: {
-      description: 'Complex tasks - GDPval >=600',
-      method: 'best',
-      min_gdpval: 600,
-      models: ['anthropic/claude-3-sonnet', 'openai/gpt-4o']
-    },
-    dynamic: {
-      description: 'Dynamic routing',
-      method: 'dynamic'
-    }
-  },
+const baseCfg: Config = {
+  model_groups: {},
   model_metrics: {},
-  gdpval_builtin: {
-    'devstral': 585,
-    'codestral-latest': 520,
-    'mistral-medium-3-5': 665,
-    'claude-3-sonnet': 680,
-    'claude-3-haiku': 350
-  }
+  providers: {
+    payg: { billing: 'pay_per_token' },
+    sub: { billing: 'subscription' },
+  },
 };
 
-const mockCache: Cache = {
-  available_models: [
-    { id: 'llama3.1', provider: 'ollama', cost_per_m: 0 },
-    { id: 'llama3.1:8b-instruct-q4_K_M', provider: 'ollama', cost_per_m: 0 },
-    { id: 'gemma3', provider: 'ollama', cost_per_m: 0 },
-    { id: 'devstral-2512', provider: 'mistral', cost_per_m: 0 },
-    { id: 'devstral-medium-2507', provider: 'mistral', cost_per_m: 0 },
-    { id: 'codestral-latest', provider: 'mistral', cost_per_m: 0 },
-    { id: 'claude-3-haiku', provider: 'anthropic', cost_per_m: 0.3 },
-    { id: 'claude-3-sonnet', provider: 'anthropic', cost_per_m: 0.6 },
-    { id: 'gpt-4o-mini', provider: 'openai', cost_per_m: 0.15 }
-  ]
-};
+beforeEach(() => {
+  setConfig(baseCfg);
+  setGdpval({});
+  setCache({});
+  setModelMap({}, []);
+  setMetrics({}); // getM() caches per-ref; without this, refs reused across tests return stale metrics
+});
 
-// Helper-Funktion zum Erstellen der Test-Umgebung
-function createTestEnvironment() {
-  const extDir = path.dirname(fileURLToPath(import.meta.url));
-  
-  // Mock für lookupGdp
-  vi.mocked(metricsModule.lookupGdp).mockImplementation((ref: string) => {
-    const gdpvalMap: Record<string, number> = {
-      'ollama/llama3.1': 50,
-      'ollama/llama3.1:8b-instruct-q4_K_M': 50,
-      'ollama/gemma3': 50,
-      'mistral/devstral-2512': 585,
-      'mistral/devstral-medium-2507': 691,
-      'mistral/codestral-latest': 520,
-      'anthropic/claude-3-haiku': 350,
-      'anthropic/claude-3-sonnet': 680,
-      'anthropic/claude-4-sonnet': 720,
-      'openai/gpt-4o-mini': 720
+describe('buildStaticFreeModelsLookup', () => {
+  it('collects and normalizes provider free_models, keyed both prefixed and bare', () => {
+    const cfg: Config = {
+      ...baseCfg,
+      providers: {
+        openrouter: { free_models: ['openrouter/model-a', 'model-b'] },
+      },
     };
-    return gdpvalMap[ref] ?? null;
+    const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(cfg);
+
+    expect(staticFreeModels).toEqual(['openrouter/model-a', 'openrouter/model-b']);
+    expect(staticFreeModelsLookup.has('openrouter/model-a')).toBe(true);
+    expect(staticFreeModelsLookup.has('model-a')).toBe(true);
+    expect(staticFreeModelsLookup.has('openrouter/model-b')).toBe(true);
+    expect(staticFreeModelsLookup.has('model-b')).toBe(true);
   });
 
-  // Mock für effCost
-  vi.mocked(metricsModule.effCost).mockImplementation((ref: string) => {
-    const costMap: Record<string, number> = {
-      'ollama/llama3.1': 0,
-      'ollama/llama3.1:8b-instruct-q4_K_M': 0,
-      'ollama/gemma3': 0,
-      'mistral/devstral-2512': 0.4,
-      'mistral/devstral-medium-2507': 0,
-      'mistral/codestral-latest': 0,
-      'anthropic/claude-3-haiku': 0.3,
-      'anthropic/claude-3-sonnet': 0.6,
-      'openai/gpt-4o-mini': 0.15
-    };
-    return costMap[ref] ?? 0;
-  });
-
-  // Mock für lookupPrice
-  vi.mocked(metricsModule.lookupPrice).mockImplementation((ref: string) => {
-    const priceMap: Record<string, { input: number, output: number }> = {
-      'ollama/llama3.1': { input: 0, output: 0 },
-      'ollama/llama3.1:8b-instruct-q4_K_M': { input: 0, output: 0 },
-      'ollama/gemma3': { input: 0, output: 0 },
-      'mistral/devstral-2512': { input: 400000, output: 400000 },
-      'mistral/devstral-medium-2507': { input: 0, output: 0 },
-      'mistral/codestral-latest': { input: 0, output: 0 },
-      'anthropic/claude-3-haiku': { input: 300000, output: 1300000 },
-      'anthropic/claude-3-sonnet': { input: 600000, output: 2000000 },
-      'openai/gpt-4o-mini': { input: 150000, output: 600000 }
-    };
-    return priceMap[ref] ?? null;
-  });
-
-  // Mock für calculateScore - einfache Implementierung für die meisten Tests
-  // Da calculateScore NICHT gemockt ist, müssen wir es hier manuell mocken
-  // Aber: vi.mocked funktioniert nicht, weil calculateScore nicht im Mock ist
-  // Also verwenden wir eine lokale Mock-Funktion
-  const mockCalculateScore = (ref: string, taskType?: string, config?: any) => {
-    // Einfache Scoring-Logik für die Tests
-    const gdpval = metricsModule.lookupGdp(ref) ?? 0;
-    const normalizedGdpval = Math.min(100, gdpval / 10);
-    
-    // Generation Bonus (Mock-Daten)
-    const generationMap: Record<string, number> = {
-      'anthropic/claude-3-sonnet': 3,
-      'anthropic/claude-3-haiku': 3,
-      'mistral/devstral-2512': 3,
-      'mistral/devstral-medium-2507': 3,
-      'mistral/codestral-latest': 1,
-      'openai/gpt-4o-mini': 4
-    };
-    const generation = generationMap[ref] ?? 0;
-    const generationBonus = Math.max(0, generation - 3) * 5;
-    
-    // Code-Bonus
-    const isCodeModel = ref.includes('codestral') || taskType === 'code';
-    const codeBonus = isCodeModel ? 5 : 0;
-    
-    return Math.min(100, normalizedGdpval + generationBonus + codeBonus);
-  };
-  
-  // Überschreibe metricsModule.calculateScore mit unserer Mock-Funktion
-  metricsModule.calculateScore = mockCalculateScore;
-
-  return { extDir, mockConfig, mockCache };
-}
-
-describe('Dynamic Configuration Generation', () => {
-  let extDir: string;
-  let router: Router;
-
-  beforeAll(() => {
-    const { extDir: dir, mockConfig: cfg, mockCache: cache } = createTestEnvironment();
-    extDir = dir;
-    
-    // Erstelle Router mit Mock-Daten
-    const limits = new Map();
-    router = new Router(cfg, cache, limits);
-  });
-
-  afterAll(() => {
-    vi.restoreAllMocks();
-  });
-
-  describe('Group Filtering and Sorting', () => {
-    test('trivial group should include free Ollama models', () => {
-      const allModels = mockCache.available_models!.map(m => `${m.provider}/${m.id}`);
-      const freeModels = allModels.filter(ref => {
-        const eff = metricsModule.effCost(ref);
-        return eff <= 0;
-      });
-      
-      expect(freeModels).toContain('ollama/llama3.1');
-      expect(freeModels).toContain('ollama/gemma3');
-      expect(freeModels).not.toContain('anthropic/claude-3-sonnet');
-    });
-
-    test('standard group should filter models with GDPval >= 500', () => {
-      const allModels = mockCache.available_models!.map(m => `${m.provider}/${m.id}`);
-      const highGdpModels = allModels.filter(ref => {
-        const gdpval = metricsModule.lookupGdp(ref);
-        return gdpval !== null && gdpval >= 500;
-      });
-      
-      expect(highGdpModels).toContain('mistral/devstral-2512');
-      expect(highGdpModels).toContain('mistral/devstral-medium-2507');
-      expect(highGdpModels).toContain('anthropic/claude-3-sonnet');
-      expect(highGdpModels).not.toContain('ollama/llama3.1'); // GDP 50
-      expect(highGdpModels).not.toContain('anthropic/claude-3-haiku'); // GDP 350
-    });
-
-    test('complex group should filter models with GDPval >= 600', () => {
-      const allModels = mockCache.available_models!.map(m => `${m.provider}/${m.id}`);
-      const complexModels = allModels.filter(ref => {
-        const gdpval = metricsModule.lookupGdp(ref);
-        return gdpval !== null && gdpval >= 600;
-      });
-      
-      expect(complexModels).toContain('mistral/devstral-medium-2507'); // GDP 691
-      expect(complexModels).toContain('anthropic/claude-3-sonnet'); // GDP 680
-      expect(complexModels).not.toContain('mistral/devstral-2512'); // GDP 585
-    });
-  });
-
-  describe('Model Sorting', () => {
-    test('best method should sort by GDPval descending', () => {
-      const models = [
-        'mistral/devstral-medium-2507', // GDP 691
-        'anthropic/claude-3-sonnet',    // GDP 680
-        'openai/gpt-4o-mini'            // GDP 720
-      ];
-      
-      const sorted = [...models].sort((a, b) => {
-        const gdpB = metricsModule.lookupGdp(b) ?? 0;
-        const gdpA = metricsModule.lookupGdp(a) ?? 0;
-        return gdpB - gdpA;
-      });
-      
-      expect(sorted[0]).toBe('openai/gpt-4o-mini'); // GDP 720
-      expect(sorted[1]).toBe('mistral/devstral-medium-2507'); // GDP 691
-      expect(sorted[2]).toBe('anthropic/claude-3-sonnet'); // GDP 680
-    });
-
-    test('min_cost method should sort by cost ascending, then GDPval descending', () => {
-      const models = [
-        'anthropic/claude-3-sonnet',    // Cost 0.6, GDP 680
-        'openai/gpt-4o-mini',            // Cost 0.15, GDP 720
-        'mistral/devstral-2512'         // Cost 0.4, GDP 585
-      ];
-      
-      const sorted = [...models].sort((a, b) => {
-        const costA = metricsModule.effCost(a);
-        const costB = metricsModule.effCost(b);
-        if (costA !== costB) return costA - costB;
-        const gdpB = metricsModule.lookupGdp(b) ?? 0;
-        const gdpA = metricsModule.lookupGdp(a) ?? 0;
-        return gdpB - gdpA;
-      });
-      
-      expect(sorted[0]).toBe('openai/gpt-4o-mini'); // Cost 0.15
-      expect(sorted[1]).toBe('mistral/devstral-2512'); // Cost 0.4
-      expect(sorted[2]).toBe('anthropic/claude-3-sonnet'); // Cost 0.6
-    });
-
-    test('tiered method should sort by GDPval descending, then cost ascending', () => {
-      const models = [
-        'anthropic/claude-3-sonnet',    // GDP 680, Cost 0.6
-        'mistral/devstral-medium-2507', // GDP 691, Cost 0
-        'openai/gpt-4o-mini'            // GDP 720, Cost 0.15
-      ];
-      
-      const sorted = [...models].sort((a, b) => {
-        const gdpA = metricsModule.lookupGdp(a) ?? 0;
-        const gdpB = metricsModule.lookupGdp(b) ?? 0;
-        if (gdpB !== gdpA) return gdpB - gdpA;
-        return metricsModule.effCost(a) - metricsModule.effCost(b);
-      });
-      
-      expect(sorted[0]).toBe('openai/gpt-4o-mini'); // GDP 720
-      expect(sorted[1]).toBe('mistral/devstral-medium-2507'); // GDP 691
-      expect(sorted[2]).toBe('anthropic/claude-3-sonnet'); // GDP 680
-    });
-  });
-
-  describe('Multi-Metric Scoring with Mocks', () => {
-    // Diese Tests verwenden die gemockte calculateScore-Funktion
-    
-    // Speichere die originale Funktion für die Wiederherstellung
-    const originalCalculateScore = metricsModule.calculateScore;
-    
-    beforeAll(() => {
-      // Setze eine spezielle Mock-Implementierung für calculateScore
-      const mockCalculateScore = (ref: string, taskType?: string, config?: any) => {
-        const gdpval = metricsModule.lookupGdp(ref) ?? 0;
-        const normalizedGdpval = Math.min(100, gdpval / 10);
-        
-        // Generation Bonus (Mock-Daten)
-        const generationMap: Record<string, number> = {
-          'anthropic/claude-3-sonnet': 3,
-          'anthropic/claude-4-sonnet': 4,
-          'mistral/devstral-medium-2507': 3,
-          'mistral/codestral-latest': 1
-        };
-        const generation = generationMap[ref] ?? 0;
-        const generationBonus = Math.max(0, generation - 3) * 5;
-        
-        // Code-Bonus: Nur für Code-Modelle auf Code-Aufgaben (wie die echte Implementierung)
-        const isCodeModelType = ref.includes('codestral');
-        const isCodeTask = taskType === 'code';
-        const codeBonus = (isCodeModelType && isCodeTask) ? 5 : 0;
-        
-        // Recency Bonus (Mock-Daten)
-        const releaseDateMap: Record<string, string> = {
-          'anthropic/claude-3-sonnet': '2024-02-26',
-          'anthropic/claude-4-sonnet': '2025-03-01',
-          'mistral/devstral-medium-2507': '2025-05-01',
-          'mistral/codestral-latest': '2024-11-01'
-        };
-        let recencyBonus = 0;
-        const releaseDate = releaseDateMap[ref];
-        if (releaseDate) {
-          const release = new Date(releaseDate);
-          const monthsOld = (Date.now() - release.getTime()) / (1000 * 60 * 60 * 24 * 30);
-          if (monthsOld < 6) recencyBonus = 5;
-          else if (monthsOld < 12) recencyBonus = 3;
-          else if (monthsOld < 18) recencyBonus = 1;
-        }
-        
-        return Math.min(100, normalizedGdpval + generationBonus + codeBonus + recencyBonus);
-      };
-      
-      metricsModule.calculateScore = mockCalculateScore;
-    });
-
-    afterAll(() => {
-      // Stelle die originale Funktion wieder her
-      metricsModule.calculateScore = originalCalculateScore;
-    });
-
-    test('Claude 4 should score higher than Claude 3 due to generation bonus', () => {
-      const scoreClaude4 = metricsModule.calculateScore('anthropic/claude-4-sonnet', 'standard');
-      const scoreClaude3 = metricsModule.calculateScore('anthropic/claude-3-sonnet', 'standard');
-      
-      expect(scoreClaude4).toBeGreaterThan(scoreClaude3);
-    });
-
-    test('Claude 4 should score higher than devstral-medium-2507 despite similar GDPval', () => {
-      const scoreClaude4 = metricsModule.calculateScore('anthropic/claude-4-sonnet', 'standard');
-      const scoreDevstral = metricsModule.calculateScore('mistral/devstral-medium-2507', 'standard');
-      
-      expect(scoreClaude4).toBeGreaterThan(scoreDevstral);
-    });
-
-    test('Code-type models get +5 bonus for code tasks', () => {
-      // codestral-latest ist ein Code-Modell (type: 'code')
-      // Der Mock gibt +5 Bonus für Code-Modelle auf Code-Aufgaben
-      const scoreGeneral = metricsModule.calculateScore('mistral/codestral-latest', 'standard');
-      const scoreCode = metricsModule.calculateScore('mistral/codestral-latest', 'code');
-      
-      // Exakter Bonus: +5 Punkte
-      expect(scoreCode).toBe(scoreGeneral + 5);
-    });
-
-    test('Recent models should get recency bonus', () => {
-      const scoreDevstral = metricsModule.calculateScore('mistral/devstral-medium-2507', 'standard');
-      const scoreClaude3 = metricsModule.calculateScore('anthropic/claude-3-sonnet', 'standard');
-      
-      expect(scoreDevstral).toBeGreaterThan(scoreClaude3);
-    });
-
-    test('Scoring should be between 0 and 100', () => {
-      const models = [
-        'anthropic/claude-3-sonnet',
-        'anthropic/claude-4-sonnet',
-        'mistral/devstral-medium-2507',
-        'mistral/codestral-latest'
-      ];
-      
-      for (const model of models) {
-        const score = metricsModule.calculateScore(model, 'standard');
-        expect(score).toBeGreaterThanOrEqual(0);
-        expect(score).toBeLessThanOrEqual(100);
-      }
-    });
-  });
-
-  describe('Original Models Fallback', () => {
-    test('should include original models that pass filters', () => {
-      const originalModels = mockConfig.model_groups.standard.models!;
-      const allModels = mockCache.available_models!.map(m => `${m.provider}/${m.id}`);
-      
-      // Prüfe ob die Original-Modelle in den verfügbaren Modellen sind
-      // oder zumindest die Filter passieren würden
-      for (const origModel of originalModels) {
-        const gdpval = metricsModule.lookupGdp(origModel);
-        const cost = metricsModule.effCost(origModel);
-        
-        // standard group: min_gdpval >= 500, max_cost_per_m <= 0.5
-        const passesGdpFilter = gdpval !== null && gdpval >= 500;
-        const price = metricsModule.lookupPrice(origModel);
-        const passesCostFilter = price ? price.input <= 0.5 * 1000000 : true;
-        
-        // Mindestens eine Bedingung sollte erfüllt sein
-        expect(passesGdpFilter || passesCostFilter).toBe(true);
-      }
-    });
-
-    test('should exclude original models that fail filters', () => {
-      // claude-3-haiku hat GDP 350, sollte also nicht in standard (min_gdpval: 500) rein
-      const gdpval = metricsModule.lookupGdp('anthropic/claude-3-haiku');
-      expect(gdpval).toBe(350);
-      expect(gdpval! < 500).toBe(true);
-    });
+  it('returns empty sets when no providers declare free_models', () => {
+    const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(baseCfg);
+    expect(staticFreeModels).toEqual([]);
+    expect(staticFreeModelsLookup.size).toBe(0);
   });
 });
 
-describe('Dynamic Config File Generation', () => {
-  const testExtDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-dynamic-config');
-  const dynamicConfigPath = path.join(testExtDir, 'router-config.dynamic.json');
+describe('buildModelsWithMetadata', () => {
+  it('drops models with no GDPval score unless explicitly statically configured', () => {
+    setGdpval({ 'known-model': 500 });
+    const cfg = { ...baseCfg, model_metrics: { 'payg/known-model': {}, 'payg/unknown-model': {} } };
+    setConfig(cfg);
 
-  beforeAll(() => {
-    // Erstelle Test-Verzeichnis
-    if (!fs.existsSync(testExtDir)) {
-      fs.mkdirSync(testExtDir, { recursive: true });
-    }
+    const result = buildModelsWithMetadata(
+      ['payg/known-model', 'payg/unknown-model'],
+      cfg,
+      new Set(),
+      new Set(['payg/unknown-model']) // hand-curated allow-list keeps it despite gdpval 0
+    );
+
+    const refs = result.map((m) => m.ref);
+    expect(refs).toContain('payg/known-model');
+    expect(refs).toContain('payg/unknown-model'); // kept: static allow-list
   });
 
-  afterAll(() => {
-    // Lösche Test-Dateien
-    if (fs.existsSync(dynamicConfigPath)) {
-      fs.unlinkSync(dynamicConfigPath);
-    }
-    if (fs.existsSync(testExtDir)) {
-      fs.rmdirSync(testExtDir);
-    }
+  it('drops an unscored, non-static model entirely', () => {
+    setGdpval({});
+    const cfg = baseCfg;
+    const result = buildModelsWithMetadata(['payg/unscored'], cfg, new Set(), new Set());
+    expect(result).toEqual([]);
   });
 
-  test('should generate valid JSON configuration', () => {
-    // Simuliere die Generierung einer dynamischen Konfiguration
-    const dynamicConfig = {
-      ...mockConfig,
-      model_groups: {
-        ...mockConfig.model_groups,
-        standard: {
-          ...mockConfig.model_groups.standard,
-          models: [
-            'mistral/devstral-medium-2507',
-            'anthropic/claude-3-sonnet',
-            'openai/gpt-4o-mini'
-          ]
-        }
-      },
-      _dynamic: {
-        generated_at: new Date().toISOString(),
-        source: 'router scan',
-        model_count: 8,
-        base_config: 'router-config.json'
-      }
-    };
-
-    // Speichere die Konfiguration
-    fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
-
-    // Prüfe ob die Datei existiert
-    expect(fs.existsSync(dynamicConfigPath)).toBe(true);
-
-    // Prüfe ob die Datei gültiges JSON ist
-    const content = fs.readFileSync(dynamicConfigPath, 'utf-8');
-    const parsed = JSON.parse(content);
-    
-    expect(parsed).toHaveProperty('_dynamic');
-    expect(parsed._dynamic.source).toBe('router scan');
-    expect(parsed.model_groups.standard.models).toBeDefined();
-    expect(Array.isArray(parsed.model_groups.standard.models)).toBe(true);
+  it('flags isFreeModel via the static free-models lookup', () => {
+    setGdpval({ m: 100 });
+    const result = buildModelsWithMetadata(
+      ['payg/m'],
+      { ...baseCfg, model_metrics: { 'payg/m': { cost_per_m: 5 } } },
+      new Set(['payg/m']),
+      new Set()
+    );
+    expect(result[0].isFreeModel).toBe(true);
   });
 
-  test('should include metadata in dynamic config', () => {
-    const dynamicConfig = {
-      ...mockConfig,
-      _dynamic: {
-        generated_at: new Date().toISOString(),
-        source: 'router scan',
-        model_count: 8,
-        base_config: 'router-config.json'
-      }
-    };
+  it('flags isFreeModel via the :free suffix', () => {
+    setGdpval({ 'm:free': 100 });
+    const result = buildModelsWithMetadata(
+      ['payg/m:free'],
+      { ...baseCfg, model_metrics: { 'payg/m:free': { cost_per_m: 5 } } },
+      new Set(),
+      new Set()
+    );
+    expect(result[0].isFreeModel).toBe(true);
+  });
 
-    fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
+  it('flags isFreeModel via a zero effective cost on a token-based provider', () => {
+    setGdpval({ m: 100 });
+    const cfg = { ...baseCfg, model_metrics: { 'payg/m': { cost_per_m: 0 } } };
+    setConfig(cfg); // effCost()/lookupPrice() read metrics.ts's internal cfg, not the parameter
+    // getM() only trusts a 0 cost_per_m for a pay_per_token provider if the
+    // model is also listed in cache.available_models with cost_per_m: 0 —
+    // otherwise it treats 0 as "not yet priced" and reports 'unknown'.
+    setCache({ available_models: [{ provider: 'payg', id: 'm', cost_per_m: 0 } as any] });
+    const result = buildModelsWithMetadata(['payg/m'], cfg, new Set(), new Set());
+    expect(result[0].isFreeModel).toBe(true);
+    expect(result[0].cost).toBe(0);
+  });
 
-    const content = fs.readFileSync(dynamicConfigPath, 'utf-8');
-    const parsed = JSON.parse(content);
-
-    expect(parsed._dynamic).toHaveProperty('generated_at');
-    expect(parsed._dynamic).toHaveProperty('source');
-    expect(parsed._dynamic).toHaveProperty('model_count');
-    expect(parsed._dynamic).toHaveProperty('base_config');
+  it('does not flag a paid model as free', () => {
+    setGdpval({ m: 100 });
+    const cfg = { ...baseCfg, model_metrics: { 'payg/m': { cost_per_m: 5 } } };
+    setConfig(cfg);
+    const result = buildModelsWithMetadata(['payg/m'], cfg, new Set(), new Set());
+    expect(result[0].isFreeModel).toBe(false);
+    expect(result[0].cost).toBe(5);
   });
 });
 
-describe('Configuration Loading Priority', () => {
-  const testExtDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-config-loading');
-  const staticConfigPath = path.join(testExtDir, 'router-config.json');
-  const dynamicConfigPath = path.join(testExtDir, 'router-config.dynamic.json');
+describe('filterModelsForGroup', () => {
+  const models: ModelWithMetadata[] = [
+    { ref: 'payg/cheap', gdpval: 300, cost: 1, price: { input: 1, output: 1 }, isFreeModel: false },
+    { ref: 'payg/expensive', gdpval: 800, cost: 20, price: { input: 20, output: 20 }, isFreeModel: false },
+    { ref: 'payg/free', gdpval: 400, cost: 0, price: { input: 0, output: 0 }, isFreeModel: true },
+    { ref: 'sub/subscribed', gdpval: 900, cost: 'unknown', price: null, isFreeModel: false },
+  ];
 
-  beforeAll(() => {
-    if (!fs.existsSync(testExtDir)) {
-      fs.mkdirSync(testExtDir, { recursive: true });
-    }
-    
-    // Erstelle statische Konfiguration
-    fs.writeFileSync(staticConfigPath, JSON.stringify(mockConfig, null, 2));
+  it('applies min_gdpval as a floor', () => {
+    const g: Group = { method: 'best', min_gdpval: 500 };
+    const filtered = filterModelsForGroup(models, g, baseCfg);
+    expect(filtered.map((m) => m.ref).sort()).toEqual(['payg/expensive', 'sub/subscribed']);
   });
 
-  afterAll(() => {
-    // Lösche Test-Dateien
-    if (fs.existsSync(staticConfigPath)) {
-      fs.unlinkSync(staticConfigPath);
-    }
-    if (fs.existsSync(dynamicConfigPath)) {
-      fs.unlinkSync(dynamicConfigPath);
-    }
-    if (fs.existsSync(testExtDir)) {
-      fs.rmdirSync(testExtDir);
-    }
+  it('applies max_cost_per_m: keeps free token-based, keeps subscription, drops over-budget paid', () => {
+    const g: Group = { method: 'best', max_cost_per_m: 5 };
+    const filtered = filterModelsForGroup(models, g, baseCfg);
+    const refs = filtered.map((m) => m.ref).sort();
+    expect(refs).toEqual(['payg/cheap', 'payg/free', 'sub/subscribed']);
+    expect(refs).not.toContain('payg/expensive');
   });
 
-  test('should prefer dynamic config over static config when both exist', () => {
-    // Erstelle dynamische Konfiguration
-    const dynamicConfig = {
-      ...mockConfig,
-      model_groups: {
-        ...mockConfig.model_groups,
-        test_group: {
-          description: 'Test group from dynamic config',
-          method: 'best',
-          models: ['test-model']
-        }
-      },
-      _dynamic: {
-        generated_at: new Date().toISOString(),
-        source: 'router scan'
-      }
+  it('applies max_cost=0: only genuinely free token-based models survive', () => {
+    const g: Group = { method: 'best', max_cost: 0 };
+    const filtered = filterModelsForGroup(models, g, baseCfg);
+    expect(filtered.map((m) => m.ref)).toEqual(['payg/free']);
+  });
+
+  it('applies max_cost>0: free passes, paid under budget passes, paid over budget drops', () => {
+    // Unlike max_cost_per_m, max_cost has NO subscription/non-token-based
+    // bypass in the original code (preserved as-is by the C1 extraction) —
+    // a subscription model with an unknown cost is genuinely dropped here,
+    // not passed through. This looks like an inconsistency but is existing,
+    // intentional-by-omission behavior, not something this refactor changed.
+    const g: Group = { method: 'best', max_cost: 2 };
+    const filtered = filterModelsForGroup(models, g, baseCfg);
+    const refs = filtered.map((m) => m.ref).sort();
+    expect(refs).toEqual(['payg/cheap', 'payg/free']);
+  });
+
+  it('drops paid models with unknown price under max_cost_per_m', () => {
+    const unknownPriceModel: ModelWithMetadata = {
+      ref: 'payg/mystery',
+      gdpval: 500,
+      cost: 'unknown',
+      price: { input: 'unknown', output: 'unknown' },
+      isFreeModel: false,
     };
-    
-    fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
+    const g: Group = { method: 'best', max_cost_per_m: 100 };
+    const filtered = filterModelsForGroup([unknownPriceModel], g, baseCfg);
+    expect(filtered).toEqual([]);
+  });
+});
 
-    // Simuliere das Laden der Konfiguration
-    let loadedConfig: any = null;
-    
-    // Versuche zuerst dynamische Konfiguration
-    if (fs.existsSync(dynamicConfigPath)) {
-      const content = fs.readFileSync(dynamicConfigPath, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (parsed._dynamic && parsed.model_groups) {
-        loadedConfig = parsed;
-      }
-    }
-    
-    // Falls keine dynamische, lade statische
-    if (!loadedConfig && fs.existsSync(staticConfigPath)) {
-      loadedConfig = JSON.parse(fs.readFileSync(staticConfigPath, 'utf-8'));
-    }
+describe('sortModelsForGroup', () => {
+  const cfg = baseCfg;
+  const score = (ref: string) => calculateScore(ref, 'standard', cfg);
 
-    expect(loadedConfig).toBeDefined();
-    expect(loadedConfig!._dynamic).toBeDefined();
-    expect(loadedConfig!.model_groups.test_group).toBeDefined();
+  it('method best/max_gdpval: sorts by calculateScore descending', () => {
+    setGdpval({ low: 100, high: 900 });
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/low', gdpval: 100, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/high', gdpval: 900, cost: 1, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'best' }, 'standard', cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/high', 'payg/low']);
   });
 
-  test('should fall back to static config when dynamic config does not exist', () => {
-    // Lösche dynamische Konfiguration
-    if (fs.existsSync(dynamicConfigPath)) {
-      fs.unlinkSync(dynamicConfigPath);
-    }
+  it('method min_cost: free models always rank before paid, then by ascending cost', () => {
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/pricey', gdpval: 500, cost: 10, price: null, isFreeModel: false },
+      { ref: 'payg/free', gdpval: 500, cost: 0, price: null, isFreeModel: true },
+      { ref: 'payg/cheap', gdpval: 500, cost: 2, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, 'standard', cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/free', 'payg/cheap', 'payg/pricey']);
+  });
 
-    // Simuliere das Laden der Konfiguration
-    let loadedConfig: any = null;
-    
-    if (fs.existsSync(dynamicConfigPath)) {
-      const content = fs.readFileSync(dynamicConfigPath, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (parsed._dynamic && parsed.model_groups) {
-        loadedConfig = parsed;
-      }
-    }
-    
-    if (!loadedConfig && fs.existsSync(staticConfigPath)) {
-      loadedConfig = JSON.parse(fs.readFileSync(staticConfigPath, 'utf-8'));
-    }
+  it('method min_cost: unknown-cost models sort after known-cost models', () => {
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/mystery', gdpval: 500, cost: 'unknown', price: null, isFreeModel: false },
+      { ref: 'payg/known', gdpval: 500, cost: 5, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, 'standard', cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/known', 'payg/mystery']);
+  });
 
-    expect(loadedConfig).toBeDefined();
-    expect(loadedConfig!._dynamic).toBeUndefined();
-    expect(loadedConfig!.model_groups.trivial).toBeDefined();
+  it('method tiered: sorts by gdpval first, free-bias second, cost third', () => {
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/low-gdp', gdpval: 100, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/high-gdp-paid', gdpval: 800, cost: 5, price: null, isFreeModel: false },
+      { ref: 'payg/high-gdp-free', gdpval: 800, cost: 0, price: null, isFreeModel: true },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'tiered' }, 'standard', cfg, calculateScore);
+    // Both gdpval-800 entries must precede the gdpval-100 entry, and among
+    // ties the free one wins.
+    expect(sorted[0].ref).toBe('payg/high-gdp-free');
+    expect(sorted[2].ref).toBe('payg/low-gdp');
+  });
+
+  it('unrecognized method leaves the input order unchanged', () => {
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/a', gdpval: 100, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/b', gdpval: 900, cost: 1, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'dynamic' }, 'standard', cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/a', 'payg/b']);
+  });
+});
+
+describe('collectGroupModels', () => {
+  it('includes hand-curated static models that pass the gates, then dedups dynamic candidates by token signature', () => {
+    setGdpval({ 'pinned-model': 600 });
+    const g: Group = { method: 'best', models: ['payg/pinned-model'] };
+    const dynamicCandidate: ModelWithMetadata = {
+      // Date-suffixed variant of the same base model — modelSig() strips the
+      // date suffix, so this collides with "pinned-model"'s signature.
+      ref: 'payg/pinned-model-20250601',
+      gdpval: 600,
+      cost: 1,
+      price: null,
+      isFreeModel: false,
+    };
+    const unrelated: ModelWithMetadata = {
+      ref: 'payg/other-model',
+      gdpval: 500,
+      cost: 1,
+      price: null,
+      isFreeModel: false,
+    };
+    const result = collectGroupModels(g, [], [dynamicCandidate, unrelated], baseCfg, new Set());
+    expect(result).toContain('payg/pinned-model');
+    expect(result).toContain('payg/other-model');
+    // The dynamic duplicate of the already-included static model is dropped.
+    expect(result).not.toContain('payg/pinned-model-20250601');
+  });
+
+  it('drops a static model with no resolvable GDPval score', () => {
+    setGdpval({});
+    const g: Group = { method: 'best', models: ['payg/unscored-static'] };
+    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    expect(result).toEqual([]);
+  });
+
+  it('drops a static model below the group min_gdpval floor', () => {
+    setGdpval({ 'low-score-model': 100 });
+    const g: Group = { method: 'best', models: ['payg/low-score-model'], min_gdpval: 500 };
+    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    expect(result).toEqual([]);
+  });
+
+  it('drops a static paid model over max_cost, but keeps a static free one', () => {
+    setGdpval({ pricey: 600, free: 600 });
+    const cfg = { ...baseCfg, model_metrics: { 'payg/pricey': { cost_per_m: 50 } } };
+    const g: Group = { method: 'best', models: ['payg/pricey', 'payg/free'], max_cost: 0 };
+    const result = collectGroupModels(g, [], [], cfg, new Set(['payg/free']));
+    expect(result).toEqual(['payg/free']);
+  });
+
+  it('returns an empty array when no static or dynamic candidates qualify', () => {
+    const g: Group = { method: 'best' };
+    expect(collectGroupModels(g, [], [], baseCfg, new Set())).toEqual([]);
+  });
+});
+
+describe('computeFallbackGroups', () => {
+  it('orders fallback groups nearest-higher-quality first, then lower, and skips dynamic groups', () => {
+    const groups: Record<string, Group> = {
+      dynamic: { method: 'dynamic' },
+      free: { method: 'tiered', max_cost: 0 },
+      mid: { method: 'tiered', min_gdpval: 400 },
+      top: { method: 'best', min_gdpval: 800 },
+    };
+    computeFallbackGroups(groups);
+
+    // Quality order (ascending): free (0) < mid (400) < top (800).
+    // 'mid' should escalate to 'top' before degrading to 'free'.
+    expect(groups.mid.fallback_groups).toEqual(['top', 'free']);
+    // 'free' (lowest) has nothing below it, only escalation upward.
+    expect(groups.free.fallback_groups).toEqual(['mid', 'top']);
+    // 'top' (highest) has nothing above it, only degradation downward.
+    expect(groups.top.fallback_groups).toEqual(['mid', 'free']);
+    // The dynamic group is never assigned fallback_groups by this function.
+    expect(groups.dynamic.fallback_groups).toBeUndefined();
+  });
+
+  it('a group with no min_gdpval/max_cost defaults to the highest quality tier (750)', () => {
+    const groups: Record<string, Group> = {
+      unconstrained: { method: 'best' },
+      free: { method: 'tiered', max_cost: 0 },
+    };
+    computeFallbackGroups(groups);
+    expect(groups.unconstrained.fallback_groups).toEqual(['free']);
+    expect(groups.free.fallback_groups).toEqual(['unconstrained']);
   });
 });

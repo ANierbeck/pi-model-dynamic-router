@@ -1175,10 +1175,19 @@ let previousTokenCount = 0;
    * --model resolution before session_start fires.
    */
   function registerGroupProviders() {
-    for (const [groupName] of Object.entries(cfg.model_groups)) {
-      const res = resolve(groupName);
+    for (const [groupName, groupCfg] of Object.entries(cfg.model_groups)) {
+      // `method: 'dynamic'` groups never resolve here — resolve() always
+      // returns null for them by design (see routing.ts Router.resolve):
+      // the actual model is picked per-prompt by the classifier hook inside
+      // groupStream, not statically at registration time. Calling resolve()
+      // anyway would just display a misleading "→ none" in Pi's model
+      // picker, so skip it and use a label that reflects what the group
+      // actually does.
+      const isDynamicGroup = groupCfg.method === 'dynamic';
+      const res = isDynamicGroup ? null : resolve(groupName);
       const resolvedRef = res?.selected ?? 'none';
       const resolvedMetrics = res ? getM(resolvedRef) : null;
+      const label = isDynamicGroup ? `${groupName} → auto-classify` : `${groupName} → ${resolvedRef}`;
 
       (pi as any).registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
@@ -1188,16 +1197,16 @@ let previousTokenCount = 0;
         models: [
           {
             id: groupName,
-            name: `${groupName} → ${resolvedRef}`,
+            name: label,
             reasoning: true,
             input: ['text', 'image'] as any,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             contextWindow: resolvedMetrics ? 200_000 : 128_000,
             maxTokens: 64_000,
           },
-          ...(cfg.model_groups[groupName]?.method === 'dynamic' ? [{
+          ...(isDynamicGroup ? [{
             id: `${groupName}:use-static`,
-            name: `${groupName} → ${resolvedRef} (static fallback)`,
+            name: `${groupName} → auto-classify (static fallback allowed)`,
             reasoning: true,
             input: ['text', 'image'] as any,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -2069,7 +2078,17 @@ let previousTokenCount = 0;
               );
               return;
             }
-            routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
+            // resolve() always returns null for method:'dynamic' groups (the
+            // classifier itself IS that group — hinting "use group dynamic" is
+            // a no-op, not an error) and for genuinely unknown group names.
+            // Distinguish the two in the log so a stale/typo'd HINT target
+            // doesn't look identical to "user asked to re-run classification".
+            const hintedGroup = cfg.model_groups[classification.hintTarget];
+            if (hintedGroup?.method === 'dynamic') {
+              routerLog(`[dynamic] HINT targets the dynamic group itself — falling through to normal classification: ${classification.hintTarget}`);
+            } else {
+              routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
+            }
           } else if (classification.hintType === 'model') {
             // Direct model override — resolve short name (e.g. "mistral-medium-3.5") to
             // fully-qualified "provider/model" ref by searching all discovered models.
