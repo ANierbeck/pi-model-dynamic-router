@@ -24,7 +24,11 @@ import type { Config, Cache } from '../src/types.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const EXT_DIR = path.resolve(__dirname, '..', 'dist');
+// model-map.yaml is identical at repo root and in dist/ (dist/ is just a
+// build-output copy). Reading it from the repo root means these tests don't
+// depend on `npm run build` having run first — CI runs tests before the
+// build step, so pointing this at dist/ would ENOENT on a fresh checkout.
+const EXT_DIR = path.resolve(__dirname, '..');
 
 function resetMetrics() {
   metricsModule.setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
@@ -201,10 +205,11 @@ describe('golden master: exclude rules in allDiscoveredRefs', () => {
 });
 
 // ── 5. GLM-5-2 end-to-end regression ──────────────────────────────────────
-// RUN ONLY LOCALLY: TEST_INTEGRATION=true npm test test/refactor-golden-master.test.ts
-// (needs local dist/.cache/scan-cache.json, dist/router-config.json, ~/.pi/agent/router-config.user.json)
+// Self-contained fixture (cache/cfg built inline below) plus the real
+// model-map.yaml — no external files or services needed, so this runs by
+// default like every other describe block in this file.
 
-describe.skipIf(!process.env.TEST_INTEGRATION)('golden master: GLM-5-2 end-to-end regression', () => {
+describe('golden master: GLM-5-2 end-to-end regression', () => {
   // The bug: GLM-5-2 must appear in strategic (≥700) with ~1506, not vanish
   // or get mis-matched to glm-4 (400).
   const cache: Cache = {
@@ -213,7 +218,10 @@ describe.skipIf(!process.env.TEST_INTEGRATION)('golden master: GLM-5-2 end-to-en
       { id: 'zai-glm-5-2', provider: 'mistral', cost_per_m: 0 },
       { id: 'glm-4.6:cloud', provider: 'ollama', cost_per_m: 0 },
     ],
-    gdpval_scores: { 'glm-5-2': 1506, 'glm-4': 400 },
+    // model-map.yaml maps glm-5-2/zai-glm-5-2 to slug 'glm-5-3' (the model
+    // was renamed upstream on AA; glm-5-2 is the deprecated id), so the score
+    // must be keyed under the current slug, not the old model id.
+    gdpval_scores: { 'glm-5-3': 1506, 'glm-4': 400 },
   };
   const cfg: Config = {
     providers: {
@@ -231,9 +239,10 @@ describe.skipIf(!process.env.TEST_INTEGRATION)('golden master: GLM-5-2 end-to-en
   };
 
   beforeEach(() => {
-    // Load the REAL model-map.yaml (has zai-glm-5-2 → glm-5-2 entry).
+    // Load the REAL model-map.yaml (has zai-glm-5-2 → glm-5-3 entry).
     metricsModule.setConfig(cfg);
     metricsModule.setCache(cache);
+    metricsModule.setGdpval(cache.gdpval_scores ?? {});
     metricsModule.loadModelMap(EXT_DIR);
   });
 
@@ -258,10 +267,10 @@ describe.skipIf(!process.env.TEST_INTEGRATION)('golden master: GLM-5-2 end-to-en
     const router = new Router(cfg, cache, new Map());
     const top = router.getTopModels('strategic', 20);
     const refs = top.map((t) => t.ref);
-    // glm-4.6:cloud would resolve to 400, below strategic's 700 threshold.
-    // (If it appears, the GDPval lookup is broken.)
-    // Note: this is only true if glm-4.6:cloud maps to glm-4 (400), which it
-    // does via token-set or model-map.
+    // glm-4.6:cloud resolves to glm-4 (400) via token-set match, below
+    // strategic's 700 threshold. If it appears here, the GDPval lookup for
+    // Ollama's tagged model ids is broken.
+    expect(refs).not.toContain('ollama/glm-4.6:cloud');
   });
 
   it('allDiscoveredRefs includes GLM models', () => {
