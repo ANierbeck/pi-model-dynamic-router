@@ -20,14 +20,8 @@
 
 ## 🔴 **Open Issues (Known Bugs)**
 
-- [ ] **Context-size mismatch on model switch breaks compaction** — when the router switches
-  from a large-context model (e.g. claude-bridge, ~1M tokens) to a smaller-context model
-  (e.g. mistral, ~128k-256k tokens) mid-session — whether via fallback cascade, HINT override,
-  or dynamic classification — the accumulated conversation context can exceed the new model's
-  window. Auto-compaction then fails with "Summarization failed: Unknown error", leaving the
-  session stuck (observed 2026-07-27). Needs: detect the new model's max context before
-  switching, and either force compaction *before* the switch or block switches that would
-  overflow the target model's window outright.
+_None currently known. See Completed Tasks below for the context-size-mismatch bug that used
+to be listed here._
 
 ## ✅ **Completed Tasks**
 
@@ -204,6 +198,38 @@ boilerplate duplicated 6x across `driveStream`/`groupStream`, plus
 (~130 lines) was intentionally left in place — too entangled with mutable
 session state to extract safely in this pass.
 
+### ✅ **"Context-size mismatch on model switch breaks compaction" — was already fixed, not a new fix (verified 2026-08-26)**
+
+This bug (previously listed under Open Issues, observed 2026-07-27) was already
+resolved by v1.3.1 (`0a99930`, 2026-08-14) and the driveStream reliability pass
+(`b3c8d93`, 2026-08-16) — the TODO entry just never got updated. `driveStream`'s
+context-window guard (`index.ts`, near `getModelContextWindow`) pre-emptively
+skips any candidate whose `contextWindow` is smaller than the estimated
+conversation size, for every switch path (fallback cascade, HINT override,
+dynamic classification — they all funnel through the same `driveStream` loop).
+If every candidate in the cascade is skipped for that reason, the router emits
+a synthetic "prompt is too long" error matching the pattern Pi's
+`isContextOverflow()` recognises, so Pi's native compaction fires instead of
+the session hanging. Because the router never calls `pi.setModel()` for group
+routing, Pi's own compaction call re-enters the router's virtual group
+provider too, so the summarization call itself benefits from the same guard.
+Regression tests: `test/context-overflow.test.ts` (3 cases: total skip →
+compaction signal, non-overflow failures still walk the normal cascade,
+a fallback group with enough room is tried before signalling overflow).
+
+### ✅ **`resolve()` "→ none" for dynamic groups — code-quality fix (DONE 2026-08-26)**
+
+`resolve()` returning `null` for `method: 'dynamic'` groups is intentional
+(documented invariant in `src/routing.ts`: the classifier hook resolves those
+per-prompt, not `resolve()`) — not a bug to fix. The actual rough edge was
+cosmetic: `registerGroupProviders()` called `resolve()` anyway for display
+purposes, showing the misleading `"dynamic → none"` in Pi's model picker. Now
+dynamic-method groups skip the call entirely and show `"dynamic →
+auto-classify"` instead. Also improved the log line when a HINT targets the
+dynamic group itself (`HINT: use group dynamic`) — previously logged as
+"group not found" (implying a typo), now explicitly notes it falls through to
+normal classification. Tests: `test/register-group-providers-label.test.ts`.
+
 ### 🔥 **Immediately Actionable** (Quick Wins - 1-2 hours)
 
 #### ✅ D2 — Shared logger (DONE 2026-08-23)
@@ -224,13 +250,33 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 `routerLog` is called and `console.*` is NOT (the D2 goal).
 
 #### Code Quality & Maintenance
-- [ ] **Increase test coverage** - Currently ~80%, target: 90%+
+- [x] **Test coverage floor + CI enforcement (DONE 2026-08-26)** — actual
+  coverage was 67.7% overall (not the ~80% previously claimed here — that
+  number was never measured, just aspirational). Raised to 70.5% by adding
+  real unit tests for `src/dynamic-config.ts` (9.7% → 85.7%; it was extracted
+  in C1 specifically to be unit-testable but shipped without tests) and
+  replacing a pre-existing `test/dynamic-config.test.ts` that never actually
+  imported the module under test (it mocked `metrics.ts` and reimplemented
+  the sort/filter logic inline, asserting against itself — zero real
+  regression coverage despite the misleading name). Added `coverage.thresholds`
+  to `vitest.config.ts` (68% stmts/funcs/lines, 78% branches — a few points
+  below the measured baseline) so `npm run test:coverage` fails the build on
+  a real regression instead of coverage silently drifting down again. Raise
+  these thresholds as coverage improves; don't lower them to unblock a red CI
+  run without fixing the actual regression.
 - [ ] **Improve mock data for unit tests** - More realistic test data
 - [ ] **Add performance tests** - Benchmarks for modules
+- [ ] **Audit other roborev-findings test files for the same tautological-test
+  pattern found in the old `dynamic-config.test.ts`** (mocking the module
+  under test and asserting a reimplementation against itself) — see `b360a93`,
+  `210fd4f`, `222f429` for other commits from that review pass.
 
 #### Build & Deployment
+- [x] **CI pipeline runs tsc + coverage (with enforced thresholds) + build on
+  every push/PR to main (DONE 2026-08-26)** — `.github/workflows/test.yml`
+  now also runs `npm run build` after tests, so a broken esbuild bundle (not
+  caught by `tsc --noEmit` alone) fails CI too.
 - [ ] **Optimize build process** - Reduce `npm run build` time
-- [ ] **Set up CI/CD pipeline** - Automated tests & deployment
 
 ---
 
