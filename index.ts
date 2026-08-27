@@ -2505,9 +2505,9 @@ let previousTokenCount = 0;
             const rlResult = recordStreamFailure(ref, String(result.reason));
             pushError(ref, 'rate_limit_exceeded');
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            const suffix = nextRef ? `, trying ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — Rate-Limit/Spend-Limit erreicht${keyMsg}${suffix}\n\n`);
+            pushRouterInfo(proxy, `> [router] ${ref} — rate limit/spend limit reached${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2546,10 +2546,10 @@ let previousTokenCount = 0;
             pushError(ref, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
             recordSoftFailure(ref);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            const suffix = nextRef ? `, trying ${nextRef} …` : '';
             pushRouterInfo(
               proxy,
-              `> [router] ${ref} — wiederholt sich in einer Schleife (${result.detail ?? 'Loop erkannt'})${suffix}\n\n`
+              `> [router] ${ref} — stuck in a repetition loop (${result.detail ?? 'loop detected'})${suffix}\n\n`
             );
             continue;
           }
@@ -2579,9 +2579,9 @@ let previousTokenCount = 0;
             const rlResult = recordStreamFailure(ref, String(result.reason));
             pushError(ref, `${result.reason} (treated as rate-limit)`);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-            const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+            const suffix = nextRef ? `, trying ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — leere Antwort (vermutlich Rate-Limit)${keyMsg}${suffix}\n\n`);
+            pushRouterInfo(proxy, `> [router] ${ref} — empty response (likely rate limit)${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2591,10 +2591,10 @@ let previousTokenCount = 0;
 
           // Notify the user about the empty response, with next candidate hint if available
           const reason = result.reason === 'empty_timeout'
-            ? 'keine Antwort innerhalb des Timeouts'
-            : 'leere Antwort vom Modell';
+            ? 'no response within timeout'
+            : 'empty response from model';
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-          const suffix = nextRef ? `, versuche ${nextRef} …` : '';
+          const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfo(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
         } catch (streamError) {
           // Hard failure (e.g., "No API provider registered") — treat as soft failure
@@ -2602,8 +2602,8 @@ let previousTokenCount = 0;
           pushError(ref, errorMsg);
           recordSoftFailure(ref);
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
-          const suffix = nextRef ? `, versuche ${nextRef} …` : '';
-          pushRouterInfo(proxy, `> [router] ${ref} — Fehler: ${errorMsg}${suffix}\n\n`);
+          const suffix = nextRef ? `, trying ${nextRef} …` : '';
+          pushRouterInfo(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
         }
       }
 
@@ -2765,7 +2765,7 @@ let previousTokenCount = 0;
                 recordSoftFailure(bestRef);
                 pushRouterInfo(
                   proxy,
-                  `> [router] ${bestRef} — wiederholt sich in einer Schleife (${result.detail ?? 'Loop erkannt'})\n\n`
+                  `> [router] ${bestRef} — stuck in a repetition loop (${result.detail ?? 'loop detected'})\n\n`
                 );
               } else {
                 // Escalate exactly like the main loop: a real rate-limit or an
@@ -2782,8 +2782,8 @@ let previousTokenCount = 0;
                   const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
                   const reasonTxt = String(result.reason);
                   const labelTxt = reasonTxt === 'rate_limit_exceeded'
-                    ? 'Rate-Limit/Spend-Limit erreicht'
-                    : 'leere Antwort (vermutlich Rate-Limit)';
+                    ? 'rate limit/spend limit reached'
+                    : 'empty response (likely rate limit)';
                   pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
                 }
               }

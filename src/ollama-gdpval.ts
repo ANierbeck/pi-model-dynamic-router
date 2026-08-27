@@ -74,6 +74,14 @@ const MODEL_FAMILY_SCORES: Record<string, number> = {
   'aquila2': 410,         // Aquila 2 models
 };
 
+// Substring matching below requires trying more specific family names first
+// (e.g. 'qwen3.8' before 'qwen'), since a shorter generic key like 'qwen' is
+// itself a substring of every versioned variant and would otherwise always
+// win the match, making the specific scores unreachable.
+const FAMILY_ENTRIES_BY_SPECIFICITY: [string, number][] = Object.entries(MODEL_FAMILY_SCORES).sort(
+  ([a], [b]) => b.length - a.length,
+);
+
 /**
  * Size multipliers for models with explicit size indicators.
  * Larger models within the same family get higher scores.
@@ -157,11 +165,14 @@ export function estimateOllamaGdpval(modelName: string): number | null {
   let sizeMultiplier = 1.0;
   let quantPenalty = 1.0;
   
-  // Normalize name: replace common separators with spaces for easier parsing
-  const normalizedName = baseName.replace(/[:\-_]/g, ' ');
+  // Normalize name: replace ':' and '_' separators with spaces. Hyphens are
+  // deliberately kept as-is: several family keys use a hyphen themselves
+  // (e.g. 'mistral-large', 'deepseek-coder'), so stripping it here would make
+  // those substring matches permanently unreachable.
+  const normalizedName = baseName.replace(/[:_]/g, ' ');
   
   // Find model family by checking if any family name appears in the normalized name
-  for (const [family, score] of Object.entries(MODEL_FAMILY_SCORES)) {
+  for (const [family, score] of FAMILY_ENTRIES_BY_SPECIFICITY) {
     if (normalizedName.includes(family)) {
       familyScore = score;
       break;

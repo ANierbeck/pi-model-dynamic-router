@@ -9,6 +9,7 @@
 // code motion, no semantic changes.
 
 import type { AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { isRateLimitText } from './detection.ts';
 
 /**
  * Builds a synthetic assistant error message with zero usage/cost. `errorMessage`
@@ -83,13 +84,5 @@ export function pushRouterInfo(proxy: AssistantMessageEventStream, text: string,
  * its normal fallback path, while still recording the real reason.
  */
 export function isExpectedTransientError(errorMsg: string): boolean {
-  const lower = errorMsg.toLowerCase();
-  return (
-    lower.includes('no api provider registered') ||
-    lower.includes('rate limit') ||
-    lower.includes('usage credits') ||
-    lower.includes('spend limit') ||
-    lower.includes('out of') ||
-    lower.includes('limit hit')
-  );
+  return errorMsg.toLowerCase().includes('no api provider registered') || isRateLimitText(errorMsg);
 }
