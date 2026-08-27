@@ -1,12 +1,27 @@
 // test/config-loader.test.ts
 // Tests for layered config loading + deep merge.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { deepMergeConfig, loadLayeredConfig } from '../src/config-loader.js';
 import type { Config } from '../src/types.js';
+
+// Mocking os.homedir() directly (rather than mutating process.env.HOME)
+// so the global override path resolves under a per-test tmpDir. Node's
+// os.homedir() does not reliably re-read a worker-thread-local
+// process.env.HOME mutation under vitest's threads pool (each worker keeps
+// its own env snapshot, but the native homedir lookup doesn't observe
+// writes to it the way the main thread does) -- mocking the function
+// itself works identically under every pool. ESM module namespaces are not
+// spy-able directly (vi.spyOn throws "Cannot redefine property"), so this
+// goes through vi.mock with importOriginal instead.
+const { homedir: mockHomedir } = vi.hoisted(() => ({ homedir: vi.fn() }));
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, homedir: mockHomedir };
+});
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -98,7 +113,6 @@ describe('loadLayeredConfig', () => {
   let extDir: string;
   let cwdDir: string;
   let globalDir: string;
-  let origHome: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cfg-test-'));
@@ -115,13 +129,11 @@ describe('loadLayeredConfig', () => {
       JSON.stringify(DEFAULT_CONFIG)
     );
 
-    // Fake HOME so the global override path resolves under tmpDir.
-    origHome = process.env.HOME ?? '';
-    process.env.HOME = path.join(tmpDir, 'home');
+    mockHomedir.mockReturnValue(path.join(tmpDir, 'home'));
   });
 
   afterEach(() => {
-    process.env.HOME = origHome;
+    mockHomedir.mockReset();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
