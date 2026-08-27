@@ -130,6 +130,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
       fs.rmSync(tmpDir, { recursive: true, force: true });
       if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      releaseRouterStateLock();
     }
   });
 
