@@ -151,6 +151,12 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     const dynBak = `${dynamicConfigPath}.non-reasoning-bak`;
     const cacheBak = `${scanCachePath}.non-reasoning-bak`;
+    // Held until the finally block restores both shared files — see
+    // router-state-lock.ts for why this must span the whole test. (This test
+    // was missing the acquire despite calling releaseRouterStateLock() in its
+    // finally block — the move-aside/restore below raced unprotected against
+    // every other test file that touches the same two shared paths.)
+    await acquireRouterStateLock();
     const hadDyn = fs.existsSync(dynamicConfigPath);
     const hadCache = fs.existsSync(scanCachePath);
     if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
