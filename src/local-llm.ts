@@ -289,9 +289,9 @@ function collectFreeCloudModels(
 }
 
 /**
- * Resolve a key value that may be a pass-store reference.
- * Mirrors DiscoveryManager.resolveKeyValue() but kept local to avoid a
- * circular import. For direct keys, returns as-is.
+ * Resolve a key value that may be a pass-store / auth.json / CLI-OAuth / env
+ * reference. Delegates to the shared pure `resolveKeyRef` in discovery.ts
+ * (the single source of truth for marker resolution) — no local copy.
  *
  * Returns null when the key is a marker this function cannot resolve. The
  * previous version returned such markers verbatim, so a pass-managed key was
