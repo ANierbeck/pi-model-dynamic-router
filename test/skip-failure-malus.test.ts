@@ -25,11 +25,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireRouterStateLock, releaseRouterStateLock } from './helpers/router-state-lock.ts';
+import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
 const dynamicConfigBackupPath = `${dynamicConfigPath}.skip-malus-test-bak`;
+const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
 
 async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
   const events: AssistantMessageEvent[] = [];
@@ -70,6 +71,8 @@ describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
     // router-state-lock.ts for why this must span the whole test.
     await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+
+    writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
     try {
       vi.resetModules();
       const mod = await import('../index.ts');
@@ -121,6 +124,8 @@ describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeNoOpScanCache(scanCachePath);
+
       if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       releaseRouterStateLock();
     }

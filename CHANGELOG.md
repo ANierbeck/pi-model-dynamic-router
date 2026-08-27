@@ -3,6 +3,27 @@
 ## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling hardening
 
 ### Fixed
+- **Root-caused and fixed the intermittent CI-only "No available models
+  for group 'standard'" flake** across the 9 lock-based driveStream
+  regression tests. The session_start handler fires `scan()` without
+  awaiting it; `scan()` ends by calling `generateDynamicConfig()`, which —
+  when `cacheManager.isScanCacheValid()` is false (no `lastScanTimestamp` on
+  a fresh CI checkout with an empty, moved-aside scan-cache) — writes
+  `router-config.dynamic.json` AND swaps the module-level `cfg`/`router` to
+  a dynamic config built from the scan. That swap races the test's
+  `groupStream()` call: the dynamic config's real `min_gdpval` threshold
+  filters out the test's unscored fake models, so `resolve('standard')`
+  returns null. Root cause was NOT lock contention (the earlier 60s→180s
+  timeout widening was a red herring — the failing tests acquired the lock
+  fine and still failed quickly): it was an intra-test race with the
+  unawaited background `scan()`. Fix: after moving the real scan-cache
+  aside, the affected tests now write a minimal "fresh, already-scraped"
+  scan-cache (`lastScanTimestamp: now`, `gdpval_scraped: true`) via a shared
+  `writeNoOpScanCache()` helper so `scan()` early-returns at every gate
+  and never reaches `generateDynamicConfig()`. Shared
+  `removeNoOpScanCache()` cleans up in afterEach. The earlier 180s lock
+  timeout widening is kept (still a reasonable headroom) but was not the
+  fix.
 - **Consolidated key-reference resolution into one pure function.** The
   same marker-resolution logic (pass store, CLI OAuth, `__auth_json__`,
   `__oauth__`, `__local__`, env var) was duplicated across three files
