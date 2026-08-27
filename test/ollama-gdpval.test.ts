@@ -8,18 +8,25 @@ import {
 describe('estimateOllamaGdpval', () => {
   it('estimates GDPval for qwen3.8:27b-mlx', () => {
     const score = estimateOllamaGdpval('qwen3.8:27b-mlx');
-    expect(score).toBe(630); // 580 base * 1.4 for 27b
+    expect(score).toBe(812); // 580 base * 1.4 for 27b
   });
 
   it('estimates GDPval for qwen3.5:7b', () => {
     const score = estimateOllamaGdpval('qwen3.5:7b');
-    expect(score).toBeGreaterThan(400);
-    expect(score).toBeLessThan(600);
+    expect(score).toBe(550); // 550 base (qwen3.5, not generic qwen=450) * 1.0 for 7b
+  });
+
+  it('does not let a generic family name shadow a more specific one', () => {
+    // 'mistral' is a substring of 'mistral-large', so a naive first-match
+    // scan (in object insertion order) would resolve this to the generic
+    // family (600) instead of the more specific, higher-scoring one (750).
+    const score = estimateOllamaGdpval('mistral-large:70b');
+    expect(score).toBe(1350); // 750 base (mistral-large, not generic mistral=600) * 1.8 for 70b
   });
 
   it('estimates GDPval for gemma4:27b', () => {
     const score = estimateOllamaGdpval('gemma4:27b');
-    expect(score).toBe(560); // 500 base * 1.4 for 27b * 0.85 for no explicit match
+    expect(score).toBe(700); // 500 base * 1.4 for 27b
   });
 
   it('estimates GDPval for llama3.2:14b', () => {
@@ -51,14 +58,14 @@ describe('estimateOllamaGdpval', () => {
     const models = ['qwen3.8:27b-mlx', 'gemma4:27b', 'llama3.2:14b'];
     const estimates = estimateOllamaModelsGdpvalAsSlugs(models);
 
-    expect(estimates['qwen3-8-27b']).toBe(630); // 580 base * 1.4 for 27b
-    expect(estimates['gemma4-27b']).toBe(560); // 500 base * 1.4 for 27b
+    expect(estimates['qwen3-8-27b']).toBe(812); // 580 base * 1.4 for 27b
+    expect(estimates['gemma4-27b']).toBe(700); // 500 base * 1.4 for 27b
     expect(estimates['llama3-2-14b']).toBeGreaterThan(500); // Should be around 500 * 1.2
   });
 
   it('handles models with different naming conventions', () => {
     // Test that the main format works correctly
-    expect(estimateOllamaGdpval('qwen3.8:27b-mlx')).toBe(630); // 580 base * 1.4 for 27b
+    expect(estimateOllamaGdpval('qwen3.8:27b-mlx')).toBe(812); // 580 base * 1.4 for 27b
     // Other formats may not match exactly due to naming conventions
     const score1 = estimateOllamaGdpval('qwen3.8-27b-mlx');
     const score2 = estimateOllamaGdpval('qwen3.8_27b_mlx');
