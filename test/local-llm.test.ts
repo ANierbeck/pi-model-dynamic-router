@@ -12,6 +12,19 @@ import { callLocalLlm, resolveLocalProvider, type LocalLlmDeps } from '../src/lo
 import type { Config, Cache } from '../src/types.js';
 import { PROVIDER_MAP } from '../src/providers.js';
 
+// local-llm.ts now resolves key-reference markers via the shared pure
+// resolveKeyRef + loadAuthFile (imported from discovery.ts). Mock the
+// discovery module so auth.json-sourced keys can be exercised without a
+// real ~/.pi/agent/auth.json on disk.
+vi.mock('../src/discovery.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/discovery.js')>();
+  return {
+    ...actual,
+    loadAuthFile: vi.fn(() => ({})),
+  };
+});
+import { loadAuthFile } from '../src/discovery.js';
+
 const originalFetch = globalThis.fetch;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -288,5 +301,54 @@ describe('callLocalLlm', () => {
     await callLocalLlm('MATCH THESE MODELS', deps);
     const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
     expect(body.messages[0]).toEqual({ role: 'user', content: 'MATCH THESE MODELS' });
+  });
+});
+
+// ── auth.json-sourced keys (roborev job 268 regression) ─────────────────
+// discoverKeys() stores auth.json-sourced keys as __auth_json__:<authKey>
+// reference markers (never raw). local-llm.ts's cloud fallback must resolve
+// these markers via the shared resolver, not silently skip the provider —
+// which is what happened when the marker handling drifted between the
+// three duplicated resolveKeyValue copies.
+describe('callLocalLlm: auth.json-sourced key resolution', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    vi.mocked(loadAuthFile).mockReturnValue({
+      'openrouter-prod': { key: 'resolved-auth-json-secret' },
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+    vi.mocked(loadAuthFile).mockReturnValue({});
+  });
+
+  it('resolves an __auth_json__ marker and uses it as the bearer token for the cloud fallback', async () => {
+    const deps = makeDeps({
+      cfg: {
+        model_groups: {},
+        model_metrics: {},
+        providers: {
+          openrouter: {
+            billing: 'pay_per_token',
+            keys: [{ key: '__auth_json__:openrouter-prod' }],
+            free_models: ['openrouter/google/gemma-3-12b-it:free'],
+          },
+        },
+      } as Config,
+      cache: { available_models: [] } as Cache, // no local provider → cloud fallback fires
+    });
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ollamaChatResponse('cloud-result'),
+    });
+
+    const result = await callLocalLlm('test prompt', deps);
+    expect(result).toBe('cloud-result');
+    // The cloud call MUST have happened (not silently skipped because the
+    // __auth_json__ marker was treated as unresolvable).
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const headers = (globalThis.fetch as any).mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe('Bearer resolved-auth-json-secret');
   });
 });

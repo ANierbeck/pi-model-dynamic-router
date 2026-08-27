@@ -12,6 +12,111 @@ import { PROVIDER_MAP } from './providers.ts';
 // ── Constants ────────────────────────────────────────────────────────────
 
 const AUTH_PATH = path.join(homedir(), '.pi', 'agent', 'auth.json');
+// ── Key-reference resolution (single source of truth) ────────────────────
+//
+// A provider key entry's `.key` field may be either a raw secret (legacy /
+// env-only setups) or a resolvable reference marker produced by
+// discoverKeys():
+//   !pass show <path>            -> pass store lookup
+//   __cli_oauth__:<file>:<field> -> read a field from a CLI OAuth json file
+//   __auth_json__:<authKey>      -> read from ~/.pi/agent/auth.json (this is
+//                                 how auth.json-sourced keys are stored so
+//                                 the raw secret is never serialized into
+//                                 the tracked router-config.json)
+//   __oauth__:<authKey>          -> same as __auth_json__, legacy marker name
+//   __local__                    -> the literal string 'local' (Ollama)
+//   <ENV_VAR_NAME>               -> process.env lookup (only when the string
+//                                 isn't any of the above markers)
+//
+// This used to be duplicated across DiscoveryManager, BudgetTracker, and
+// local-llm.ts with slightly different marker coverage in each -- which is
+// exactly how the __auth_json__ marker (added when auth.json keys stopped
+// being stored raw for security) failed to propagate to local-llm.ts,
+// silently disabling its free-model cloud fallback for auth.json-only
+// providers. Consolidating into one pure function removes that drift.
+
+export interface AuthEntry {
+  key?: string;
+  access?: string;
+}
+export type AuthData = Record<string, AuthEntry> | null;
+
+/**
+ * Reads ~/.pi/agent/auth.json (the single auth source used by the
+ * __auth_json__ / __oauth__ markers). Returns {} on any read/parse error so
+ * callers can treat a missing/unreadable auth file as "no auth entries".
+ */
+export function loadAuthFile(): AuthData {
+  try {
+    return JSON.parse(fs.readFileSync(AUTH_PATH, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Pure key-reference resolver. Returns the resolved secret, or null when
+ * the marker is known but cannot be resolved (missing pass entry, unreadable
+ * file, no matching auth entry). Returning null -- rather than the marker
+ * itself -- lets callers skip the provider instead of issuing a request with
+ * an unusable bearer token that will fail auth and be silently swallowed.
+ *
+ * `auth` is passed in (rather than read here) so callers control when the
+ * file is read and can inject a mock in tests.
+ *
+ * For a non-marker, non-env string (a legacy raw key) the key is returned
+ * as-is so direct keys still work; callers that want "skip on unknown" can
+ * null-check the result.
+ */
+export function resolveKeyRef(key: string, auth: AuthData): string | null {
+  if (key.startsWith('!pass show ')) {
+    try {
+      const out = execSync(key.slice(1) + ' 2>/dev/null', { encoding: 'utf-8' }).trim();
+      return out || null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (key.startsWith('__cli_oauth__:')) {
+    const parts = key.slice('__cli_oauth__:'.length);
+    const lastColon = parts.lastIndexOf(':');
+    const filePath = parts.slice(0, lastColon).replace('~', homedir());
+    const field = parts.slice(lastColon + 1);
+    try {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return data[field] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (key.startsWith('__auth_json__:') || key.startsWith('__oauth__:')) {
+    const authKey = key.startsWith('__auth_json__:')
+      ? key.slice('__auth_json__:'.length)
+      : key.slice('__oauth__:'.length);
+    const entry = auth?.[authKey];
+    if (entry?.key) return entry.key;
+    if (entry?.access) return entry.access;
+    return null;
+  }
+
+  if (key === '__local__') {
+    return 'local';
+  }
+
+  // Environment variable: only when the string isn't one of the markers
+  // above (otherwise an env var named like, say, "__local__" would shadow
+  // the marker -- unlikely, but the marker check must come first).
+  if (process.env[key]) {
+    return process.env[key]!;
+  }
+
+  // Raw key (no marker, no env match) -- return as-is so legacy direct keys
+  // still work.
+  return key;
+}
+
 
 // ── Discovery Manager ─────────────────────────────────────────────────────
 
@@ -35,11 +140,7 @@ export class DiscoveryManager {
    * Loads PI's auth file
    */
   loadAuth(): any {
-    try {
-      return JSON.parse(fs.readFileSync(AUTH_PATH, 'utf-8'));
-    } catch {
-      return {};
-    }
+    return loadAuthFile();
   }
 
   /**
@@ -86,46 +187,17 @@ export class DiscoveryManager {
   }
 
   /**
-   * Resolves a key value (e.g. pass store reference or CLI auth token)
+   * Resolves a key reference (pass store, CLI auth, auth.json marker, env
+   * var) to its actual secret. Delegates to the pure `resolveKeyRef` so
+   * there is exactly one copy of the marker-resolution logic across the
+   * whole codebase (see the module-level comment above).
+   *
+   * Note: unlike the pure version, this returns the unresolved marker
+   * verbatim (never null) when resolution fails, preserving the historical
+   * `string` return type callers depend on.
    */
   resolveKeyValue(key: string): string {
-    if (key.startsWith('!pass show ')) {
-      try {
-        return execSync(key.slice(1) + ' 2>/dev/null', { encoding: 'utf-8' }).trim();
-      } catch {
-        return key;
-      }
-    }
-
-    if (key.startsWith('__cli_oauth__:')) {
-      const parts = key.slice('__cli_oauth__:'.length);
-      const lastColon = parts.lastIndexOf(':');
-      const filePath = parts.slice(0, lastColon);
-      const field = parts.slice(lastColon + 1);
-
-      try {
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        if (data[field]) return data[field];
-      } catch {
-        /* unreadable */
-      }
-    }
-
-    if (key.startsWith('__auth_json__:') || key.startsWith('__oauth__:')) {
-      const authKey = key.startsWith('__auth_json__:')
-        ? key.slice('__auth_json__:'.length)
-        : key.slice('__oauth__:'.length);
-      try {
-        const auth = this.loadAuth();
-        const entry = auth[authKey];
-        if (entry?.key) return entry.key;
-        if (entry?.access) return entry.access;
-      } catch {
-        /* unreadable */
-      }
-    }
-
-    return key;
+    return resolveKeyRef(key, this.loadAuth()) ?? key;
   }
 
   /**

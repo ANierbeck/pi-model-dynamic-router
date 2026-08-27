@@ -3,6 +3,7 @@
 
 import type { Cache, Config } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { resolveKeyRef, loadAuthFile } from './discovery.ts';
 
 /**
  * Budget information for a subscription provider
@@ -240,61 +241,12 @@ export class BudgetTracker {
   }
 
   /**
-   * Resolve a key value (handle pass references, CLI auth, etc.)
+   * Resolve a key value (pass reference, CLI auth, auth.json marker, env
+   * var). Delegates to the shared pure `resolveKeyRef` so there is exactly
+   * one copy of the marker-resolution logic across the codebase.
    */
   private resolveKeyValue(key: string): string | null {
-    if (key.startsWith('!pass show ')) {
-      try {
-        const { execSync } = require('node:child_process');
-        return execSync(key.slice(1) + ' 2>/dev/null', { encoding: 'utf-8' }).trim();
-      } catch {
-        return null;
-      }
-    }
-    
-    if (key.startsWith('__cli_oauth__:')) {
-      // Handle CLI OAuth tokens
-      const parts = key.slice('__cli_oauth__:'.length);
-      const lastColon = parts.lastIndexOf(':');
-      const filePath = parts.slice(0, lastColon).replace('~', require('node:os').homedir());
-      const field = parts.slice(lastColon + 1);
-      
-      try {
-        const { readFileSync } = require('node:fs');
-        const data = JSON.parse(readFileSync(filePath, 'utf-8'));
-        return data[field] ?? null;
-      } catch {
-        return null;
-      }
-    }
-
-    if (key.startsWith('__auth_json__:') || key.startsWith('__oauth__:')) {
-      const authKey = key.startsWith('__auth_json__:')
-        ? key.slice('__auth_json__:'.length)
-        : key.slice('__oauth__:'.length);
-      try {
-        const { readFileSync } = require('node:fs');
-        const path = require('node:path').join(require('node:os').homedir(), '.pi', 'agent', 'auth.json');
-        const auth = JSON.parse(readFileSync(path, 'utf-8'));
-        const entry = auth[authKey];
-        if (entry?.key) return entry.key;
-        if (entry?.access) return entry.access;
-        return null;
-      } catch {
-        return null;
-      }
-    }
-
-    if (key === '__local__') {
-      return 'local';
-    }
-    
-    // Environment variable
-    if (process.env[key]) {
-      return process.env[key]!;
-    }
-    
-    return key;
+    return resolveKeyRef(key, loadAuthFile());
   }
 
   /**
