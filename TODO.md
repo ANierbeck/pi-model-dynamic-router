@@ -52,8 +52,11 @@ to be listed here._
   - Complex tasks (code_complex, design, planning) → tactical group (GDPval >= 600)
 
 - [x] **Cloud fallback for classification**
-  - Fallback chain: Ollama → Free cloud models → Static classification
-  - `classifyPrompt()` supports `allowCloudFallback` option
+  - Fallback chain: Ollama → Free cloud models (opt-in, off by default) → Static classification
+  - `classifyPrompt()` supports `allowCloudFallback` option; `index.ts` only passes `true` when the
+    dynamic group config explicitly sets `classifier_cloud_fallback: true` (data-minimization —
+    sends raw prompt text externally, so it must not be silently on for anyone with a `free_models`
+    provider configured)
   - Uses `CloudClient.callModel()` for cloud classification
 
 - [x] **Static classification as ultimate fallback**
