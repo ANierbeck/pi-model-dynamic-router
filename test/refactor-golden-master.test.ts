@@ -218,10 +218,11 @@ describe('golden master: GLM-5-2 end-to-end regression', () => {
       { id: 'zai-glm-5-2', provider: 'mistral', cost_per_m: 0 },
       { id: 'glm-4.6:cloud', provider: 'ollama', cost_per_m: 0 },
     ],
-    // model-map.yaml maps glm-5-2/zai-glm-5-2 to slug 'glm-5-3' (the model
-    // was renamed upstream on AA; glm-5-2 is the deprecated id), so the score
-    // must be keyed under the current slug, not the old model id.
-    gdpval_scores: { 'glm-5-3': 1506, 'glm-4': 400 },
+    // model-map.yaml maps glm-5-2/zai-glm-5-2 to slug 'glm-5-2' (the model
+    // IS GLM-5.2; AA benchmarks glm-5-2 and glm-5-3 separately — do NOT remap
+    // onto the 5.3 slug, that would falsely assign the 5.3 score), so the
+    // score must be keyed under the glm-5-2 slug.
+    gdpval_scores: { 'glm-5-2': 1506, 'glm-4': 400 },
   };
   const cfg: Config = {
     providers: {
@@ -239,7 +240,7 @@ describe('golden master: GLM-5-2 end-to-end regression', () => {
   };
 
   beforeEach(() => {
-    // Load the REAL model-map.yaml (has zai-glm-5-2 → glm-5-3 entry).
+    // Load the REAL model-map.yaml (has zai-glm-5-2 → glm-5-2 entry).
     metricsModule.setConfig(cfg);
     metricsModule.setCache(cache);
     metricsModule.setGdpval(cache.gdpval_scores ?? {});
@@ -289,9 +290,10 @@ describe('golden master: load() → lookupGdp consistency', () => {
   it('lookupGdp is consistent after full setup (no drift between calls)', () => {
     const cache: Cache = {
       available_models: [{ id: 'glm-5-2', provider: 'mistral', cost_per_m: 0 }],
-      // GLM-5-2 maps to the glm-5-3 slug in model-map.yaml (the current AA
-      // slug; glm-5-2 was deprecated). The score is 1769 (AA-scraped).
-      gdpval_scores: { 'glm-5-3': 1769, 'mistral-medium-3-5': 924 },
+      // GLM-5-2 maps to the glm-5-2 slug in model-map.yaml (the model IS
+      // GLM-5.2; AA benchmarks 5.2 and 5.3 separately). The score is 1769
+      // here (AA-scraped, used as a stable test fixture).
+      gdpval_scores: { 'glm-5-2': 1769, 'mistral-medium-3-5': 924 },
     };
     const cfg: Config = {
       model_groups: {},
@@ -307,6 +309,6 @@ describe('golden master: load() → lookupGdp consistency', () => {
     // Second call (must be identical — no state drift).
     const s2 = metricsModule.lookupGdp('mistral/glm-5-2');
     expect(s1).toBe(s2);
-    expect(s1).toBe(1769); // via glm-5-2 → glm-5-3 map → 1769
+    expect(s1).toBe(1769); // via glm-5-2 → glm-5-2 map → 1769
   });
 });

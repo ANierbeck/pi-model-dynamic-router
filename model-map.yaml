@@ -56,9 +56,12 @@ deepseek-ai/DeepSeek-R1-Distill-Llama-70B: ~
 # ── GLM (Zhipu/Z-AI) ──────────────────────────────────────────────────
 # Mistral-hosted GLM-5.2 ids — explicit mapping as an authoritative override,
 # because the LLM matcher sometimes mis-matches these to the older "glm-4" slug.
-glm-5-2:                                 glm-5-3
-zai-glm-5-2:                              glm-5-3
-glm-5-2-tee:                             glm-5-3
+# These models ARE GLM-5.2, so they map to the glm-5-2 slug (AA benchmarks
+# both glm-5-2 and glm-5-3 separately — do NOT remap 5.2 onto the 5.3 slug,
+# that would falsely assign the higher 5.3 score to a 5.2 model).
+glm-5-2:                                 glm-5-2
+zai-glm-5-2:                              glm-5-2
+glm-5-2-tee:                             glm-5-2
 zai-org/GLM-5-TEE:                        glm-5
 zai-org/GLM-5-Turbo:                      ~                        # Turbo = weaker variant
 zai-org/GLM-4.7-TEE:                      glm-4-7
@@ -204,8 +207,8 @@ mistral/mistral-medium-3-5:              mistral-medium-3-5
 mistral-zai/codestral-latest:             codestral-latest
 mistral-zai/mistral-medium-3.5:          mistral-medium-3-5
 mistral-zai/mistral-medium-3-5:          mistral-medium-3-5
-mistral-zai/zai-glm-5-2:                 glm-5-3
-mistral/zai-glm-5-2:                     glm-5-3
+mistral-zai/zai-glm-5-2:                 glm-5-2
+mistral/zai-glm-5-2:                     glm-5-2
 # OCR / Voxtral / Vibe-CLI / Code models — not benchmarked, exclude from routing
 mistral-ocr-*:                           ~
 voxtral-*:                               ~

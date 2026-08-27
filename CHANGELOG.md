@@ -3,6 +3,16 @@
 ## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling hardening
 
 ### Fixed
+- **GLM-5.2 model-map targets corrected.** The Mistral-hosted
+  `glm-5-2` / `zai-glm-5-2` / `glm-5-2-tee` ids were mapped to the
+  `glm-5-3` GDPval slug — but GLM-5.2 and GLM-5.3 are distinct,
+  separately-benchmarked models on Artificial Analysis (1502 vs. 1763),
+  not a rename. Mapping 5.2 onto the 5.3 slug falsely assigned the higher
+  5.3 score to a 5.2 model. The models ARE GLM-5.2, so they now map to
+  `glm-5-2` (their own slug). Affected tests and docs updated; the
+  `model-map-live` regression guard now asserts the correct mapping and
+  was verified via mutation testing (reintroducing the `glm-5-3` target
+  fails it).
 - **Key-handling consistency for `~/.pi/agent/auth.json` discovery.**
   `discoverKeys()` now stores an `__auth_json__:<authKey>` reference for keys
   sourced from `auth.json`, mirroring the reference-only approach already
@@ -168,8 +178,9 @@
   developer-machine files it never actually read. Un-skipping immediately
   surfaced two real, previously-invisible bugs in the test itself — a
   missing `setGdpval()` call that made every assertion vacuous, and a
-  fixture keyed under a GDPval slug (`glm-5-2`) that had since been
-  renamed (`glm-5-3`) — both fixed. Deleted the non-portable
+  fixture keyed under a GDPval slug (`glm-5-2`) that had been remapped
+  to the wrong slug (`glm-5-3` — a distinct, separately-benchmarked model,
+  not a rename of `glm-5-2`) — both fixed. Deleted the non-portable
   `glm-live-debug.test.ts`, which read personal machine-specific files
   (`~/.pi/agent/router-config.user.json`, local scan cache) and duplicated
   the now-working golden-master coverage.

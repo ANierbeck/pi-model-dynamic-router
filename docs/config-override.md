@@ -100,7 +100,7 @@ Add or override benchmark scores for models not in the scraped table:
 ```json
 {
   "gdpval_builtin": {
-    "glm-5-3": 1506
+    "glm-5-2": 1506
   }
 }
 ```
