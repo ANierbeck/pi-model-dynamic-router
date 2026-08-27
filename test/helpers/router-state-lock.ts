@@ -27,8 +27,24 @@ const STALE_LOCK_MS = 5 * 60_000;
 
 let holdingLock = false;
 
-/** Blocks until the shared-state lock is held by this test. */
-export async function acquireRouterStateLock(timeoutMs = 60_000): Promise<void> {
+/**
+ * Blocks until the shared-state lock is held by this test.
+ *
+ * Default timeout: 9 test files currently serialize on this lock, and their
+ * individual hold times (measured locally: ~1s-10.9s each, dominated by
+ * tests that intentionally wait out real setTimeout-based timeouts) sum to
+ * roughly 55-60s in the worst case where all 9 happen to queue back-to-back
+ * on the same CI runner. GitHub Actions' shared/throttled CPUs regularly run
+ * 2-3x slower than an idle local machine, so a 60s timeout here had no
+ * headroom left and intermittently threw under CI's real-world scheduling
+ * ("No available models for group ...", CI runs 33061592936, retried and
+ * reproduced on a *different* lock-using file each time -- confirming
+ * genuine multi-file contention, not a bug isolated to one file). Widened to
+ * 180s to comfortably absorb that worst case; vitest's testTimeout/
+ * hookTimeout (vitest.config.ts) must stay comfortably above this value or
+ * vitest kills the wait before this timeout ever gets a chance.
+ */
+export async function acquireRouterStateLock(timeoutMs = 180_000): Promise<void> {
   const start = Date.now();
   for (;;) {
     try {
