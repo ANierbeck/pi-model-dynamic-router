@@ -45,16 +45,16 @@ export default defineConfig({
     // Several driveStream regression tests share one physical scan-cache /
     // dynamic-config file and serialize on a cross-process lock (see
     // test/helpers/router-state-lock.ts) to avoid racing each other.
-    // acquireRouterStateLock() itself can legitimately poll for up to 60s
-    // (its own internal timeout) before giving up. Both testTimeout (calls
-    // happen inside some `it()` bodies) and hookTimeout (calls happen inside
-    // some `beforeEach()` hooks) must exceed that 60s by a comfortable
-    // margin, or vitest kills the wait before the lock's own timeout ever
-    // gets a chance -- which previously surfaced as spurious "No available
-    // models for group ..." / hook-timeout / "reading 'mockRestore' of
-    // undefined" failures under real CI lock contention, not a real bug in
-    // the routing logic under test.
-    testTimeout: 90_000,
-    hookTimeout: 90_000,
+    // acquireRouterStateLock() itself can legitimately poll for up to 180s
+    // (its own internal timeout, widened from 60s after CI run 33061592936
+    // reproduced "No available models for group ..." on a different
+    // lock-using file on each retry -- genuine multi-file contention across
+    // the 9 files that share this lock, not a bug isolated to one file).
+    // Both testTimeout (calls happen inside some `it()` bodies) and
+    // hookTimeout (calls happen inside some `beforeEach()` hooks) must
+    // exceed that 180s by a comfortable margin, or vitest kills the wait
+    // before the lock's own timeout ever gets a chance.
+    testTimeout: 200_000,
+    hookTimeout: 200_000,
   },
 });
