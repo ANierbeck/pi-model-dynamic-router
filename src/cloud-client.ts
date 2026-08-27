@@ -16,6 +16,14 @@ export interface CloudModelResponse {
 export interface CloudClientOptions {
   timeoutMs?: number;
   maxRetries?: number;
+  /**
+   * Resolves a stored key entry (which may be a reference marker such as
+   * "__auth_json__:...", "__cli_oauth__:...", "!pass show ...", or a bare
+   * env var name -- see DiscoveryManager.resolveKeyValue) into the actual
+   * secret value. Without this, callModel() would send the raw marker
+   * string as the bearer token instead of the real key.
+   */
+  resolveKey?: (key: string) => string;
 }
 
 /**
@@ -31,6 +39,7 @@ export class CloudClient {
     this.options = {
       timeoutMs: 30000,
       maxRetries: 3,
+      resolveKey: (k: string) => k,
       ...options,
     };
   }
@@ -55,9 +64,13 @@ export class CloudClient {
     }
 
     // Get API key from configuration
-    const apiKey = this.getApiKey(providerId);
-    if (!apiKey) {
+    const rawKey = this.getApiKey(providerId);
+    if (!rawKey) {
       throw new Error(`No API key for provider: ${providerId}`);
+    }
+    const apiKey = this.options.resolveKey(rawKey);
+    if (!apiKey || apiKey.startsWith('__') || apiKey.startsWith('!')) {
+      throw new Error(`Could not resolve API key for provider: ${providerId}`);
     }
 
     // Provider-specific calls

@@ -44,6 +44,12 @@ this module asks a local LLM to match it to a known GDPval slug.
   Ollama). `gemma2:2b` is ranked last (too weak for matching).
 - `callLocalLlm(prompt, deps)` — calls the local provider via OpenAI
   `/chat/completions`, falls back to free OpenRouter cloud models on failure.
+  Used only for GDPval model-slug matching (matching a discovered model ID
+  against known leaderboard slugs) -- the prompt sent here is built from
+  model IDs/labels, never user conversation content. Unconditional (not
+  gated by an opt-in flag) because no user data is involved; contrast with
+  the content-classifier's `classifier_cloud_fallback`, which does carry raw
+  user prompt text and is opt-in for that reason.
 
 ### `src/exclude.ts` — Personalized support/no-support list
 

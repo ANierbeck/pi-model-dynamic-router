@@ -446,7 +446,9 @@ export async function classifyPrompt(
       const cloudModels = discovery.getFreeModels();
       
       if (cloudModels.length > 0) {
-        const cloudClient = new CloudClient(cfg);
+        const cloudClient = new CloudClient(cfg, {
+          resolveKey: (key) => discovery.resolveKeyValue(key),
+        });
         
         for (const modelRef of cloudModels) {
           try {

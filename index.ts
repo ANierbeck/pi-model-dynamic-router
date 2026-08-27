@@ -2029,7 +2029,11 @@ let previousTokenCount = 0;
         const stripOllama = (ref: string) => ref.replace(/^ollama\//, '');
         const classifyOpts: Parameters<typeof classifyPrompt>[1] = {
           allowStaticFallback: useStatic,
-          allowCloudFallback: true,
+          // Data minimization: opt-in only, see classifier_cloud_fallback doc
+          // comment in types.ts. Off by default so a provider's free_models
+          // (configured for actual answering fallback) isn't silently reused
+          // to also receive raw prompt content for classification.
+          allowCloudFallback: dynamicGroupCfg?.classifier_cloud_fallback === true,
           cfg,
           cache,
           context: {

@@ -111,6 +111,20 @@ export class DiscoveryManager {
       }
     }
 
+    if (key.startsWith('__auth_json__:') || key.startsWith('__oauth__:')) {
+      const authKey = key.startsWith('__auth_json__:')
+        ? key.slice('__auth_json__:'.length)
+        : key.slice('__oauth__:'.length);
+      try {
+        const auth = this.loadAuth();
+        const entry = auth[authKey];
+        if (entry?.key) return entry.key;
+        if (entry?.access) return entry.access;
+      } catch {
+        /* unreadable */
+      }
+    }
+
     return key;
   }
 
@@ -148,7 +162,12 @@ export class DiscoveryManager {
         const label = 'auth.json';
         if (!existingLabels.has(label)) {
           if (authEntry.key) {
-            prov.keys.push({ key: authEntry.key, label });
+            // Reference, not the raw secret -- resolved on demand via
+            // resolveKeyValue(). cfg (and thus prov.keys) can be written
+            // back to router-config.json (a tracked file, see update_model_metrics
+            // in index.ts); storing the plaintext key here would leak it into
+            // git history the next time that write path runs.
+            prov.keys.push({ key: `__auth_json__:${def.authKey}`, label });
           } else if (authEntry.type === 'oauth' || authEntry.refresh) {
             prov.keys.push({ key: `__oauth__:${def.authKey}`, label: 'auth.json:oauth' });
           }

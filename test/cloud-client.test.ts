@@ -206,6 +206,55 @@ describe("CloudClient", () => {
         ).rejects.toThrow("Unknown provider: unknown-provider");
       });
 
+      it("resolves a marker key via resolveKey before sending it as the bearer token", async () => {
+        vi.mocked(globalThis.fetch).mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ choices: [{ message: { content: "Test" } }] }),
+        });
+
+        const cfgMarkerKey: Config = {
+          providers: {
+            openrouter: { keys: [{ key: "__auth_json__:openrouter" }] },
+          },
+          model_groups: {},
+          model_metrics: {},
+        };
+
+        const client = new CloudClient(cfgMarkerKey, {
+          resolveKey: (key) =>
+            key === "__auth_json__:openrouter" ? "resolved-real-secret" : key,
+        });
+        await client.callModel("openrouter/qwen/qwen3-4b:free", "Test");
+
+        expect(fetch).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            headers: expect.objectContaining({ Authorization: "Bearer resolved-real-secret" }),
+          })
+        );
+      });
+
+      it("refuses to send an unresolved marker key as the bearer token", async () => {
+        const cfgMarkerKey: Config = {
+          providers: {
+            openrouter: { keys: [{ key: "__auth_json__:openrouter" }] },
+          },
+          model_groups: {},
+          model_metrics: {},
+        };
+
+        // No resolveKey provided -> default identity resolver leaves the
+        // marker unresolved. callModel must refuse to send it rather than
+        // silently sending the literal "__auth_json__:openrouter" string as
+        // a bearer token (which would just fail auth, but the point is it
+        // must never be attempted).
+        const client = new CloudClient(cfgMarkerKey);
+        await expect(
+          client.callModel("openrouter/qwen/qwen3-4b:free", "Test prompt")
+        ).rejects.toThrow("Could not resolve API key for provider: openrouter");
+        expect(fetch).not.toHaveBeenCalled();
+      });
+
       it("behandelt fehlenden API-Key", async () => {
         const cfgNoKey: Config = {
           providers: {
