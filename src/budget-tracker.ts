@@ -267,7 +267,24 @@ export class BudgetTracker {
         return null;
       }
     }
-    
+
+    if (key.startsWith('__auth_json__:') || key.startsWith('__oauth__:')) {
+      const authKey = key.startsWith('__auth_json__:')
+        ? key.slice('__auth_json__:'.length)
+        : key.slice('__oauth__:'.length);
+      try {
+        const { readFileSync } = require('node:fs');
+        const path = require('node:path').join(require('node:os').homedir(), '.pi', 'agent', 'auth.json');
+        const auth = JSON.parse(readFileSync(path, 'utf-8'));
+        const entry = auth[authKey];
+        if (entry?.key) return entry.key;
+        if (entry?.access) return entry.access;
+        return null;
+      } catch {
+        return null;
+      }
+    }
+
     if (key === '__local__') {
       return 'local';
     }

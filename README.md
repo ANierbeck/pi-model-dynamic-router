@@ -100,7 +100,7 @@ To use the **`dynamic`** group, you need:
 - **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-If both Ollama models are unavailable, the classifier falls back to cloud models (if configured), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
+If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
 
 ---
 
@@ -207,12 +207,19 @@ This provides **accurate feedback** about which model is currently generating re
 
 On startup, the router automatically:
 
-1. **Discovers API keys** from env vars, `~/.pi/agent/auth.json`, `pass` store, and CLI OAuth files (qwen, gemini)
+1. **Discovers API keys** from env vars, `~/.pi/agent/auth.json`, `pass` store, and CLI OAuth files (qwen, gemini) — for `auth.json`/`pass`/CLI-OAuth sources, only a *reference* (e.g. which auth.json entry, which pass path) is kept in memory/config, never the raw secret value; the actual key is looked up on demand only at the moment a request is made to that key's own provider (see [Data handling & privacy](#data-handling--privacy))
 2. **Scans models** from Chutes, OpenRouter, and direct provider APIs (Anthropic, OpenAI, Google, Mistral, DeepSeek)
-3. **Scrapes GDPval scores** from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) with hardcoded fallbacks
+3. **Scrapes GDPval scores** from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) with hardcoded fallbacks — a plain, unauthenticated GET of a public leaderboard page; no local data is sent
 4. **Caches pricing** per provider/model from APIs, with OpenRouter backfill for providers without pricing endpoints
 
 All scanning is async and non-blocking.
+
+### Data handling & privacy
+
+- **API keys are never written to `router-config.json`** (the tracked, in-repo static config). Discovery stores only resolvable reference markers there (env var name, `pass` path, auth-file pointer); the real secret is read from its source (env, `auth.json`, `pass`, CLI OAuth file) only at the point of use and is never persisted back to a tracked file.
+- **Prompt content stays local by default.** The dynamic-group content classifier runs against a local Ollama model. If both local classifier models are unavailable, it falls back to static keyword matching (only if `allowStaticFallback` is enabled) rather than sending anything externally.
+- **Optional cloud classifier fallback (`classifier_cloud_fallback`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
+- **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
 
 ---
 
@@ -442,7 +449,7 @@ To use the **`dynamic`** group, you need:
 - **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-If both Ollama models are unavailable, the classifier falls back to cloud models (if configured), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
+If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
 
 ## Commands
 

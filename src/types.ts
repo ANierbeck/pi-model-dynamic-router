@@ -65,6 +65,16 @@ export interface Group {
   classifier_model?: string;
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
   classifier_fallback?: string;
+  /**
+   * Opt-in: if both classifier_model and classifier_fallback are unavailable,
+   * send the (raw) prompt to a free cloud model (via a provider's configured
+   * free_models) purely to classify it. Off by default (data minimization --
+   * a provider configured for free_models as a general answering fallback
+   * should not silently also receive prompt content for an unrelated,
+   * internal classification purpose). Requires a provider with free_models
+   * and a resolvable key configured in router-config.json.
+   */
+  classifier_cloud_fallback?: boolean;
   /** Groups to try (in order) when all candidates in this group fail. e.g. ["strategic", "operational"] */
   fallback_groups?: string[];
 }

@@ -1,6 +1,38 @@
 # Changelog
 
-## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability
+## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling security fix
+
+### Security
+- **Discovered API keys sourced from `~/.pi/agent/auth.json` were stored as
+  raw plaintext secrets in `cfg.providers[...].keys`** — inconsistent with
+  every other discovery source (env var, `pass`, CLI OAuth), which all
+  stored a resolvable *reference* instead. Since that same `cfg` object is
+  written back to the tracked `router-config.json` by the
+  `update_model_metrics` tool, a plain (non-OAuth) auth.json key could have
+  been committed into git history in plaintext. Fixed by storing an
+  `__auth_json__:<authKey>` reference (mirroring `__cli_oauth__:`/`!pass
+  show`), resolved on demand via `resolveKeyValue()` only at the point of
+  use. Also wired up resolution for the pre-existing but never-resolved
+  `__oauth__:` marker, and fixed `CloudClient.getApiKey()` (used by the
+  content-classifier's cloud fallback), which previously read `keys[0].key`
+  raw without resolving it at all — it now requires an explicit resolver and
+  refuses to send an unresolved marker as a bearer token. 10 new regression
+  tests (`test/discovery-key-security.test.ts`,
+  `test/classifier-cloud-fallback-opt-in.test.ts`, plus 2 added to
+  `test/cloud-client.test.ts`).
+- **The dynamic-group content classifier's cloud fallback
+  (`allowCloudFallback`) was hardcoded to `true`** in `index.ts`, meaning any
+  provider configured with `free_models` (typically set up purely as a
+  cost-saving answering fallback) would silently also receive the user's raw
+  prompt text for internal classification whenever local Ollama
+  classification failed — an undisclosed, non-opt-in data flow to a
+  third-party model. Now gated behind a new, explicit, off-by-default
+  `classifier_cloud_fallback` flag on the `dynamic` group config
+  (data-minimization: classification and answering are different
+  data-exposure decisions for the same free-model config and must be opted
+  into separately). README documents the new flag and adds a "Data handling
+  & privacy" section clarifying what each discovery/scan/fallback path does
+  and does not send externally.
 
 ### Fixed (CI stability)
 - **`test/config-loader.test.ts` mocked `os.homedir()` by mutating
