@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache } from './helpers/router-state-lock.ts';
+import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
@@ -134,6 +134,7 @@ describe('driveStream: repetition loop detection', () => {
         };
         const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
         await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'edit the file' }] };

@@ -124,41 +124,122 @@ export async function withSharedRouterStateLock<T>(fn: () => Promise<T>): Promis
 // "No available models for group 'standard'" flake (the dynamic config's
 // real min_gdpval threshold filters out the test's unscored fake models).
 //
-// Fix: after moving the real scan-cache aside, write a minimal "fresh,
-// already-scraped" scan-cache in its place. lastScanTimestamp (now) makes
-// isScanCacheValid() return true so generateDynamicConfig() early-returns,
-// and gdpval_scraped=true skips the GDPval network scrape. scan() becomes a
-// no-op and can no longer swap global state mid-test. These helpers keep
-// that 10-line dance in one place so all 9 lock-based tests stay in sync.
+// Fix (part 1): after moving the real scan-cache aside, write a minimal
+// "fresh, already-scraped" scan-cache in its place. lastScanTimestamp (now)
+// makes isScanCacheValid() return true so generateDynamicConfig()
+// early-returns, and gdpval_scraped=true skips the GDPval network scrape.
+//
+// That alone is NOT sufficient: scan()'s model-discovery block is gated
+// independently by `age > MODELS_TTL || missingProviders` (index.ts), and
+// this no-op cache satisfies neither — it has no `models_cached` (so age is
+// Infinity) and an empty `available_models` (so `missingProviders` is true
+// for any real provider, e.g. mistral/openrouter, that has keys configured
+// outside the test's own tmp cwd config). Without part 2 below, the
+// unawaited scan() still runs REAL network discovery against Ollama/Mistral/
+// OpenRouter and then unconditionally calls saveCache() — which, like
+// router-config.dynamic.json, resolves against index.ts's own extension
+// directory, NOT the test's mocked cwd. On a machine where this checkout is
+// itself the loaded Pi extension (dev-on-the-installed-copy), that write
+// lands on the real, live scan-cache.json, silently overwriting production
+// router state with a partial scan (GDPval-scrape skipped, only
+// Ollama/whatever-provider-discovery succeeded) — observed in practice: a
+// `vitest run` overwrote the real cache with a scan whose gdpval_scores were
+// just the 6 locally-estimated Ollama entries, timestamped mid-test-run.
+//
+// Fix (part 2): stub global fetch for the duration so every network call
+// inside scan() fails fast. Every fetch call site in scan() (GDPval scrape,
+// chutes, openrouter, ollama /api/tags + /api/show, generic provider scans)
+// is already wrapped in try/catch, so a rejected fetch makes the whole
+// discovery block a harmless no-op: `models` stays empty, `available_models`
+// is left untouched by the (skipped) merge, and the final saveCache() only
+// persists the harmless stub shape instead of real discovery results. These
+// helpers keep that dance in one place so all 9 lock-based tests stay in
+// sync.
+
+// Some callers already move the real scan-cache.json aside themselves
+// before calling writeNoOpScanCache (their own hadCache/cacheBak dance).
+// Others (context-overflow, register-group-providers-label,
+// skip-failure-malus) call writeNoOpScanCache directly against the live
+// path with no backup at all — removeNoOpScanCache then unconditionally
+// unlinks it, permanently deleting whatever real scan-cache.json existed
+// before the test ran (observed in practice: the file was gone entirely
+// after a run mixed a backing-up test with a non-backing-up one). To make
+// every call site safe regardless of which pattern it uses, the backup/
+// restore now lives HERE: if a real file exists at the given path when
+// writeNoOpScanCache runs, it's moved aside and restored by
+// removeNoOpScanCache. Callers that already moved it away first are
+// unaffected (this just finds nothing to back up).
+const NOOP_CACHE_BACKUP_SUFFIX = '.router-state-lock.noop-bak';
+let originalFetch: typeof fetch | undefined;
 
 /**
- * Writes a minimal scan-cache.json that makes the unawaited session_start
- * scan() a no-op (fresh lastScanTimestamp + gdpval_scraped). Call AFTER
- * moving the real scan-cache aside and BEFORE firing session_start. The
- * caller is responsible for removing this file (removeNoOpScanCache) and
- * restoring the real one in afterEach.
+ * Writes a minimal scan-cache.json AND stubs global fetch to reject, making
+ * the unawaited session_start scan() a full no-op (see block comment above
+ * for why the cache alone isn't enough). Call AFTER moving the real
+ * scan-cache aside and BEFORE firing session_start. The caller is
+ * responsible for undoing both (removeNoOpScanCache) in afterEach.
  */
 export function writeNoOpScanCache(scanCachePath: string): void {
+  const backupPath = `${scanCachePath}${NOOP_CACHE_BACKUP_SUFFIX}`;
+  if (fs.existsSync(scanCachePath)) fs.renameSync(scanCachePath, backupPath);
+
   fs.mkdirSync(path.dirname(scanCachePath), { recursive: true });
   fs.writeFileSync(
     scanCachePath,
     JSON.stringify({
       lastScanTimestamp: Date.now(),
       gdpval_scraped: true,
+      models_cached: new Date().toISOString(),
       available_models: [],
       gdpval_scores: {},
     })
   );
+
+  originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.reject(new Error('network disabled during test (writeNoOpScanCache)'))) as typeof fetch;
 }
 
 /**
- * Removes the no-op scan-cache written by writeNoOpScanCache. Safe to call
- * even if the file is already gone (e.g. another helper removed it).
+ * Awaits the unawaited background scan() fired by session_start.
+ *
+ * session_start calls `scan().catch(() => {})` WITHOUT awaiting it, so
+ * `await onHandlers['session_start']?.(...)` in a test does NOT wait for
+ * scan() to finish — only for the synchronous rest of the handler. scan()
+ * ALWAYS ends with an unconditional `saveCache()` (outside any of its
+ * early-return gates), which persists to the same extension-directory-
+ * relative scan-cache.json this helper backs up/restores. With fetch
+ * stubbed to reject (writeNoOpScanCache), scan() settles in a handful of
+ * microtask ticks — but "a handful of ticks" is still nondeterministic
+ * relative to a test's own cleanup. Call this right after firing
+ * session_start so scan()'s harmless (stub-derived) saveCache() write lands
+ * BEFORE the test's own restore, instead of racing to land after it and
+ * clobbering the just-restored real cache (observed in practice with
+ * context-overflow.test.ts: the real cache was replaced by the no-op stub's
+ * shape even though writeNoOpScanCache/removeNoOpScanCache's backup/restore
+ * ran correctly — the restore simply lost the race to a late scan()).
+ * 50ms is generous headroom over the handful of ticks actually needed.
+ */
+export async function flushBackgroundScan(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+/**
+ * Removes the no-op scan-cache, restores whatever real scan-cache.json
+ * writeNoOpScanCache found and backed up (if any), and restores global
+ * fetch. Safe to call even if the file is already gone or fetch was never
+ * stubbed.
  */
 export function removeNoOpScanCache(scanCachePath: string): void {
   try {
     fs.unlinkSync(scanCachePath);
   } catch {
     /* already gone */
+  }
+  const backupPath = `${scanCachePath}${NOOP_CACHE_BACKUP_SUFFIX}`;
+  if (fs.existsSync(backupPath)) fs.renameSync(backupPath, scanCachePath);
+  if (originalFetch) {
+    globalThis.fetch = originalFetch;
+    originalFetch = undefined;
   }
 }

@@ -34,7 +34,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache } from './helpers/router-state-lock.ts';
+import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
@@ -100,6 +100,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       };
       const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
       await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
 
       // Build a ~30K-token conversation (120K chars / 4).
       const bigMessage = 'x '.repeat(60_000);
@@ -192,6 +193,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       };
       const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
       await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
 
       const groupModel = { provider: 'standard', id: 'standard' };
       const context: any = { messages: [{ role: 'user', content: 'hello' }] };
@@ -297,6 +299,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       };
       const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
       await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
 
       // ~30K-token conversation — over the small model's 8K window, well under
       // the big model's 1M window.
