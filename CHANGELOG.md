@@ -3,6 +3,18 @@
 ## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling hardening
 
 ### Fixed
+- **Consolidated key-reference resolution into one pure function.** The
+  same marker-resolution logic (pass store, CLI OAuth, `__auth_json__`,
+  `__oauth__`, `__local__`, env var) was duplicated across three files
+  (`DiscoveryManager.resolveKeyValue`, `BudgetTracker.resolveKeyValue`,
+  and `local-llm.ts`'s private `resolveKeyValue`) with slightly different
+  marker coverage in each. The `__auth_json__` marker added by the
+  key-handling fix above propagated to only two of the three, silently
+  disabling `local-llm.ts`'s free-model cloud fallback for any provider
+  whose only key source was auth.json (found by roborev review, job 268).
+  All three now delegate to a single exported `resolveKeyRef(key, auth)`
+  in `discovery.ts`; regression test added that fails against the old
+  drifted copy (verified via mutation testing).
 - **GLM-5.2 model-map targets corrected.** The Mistral-hosted
   `glm-5-2` / `zai-glm-5-2` / `glm-5-2-tee` ids were mapped to the
   `glm-5-3` GDPval slug — but GLM-5.2 and GLM-5.3 are distinct,

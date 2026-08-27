@@ -18,8 +18,8 @@
 // All dependencies (PROVIDER_MAP, cache, config) are injected so the module
 // is fully unit-testable with a mocked fetch and no network.
 
-import { execSync } from 'node:child_process';
 import type { ProviderDef, Config, Cache } from './types.ts';
+import { resolveKeyRef, loadAuthFile } from './discovery.ts';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -295,23 +295,17 @@ function collectFreeCloudModels(
  *
  * Returns null when the key is a marker this function cannot resolve. The
  * previous version returned such markers verbatim, so a pass-managed key was
- * sent as `Authorization: Bearer !pass show ...` — the request failed auth and
- * was silently swallowed per-model, quietly disabling the cloud fallback for
- * anyone using pass. Returning null lets the caller skip the provider instead
- * of issuing a request that cannot succeed.
+ * sent as `Authorization: Bearer !pass show ...` -- the request failed auth
+ * and was silently swallowed per-model, quietly disabling the cloud fallback
+ * for anyone using pass. Returning null lets the caller skip the provider
+ * instead of issuing a request that cannot succeed.
+ *
+ * Delegates to the shared pure `resolveKeyRef` (from discovery.ts) so there
+ * is exactly one copy of the marker-resolution logic across the codebase;
+ * the old local copy had drifted and missed the __auth_json__ marker, which
+ * silently disabled this free-model cloud fallback for auth.json-only
+ * providers after auth.json keys stopped being stored raw.
  */
 function resolveKeyValue(key: string): string | null {
-  if (key.startsWith('!pass show ')) {
-    try {
-      const out = execSync(key.slice(1) + ' 2>/dev/null', { encoding: 'utf-8' }).trim();
-      return out || null;
-    } catch {
-      return null;
-    }
-  }
-  // Other internal marker formats (CLI OAuth, local placeholders) are resolved
-  // by DiscoveryManager, which owns the file/keychain access. Treat them as
-  // unavailable here rather than sending them as a bearer token.
-  if (key.startsWith('!') || key.startsWith('__')) return null;
-  return key;
+  return resolveKeyRef(key, loadAuthFile());
 }
