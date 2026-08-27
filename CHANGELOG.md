@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency
 
 ### Fixed
 - **Runtime context-overflow detection could false-positive on legitimate
@@ -40,6 +40,121 @@
   `isPlausibleMatch()`). Also removed the test file that exclusively
   exercised the dead function; equivalent coverage already exists in
   `test/model-matcher-batched.test.ts` for the live path.
+
+### Fixed (roborev, post-refactor pass)
+- **Ollama GDPval family-score matching silently returned the wrong
+  (lower, generic) score for every versioned model family.**
+  `estimateOllamaGdpval()` iterated `MODEL_FAMILY_SCORES` in object
+  insertion order and matched via `normalizedName.includes(family)` with a
+  first-match break. Generic keys (`'qwen'`, `'gemma'`, `'llama3'`,
+  `'mistral'`) are inserted before their more specific variants
+  (`'qwen3.8'`, `'gemma4'`, `'llama3.2'`, `'mistral-large'`) and are
+  substrings of them, so the generic entry always won — every specific
+  score was unreachable dead code. `qwen3.8:27b-mlx` silently scored via
+  the generic `'qwen'` entry (450) instead of the intended `'qwen3.8'`
+  entry (580), even though the existing test asserted the
+  coincidentally-plausible generic result with a comment claiming it was
+  the specific one. Fixed by matching against family keys sorted
+  longest-first. Fixing this surfaced a second, independent bug: name
+  normalization stripped hyphens, so hyphenated family keys
+  (`'mistral-small/-medium/-large'`, `'deepseek-coder'`) could never match
+  regardless of iteration order, since the hyphen in the key no longer
+  existed in the string being searched. Hyphens are now preserved during
+  normalization.
+- **`isExpectedTransientError()` reintroduced a duplicate, narrower
+  rate-limit pattern list** instead of delegating to the unified
+  `isRateLimitText()` table added earlier in this cycle specifically to
+  stop two pattern lists from drifting apart. Now delegates directly,
+  keeping only the unrelated `'no api provider registered'` check as its
+  own condition.
+- **Remaining German user-facing router-info messages translated to
+  English.** Six occurrences across the empty-response/timeout/rate-limit/
+  repetition-loop error paths (e.g. "Rate-Limit/Spend-Limit erreicht",
+  "leere Antwort vom Modell", "wiederholt sich in einer Schleife") had been
+  missed by the earlier German→English comment-translation pass, which
+  covered code comments but not these live session-visible strings.
+
+### Refactored
+- **A1 — Extracted shared group-candidate filtering** (`applyGroupFilters`
+  in `src/routing.ts`) out of duplicated logic in `resolveGroup()` and
+  `getTopModels()`.
+- **D2 — Added a shared file-based logger** (`src/logger.ts`) for modules
+  that don't have access to Pi's `ctx` logging and previously had no way to
+  emit diagnostics without touching stdout/stderr.
+- **F1 — Removed dead `estimateOllamaModelsGdpval`** and documented why
+  `ollama-gdpval.ts`/`ollama-context.ts`/`ollama-utils.ts` remain three
+  separate modules instead of one (different concerns: pure scoring math,
+  context-window resolution from scan capabilities, live HTTP API wrapper).
+- **A2 — Consolidated GDPval resolution into a single pipeline**, removing
+  a second, divergent lookup path that had grown alongside the primary one.
+- **F3 — Translated remaining German code comments to English** across
+  `index.ts` (this pass's runtime-string translations, above, close the gap
+  this left for user-visible text).
+- **C1 — Extracted oversized closures out of `index.ts`'s `activate()`**
+  into pure, independently-testable functions: `dynamic-config.ts` and
+  `stream-driver.ts` gained `getFallbackGroup()`/`FALLBACK_GROUP_ORDER` and
+  `pushRouterInfo()`, replacing hand-copied reimplementations that had
+  drifted from the real logic in several test files.
+- **Fixed `registerGroupProviders()`'s cosmetic label for dynamic groups**
+  and verified the previously-tracked "context-size mismatch on model
+  switch breaks compaction" bug was already fixed by the driveStream
+  reliability pass in 1.4.0 (not a new fix — confirmed via code inspection
+  and existing test coverage, TODO.md updated accordingly).
+
+### Tests
+- Removed three fully-superseded test files whose coverage now lives in
+  real unit tests against the extracted `src/` functions above
+  (`dynamic-config-generation.test.ts`, `rate-limit-detection.test.ts`,
+  `dedup-models.test.ts`), and rewrote `fallback-chain.test.ts` /
+  `router-info-events.test.ts` to exercise the actual exported
+  `getFallbackGroup()` / `pushRouterInfo()` functions instead of local
+  reimplementations that could no longer regress-test anything real.
+- Un-skipped and repaired the `TEST_INTEGRATION`-gated "GLM-5-2 end-to-end
+  regression" block in `refactor-golden-master.test.ts` (5 tests): it was
+  hidden behind a stale, copy-pasted comment claiming it needed external
+  developer-machine files it never actually read. Un-skipping immediately
+  surfaced two real, previously-invisible bugs in the test itself — a
+  missing `setGdpval()` call that made every assertion vacuous, and a
+  fixture keyed under a GDPval slug (`glm-5-2`) that had since been
+  renamed (`glm-5-3`) — both fixed. Deleted the non-portable
+  `glm-live-debug.test.ts`, which read personal machine-specific files
+  (`~/.pi/agent/router-config.user.json`, local scan cache) and duplicated
+  the now-working golden-master coverage.
+- Added `test/dynamic-config.test.ts` (25 tests) and
+  `test/register-group-providers-label.test.ts`; added coverage thresholds
+  to `vitest.config.ts` and a build step to CI so both are enforced going
+  forward.
+- Added a regression test for the Ollama family-score shadowing bug
+  (`mistral-large:70b` must resolve via the specific family, not the
+  generic one it's a substring of) and `is-expected-transient-error.test.ts`
+  (previously zero coverage for that function).
+
+### Removed
+- 9 dead/obsolete files with no functional impact: pre-refactor root-level
+  test files that vitest's config never picked up and that hand-copied
+  logic already covered by real `src/`+`test/` modules
+  (`routing.test.ts`, `integration.test.ts`, `pass-parser.test.ts`,
+  `model-utils.ts`/`.test.ts`, `test-dynamic-api.mjs`,
+  `test-dynamic-router.sh`), plus two obsolete docs
+  (`MIGRATION-0.82.md` — one-time dependency-version migration long since
+  completed; `IMPLEMENTATION_REPETITION_GUARD.md` — orphaned design note
+  whose content is documented in `src/repetition-guard.ts`).
+
+### Docs
+- Removed stale references to the already-removed "Cost Tier System" as
+  an active feature in `PI.md`/`AGENT.md`/`TODO.md`/`SKILL.md`; corrected
+  stale version/date markers (`TODO.md` "Last Updated: June 2026" →
+  August; `SKILL.md` "New Features (v1.1.8)" → "Features (v1.1.8
+  onwards)").
+- Rewrote `RELEASE_CHECKLIST.md` from a single-shot v1.3.0 checklist
+  (referencing specific validation items and test counts that no longer
+  hold) into a reusable, version-agnostic template.
+- Repaired a dead link to the deleted `glm-live-debug.test.ts` in
+  `docs/architecture.md`; updated the `gdpval_builtin` example in
+  `docs/config-override.md` from the renamed `glm-5-2` slug to `glm-5-3`.
+- Added `router-config.dynamic.json.*-bak` to `.gitignore` to stop the
+  router's own test-run backup artifacts from appearing as untracked
+  clutter.
 
 ## [1.4.0] — 2026-08-17 — Reliability: cycles, runaway retries, externalized deps, context-overflow, reasoning timeout, HINT cooldowns, force-retry escalation
 
