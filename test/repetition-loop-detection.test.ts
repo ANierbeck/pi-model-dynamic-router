@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireRouterStateLock, releaseRouterStateLock } from './helpers/router-state-lock.ts';
+import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache } from './helpers/router-state-lock.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
@@ -40,6 +40,8 @@ async function withIsolatedRouter(
   if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
   if (hadCache) fs.renameSync(scanCachePath, cacheBak);
 
+  writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
+
   try {
     vi.resetModules();
     const mod = await import('../index.ts');
@@ -48,6 +50,8 @@ async function withIsolatedRouter(
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    removeNoOpScanCache(scanCachePath);
+
     if (hadCache) fs.renameSync(cacheBak, scanCachePath);
     releaseRouterStateLock();
   }

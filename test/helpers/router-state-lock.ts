@@ -110,3 +110,55 @@ export async function withSharedRouterStateLock<T>(fn: () => Promise<T>): Promis
     releaseRouterStateLock();
   }
 }
+
+// ── No-op scan-cache (prevents the session_start scan() race) ──────────────
+//
+// The driveStream regression tests move the real scan-cache.json aside so
+// cached machine-local scores don't leak in. But that leaves an EMPTY cache,
+// and session_start fires scan() WITHOUT awaiting it. scan() ends by calling
+// generateDynamicConfig(), which — when cacheManager.isScanCacheValid() is
+// false (no lastScanTimestamp) — WRITES router-config.dynamic.json and swaps
+// the module-level cfg/router to a dynamic config built from the scan. That
+// swap races the test's groupStream() call and intermittently replaces the
+// staticCfg-based router the test relies on, producing the CI-only
+// "No available models for group 'standard'" flake (the dynamic config's
+// real min_gdpval threshold filters out the test's unscored fake models).
+//
+// Fix: after moving the real scan-cache aside, write a minimal "fresh,
+// already-scraped" scan-cache in its place. lastScanTimestamp (now) makes
+// isScanCacheValid() return true so generateDynamicConfig() early-returns,
+// and gdpval_scraped=true skips the GDPval network scrape. scan() becomes a
+// no-op and can no longer swap global state mid-test. These helpers keep
+// that 10-line dance in one place so all 9 lock-based tests stay in sync.
+
+/**
+ * Writes a minimal scan-cache.json that makes the unawaited session_start
+ * scan() a no-op (fresh lastScanTimestamp + gdpval_scraped). Call AFTER
+ * moving the real scan-cache aside and BEFORE firing session_start. The
+ * caller is responsible for removing this file (removeNoOpScanCache) and
+ * restoring the real one in afterEach.
+ */
+export function writeNoOpScanCache(scanCachePath: string): void {
+  fs.mkdirSync(path.dirname(scanCachePath), { recursive: true });
+  fs.writeFileSync(
+    scanCachePath,
+    JSON.stringify({
+      lastScanTimestamp: Date.now(),
+      gdpval_scraped: true,
+      available_models: [],
+      gdpval_scores: {},
+    })
+  );
+}
+
+/**
+ * Removes the no-op scan-cache written by writeNoOpScanCache. Safe to call
+ * even if the file is already gone (e.g. another helper removed it).
+ */
+export function removeNoOpScanCache(scanCachePath: string): void {
+  try {
+    fs.unlinkSync(scanCachePath);
+  } catch {
+    /* already gone */
+  }
+}
