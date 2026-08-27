@@ -37,8 +37,8 @@ for (const line of fs.readFileSync(MAP_PATH, 'utf-8').split('\n')) {
 modelMapWildcards.sort((a, b) => b[0].length - a[0].length);
 
 const gdpvalScores: Record<string, number> = {
-  'glm-5-3': 1769,
-  'glm-53': 1769,
+  'glm-5-2': 1502,
+  'glm-52': 1502,
   'glm-5': 1418,
   'mistral-medium-3-5': 924.55,
 };
@@ -55,25 +55,28 @@ describe('model-map.yaml (live) — GLM regression guard', () => {
   it('CONTAINS authoritative map entries for the Mistral-hosted glm-5-2 ids (override the LLM)', () => {
     // The LLM matcher sometimes mis-matches glm-5-2 → glm-4 (older slug).
     // The model-map entries are authoritative (tier 1) and prevent this.
-    // GLM-5-2 maps to glm-5-3 (the current AA slug; glm-5-2 was deprecated).
-    expect(modelMap['glm-5-2']).toBe('glm-5-3');
-    expect(modelMap['zai-glm-5-2']).toBe('glm-5-3');
-    expect(modelMap['glm-5-2-tee']).toBe('glm-5-3');
+    // These models ARE GLM-5.2, so they map to the glm-5-2 slug — NOT to
+    // glm-5-3, which is a distinct, separately-benchmarked model with a
+    // higher score. Remapping 5.2 onto the 5.3 slug would falsely assign the
+    // 5.3 score to a 5.2 model.
+    expect(modelMap['glm-5-2']).toBe('glm-5-2');
+    expect(modelMap['zai-glm-5-2']).toBe('glm-5-2');
+    expect(modelMap['glm-5-2-tee']).toBe('glm-5-2');
   });
 
-  it('the model-map resolves zai-glm-5-2 → glm-5-3 → 1769 (tier 0, no LLM needed)', () => {
-    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1769);
+  it('the model-map resolves zai-glm-5-2 → glm-5-2 → 1502 (tier 0, no LLM needed)', () => {
+    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1502);
   });
 
   it('the model-map override beats a WRONG LLM match (e.g. LLM says glm-4)', () => {
     // If the LLM incorrectly matched zai-glm-5-2 → glm-4, the map entry
-    // (glm-5-3) must win because the model-map tier is checked BEFORE the
+    // (glm-5-2) must win because the model-map tier is checked BEFORE the
     // LLM tier in resolveSlug().
     setLlmMatches({ 'mistral-zai/zai-glm-5-2': 'glm-4' }); // wrong LLM match
-    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1769); // map wins, not glm-4
+    expect(lookupGdp('mistral-zai/zai-glm-5-2')).toBe(1502); // map wins, not glm-4
   });
 
   it('without the LLM tier, glm-5-2 (no zai prefix) STILL resolves via the map', () => {
-    expect(lookupGdp('mistral/glm-5-2')).toBe(1769);
+    expect(lookupGdp('mistral/glm-5-2')).toBe(1502);
   });
 });
