@@ -329,12 +329,31 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - [ ] **Implement learning from user feedback** - Improve classification based on corrections
 - [ ] **Add user-specific configurations** - Personalized model preferences
 
-### Intelligent Failure Management
-- [ ] **recordFailure(model, reason)** - Track model failures
-- [ ] **recordSuccess(model)** - Track model successes
-- [ ] **Temporary blacklist** - After X failures, blacklist model for 1 hour
-- [ ] **Cooldown period** - Exponential backoff for failed models
-- [ ] **Integration in resolveGroup()** - Filter blacklisted models
+### ✅ Intelligent Failure Management (already built, TODO was stale — closed 2026-08-28)
+
+This section described functionality that was already fully implemented in
+`src/rate-limit.ts`'s `RateLimitManager`, just under different names than
+what this TODO originally envisioned:
+
+- [x] **recordFailure(model, reason)** → `recordLimit(ref, providerKeys)` (hard:
+  rate-limit/auth, with key rotation) + `recordSoftFailure(ref)` (soft:
+  timeout/empty response) — reason-differentiated exactly as planned.
+- [x] **recordSuccess(model)** → `recordOk(ref)` resets the hit counter.
+- [x] **Temporary blacklist** → the cooldown ladder (`cooldown_until` per ref)
+  IS the blacklist; a limited ref is filtered out of candidates until it
+  expires.
+- [x] **Cooldown period, exponential backoff** → `backoff_minutes: [1, 2, 4,
+  8, 16, 32, 64, 90]` (hard failures) and `soft_backoff_ms: [30s, 60s, 120s,
+  300s]` (soft failures) in `router-defaults.yaml` — a real escalation
+  ladder, not a fixed cooldown.
+- [x] **Integration in resolveGroup()** → `src/routing.ts:837` already does
+  `c.filter((ref) => !this.isLimited(ref))`.
+
+Tests: `test/rate-limit-cooldown.test.ts`, `test/cooldown-collapse.test.ts`.
+Not pursued further: a *separate* hard-blacklist ("after N failures, sperren
+24h regardless of ladder expiry") was considered and explicitly declined —
+the existing ladder already caps at 90min and resets on success, which was
+judged sufficient.
 
 ### Integration & Extensibility
 - [ ] **Create plugin system** - Extensible architecture for new features
@@ -365,11 +384,11 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - [x] ~~Fix resolve() for dynamic groups~~ not a bug, intentional (DONE 2026-08-26)
 
 ### Phase 2: Resilience (2-3 days)
-- [ ] Implement caching for classification
+- [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
 - [ ] Add batch processing
 - [ ] Add more categories
-- [ ] Implement recordFailure/recordSuccess
-- [ ] Temporary blacklist system
+- [x] ~~Implement recordFailure/recordSuccess~~ already existed as recordLimit/recordSoftFailure/recordOk (DONE 2026-08-28, see ✅ Intelligent Failure Management above)
+- [x] ~~Temporary blacklist system~~ already existed as the cooldown ladder (DONE 2026-08-28, see above)
 
 ### Phase 3: New Features (1-2 weeks)
 - [ ] Multi-label classification
