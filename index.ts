@@ -1623,14 +1623,15 @@ let previousTokenCount = 0;
     // so registering here with just the one on-demand model would silently
     // wipe every other model that provider was registered with (paid or
     // free) and make them unreachable via modelRegistry.find() for the rest
-    // of the session. Only register when Pi does not know the provider at
-    // all — if any of its free_models is already findable, the provider is
-    // already registered and we must not touch it.
-    const providerAlreadyKnown = freeModels.some((r: string) => {
-      const mid = r.startsWith(`${provider}/`) ? r.slice(provider.length + 1) : r;
-      return Boolean(sessionCtx?.modelRegistry.find(provider, mid));
-    });
-    if (providerAlreadyKnown) return false;
+    // of the session. Only register when Pi does not know the provider AT
+    // ALL — checking only free_models is not enough (MEDIUM finding, roborev
+    // job 305): a provider registered by another path with a models list
+    // that doesn't yet include a free model would pass a free-only guard and
+    // still get wiped. Use getRegisteredProviderIds (already used at
+    // index.ts:1247) for the authoritative 'is the provider known' check.
+    const registeredProviderIds: string[] =
+      (sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() ?? [];
+    if (registeredProviderIds.includes(provider)) return false;
     // Resolve an API key (free models still need a key for the OpenRouter
     // endpoint, just at no cost). Without one we can't register.
     const keys = cfg.providers?.[provider]?.keys;
