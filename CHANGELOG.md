@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.2] — 2026-08-27 — Mid-stream stall detection
+
+### Fixed
+- **Root-caused and fixed the 20-minute session hang** observed when a
+  free/rate-limited OpenRouter proxy (`cohere/north-mini-code:free` in the
+  reported incident) opened a stream, emitted some content, then went silent
+  forever — connection open, no error, no close, no further events.
+  `consumeWithDetection()` had only a **first-token** timeout: the timer was
+  cleared on the first content token and never re-armed, so a stream that
+  stalled mid-response left the `for await` loop blocked indefinitely — no
+  fallback, no recovery, the whole session hung until the user hard-killed
+  Pi. Fix: the stall timer is now **(re)armed on every received event**, so
+  the same timer guards both the first-token window AND a mid-stream stall.
+  A stall after content is reported as a new `stall_timeout` reason
+  (distinct from `empty_timeout`), surfaced to the user as "stream stalled
+  mid-response", and routed through the same Free-vs-Paid escalation policy
+  as empty responses (hard cooldown + key rotation for paid cloud models,
+  short soft backoff for `:free` and local models). Regression test added
+  (`test/stall-timeout-detection.test.ts`) that simulates the exact hang —
+  a stream that emits one token then awaits a never-resolving promise — and
+  asserts the cascade falls over to the next candidate instead of hanging.
+
 ## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling hardening
 
 ### Fixed

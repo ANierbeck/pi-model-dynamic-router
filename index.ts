@@ -1061,7 +1061,9 @@ let previousTokenCount = 0;
     reason: string
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
     const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-    const isEmptyFailure = reason === 'empty_response' || reason === 'empty_timeout';
+    const isEmptyFailure = reason === 'empty_response'
+      || reason === 'empty_timeout'
+      || reason === 'stall_timeout';
     const isFreeModel = ref.includes(':free');
     if (reason === 'rate_limit_exceeded' || (isCloudProvider && isEmptyFailure && !isFreeModel)) {
       const rlResult = recordLimit(ref);
@@ -1643,13 +1645,32 @@ let previousTokenCount = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let timedOut = false;
 
-    // Start a timeout that fires if we never see content
+    // Stall detection: a single timer guards BOTH the first-token window AND
+    // mid-stream stalls. The timer is (re)armed on every received event —
+    // not just cleared after the first content token — so a stream that opens
+    // the connection, emits some content, then goes silent forever (observed
+    // with free/rate-limited OpenRouter proxies) is still aborted and handed
+    // to the next candidate. Without the re-arm, the for-await loop would
+    // block indefinitely: no error, no close, no timeout, no fallback — the
+    // whole session hangs until the user hard-kills Pi.
+    let resolveTimeout: ((v: 'timeout') => void) | null = null;
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        resolve('timeout');
-      }, timeoutMs);
+      resolveTimeout = resolve;
     });
+    const fireTimeout = () => {
+      timedOut = true;
+      if (timer) { clearTimeout(timer); timer = null; }
+      resolveTimeout?.('timeout');
+    };
+    const armTimer = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(fireTimeout, timeoutMs);
+    };
+    const clearTimer = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+    };
+    // Arm the initial first-token timer.
+    armTimer();
 
     // Rate-limit + overflow detection now live in src/detection.ts (single
     // source of truth). Previously isRateLimitText (here, 15 patterns) and
@@ -1667,7 +1688,10 @@ let previousTokenCount = 0;
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
-          // Cancel timeout on first real content
+          // Re-arm the stall timer on every event — this both cancels the
+          // first-token timeout once content starts AND restarts the
+          // inactivity window for the rest of the stream. A stream that emits
+          // content then goes silent will trip the timer again.
           if (!hadContent) {
             const t = event.type;
             if (
@@ -1677,17 +1701,11 @@ let previousTokenCount = 0;
               t === 'toolcall_delta'
             ) {
               hadContent = true;
-              if (timer) {
-                clearTimeout(timer);
-                timer = null;
-              }
             }
           }
+          armTimer();
           if (event.type === 'error') {
-            if (timer) {
-              clearTimeout(timer);
-              timer = null;
-            }
+            clearTimer();
             // Check if this is a rate limit or subscription error from claude-bridge
             const errorMsg = String((event as any).error?.message || (event as any).error || '');
             if (isRateLimitText(errorMsg)) {
@@ -1712,10 +1730,7 @@ let previousTokenCount = 0;
             accumulatedText += delta;
             if (isRateLimitText(delta) || isRateLimitText(accumulatedText)) {
               rateLimited = true;
-              if (timer) {
-                clearTimeout(timer);
-                timer = null;
-              }
+              clearTimer();
               // Stop consuming — don't forward rate-limit text to the user
               return 'done';
             }
@@ -1725,10 +1740,7 @@ let previousTokenCount = 0;
             if (isOverflowDeltaText(delta) || isOverflowDeltaText(accumulatedText)) {
               overflowDetected = true;
               overflowDetail = accumulatedText;
-              if (timer) {
-                clearTimeout(timer);
-                timer = null;
-              }
+              clearTimer();
               // Stop consuming — don't forward the raw provider error text
               return 'done';
             }
@@ -1747,10 +1759,7 @@ let previousTokenCount = 0;
               if (rep.detected) {
                 repetitionLoop = true;
                 repetitionDetail = `"${(rep.unit ?? '').trim().slice(0, 80)}" x${rep.repeats}`;
-                if (timer) {
-                  clearTimeout(timer);
-                  timer = null;
-                }
+                clearTimer();
                 // Stop consuming — don't forward more of the repeated text
                 return 'done';
               }
@@ -1759,25 +1768,24 @@ let previousTokenCount = 0;
           proxy.push(event);
         }
       } catch (err) {
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
+        clearTimer();
         // Stream threw — treat as soft failure
         return 'done';
       }
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
+      clearTimer();
       return 'done';
     })();
 
     const winner = await Promise.race([iterPromise, timeoutPromise]);
 
-    if (winner === 'timeout' && !hadContent) {
-      // No content within timeout — soft failure
-      return { ok: false, reason: 'empty_timeout' };
+    if (winner === 'timeout') {
+      // Timeout fired. Two cases share one timer:
+      //  - empty_timeout: no content ever arrived (first-token window expired)
+      //  - stall_timeout: content started, then the stream went silent for
+      //    the full window (mid-stream stall). Both are soft failures that
+      //    hand off to the next candidate; stall_timeout just tells the user
+      //    a more accurate reason ("stream stalled" vs "no response").
+      return { ok: false, reason: hadContent ? 'stall_timeout' : 'empty_timeout' };
     }
 
     // Stream completed — check if we actually got content or hit a rate limit
@@ -2576,7 +2584,9 @@ let previousTokenCount = 0;
           // to the shared recordStreamFailure() helper used by the force-retry
           // path too. This branch keeps its own user-facing message.
           const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-          const isEmptyFailure = result.reason === 'empty_response' || result.reason === 'empty_timeout';
+          const isEmptyFailure = result.reason === 'empty_response'
+            || result.reason === 'empty_timeout'
+            || result.reason === 'stall_timeout';
           const isFreeModel = ref.includes(':free');
           if (isCloudProvider && isEmptyFailure && !isFreeModel) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
@@ -2596,7 +2606,9 @@ let previousTokenCount = 0;
           // Notify the user about the empty response, with next candidate hint if available
           const reason = result.reason === 'empty_timeout'
             ? 'no response within timeout'
-            : 'empty response from model';
+            : result.reason === 'stall_timeout'
+              ? 'stream stalled mid-response'
+              : 'empty response from model';
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfo(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
