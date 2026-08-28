@@ -21,6 +21,24 @@
   (`test/stall-timeout-detection.test.ts`) that simulates the exact hang —
   a stream that emits one token then awaits a never-resolving promise — and
   asserts the cascade falls over to the next candidate instead of hanging.
+- **Separate mid-stream inactivity timeout from the first-token timeout.**
+  The first-token window and the mid-stream inactivity window guard different
+  failure modes and needn't be the same duration. A legitimately
+  slow-but-working provider under load can have silent gaps between
+  reasoning/output bursts far longer than the first-token wait; reusing the
+  first-token value would misclassify healthy-but-slow streams as stalls.
+  New `stall_timeout_ms` config (default 180000, 2x the reasoning first-token
+  timeout) governs the inactivity window after content has started, while
+  `empty_response_timeout_ms` / `reasoning_empty_response_timeout_ms` keep
+  governing the first-token wait as before.
+- **Accurate user-facing label for `stall_timeout`.** Both the main loop's
+  paid-cloud branch and the force-retry path previously printed
+  "empty response (likely rate limit)" for `stall_timeout`, contradicting
+  the more precise "stream stalled mid-response" used by the local/free
+  branch. Both now branch on `stall_timeout` and print
+  "stream stalled (likely rate limit)".
+- **Removed dead `timedOut` variable** in `consumeWithDetection` (set but
+  never read after the timeout-promise refactor).
 
 ## [1.4.1] — 2026-08-27 — Internal cleanup, Ollama scoring fix, doc consistency, CI stability, key-handling hardening
 

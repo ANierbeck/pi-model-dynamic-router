@@ -33,6 +33,21 @@ empty_response_timeout_ms: 30000
 # overloaded reasoning provider room to emit its first token.
 reasoning_empty_response_timeout_ms: 90000
 
+# Mid-stream inactivity timeout (ms). Once a stream has emitted its first
+# content token, this is the maximum allowed gap between any two subsequent
+# events before the router declares the stream stalled (reason: stall_timeout)
+# and falls over to the next candidate. Guards against the observed hang
+# where a free/rate-limited proxy opens, emits some content, then goes silent
+# forever (connection open, no error, no close). This is SEPARATE from the
+# first-token timeout above on purpose: a legitimately slow-but-working
+# provider under load can have silent gaps between reasoning/output bursts
+# far longer than the first-token wait, and reusing the first-token value
+# would misclassify healthy-but-slow streams as stalls. Defaults to 2x the
+# reasoning first-token timeout (180s) — long enough that a paused-but-alive
+# reasoning stream isn't abandoned, short enough that a truly dead stream
+# doesn't hang the session for 20 minutes.
+stall_timeout_ms: 180000
+
 # Model ID normalization — stripped suffixes (prefixes handled by lastIndexOf("/"))
 strip_suffixes:
   - "-tee"
