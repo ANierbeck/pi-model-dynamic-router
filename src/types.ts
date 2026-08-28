@@ -17,6 +17,7 @@ export interface Defaults {
   empty_response_timeout_ms: number;
   reasoning_empty_response_timeout_ms: number;
   stall_timeout_ms: number;
+  ollama_max_concurrent_streams: number;
   strip_suffixes: string[];
 }
 
@@ -104,6 +105,8 @@ export interface Config {
   reasoning_empty_response_timeout_ms?: number;
   /** Override the mid-stream inactivity timeout (ms), after the first content token. */
   stall_timeout_ms?: number;
+  /** Max simultaneous streams to a LOCAL model server (ollama/lm-studio), to prevent OOM crashes. Default 1 (serial). */
+  ollama_max_concurrent_streams?: number;
   /**
    * Global model exclusion rules — applied to EVERY group before per-group
    * filtering. Lets a user opt out of paid OpenRouter models, specific costly
