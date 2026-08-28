@@ -165,7 +165,7 @@ describe('driveStream: on-demand free-model registration', () => {
         },
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: {
-          'openrouter/z-ai/glm-5.2:free': 900,
+          'openrouter/z-ai/glm-5.2:free': 1000,
           'openrouter/some-paid-model': 950,
         },
       },
@@ -188,16 +188,20 @@ describe('driveStream: on-demand free-model registration', () => {
         // The provider is ALREADY registered (with a paid model) — simulating
         // registerGroupModels or another extension having done it. The
         // modelRegistry reports openrouter as a registered provider id AND
-        // can find the paid model, but NOT the free model yet.
+        // can find the paid model, but NOT the free model yet (find returns
+        // null for the free ref until it's explicitly registered, which the
+        // Ü1 guard must prevent from happening).
         const paidModel = { provider: 'openrouter', id: 'some-paid-model', api: 'openai-completions', contextWindow: 128_000 };
         const freeModel = { provider: 'openrouter', id: 'z-ai/glm-5.2:free', api: 'openai-completions', contextWindow: 128_000 };
-        const modelsByRef: Record<string, any> = {
-          'openrouter/some-paid-model': paidModel,
-          'openrouter/z-ai/glm-5.2:free': freeModel,
-        };
         const modelRegistry = {
           getAvailable: () => [paidModel, freeModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          // Paid model is findable (already registered); free model is NOT
+          // findable — so tryStream's `if (!realModel)` branch fires and
+          // calls registerFreeModelOnDemand. The guard must then see
+          // openrouter in getRegisteredProviderIds and bail, leaving the
+          // paid model intact.
+          find: (provider: string, modelId: string) =>
+            modelId === 'some-paid-model' ? paidModel : null,
           getApiKeyForProvider: async () => 'sk-or-test-fake-key',
           // getRegisteredProviderIds is the authoritative 'is the provider known'
           // check used by the guard. openrouter IS registered → guard must bail.
