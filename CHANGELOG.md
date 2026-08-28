@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.5.0] — 2026-08-28 — Ollama crash prevention, free-model registration, classification caching
+
+### Fixed
+- **Ollama/lm-studio OOM crash from parallel subagent streams.** Each local
+  stream loads a full model into RAM (qwen3.8:27b-mlx ≈ 18GB, gemma4:12b ≈
+  10GB); parallel subagent fan-out can request N models at once and exhaust
+  system RAM → OOM crash / kernel panic (observed 2026-08-27: 6 Ollama models
+  streamed in 75ms → ~55GB RAM demand). New process-wide semaphore limits
+  concurrent local streams via `ollama_max_concurrent_streams` (default 1,
+  strictly serial). When the limit is reached, extra local candidates
+  soft-fail (reason: `local_concurrency_limit`) and `driveStream` falls over
+  to the next candidate (typically a cloud model). Only applies to local
+  providers; cloud (openrouter, mistral, etc.) is never throttled. The slot
+  is reserved pre-`await` in `tryStream` so parallel callers can't all pass
+  the check in the same microtask, and released in a `finally` block after
+  `consumeWithDetection` settles. Regression test:
+  `test/ollama-concurrency-limit.test.ts`.
+- **Statically-configured free models silently skipped as 'not registered'.**
+  Free models listed in `cfg.providers[provider].free_models` never go
+  through the scan/cache.available_models path, so `registerGroupModels`
+  never saw them and `tryStream` skipped every free model as 'not registered
+  in Pi's model registry' — the observed 'claude-sonnet-5 dominates, GLM
+  unused' symptom: the cascade fell through to the next non-free model
+  (claude-sonnet-5) on every turn, ignoring the free tier entirely. Fix:
+  `tryStream` now calls `registerFreeModelOnDemand(provider, modelId)` when
+  the model isn't found in Pi's registry. If the ref is listed in
+  `free_models` and the provider has a resolvable API key (cfg key), the
+  router registers the provider with just the one model needed, then
+  re-looks it up. Conservative: only for providers in PROVIDER_MAP with a
+  baseUrl, only for explicitly-listed free model IDs, never overwrites an
+  existing registration. Regression test:
+  `test/free-model-on-demand-registration.test.ts`.
+
+### Added
+- **Classification caching (LRU + TTL).** Repeated identical prompts
+  (subagent fan-out, retry loops, re-asks) would otherwise re-run the ~22s
+  gemma4:12b classifier every time. Cache the prompt → classification result
+  in an LRU (max 64 entries) with a 5-minute TTL. Only fires on the LLM path
+  (after deterministic early-returns: HINT, compaction, short-prompt
+  momentum) and only when there is no conversation context — context-bearing
+  prompts vary per turn and would risk stale hits. Tests:
+  `test/classification-cache.test.ts`.
+
 ## [1.4.2] — 2026-08-27 — Mid-stream stall detection
 
 ### Fixed
