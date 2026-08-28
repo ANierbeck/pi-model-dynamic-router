@@ -162,4 +162,76 @@ describe('driveStream: local-stream concurrency limit', () => {
       }
     );
   }, 15000);
+
+  it('does not leak the local slot when hostStreamSimple throws synchronously (roborev job 302 MEDIUM)', async () => {
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: {},
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        gdpval_builtin: {
+          'ollama/throwing-model': 1000,
+          'ollama/next-model': 950,
+        },
+        ollama_max_concurrent_streams: 1,
+      },
+      async (defaultExport, tmpDir) => {
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const pi: any = {
+          registerTool: vi.fn(),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn(),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => {
+            onHandlers[event] = handler;
+          }),
+        };
+        defaultExport(pi);
+
+        const throwingModel = { provider: 'ollama', id: 'throwing-model', api: 'openai-completions', contextWindow: 1_000_000 };
+        const nextModel = { provider: 'ollama', id: 'next-model', api: 'openai-completions', contextWindow: 1_000_000 };
+        const modelsByRef: Record<string, any> = {
+          'ollama/throwing-model': throwingModel,
+          'ollama/next-model': nextModel,
+        };
+        const streamSimple = vi.fn((model: any) => {
+          if (model.id === 'throwing-model') {
+            // Synchronous throw — the bug path: before the fix this leaked
+            // the reserved local slot, shrinking the budget until all future
+            // local candidates soft-failed even with nothing streaming.
+            throw new Error('hostStreamSimple blew up synchronously');
+          }
+          return (async function* () {
+            yield { type: 'text_delta', delta: 'next model ok' };
+            yield { type: 'done' };
+          })();
+        });
+        const modelRegistry = {
+          getAvailable: () => [throwingModel, nextModel],
+          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          getApiKeyForProvider: async () => null,
+          runtime: { streamSimple },
+        };
+        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        // First call: throwing-model throws synchronously. If the slot
+        // leaked, the second call's next-model would soft-fail with
+        // local_concurrency_limit and the cascade would emit an error.
+        // If the slot was released correctly, next-model streams fine.
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'go' }] };
+        const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+        // The cascade must have reached next-model and produced content —
+        // proving the slot didn't leak after the synchronous throw.
+        const text = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+        expect(text).toContain('next model ok');
+      }
+    );
+  }, 15000);
 });

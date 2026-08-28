@@ -152,4 +152,88 @@ describe('driveStream: on-demand free-model registration', () => {
       }
     );
   }, 15000);
+
+  it('does NOT overwrite a provider already registered with paid models (Ü1 invariant, roborev job 305)', async () => {
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: {
+          openrouter: {
+            free_models: ['openrouter/z-ai/glm-5.2:free'],
+            keys: [{ key: 'sk-or-test-fake-key' }],
+          },
+        },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        gdpval_builtin: {
+          'openrouter/z-ai/glm-5.2:free': 900,
+          'openrouter/some-paid-model': 950,
+        },
+      },
+      async (defaultExport, tmpDir) => {
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const registerProviderCalls: any[] = [];
+        const pi: any = {
+          registerTool: vi.fn(),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn((name: string, opts: any) => {
+            registerProviderCalls.push({ name, opts });
+          }),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => {
+            onHandlers[event] = handler;
+          }),
+        };
+        defaultExport(pi);
+
+        // The provider is ALREADY registered (with a paid model) — simulating
+        // registerGroupModels or another extension having done it. The
+        // modelRegistry reports openrouter as a registered provider id AND
+        // can find the paid model, but NOT the free model yet.
+        const paidModel = { provider: 'openrouter', id: 'some-paid-model', api: 'openai-completions', contextWindow: 128_000 };
+        const freeModel = { provider: 'openrouter', id: 'z-ai/glm-5.2:free', api: 'openai-completions', contextWindow: 128_000 };
+        const modelsByRef: Record<string, any> = {
+          'openrouter/some-paid-model': paidModel,
+          'openrouter/z-ai/glm-5.2:free': freeModel,
+        };
+        const modelRegistry = {
+          getAvailable: () => [paidModel, freeModel],
+          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          getApiKeyForProvider: async () => 'sk-or-test-fake-key',
+          // getRegisteredProviderIds is the authoritative 'is the provider known'
+          // check used by the guard. openrouter IS registered → guard must bail.
+          getRegisteredProviderIds: () => ['openrouter'],
+          runtime: {
+            streamSimple: vi.fn((model: any) => {
+              if (model.id === 'some-paid-model') {
+                return (async function* () {
+                  yield { type: 'text_delta', delta: 'paid model survived' };
+                  yield { type: 'done' };
+                })();
+              }
+              return (async function* () {
+                yield { type: 'text_delta', delta: 'free model ok' };
+                yield { type: 'done' };
+              })();
+            }),
+          },
+        };
+        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        // The free model is NOT findable (not in the provider's registered
+        // models list), so tryStream's on-demand guard fires — but it must
+        // see openrouter as already registered and bail (not overwrite).
+        // The cascade then falls over to the paid model, which IS findable.
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'hi' }] };
+        const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+        // The on-demand registration must NOT have been called for openrouter
+        // (the provider was already registered → Ü1 guard bailed).
+        const openrouterReg = registerProviderCalls.find((c) => c.name === 'openrouter');
+        expect(openrouterReg).toBeUndefined();
+      }
+    );
+  }, 15000);
 });
