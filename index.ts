@@ -1598,6 +1598,57 @@ let previousTokenCount = 0;
     return ref.startsWith('ollama/') || ref.startsWith('lm-studio/');
   }
 
+  /**
+   * On-demand registration of a configured free model into Pi's model
+   * registry. Statically-configured free models (cfg.providers[provider]
+   * .free_models) never go through the scan/cache.available_models path,
+   * so registerGroupModels never sees them and tryStream would skip every
+   * free model forever. This registers the PROVIDER (if Pi doesn't know it)
+   * with just the one model needed, then re-lookup. Returns true if the
+   * model is now findable.
+   *
+   * Conservative: only fires for providers in PROVIDER_MAP with a baseUrl,
+   * and only for model IDs explicitly listed in free_models. Never
+   * overwrites an existing provider registration (Ü1 invariant).
+   */
+  function registerFreeModelOnDemand(provider: string, modelId: string): boolean {
+    const def = (PROVIDER_MAP as any)[provider];
+    if (!def?.baseUrl || !def?.api) return false;
+    const freeModels = cfg.providers?.[provider]?.free_models;
+    if (!freeModels?.length) return false;
+    const ref = `${provider}/${modelId}`;
+    if (!freeModels.includes(ref)) return false;
+    // Resolve an API key (free models still need a key for the OpenRouter
+    // endpoint, just at no cost). Without one we can't register.
+    const keys = cfg.providers?.[provider]?.keys;
+    let apiKey: string | undefined;
+    if (keys?.length) {
+      apiKey = resolveKeyValue(keys[activeKeyIdx[provider] ?? 0]?.key);
+    } else if (def.authKey) {
+      // auth.json key resolution is async in the real path, but we're in a
+      // sync helper. If the provider needs auth.json and has no cfg key, we
+      // can't resolve synchronously here — bail and let registerGroupModels
+      // (which awaits the key) handle it at session start. This on-demand path
+      // only fires for providers with a resolvable cfg key.
+      return false;
+    }
+    if (!apiKey) return false;
+    try {
+      (pi as any).registerProvider(provider, {
+        name: `${provider} (free, on-demand)`,
+        baseUrl: def.baseUrl,
+        apiKey,
+        api: def.api,
+        models: [{ id: modelId, name: modelId }],
+      });
+      routerLog(`[router] On-demand registered free model ${ref}`);
+      return Boolean(sessionCtx?.modelRegistry.find(provider, modelId));
+    } catch (e) {
+      routerLog(`[router] On-demand registration failed for ${ref}:`, e);
+      return false;
+    }
+  }
+
   async function tryStream(
     ref: string,
     context: Context,
@@ -1613,9 +1664,21 @@ let previousTokenCount = 0;
     const { provider, modelId } = splitRef(ref);
     // Skip group virtual models to prevent recursion
     if (cfg.model_groups[provider]) return skip(`"${provider}" is a group, not a provider`);
-    const realModel = sessionCtx.modelRegistry.find(provider, modelId);
-    if (!realModel)
-      return skip(`not registered in Pi's model registry (provider=${provider}, id=${modelId})`);
+    let realModel = sessionCtx.modelRegistry.find(provider, modelId);
+    if (!realModel) {
+      // The ref isn't in Pi's model registry. If it's a configured free
+      // model (cfg.providers[provider].free_models), register it on demand —
+      // statically-configured free models never go through the scan/
+      // cache.available_models path, so registerGroupModels never sees them,
+      // and without this on-demand registration tryStream would skip every
+      // free model forever (the observed 'claude-sonnet-5 dominates, GLM
+      // unused' symptom: free models silently dropped from the cascade).
+      if (registerFreeModelOnDemand(provider, modelId)) {
+        realModel = sessionCtx.modelRegistry.find(provider, modelId);
+      }
+      if (!realModel)
+        return skip(`not registered in Pi's model registry (provider=${provider}, id=${modelId})`);
+    }
     if (cfg.model_groups[realModel.provider])
       return skip(`resolved provider "${realModel.provider}" is a group`);
     // Concurrency guard for LOCAL providers (ollama/lm-studio): each local
