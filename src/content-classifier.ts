@@ -141,6 +141,41 @@ interface ClassificationOptions {
 
 const DEFAULT_MODEL = 'gemma4:12b-mlx';
 const DEFAULT_TIMEOUT = 45_000; // gemma4:12b-mlx needs ~22s on M3 Max
+
+// ── Classification cache (LRU + TTL) ────────────────────────────────────────
+// Repeated identical prompts (subagent fan-out, retry loops, re-asks) would
+// otherwise re-run the LLM classifier every time — a 22s gemma4:12b call each.
+// Cache the prompt → classification result, evicting least-recently-used past
+// MAX_CLASSIFY_CACHE entries and expiring entries after CLASSIFY_CACHE_TTL_MS.
+const MAX_CLASSIFY_CACHE = 64;
+const CLASSIFY_CACHE_TTL_MS = 5 * 60_000; // 5 minutes
+interface ClassifyCacheEntry {
+  result: FullClassificationResult;
+  ts: number;
+}
+const classifyCache = new Map<string, ClassifyCacheEntry>();
+
+function classifyCacheGet(prompt: string): FullClassificationResult | null {
+  const entry = classifyCache.get(prompt);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CLASSIFY_CACHE_TTL_MS) {
+    classifyCache.delete(prompt);
+    return null;
+  }
+  // LRU: move to end (most-recently-used) by re-inserting.
+  classifyCache.delete(prompt);
+  classifyCache.set(prompt, entry);
+  return entry.result;
+}
+
+function classifyCacheSet(prompt: string, result: FullClassificationResult): void {
+  if (classifyCache.size >= MAX_CLASSIFY_CACHE) {
+    // Evict the oldest entry (first in iteration order).
+    const oldest = classifyCache.keys().next().value;
+    if (oldest !== undefined) classifyCache.delete(oldest);
+  }
+  classifyCache.set(prompt, { result, ts: Date.now() });
+}
 const FALLBACK_MODEL = 'gemma2:2b';
 const FALLBACK_TIMEOUT = 10_000;
 const MIN_CONFIDENCE = 0.5;
@@ -321,6 +356,17 @@ export async function classifyPrompt(
   }
   const contextBlock = contextLines.length > 0 ? `Context:\n${contextLines.join('\n')}\n\n` : '';
 
+  // Cache check: only for the LLM-classification path (after the deterministic
+  // early-returns above). Cache key is the raw prompt — the deterministic cases
+  // (HINT, compaction, short-prompt momentum) never reach here, and context
+  // (previous message / last assistant snippet) varies per turn so we only
+  // cache when there's no context block, to avoid a stale hit when the same
+  // prompt re-appears in a different conversation context.
+  if (!contextBlock) {
+    const cached = classifyCacheGet(prompt);
+    if (cached) return cached;
+  }
+
   const ollamaPrompt = CLASSIFICATION_PROMPT.replace('{{context_block}}', contextBlock).replace(
     '{{prompt}}',
     prompt
@@ -435,6 +481,9 @@ export async function classifyPrompt(
   }
 
   if (classificationResult) {
+    // Cache the LLM classification result for repeated identical prompts
+    // (only when there was no conversation context — see cache check above).
+    if (!contextBlock) classifyCacheSet(prompt, classificationResult);
     return classificationResult;
   }
 
