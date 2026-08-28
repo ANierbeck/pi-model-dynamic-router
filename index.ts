@@ -78,6 +78,7 @@ const COST_MUX_AT_HIT = _defaults.cost_mux_at_hit;
 const MODELS_TTL = _defaults.models_ttl_ms;
 const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
 const REASONING_EMPTY_RESPONSE_TIMEOUT_MS = _defaults.reasoning_empty_response_timeout_ms;
+const STALL_TIMEOUT_MS = _defaults.stall_timeout_ms;
 const GDPVAL_URL = _defaults.gdpval_url;
 
 // ── Extension ──────────────────────────────────────────────────────────────
@@ -1639,11 +1640,11 @@ let previousTokenCount = 0;
   async function consumeWithDetection(
     upstream: AssistantMessageEventStream,
     proxy: AssistantMessageEventStream,
-    timeoutMs: number
+    timeoutMs: number,
+    stallMs: number
   ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let timedOut = false;
 
     // Stall detection: a single timer guards BOTH the first-token window AND
     // mid-stream stalls. The timer is (re)armed on every received event —
@@ -1653,18 +1654,25 @@ let previousTokenCount = 0;
     // to the next candidate. Without the re-arm, the for-await loop would
     // block indefinitely: no error, no close, no timeout, no fallback — the
     // whole session hangs until the user hard-kills Pi.
+    //
+    // Two windows share one timer: `timeoutMs` before the first content token
+    // (first-token wait), and `stallMs` after content has started (mid-stream
+    // inactivity). They guard different failure modes and needn't be the same
+    // duration — a legitimately slow-but-working provider under load can have
+    // silent gaps far longer than the first-token wait, so the stall window is
+    // a separate, longer configurable value.
     let resolveTimeout: ((v: 'timeout') => void) | null = null;
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       resolveTimeout = resolve;
     });
     const fireTimeout = () => {
-      timedOut = true;
       if (timer) { clearTimeout(timer); timer = null; }
       resolveTimeout?.('timeout');
     };
     const armTimer = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(fireTimeout, timeoutMs);
+      const ms = hadContent ? stallMs : timeoutMs;
+      timer = setTimeout(fireTimeout, ms);
     };
     const clearTimer = () => {
       if (timer) { clearTimeout(timer); timer = null; }
@@ -1918,6 +1926,20 @@ let previousTokenCount = 0;
     const base = cfg.empty_response_timeout_ms ?? EMPTY_RESPONSE_TIMEOUT_MS;
     const reasoning = cfg.reasoning_empty_response_timeout_ms ?? REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
     return isReasoningModel(ref) ? reasoning : base;
+  }
+
+  /**
+   * Mid-stream inactivity timeout (after the first content token) for a given
+   * model ref. Separate from the first-token timeout: a legitimately
+   * slow-but-working provider under load can have silent gaps far longer than
+   * the first-token wait, so reusing the first-token value would misclassify
+   * healthy-but-slow streams as stalls. Reasoning models get the same value as
+   * non-reasoning here — the gap is already generous (default 180s) and the
+   * reasoning distinction only matters for the first token (which they spend
+   * thinking before emitting).
+   */
+  function getStallTimeout(ref: string): number {
+    return cfg.stall_timeout_ms ?? STALL_TIMEOUT_MS;
   }
 
   function isCompactionTurn(context: Context): boolean {
@@ -2495,7 +2517,7 @@ let previousTokenCount = 0;
         lastDynamicModel = ref;
 
         try {
-          const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(ref));
+          const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(ref), getStallTimeout(ref));
 
           if (result.ok) {
             // Success — record healthy, proxy completes via the pushed "done" event
@@ -2595,7 +2617,10 @@ let previousTokenCount = 0;
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, trying ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — empty response (likely rate limit)${keyMsg}${suffix}\n\n`);
+            const paidLabel = result.reason === 'stall_timeout'
+              ? 'stream stalled (likely rate limit)'
+              : 'empty response (likely rate limit)';
+            pushRouterInfo(proxy, `> [router] ${ref} — ${paidLabel}${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2750,7 +2775,7 @@ let previousTokenCount = 0;
           });
           if (target) {
             try {
-              const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(bestRef));
+              const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(bestRef), getStallTimeout(bestRef));
               if (result.ok) {
                 recordOk(bestRef);
                 return;
@@ -2799,7 +2824,9 @@ let previousTokenCount = 0;
                   const reasonTxt = String(result.reason);
                   const labelTxt = reasonTxt === 'rate_limit_exceeded'
                     ? 'rate limit/spend limit reached'
-                    : 'empty response (likely rate limit)';
+                    : reasonTxt === 'stall_timeout'
+                      ? 'stream stalled (likely rate limit)'
+                      : 'empty response (likely rate limit)';
                   pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
                 }
               }

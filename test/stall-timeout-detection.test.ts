@@ -80,11 +80,14 @@ describe('driveStream: mid-stream stall detection', () => {
           'stalling-model': 1000,
           'healthy-model': 900,
         },
-        // Short timeout so the test resolves quickly. The stall is simulated
+        // Short timeouts so the test resolves quickly. The stall is simulated
         // by a stream that emits one token then never yields again (and never
-        // closes). The re-armed inactivity timer must fire within this window.
+        // closes). BOTH the first-token window and the mid-stream inactivity
+        // window must be short here — the re-armed inactivity timer fires within
+        // the stall window after the stream goes silent.
         empty_response_timeout_ms: 300,
         reasoning_empty_response_timeout_ms: 300,
+        stall_timeout_ms: 300,
       },
       async (defaultExport, tmpDir) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
