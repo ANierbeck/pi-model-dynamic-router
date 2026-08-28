@@ -1618,6 +1618,19 @@ let previousTokenCount = 0;
     if (!freeModels?.length) return false;
     const ref = `${provider}/${modelId}`;
     if (!freeModels.includes(ref)) return false;
+    // Ü1 invariant (HIGH finding, roborev job 302): pi.registerProvider
+    // REPLACES the provider's `models` array wholesale (it does not merge),
+    // so registering here with just the one on-demand model would silently
+    // wipe every other model that provider was registered with (paid or
+    // free) and make them unreachable via modelRegistry.find() for the rest
+    // of the session. Only register when Pi does not know the provider at
+    // all — if any of its free_models is already findable, the provider is
+    // already registered and we must not touch it.
+    const providerAlreadyKnown = freeModels.some((r: string) => {
+      const mid = r.startsWith(`${provider}/`) ? r.slice(provider.length + 1) : r;
+      return Boolean(sessionCtx?.modelRegistry.find(provider, mid));
+    });
+    if (providerAlreadyKnown) return false;
     // Resolve an API key (free models still need a key for the OpenRouter
     // endpoint, just at no cost). Without one we can't register.
     const keys = cfg.providers?.[provider]?.keys;
@@ -1634,14 +1647,26 @@ let previousTokenCount = 0;
     }
     if (!apiKey) return false;
     try {
+      // Register the provider with ALL configured free models at once, not
+      // just the one requested — a subsequent on-demand call for a different
+      // free model would otherwise find the provider already known (the
+      // providerAlreadyKnown guard above) and skip, but the new model wouldn't
+      // be in the models list. Registering all free_models up front avoids
+      // that and keeps the provider's registration coherent.
+      const allFreeModelEntries = freeModels
+        .filter((r: string) => r.startsWith(`${provider}/`))
+        .map((r: string) => {
+          const id = r.slice(provider.length + 1);
+          return { id, name: id };
+        });
       (pi as any).registerProvider(provider, {
         name: `${provider} (free, on-demand)`,
         baseUrl: def.baseUrl,
         apiKey,
         api: def.api,
-        models: [{ id: modelId, name: modelId }],
+        models: allFreeModelEntries,
       });
-      routerLog(`[router] On-demand registered free model ${ref}`);
+      routerLog(`[router] On-demand registered ${allFreeModelEntries.length} free model(s) for ${provider} (triggered by ${ref})`);
       return Boolean(sessionCtx?.modelRegistry.find(provider, modelId));
     } catch (e) {
       routerLog(`[router] On-demand registration failed for ${ref}:`, e);
@@ -1722,7 +1747,19 @@ let previousTokenCount = 0;
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = options ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
-    const stream = hostStreamSimple(realModel, context, streamOpts);
+    // MEDIUM finding (roborev job 302): if hostStreamSimple throws
+    // synchronously (instead of returning null), the thrown error would
+    // propagate past this point and the reserved local slot would leak —
+    // driveStream's candidate-loop catch turns it into a null target and
+    // `continue`s before ever reaching the try/finally that releases. Wrap
+    // the stream creation so a throw releases the slot and re-throws.
+    let stream: AssistantMessageEventStream | null;
+    try {
+      stream = hostStreamSimple(realModel, context, streamOpts);
+    } catch (streamBuildErr) {
+      if (reservedLocalSlot && localStreamsInFlight > 0) localStreamsInFlight--;
+      throw streamBuildErr;
+    }
     if (!stream) {
       // Release the reserved slot — no stream to consume, so driveStream's
       // finally won't run. Without this the slot leaks and local routing
