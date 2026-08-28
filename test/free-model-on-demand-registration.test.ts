@@ -159,7 +159,7 @@ describe('driveStream: on-demand free-model registration', () => {
         free_models: [],
         providers: {
           openrouter: {
-            free_models: ['openrouter/z-ai/glm-5.2:free'],
+            free_models: ['openrouter/z-ai/glm-5.2:free', 'openrouter/some-paid-model'],
             keys: [{ key: 'sk-or-test-fake-key' }],
           },
         },
@@ -237,6 +237,17 @@ describe('driveStream: on-demand free-model registration', () => {
         // (the provider was already registered → Ü1 guard bailed).
         const openrouterReg = registerProviderCalls.find((c) => c.name === 'openrouter');
         expect(openrouterReg).toBeUndefined();
+
+        // And the cascade must have fallen over to the paid model, which WAS
+        // findable — proving the guard didn't break routing, just prevented
+        // the wipe. (roborev job 313 LOW)
+        const errEvent = events.find((e: any) => e.type === 'error') as any;
+        expect(errEvent).toBeUndefined();
+        const text = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+        expect(text).toContain('paid model survived');
       }
     );
   }, 15000);
