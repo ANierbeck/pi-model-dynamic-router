@@ -79,7 +79,17 @@ const MODELS_TTL = _defaults.models_ttl_ms;
 const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
 const REASONING_EMPTY_RESPONSE_TIMEOUT_MS = _defaults.reasoning_empty_response_timeout_ms;
 const STALL_TIMEOUT_MS = _defaults.stall_timeout_ms;
+const OLLAMA_MAX_CONCURRENT_STREAMS = _defaults.ollama_max_concurrent_streams;
 const GDPVAL_URL = _defaults.gdpval_url;
+
+// Local-stream concurrency limiter (process-wide semaphore for ollama/lm-studio).
+// Each local stream loads a full model into RAM; unbounded parallel streams
+// (e.g. from subagent fan-out) can exhaust system memory and crash the host.
+// tryStream() acquires before opening a local stream; the caller (driveStream)
+// releases after consumeWithDetection() settles, in a finally block.
+// localStreamLimit() and isLocalProvider() are defined inside the default
+// export scope (where `cfg` is in scope) below; only the counter is here.
+let localStreamsInFlight = 0;
 
 // ── Extension ──────────────────────────────────────────────────────────────
 
@@ -1579,6 +1589,15 @@ let previousTokenCount = 0;
   // not in Pi's registry, no API key) stays invisible.
   const skipReasons = new Map<string, string>();
 
+  // Local-stream concurrency limiter helpers (counter is module-global above;
+  // limit + predicate need `cfg`, which is in scope here).
+  function localStreamLimit(): number {
+    return cfg.ollama_max_concurrent_streams ?? OLLAMA_MAX_CONCURRENT_STREAMS;
+  }
+  function isLocalProvider(ref: string): boolean {
+    return ref.startsWith('ollama/') || ref.startsWith('lm-studio/');
+  }
+
   async function tryStream(
     ref: string,
     context: Context,
@@ -1599,6 +1618,25 @@ let previousTokenCount = 0;
       return skip(`not registered in Pi's model registry (provider=${provider}, id=${modelId})`);
     if (cfg.model_groups[realModel.provider])
       return skip(`resolved provider "${realModel.provider}" is a group`);
+    // Concurrency guard for LOCAL providers (ollama/lm-studio): each local
+    // stream loads a full model into RAM; parallel subagent fan-out can
+    // request N models at once and exhaust system RAM → OOM crash. When at
+    // the limit, soft-fail this candidate so driveStream falls over to the
+    // next one (typically a cloud model). Only applies to local providers;
+    // cloud (openrouter, mistral, etc.) is never throttled here.
+    //
+    // The slot is RESERVED here (before any await) so parallel tryStream
+    // callers can't all pass the check in the same microtask and then all
+    // increment past the limit. If anything below throws before the stream
+    // is handed back, the finally in the reservation wrapper releases it.
+    let reservedLocalSlot = false;
+    if (isLocalProvider(ref)) {
+      if (localStreamsInFlight >= localStreamLimit()) {
+        return skip(`local_concurrency_limit (${localStreamsInFlight} of ${localStreamLimit()} local streams in flight)`);
+      }
+      localStreamsInFlight++;
+      reservedLocalSlot = true;
+    }
     // Diagnostic: log exactly what the router resolved for this ref, so a failure
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
@@ -1614,17 +1652,28 @@ let previousTokenCount = 0;
     // mechanism the /model command uses). Only enforce apiKey/local for providers
     // the router actually registers itself.
     const routerManaged = Boolean((PROVIDER_MAP as any)[realModel.provider]);
-    if (routerManaged && !apiKey && !isLocal)
+    if (routerManaged && !apiKey && !isLocal) {
+      if (reservedLocalSlot && localStreamsInFlight > 0) localStreamsInFlight--;
       return skip(`no API key for provider "${realModel.provider}"`);
+    }
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = options ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
     const stream = hostStreamSimple(realModel, context, streamOpts);
     if (!stream) {
+      // Release the reserved slot — no stream to consume, so driveStream's
+      // finally won't run. Without this the slot leaks and local routing
+      // deadlocks after enough failures.
+      if (reservedLocalSlot && localStreamsInFlight > 0) localStreamsInFlight--;
       throw new Error(
         `No stream handler available for "${ref}" (provider=${realModel.provider}, api=${realModel.api})`
       );
     }
+    // Acquire the local concurrency slot AFTER the stream object is built
+    // but BEFORE it is handed to the caller for consumption. The matching
+    // release happens in driveStream's finally block after consumeWithDetection
+    // settles — we can't release here because tryStream doesn't consume the
+    // stream, it only opens it. (Slot already reserved above, pre-await.)
     routerLog(`[diag] tryStream streaming "${ref}" via host runtime`);
     return { stream, ref };
   }
@@ -2645,6 +2694,12 @@ let previousTokenCount = 0;
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfo(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
+        } finally {
+          // Release the local concurrency slot acquired in tryStream. Must
+          // run on every path: success (return), soft-failure (continue),
+          // and hard-failure (catch). Cloud providers were never counted and
+          // are never released — guarded by isLocalProvider(ref).
+          if (isLocalProvider(ref) && localStreamsInFlight > 0) localStreamsInFlight--;
         }
       }
 
@@ -2834,6 +2889,10 @@ let previousTokenCount = 0;
               const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
               pushError(bestRef, errorMsg);
               recordSoftFailure(bestRef);
+            } finally {
+              // Release the local concurrency slot acquired in tryStream for
+              // the force-retry candidate. Same guard as the main loop's finally.
+              if (isLocalProvider(bestRef!) && localStreamsInFlight > 0) localStreamsInFlight--;
             }
           }
           // If the force-retry failed, fall through to the normal error-emit

@@ -48,6 +48,19 @@ reasoning_empty_response_timeout_ms: 90000
 # doesn't hang the session for 20 minutes.
 stall_timeout_ms: 180000
 
+# Concurrency limit for LOCAL providers (ollama, lm-studio). Maximum number
+# of simultaneous streams the router will open to a local model server. Each
+# stream loads a full model into RAM (e.g. qwen3.8:27b-mlx ≈ 18GB), so
+# parallel subagent fan-out can request N models at once and exhaust system
+# RAM → OOM crash / kernel panic. Default 1 (strictly serial) is the safest
+# value: local model servers are single-process and far more sensitive to
+# memory pressure than cloud providers. When the limit is reached, the
+# router soft-fails the extra candidate (reason: local_concurrency_limit)
+# and driveStream falls over to the next candidate — typically a cloud
+# model. Only applies to local providers; cloud (openrouter, mistral, etc.)
+# is never throttled here.
+ollama_max_concurrent_streams: 1
+
 # Model ID normalization — stripped suffixes (prefixes handled by lastIndexOf("/"))
 strip_suffixes:
   - "-tee"
