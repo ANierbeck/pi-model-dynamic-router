@@ -297,14 +297,29 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
 ### Resilience & Fallback Strategies
-- [ ] **Implement caching for classification** - LRU cache with TTL for frequent prompts
+- [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
 - [ ] **Add batch processing** - Parallelize classification requests
 - [ ] **Optimize model selection** - Evaluate smaller models for classification
 
 ### Extended Classification
 - [ ] **Add more categories** - More specific distinction
-- [ ] **Multi-label classification** - Multiple categories per prompt
-- [ ] **Context-based classification** - Consider session context
+- [ ] **Multi-label classification** - Multiple categories per prompt (needs an ADR before implementation, see below)
+- [x] **Context-based classification (partially done, 2026-08-29)** — the
+  classifier already accepted `lastCategory` (short-prompt momentum: "yes",
+  "do it", "mach das" inherit the prior task's category) and
+  `previousUserMessage` (fed into the LLM's context block) in its type, but
+  the real call site in `index.ts` never populated either field — both were
+  silently `undefined`, so momentum never fired outside of unit tests that
+  set them directly. Fixed: `index.ts` now tracks `lastClassifiedCategory`
+  as session state (mirrors the existing `lastDynamicModel` pattern) and
+  extracts the previous user message via a new `extractPreviousUserMessage()`
+  helper. Regression test:
+  `test/dynamic-classification-momentum.test.ts` (drives two real turns
+  through `groupStream()`, asserts the LLM classifier is called once, not
+  twice, on a short follow-up, and that the previous user message shows up
+  in the LLM prompt on the next real classification call). Still open:
+  going beyond a single previous turn (e.g. rolling session summary) — not
+  pursued, no concrete need identified yet.
 
 ### Code Quality
 - [x] **Refactor resolveGroup() and getTopModels()** - DONE as A1 (see above): both call `applyGroupFilters()` in `src/routing.ts`
@@ -326,8 +341,13 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - [ ] **Multi-label classification** - Assign multiple categories to a single prompt
   - *Idea*: Allow prompts to match multiple categories (e.g., "code_simple" + "explanation")
   - *Benefit*: More accurate model selection based on combined requirements
-- [ ] **Implement learning from user feedback** - Improve classification based on corrections
-- [ ] **Add user-specific configurations** - Personalized model preferences
+- [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation, see below)
+- [x] **Add user-specific configurations (already built, closed 2026-08-29)**
+  — `src/config-loader.ts`'s layered config already does exactly this:
+  embedded defaults → `~/.pi/agent/router-config.user.json` (global user
+  overrides) → `<cwd>/.pi/router-config.json` (per-project overrides), deep-
+  merged. This IS "personalized model preferences" — the TODO predated it
+  and was never updated.
 
 ### ✅ Intelligent Failure Management (already built, TODO was stale — closed 2026-08-28)
 

@@ -27,8 +27,8 @@ export interface ClassificationResult {
 export type FullClassificationResult = ClassificationResult | HintClassificationResult;
 
 export interface ClassificationContext {
-  lastCategory?: ClassificationResult['category'];
-  previousUserMessage?: string;
+  lastCategory?: ClassificationResult['category'] | undefined;
+  previousUserMessage?: string | undefined;
   lastAssistantSnippet?: string | undefined;
   lastModel?: string | undefined;  // Model to reuse (e.g., after compaction)
   isCompaction?: boolean;  // NEW: Explicit compaction flag

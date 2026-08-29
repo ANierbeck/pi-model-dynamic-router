@@ -119,6 +119,11 @@ const defaultExport = function (pi: ExtensionAPI) {
   let curModel = '';
   let activeGroup: string | null = null;
   let lastDynamicModel = '';
+  // Category the dynamic classifier picked on the previous turn — feeds
+  // short-prompt momentum ('yes', 'do it', 'mach das') in classifyPrompt so a
+  // terse follow-up inherits the prior task's complexity instead of
+  // re-classifying from near-zero signal.
+  let lastClassifiedCategory: ClassificationResult['category'] | undefined;
   let sessionCtx: any = null;
 
 // Compaction detection state
@@ -2140,6 +2145,31 @@ let previousTokenCount = 0;
     return undefined;
   }
 
+  /**
+   * The user message BEFORE the current prompt (i.e. the second-to-last user
+   * message), for the classifier's context block. Distinct from
+   * extractLastUserPrompt(), which returns the CURRENT prompt being classified.
+   */
+  function extractPreviousUserMessage(context: Context): string | undefined {
+    try {
+      const userMsgs = context.messages.filter((m) => m.role === 'user');
+      const prev = userMsgs[userMsgs.length - 2];
+      if (!prev) return undefined;
+      const c = prev.content;
+      if (typeof c === 'string') return c.slice(0, 150);
+      if (Array.isArray(c)) {
+        const textContent = c
+          .filter((b: any) => b.type === 'text')
+          .map((b: any) => b.text as string)
+          .join('');
+        return textContent.slice(0, 150);
+      }
+    } catch {
+      /* context shape unknown */
+    }
+    return undefined;
+  }
+
   function groupStream(
     model: Model<any>,
     context: Context,
@@ -2203,7 +2233,8 @@ let previousTokenCount = 0;
         }
 
         const lastAssistantSnippet = extractLastAssistantSnippet(context);
-        
+        const previousUserMessage = extractPreviousUserMessage(context);
+
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
         // Strip "ollama/" prefix — callOllama expects the bare model name
         const stripOllama = (ref: string) => ref.replace(/^ollama\//, '');
@@ -2218,6 +2249,8 @@ let previousTokenCount = 0;
           cache,
           context: {
             lastAssistantSnippet,
+            previousUserMessage,
+            lastCategory: lastClassifiedCategory,
             lastModel: lastDynamicModel || undefined,
             isCompaction: isCompactionTurn(context),  // Pass context for detection
             lastModelLimited: lastDynamicModel ? isLimited(lastDynamicModel) : false,
@@ -2229,7 +2262,15 @@ let previousTokenCount = 0;
           classifyOpts.fallbackModel = stripOllama(dynamicGroupCfg.classifier_fallback);
 
         const classification = await classifyPrompt(prompt, classifyOpts);
-        
+
+        // Track the resolved category for next turn's short-prompt momentum
+        // ('yes', 'do it', ...). Hint results have no category — leave the
+        // prior value in place rather than clearing it, since a hint is a
+        // one-off override, not evidence the task category changed.
+        if ('category' in classification) {
+          lastClassifiedCategory = classification.category;
+        }
+
         // Check for HINT override
         if ('hintType' in classification) {
           if (classification.hintType === 'group') {
