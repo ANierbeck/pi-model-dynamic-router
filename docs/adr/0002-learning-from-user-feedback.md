@@ -168,6 +168,16 @@ real usage data rather than speculatively building similarity matching now.
 recommendation above — respects the project's existing data-minimization
 stance, has no silent-misapplication failure mode, and is fully auditable.
 
+**Explicit deferral note:** when revisiting ADR 0001 the same day, the user
+independently flagged C and D here as "sounds good, worth revisiting
+later" — not accepted now, but recorded so the next time this comes up we
+start from "why didn't we just do C/D already" instead of re-deriving it.
+Good trigger to revisit: if B's exact-match store turns out too narrow in
+practice (user keeps re-typing HINTs for reworded-but-same-intent
+requests), start with C (similarity matching) rather than D (few-shot),
+since D was rated worse on auditability regardless of which option is
+chosen for learning-scope.
+
 ## Consequences
 
 If B is accepted:
