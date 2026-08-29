@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted (2026-08-29) — Option B.
+Accepted (2026-08-29, revised same day) — Option C, with an explicit
+mitigation plan for its main risk (see below). Initially B was accepted,
+then revisited after the user pointed out a concrete, observed problem B
+cannot fix: real usage shows claude-sonnet-5 selected even for simple
+tasks, and B can only ever escalate (make routing more expensive), never
+correct an overshoot. C is the only option on the table that can route
+cheaper when the signal genuinely supports it.
 
 ## Context
 
@@ -127,36 +133,88 @@ combination with a `design`/`planning` category to bump toward `tactical`.
 
 ## Decision
 
-**Recommendation: Option B** (additive secondary category, max-tier
-escalation only). It's the smallest change that actually addresses the
-stated gap (mixed-intent prompts undershooting), stays backward compatible,
-fails safe on LLM misbehavior, and doesn't require designing a new scoring
-system whose behavior would be harder to reason about than the problem it
-solves — appropriate given the single-user deployment (Decision Drivers).
+**Accepted: Option C** (full weighted multi-label, with a bounded scoring
+function — see Mitigation Plan below). B was rejected on revisit because it
+structurally cannot fix the actual problem: it can only ever escalate
+(route to something MORE expensive), never correct an overshoot. Real usage
+data shows the opposite failure mode happening in practice — claude-sonnet-5
+being selected for tasks that don't need it — which only C, D can address,
+and D was already rejected for breaking language-independence. C's downside
+(a new, harder-to-audit failure mode: silent misrouting instead of a crash)
+is real and is the reason this ADR includes a dedicated Mitigation Plan
+rather than accepting the risk implicitly.
 
-Option A (do nothing) is the fallback if the user judges the escalation
-logic already sufficient and doesn't want to touch the classifier prompt at
-all right now.
+## Mitigation Plan for Silent Misrouting Risk
 
-**Confirmed by user (2026-08-29): Option B.** Rationale matches the
-recommendation above — smallest change that addresses the actual gap,
-stays backward compatible, and doesn't require designing a new scoring
-system the single-user deployment doesn't need.
+The core risk identified in "Options Considered" is that a weighted scoring
+function can quietly route to the wrong group with no error thrown — unlike
+B (which only ever escalates, so the worst case is "too expensive, never
+too weak") or a crash (which is at least visible). This plan bounds that
+risk instead of accepting it on faith:
+
+1. **Bounded output space — no interpolation.** The scoring function only
+   ever resolves to one of the groups actually implied by the LLM's
+   returned labels (via the existing `CATEGORY_TO_GROUP` map) — it never
+   synthesizes a new GDPval floor. This keeps every possible outcome a
+   real, already-configured, already-tested group.
+2. **Strict validation, fail-safe on malformed output.** Weights must be
+   numeric in `[0,1]`; if they don't sum to ~1 (±0.15), renormalize; if
+   that's not possible (missing/zero/garbage), fall back to primary-label-
+   only behavior — i.e. today's routing, never a crash, never an
+   arbitrary/undefined resolution. `labels[]` is capped at 3 entries to
+   bound the parsing/hallucination surface.
+3. **Confidence-gated downgrades — the main lever.** The scoring function
+   may only resolve to a CHEAPER group than the dominant label alone would
+   give when BOTH: the dominant label's weight ≥ 0.7, AND the overall
+   `confidence` field ≥ `min_confidence` (already an existing config
+   value). Any less-confident or more-evenly-split distribution falls back
+   to escalate-only behavior (identical to what B would have done) — so C's
+   "can downgrade" capability is only ever exercised when the signal is
+   genuinely strong, not on every ambiguous call.
+4. **Full auditability via existing logging.** `appendRawLog()` (already
+   called at every dynamic classification decision) is extended to record
+   the full label/weight vector and which gate (confidence-gated downgrade
+   vs. escalate-only fallback) fired — e.g.
+   `labels=[code_simple:0.8,design:0.2] confidence=0.85 → group=simple (downgrade, gate passed)`.
+   "Why did it route here" stays a direct log read, not a mystery — this
+   directly answers the "harder to explain" con from Options Considered.
+5. **Shadow mode before trusting it in production.** New config flag
+   `multi_label_downgrade_enabled` (default `false`). While `false`: labels
+   are parsed, scored, and logged as normal, but the ACTUAL routing
+   decision still uses escalate-only logic — the log shows what C WOULD
+   have chosen vs. what actually happened, with zero behavior change. Only
+   flip to `true` after reviewing a representative window of shadow logs.
+   This is a config flag, not a code path — reverting is a one-line change,
+   not a redeploy.
+6. **Existing escalation logic remains a second safety net.** Even after
+   `multi_label_downgrade_enabled: true`, if a downgrade turns out to be
+   wrong and causes visible thrash/loops within a session,
+   `SessionEscalation`'s existing reactive loop-detection still bumps the
+   tier back up exactly as it does today for any other routing misjudgment
+   — a bad downgrade self-corrects within a few turns, it doesn't get stuck
+   silently.
 
 ## Consequences
 
-If B is accepted:
-
-- `ClassificationResult` gains an optional field; `isValidClassification()`
-  needs to accept-but-not-require it.
-- `index.ts`'s dynamic-group resolution needs a `Math.max`-by-GDPval-floor
-  step instead of a single `getGroupForCategory()` call.
-- The classifier's LLM prompt needs one new sentence describing when to set
-  `secondary_category` (keep it optional/rare — most prompts still get one
-  label).
-- Test coverage needed: LLM returns only primary (today's behavior
-  unchanged), LLM returns primary+secondary with secondary MORE expensive
-  (escalates), LLM returns primary+secondary with secondary CHEAPER
-  (primary wins, no downgrade), and a malformed `secondary_category` value
-  (ignored, falls back to primary-only — never crashes the whole
-  classification).
+- `ClassificationResult` gains a `labels: {category, weight}[]` field
+  (capped at 3); the existing single `category` field is kept and derived
+  as `labels[0].category` for backward compatibility with every other call
+  site (compaction routing, static fallback, HINT detection) that only
+  knows about single-label results.
+- New scoring function in `src/content-classifier.ts` (weighted GDPval-
+  floor lookup over `CATEGORY_TO_GROUP`, with the confidence gate from the
+  Mitigation Plan) replaces the single `getGroupForCategory()` call at the
+  dynamic-group resolution site in `index.ts`.
+- New config: `multi_label_downgrade_enabled` (default `false`, ships in
+  shadow mode first), plus reuse of existing `min_confidence`.
+- `appendRawLog()` call sites extended with the label/weight vector and
+  gate decision.
+- The classifier's LLM prompt needs new instructions for the `labels[]`
+  shape, including a worked example of a mixed-intent prompt.
+- Test coverage needed: single-label passthrough (today's behavior
+  unchanged), confident downgrade (gate passes, routes cheaper), low-
+  confidence downgrade attempt (gate blocks it, falls back to escalate-
+  only), malformed/out-of-range weights (renormalize or fall back to
+  primary-only, never crash), shadow mode (`multi_label_downgrade_enabled:
+  false` logs the would-be decision but doesn't act on it), and a
+  downgrade-then-thrash scenario proving `SessionEscalation` still recovers.
