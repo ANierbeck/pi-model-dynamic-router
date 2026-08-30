@@ -89,11 +89,17 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // This is the exact text produced by claude-bridge's formatResetTimestamp():
     // `toLocaleString(void 0, { day:"numeric", month:"short", year:"numeric",
     //   hour:"numeric", minute:"2-digit", second:"2-digit", timeZoneName:"short" })`
-    const text =
-      'Warning: [rate-limit] Claude five_hour rate limit hit \u2014 resets 30. Aug. 2026, 17:00:00 MESZ';
+    // Date is computed relative to now (not hardcoded) — a fixed date eventually
+    // becomes "today" or "the past" as the calendar catches up, which made this
+    // test flip from pass to fail once the suite ran on/after 2026-08-30.
+    const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const day = in3days.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[in3days.getMonth()];
+    const year = in3days.getFullYear();
+    const text = `Warning: [rate-limit] Claude five_hour rate limit hit — resets ${day}. ${mon}. ${year}, 17:00:00 MESZ`;
     const ms = parseResetAtMs(text);
     expect(ms).toBeGreaterThan(Date.now());
-    // 30 Aug 2026 17:00:00 UTC (approximate — we use UTC as the interpretation)
     expect(ms).toBeLessThan(Date.now() + 7 * 24 * 60 * 60 * 1000);
   });
 

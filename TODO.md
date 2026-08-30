@@ -18,44 +18,49 @@
 
 ---
 
-## 🔴 **Open Issues (Known Bugs)**
-
-### `Summarization failed: Unknown error` from pi-ai auto-compaction
-
-**Status**: Logged, not yet investigated. Likely self-resolves once the
-`provider_error` fix from commit `53da69d` is in production (see Completed
-Tasks below) — that fix stops the router from silently treating a
-`finish_reason: error` mid-stream as a successful turn, so the broken
-free OpenRouter model no longer stays as `curModel` when compaction
-fires.
-
-**Symptom** (observed once, 2026-08-30 in `~/private-chat`):
-`pi-ai`'s `completeSummarization()` in
-`@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js`
-calls the model, gets `stopReason: 'error'` back with no `errorMessage`
-field, and `getSummarizationFailure()` falls through to the
-`'Unknown error'` branch (line 433 of `compaction.js`).
-
-**Why it's NOT the same bug as the `provider_error` fix above**:
-that fix only intercepts the *main* `driveStream` path. The compaction
-path uses `completeSimple()` directly, not `consumeWithDetection()`, so
-the `providerErrorDetected` flag never gets set there. But — same
-root cause in the upstream provider: the broken free model is still
-sending a raw `finish_reason: error`.
-
-**TODO** (separate investigation, not blocking):
-1. Confirm whether the broken model is the `curModel` when compaction
-   fires in current session, or whether `curModel` is now a healthy
-   fallback thanks to the `provider_error` fix.
-2. If still broken, decide between:
-   - Routing compaction through the same healthy fallback as the main
-     stream (would require either a hook into `pi-ai` or registering
-     a different model for summarization).
-   - Upstream pi-ai fix: have `getSummarizationFailure()` surface the
-     raw `response` so the user sees the actual `finish_reason` string
-     instead of `Unknown error`.
-
 ## ✅ **Completed Tasks**
+
+### `Summarization failed: Unknown error` from pi-ai auto-compaction — FIXED
+
+**Root cause**: compaction/branch-summary calls DO route through the
+router's `groupStream`/`driveStream` cascade (traced end-to-end:
+`AgentSession._runDefaultCompaction` → `agent.streamFunction` →
+pi-coding-agent's `modelRuntime.streamSimple` → provider lookup by
+`model.provider`, which is the router's persistent virtual group model
+for the whole session → the router's registered group provider
+`streamSimple: groupStream`). The cascade itself worked correctly. The
+bug was in how failures were reported back: `driveStream`'s "all
+candidates failed" / "dynamic routing failed" / catch-all error paths
+called `pushStreamError(proxy, detailText)` without the optional third
+`errorMessage` argument, so the resulting `AssistantMessage` had a
+detailed failure list in `content[0].text` but an *undefined*
+`errorMessage` field. pi-ai's `getSummarizationFailure()` reads only
+`response.errorMessage` (never `content[0].text`), so it always fell
+through to `"Unknown error"` even though the router had logged the real
+reason.
+
+**Fix** (commit pending): populate `errorMessage` at the 3 call sites
+that omitted it, but with a *generic, deterministic* string — not the
+raw failure list. This matters because pi-ai's `retryAssistantCall`
+(used by `completeSummarization`) calls `isRetryableAssistantError()`,
+which treats any `errorMessage` matching `RETRYABLE_PROVIDER_ERROR_PATTERN`
+(`timeout`, `rate.?limit`, `network.?error`, 5xx, ...) as transient and
+re-invokes the *entire* candidate cascade up to `maxRetries` times. Real
+failure-list text routinely contains those exact words
+(`rate_limit_exceeded`, `empty_timeout`, `stall_timeout`), so echoing it
+verbatim into `errorMessage` would turn an already multi-minute fallback
+cascade (N candidates × up to `stall_timeout_ms` each, default 180s) into
+a multi-attempt retry storm — very plausibly the cause of "pi hangs in
+working mode, have to Ctrl-C" reports during compaction. The full
+diagnostic detail stays in `content[0].text`; only a short, non-matching
+summary (e.g. `"[router] no candidates succeeded for this request (see
+chat log for per-candidate reasons)"`) goes into `errorMessage`.
+
+**Regression test**: `test/summarization-error-message.test.ts` asserts
+(a) `errorMessage` is non-empty and not `"Unknown error"`, and (b) pi-ai's
+own `isRetryableAssistantError()` classifies it as non-retryable —
+guarding against the retry-storm regression specifically, not just the
+original "Unknown error" symptom.
 
 ### Core Infrastructure
 - [x] **Modular architecture** - 8 modules (providers, types, utils, rate-limit, discovery, metrics, cache, routing, content-classifier)

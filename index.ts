@@ -2548,7 +2548,18 @@ let previousTokenCount = 0;
           fb = resolve(alt);
         }
         if (!fb) {
-          pushStreamError(proxy, `[router] Dynamic routing failed: ${err}`);
+          // errorMessage (3rd arg) must stay free of pi-ai's RETRYABLE_PROVIDER_ERROR_PATTERN
+          // trigger words (timeout, rate limit, network error, 5xx, ...) — pi-ai's
+          // retryAssistantCall (used by compaction/summarization) treats a matching
+          // errorMessage as transient and re-invokes this entire candidate cascade up
+          // to maxRetries times. The raw `err` here is an arbitrary caught exception
+          // and could easily contain one of those words, so it's kept out of
+          // errorMessage and only shown in the visible chat text.
+          pushStreamError(
+            proxy,
+            `[router] Dynamic routing failed: ${err}`,
+            '[router] dynamic classification unavailable, used fallback routing'
+          );
           return;
         }
         candidates = [...fb.candidates];
@@ -3079,13 +3090,33 @@ let previousTokenCount = 0;
             })
             .join('\n')
         : '  (no candidates attempted)';
+      // errorMessage (3rd arg) is what pi-ai's getSummarizationFailure() reads for the
+      // compaction/branch-summary "Summarization failed: ..." message — without it, that
+      // message is always "Unknown error" even though failureList has the real reason
+      // (see TODO.md 'Summarization failed: Unknown error'). It must stay a generic,
+      // deterministic string free of pi-ai's RETRYABLE_PROVIDER_ERROR_PATTERN trigger
+      // words (timeout, rate.?limit, network.?error, 5xx, ...): failureList's per-
+      // candidate reasons routinely contain those words (rate_limit_exceeded,
+      // empty_timeout, stall_timeout), and if errorMessage echoed them verbatim,
+      // pi-ai's retryAssistantCall would classify the failure as transient and re-run
+      // this entire already-exhausted candidate cascade up to maxRetries times —
+      // multiplying an already multi-minute fallback (N candidates × up to
+      // stall_timeout_ms each) into a hang the user has to Ctrl-C out of. The full
+      // per-candidate detail stays in the visible chat text; only this generic
+      // summary goes into errorMessage.
       pushStreamError(
         proxy,
-        `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`
+        `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`,
+        `[router] no candidates succeeded for this request (see chat log for per-candidate reasons)`
       );
     })().catch((err) => {
-      // Unhandled error in the async driver — surface it
-      pushStreamError(proxy, `[router] Stream error: ${err instanceof Error ? err.message : String(err)}`);
+      // Unhandled error in the async driver — surface it. Same retry-storm caution as
+      // above: keep errorMessage generic, not the raw (possibly trigger-word-laden) `err`.
+      pushStreamError(
+        proxy,
+        `[router] Stream error: ${err instanceof Error ? err.message : String(err)}`,
+        '[router] unexpected routing failure'
+      );
     });
   }
 

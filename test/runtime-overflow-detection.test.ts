@@ -244,7 +244,12 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
         const errEvent = events.find((e: any) => e.type === 'error') as any;
         expect(errEvent).toBeDefined();
-        expect(errEvent.error.errorMessage).toBeUndefined();
+        // errorMessage is now populated (fixes pi-ai's "Summarization failed:
+        // Unknown error"), but must stay a generic, non-overflow string — not
+        // the overflow-pattern text that would false-positive-trigger Pi's
+        // native compaction for what is actually just an empty response.
+        expect(errEvent.error.errorMessage).toBeTruthy();
+        expect(errEvent.error.errorMessage).not.toMatch(/prompt is too long/i);
       }
     );
   });
