@@ -203,8 +203,13 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       const error = errEvent.error;
 
       // Must be the normal "All N candidates failed" error, NOT the overflow
-      // signal.
-      expect(error.errorMessage).toBeUndefined();
+      // signal. errorMessage is now populated (fixes pi-ai's "Summarization
+      // failed: Unknown error"), but must stay a generic, non-overflow,
+      // non-retryable string — not the overflow-pattern text checked below,
+      // and not something that would make pi-ai's retryAssistantCall re-run
+      // this already-exhausted cascade.
+      expect(error.errorMessage).toBeTruthy();
+      expect(error.errorMessage).not.toMatch(/prompt is too long/i);
       const text = Array.isArray(error.content)
         ? error.content.map((c: any) => c.text ?? '').join('')
         : '';
