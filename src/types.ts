@@ -33,6 +33,10 @@ export interface RateLimit {
   cooldown_until: number;
   backoff_ms: number;
   hits: number;
+  /** Optional reset-at timestamp (Unix ms). When present, the cooldown_until
+   * is at least this value — set from a parsed rate-limit reset time so the
+   * router doesn't retry before the provider's window actually resets. */
+  resetAtMs?: number;
 }
 
 export interface PipeStep {

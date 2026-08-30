@@ -12,6 +12,7 @@ import {
   isRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
+  parseResetAtMs,
   RATE_LIMIT_PATTERNS,
 } from '../src/detection.ts';
 
@@ -80,5 +81,64 @@ describe('isOverflowDeltaText — narrow patterns for text_delta content', () =>
     // "context window" — the narrow text_delta set must not match it.
     expect(isOverflowDeltaText('the context window is 128k tokens')).toBe(false);
     expect(isOverflowDeltaText('maximum context length is a constraint')).toBe(false);
+  });
+});
+
+describe('parseResetAtMs — extracts reset timestamps from rate-limit messages', () => {
+  it('parses the German-locale format from claude-bridge formatResetTimestamp', () => {
+    // This is the exact text produced by claude-bridge's formatResetTimestamp():
+    // `toLocaleString(void 0, { day:"numeric", month:"short", year:"numeric",
+    //   hour:"numeric", minute:"2-digit", second:"2-digit", timeZoneName:"short" })`
+    const text =
+      'Warning: [rate-limit] Claude five_hour rate limit hit \u2014 resets 30. Aug. 2026, 17:00:00 MESZ';
+    const ms = parseResetAtMs(text);
+    expect(ms).toBeGreaterThan(Date.now());
+    // 30 Aug 2026 17:00:00 UTC (approximate — we use UTC as the interpretation)
+    expect(ms).toBeLessThan(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('parses the format in isolation', () => {
+    // A bare "resets DD. Mon YYYY, HH:MM:SS TZ" should parse.
+    // Use a date within 7 days (the sanity cap).
+    const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const day = in3days.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[in3days.getMonth()];
+    const year = in3days.getFullYear();
+    const text = `resets ${day}. ${mon}. ${year}, 12:00:00 EST`;
+    const ms = parseResetAtMs(text);
+    expect(ms).toBeGreaterThan(Date.now());
+    expect(ms).toBeLessThan(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  });
+
+  it('returns undefined for text with no reset-time pattern', () => {
+    expect(parseResetAtMs('rate limit exceeded')).toBeUndefined();
+    expect(parseResetAtMs('Warning: [rate-limit] Claude unknown rate limit')).toBeUndefined();
+    expect(parseResetAtMs('')).toBeUndefined();
+  });
+
+  it('returns undefined for past timestamps', () => {
+    // 30 Aug 2020 is definitely in the past
+    const ms = parseResetAtMs('resets 30. Aug. 2020, 17:00:00 MESZ');
+    expect(ms).toBeUndefined();
+  });
+
+  it('returns undefined for timestamps more than 7 days in the future', () => {
+    // A suspiciously far future date should be rejected as garbage
+    const ms = parseResetAtMs('resets 30. Aug. 2099, 17:00:00 MESZ');
+    expect(ms).toBeUndefined();
+  });
+
+  it('handles single-digit day and hour', () => {
+    // Use a date within 7 days (the sanity cap) with single-digit day and hour.
+    const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const day = in3days.getDate(); // single-digit possible
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[in3days.getMonth()];
+    const year = in3days.getFullYear();
+    const hour = in3days.getHours(); // single-digit possible
+    const text = `resets ${day}. ${mon}. ${year}, ${hour}:05:00 EST`;
+    const ms = parseResetAtMs(text);
+    expect(ms).toBeGreaterThan(Date.now());
   });
 });
