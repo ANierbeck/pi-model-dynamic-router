@@ -1803,6 +1803,8 @@ let previousTokenCount = 0;
     let overflowDetail = ''; // Raw provider text that triggered overflow detection
     let repetitionLoop = false; // Model is stuck regenerating the same phrase
     let repetitionDetail = ''; // The repeating unit + count, for the router-info message
+    let providerErrorDetected = false; // Any other provider-reported error event (not rate-limit/overflow)
+    let providerErrorDetail = ''; // Raw provider error text, for the router-info message
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
     let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
     const iterPromise = (async (): Promise<'done'> => {
@@ -1826,8 +1828,12 @@ let previousTokenCount = 0;
           armTimer();
           if (event.type === 'error') {
             clearTimer();
-            // Check if this is a rate limit or subscription error from claude-bridge
-            const errorMsg = String((event as any).error?.message || (event as any).error || '');
+            // Check if this is a rate limit or subscription error from claude-bridge.
+            // pi-ai's openai-completions provider puts the message on
+            // `.errorMessage` (the assistant-message shape), not `.message` —
+            // check both so this works across provider families.
+            const errObj = (event as any).error;
+            const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
             if (isRateLimitText(errorMsg)) {
               rateLimited = true;
             }
@@ -1835,6 +1841,21 @@ let previousTokenCount = 0;
             if (isOverflowErrorText(errorMsg)) {
               overflowDetected = true;
               overflowDetail = errorMsg;
+            }
+            // Any other provider-reported error — e.g. pi-ai's "Provider
+            // finish_reason: <reason>" when a free OpenRouter model (minimax,
+            // north-mini-code, inkling observed in practice) ends its stream
+            // with an unrecognized finish_reason like a raw "error" value.
+            // This still counts as a failure even when content streamed
+            // first (hadContent already true) — without this branch it fell
+            // through every check below to the final `return { ok: true }`,
+            // silently treating a mid-stream provider error as a successful
+            // completion: no cooldown recorded, the same broken model gets
+            // picked again next turn, and the failure repeats as an apparent
+            // hang/loop.
+            if (!rateLimited && !overflowDetected) {
+              providerErrorDetected = true;
+              providerErrorDetail = errorMsg;
             }
             // Don't forward error events — treat as soft failure so driveStream
             // can try the next candidate without showing an error to the user.
@@ -1926,6 +1947,13 @@ let previousTokenCount = 0;
       // Model is stuck regenerating the same phrase — soft failure, try next
       // model instead of letting it burn the whole context window.
       return { ok: false, reason: 'repetition_loop', detail: repetitionDetail || undefined };
+    }
+    if (providerErrorDetected) {
+      // Any other provider error event (not rate-limit/overflow) — soft
+      // failure, try next candidate. Checked before `!hadContent` on purpose:
+      // a provider that streams partial content and THEN errors still needs
+      // this branch, since hadContent alone would otherwise report success.
+      return { ok: false, reason: 'provider_error', detail: providerErrorDetail || undefined };
     }
 
     if (!hadContent) {
@@ -2781,7 +2809,9 @@ let previousTokenCount = 0;
             ? 'no response within timeout'
             : result.reason === 'stall_timeout'
               ? 'stream stalled mid-response'
-              : 'empty response from model';
+              : result.reason === 'provider_error'
+                ? `provider error${result.detail ? `: ${result.detail}` : ''}`
+                : 'empty response from model';
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfo(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
