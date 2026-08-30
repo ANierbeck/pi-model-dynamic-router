@@ -18,7 +18,6 @@ import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
 import { getGroupForCategory } from './content-classifier.ts';
-import { BudgetTracker, initBudgetTracker } from './budget-tracker.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -201,13 +200,11 @@ export class Router {
   private lastDynamicModel: string = '';
   private lastDynamicCategory: string | undefined;
   private sessionCtx: ExtensionContext | null = null;
-  private budgetTracker: BudgetTracker | null = null;
 
   constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
     this.cfg = cfg;
     this.cache = cache;
     this.limits = limits;
-    this.budgetTracker = initBudgetTracker(cfg, cache);
   }
 
   setSessionCtx(ctx: ExtensionContext | null): void {
@@ -218,20 +215,14 @@ export class Router {
    * Point the router at a new cache object.
    *
    * index.ts REPLACES its `cache` variable on every reload path (loadCache,
-   * discoverKeys, saveCache/budget refresh) and notifies metrics, the rate-limit
-   * manager and the budget tracker. The router was never notified, so it kept
-   * reading the object it was constructed with — discovered models, exclude
-   * lookups, dedup and health data all silently went stale for the rest of the
-   * session. Every place that reassigns index.ts's cache must call this.
+   * discoverKeys, saveCache) and notifies metrics and the rate-limit manager.
+   * The router was never notified, so it kept reading the object it was
+   * constructed with — discovered models, exclude lookups, dedup and health
+   * data all silently went stale for the rest of the session. Every place
+   * that reassigns index.ts's cache must call this.
    */
   updateCache(cache: Cache): void {
     this.cache = cache;
-    // Swap the tracker's cache reference rather than constructing a new one.
-    // initBudgetTracker() also reassigns the module-level budgetTracker
-    // singleton in budget-tracker.ts — an unrelated side effect to trigger up
-    // to four times per reload cycle. Only construct when none exists yet.
-    if (this.budgetTracker) this.budgetTracker.updateCache(cache);
-    else this.budgetTracker = initBudgetTracker(this.cfg, cache);
   }
 
   // ── Model Discovery ─────────────────────────────────────────────────────
@@ -306,25 +297,10 @@ export class Router {
     // Delegate to the single source of truth in budget.ts.
     // Previously this duplicated hasModelBudget (index.ts) with identical logic;
     // both now go through hasBudget() so the rule lives in one place.
-    if (!this.budgetTracker || !this.cache.budget_cache) return refs;
+    if (!this.cache.budget_cache) return refs;
     return refs.filter((ref) =>
       hasBudget(ref, this.cfg.providers, this.cache.budget_cache)
     );
-  }
-  
-  /**
-   * Async version that refreshes budget info from APIs
-   */
-  async filterByBudgetAsync(refs: string[]): Promise<string[]> {
-    if (!this.budgetTracker) return refs;
-    
-    const result: string[] = [];
-    for (const ref of refs) {
-      if (await this.budgetTracker.hasBudget(ref)) {
-        result.push(ref);
-      }
-    }
-    return result;
   }
 
   /**

@@ -31,3 +31,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 
 - [0001 — Multi-label classification](0001-multi-label-classification.md)
 - [0002 — Learning from user feedback](0002-learning-from-user-feedback.md)
+- [0003 — Reject live subscription-usage-API querying](0003-reject-live-subscription-usage-api.md)
