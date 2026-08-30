@@ -57,6 +57,7 @@ import {
   isRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
+  parseResetAtMs,
 } from './src/detection.ts';
 import { hasBudget } from './src/budget.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
@@ -1011,9 +1012,9 @@ let previousTokenCount = 0;
     return rateLimitManager.isLimited(ref);
   }
 
-  function recordLimit(ref: string): { rotated: boolean; newKey?: string } {
+  function recordLimit(ref: string, resetAtMs?: number): { rotated: boolean; newKey?: string } {
     recordModelFailure(cache, ref);
-    return rateLimitManager.recordLimit(ref, cfg.providers ?? {});
+    return rateLimitManager.recordLimit(ref, cfg.providers ?? {}, resetAtMs);
   }
 
   function recordOk(ref: string) {
@@ -1046,7 +1047,8 @@ let previousTokenCount = 0;
    */
   function recordStreamFailure(
     ref: string,
-    reason: string
+    reason: string,
+    resetAtMs?: number
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
     const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
     const isEmptyFailure = reason === 'empty_response'
@@ -1054,7 +1056,7 @@ let previousTokenCount = 0;
       || reason === 'stall_timeout';
     const isFreeModel = ref.includes(':free');
     if (reason === 'rate_limit_exceeded' || (isCloudProvider && isEmptyFailure && !isFreeModel)) {
-      const rlResult = recordLimit(ref);
+      const rlResult = recordLimit(ref, resetAtMs);
       return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
     }
     recordSoftFailure(ref);
@@ -1754,7 +1756,7 @@ let previousTokenCount = 0;
     proxy: AssistantMessageEventStream,
     timeoutMs: number,
     stallMs: number
-  ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined }> {
+  ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined; resetAtMs?: number }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1799,6 +1801,7 @@ let previousTokenCount = 0;
     //
     // Race: iterate the stream vs timeout
     let rateLimited = false;
+    let rateLimitResetAtMs: number | undefined; // Parsed reset time from the error text (if any)
     let overflowDetected = false; // Provider rejected oversized prompt (overflow text)
     let overflowDetail = ''; // Raw provider text that triggered overflow detection
     let repetitionLoop = false; // Model is stuck regenerating the same phrase
@@ -1836,6 +1839,12 @@ let previousTokenCount = 0;
             const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
             if (isRateLimitText(errorMsg)) {
               rateLimited = true;
+              // Try to extract the reset time from the error text. This lets
+              // the router set a cooldown that exactly matches the provider's
+              // window (e.g. 2.5h for a five_hour rate limit), instead of
+              // guessing with the escalating backoff schedule and risk
+              // re-picking the model before the window actually resets.
+              rateLimitResetAtMs = parseResetAtMs(errorMsg);
             }
             // Check if this is a context-overflow rejection (Mistral/OpenAI/etc.)
             if (isOverflowErrorText(errorMsg)) {
@@ -1871,6 +1880,11 @@ let previousTokenCount = 0;
             accumulatedText += delta;
             if (isRateLimitText(delta) || isRateLimitText(accumulatedText)) {
               rateLimited = true;
+              // Same reset-time extraction as the error-event branch. The
+              // text_delta path is the one claude-bridge actually uses for
+              // its `piUI.notify(...)` rate-limit warning, so this is the
+              // case that triggers most often in practice.
+              rateLimitResetAtMs = parseResetAtMs(accumulatedText) ?? rateLimitResetAtMs;
               clearTimer();
               // Stop consuming — don't forward rate-limit text to the user
               return 'done';
@@ -1940,8 +1954,16 @@ let previousTokenCount = 0;
       return { ok: false, reason: 'context_overflow', detail: overflowDetail || undefined };
     }
     if (rateLimited) {
-      // Rate limit or subscription error — soft failure, try next model
-      return { ok: false, reason: 'rate_limit_exceeded' };
+      // Rate limit or subscription error — soft failure, try next model.
+      // Pass through the parsed reset time so recordLimit can set a cooldown
+      // that exactly matches the provider's window (instead of the default
+      // escalating backoff that might expire too early for long windows).
+      // Strip the key when undefined so exactOptionalPropertyTypes is happy.
+      return {
+        ok: false,
+        reason: 'rate_limit_exceeded',
+        ...(rateLimitResetAtMs ? { resetAtMs: rateLimitResetAtMs } : {}),
+      };
     }
     if (repetitionLoop) {
       // Model is stuck regenerating the same phrase — soft failure, try next
@@ -2712,12 +2734,18 @@ let previousTokenCount = 0;
           // apart on escalation policy. Each branch still owns its own
           // user-facing message.
           if (result.reason === 'rate_limit_exceeded') {
-            const rlResult = recordStreamFailure(ref, String(result.reason));
+            const rlResult = recordStreamFailure(ref, String(result.reason), result.resetAtMs);
             pushError(ref, 'rate_limit_exceeded');
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, trying ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — rate limit/spend limit reached${keyMsg}${suffix}\n\n`);
+            // If we parsed a reset time, surface it so the user can see when
+            // this model is expected to be available again (instead of just
+            // the generic "rate limit" message and a mystery cooldown).
+            const resetMsg = result.resetAtMs
+              ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
+              : '';
+            pushRouterInfo(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2788,7 +2816,7 @@ let previousTokenCount = 0;
           const isFreeModel = ref.includes(':free');
           if (isCloudProvider && isEmptyFailure && !isFreeModel) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
-            const rlResult = recordStreamFailure(ref, String(result.reason));
+            const rlResult = recordStreamFailure(ref, String(result.reason), result.resetAtMs);
             pushError(ref, `${result.reason} (treated as rate-limit)`);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, trying ${nextRef} …` : '';
@@ -2796,7 +2824,10 @@ let previousTokenCount = 0;
             const paidLabel = result.reason === 'stall_timeout'
               ? 'stream stalled (likely rate limit)'
               : 'empty response (likely rate limit)';
-            pushRouterInfo(proxy, `> [router] ${ref} — ${paidLabel}${keyMsg}${suffix}\n\n`);
+            const resetMsg = result.resetAtMs
+              ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
+              : '';
+            pushRouterInfo(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -3002,7 +3033,7 @@ let previousTokenCount = 0;
                 // rest of the router relies on. Capture the result so a key
                 // rotation is surfaced to the user, mirroring the main loop's
                 // "(key rotated to X)" router-info lines.
-                const frResult = recordStreamFailure(bestRef, String(result.reason));
+                const frResult = recordStreamFailure(bestRef, String(result.reason), result.resetAtMs);
                 if (frResult.hardLimited) {
                   const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
                   const reasonTxt = String(result.reason);
@@ -3011,7 +3042,10 @@ let previousTokenCount = 0;
                     : reasonTxt === 'stall_timeout'
                       ? 'stream stalled (likely rate limit)'
                       : 'empty response (likely rate limit)';
-                  pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${keyMsg}\n\n`);
+                  const resetMsg = result.resetAtMs
+                    ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
+                    : '';
+                  pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
                 }
               }
             } catch (streamError) {

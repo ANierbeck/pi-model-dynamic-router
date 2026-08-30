@@ -112,10 +112,20 @@ export class RateLimitManager {
   /**
    * Records a rate-limit error and attempts key rotation.
    * Returns whether rotation succeeded and the new key label if so.
+   *
+   * `resetAtMs` (optional) — when present, the cooldown is forced to be at
+   * least as long as the gap from now until the provider's window actually
+   * resets. This prevents a real provider reset time (e.g. 2.5h from now) from
+   * being capped at the backoff schedule's 90-minute ceiling — which used to
+   * cause the same model to get re-picked and re-rate-limited in a tight
+   * loop near the end of the user's 5-hour window. The schedule still
+   * escalates the backoff for repeated hits; resetAtMs only ensures we wait
+   * at least until the window resets.
    */
   recordLimit(
     ref: string,
-    providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>
+    providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>,
+    resetAtMs?: number
   ): { rotated: boolean; newKey?: string } {
     const { provider } = splitRef(ref);
 
@@ -136,7 +146,23 @@ export class RateLimitManager {
     // = 41.67 days cooldown — blocking ALL models for over a month.
     const ms = this.backoffMinutes[backoffIndex];
 
-    this.limits.set(ref, { cooldown_until: Date.now() + ms, backoff_ms: ms, hits });
+    // If a reset time is known, use the LONGER of (escalating backoff,
+    // wait-until-reset). Without this, a hit near the end of a 5-hour window
+    // gets capped at 90m, the model is re-picked, fails again, escalates —
+    // a tight loop until the window actually resets. With it, the cooldown
+    // is exactly right the first time.
+    let cooldown_ms = ms;
+    if (resetAtMs && Number.isFinite(resetAtMs)) {
+      const untilReset = Math.max(0, resetAtMs - Date.now());
+      if (untilReset > cooldown_ms) cooldown_ms = untilReset;
+    }
+
+    this.limits.set(ref, {
+      cooldown_until: Date.now() + cooldown_ms,
+      backoff_ms: ms,
+      hits,
+      ...(resetAtMs && Number.isFinite(resetAtMs) ? { resetAtMs } : {}),
+    });
 
     // After enough consecutive hits, apply a costMux penalty to the provider
     if (hits === this.costMuxAtHit) {
