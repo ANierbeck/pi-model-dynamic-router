@@ -64,7 +64,6 @@ import { Router, getFallbackGroup } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { costTracker } from './src/cost-tracker.ts';
-import { BudgetTracker, initBudgetTracker } from './src/budget-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -111,7 +110,6 @@ const defaultExport = function (pi: ExtensionAPI) {
   let discoveryManager: DiscoveryManager;
   let cacheManager: CacheManager;
   let router: Router;
-  let budgetTracker: BudgetTracker;
   // gdpval/modelMap/lookupGdp state lives in metrics.ts (single source of truth).
   let scanning = false;
   let sessionStart = Date.now();
@@ -320,7 +318,6 @@ let previousTokenCount = 0;
     // re-apply here; callers must never need to remember to redo this themselves.
     if (sessionCtx) router.setSessionCtx(sessionCtx);
     metricsModule.setCache(cache);
-    budgetTracker = initBudgetTracker(cfg, cache);
     // Keep escalation's loop-detection model in sync with the configured dynamic
     // group's classifier_fallback — don't hardcode a specific local model.
     const dynGroup = cfg.model_groups?.['dynamic'];
@@ -334,17 +331,9 @@ let previousTokenCount = 0;
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
     router?.updateCache(cache);
-    if (budgetTracker) {
-      budgetTracker.updateCache(cache);
-    }
   }
 
   function saveCache() {
-    // Update cache with latest budget info before saving
-    if (budgetTracker) {
-      cache = budgetTracker.getCache();
-      router?.updateCache(cache);
-    }
     cacheManager.saveCache(cache);
   }
 
@@ -359,32 +348,15 @@ let previousTokenCount = 0;
   }
 
   // ── Budget Tracking ─────────────────────────────────────────────────────
-
-  /**
-   * Refresh budget info for all subscription providers
-   */
-  async function refreshBudgets() {
-    if (!budgetTracker) return;
-    
-    const subscriptionProviders = Object.entries(cfg.providers ?? {})
-      .filter(([prov, config]) => config.billing === 'subscription')
-      .map(([prov]) => prov);
-    
-    // Refresh budget for each subscription provider
-    for (const prov of subscriptionProviders) {
-      try {
-        await budgetTracker.refreshBudget(prov);
-        routerLog(`[budget] Refreshed budget for ${prov}`);
-      } catch (error) {
-        routerLog(`[budget] Error refreshing budget for ${prov}:`, error);
-      }
-    }
-    
-    // Update cache with new budget info
-    cache = budgetTracker.getCache();
-    router?.updateCache(cache);
-    saveCache();
-  }
+  //
+  // There is no live-refresh path here: no subscription provider (Claude Pro/
+  // Max via claude-bridge, or any other) exposes a documented API to query
+  // remaining quota. See docs/adr/0003-reject-live-subscription-usage-api.md
+  // for why this was investigated and rejected rather than built. hasBudget()
+  // reads whatever is in cache.budget_cache (currently always empty, so
+  // subscription providers are treated as available — the same as
+  // pay-per-token providers) and relies on RateLimitManager's reactive
+  // cooldowns to react once a provider actually reports a rate limit.
 
   /**
    * Check if a model has available budget (synchronous, uses cache)
@@ -1266,21 +1238,6 @@ let previousTokenCount = 0;
 
     await registerGroupModels(ctx);
     scan().catch(() => {});
-    
-    // Refresh budgets initially and then every 5 minutes
-    refreshBudgets().catch(() => {});
-    const budgetRefreshInterval = setInterval(() => {
-      refreshBudgets().catch(() => {});
-    }, 5 * 60 * 1000); // 5 minutes
-    
-    // Store interval in session context for cleanup
-    if (!sessionCtx) {
-      sessionCtx = {};
-    }
-    if (!sessionCtx._budgetRefreshIntervals) {
-      sessionCtx._budgetRefreshIntervals = [];
-    }
-    sessionCtx._budgetRefreshIntervals.push(budgetRefreshInterval);
 
     // Footer
     ctx.ui.setFooter((tui, theme, fd) => {

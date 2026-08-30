@@ -149,7 +149,11 @@ export interface Cache {
   exhausted_keys?: Record<string, number>; // "provider:keyIdx" → exhausted_until timestamp
   openrouter_pricing?: Record<string, { input: number; output: number }>; // provider/modelId ref → $/1M
   usage_log?: { ref: string; tokens: number; ts: number }[]; // token usage history
-  // Budget tracking for subscription providers
+  // Budget tracking for subscription providers. Nothing currently writes to
+  // this — there is no live API to query remaining subscription quota (see
+  // docs/adr/0003-reject-live-subscription-usage-api.md). The field and the
+  // hasBudget()/filterByBudget() logic that reads it stay in place as a hook
+  // a future local-usage-log-based tracker could populate.
   budget_cache?: Record<string, { // provider → budget info
     remaining_tokens?: number;
     window_type?: 'hourly' | 'daily' | 'monthly';
