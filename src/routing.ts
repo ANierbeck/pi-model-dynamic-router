@@ -855,17 +855,19 @@ export class Router {
       c = this.sortBy(c, g.method);
     }
 
-    // Collapse cross-provider same-slug entries to ONE row (the best-ranked
-    // variant). Users see "which models are available", not "which providers
-    // offer which variant of which model" — the latter is noise when all
-    // variants score identically. The routing/failover path (resolveGroup's
-    // rank closure above) keeps all variants internally, so failover still
-    // tries every provider in order before moving to the next model.
-
-    // Collapse to ONE row per slug. Pick the best representative per cluster:
-    // prefer a non-limited variant (model is actually usable via that provider)
-    // over a limited one. When all variants of a slug are limited, any one
-    // serves as the representative — it correctly lands in the limited bucket.
+    // Collapse cross-provider same-slug entries to ONE row. Users see "which
+    // models are available", not "which providers offer which variant of
+    // which model" — the latter is noise when all variants score identically.
+    // The routing/failover path (resolveGroup's rank closure above) keeps all
+    // variants internally, so failover still tries every provider in order
+    // before moving to the next model.
+    //
+    // Pick the best representative per cluster: prefer a non-limited variant
+    // (model is actually usable via that provider) over a higher-ranked but
+    // limited one — otherwise a temporarily rate-limited top provider would
+    // wrongly hide an available sibling behind the "limited" bucket. When all
+    // variants of a slug are limited, any one serves as the representative —
+    // it correctly lands in the limited bucket.
     c = this.coalesceBySlug(c);
     {
       // Map: slug key -> best representative ref (non-limited wins).
