@@ -112,7 +112,11 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
-    const text = `resets ${day}. ${mon}. ${year}, 12:00:00 EST`;
+    // UTC (not EST/etc.) since roborev job 354 restricted TZ_OFFSET_HOURS to
+    // only the verified German-locale case — an unmapped abbreviation now
+    // returns undefined instead of guessing offset 0, so this test (which is
+    // about the regex/digit parsing, not TZ correctness) uses a mapped zone.
+    const text = `resets ${day}. ${mon}. ${year}, 12:00:00 UTC`;
     const ms = parseResetAtMs(text);
     expect(ms).toBeGreaterThan(Date.now());
     expect(ms).toBeLessThan(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -136,6 +140,23 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     expect(ms).toBeUndefined();
   });
 
+  it('returns undefined for an unmapped/ambiguous TZ abbreviation instead of guessing offset 0 (roborev job 354 LOW)', () => {
+    // EST is not in TZ_OFFSET_HOURS (deliberately — speculative US-zone
+    // entries were removed; see the comment above the table). Silently
+    // assuming offset 0 for an unmapped negative-offset zone would make the
+    // parsed cooldown expire BEFORE the real reset (premature retry) — the
+    // exact failure mode this feature exists to prevent — so an unmapped
+    // zone must return undefined and let the caller fall back to the
+    // standard escalating backoff instead.
+    const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const day = in3days.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mon = months[in3days.getMonth()];
+    const year = in3days.getFullYear();
+    const ms = parseResetAtMs(`resets ${day}. ${mon}. ${year}, 12:00:00 EST`);
+    expect(ms).toBeUndefined();
+  });
+
   it('handles single-digit day and hour', () => {
     // Use a date within 7 days (the sanity cap) with single-digit day and hour.
     const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
@@ -144,7 +165,7 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
     const hour = in3days.getHours(); // single-digit possible
-    const text = `resets ${day}. ${mon}. ${year}, ${hour}:05:00 EST`;
+    const text = `resets ${day}. ${mon}. ${year}, ${hour}:05:00 UTC`;
     const ms = parseResetAtMs(text);
     expect(ms).toBeGreaterThan(Date.now());
   });
