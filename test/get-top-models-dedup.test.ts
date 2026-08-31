@@ -199,12 +199,14 @@ describe('coalesceBySlug — clusters cross-provider same-slug entries together'
     );
     metricsModule.setCache(cache);
   });
+});
 
-  // Finding #2 — Medium: the primary behavior change (failover ordering in
-  // resolveGroup's rank closure) was not exercised by any test.  Verify that
-  // resolve() returns a candidate list where same-slug variants are grouped
-  // consecutively so driveStream failure handlers try all provider variants
-  // of a model before falling through to the next model.
+// resolveGroup/resolve() is the live routing path (as opposed to getTopModels,
+// the display path exercised by the suites above) — verify that same-slug
+// variants stay grouped consecutively in the candidate list so driveStream
+// failure handlers try every provider of a model before falling through to
+// the next model.
+describe('resolveGroup — failover ordering', () => {
   it(
     'resolve() keeps all cross-provider same-slug variants consecutively in ' +
       'the candidate list (failover ordering)',
