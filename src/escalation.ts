@@ -135,6 +135,7 @@ export class SessionEscalation {
   private _sessionId = 0;
   private _classifierModel: string;
   private _correctionStreak = 0;
+  private _streakEscalatedPending = false;
 
   /**
    * @param classifierModel Ollama ref used for LLM-based loop detection. Should come
@@ -164,6 +165,7 @@ export class SessionEscalation {
     this._history = [];
     this._sessionId++;
     this._correctionStreak = 0;
+    this._streakEscalatedPending = false;
   }
 
   /**
@@ -183,7 +185,6 @@ export class SessionEscalation {
     // once the same signal has shown up STREAK_THRESHOLD times in a row,
     // resetting on any user turn that doesn't carry it (a single clean turn
     // means it wasn't a real ongoing loop).
-    let streakEscalated = false;
     if (prompt.trim().length > 0) {
       if (hasFrustrationSignal(prompt)) {
         this._correctionStreak++;
@@ -192,7 +193,14 @@ export class SessionEscalation {
           this._level = nextLevel(this._level);
           this._correctionStreak = 0;
           if (prev !== this._level) {
-            streakEscalated = true;
+            // Persisted on the instance (not a call-local variable) because the
+            // periodic _checkAndEscalate trigger below fires on raw call count,
+            // not on which half of the split user/assistant exchange it lands
+            // on (roborev job 376 MEDIUM) — it can fire on the very NEXT call
+            // (the assistant-only half, empty prompt), which would otherwise
+            // see a call-local flag reset to its default and wrongly permit
+            // the LLM path to stack a second escalation on top of this one.
+            this._streakEscalatedPending = true;
             routerLog(`[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`);
           }
         }
@@ -203,7 +211,7 @@ export class SessionEscalation {
 
     // Check every 3rd turn, starting when we have at least 2 entries.
     if (this._history.length >= 2 && (this._history.length - 2) % 3 === 0) {
-      this._checkAndEscalate(streakEscalated);
+      this._checkAndEscalate();
     }
   }
 
@@ -212,12 +220,14 @@ export class SessionEscalation {
    * rule-based path lives entirely in recordTurn's streak counter above —
    * this is a secondary, slower signal for loops the keyword streak misses
    * (e.g. repeated semantic frustration without the specific tracked words).
-   * `alreadyEscalatedThisTurn` prevents a double-escalation when the streak
-   * check already bumped the level in the SAME recordTurn call that
-   * triggered this LLM check — the async result resolves later and must not
-   * stack a second bump on top of one that already happened this turn.
+   * Consumes `_streakEscalatedPending` (set by recordTurn's streak check) to
+   * prevent a double-escalation when the streak already bumped the level
+   * recently — the async LLM result resolves later and must not stack a
+   * second bump on top of one the streak already applied.
    */
-  private _checkAndEscalate(alreadyEscalatedThisTurn: boolean): void {
+  private _checkAndEscalate(): void {
+    const alreadyEscalatedThisTurn = this._streakEscalatedPending;
+    this._streakEscalatedPending = false;
     const recent = this._history.slice(-2);
 
     if (!this._llmInFlight) {
