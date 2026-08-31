@@ -128,27 +128,37 @@ export function parseResetAtMs(text: string): number | undefined {
   const month = MONTH[monRaw];
   if (month === undefined) return undefined;
   // Maps the TZ abbreviation captured above to hours-ahead-of-UTC (roborev
-  // job 351 MEDIUM). The claude-bridge text carries local wall-clock digits
-  // (Anthropic's resetsAt reformatted via toLocaleString in the user's
-  // timezone) — without correcting for the offset, treating those digits as
-  // literal UTC makes the parsed instant *later* than the real reset by the
-  // zone's full offset (e.g. 2h for MESZ/CEST), which on a 5h five_hour
-  // window is a ~40% overestimate, not a rounding error. Covers the
-  // documented/tested case (German locale: MEZ/MESZ) plus a few other common
-  // abbreviations; anything unmapped falls back to offset 0 (the previous
-  // behavior) — safe (never resets the cooldown early) but imprecise for
-  // zones outside this table.
+  // job 351 MEDIUM/354 LOW×2). The claude-bridge text carries local
+  // wall-clock digits (Anthropic's resetsAt reformatted via toLocaleString in
+  // the user's timezone) — without correcting for the offset, treating those
+  // digits as literal UTC makes the parsed instant *later* than the real
+  // reset by the zone's full offset (e.g. 2h for MESZ/CEST), which on a 5h
+  // five_hour window is a ~40% overestimate, not a rounding error.
+  //
+  // Deliberately limited to the ONLY verified/documented use case (German
+  // locale: MEZ/MESZ, CET/CEST as the English label for the same zones) —
+  // an earlier version of this table speculatively added common US
+  // abbreviations (EST/CST/MST/PST, BST) "in case an English-locale Pi
+  // install produces them", which introduced two real problems: (1) several
+  // of those abbreviations are genuinely ambiguous (CST = US Central Standard
+  // Time OR China Standard Time; BST = British Summer Time OR Bangladesh
+  // Standard Time) with no way to disambiguate from the text alone, and (2)
+  // for negative-offset zones specifically, guessing wrong is NOT safe the
+  // way the old "unmapped → offset 0" fallback was for positive-offset
+  // zones — it makes the parsed cooldown expire BEFORE the real reset
+  // (premature retry), the exact failure mode this feature exists to
+  // prevent. Rather than maintain an ever-growing, never-fully-verified
+  // list, an unmapped abbreviation now returns undefined (see below) so the
+  // caller falls back to the standard escalating backoff — safe in all
+  // directions, just less precise, exactly like the pre-existing behavior
+  // before this reset-time feature existed.
   const TZ_OFFSET_HOURS: Record<string, number> = {
     UTC: 0, GMT: 0,
     MEZ: 1, MESZ: 2, // Germany (CET/CEST), German abbreviation — the documented case
     CET: 1, CEST: 2, // same zones, English abbreviation
-    EST: -5, EDT: -4,
-    CST: -6, CDT: -5,
-    MST: -7, MDT: -6,
-    PST: -8, PDT: -7,
-    BST: 1, // British Summer Time
   };
-  const offsetHours = TZ_OFFSET_HOURS[tz] ?? 0;
+  if (!(tz in TZ_OFFSET_HOURS)) return undefined;
+  const offsetHours = TZ_OFFSET_HOURS[tz];
   try {
     // Date.UTC(...) on the raw local digits produces a timestamp numerically
     // equal to "local wall-clock time interpreted as UTC", which is exactly
