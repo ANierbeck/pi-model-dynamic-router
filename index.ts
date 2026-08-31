@@ -2591,10 +2591,20 @@ let previousTokenCount = 0;
           // to maxRetries times. The raw `err` here is an arbitrary caught exception
           // and could easily contain one of those words, so it's kept out of
           // errorMessage and only shown in the visible chat text.
+          //
+          // This branch is reached only when the fallback lookup was ATTEMPTED
+          // and ALSO failed (both `resolve('fallback')` and the alternate
+          // non-dynamic group above returned nothing) — not when a fallback
+          // ran successfully. The wording must say so plainly (roborev job 351
+          // LOW): the previous "...used fallback routing" text surfaces via
+          // getSummarizationFailure() as e.g. "Summarization failed: [router]
+          // dynamic classification unavailable, used fallback routing", which
+          // would mislead anyone debugging a total routing failure into
+          // thinking a fallback model actually ran.
           pushStreamError(
             proxy,
             `[router] Dynamic routing failed: ${err}`,
-            '[router] dynamic classification unavailable, used fallback routing'
+            '[router] dynamic classification and fallback routing both unavailable'
           );
           return;
         }

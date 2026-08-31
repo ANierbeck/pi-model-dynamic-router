@@ -7,7 +7,7 @@
 // trigger a fallback in one path but not the other. Both now go through
 // RATE_LIMIT_PATTERNS here.
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -164,6 +164,22 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // input text via the real `toLocaleString('de-DE', ...)` call (the same
     // one claude-bridge uses) rather than hand-typing month strings, so a typo
     // in the test can't accidentally match a typo in the implementation.
+    //
+    // Forces TZ=Europe/Berlin (restored after) so `toLocaleString`'s
+    // timeZoneName output is deterministically MEZ/MESZ regardless of the
+    // CI machine's actual system timezone — without this, a CI runner set to
+    // e.g. UTC would render "UTC" instead, and one set to an unmapped zone
+    // (e.g. America/New_York) would render a "GMT-4"-style offset that
+    // wouldn't even match the TZ_OFFSET_HOURS lookup (roborev job 351 MEDIUM).
+    let originalTz: string | undefined;
+    beforeAll(() => {
+      originalTz = process.env.TZ;
+      process.env.TZ = 'Europe/Berlin';
+    });
+    afterAll(() => {
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    });
     afterEach(() => {
       vi.useRealTimers();
     });
@@ -193,20 +209,12 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
         const formatted = target.toLocaleString('de-DE', LOCALE_OPTS);
         const text = `Warning: [rate-limit] Claude five_hour rate limit hit — resets ${formatted}`;
 
-        // Mirror parseResetAtMs's own UTC interpretation of the LOCAL date/time
-        // components (not target.getTime(), which is the real UTC instant —
-        // these two only coincide when the test machine's TZ offset is 0).
-        const expectedMs = Date.UTC(
-          target.getFullYear(),
-          target.getMonth(),
-          target.getDate(),
-          target.getHours(),
-          target.getMinutes(),
-          target.getSeconds()
-        );
-
+        // With TZ forced to Europe/Berlin and the offset-aware fix
+        // (TZ_OFFSET_HOURS in parseResetAtMs), the parsed value must recover
+        // the real UTC instant — not the naive "local digits as UTC" value,
+        // which would be off by the MEZ/MESZ offset (1-2h).
         const ms = parseResetAtMs(text);
-        expect(ms).toBe(expectedMs);
+        expect(ms).toBe(target.getTime());
       });
     }
   });

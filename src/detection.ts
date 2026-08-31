@@ -116,7 +116,7 @@ export function parseResetAtMs(text: string): number | undefined {
   );
   if (!mdy) return undefined;
   // Groups: [fullMatch, day, month, year, hour, minute, second, tz]
-  const [, day, monRaw, year, hour, minute, second] = mdy;
+  const [, day, monRaw, year, hour, minute, second, tz] = mdy;
   // Both English abbreviations (in case an English-locale Pi install produces
   // them) and German ones (de-DE Intl short-month output, the format
   // claude-bridge actually uses today — see comment above).
@@ -127,16 +127,33 @@ export function parseResetAtMs(text: string): number | undefined {
   };
   const month = MONTH[monRaw];
   if (month === undefined) return undefined;
+  // Maps the TZ abbreviation captured above to hours-ahead-of-UTC (roborev
+  // job 351 MEDIUM). The claude-bridge text carries local wall-clock digits
+  // (Anthropic's resetsAt reformatted via toLocaleString in the user's
+  // timezone) — without correcting for the offset, treating those digits as
+  // literal UTC makes the parsed instant *later* than the real reset by the
+  // zone's full offset (e.g. 2h for MESZ/CEST), which on a 5h five_hour
+  // window is a ~40% overestimate, not a rounding error. Covers the
+  // documented/tested case (German locale: MEZ/MESZ) plus a few other common
+  // abbreviations; anything unmapped falls back to offset 0 (the previous
+  // behavior) — safe (never resets the cooldown early) but imprecise for
+  // zones outside this table.
+  const TZ_OFFSET_HOURS: Record<string, number> = {
+    UTC: 0, GMT: 0,
+    MEZ: 1, MESZ: 2, // Germany (CET/CEST), German abbreviation — the documented case
+    CET: 1, CEST: 2, // same zones, English abbreviation
+    EST: -5, EDT: -4,
+    CST: -6, CDT: -5,
+    MST: -7, MDT: -6,
+    PST: -8, PDT: -7,
+    BST: 1, // British Summer Time
+  };
+  const offsetHours = TZ_OFFSET_HOURS[tz] ?? 0;
   try {
-    // We use UTC. The TZ abbreviation (e.g. MESZ) indicates the *display*
-    // offset, not the actual offset to UTC. The error text comes from
-    // claude-bridge which forwards Anthropic's resetsAt (already a UTC
-    // moment), then formats it in the *user's local timezone*. We don't
-    // know the user's exact timezone from the text alone — we only know
-    // the local clock reading. Conservatively assume the timestamp is
-    // already in UTC (close enough; the backoff is the same order of
-    // magnitude either way, and the user can tell from the warning text
-    // that the time is in their local TZ).
+    // Date.UTC(...) on the raw local digits produces a timestamp numerically
+    // equal to "local wall-clock time interpreted as UTC", which is exactly
+    // offsetHours ahead of the real UTC instant (local = UTC + offset).
+    // Subtracting the offset recovers the real instant for mapped zones.
     const ms = Date.UTC(
       Number(year),
       month,
@@ -144,7 +161,7 @@ export function parseResetAtMs(text: string): number | undefined {
       Number(hour),
       Number(minute),
       Number(second)
-    );
+    ) - offsetHours * 60 * 60 * 1000;
     if (!Number.isFinite(ms)) return undefined;
     const now = Date.now();
     // Sanity-check the parsed timestamp: must be a future time within 7 days
