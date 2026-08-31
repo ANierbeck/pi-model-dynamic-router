@@ -72,4 +72,44 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(esc.correctionStreak).toBe(0);
     expect(esc.level).toBe('operational');
   });
+
+  // roborev job 373 MEDIUM: index.ts's only real call site invokes
+  // recordTurn() TWICE per logical exchange — once with (userText, '') on
+  // the user's turn_end, once with ('', assistantText) on the assistant's
+  // turn_end — not once with both populated together as the tests above do.
+  it('advances the streak by exactly 1 per exchange under the real split-call pattern (user, then assistant)', () => {
+    const esc = new SessionEscalation();
+    // Exchange 1: user turn_end, then assistant turn_end (split calls, as index.ts does).
+    esc.recordTurn('please add a login button', '');
+    esc.recordTurn('', 'Done, added the button.');
+    expect(esc.correctionStreak).toBe(0);
+
+    // Exchange 2: user says "again" — streak should advance by exactly 1,
+    // not 2, even though this exchange is also 2 separate recordTurn() calls.
+    esc.recordTurn('Ok you did stop again, please proceed', '');
+    esc.recordTurn('', 'Continuing...');
+    expect(esc.correctionStreak).toBe(1);
+
+    esc.recordTurn('still not done, try again', '');
+    esc.recordTurn('', 'Continuing...');
+    expect(esc.correctionStreak).toBe(2);
+
+    esc.recordTurn('you stopped again', '');
+    esc.recordTurn('', 'Continuing...');
+    expect(esc.correctionStreak).toBe(0); // reset after escalating on the 3rd
+    expect(esc.level).toBe('tactical');
+  });
+
+  it('is NOT driven by frustration/error keywords in the router\'s own assistant-side fallback text', () => {
+    const esc = new SessionEscalation();
+    // The assistant's response can legitimately contain router-injected
+    // fallback narration like "... error: ..." or "... failed, trying ..."
+    // (pushRouterInfo/pushRouterInfoLogged) with zero real user frustration
+    // behind it. Three such assistant-only turns must not escalate anything.
+    esc.recordTurn('', 'openrouter/foo — error: rate limited, trying openrouter/bar …');
+    esc.recordTurn('', 'All models in scout failed, trying operational...');
+    esc.recordTurn('', 'mistral/baz — error: empty response, trying mistral/qux …');
+    expect(esc.correctionStreak).toBe(0);
+    expect(esc.level).toBe('operational');
+  });
 });

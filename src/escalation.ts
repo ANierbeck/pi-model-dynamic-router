@@ -30,13 +30,20 @@ function extractUserCorrections(text: string): string[] {
  * "you stopped again, please proceed" message never fired it: the turn
  * before it is ordinary and `.every()` failed). Real users only say
  * "again"/"still"/"nochmal" ONCE per incident, not twice in a row.
+ *
+ * USER PROMPT ONLY (roborev job 373 MEDIUM): the assistant's own response
+ * text is deliberately never scanned. index.ts's only caller invokes
+ * recordTurn() TWICE per logical exchange — once with the user's prompt
+ * (assistant text empty), once with the assistant's response (prompt empty)
+ * — so a signal keyed off `response` would double-count within one exchange.
+ * Worse, the router's own auto-generated fallback narration (pushed into the
+ * assistant's message via pushRouterInfo/pushRouterInfoLogged, e.g. "...
+ * error: ..." or "...failed, trying ...") would then drive escalation on
+ * its own during a rough patch of provider failures, with no real user
+ * frustration involved at all.
  */
-function hasFrustrationSignal(prompt: string, response: string): boolean {
-  return (
-    extractUserCorrections(prompt).length > 0 ||
-    extractErrorKeywords(prompt).length > 0 ||
-    extractErrorKeywords(response).length > 0
-  );
+function hasFrustrationSignal(prompt: string): boolean {
+  return extractUserCorrections(prompt).length > 0 || extractErrorKeywords(prompt).length > 0;
 }
 
 function nextLevel(current: EscalationLevel): EscalationLevel {
@@ -159,30 +166,39 @@ export class SessionEscalation {
     this._correctionStreak = 0;
   }
 
-  /** Call once per turn_end event for both user and assistant messages. */
+  /**
+   * Call once per turn_end event for both user and assistant messages
+   * (index.ts calls this TWICE per logical exchange: once with the user's
+   * prompt and an empty response, once with an empty prompt and the
+   * assistant's response).
+   */
   recordTurn(prompt: string, response: string): void {
     this._history.push({ prompt, response });
 
-    // Streak-based check: runs every turn (cheap, no I/O) and looks at the
-    // LATEST turn alone rather than requiring the pattern to repeat across
-    // 2 consecutive turns. Escalates once the same frustration/failure signal
-    // has shown up STREAK_THRESHOLD times, resetting the streak on any turn
-    // that doesn't carry the signal (a single clean turn means it wasn't a
-    // real ongoing loop).
+    // Streak-based check: runs on the USER's half of the exchange only (see
+    // hasFrustrationSignal's docstring for why response text is never
+    // scanned) so one logical exchange advances the streak by exactly one,
+    // not up to two, and the router's own fallback narration in the
+    // assistant's response can never drive escalation on its own. Escalates
+    // once the same signal has shown up STREAK_THRESHOLD times in a row,
+    // resetting on any user turn that doesn't carry it (a single clean turn
+    // means it wasn't a real ongoing loop).
     let streakEscalated = false;
-    if (hasFrustrationSignal(prompt, response)) {
-      this._correctionStreak++;
-      if (this._correctionStreak >= STREAK_THRESHOLD) {
-        const prev = this._level;
-        this._level = nextLevel(this._level);
-        this._correctionStreak = 0;
-        if (prev !== this._level) {
-          streakEscalated = true;
-          routerLog(`[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`);
+    if (prompt.trim().length > 0) {
+      if (hasFrustrationSignal(prompt)) {
+        this._correctionStreak++;
+        if (this._correctionStreak >= STREAK_THRESHOLD) {
+          const prev = this._level;
+          this._level = nextLevel(this._level);
+          this._correctionStreak = 0;
+          if (prev !== this._level) {
+            streakEscalated = true;
+            routerLog(`[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`);
+          }
         }
+      } else {
+        this._correctionStreak = 0;
       }
-    } else {
-      this._correctionStreak = 0;
     }
 
     // Check every 3rd turn, starting when we have at least 2 entries.
