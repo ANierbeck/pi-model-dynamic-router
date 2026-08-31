@@ -52,7 +52,7 @@ import {
   collectGroupModels,
   computeFallbackGroups,
 } from './src/dynamic-config.ts';
-import { pushStreamError, pushRouterInfo, isExpectedTransientError } from './src/stream-driver.ts';
+import { pushStreamError, pushRouterInfo, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -2223,6 +2223,11 @@ let previousTokenCount = 0;
     const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
     const g = cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
+    // Stamped onto every synthetic error AssistantMessage this call produces —
+    // must exactly match `model` (Pi's `agent.state.model`), including the
+    // `:use-static` suffix on `.id` when present, or Pi's overflow-recovery
+    // sameModel check silently fails and auto-compaction never fires.
+    const sourceModel: SourceModelInfo = { provider: model.provider, id: model.id, api: model.api };
 
     if (!isDynamic) {
       const res = resolve(groupName);
@@ -2234,7 +2239,7 @@ let previousTokenCount = 0;
       // Cost tracking for static routing
       costTracker.trackRequest(res.selected, 1000, 500);
       
-      driveStream(proxy, candidates, context, options, undefined, groupName);
+      driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
 
@@ -2271,7 +2276,7 @@ let previousTokenCount = 0;
           if (!res) throw new Error('No fallback model for tool follow-up');
           // Prefer the exact model used in the previous turn
           candidates = [lastDynamicModel, ...res.candidates.filter((r) => r !== lastDynamicModel)];
-          await driveStream(proxy, candidates, context, options, undefined, followUpGroup);
+          await driveStream(proxy, candidates, context, options, undefined, followUpGroup, undefined, sourceModel);
           return;
         }
 
@@ -2342,7 +2347,9 @@ let previousTokenCount = 0;
                 context,
                 options,
                 dynamicLabel,
-                classification.hintTarget
+                classification.hintTarget,
+                undefined,
+                sourceModel
               );
               return;
             }
@@ -2526,7 +2533,7 @@ let previousTokenCount = 0;
             const resolvedGdpval = lookupGdp(resolvedTarget) ?? 0;
             const hintStartGroup =
               resolvedGdpval >= 700 ? 'strategic' : resolvedGdpval >= 300 ? 'tactical' : 'scout';
-            await driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup);
+            await driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
             return;
           }
         }
@@ -2604,13 +2611,14 @@ let previousTokenCount = 0;
           pushStreamError(
             proxy,
             `[router] Dynamic routing failed: ${err}`,
-            '[router] dynamic classification and fallback routing both unavailable'
+            '[router] dynamic classification and fallback routing both unavailable',
+            sourceModel
           );
           return;
         }
         candidates = [...fb.candidates];
       }
-      await driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup);
+      await driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup, undefined, sourceModel);
     })();
     return proxy;
   }
@@ -2651,7 +2659,13 @@ let previousTokenCount = 0;
     // when two groups' auto-generated fallback_groups reference each other
     // (e.g. tactical ⇄ strategic), which previously crashed with "Maximum call
     // stack size exceeded" whenever both groups' candidates failed.
-    visitedGroups?: Set<string>
+    visitedGroups?: Set<string>,
+    // The virtual group model Pi's session currently has pinned as its active
+    // model (groupStream's own `model` parameter) — stamped onto every synthetic
+    // error AssistantMessage so Pi's overflow-recovery gate (agent-session.js
+    // sameModel check: provider+id must match `agent.state.model`) actually
+    // fires instead of silently no-opping on an unstamped message.
+    sourceModel?: SourceModelInfo
   ): Promise<void> {
     return (async () => {
       // Preserve the active group (e.g., 'dynamic') for display purposes
@@ -2837,7 +2851,8 @@ let previousTokenCount = 0;
               // for the reasons documented on estimateContextTokens().
               result.detail
                 ? `prompt is too long: ${result.detail}`
-                : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`
+                : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+              sourceModel
             );
             return;
           }
@@ -2975,7 +2990,8 @@ let previousTokenCount = 0;
               options,
               `${label ?? groupName}→${fallbackGroup}`,
               fallbackGroup,
-              visited
+              visited,
+              sourceModel
             );
             return;
           }
@@ -3003,7 +3019,8 @@ let previousTokenCount = 0;
           // errorMessage is what Pi's isContextOverflow() inspects. The exact
           // phrasing matches the Anthropic overflow pattern, which is the most
           // reliably-detected one in @earendil-works/pi-ai/utils/overflow.
-          `prompt is too long: ${contextTokens} tokens exceeds the maximum context length of available models`
+          `prompt is too long: ${contextTokens} tokens exceeds the maximum context length of available models`,
+          sourceModel
         );
         return;
       }
@@ -3095,7 +3112,8 @@ let previousTokenCount = 0;
                   `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
                   result.detail
                     ? `prompt is too long: ${result.detail}`
-                    : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`
+                    : `prompt is too long: ${contextTokens} tokens exceeds the maximum context length`,
+                  sourceModel
                 );
                 return;
               }
@@ -3181,7 +3199,8 @@ let previousTokenCount = 0;
       pushStreamError(
         proxy,
         `[router] All ${candidates.length} candidate(s) failed:\n${failureList}\n${hintInfo}Available: ${availableModels}${modelSuffix}`,
-        `[router] no candidates succeeded for this request (see chat log for per-candidate reasons)`
+        `[router] no candidates succeeded for this request (see chat log for per-candidate reasons)`,
+        sourceModel
       );
     })().catch((err) => {
       // Unhandled error in the async driver — surface it. Same retry-storm caution as
@@ -3189,7 +3208,8 @@ let previousTokenCount = 0;
       pushStreamError(
         proxy,
         `[router] Stream error: ${err instanceof Error ? err.message : String(err)}`,
-        '[router] unexpected routing failure'
+        '[router] unexpected routing failure',
+        sourceModel
       );
     });
   }
