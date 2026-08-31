@@ -159,4 +159,99 @@ describe('driveStream: total cooldown collapse', () => {
       releaseRouterStateLock();
     }
   });
+
+  it('force-retry that fails with provider_error shows the provider-error wording, not the generic empty-response one (roborev job 342 LOW)', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cooldown-collapse-pe-'));
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.pi', 'router-config.json'),
+      JSON.stringify({
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+      })
+    );
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+    const dynBak = `${dynamicConfigPath}.collapse-pe-bak`;
+    const cacheBak = `${scanCachePath}.collapse-pe-bak`;
+    await acquireRouterStateLock();
+    const hadDyn = fs.existsSync(dynamicConfigPath);
+    const hadCache = fs.existsSync(scanCachePath);
+    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+
+    writeNoOpScanCache(scanCachePath);
+
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const defaultExport = mod.default as any;
+
+      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+      const pi: any = {
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn((event: string, handler: any) => {
+          onHandlers[event] = handler;
+        }),
+      };
+      defaultExport(pi);
+
+      // Single, PAID cloud candidate (no ':free' suffix, not ollama/lm-studio)
+      // so recordStreamFailure's hard-cooldown branch applies. First attempt
+      // throws (cooldown set); the force-retry then fails with an
+      // unrecognized finish_reason (provider_error), not a plain
+      // empty/timeout failure.
+      let calls = 0;
+      const streamSimple = vi.fn(() => {
+        calls++;
+        return (async function* () {
+          if (calls === 1) {
+            throw new Error('first attempt fails');
+          }
+          yield {
+            type: 'error',
+            error: { errorMessage: 'Provider finish_reason: error' },
+          };
+        })();
+      });
+      const modelRegistry = {
+        getAvailable: () => [{ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000 }],
+        find: () => ({ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000 }),
+        getApiKeyForProvider: async () => null,
+        runtime: { streamSimple },
+      };
+      const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+      await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
+
+      // First call: throws -> soft failure -> cooldown set.
+      await drainStream(
+        defaultExport.groupStream({ provider: 'standard', id: 'standard' }, { messages: [{ role: 'user', content: 'go' }] }, {})
+      );
+
+      // Second call: candidate is in cooldown -> force-retry path -> fails
+      // with provider_error this time.
+      const events2 = await drainStream(
+        defaultExport.groupStream({ provider: 'standard', id: 'standard' }, { messages: [{ role: 'user', content: 'go' }] }, {})
+      );
+      const text2 = allText(events2);
+
+      expect(text2).toMatch(/All models in cooldown, retrying/i);
+      // Must show the provider-error-specific wording (with the real detail
+      // text), not the generic 'empty response (likely rate limit)' fallback
+      // that every other reason not explicitly listed falls through to.
+      expect(text2).toContain('provider error: Provider finish_reason: error (likely rate limit)');
+      expect(text2).not.toContain('empty response (likely rate limit)');
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+      removeNoOpScanCache(scanCachePath);
+      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      releaseRouterStateLock();
+    }
+  });
 });
