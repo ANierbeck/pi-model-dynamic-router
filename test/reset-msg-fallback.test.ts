@@ -135,4 +135,74 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
       }
     );
   }, 15000);
+
+  // roborev job 388 LOW: formatResetMsg is called from 3 separate sites with
+  // independently-wired ref/rotated arguments; the rate_limit_exceeded branch
+  // above only exercises one of them. This covers the isPaidCloudRateLimitFailure
+  // soft-failure branch (a PAID cloud model hitting provider_error, escalated
+  // to the hard-cooldown "likely rate limit" wording).
+  it('also shows a computed "(resets ...)" time on the paid-cloud provider_error branch', async () => {
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        gdpval_builtin: { 'paid-model': 1000 },
+      },
+      async (defaultExport, tmpDir) => {
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const pi: any = {
+          registerTool: vi.fn(),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn(),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => {
+            onHandlers[event] = handler;
+          }),
+        };
+        defaultExport(pi);
+
+        // No ":free" suffix and not ollama/lm-studio — a paid cloud model.
+        const paidModel = {
+          provider: 'paid-cloud-provider',
+          id: 'paid-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+        };
+        const modelsByRef: Record<string, any> = {
+          'paid-cloud-provider/paid-model': paidModel,
+        };
+        const streamSimple = vi.fn(() => {
+          return (async function* () {
+            yield {
+              type: 'error',
+              error: { errorMessage: 'Provider finish_reason: error' },
+            };
+          })();
+        });
+        const modelRegistry = {
+          getAvailable: () => [paidModel],
+          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          getApiKeyForProvider: async () => null,
+          runtime: { streamSimple },
+        };
+        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
+
+        const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+        const routerInfoText = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+
+        expect(routerInfoText).toContain('likely rate limit');
+        expect(routerInfoText).toMatch(/\(resets .+\)/);
+      }
+    );
+  }, 15000);
 });
