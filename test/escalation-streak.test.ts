@@ -7,7 +7,7 @@
 // now tracks a streak of the LATEST turn alone, checked every turn, and
 // escalates once the same signal repeats STREAK_THRESHOLD (3) times.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // The LLM-based secondary check (every 3rd turn) is fire-and-forget and
 // would otherwise attempt a real network call to a local Ollama instance.
@@ -20,6 +20,16 @@ vi.mock('../src/ollama-utils.ts', () => ({
 
 import { SessionEscalation } from '../src/escalation.ts';
 import { callOllama } from '../src/ollama-utils.ts';
+
+// vi.fn() call history and any mockResolvedValueOnce/mockResolvedValue
+// overrides persist across tests in this file (callOllama is a single
+// shared mock instance) — reset both before each test so tests asserting on
+// call counts (or specific resolved values) aren't polluted by whichever
+// other test ran before them.
+beforeEach(() => {
+  vi.mocked(callOllama).mockReset();
+  vi.mocked(callOllama).mockRejectedValue(new Error('mocked: no ollama in tests'));
+});
 
 describe('SessionEscalation — streak-based escalation', () => {
   it('does NOT escalate on a single frustration turn preceded by a clean turn', () => {
@@ -123,26 +133,43 @@ describe('SessionEscalation — streak-based escalation', () => {
   // driven escalation in that case, even though it's a different recordTurn
   // call than the one that streak-escalated.
   it('does not stack an LLM-driven escalation on top of a streak escalation that just happened one call earlier', async () => {
-    vi.mocked(callOllama).mockResolvedValue('{"shouldEscalate": true, "reason": "test says escalate"}');
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+    const noEscalate = '{"shouldEscalate": false, "reason": "nothing to see"}';
+    const doEscalate = '{"shouldEscalate": true, "reason": "test says escalate"}';
+    // First 2 periodic checks (len 2, len 5) vote NOT to escalate, isolating
+    // the scenario to just the len-8 dispatch that lands right after the
+    // streak escalation at len 7 — the one roborev job 376 was about.
+    vi.mocked(callOllama)
+      .mockResolvedValueOnce(noEscalate)
+      .mockResolvedValueOnce(noEscalate)
+      .mockResolvedValueOnce(doEscalate);
     const esc = new SessionEscalation();
 
     esc.recordTurn('hello', ''); // len 1
-    esc.recordTurn('', 'hi'); // len 2
+    esc.recordTurn('', 'hi'); // len 2 -> periodic check dispatches call #1
+    await tick(); // let call #1 resolve (shouldEscalate:false) so _llmInFlight clears
+
     esc.recordTurn('again', ''); // len 3, streak 1
     esc.recordTurn('', 'ok'); // len 4
-    esc.recordTurn('still again', ''); // len 5, streak 2
+    esc.recordTurn('still again', ''); // len 5, streak 2 -> periodic check dispatches call #2
+    await tick(); // let call #2 resolve (shouldEscalate:false)
+
     esc.recordTurn('', 'ok'); // len 6
     esc.recordTurn('again please', ''); // len 7, streak 3 -> escalates to 'tactical'
     expect(esc.level).toBe('tactical');
-    // len 8, assistant-only call: (8-2)%3===0 fires _checkAndEscalate here,
-    // one call after the streak escalation — not the same call.
-    esc.recordTurn('', 'ok');
 
-    // Let the mocked (immediately-resolved) LLM promise's .then() run.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // len 8, assistant-only call: (8-2)%3===0 fires _checkAndEscalate here,
+    // one call AFTER the streak escalation (not the same recordTurn call).
+    // _llmInFlight is false (call #2 already resolved), so this actually
+    // dispatches call #3, which must capture alreadyEscalatedThisTurn=true.
+    esc.recordTurn('', 'ok');
+    await tick(); // let call #3 resolve (shouldEscalate:true)
 
     // Must still be 'tactical', not 'strategic' — the LLM's shouldEscalate:
-    // true must NOT stack a second bump on top of the streak's.
+    // true on call #3 must NOT stack a second bump on top of the streak's.
     expect(esc.level).toBe('tactical');
+    // Prove call #3 (the len-8 dispatch) actually happened — otherwise this
+    // assertion would pass vacuously without ever exercising the guard.
+    expect(vi.mocked(callOllama).mock.calls.length).toBe(3);
   });
 });
