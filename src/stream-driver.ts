@@ -12,16 +12,43 @@ import type { AssistantMessage, AssistantMessageEvent, AssistantMessageEventStre
 import { isRateLimitText } from './detection.ts';
 
 /**
+ * Identifies the model Pi's session currently has pinned as "the active model"
+ * (the virtual group model passed into groupStream/streamSimple) — needed so
+ * synthetic error messages can be stamped with matching provider/model fields.
+ */
+export interface SourceModelInfo {
+  provider: string;
+  id: string;
+  api?: string;
+}
+
+/**
  * Builds a synthetic assistant error message with zero usage/cost. `errorMessage`
  * (when provided) is what Pi's isContextOverflow() inspects to trigger compaction —
  * omit it entirely (not just leave undefined) unless the caller has one, since some
  * downstream consumers distinguish "field present" from "field undefined".
+ *
+ * `sourceModel` (when provided) stamps `provider`/`model`/`api` to match the
+ * virtual group model Pi's session has pinned as `agent.state.model`. Without
+ * this, Pi's own overflow-recovery gate in agent-session.js requires
+ * `assistantMessage.provider === this.model.provider && assistantMessage.model
+ * === this.model.id` before running isContextOverflow() at all — a synthetic
+ * message with no provider/model (both undefined) always fails that check, so
+ * the errorMessage's "prompt is too long" pattern is never even inspected and
+ * auto-compaction silently never fires, no matter how well the pattern matches.
  */
-export function buildErrorAssistantMessage(text: string, errorMessage?: string): AssistantMessage {
+export function buildErrorAssistantMessage(
+  text: string,
+  errorMessage?: string,
+  sourceModel?: SourceModelInfo
+): AssistantMessage {
   return {
     role: 'assistant',
     content: [{ type: 'text', text }],
     ...(errorMessage !== undefined ? { errorMessage } : {}),
+    ...(sourceModel
+      ? { provider: sourceModel.provider, model: sourceModel.id, api: sourceModel.api }
+      : {}),
     usage: {
       input: 0,
       output: 0,
@@ -39,12 +66,13 @@ export function buildErrorAssistantMessage(text: string, errorMessage?: string):
 export function pushStreamError(
   proxy: AssistantMessageEventStream,
   text: string,
-  errorMessage?: string
+  errorMessage?: string,
+  sourceModel?: SourceModelInfo
 ): void {
   proxy.push({
     type: 'error',
     reason: 'error',
-    error: buildErrorAssistantMessage(text, errorMessage),
+    error: buildErrorAssistantMessage(text, errorMessage, sourceModel),
   } as AssistantMessageEvent);
 }
 

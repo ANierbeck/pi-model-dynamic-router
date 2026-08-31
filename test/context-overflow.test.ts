@@ -123,6 +123,18 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       expect(error.errorMessage).toMatch(/prompt is too long/i);
       expect(error.errorMessage).toContain('30000');
 
+      // Regression: Pi's agent-session.js only runs isContextOverflow() at
+      // all if `assistantMessage.provider === this.model.provider &&
+      // assistantMessage.model === this.model.id` (the "sameModel" gate,
+      // meant to ignore a stale overflow from a model the user has since
+      // switched away from). This synthetic message must therefore be
+      // stamped with the SAME provider/id as the group model Pi passed into
+      // groupStream — otherwise the errorMessage above never even gets
+      // inspected and auto-compaction silently never fires, no matter how
+      // well "prompt is too long" matches.
+      expect(error.provider).toBe(groupModel.provider);
+      expect(error.model).toBe(groupModel.id);
+
       // Must NOT have walked the fallback cascade (no other groups configured
       // anyway, but the info line would appear if it tried).
       const allText = events
