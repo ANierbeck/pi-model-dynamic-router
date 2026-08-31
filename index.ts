@@ -379,11 +379,11 @@ let previousTokenCount = 0;
   function extractGdpvalScores(html: string): Record<string, number> {
     const scores: Record<string, number> = {};
 
-    // Current AA format (2025+): RSC payload embeds structured data as
-    // {"label":"Model Name","gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":1769.15},...],"detailsUrl":"/models/slug"}
-    const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"/g;
+    // Stage 1 (Format A, 2025+): RSC payload uses {"label":"Model Name",
+    // "gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":N},...],
+    // "detailsUrl":"/models/slug"}.  detailsUrl gives the slug directly.
+    const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
     let em;
-    let count = 0;
     while ((em = entryRe.exec(html))) {
       const label = em[1];
       const score = parseFloat(em[2]);
@@ -391,9 +391,47 @@ let previousTokenCount = 0;
       scores[slug] = score;
       const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       if (labelKey && labelKey !== slug) scores[labelKey] = score;
-      count++;
     }
-    if (count > 0) return scores;
+
+    // Stage 2 (Format B): AA also embeds the full sorted leaderboard as
+    // {"id":"...","displayName":"Model Name","creator":{...},"elo":N,...}.
+    // No detailsUrl here — we look up the slug by matching displayName against
+    // the model-list JSON that lives in the same RSC payload:
+    //   {"slug":"glm-5-2","name":"GLM-5.2 (max)",...}
+    // We build the displayName→slug table once and reuse it for all entries.
+    // The HTML embeds JSON with HTML-escaped quotes (" → \"), so we normalise
+    // to plain JSON before parsing.
+    const normalized = html.replace(/\\"/g, '"');
+    const slugByDisplayName = new Map<string, string>();
+    const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
+    let s;
+    while ((s = slugRe.exec(normalized))) {
+      slugByDisplayName.set(s[2], s[1]);
+    }
+
+    // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
+    // Stop at the first closing brace so that nested creator objects don't break
+    // the regex.
+    const eloRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
+    while ((em = eloRe.exec(normalized))) {
+      const displayName = em[1];
+      const score = parseFloat(em[2]);
+      // Look up slug: exact displayName match first, then label-key match
+      // (strips parenthetical suffix like "(max)").
+      let slug = slugByDisplayName.get(displayName);
+      if (!slug) {
+        const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        for (const [dn, sv] of slugByDisplayName) {
+          const dnKey = dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+          if (dnKey === labelKey) { slug = sv; break; }
+        }
+      }
+      if (slug) {
+        scores[slug] = score; // Format B is authoritative for the full leaderboard
+        const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        if (labelKey && labelKey !== slug) scores[labelKey] = score;
+      }
+    }
 
     // Legacy: window.__MODELS_DATA__ = {...} (pre-2025 AA structure)
     const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
