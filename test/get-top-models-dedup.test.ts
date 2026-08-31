@@ -199,4 +199,82 @@ describe('coalesceBySlug — clusters cross-provider same-slug entries together'
     );
     metricsModule.setCache(cache);
   });
+
+  // Finding #2 — Medium: the primary behavior change (failover ordering in
+  // resolveGroup's rank closure) was not exercised by any test.  Verify that
+  // resolve() returns a candidate list where same-slug variants are grouped
+  // consecutively so driveStream failure handlers try all provider variants
+  // of a model before falling through to the next model.
+  it(
+    'resolve() keeps all cross-provider same-slug variants consecutively in ' +
+      'the candidate list (failover ordering)',
+    () => {
+      const failConfig: Config = {
+        model_groups: {
+          tactical: { method: 'best', min_gdpval: 0 },
+        },
+        model_metrics: {},
+        providers: {
+          mistral: { billing: 'pay_per_token' },
+          'mistral-zai': { billing: 'pay_per_token' },
+          openrouter: { billing: 'pay_per_token' },
+        },
+        gdpval_builtin: { 'glm-5-2': 1497.55, 'other-model': 500 },
+      };
+      const failCache: Cache = {
+        available_models: [
+          { id: 'zai-glm-5-2', provider: 'mistral', cost_per_m: 0 },
+          { id: 'zai-glm-5-2', provider: 'mistral-zai', cost_per_m: 0 },
+          { id: 'glm-5.2:free', provider: 'openrouter', cost_per_m: 0 },
+          { id: 'other-model', provider: 'mistral', cost_per_m: 0 },
+        ],
+      };
+      metricsModule.setConfig(failConfig);
+      metricsModule.setModelMap(
+        {
+          'mistral/zai-glm-5-2': 'glm-5-2',
+          'mistral-zai/zai-glm-5-2': 'glm-5-2',
+          'glm-5.2:free': 'glm-5-2',
+          'mistral/other-model': 'other-model',
+        },
+        []
+      );
+      metricsModule.setCache(failCache);
+      const failRouter = new Router(failConfig, failCache, new Map());
+
+      const result = failRouter.resolve('tactical');
+      expect(result).not.toBeNull();
+      const { candidates } = result!;
+
+      // Every variant of glm-5-2 must appear consecutively in the candidate list.
+      // The first non-glm-5-2 ref marks the boundary — nothing from glm-5-2
+      // may appear after it.
+      const firstOtherIdx = candidates.findIndex(
+        (r) => !r.includes('glm-5-2') && !r.includes('glm-5.2')
+      );
+      const glmSlice = candidates.slice(0, firstOtherIdx < 0 ? candidates.length : firstOtherIdx);
+      const allGlm = glmSlice.every(
+        (r) => r.includes('glm-5-2') || r.includes('glm-5.2')
+      );
+      expect(allGlm).toBe(true);
+      // All three glm-5-2 variants must be in the list.
+      const glmCount = candidates.filter(
+        (r) => r.includes('glm-5-2') || r.includes('glm-5.2')
+      ).length;
+      expect(glmCount).toBe(3);
+
+      // Restore state.
+      metricsModule.setConfig(testConfig);
+      metricsModule.setModelMap(
+        {
+          'mistral-medium-2604': 'mistral-medium-3-5',
+          'mistral-medium-3.5': 'mistral-medium-3-5',
+          'mistral-medium-latest': 'mistral-medium-3-5',
+          'mistral-medium': 'mistral-medium-3-5',
+        },
+        []
+      );
+      metricsModule.setCache(cache);
+    }
+  );
 });

@@ -689,6 +689,8 @@ export class Router {
     // unhealthy models, and demoting within an already-broken subset merely
     // reorders it — the same failing model still ends up at rank 0, which is
     // exactly what health tracking exists to prevent.
+    // Coalesce before demoteUnhealthy so same-slug variants are adjacent
+    // and stay together when health demotion splits into healthy/unhealthy buckets.
     const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, this.coalesceBySlug(refs));
 
     if (g.method === 'best') {
@@ -860,19 +862,31 @@ export class Router {
     // rank closure above) keeps all variants internally, so failover still
     // tries every provider in order before moving to the next model.
 
-    // Slice AFTER coalescing so each slug cluster contributes exactly one entry:
-    // after coalescing, only one entry per slug should appear in the display.
+    // Collapse to ONE row per slug. Pick the best representative per cluster:
+    // prefer a non-limited variant (model is actually usable via that provider)
+    // over a limited one. When all variants of a slug are limited, any one
+    // serves as the representative — it correctly lands in the limited bucket.
     c = this.coalesceBySlug(c);
     {
-      // Collapse all but the first (best-ranked) variant of each slug.
-      // Uses the same slug key as coalesceBySlug: getMatchedSlug(ref) ?? ref.
-      const seenSlugs = new Set<string>();
-      c = c.filter((ref) => {
+      // Map: slug key -> best representative ref (non-limited wins).
+      const representative = new Map<string, string>();
+      for (const ref of c) {
         const key = getMatchedSlug(ref) ?? ref;
-        if (seenSlugs.has(key)) return false;
-        seenSlugs.add(key);
-        return true;
-      });
+        if (!representative.has(key)) {
+          representative.set(key, ref); // first = best-ranked by score
+        } else if (this.isLimited(representative.get(key)!) && !this.isLimited(ref)) {
+          representative.set(key, ref); // swap in healthy sibling
+        }
+      }
+      // Map each slug cluster to its representative, then dedupe to one per slug.
+      const seen = new Set<string>();
+      c = c
+        .map((ref) => representative.get(getMatchedSlug(ref) ?? ref) ?? ref)
+        .filter((ref) => {
+          if (seen.has(ref)) return false;
+          seen.add(ref);
+          return true;
+        });
     }
     const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
     const limited = c.filter((ref) => this.isLimited(ref));
