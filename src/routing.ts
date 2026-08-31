@@ -552,6 +552,49 @@ export class Router {
   }
 
   /**
+   * Cluster candidates that resolve to the SAME GDPval slug so they end up
+   * ADJACENT in the list, without changing the relative order of different
+   * slugs (a slug's cluster is inserted at the position of its first, i.e.
+   * best-ranked, occurrence).
+   *
+   * WHY: dedupByModelIdentity deliberately keeps cross-provider duplicates
+   * of the same model (e.g. mistral/zai-glm-5-2, mistral-zai/zai-glm-5-2,
+   * openrouter/z-ai/glm-5.2:free all match slug glm-5-2) — that's useful
+   * variability, not noise. But nothing GUARANTEES those duplicates stay
+   * adjacent after sorting/tie-breaking, so a failover walk isn't reliably
+   * "try every provider of this model before moving to a different model".
+   * This pass makes that guarantee explicit.
+   *
+   * ORDERING WITH HEALTH: must run BEFORE demoteUnhealthy, not after.
+   * demoteUnhealthy partitions into healthy-first/unhealthy-last and
+   * preserves order WITHIN each partition — so composing as
+   * `demoteUnhealthy(coalesceBySlug(refs))` clusters same-slug entries
+   * within each health partition separately. A persistently broken
+   * candidate never jumps back to the front just because a healthy sibling
+   * with the same slug ranks well; the reverse order would defeat health
+   * tracking entirely.
+   */
+  private coalesceBySlug(refs: string[]): string[] {
+    const order: string[] = [];
+    const groups = new Map<string, string[]>();
+    for (const ref of refs) {
+      // Unmatched refs (no slug) each get their own singleton group, keyed
+      // by the ref itself, so they pass through unchanged and unclustered.
+      const key = getMatchedSlug(ref) ?? ref;
+      let group = groups.get(key);
+      if (!group) {
+        group = [];
+        groups.set(key, group);
+        order.push(key);
+      }
+      group.push(ref);
+    }
+    const result: string[] = [];
+    for (const key of order) result.push(...groups.get(key)!);
+    return result;
+  }
+
+  /**
    * Determine if a model ref is a BETTER variant than another.
    * Used by dedupByModelIdentity to pick the best among duplicates.
    *
@@ -646,7 +689,7 @@ export class Router {
     // unhealthy models, and demoting within an already-broken subset merely
     // reorders it — the same failing model still ends up at rank 0, which is
     // exactly what health tracking exists to prevent.
-    const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, refs);
+    const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, this.coalesceBySlug(refs));
 
     if (g.method === 'best') {
       // Multi-metric scoring for 'best' method
@@ -810,6 +853,27 @@ export class Router {
       c = this.sortBy(c, g.method);
     }
 
+    // Collapse cross-provider same-slug entries to ONE row (the best-ranked
+    // variant). Users see "which models are available", not "which providers
+    // offer which variant of which model" — the latter is noise when all
+    // variants score identically. The routing/failover path (resolveGroup's
+    // rank closure above) keeps all variants internally, so failover still
+    // tries every provider in order before moving to the next model.
+
+    // Slice AFTER coalescing so each slug cluster contributes exactly one entry:
+    // after coalescing, only one entry per slug should appear in the display.
+    c = this.coalesceBySlug(c);
+    {
+      // Collapse all but the first (best-ranked) variant of each slug.
+      // Uses the same slug key as coalesceBySlug: getMatchedSlug(ref) ?? ref.
+      const seenSlugs = new Set<string>();
+      c = c.filter((ref) => {
+        const key = getMatchedSlug(ref) ?? ref;
+        if (seenSlugs.has(key)) return false;
+        seenSlugs.add(key);
+        return true;
+      });
+    }
     const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
