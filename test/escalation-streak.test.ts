@@ -37,7 +37,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('please add a login button', 'Done, added the button.');
     esc.recordTurn('Ok you did stop again, please proceed', 'Continuing...');
     expect(esc.level).toBe('operational');
-    expect(esc.correctionStreak).toBe(1);
+    expect(esc.frustrationStreak).toBe(1);
   });
 
   it('escalates after the SAME frustration signal repeats 3 times, even with clean turns interleaved differently is NOT required', () => {
@@ -48,7 +48,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(esc.level).toBe('operational'); // only 2 so far
     esc.recordTurn('still not done, try again please', 'Continuing...');
     expect(esc.level).toBe('tactical'); // 3rd consecutive signal escalates
-    expect(esc.correctionStreak).toBe(0); // streak resets after escalating
+    expect(esc.frustrationStreak).toBe(0); // streak resets after escalating
   });
 
   it('resets the streak on a clean turn, requiring 3 fresh consecutive signals', () => {
@@ -57,7 +57,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('still broken, again', 'Fixing...');
     // Clean turn breaks the streak.
     esc.recordTurn('looks good now, thanks', 'Great, glad it works.');
-    expect(esc.correctionStreak).toBe(0);
+    expect(esc.frustrationStreak).toBe(0);
     esc.recordTurn('again broken', 'Fixing...');
     esc.recordTurn('still broken', 'Fixing...');
     expect(esc.level).toBe('operational'); // only 2 consecutive since the reset
@@ -78,9 +78,9 @@ describe('SessionEscalation — streak-based escalation', () => {
     const esc = new SessionEscalation();
     esc.recordTurn('again', 'retrying');
     esc.recordTurn('still again', 'retrying');
-    expect(esc.correctionStreak).toBe(2);
+    expect(esc.frustrationStreak).toBe(2);
     esc.reset();
-    expect(esc.correctionStreak).toBe(0);
+    expect(esc.frustrationStreak).toBe(0);
     expect(esc.level).toBe('operational');
   });
 
@@ -93,21 +93,21 @@ describe('SessionEscalation — streak-based escalation', () => {
     // Exchange 1: user turn_end, then assistant turn_end (split calls, as index.ts does).
     esc.recordTurn('please add a login button', '');
     esc.recordTurn('', 'Done, added the button.');
-    expect(esc.correctionStreak).toBe(0);
+    expect(esc.frustrationStreak).toBe(0);
 
     // Exchange 2: user says "again" — streak should advance by exactly 1,
     // not 2, even though this exchange is also 2 separate recordTurn() calls.
     esc.recordTurn('Ok you did stop again, please proceed', '');
     esc.recordTurn('', 'Continuing...');
-    expect(esc.correctionStreak).toBe(1);
+    expect(esc.frustrationStreak).toBe(1);
 
     esc.recordTurn('still not done, try again', '');
     esc.recordTurn('', 'Continuing...');
-    expect(esc.correctionStreak).toBe(2);
+    expect(esc.frustrationStreak).toBe(2);
 
     esc.recordTurn('you stopped again', '');
     esc.recordTurn('', 'Continuing...');
-    expect(esc.correctionStreak).toBe(0); // reset after escalating on the 3rd
+    expect(esc.frustrationStreak).toBe(0); // reset after escalating on the 3rd
     expect(esc.level).toBe('tactical');
   });
 
@@ -120,7 +120,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('', 'openrouter/foo — error: rate limited, trying openrouter/bar …');
     esc.recordTurn('', 'All models in scout failed, trying operational...');
     esc.recordTurn('', 'mistral/baz — error: empty response, trying mistral/qux …');
-    expect(esc.correctionStreak).toBe(0);
+    expect(esc.frustrationStreak).toBe(0);
     expect(esc.level).toBe('operational');
   });
 

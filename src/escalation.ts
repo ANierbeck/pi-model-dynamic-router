@@ -134,7 +134,7 @@ export class SessionEscalation {
   private _llmInFlight = false;
   private _sessionId = 0;
   private _classifierModel: string;
-  private _correctionStreak = 0;
+  private _frustrationStreak = 0;
   private _streakEscalatedPending = false;
 
   /**
@@ -151,8 +151,8 @@ export class SessionEscalation {
   }
 
   /** Consecutive turns carrying a frustration/failure signal (diagnostic). */
-  get correctionStreak(): number {
-    return this._correctionStreak;
+  get frustrationStreak(): number {
+    return this._frustrationStreak;
   }
 
   /** Update the classifier model after config load (constructor runs before config is available). */
@@ -164,7 +164,7 @@ export class SessionEscalation {
     this._level = 'operational';
     this._history = [];
     this._sessionId++;
-    this._correctionStreak = 0;
+    this._frustrationStreak = 0;
     this._streakEscalatedPending = false;
   }
 
@@ -187,11 +187,11 @@ export class SessionEscalation {
     // means it wasn't a real ongoing loop).
     if (prompt.trim().length > 0) {
       if (hasFrustrationSignal(prompt)) {
-        this._correctionStreak++;
-        if (this._correctionStreak >= STREAK_THRESHOLD) {
+        this._frustrationStreak++;
+        if (this._frustrationStreak >= STREAK_THRESHOLD) {
           const prev = this._level;
           this._level = nextLevel(this._level);
-          this._correctionStreak = 0;
+          this._frustrationStreak = 0;
           if (prev !== this._level) {
             // Persisted on the instance (not a call-local variable) because the
             // periodic _checkAndEscalate trigger below fires on raw call count,
@@ -205,7 +205,7 @@ export class SessionEscalation {
           }
         }
       } else {
-        this._correctionStreak = 0;
+        this._frustrationStreak = 0;
       }
     }
 
