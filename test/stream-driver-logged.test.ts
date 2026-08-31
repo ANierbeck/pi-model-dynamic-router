@@ -52,9 +52,13 @@ describe('pushRouterInfoLogged', () => {
     );
   });
 
-  it('does not throw or log when routerLog is unavailable-like (defensive smoke test)', () => {
+  it('logs each call independently (no batching/deduping across repeated switches)', () => {
     const proxy = fakeProxy();
-    expect(() => pushRouterInfoLogged(proxy as any, '> [router] plain message\n\n')).not.toThrow();
-    expect(proxy.events.length).toBe(3);
+    pushRouterInfoLogged(proxy as any, '> [router] mistral/foo — rate limit, trying mistral/bar …\n\n');
+    pushRouterInfoLogged(proxy as any, '> [router] mistral/bar — stall_timeout, trying mistral/baz …\n\n');
+
+    expect(routerLogSpy).toHaveBeenCalledTimes(2);
+    expect(routerLogSpy.mock.calls[0][0]).toContain('mistral/foo');
+    expect(routerLogSpy.mock.calls[1][0]).toContain('mistral/bar — stall_timeout');
   });
 });
