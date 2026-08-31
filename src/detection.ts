@@ -87,12 +87,64 @@ export const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
  * value using a German locale pattern (the format produced by `toLocaleString`
  * with `timeZoneName: "short"`).
  *
+ * A second, unrelated format is also recognized: Claude Code CLI's own
+ * spend-limit message carries no date, just an informal wall-clock time and
+ * an IANA zone name — "your session limit resets 7pm (Europe/Berlin)". Since
+ * there's no date, this is interpreted as "the next occurrence of that
+ * wall-clock time in that zone" (today if still ahead of now, else
+ * tomorrow), converted via Intl instead of the TZ-abbreviation lookup table
+ * above (a real IANA identifier needs no guessing).
+ *
  * The parsed value is validated: must be a finite future timestamp (within
  * 7 days, matching Anthropic's seven_day/seven_day_opus rate-limit windows —
  * see the inline comment below) to guard against clock-skew / parsed garbage.
  * Returns undefined if parsing fails — the caller falls back to the standard
  * escalating backoff.
  */
+
+/**
+ * Converts a wall-clock date/time in a given IANA zone to a Unix-ms UTC
+ * instant, without a timezone library. Standard single-iteration technique:
+ * treat the target fields as if they were UTC (a "guess"), format that guess
+ * back through the target zone to see what wall-clock time it displays there,
+ * and the difference between the guess and that round-trip IS the zone's
+ * offset at that instant — subtracting it from the guess recovers the real
+ * UTC instant. Accurate except within the same hour as a DST transition,
+ * which is an acceptable approximation for a rate-limit cooldown estimate.
+ */
+function zonedTimeToUtcMs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string
+): number {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(new Date(utcGuess)).map((p) => [p.type, p.value]));
+  // Intl's 24h formatter can emit "24" for midnight instead of "00".
+  const guessedHour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const guessedLocalAsUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    guessedHour,
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return utcGuess + (utcGuess - guessedLocalAsUtc);
+}
+
 export function parseResetAtMs(text: string): number | undefined {
   // DD. Mon YYYY, HH:MM:SS TZ (German locale, produced by toLocaleString
   // with the standard date/time options in claude-bridge's formatResetTimestamp)
@@ -114,7 +166,7 @@ export function parseResetAtMs(text: string): number | undefined {
   const mdy = text.match(
     /\b(\d{1,2})\.\s+([A-Za-zÀ-ÖØ-öø-ÿ]+)\.?\s+(\d{4}),\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,6})\b/
   );
-  if (!mdy) return undefined;
+  if (!mdy) return parseInformalZonedReset(text);
   // Groups: [fullMatch, day, month, year, hour, minute, second, tz]
   const [, day, monRaw, year, hour, minute, second, tz] = mdy;
   // Both English abbreviations (in case an English-locale Pi install produces
@@ -179,6 +231,52 @@ export function parseResetAtMs(text: string): number | undefined {
     // windows are five_hour (5h), seven_day (7d), and seven_day_opus (~7d);
     // the 7d ceiling covers them all. Anything past 7 days is almost certainly
     // a parsing error and would be worse than the standard escalating backoff.
+    if (ms <= now || ms > now + 7 * 24 * 60 * 60 * 1000) return undefined;
+    return ms;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Second reset-time format, tried when the claude-bridge date+TZ-abbreviation
+ * pattern above doesn't match. Claude Code CLI's own spend-limit message has
+ * no date, just an informal 12-hour time and a real IANA zone identifier:
+ * "your session limit resets 7pm (Europe/Berlin)" or "7:30pm (America/New_York)".
+ * Since there's no date, this resolves to the NEXT occurrence of that
+ * wall-clock time in that zone — today if it hasn't happened yet, tomorrow
+ * otherwise.
+ */
+function parseInformalZonedReset(text: string): number | undefined {
+  const zoned = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([A-Za-z]+\/[A-Za-z_]+)\)/i);
+  if (!zoned) return undefined;
+  const [, hourRaw, minuteRaw, ampm, timeZone] = zoned;
+  let hour = Number(hourRaw) % 12;
+  if (ampm.toLowerCase() === 'pm') hour += 12;
+  const minute = minuteRaw ? Number(minuteRaw) : 0;
+  try {
+    const now = Date.now();
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const todayParts = Object.fromEntries(dtf.formatToParts(new Date(now)).map((p) => [p.type, p.value]));
+    const year = Number(todayParts.year);
+    const month = Number(todayParts.month);
+    const day = Number(todayParts.day);
+    let ms = zonedTimeToUtcMs(year, month, day, hour, minute, timeZone);
+    if (ms <= now) {
+      // Already passed today in that zone — next occurrence is tomorrow.
+      // Date.UTC (inside zonedTimeToUtcMs) normalizes day = actualDaysInMonth+1
+      // into the next month automatically, so no manual month/year rollover
+      // is needed here.
+      ms = zonedTimeToUtcMs(year, month, day + 1, hour, minute, timeZone);
+    }
+    if (!Number.isFinite(ms)) return undefined;
+    // Same guard as the date+TZ-abbreviation format above, though a
+    // next-occurrence time-of-day can never exceed 24h out in practice.
     if (ms <= now || ms > now + 7 * 24 * 60 * 60 * 1000) return undefined;
     return ms;
   } catch {
