@@ -23,17 +23,20 @@ function extractUserCorrections(text: string): string[] {
   return corrections.filter(c => lower.includes(c));
 }
 
-function detectLoopRuleBased(history: Array<{ prompt: string; response: string }>, lookback = 2): boolean {
-  if (history.length < lookback) return false;
-  const recent = history.slice(-lookback);
-  const hasErrors = recent.every(t =>
-    extractErrorKeywords(t.prompt).length > 0 || extractErrorKeywords(t.response).length > 0
+/**
+ * Single-turn frustration/failure signal. Deliberately looks at the LATEST
+ * turn alone rather than requiring the pattern to repeat across 2 consecutive
+ * turns (an earlier version used `history.slice(-2).every(...)`, so a single
+ * "you stopped again, please proceed" message never fired it: the turn
+ * before it is ordinary and `.every()` failed). Real users only say
+ * "again"/"still"/"nochmal" ONCE per incident, not twice in a row.
+ */
+function hasFrustrationSignal(prompt: string, response: string): boolean {
+  return (
+    extractUserCorrections(prompt).length > 0 ||
+    extractErrorKeywords(prompt).length > 0 ||
+    extractErrorKeywords(response).length > 0
   );
-  const userTurns = recent.filter(t => t.prompt.trim().length > 0);
-  const hasCorrections = userTurns.length > 0 && userTurns.every(t =>
-    extractUserCorrections(t.prompt).length > 0
-  );
-  return hasErrors || hasCorrections;
 }
 
 function nextLevel(current: EscalationLevel): EscalationLevel {
@@ -100,18 +103,31 @@ export type TurnRecord = { prompt: string; response: string };
  * Create one instance per session; call reset() on session_start.
  *
  * Two-tier detection:
- *  1. Rule-based check (synchronous, immediate) — keyword matching.
- *  2. LLM check (fire-and-forget, gemma2:2b) — always fired, but its result is
- *     ignored when rule-based already escalated, preventing double-escalation.
- *     A monotonic _sessionId ensures stale promises from a previous session
- *     cannot affect the new session even if they resolve after reset().
+ *  1. Streak-based check (synchronous, every turn) — the LATEST turn alone is
+ *     scanned for frustration/failure keywords; STREAK_THRESHOLD consecutive
+ *     hits escalates one tier and resets the streak.
+ *  2. LLM check (fire-and-forget, gemma2:2b, every 3rd turn) — a slower,
+ *     secondary signal for loops the keyword streak misses. Its result is
+ *     ignored when the streak check already escalated in the same recordTurn
+ *     call, preventing double-escalation. A monotonic _sessionId ensures
+ *     stale promises from a previous session cannot affect the new session
+ *     even if they resolve after reset().
  */
+// Consecutive turns carrying a frustration/failure signal before the
+// streak-based rule escalates. Matches the observed real-world pattern: a
+// user doesn't say "you stopped again" on the FIRST stall (that's normal
+// retry noise) but does by the third — escalating on the first occurrence
+// would be too trigger-happy, escalating only after 3+ separate incidents
+// isn't.
+const STREAK_THRESHOLD = 3;
+
 export class SessionEscalation {
   private _level: EscalationLevel = 'operational';
   private _history: TurnRecord[] = [];
   private _llmInFlight = false;
   private _sessionId = 0;
   private _classifierModel: string;
+  private _correctionStreak = 0;
 
   /**
    * @param classifierModel Ollama ref used for LLM-based loop detection. Should come
@@ -126,6 +142,11 @@ export class SessionEscalation {
     return this._level;
   }
 
+  /** Consecutive turns carrying a frustration/failure signal (diagnostic). */
+  get correctionStreak(): number {
+    return this._correctionStreak;
+  }
+
   /** Update the classifier model after config load (constructor runs before config is available). */
   setClassifierModel(classifierModel: string): void {
     this._classifierModel = classifierModel;
@@ -135,20 +156,53 @@ export class SessionEscalation {
     this._level = 'operational';
     this._history = [];
     this._sessionId++;
+    this._correctionStreak = 0;
   }
 
   /** Call once per turn_end event for both user and assistant messages. */
   recordTurn(prompt: string, response: string): void {
     this._history.push({ prompt, response });
+
+    // Streak-based check: runs every turn (cheap, no I/O) and looks at the
+    // LATEST turn alone rather than requiring the pattern to repeat across
+    // 2 consecutive turns. Escalates once the same frustration/failure signal
+    // has shown up STREAK_THRESHOLD times, resetting the streak on any turn
+    // that doesn't carry the signal (a single clean turn means it wasn't a
+    // real ongoing loop).
+    let streakEscalated = false;
+    if (hasFrustrationSignal(prompt, response)) {
+      this._correctionStreak++;
+      if (this._correctionStreak >= STREAK_THRESHOLD) {
+        const prev = this._level;
+        this._level = nextLevel(this._level);
+        this._correctionStreak = 0;
+        if (prev !== this._level) {
+          streakEscalated = true;
+          routerLog(`[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`);
+        }
+      }
+    } else {
+      this._correctionStreak = 0;
+    }
+
     // Check every 3rd turn, starting when we have at least 2 entries.
     if (this._history.length >= 2 && (this._history.length - 2) % 3 === 0) {
-      this._checkAndEscalate();
+      this._checkAndEscalate(streakEscalated);
     }
   }
 
-  private _checkAndEscalate(): void {
+  /**
+   * LLM-based escalation check (fire-and-forget, gemma2:2b). The synchronous
+   * rule-based path lives entirely in recordTurn's streak counter above —
+   * this is a secondary, slower signal for loops the keyword streak misses
+   * (e.g. repeated semantic frustration without the specific tracked words).
+   * `alreadyEscalatedThisTurn` prevents a double-escalation when the streak
+   * check already bumped the level in the SAME recordTurn call that
+   * triggered this LLM check — the async result resolves later and must not
+   * stack a second bump on top of one that already happened this turn.
+   */
+  private _checkAndEscalate(alreadyEscalatedThisTurn: boolean): void {
     const recent = this._history.slice(-2);
-    const ruleFired = detectLoopRuleBased(recent);
 
     if (!this._llmInFlight) {
       this._llmInFlight = true;
@@ -159,7 +213,7 @@ export class SessionEscalation {
           this._llmInFlight = false;
           if (
             result.shouldEscalate &&
-            !ruleFired &&
+            !alreadyEscalatedThisTurn &&
             this._level === levelAtCallTime &&
             this._sessionId === sessionAtCallTime
           ) {
@@ -174,14 +228,6 @@ export class SessionEscalation {
           this._llmInFlight = false;
           routerLog('[escalation] LLM loop detection failed', err);
         });
-    }
-
-    if (ruleFired) {
-      const prev = this._level;
-      this._level = nextLevel(this._level);
-      if (prev !== this._level) {
-        routerLog(`[escalation] Rule-based loop detection. Upgraded from ${prev} to ${this._level}`);
-      }
     }
   }
 }

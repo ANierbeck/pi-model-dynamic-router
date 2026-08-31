@@ -10,6 +10,7 @@
 
 import type { AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { isRateLimitText } from './detection.ts';
+import { routerLog } from './logger.ts';
 
 /**
  * Identifies the model Pi's session currently has pinned as "the active model"
@@ -85,6 +86,21 @@ export function pushStreamError(
  * properties of undefined (reading 'role')". Emitting all three event types
  * (not just text_delta) matches what a real streamed text block looks like.
  */
+/**
+ * Same as pushRouterInfo, but also writes a durable line to router.log.
+ * pushRouterInfo alone is chat-only — the "> [router] X — reason, trying Y"
+ * messages the user sees live scroll out of the transcript and leave no
+ * trace once the turn ends. Every model-switch/failure notice the user can
+ * see should also be greppable in the log after the fact (diagnosing "why
+ * did the router pick model X" shouldn't require having watched the chat
+ * live). Use this instead of pushRouterInfo for any message that announces
+ * a candidate outcome (selected, failed, rate-limited, falling back).
+ */
+export function pushRouterInfoLogged(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
+  routerLog(text.replace(/^>\s*/, '').trim());
+  pushRouterInfo(proxy, text, contentIndex);
+}
+
 export function pushRouterInfo(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
   const partial: AssistantMessage = {
     role: 'assistant',

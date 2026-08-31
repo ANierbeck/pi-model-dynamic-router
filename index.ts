@@ -52,7 +52,7 @@ import {
   collectGroupModels,
   computeFallbackGroups,
 } from './src/dynamic-config.ts';
-import { pushStreamError, pushRouterInfo, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
+import { pushStreamError, pushRouterInfo, pushRouterInfoLogged, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -2780,7 +2780,7 @@ let previousTokenCount = 0;
           pushError(ref, errorMsg);
           recordSoftFailure(ref);
           // Notify user about hard failures so they know we tried alternatives
-          pushRouterInfo(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
+          pushRouterInfoLogged(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
           return null;
         });
         if (!target) {
@@ -2803,7 +2803,7 @@ let previousTokenCount = 0;
 
         // Show which model is actually being used
         const prefix = label ? `${label} · ${ref}` : ref;
-        pushRouterInfo(proxy, `> [router] ${prefix}\n\n`);
+        pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
 
         // Update the status line as soon as the stream was created successfully —
         // waiting for the stream to finish would leave the previous model displayed
@@ -2864,7 +2864,7 @@ let previousTokenCount = 0;
             const resetMsg = result.resetAtMs
               ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
               : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
+            pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2905,7 +2905,7 @@ let previousTokenCount = 0;
             recordSoftFailure(ref);
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, trying ${nextRef} …` : '';
-            pushRouterInfo(
+            pushRouterInfoLogged(
               proxy,
               `> [router] ${ref} — stuck in a repetition loop (${result.detail ?? 'loop detected'})${suffix}\n\n`
             );
@@ -2956,7 +2956,7 @@ let previousTokenCount = 0;
             const resetMsg = result.resetAtMs
               ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
               : '';
-            pushRouterInfo(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
+            pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
 
@@ -2974,7 +2974,7 @@ let previousTokenCount = 0;
                 : 'empty response from model';
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          pushRouterInfo(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
+          pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
         } catch (streamError) {
           // Hard failure (e.g., "No API provider registered") — treat as soft failure
           const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
@@ -2982,7 +2982,7 @@ let previousTokenCount = 0;
           recordSoftFailure(ref);
           const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          pushRouterInfo(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
+          pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
         } finally {
           // Release the local concurrency slot acquired in tryStream. Must
           // run on every path: success (return), soft-failure (continue),
@@ -3019,7 +3019,7 @@ let previousTokenCount = 0;
         if (fallbackGroup) {
           const fb = resolve(fallbackGroup);
           if (fb?.candidates?.length) {
-            pushRouterInfo(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
+            pushRouterInfoLogged(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
             // Recursively try the fallback group
             await driveStream(
               proxy,
@@ -3158,7 +3158,7 @@ let previousTokenCount = 0;
               if (result.reason === 'repetition_loop') {
                 pushError(bestRef, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
                 recordSoftFailure(bestRef);
-                pushRouterInfo(
+                pushRouterInfoLogged(
                   proxy,
                   `> [router] ${bestRef} — stuck in a repetition loop (${result.detail ?? 'loop detected'})\n\n`
                 );
@@ -3186,7 +3186,7 @@ let previousTokenCount = 0;
                   const resetMsg = result.resetAtMs
                     ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
                     : '';
-                  pushRouterInfo(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
+                  pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
                 }
               }
             } catch (streamError) {
