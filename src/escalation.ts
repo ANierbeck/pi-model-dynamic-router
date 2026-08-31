@@ -226,11 +226,17 @@ export class SessionEscalation {
    * second bump on top of one the streak already applied.
    */
   private _checkAndEscalate(): void {
-    const alreadyEscalatedThisTurn = this._streakEscalatedPending;
-    this._streakEscalatedPending = false;
     const recent = this._history.slice(-2);
 
     if (!this._llmInFlight) {
+      // Only consume the pending flag when a call is actually about to be
+      // dispatched (roborev job 379 LOW) — reading/clearing it unconditionally
+      // at the top of this method discarded it even on calls that never
+      // dispatch anything (because _llmInFlight was already true), silently
+      // losing the "escalated recently" signal for whichever future call
+      // eventually does dispatch.
+      const alreadyEscalatedThisTurn = this._streakEscalatedPending;
+      this._streakEscalatedPending = false;
       this._llmInFlight = true;
       const levelAtCallTime = this._level;
       const sessionAtCallTime = this._sessionId;
