@@ -1110,6 +1110,25 @@ let previousTokenCount = 0;
     return rateLimitManager.limitSecs(ref);
   }
 
+  /**
+   * Builds the " (resets HH:MM:SS)" suffix for a rate-limit router-info
+   * message. Prefers the parsed provider reset time (resetAtMs) when
+   * available — the accurate case. Otherwise falls back to the router's own
+   * computed cooldown_until (the escalating backoff, or whatever
+   * recordStreamFailure actually set) so the user always sees a concrete
+   * wall-clock time instead of a mystery cooldown when the failure text
+   * couldn't be parsed for a reset time. Omitted when the ref was
+   * key-rotated — no cooldown was applied to it in that case (a different
+   * key will be tried next time), so there's no meaningful reset time to show.
+   */
+  function formatResetMsg(ref: string, resetAtMs: number | undefined, rotated: boolean): string {
+    if (resetAtMs) return ` (resets ${new Date(resetAtMs).toLocaleString()})`;
+    if (rotated) return '';
+    const secs = limitSecs(ref);
+    if (secs <= 0) return '';
+    return ` (resets ${new Date(Date.now() + secs * 1000).toLocaleString()})`;
+  }
+
   // ── Usage Stats ────────────────────────────────────────────────────────
 
   function getUsage(ref: string, days: number): number {
@@ -2858,12 +2877,11 @@ let previousTokenCount = 0;
             const nextRef = candidates.slice(i + 1).find(r => !isLimited(r));
             const suffix = nextRef ? `, trying ${nextRef} …` : '';
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
-            // If we parsed a reset time, surface it so the user can see when
-            // this model is expected to be available again (instead of just
-            // the generic "rate limit" message and a mystery cooldown).
-            const resetMsg = result.resetAtMs
-              ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
-              : '';
+            // Surface when this model is expected to be available again
+            // (instead of just the generic "rate limit" message and a
+            // mystery cooldown) — uses the parsed provider reset time when
+            // available, otherwise the router's own computed cooldown.
+            const resetMsg = formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
             pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
@@ -2953,9 +2971,7 @@ let previousTokenCount = 0;
               : result.reason === 'provider_error'
                 ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
                 : 'empty response (likely rate limit)';
-            const resetMsg = result.resetAtMs
-              ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
-              : '';
+            const resetMsg = formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
             pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
             continue;
           }
@@ -3183,9 +3199,7 @@ let previousTokenCount = 0;
                       : reasonTxt === 'provider_error'
                         ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
                         : 'empty response (likely rate limit)';
-                  const resetMsg = result.resetAtMs
-                    ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
-                    : '';
+                  const resetMsg = formatResetMsg(bestRef!, result.resetAtMs, frResult.rotated);
                   pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
                 }
               }

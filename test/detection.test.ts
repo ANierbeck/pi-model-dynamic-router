@@ -265,3 +265,63 @@ describe('isPaidCloudRateLimitFailure — single source of truth for the hard-co
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'aborted')).toBe(false);
   });
 });
+
+describe('parseResetAtMs — informal "Npm (Zone/City)" format (Claude Code CLI spend-limit message)', () => {
+  // Verifies the ACTUAL timezone conversion, not just "returns a future
+  // number" — formats the parsed instant back through the same IANA zone and
+  // checks the displayed wall-clock hour/minute match what was requested.
+  function wallClockIn(ms: number, timeZone: string): { hour: number; minute: number } {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', { timeZone, hour12: false, hour: '2-digit', minute: '2-digit' })
+        .formatToParts(new Date(ms))
+        .map((p) => [p.type, p.value])
+    );
+    return { hour: Number(parts.hour) % 24, minute: Number(parts.minute) };
+  }
+
+  it('parses "your session limit resets 7pm (Europe/Berlin)" to a future timestamp with the correct wall-clock hour', () => {
+    const text = "You've hit your monthly spend limit · raise it at claude.ai/settings/usage · your session limit resets 7pm (Europe/Berlin)";
+    const ms = parseResetAtMs(text);
+    expect(ms).toBeDefined();
+    expect(ms!).toBeGreaterThan(Date.now());
+    expect(ms!).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000);
+    expect(wallClockIn(ms!, 'Europe/Berlin')).toEqual({ hour: 19, minute: 0 });
+  });
+
+  it('parses an explicit minute ("7:30pm")', () => {
+    const ms = parseResetAtMs('resets 7:30pm (Europe/Berlin)');
+    expect(ms).toBeDefined();
+    expect(wallClockIn(ms!, 'Europe/Berlin')).toEqual({ hour: 19, minute: 30 });
+  });
+
+  it('handles 12am/12pm correctly (12-hour clock edge case)', () => {
+    const noon = parseResetAtMs('resets 12pm (Europe/Berlin)');
+    expect(wallClockIn(noon!, 'Europe/Berlin')).toEqual({ hour: 12, minute: 0 });
+    const midnight = parseResetAtMs('resets 12am (Europe/Berlin)');
+    expect(wallClockIn(midnight!, 'Europe/Berlin')).toEqual({ hour: 0, minute: 0 });
+  });
+
+  it('resolves to tomorrow when the wall-clock time has already passed today in that zone', () => {
+    // Whatever hour it currently is in Europe/Berlin, one hour earlier has
+    // already passed today — the "next occurrence" must be tomorrow, not a
+    // past timestamp today.
+    const nowBerlin = wallClockIn(Date.now(), 'Europe/Berlin');
+    const pastHour = (nowBerlin.hour + 23) % 24; // 1 hour before "now", wrapping
+    const ampm = pastHour === 0 ? '12am' : pastHour < 12 ? `${pastHour}am` : pastHour === 12 ? '12pm' : `${pastHour - 12}pm`;
+    const ms = parseResetAtMs(`resets ${ampm} (Europe/Berlin)`);
+    expect(ms).toBeDefined();
+    expect(ms!).toBeGreaterThan(Date.now());
+  });
+
+  it('works for a different IANA zone (America/New_York) — not hardcoded to one offset', () => {
+    const ms = parseResetAtMs('resets 3pm (America/New_York)');
+    expect(ms).toBeDefined();
+    expect(wallClockIn(ms!, 'America/New_York')).toEqual({ hour: 15, minute: 0 });
+  });
+
+  it('returns undefined for text with no zoned-time pattern', () => {
+    expect(parseResetAtMs('your session limit resets soon')).toBeUndefined();
+    expect(parseResetAtMs('resets 7pm')).toBeUndefined(); // no zone
+    expect(parseResetAtMs('resets (Europe/Berlin)')).toBeUndefined(); // no time
+  });
+});
