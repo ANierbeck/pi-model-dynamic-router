@@ -19,6 +19,7 @@ vi.mock('../src/ollama-utils.ts', () => ({
 }));
 
 import { SessionEscalation } from '../src/escalation.ts';
+import { callOllama } from '../src/ollama-utils.ts';
 
 describe('SessionEscalation — streak-based escalation', () => {
   it('does NOT escalate on a single frustration turn preceded by a clean turn', () => {
@@ -111,5 +112,37 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('', 'mistral/baz — error: empty response, trying mistral/qux …');
     expect(esc.correctionStreak).toBe(0);
     expect(esc.level).toBe('operational');
+  });
+
+  // roborev job 376 MEDIUM: the periodic LLM-check trigger
+  // ((history.length - 2) % 3 === 0) fires on raw call count, not on which
+  // half of the split user/assistant exchange it lands on. It can fire on
+  // the assistant-only call immediately AFTER a streak escalation (history
+  // length 8, right after the escalating call at length 7) — the
+  // "already escalated this turn" guard must still suppress a second LLM-
+  // driven escalation in that case, even though it's a different recordTurn
+  // call than the one that streak-escalated.
+  it('does not stack an LLM-driven escalation on top of a streak escalation that just happened one call earlier', async () => {
+    vi.mocked(callOllama).mockResolvedValue('{"shouldEscalate": true, "reason": "test says escalate"}');
+    const esc = new SessionEscalation();
+
+    esc.recordTurn('hello', ''); // len 1
+    esc.recordTurn('', 'hi'); // len 2
+    esc.recordTurn('again', ''); // len 3, streak 1
+    esc.recordTurn('', 'ok'); // len 4
+    esc.recordTurn('still again', ''); // len 5, streak 2
+    esc.recordTurn('', 'ok'); // len 6
+    esc.recordTurn('again please', ''); // len 7, streak 3 -> escalates to 'tactical'
+    expect(esc.level).toBe('tactical');
+    // len 8, assistant-only call: (8-2)%3===0 fires _checkAndEscalate here,
+    // one call after the streak escalation — not the same call.
+    esc.recordTurn('', 'ok');
+
+    // Let the mocked (immediately-resolved) LLM promise's .then() run.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Must still be 'tactical', not 'strategic' — the LLM's shouldEscalate:
+    // true must NOT stack a second bump on top of the streak's.
+    expect(esc.level).toBe('tactical');
   });
 });
