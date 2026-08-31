@@ -58,6 +58,7 @@ import {
   isOverflowErrorText,
   isOverflowDeltaText,
   parseResetAtMs,
+  isPaidCloudRateLimitFailure,
 } from './src/detection.ts';
 import { hasBudget } from './src/budget.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
@@ -1041,12 +1042,13 @@ let previousTokenCount = 0;
    * recordLimit(). A FREE-model or local-model failure gets only the short
    * soft-backoff ladder, since those are commonly just transient overload.
    *
-   * provider_error is included here (roborev job 339 LOW): this predicate
-   * MUST stay in sync with the caller's own copy in the main driveStream loop
-   * (search isRateLimitLikeFailure) — that caller decides which user-facing
-   * message to show ("treated as rate-limit" vs a plain soft-failure notice)
-   * based on the same condition, so if the two ever diverge the message would
-   * lie about which backoff tier was actually applied.
+   * The escalation predicate (isPaidCloudRateLimitFailure, src/detection.ts)
+   * is the single source of truth shared with the caller's own branch in the
+   * main driveStream loop — that caller decides which user-facing message to
+   * show ("treated as rate-limit" vs a plain soft-failure notice) based on
+   * the same function, so the two can no longer diverge (roborev job 348 LOW
+   * — they had already drifted out of sync once this session before this
+   * extraction).
    *
    * Used both by the main candidate loop and by the total-cooldown-collapse
    * force-retry, so a force-retried candidate that turns out to still be
@@ -1058,13 +1060,7 @@ let previousTokenCount = 0;
     reason: string,
     resetAtMs?: number
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
-    const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-    const isRateLimitLikeFailure = reason === 'empty_response'
-      || reason === 'empty_timeout'
-      || reason === 'stall_timeout'
-      || reason === 'provider_error';
-    const isFreeModel = ref.includes(':free');
-    if (reason === 'rate_limit_exceeded' || (isCloudProvider && isRateLimitLikeFailure && !isFreeModel)) {
+    if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason)) {
       const rlResult = recordLimit(ref, resetAtMs);
       return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
     }
@@ -2878,14 +2874,11 @@ let previousTokenCount = 0;
           // The escalation decision (hard cooldown + key rotation for a paid
           // cloud failure, short soft backoff otherwise) is delegated to the
           // shared recordStreamFailure() helper used by the force-retry path too.
-          // This branch keeps its own user-facing message.
-          const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-          const isRateLimitLikeFailure = result.reason === 'empty_response'
-            || result.reason === 'empty_timeout'
-            || result.reason === 'stall_timeout'
-            || result.reason === 'provider_error';
-          const isFreeModel = ref.includes(':free');
-          if (isCloudProvider && isRateLimitLikeFailure && !isFreeModel) {
+          // This branch keeps its own user-facing message. isPaidCloudRateLimitFailure
+          // (src/detection.ts) is the single source of truth for the gate condition
+          // (roborev job 348 LOW) — shared with recordStreamFailure's own copy so
+          // the two can no longer silently diverge.
+          if (isPaidCloudRateLimitFailure(ref, String(result.reason))) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
             const rlResult = recordStreamFailure(ref, String(result.reason), result.resetAtMs);
             pushError(ref, `${result.reason} (treated as rate-limit)`);
