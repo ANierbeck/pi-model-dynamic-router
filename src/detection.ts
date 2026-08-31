@@ -176,3 +176,37 @@ export function isOverflowDeltaText(text: string): boolean {
   const lower = text.toLowerCase();
   return TEXT_DELTA_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
 }
+
+/**
+ * True if a failure `reason` looks rate-limit-shaped rather than a definitive
+ * signal on its own (empty response, timeout, or an unrecognized provider
+ * finish_reason) — the caller still must combine this with provider/pricing
+ * tier (see isPaidCloudRateLimitFailure below) before treating it as a real
+ * rate limit.
+ */
+export function isRateLimitLikeReason(reason: string): boolean {
+  return reason === 'empty_response'
+    || reason === 'empty_timeout'
+    || reason === 'stall_timeout'
+    || reason === 'provider_error';
+}
+
+/**
+ * Single source of truth (roborev job 348 LOW) for "should this failure on
+ * `ref` be escalated to a hard rate-limit cooldown + key rotation, instead of
+ * the short soft-backoff ladder": a PAID cloud model (not local, not
+ * `:free`-suffixed) hitting a rate-limit-shaped reason. Local/free models get
+ * only the soft backoff, since those failures are commonly just transient
+ * overload rather than a masked 429/auth error.
+ *
+ * Was previously duplicated verbatim in index.ts's driveStream main loop and
+ * in its recordStreamFailure() escalation helper — the two copies had
+ * already drifted out of sync once this session (provider_error was added to
+ * one but not the other), which would have made the user-facing "treated as
+ * rate-limit" message lie about which backoff tier was actually applied.
+ */
+export function isPaidCloudRateLimitFailure(ref: string, reason: string): boolean {
+  const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
+  const isFreeModel = ref.includes(':free');
+  return isCloudProvider && isRateLimitLikeReason(reason) && !isFreeModel;
+}

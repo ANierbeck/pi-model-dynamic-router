@@ -13,6 +13,7 @@ import {
   isOverflowErrorText,
   isOverflowDeltaText,
   parseResetAtMs,
+  isPaidCloudRateLimitFailure,
   RATE_LIMIT_PATTERNS,
 } from '../src/detection.ts';
 
@@ -208,5 +209,30 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
         expect(ms).toBe(expectedMs);
       });
     }
+  });
+});
+
+describe('isPaidCloudRateLimitFailure — single source of truth for the hard-cooldown gate (roborev job 348 LOW)', () => {
+  it('treats a paid cloud model with a rate-limit-shaped reason as hard-cooldown-worthy', () => {
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'empty_response')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'empty_timeout')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'stall_timeout')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error')).toBe(true);
+  });
+
+  it('does NOT flag a free-suffixed model, even on a rate-limit-shaped reason', () => {
+    expect(isPaidCloudRateLimitFailure('openrouter/some-model:free', 'provider_error')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-model:free', 'empty_response')).toBe(false);
+  });
+
+  it('does NOT flag a local provider (ollama/lm-studio), even on a rate-limit-shaped reason', () => {
+    expect(isPaidCloudRateLimitFailure('ollama/some-model', 'provider_error')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('lm-studio/some-model', 'empty_timeout')).toBe(false);
+  });
+
+  it('does NOT flag a paid cloud model for a non-rate-limit-shaped reason', () => {
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'context_overflow')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'repetition_loop')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'aborted')).toBe(false);
   });
 });
