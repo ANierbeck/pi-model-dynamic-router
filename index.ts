@@ -1817,6 +1817,7 @@ let previousTokenCount = 0;
     let repetitionDetail = ''; // The repeating unit + count, for the router-info message
     let providerErrorDetected = false; // Any other provider-reported error event (not rate-limit/overflow)
     let providerErrorDetail = ''; // Raw provider error text, for the router-info message
+    let userAborted = false; // event.reason === 'aborted' (Ctrl-C or an outer abort signal) — not a model failure
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
     let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
     const iterPromise = (async (): Promise<'done'> => {
@@ -1840,6 +1841,26 @@ let previousTokenCount = 0;
           armTimer();
           if (event.type === 'error') {
             clearTimer();
+            // pi-ai's AssistantMessageEvent contract (types.d.ts) has a stream
+            // terminate with `{type:'error', reason:'aborted'|'error', error}`
+            // for BOTH a genuine provider fault AND a user/agent-initiated
+            // cancellation (e.g. Ctrl-C mid-generation, or an outer abort
+            // signal from the caller) — the underlying provider's stream()
+            // catches the abort and sets `stopReason: signal?.aborted ?
+            // "aborted" : "error"` itself. Without this check, a plain user
+            // cancellation on a paid cloud model would fall through to the
+            // providerErrorDetected branch below and get escalated to a hard
+            // cooldown + key rotation ("likely rate limit") even though
+            // nothing was wrong with the provider (roborev job 345 HIGH).
+            if ((event as any).reason === 'aborted') {
+              userAborted = true;
+              // Forward the real event so the caller sees a proper
+              // stopReason:'aborted' message — pi-ai's own retry/abort
+              // handling already treats this specially (never retried, no
+              // cooldown recorded against the model).
+              proxy.push(event);
+              return 'done';
+            }
             // Check if this is a rate limit or subscription error from claude-bridge.
             // pi-ai's openai-completions provider puts the message on
             // `.errorMessage` (the assistant-message shape), not `.message` —
@@ -1953,6 +1974,16 @@ let previousTokenCount = 0;
     }
 
     // Stream completed — check if we actually got content or hit a rate limit
+    if (userAborted) {
+      // User/agent-initiated cancellation, not a model failure — checked
+      // before every other classification (highest priority) so an abort
+      // can never be misread as a rate-limit/overflow/provider_error and
+      // escalated into a cooldown. The real aborted event was already
+      // forwarded to the caller above; driveStream must stop the whole
+      // cascade here rather than trying the next candidate or recording
+      // any failure against this one.
+      return { ok: false, reason: 'aborted' };
+    }
     if (overflowDetected) {
       // Provider rejected the prompt as too large for its context window.
       // This is the runtime counterpart to the pre-flight context-window guard
@@ -2743,6 +2774,16 @@ let previousTokenCount = 0;
             return;
           }
 
+          if (result.reason === 'aborted') {
+            // User/agent-initiated cancellation (Ctrl-C, outer abort signal),
+            // not a model failure (roborev job 345 HIGH) — do not record any
+            // cooldown against `ref` and do not try the next candidate; that
+            // would ignore the cancellation and burn another API call. The
+            // real aborted event was already forwarded to the proxy inside
+            // consumeWithDetection.
+            return;
+          }
+
           // Rate-limit / spend-limit failure — record a HARD limit (not soft)
           // so the model is properly skipped in future attempts and API keys
           // are rotated. Without this, the router only records a short soft
@@ -3025,6 +3066,13 @@ let previousTokenCount = 0;
               const result = await consumeWithDetection(target.stream, proxy, getEmptyResponseTimeout(bestRef), getStallTimeout(bestRef));
               if (result.ok) {
                 recordOk(bestRef);
+                return;
+              }
+              if (result.reason === 'aborted') {
+                // User/agent-initiated cancellation, not a model failure
+                // (roborev job 345 HIGH) — mirror the main loop's early return:
+                // no cooldown recorded, no further retry. The real aborted
+                // event was already forwarded to the proxy.
                 return;
               }
               pushError(bestRef, String(result.reason));
