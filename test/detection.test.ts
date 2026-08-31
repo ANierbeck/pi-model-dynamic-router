@@ -7,7 +7,7 @@
 // trigger a fallback in one path but not the other. Both now go through
 // RATE_LIMIT_PATTERNS here.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   isRateLimitText,
   isOverflowErrorText,
@@ -146,5 +146,67 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     const text = `resets ${day}. ${mon}. ${year}, ${hour}:05:00 EST`;
     const ms = parseResetAtMs(text);
     expect(ms).toBeGreaterThan(Date.now());
+  });
+
+  describe('German month names (roborev job 339 MEDIUM)', () => {
+    // node's de-DE Intl short-month format only abbreviates SOME months with a
+    // trailing dot ("Jan.", "Feb.", "Aug.", "Sept.", "Okt.", "Nov.", "Dez.")
+    // and spells others out in full with NO trailing dot ("März", "Mai", "Juni",
+    // "Juli") — this is the exact format claude-bridge's formatResetTimestamp()
+    // produces on a German-locale machine. Before the fix, \w (ASCII-only,
+    // never matches ä) combined with a mandatory trailing dot meant März/Mai/
+    // Juni/Juli failed to match the regex at all, and the MONTH table (English
+    // abbreviations only) meant Sept/Okt/Dez failed the lookup even when the
+    // regex did match — silently losing the reset-time-aware cooldown for
+    // roughly 7 of 12 months. Uses fake timers so every month can be tested
+    // deterministically regardless of when the suite runs, and generates the
+    // input text via the real `toLocaleString('de-DE', ...)` call (the same
+    // one claude-bridge uses) rather than hand-typing month strings, so a typo
+    // in the test can't accidentally match a typo in the implementation.
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const LOCALE_OPTS = {
+      day: 'numeric' as const,
+      month: 'short' as const,
+      year: 'numeric' as const,
+      hour: 'numeric' as const,
+      minute: '2-digit' as const,
+      second: '2-digit' as const,
+      timeZoneName: 'short' as const,
+    };
+
+    // One month index per calendar quarter that needs the fix: März/Mai/Juni/
+    // Juli (no trailing dot, non-ASCII for März) and Sept/Okt/Dez (German
+    // abbreviation differs from the English one already in the table).
+    const monthsNeedingFix = [2, 4, 5, 6, 8, 9, 11];
+
+    for (const monthIndex of monthsNeedingFix) {
+      it(`parses German locale text for month index ${monthIndex}`, () => {
+        const now = new Date(2026, monthIndex, 1, 12, 0, 0);
+        vi.useFakeTimers();
+        vi.setSystemTime(now);
+
+        const target = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+        const formatted = target.toLocaleString('de-DE', LOCALE_OPTS);
+        const text = `Warning: [rate-limit] Claude five_hour rate limit hit — resets ${formatted}`;
+
+        // Mirror parseResetAtMs's own UTC interpretation of the LOCAL date/time
+        // components (not target.getTime(), which is the real UTC instant —
+        // these two only coincide when the test machine's TZ offset is 0).
+        const expectedMs = Date.UTC(
+          target.getFullYear(),
+          target.getMonth(),
+          target.getDate(),
+          target.getHours(),
+          target.getMinutes(),
+          target.getSeconds()
+        );
+
+        const ms = parseResetAtMs(text);
+        expect(ms).toBe(expectedMs);
+      });
+    }
   });
 });

@@ -1034,11 +1034,19 @@ let previousTokenCount = 0;
 
   /**
    * Escalates a stream failure to the right backoff tier, exactly like the
-   * main driveStream loop does: a real rate-limit, or an empty response from
-   * a PAID cloud model (which is much more likely a masked 429/auth error
-   * than a fluke), gets a hard cooldown + key rotation via recordLimit(). A
-   * FREE-model or local-model empty response gets only the short soft-backoff
-   * ladder, since those are commonly just transient overload.
+   * main driveStream loop does: a real rate-limit, or a failure from a PAID
+   * cloud model that looks rate-limit-shaped (empty response, timeout,
+   * unrecognized provider_error — all much more likely a masked 429/auth
+   * error than a fluke), gets a hard cooldown + key rotation via
+   * recordLimit(). A FREE-model or local-model failure gets only the short
+   * soft-backoff ladder, since those are commonly just transient overload.
+   *
+   * provider_error is included here (roborev job 339 LOW): this predicate
+   * MUST stay in sync with the caller's own copy in the main driveStream loop
+   * (search isRateLimitLikeFailure) — that caller decides which user-facing
+   * message to show ("treated as rate-limit" vs a plain soft-failure notice)
+   * based on the same condition, so if the two ever diverge the message would
+   * lie about which backoff tier was actually applied.
    *
    * Used both by the main candidate loop and by the total-cooldown-collapse
    * force-retry, so a force-retried candidate that turns out to still be
@@ -1051,11 +1059,12 @@ let previousTokenCount = 0;
     resetAtMs?: number
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
     const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-    const isEmptyFailure = reason === 'empty_response'
+    const isRateLimitLikeFailure = reason === 'empty_response'
       || reason === 'empty_timeout'
-      || reason === 'stall_timeout';
+      || reason === 'stall_timeout'
+      || reason === 'provider_error';
     const isFreeModel = ref.includes(':free');
-    if (reason === 'rate_limit_exceeded' || (isCloudProvider && isEmptyFailure && !isFreeModel)) {
+    if (reason === 'rate_limit_exceeded' || (isCloudProvider && isRateLimitLikeFailure && !isFreeModel)) {
       const rlResult = recordLimit(ref, resetAtMs);
       return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
     }
@@ -2805,27 +2814,37 @@ let previousTokenCount = 0;
 
           // Soft failure — record and try next candidate
           //
-          // IMPORTANT: For cloud providers (openrouter, etc.), an empty_response
-          // or empty_timeout can be a rate-limit, auth error, or just a
-          // transient overload. The right response depends on the model type:
+          // IMPORTANT: For cloud providers (openrouter, etc.), an empty_response,
+          // empty_timeout, or provider_error can be a rate-limit, auth error, or
+          // just a transient overload. The right response depends on the model type:
           //
           // - FREE models (":free" suffix): These are often just overloaded
           //   (free tier has low priority). Use a SHORT soft backoff so they
           //   get retried on the next turn without permanently blocking them.
           //
-          // - PAID cloud models: An empty response is more likely a real
+          // - PAID cloud models: A failure here is more likely a real
           //   rate-limit (429) or auth error. Use a HARD cooldown.
           //
+          // provider_error (unrecognized finish_reason) is included here, not just
+          // empty_response/empty_timeout/stall_timeout (roborev job 339 LOW): the
+          // original provider_error detection was only observed on free OpenRouter
+          // models in practice, but the code path itself has no such restriction —
+          // a paid cloud model hitting provider_error was falling through to the
+          // short-soft-backoff branch below (meant for local models) and getting
+          // immediately retried with the same key next turn instead of the hard
+          // cooldown + key rotation other paid-cloud failures get.
+          //
           // The escalation decision (hard cooldown + key rotation for a paid
-          // cloud empty response, short soft backoff otherwise) is delegated
-          // to the shared recordStreamFailure() helper used by the force-retry
-          // path too. This branch keeps its own user-facing message.
+          // cloud failure, short soft backoff otherwise) is delegated to the
+          // shared recordStreamFailure() helper used by the force-retry path too.
+          // This branch keeps its own user-facing message.
           const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-          const isEmptyFailure = result.reason === 'empty_response'
+          const isRateLimitLikeFailure = result.reason === 'empty_response'
             || result.reason === 'empty_timeout'
-            || result.reason === 'stall_timeout';
+            || result.reason === 'stall_timeout'
+            || result.reason === 'provider_error';
           const isFreeModel = ref.includes(':free');
-          if (isCloudProvider && isEmptyFailure && !isFreeModel) {
+          if (isCloudProvider && isRateLimitLikeFailure && !isFreeModel) {
             // Paid cloud model — treat as rate-limit (hard cooldown)
             const rlResult = recordStreamFailure(ref, String(result.reason), result.resetAtMs);
             pushError(ref, `${result.reason} (treated as rate-limit)`);
@@ -2834,7 +2853,9 @@ let previousTokenCount = 0;
             const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
             const paidLabel = result.reason === 'stall_timeout'
               ? 'stream stalled (likely rate limit)'
-              : 'empty response (likely rate limit)';
+              : result.reason === 'provider_error'
+                ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
+                : 'empty response (likely rate limit)';
             const resetMsg = result.resetAtMs
               ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
               : '';
