@@ -88,8 +88,10 @@ export const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
  * with `timeZoneName: "short"`).
  *
  * The parsed value is validated: must be a finite future timestamp (within
- * 48h) to guard against clock-skew / parsed garbage. Returns undefined if
- * parsing fails — the caller falls back to the standard escalating backoff.
+ * 7 days, matching Anthropic's seven_day/seven_day_opus rate-limit windows —
+ * see the inline comment below) to guard against clock-skew / parsed garbage.
+ * Returns undefined if parsing fails — the caller falls back to the standard
+ * escalating backoff.
  */
 export function parseResetAtMs(text: string): number | undefined {
   // DD. Mon YYYY, HH:MM:SS TZ (German locale, produced by toLocaleString

@@ -3073,7 +3073,9 @@ let previousTokenCount = 0;
                     ? 'rate limit/spend limit reached'
                     : reasonTxt === 'stall_timeout'
                       ? 'stream stalled (likely rate limit)'
-                      : 'empty response (likely rate limit)';
+                      : reasonTxt === 'provider_error'
+                        ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
+                        : 'empty response (likely rate limit)';
                   const resetMsg = result.resetAtMs
                     ? ` (resets ${new Date(result.resetAtMs).toLocaleString()})`
                     : '';
