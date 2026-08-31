@@ -97,13 +97,31 @@ export function parseResetAtMs(text: string): number | undefined {
   // claude-bridge formats dates as "DD. Mon YYYY, HH:MM:SS TZ" (e.g. "30. Aug. 2026, 17:00:00 MESZ").
   // Note: there are TWO literal dots in the pattern ("DD." and "Mon.") — both must be escaped
   // as \\d (dot) not . (wildcard)!
-  const mdy = text.match(/\b(\d{1,2})\.\s+(\w+)\.\s+(\d{4}),\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Z]{2,5})\b/);
+  //
+  // The month token is NOT always followed by a dot, and is not always ASCII:
+  // de-DE's Intl short-month format only abbreviates SOME months ("Jan.",
+  // "Feb.", "Aug.", "Sept.", "Okt.", "Nov.", "Dez.") while spelling others out
+  // in full with no trailing dot ("März", "Mai", "Juni", "Juli") — verified
+  // against Node's actual de-DE Intl output. `\w` never matches accented
+  // letters like ä (the `u` regex flag doesn't change that; \w stays
+  // ASCII-only), and a required trailing `\.` would reject "März"/"Mai"/
+  // "Juni"/"Juli" outright — so the previous pattern silently failed to parse
+  // 4 of 12 months and (via the MONTH table below being English-only) treated
+  // several more as unparsed too. Fixed: an explicit Latin-1 letter class for
+  // the month token, and the trailing dot is now optional.
+  const mdy = text.match(
+    /\b(\d{1,2})\.\s+([A-Za-zÀ-ÖØ-öø-ÿ]+)\.?\s+(\d{4}),\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,6})\b/
+  );
   if (!mdy) return undefined;
   // Groups: [fullMatch, day, month, year, hour, minute, second, tz]
   const [, day, monRaw, year, hour, minute, second] = mdy;
+  // Both English abbreviations (in case an English-locale Pi install produces
+  // them) and German ones (de-DE Intl short-month output, the format
+  // claude-bridge actually uses today — see comment above).
   const MONTH: Record<string, number> = {
-    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    Jan: 0, Feb: 1, Mar: 2, Mär: 2, März: 2, Apr: 3, May: 4, Mai: 4,
+    Jun: 5, Juni: 5, Jul: 6, Juli: 6, Aug: 7, Sep: 8, Sept: 8,
+    Oct: 9, Okt: 9, Nov: 10, Dec: 11, Dez: 11,
   };
   const month = MONTH[monRaw];
   if (month === undefined) return undefined;
