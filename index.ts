@@ -99,6 +99,7 @@ let localStreamsInFlight = 0;
 // reaching for console.* (which bypasses Pi's TUI and can land in the user's
 // input field). Re-imported here for index.ts's own use.
 import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
+import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 
 const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
@@ -132,6 +133,9 @@ let previousTokenCount = 0;
 
   // ── Session Escalation ─────────────────────────────────────────────────
   const escalation = new SessionEscalation();
+  // Initialized early so buildOrchestratorContext can reference it before the
+  // full tryStream helpers are defined. tryStream clears and repopulates it.
+  let skipReasons = new Map<string, string>();
 
   // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -998,6 +1002,8 @@ let previousTokenCount = 0;
       // are available for the current session without requiring a restart.
       cfg = dynamicConfig as Config;
       router = new Router(cfg, cache, rateLimitManager.getLimits());
+      // Keep stream-orchestrator in sync with the new router instance.
+      streamOrchestrator.ctx.router = router;
       if (sessionCtx) router.setSessionCtx(sessionCtx);
       metricsModule.setConfig(cfg);
       discoveryManager = new DiscoveryManager(cfg, cache);
@@ -1110,7 +1116,7 @@ let previousTokenCount = 0;
    * key-rotated — no cooldown was applied to it in that case (a different
    * key will be tried next time), so there's no meaningful reset time to show.
    */
-  function formatResetMsg(ref: string, resetAtMs: number | undefined, rotated: boolean): string {
+  function formatResetMsg(ref: string, resetAtMs: number | undefined, rotated?: boolean): string {
     if (resetAtMs) return ` (resets ${new Date(resetAtMs).toLocaleString()})`;
     if (rotated) return '';
     const secs = limitSecs(ref);
@@ -1267,6 +1273,53 @@ let previousTokenCount = 0;
   metricsModule.loadModelMap(extDir);
   loadCache();
   registerGroupProviders();
+
+  // Build the streaming orchestrator context once all helpers are defined.
+  // Fields that change mid-session (cfg, cache) are passed as mutable object
+  // references so the orchestrator always reads the current value.
+  const buildOrchestratorContext = (): StreamOrchestratorContext => ({
+    curModel,
+    get activeGroup() { return activeGroup; },
+    set activeGroup(v) { activeGroup = v; },
+    get lastDynamicModel() { return lastDynamicModel; },
+    set lastDynamicModel(v) { lastDynamicModel = v; },
+    get lastClassifiedCategory() { return lastClassifiedCategory; },
+    set lastClassifiedCategory(v) { lastClassifiedCategory = v; },
+    get sessionCtx() { return sessionCtx; },
+    get cfg() { return cfg; },
+    get cache() { return cache; },
+    router,
+    escalation,
+    costTracker,
+    rateLimitManager,
+    cacheManager,
+    resolve,
+    isLimited,
+    clearLimit,
+    tryStream,
+    estimateContextTokens,
+    getModelContextWindow,
+    getEmptyResponseTimeout,
+    getStallTimeout,
+    consumeWithDetection,
+    isLocalProvider,
+    localStreamLimit: () => localStreamLimit(),
+    recordSoftFailure,
+    recordOk,
+    recordStreamFailure,
+    formatResetMsg,
+    classifyPrompt,
+    detectHintDirectly,
+    getGroupForCategory,
+    extractLastUserPrompt,
+    extractLastAssistantSnippet,
+    isCompactionTurn,
+    lookupGdp,
+    skipReasons,
+    get localStreamsInFlight() { return localStreamsInFlight; },
+  });
+
+  const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
 
   pi.on('session_start', async (_ev, ctx) => {
     sessionCtx = ctx;
@@ -1602,7 +1655,7 @@ let previousTokenCount = 0;
   // this so a silently skipped candidate still shows up in the failure list —
   // otherwise "All 9 candidates failed" lists only 4 and the real reason (model
   // not in Pi's registry, no API key) stays invisible.
-  const skipReasons = new Map<string, string>();
+  skipReasons = new Map<string, string>();
 
   // Local-stream concurrency limiter helpers (counter is module-global above;
   // limit + predicate need `cfg`, which is in scope here).
@@ -2285,7 +2338,7 @@ let previousTokenCount = 0;
       // Cost tracking for static routing
       costTracker.trackRequest(res.selected, 1000, 500);
       
-      driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
 
@@ -2322,7 +2375,7 @@ let previousTokenCount = 0;
           if (!res) throw new Error('No fallback model for tool follow-up');
           // Prefer the exact model used in the previous turn
           candidates = [lastDynamicModel, ...res.candidates.filter((r) => r !== lastDynamicModel)];
-          await driveStream(proxy, candidates, context, options, undefined, followUpGroup, undefined, sourceModel);
+          await streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, followUpGroup, undefined, sourceModel);
           return;
         }
 
@@ -2387,7 +2440,7 @@ let previousTokenCount = 0;
 
               // Cost tracking for HINT override
               costTracker.trackRequest(res.selected, 1000, 500);
-              await driveStream(
+              await streamOrchestrator.driveStream(
                 proxy,
                 candidates,
                 context,
@@ -2579,7 +2632,7 @@ let previousTokenCount = 0;
             const resolvedGdpval = lookupGdp(resolvedTarget) ?? 0;
             const hintStartGroup =
               resolvedGdpval >= 700 ? 'strategic' : resolvedGdpval >= 300 ? 'tactical' : 'scout';
-            await driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
+            await streamOrchestrator.driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
             return;
           }
         }
@@ -2664,7 +2717,7 @@ let previousTokenCount = 0;
         }
         candidates = [...fb.candidates];
       }
-      await driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup, undefined, sourceModel);
+      await streamOrchestrator.driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup, undefined, sourceModel);
     })();
     return proxy;
   }
@@ -3026,7 +3079,7 @@ let previousTokenCount = 0;
           if (fb?.candidates?.length) {
             pushRouterInfoLogged(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
             // Recursively try the fallback group
-            await driveStream(
+            await streamOrchestrator.driveStream(
               proxy,
               fb.candidates,
               context,
@@ -3650,7 +3703,8 @@ let previousTokenCount = 0;
   process.on('SIGINT', () => process.exit(0));
 
   // Export groupStream for testing
-  (defaultExport as any).groupStream = groupStream;
+  (defaultExport as any).groupStream = streamOrchestrator.groupStream.bind(streamOrchestrator);
+  (defaultExport as any).driveStream = streamOrchestrator.driveStream.bind(streamOrchestrator);
 };
 
 export default defaultExport;

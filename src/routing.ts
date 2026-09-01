@@ -198,8 +198,10 @@ export class Router {
   private rrCounters: Record<string, number> = {};
   private activeGroup: string | null = null;
   private curModel: string = '';
-  private lastDynamicModel: string = '';
-  private lastDynamicCategory: string | undefined;
+
+  setCurModel(model: string): void {
+    this.curModel = model;
+  }
   private sessionCtx: ExtensionContext | null = null;
 
   constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
