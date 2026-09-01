@@ -1304,6 +1304,9 @@ let previousTokenCount = 0;
     consumeWithDetection,
     isLocalProvider,
     localStreamLimit: () => localStreamLimit(),
+    releaseLocalSlot: (ref: string) => {
+      if (isLocalProvider(ref) && localStreamsInFlight > 0) localStreamsInFlight--;
+    },
     recordSoftFailure,
     recordOk,
     recordStreamFailure,
