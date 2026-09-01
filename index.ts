@@ -1315,7 +1315,7 @@ let previousTokenCount = 0;
     extractLastAssistantSnippet,
     isCompactionTurn,
     lookupGdp,
-    skipReasons,
+    get skipReasons() { return skipReasons; },
     get localStreamsInFlight() { return localStreamsInFlight; },
   });
 
