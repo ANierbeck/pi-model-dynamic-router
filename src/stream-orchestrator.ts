@@ -32,6 +32,7 @@ import type { CostTracker } from './cost-tracker.ts';
 import { resolveShortModelName } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
+import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { appendRawLog, routerLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
@@ -250,10 +251,10 @@ export class StreamOrchestrator {
             }
             if (this.ctx.sessionCtx?.modelRegistry) {
               const knownProviders = new Set<string>([
-                ...Object.keys({} as Record<string, unknown>), // PLACEHOLDER — filled below
+                ...Object.keys(PROVIDER_MAP),
+                ...Object.keys(cfg.providers ?? {}),
+                ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
               ]);
-              // Actually populate from router.allDiscoveredRefs
-              for (const ref of router.allDiscoveredRefs()) knownProviders.add(ref.split('/')[0]);
               for (const provider of knownProviders) {
                 const model = this.ctx.sessionCtx.modelRegistry.find(provider, bareName);
                 if (model) addMatch(`${provider}/${model.id}`);
@@ -261,9 +262,11 @@ export class StreamOrchestrator {
             }
             if (!matches.length) {
               const allGroupModels: string[] = [];
-              try {
-                for (const item of router.getTopModels(bareName, 100)) allGroupModels.push(item.ref);
-              } catch (_) { /* ignore */ }
+              for (const [groupName] of Object.entries(cfg.model_groups)) {
+                try {
+                  for (const item of router.getTopModels(groupName, 100)) allGroupModels.push(item.ref);
+                } catch (_) { /* ignore */ }
+              }
               const viaGroups = resolveShortModelName(bareName, allGroupModels);
               if (viaGroups) { addMatch(viaGroups); routerLog(`[dynamic] HINT: resolved "${shortName}" to "${viaGroups}" via group scan`); }
             }
