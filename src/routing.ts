@@ -900,31 +900,7 @@ export class Router {
     return this.activeGroup;
   }
 
-  getCurModel(): string {
-    return this.curModel;
-  }
-
-  getLastDynamicModel(): string {
-    return this.lastDynamicModel;
-  }
-
-  getLastDynamicCategory(): string | undefined {
-    return this.lastDynamicCategory;
-  }
-
   setActiveGroup(group: string | null): void {
     this.activeGroup = group;
-  }
-
-  setCurModel(model: string): void {
-    this.curModel = model;
-  }
-
-  setLastDynamicModel(model: string): void {
-    this.lastDynamicModel = model;
-  }
-
-  setLastDynamicCategory(category: string | undefined): void {
-    this.lastDynamicCategory = category;
   }
 }
