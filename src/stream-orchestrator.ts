@@ -88,6 +88,7 @@ export interface StreamOrchestratorContext {
   ) => Promise<{ ok: boolean; reason?: string; resetAtMs?: number; detail?: string | undefined }>;
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
+  releaseLocalSlot: (ref: string) => void;
   recordSoftFailure: (ref: string) => void;
   recordOk: (ref: string) => void;
   recordStreamFailure: (
@@ -528,15 +529,11 @@ export class StreamOrchestrator {
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
       } finally {
-        if (ctx.isLocalProvider(ref) && ctx.localStreamLimit() > 0) {
-          // Decrement via shared counter
-          const counter = this;
-        }
-        // Release concurrency slot — guard isLocalProvider but decrement happens in index.ts tryStream
-        // (this ctx field is the shared counter)
-        if (ctx.isLocalProvider(ref) && ctx.localStreamLimit() > 0) {
-          // Slot release happens in index.ts tryStream finally block
-        }
+        // Release the local concurrency slot acquired in tryStream. Must
+        // run on every path: success (return), soft-failure (continue),
+        // and hard-failure (catch). Cloud providers were never counted and
+        // are never released — guarded by isLocalProvider(ref).
+        ctx.releaseLocalSlot(ref);
       }
     }
 
@@ -644,6 +641,10 @@ export class StreamOrchestrator {
             const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
             pushError(bestRef, errorMsg);
             ctx.recordSoftFailure(bestRef);
+          } finally {
+            // Release the local concurrency slot acquired in tryStream for
+            // the force-retry candidate. Same guard as the main loop's finally.
+            ctx.releaseLocalSlot(bestRef);
           }
         }
       }
