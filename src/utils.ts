@@ -38,19 +38,6 @@ export function splitRef(ref: string): ModelRef {
 }
 
 /**
- * Removes the provider prefix from a reference
- * Example: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3"
- */
-export function stripProvider(ref: string): string {
-  const i = ref.indexOf('/');
-  if (i === -1) return ref;
-  const prov = ref.slice(0, i);
-  // If the provider exists in PROVIDER_MAP or cfg.providers, remove it
-  // For this function we pass the provider list in later
-  return ref.slice(i + 1);
-}
-
-/**
  * Formats numbers for display (e.g. 1000 → "1k")
  */
 export function fmt(n: number): string {
@@ -105,28 +92,4 @@ export function resolveShortModelName(
   return match || null;
 }
 
-// ── Validation Utilities ──────────────────────────────────────────────────
 
-/**
- * Checks whether a model reference is currently rate-limited
- */
-export function isModelLimited(
-  ref: string,
-  limits: Map<string, { cooldown_until: number }>
-): boolean {
-  const limit = limits.get(ref);
-  if (!limit) return false;
-  if (Date.now() >= limit.cooldown_until) {
-    limits.delete(ref);
-    return false;
-  }
-  return true;
-}
-
-/**
- * Returns the remaining seconds of the rate limit
- */
-export function limitSecs(ref: string, limits: Map<string, { cooldown_until: number }>): number {
-  const limit = limits.get(ref);
-  return limit ? Math.max(0, Math.ceil((limit.cooldown_until - Date.now()) / 1000)) : 0;
-}
