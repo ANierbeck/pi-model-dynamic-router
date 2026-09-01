@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 
 import type { Config, Cache, ProviderConfig, ProviderKey } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { lookupPrice } from './metrics.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -371,6 +372,64 @@ export class DiscoveryManager {
    */
   hasFreeModels(): boolean {
     return this.getFreeModels().length > 0;
+  }
+
+  // ── Cheapest Cloud Model Discovery ─────────────────────────────────────
+
+  /**
+   * Returns the cheapest cloud models for classification fallback, discovered
+   * dynamically from all scanned providers. Unlike getFreeModels() (which only
+   * returns the hardcoded free_models list), this discovers models from
+   * cache.available_models + free_models, filters out local providers, looks
+   * up real pricing, and returns the cheapest ones.
+   *
+   * This works for ANY user out-of-the-box: whatever providers they have keys
+   * for, the scan discovers models and pricing, and this function finds the
+   * cheapest capable ones.
+   *
+   * @param maxPricePerM  Maximum output price per million tokens (default $5/M
+   *                      — cheap enough for a <100-token classification prompt)
+   * @param maxResults    Maximum number of models to return (default 5 — enough
+   *                      to have fallbacks if the cheapest one is rate-limited)
+   * @returns Array of model refs sorted by output price ascending
+   */
+  getCheapestCloudModels(maxPricePerM = 5, maxResults = 5): string[] {
+    const candidates = new Set<string>();
+
+    // 1. Discovered models from scan (cache.available_models)
+    for (const m of this.cache.available_models ?? []) {
+      const ref = `${m.provider}/${m.id}`;
+      // Skip local providers — those are the primary classifier path, not fallback
+      if (ref.startsWith('ollama/') || ref.startsWith('lm-studio/')) continue;
+      candidates.add(ref);
+    }
+
+    // 2. Also include free_models from config (may not be in scanned cache)
+    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+      // Only include if provider has keys (user can actually use these models)
+      if (provConfig.free_models && provConfig.free_models.length > 0 && provConfig.keys?.length) {
+        for (const fm of provConfig.free_models) {
+          if (fm.startsWith('ollama/') || fm.startsWith('lm-studio/')) continue;
+          candidates.add(fm);
+        }
+      }
+    }
+
+    // 3. Filter by price: must have known output price ≤ threshold
+    const priced: { ref: string; output: number }[] = [];
+    for (const ref of candidates) {
+      const price = lookupPrice(ref);
+      if (!price) continue;
+      if (price.output === 'unknown') continue;
+      if (price.output <= maxPricePerM) {
+        priced.push({ ref, output: price.output });
+      }
+    }
+
+    // 4. Sort by output price ascending (cheapest first)
+    priced.sort((a, b) => a.output - b.output);
+
+    return priced.slice(0, maxResults).map((p) => p.ref);
   }
 
   // ── Getter ─────────────────────────────────────────────────────────────

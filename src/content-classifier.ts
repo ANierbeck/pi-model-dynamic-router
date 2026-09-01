@@ -487,19 +487,26 @@ export async function classifyPrompt(
     return classificationResult;
   }
 
-  // Cloud fallback: Try free cloud models
-  // Only activate when allowCloudFallback is true AND cfg/cache are available
+  // Cloud fallback: Try the cheapest available cloud models.
+  // Discovery-only (B): instead of the hardcoded free_models list, we discover
+  // the cheapest models from whatever providers the user has keys for. This
+  // works out-of-the-box for any user (OpenRouter, Mistral, Requesty, etc.)
+  // without requiring a hand-maintained free_models array.
+  // Only activate when allowCloudFallback is true AND cfg/cache are available.
   if (allowCloudFallback && cfg && cache) {
     try {
       const discovery = new DiscoveryManager(cfg, cache);
-      const cloudModels = discovery.getFreeModels();
+      // Try dynamically discovered cheapest models first (works for any provider)
+      const cloudModels = discovery.getCheapestCloudModels();
+      // Fall back to the static free_models list if dynamic discovery found nothing
+      const modelsToTry = cloudModels.length > 0 ? cloudModels : discovery.getFreeModels();
       
-      if (cloudModels.length > 0) {
+      if (modelsToTry.length > 0) {
         const cloudClient = new CloudClient(cfg, {
           resolveKey: (key) => discovery.resolveKeyValue(key),
         });
         
-        for (const modelRef of cloudModels) {
+        for (const modelRef of modelsToTry) {
           try {
             const cloudResponse = await cloudClient.callModel(modelRef, ollamaPrompt);
             const cleaned = cloudResponse.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
