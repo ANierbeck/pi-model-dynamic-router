@@ -51,6 +51,25 @@ this module asks a local LLM to match it to a known GDPval slug.
   the content-classifier's `classifier_cloud_fallback`, which does carry raw
   user prompt text and is opt-in for that reason.
 
+### `src/rate-limit.ts` — Single source of truth for cooldown checks
+
+`isRefLimited(limits, ref)` / `refLimitSecs(limits, ref)` are the **only**
+implementation of "is this ref still in cooldown". `RateLimitManager`
+(the owner of the state) and `routing.ts`'s `Router` class (constructed with
+a reference to the *same* `Map`, not a copy) both delegate to these instead
+of each keeping its own copy of the cooldown check. Previously the two
+classes had byte-identical `isLimited`/`limitSecs` methods operating on the
+same Map — a fix to one would silently not apply to the other. Consolidated
+2026-09-01; see also the now-removed dead `isModelLimited`/`limitSecs` pair
+that had drifted into `utils.ts` as an unused third copy.
+
+### `src/budget.ts` — Single source of truth for subscription budget
+
+`hasBudget(ref, providers, budgetCache)` is the **only** implementation of
+"does this model still have subscription budget?". Previously duplicated
+between `hasModelBudget` (index.ts) and `filterByBudget` (routing.ts); both
+now delegate here.
+
 ### `src/exclude.ts` — Personalized support/no-support list
 
 - `isExcluded(ref, ctx)` — checks provider, model-pattern (glob), and
@@ -75,6 +94,35 @@ this module asks a local LLM to match it to a known GDPval slug.
 ## Configuration
 
 See `docs/config-override.md` for the layered config system and exclude rules.
+
+## Duplication cleanup log
+
+Recurring pattern in this codebase: a helper gets copy-pasted into a second
+location instead of imported, the two copies drift (different behavior) or
+one becomes dead code (unused but never deleted). Each pass below found and
+fixed instances; new instances should be consolidated the same way — one
+exported function in the module that owns the concern, everything else
+delegates.
+
+- **2026-08 (pre-1.5.0)**: `lookupGdp`/`mapLookup`/`buildGdpvalIndex` were
+  duplicated between `index.ts` (closure) and `metrics.ts` (export) →
+  consolidated into `metrics.ts` (see above). `hasModelBudget`/`filterByBudget`
+  duplicated between `index.ts` and `routing.ts` → consolidated into
+  `budget.ts`. `isFreeModel`/exclude-list "is this free" logic duplicated
+  between `metrics.ts` and `exclude.ts` → consolidated into `isFreeModelRef`
+  in `metrics.ts`.
+- **2026-09-01**: `Router.isLimited`/`limitSecs` (routing.ts) reimplemented
+  `RateLimitManager.isLimited`/`limitSecs` (rate-limit.ts) verbatim over the
+  same shared `Map` → consolidated into `isRefLimited`/`refLimitSecs` in
+  `rate-limit.ts`. Found in the process: `utils.ts` carried three pieces of
+  dead code — a second `stripProvider` with *different* semantics than the
+  one actually used in `metrics.ts` (unconditional strip vs. known-provider-
+  only strip, never imported), and an orphaned `isModelLimited`/`limitSecs`
+  pair (a third, unused copy of the same cooldown check). All removed.
+  `index.ts`'s local `fmt`/`fmtTime` were full reimplementations of the
+  `utils.ts` versions rather than delegates (unlike `getM`/`effCost`/
+  `lookupPrice`/etc., which already delegated correctly) → now imported from
+  `utils.ts` instead.
 
 ## Testing
 

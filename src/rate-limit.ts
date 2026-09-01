@@ -8,6 +8,34 @@ import { splitRef } from './utils.ts';
 
 const KEY_COOLDOWN = 3_600_000; // 1hr per exhausted key
 
+// ── Shared cooldown check (single source of truth) ─────────────────────────
+//
+// Both RateLimitManager (the owner of the state) and routing.ts's Router
+// (constructed with a reference to the SAME Map, not a copy) need to answer
+// "is this ref still in cooldown". Previously each had its own byte-identical
+// isLimited/limitSecs implementation over the shared Map — a fix to one
+// wouldn't apply to the other. Both now delegate to these pure functions.
+
+/**
+ * Returns true if `ref` is currently rate-limited per `limits`. Expired
+ * entries are deleted as a side effect (lazy cleanup on read).
+ */
+export function isRefLimited(limits: Map<string, RateLimit>, ref: string): boolean {
+  const limit = limits.get(ref);
+  if (!limit) return false;
+  if (Date.now() >= limit.cooldown_until) {
+    limits.delete(ref);
+    return false;
+  }
+  return true;
+}
+
+/** Returns the remaining cooldown seconds for `ref`, or 0 if not limited. */
+export function refLimitSecs(limits: Map<string, RateLimit>, ref: string): number {
+  const limit = limits.get(ref);
+  return limit ? Math.max(0, Math.ceil((limit.cooldown_until - Date.now()) / 1000)) : 0;
+}
+
 // ── Rate Limit Management ────────────────────────────────────────────────
 
 /**
@@ -100,13 +128,7 @@ export class RateLimitManager {
    * Returns true if the given model reference is currently rate-limited
    */
   isLimited(ref: string): boolean {
-    const limit = this.limits.get(ref);
-    if (!limit) return false;
-    if (Date.now() >= limit.cooldown_until) {
-      this.limits.delete(ref);
-      return false;
-    }
-    return true;
+    return isRefLimited(this.limits, ref);
   }
 
   /**
@@ -204,8 +226,7 @@ export class RateLimitManager {
    * Returns the remaining cooldown seconds for a rate-limited reference
    */
   limitSecs(ref: string): number {
-    const limit = this.limits.get(ref);
-    return limit ? Math.max(0, Math.ceil((limit.cooldown_until - Date.now()) / 1000)) : 0;
+    return refLimitSecs(this.limits, ref);
   }
 
   // ── Cost Mux Management ────────────────────────────────────────────────

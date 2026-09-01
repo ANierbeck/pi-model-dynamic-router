@@ -108,7 +108,12 @@ export function setModelMap(map: ModelMap, wildcards: [string, string | null][])
 }
 
 /**
- * Strip provider prefix from ref: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3"
+ * Strip provider prefix from ref: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3".
+ * Only strips a KNOWN provider prefix (PROVIDER_MAP or cfg.providers) — an
+ * unrecognized first segment is left alone, since it might be part of the
+ * model id itself rather than a provider. This is the only implementation;
+ * a second, unconditional-strip copy in utils.ts was dead code (imported
+ * nowhere) and has been removed.
  */
 export function stripProvider(ref: string): string {
   const i = ref.indexOf('/');

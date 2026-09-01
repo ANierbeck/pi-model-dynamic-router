@@ -11,12 +11,13 @@ import type {
   ModelWithLimits,
   GroupResolution,
 } from './types.ts';
-import { splitRef, stripProvider, norm, baseTokens } from './utils.ts';
+import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
+import { isRefLimited, refLimitSecs } from './rate-limit.ts';
 import { getGroupForCategory } from './content-classifier.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -760,24 +761,21 @@ export class Router {
   // ── Rate Limit ─────────────────────────────────────────────────────────────
 
   /**
-   * Checks whether a reference is currently rate-limited
+   * Checks whether a reference is currently rate-limited.
+   * Delegates to rate-limit.ts's isRefLimited — the single source of truth,
+   * shared with RateLimitManager (both operate on the same underlying Map;
+   * see rate-limit.ts's "Shared cooldown check" section for why this used
+   * to be duplicated).
    */
   isLimited(ref: string): boolean {
-    const limit = this.limits.get(ref);
-    if (!limit) return false;
-    if (Date.now() >= limit.cooldown_until) {
-      this.limits.delete(ref);
-      return false;
-    }
-    return true;
+    return isRefLimited(this.limits, ref);
   }
 
   /**
    * Returns the remaining seconds of the rate limit
    */
   limitSecs(ref: string): number {
-    const limit = this.limits.get(ref);
-    return limit ? Math.max(0, Math.ceil((limit.cooldown_until - Date.now()) / 1000)) : 0;
+    return refLimitSecs(this.limits, ref);
   }
 
   // ── Top Models ────────────────────────────────────────────────────────────

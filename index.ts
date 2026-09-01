@@ -28,7 +28,7 @@ import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
-import { splitRef, stripDateSuffix, resolveShortModelName } from './src/utils.ts';
+import { splitRef, stripDateSuffix, resolveShortModelName, fmt, fmtTime } from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
@@ -230,18 +230,7 @@ let previousTokenCount = 0;
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  function fmt(n: number) {
-    return n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`;
-  }
-
-  function fmtTime(ms: number) {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return `${s}s`;
-    const m = Math.floor(s / 60),
-      rs = s % 60;
-    if (m < 60) return `${m}m${rs ? rs + 's' : ''}`;
-    return `${Math.floor(m / 60)}h${m % 60 ? (m % 60) + 'm' : ''}`;
-  }
+  // fmt/fmtTime: delegate to utils.ts, the single implementation.
 
   // ── Config + Cache ─────────────────────────────────────────────────────
 
