@@ -7,7 +7,9 @@
         "openrouter/google/gemma-4-26b-a4b-it:free",
         "openrouter/z-ai/glm-5.2:free",
         "openrouter/cohere/north-mini-code:free",
-        "openrouter/liquid/lfm-2.5-2.6b:free"
+        "openrouter/liquid/lfm-2.5-2.6b:free",
+        "openrouter/mistral/mistral-small-3-2",
+        "openrouter/qwen/qwen-2.5-7b-instruct"
       ]
     }
   },
@@ -88,6 +90,7 @@
       "method": "dynamic",
       "classifier_model": "ollama/gemma4:12b-mlx",
       "classifier_fallback": "ollama/gemma2:2b",
+      "classifier_cloud_fallback": true,
       "fallback_groups": [
         "strategic",
         "tactical",
