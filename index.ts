@@ -66,6 +66,7 @@ import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router, getFallbackGroup } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
+import { probeAndCache, getCachedFallbackModels, selectClassifierCandidates } from './src/classifier-fallback-probe.ts';
 import { costTracker } from './src/cost-tracker.ts';
 
 function loadDefaults(extDir: string): Defaults {
@@ -735,6 +736,31 @@ let previousTokenCount = 0;
         }
       }
       saveCache();
+
+      // Probe classifier-fallback candidates and cache the verified-working
+      // list. Runs after the scan saves (so cache.available_models is fresh)
+      // and before generateDynamicConfig. The probe is bounded (max 12
+      // candidates, 15s timeout each, stops at 8 successes) and non-fatal —
+      // if it fails the classifier falls back to selectClassifierCandidates +
+      // the try-each loop at classification time. See
+      // src/classifier-fallback-probe.ts.
+      try {
+        const registry = sessionCtx?.modelRegistry as any;
+        if (registry?.runtime?.completeSimple) {
+          await probeAndCache(cfg, cache, {
+            findModel: (ref: string) => {
+              const i = ref.indexOf('/');
+              if (i === -1) return undefined;
+              return registry.find(ref.slice(0, i), ref.slice(i + 1));
+            },
+            completeSimple: (model: any, ctx: any, options: any) =>
+              registry.runtime.completeSimple(model, ctx, options),
+          }, routerLog);
+          saveCache();
+        }
+      } catch (probeErr) {
+        routerLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+      }
       
       // Generiere dynamische Konfiguration nach dem Scan
       await generateDynamicConfig(force);

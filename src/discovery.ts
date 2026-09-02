@@ -9,30 +9,20 @@ import { homedir } from 'node:os';
 import type { Config, Cache, ProviderConfig, ProviderKey } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
 
-// ── Curated list of known genuinely FREE or near-free models ──────────────────
-//
-// These models are free or cost < $0.01 per classification call on their
-// provider's native API. They are NOT discovered via price lookup (the scan
-// never fetched real Mistral pricing), so they would otherwise be invisible to
-// getCheapestCloudModels — which falls back to placeholder-$0 models like
-// zai-glm-5-2 (alphabetically last among 46 tied models).
-//
-// Each entry: [providerPrefix, modelId]
-// providerPrefix must match the provider key used in the scan cache.
-const CURATED_FREE_MODELS: Array<[provider: string, id: string]> = [
-  // mistral-small-latest is FREE on Mistral's own API (Mistral free tier).
-  // Try mistral-zai first — that is the provider prefix the user already uses
-  // for their other mistral-zai models (zai-glm-5-2 etc.).
-  ['mistral-zai', 'mistral-small-latest'],
-  ['mistral', 'mistral-small-latest'],
-  // magistral-small-latest is very cheap (~$0.15/M input, ~$0.60/M output)
-  // and useful as a second-tier fallback if mistral-small is unavailable.
-  // Note: "magistral" (with i), not "magistral" — matches the scan cache ID.
-  ['mistral-zai', 'magistral-small-latest'],
-  // mistral-small-2603 is an older, still-supported cheap variant.
-  ['mistral', 'mistral-small-2603'],
-  ['mistral-zai', 'mistral-small-2603'],
-];
+// NOTE (2026-09-02): the hardcoded CURATED_FREE_MODELS list that used to live
+// here has been REMOVED. It only worked for one user's provider setup (a user
+// with mistral-zai/mistral-small-latest configured); every other user got a
+// list of models they couldn't use. It has been replaced by a dynamic,
+// probe-based discovery in src/classifier-fallback-probe.ts:
+//   1. selectClassifierCandidates() picks cheap + low-gdpval candidates
+//      from the scan cache (works for ANY user's providers).
+//   2. probeAndCache() pings each candidate at scan time and caches the
+//      verified-working ones in cache.classifier_fallback_models.
+//   3. The classifier reads that cached list at fallback time.
+// getCheapestCloudModels() below is kept for backward compatibility (other
+// call sites / tests) but the classifier no longer relies on it as the
+// primary path.
+
 import { lookupPrice } from './metrics.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -464,50 +454,13 @@ export class DiscoveryManager {
 
     // 4. Sort by output price ascending (cheapest first)
     priced.sort((a, b) => a.output - b.output);
-    const pricedResults = priced.slice(0, maxResults).map((p) => p.ref);
-
-    // 5. Curated free-model prepended.
-    //
-    // Problem: all 46 mistral-zai models carry cost_per_m: 0 (hardcoded
-    // placeholder — the scan never fetched real Mistral pricing). After the
-    // price sort, zai-glm-5-2 wins alphabetically as the last of the tied
-    // models, even though mistral-small-latest is genuinely FREE on Mistral's
-    // API and would be a far better classifier choice.
-    //
-    // Solution: prepend the curated list. Each curated ref is resolved against
-    // available_models so we only include models the scan actually found.
-    // findModel in the caller provides a second guard (skips if not in pi's
-    // registry), so no harm if a curated model slips through.
-    const availableIds = new Set(
-      (this.cache.available_models ?? []).map((m) => `${m.provider}/${m.id}`)
-    );
-    const curated = CURATED_FREE_MODELS
-      .filter(([prov, id]) => availableIds.has(`${prov}/${id}`))
-      .map(([prov, id]) => `${prov}/${id}`);
-
-    // De-duplicate: curated models that already appear in pricedResults (e.g.
-    // if someone explicitly priced mistral-small in the future) stay once.
-    const seen = new Set<string>();
-    const result: string[] = [];
-
-    // Step 1: all curated models first (curated is pre-authoritative — these are
-    // known genuinely free/cheap; do NOT cap them).
-    for (const ref of curated) {
-      if (!seen.has(ref)) {
-        seen.add(ref);
-        result.push(ref);
-      }
-    }
-
-    // Step 2: append priced results up to maxResults cap.
-    for (const ref of pricedResults) {
-      if (result.length >= maxResults) break;
-      if (!seen.has(ref)) {
-        seen.add(ref);
-        result.push(ref);
-      }
-    }
-    return result;
+    return priced.slice(0, maxResults).map((p) => p.ref);
+    // NOTE: the curated-free-model prepending that used to be Step 5 has been
+    // removed — it was a hardcoded list that only worked for one user. The
+    // probe-based discovery in src/classifier-fallback-probe.ts replaces it:
+    // selectClassifierCandidates() tiers by price + gdpval, and probeAndCache()
+    // filters out broken candidates at scan time. This function is kept for
+    // backward compatibility but the classifier no longer relies on it.
   }
 
   // ── Getter ─────────────────────────────────────────────────────────────
