@@ -1,8 +1,34 @@
 # Changelog
 
-## [Unreleased] — Cloud fallback via pi's modelRegistry, stream-orchestrator extraction, stale-ctx.router fix
+## [1.5.1-SNAPSHOT] — Unreleased (snapshot, not published to npm)
 
-### Fixed
+> **Snapshot.** This version is under preparation and has **not** been
+> released. `package.json` carries `private: true` so `npm publish` refuses
+> it until the flag is cleared at release time. The entries below are
+> staged for the eventual 1.5.1 release notes.
+
+### Added (genuine new behavior)
+- **Streak-based escalation trigger.** `SessionEscalation`'s old rule-based
+  loop detector required a frustration/error signal in BOTH of the last 2
+  turns (`history.slice(-2).every(...)`), checked only every 3rd turn — so
+  a single "you did stop again, please proceed" never fired it. Replaced
+  with a per-turn streak counter: the latest turn alone is scanned every
+  turn, and 3 consecutive frustration/failure signals escalate one tier
+  (matches the observed real pattern — users say "again"/"still" once per
+  incident, and the complaint tends to repeat ~3x before the user asks for
+  a model switch). The old two-turn rule-based check is removed entirely
+  (superseded by the streak); the LLM-based secondary check (fire-and-
+  forget, every 3rd turn) is unchanged, gated on whether the streak
+  already escalated this turn to avoid double-escalation.
+- **Durable model-switch logging.** `pushRouterInfo` (the
+  "> [router] X — reason, trying Y" chat messages) previously only ever
+  wrote to the live chat stream — none of the 10 call sites mirrored to
+  `router.log`, so every rate-limit/stall/provider-error/fallback switch
+  was visible in the moment but left no durable trace to grep afterward.
+  Added `pushRouterInfoLogged` (`src/stream-driver.ts`) that does both, and
+  switched all 8 relevant call sites in `index.ts` to use it.
+
+### Fixed (things that were supposed to work but didn't)
 - **Stale `ctx.router` caused "running in circles" on total-cooldown-collapse.**
   `buildOrchestratorContext()` captured `router`, `rateLimitManager`, and
   `cacheManager` as plain properties frozen at `StreamOrchestrator` construction
@@ -53,10 +79,8 @@
   non-escalating abort path. Regression tests:
   `test/abort-text-not-rate-limit.test.ts`,
   `test/abort-not-provider-error.test.ts`.
-
-### Changed
-- **Cloud classification fallback now uses pi's `modelRegistry` (not a custom
-  HTTP client).** The classifier's cloud fallback previously rolled its own
+- **Cloud classification fallback actually works now (uses pi's `modelRegistry`).**
+  The cloud fallback existed since v1.2 but never worked: it rolled its own
   HTTP client (`src/cloud-client.ts`) that read API keys from
   `router-config.json` — but the user's OpenRouter key lives in pi's
   `~/.pi/agent/auth.json`, so the fallback always failed with "No API key for
@@ -66,17 +90,26 @@
   0004. `getCheapestCloudModels()` (in `src/discovery.ts`) dynamically
   discovers the cheapest cloud models for the fallback instead of a
   hard-coded list.
-- **`registerGroupModels` registers the UNION of known+new models, not
-  just the new ones.** `pi.registerProvider()`'s `models` field REPLACES
-  (not merges) the provider's entire model list. The first version of the
-  F4 fix passed only `newModels` to `registerProvider` in the mixed case (pi
-  knows some but not all models), which would silently DELETE pi's existing
-  model registrations including compat flags — exactly the destructive
-  overwrite Ü1 was meant to prevent (roborev job 426 HIGH). Fix: round-trip
-  pi's own already-known Model objects (preserving compat flags byte-for-
-  byte) and pass the UNION of those plus the new models. See ADR 0005.
+- **F4: scored GLM-5.2 variant invisible to routing.** pi's `models.json`
+  registers `mistral-zai` with exactly one model, `zai-glm-5-2`, carrying
+  user-curated compat flags. The Ü1 guard in `registerGroupModels`
+  (correctly) refused to overwrite a provider pi already knows — but as a
+  side effect it never registered the other scan-discovered `mistral-zai`
+  models, including `mistral-zai/glm-5-2` (the variant whose slug `glm-5-2`
+  has gdpval 1497.55). The registered `zai-glm-5-2` has slug `zai-glm-5-2`
+  which is unscored → fails `tactical`'s `min_gdpval: 600` → never a
+  candidate. Fix: Ü1 guard now checks models individually — if pi knows ALL
+  → skip; if pi knows SOME → register only the new ones, preserving pi's
+  existing entries. Because `pi.registerProvider()`'s `models` field
+  REPLACES (not merges) the provider's entire model list, the fix round-
+  trips pi's own already-known Model objects (preserving compat flags
+  byte-for-byte) and passes the UNION of those plus the new models —
+  passing only the new ones (an earlier version of this fix) would have
+  silently deleted pi's existing registrations (roborev job 426 HIGH).
+  See ADR 0005. Regression test:
+  `test/register-group-models-merge-not-replace.test.ts`.
 
-### Refactored
+### Internal (refactors, not user-facing)
 - **`stream-orchestrator.ts` extracted from `index.ts`.** `groupStream`
   (~430 lines) and `driveStream` (~950 lines) moved out of `index.ts` into
   `src/stream-orchestrator.ts` (687 lines), accessed via a
