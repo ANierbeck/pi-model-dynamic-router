@@ -60,27 +60,31 @@ describe('classifyPrompt cloud fallback opt-in', () => {
   });
 
   it('does call the cloud model when allowCloudFallback is explicitly true', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          choices: [
-            {
-              message: {
-                content: '{"category": "code_simple", "reason": "cloud", "confidence": 0.9}',
-              },
-            },
-          ],
-        }),
-    } as Response);
+    // New architecture: the cloud fallback uses pi's modelRegistry.completeSimple
+    // (pi owns auth + HTTP), NOT a raw fetch. The test supplies a fake
+    // completeSimple + findModel so the classifier drives pi's path without a
+    // real provider. The opt-in gate is still asserted via fetch NOT being
+    // called — the router must never roll its own HTTP for classification.
+    const fakeModel = { provider: 'openrouter', id: 'qwen/qwen3-4b:free' };
+    const completeSimple = vi.fn(async () => ({
+      content: [
+        { type: 'text', text: '{"category": "code_simple", "reason": "cloud", "confidence": 0.9}' },
+      ],
+      stopReason: 'stop',
+    }));
+    const findModel = vi.fn(() => fakeModel);
 
     const result = await classifyPrompt('a reasonably long prompt to avoid short-circuiting', {
       cfg: cfgWithFreeModel,
       cache,
       allowCloudFallback: true,
+      completeSimple,
+      findModel,
     });
 
-    expect(fetch).toHaveBeenCalled();
+    // The cloud model was driven via pi's completeSimple, not a raw fetch.
+    expect(completeSimple).toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
     expect(result.category).toBe('code_simple');
   });
 });

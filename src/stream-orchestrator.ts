@@ -27,6 +27,36 @@ import { Router } from './routing.ts';
 import type { SessionEscalation } from './escalation.ts';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { CacheManager } from './cache.ts';
+/**
+ * Extracts the actual context window and requested tokens from an OpenRouter
+ * (or compatible) overflow error detail JSON.
+ *
+ * Example detail:
+ *   'prompt is too long: 400: {"message":"This endpoint's maximum context
+ *    length is 196608 tokens. However, you requested about 197318 tokens...",
+ *    "code":400}'
+ *
+ * Returns { actualContextWindow, requestedTokens } or null if the detail is
+ * absent or unparseable (e.g. a non-JSON provider error).
+ */
+function extractContextWindowFromError(detail: string | undefined): {
+  actualContextWindow: number;
+  requestedTokens: number;
+} | null {
+  if (!detail) return null;
+  // Patterns mirror pi-ai's isContextOverflow() OVERFLOW_PATTERNS for the
+  // OpenRouter family ("maximum context length is X tokens"), extended to also
+  // capture the requested-token count. No leading quote so this matches both
+  // the raw JSON-quoted form and a plain-text provider message.
+  const cwMatch = detail.match(/maximum context length is (\d+) tokens/);
+  const reqMatch = detail.match(/requested about (\d+) tokens/);
+  if (!cwMatch || !reqMatch) return null;
+  const cw = parseInt(cwMatch[1], 10);
+  const req = parseInt(reqMatch[1], 10);
+  if (!cw || !req) return null;
+  return { actualContextWindow: cw, requestedTokens: req };
+}
+
 import { type ClassificationResult } from './content-classifier.ts';
 import type { CostTracker } from './cost-tracker.ts';
 import { resolveShortModelName } from './utils.ts';
@@ -79,6 +109,12 @@ export interface StreamOrchestratorContext {
   ) => Promise<{ stream: AssistantMessageEventStream; ref: string } | null>;
   estimateContextTokens: (context: Context) => number;
   getModelContextWindow: (ref: string) => number | null;
+  /**
+   * Updates the model registry with a discovered context window so future
+   * requests skip this model for the current context size without needing a
+   * fresh error. Mutates the registry entry in-place.
+   */
+  updateModelContextWindow: (ref: string, cw: number) => void;
   getEmptyResponseTimeout: (ref: string) => number;
   getStallTimeout: (ref: string) => number;
   consumeWithDetection: (
@@ -178,6 +214,20 @@ export class StreamOrchestrator {
           allowCloudFallback: dynamicGroupCfg?.classifier_cloud_fallback === true,
           cfg,
           cache,
+          // Cloud fallback uses pi's own model registry (completeSimple) so pi
+          // owns auth + provider HTTP — the user's keys live in pi's auth store,
+          // not router-config.json, so the router must NOT roll its own key
+          // resolution / HTTP client. findModel resolves a ref to a pi Model;
+          // completeSimple runs the one-shot call.
+          findModel: (ref: string) => {
+            const registry = this.ctx.sessionCtx?.modelRegistry;
+            if (!registry) return undefined;
+            const i = ref.indexOf('/');
+            if (i === -1) return undefined;
+            return registry.find(ref.slice(0, i), ref.slice(i + 1));
+          },
+          completeSimple: (model: any, ctx: any, options: any) =>
+            this.ctx.sessionCtx?.modelRegistry?.completeSimple?.(model, ctx, options),
           context: {
             lastAssistantSnippet,
             previousUserMessage,
@@ -473,6 +523,42 @@ export class StreamOrchestrator {
           continue;
         }
         if (result.reason === 'context_overflow') {
+          const errInfo = extractContextWindowFromError(result.detail);
+
+          // Update the registry with the real context window so future requests
+          // don't try this model for the current (or similar) context size.
+          if (errInfo) {
+            ctx.updateModelContextWindow(ref, errInfo.actualContextWindow);
+            routerLog(
+              `[router] ${ref} context window is ${errInfo.actualContextWindow.toLocaleString()} tokens (discovered from overflow error; prompt was ${errInfo.requestedTokens.toLocaleString()} tokens)`
+            );
+          }
+
+          // Filter remaining candidates to those with enough context window.
+          // If the error gave us the real numbers, use them (much more accurate
+          // than our token estimate). Otherwise fall back to the estimate.
+          const minNeeded = errInfo?.requestedTokens ?? contextTokens;
+          const largerCandidates = candidates.slice(i + 1).filter((r) => {
+            const cw = ctx.getModelContextWindow(r);
+            return !cw || cw > minNeeded;
+          });
+
+          // Try larger-context models first before giving up.
+          if (largerCandidates.length > 0) {
+            const tried = [...candidates.slice(0, i + 1), ...largerCandidates];
+            const label2 = label ? `${label} (context overflow → trying larger)` : `${groupName ?? ref} (context overflow → trying larger)`;
+            pushRouterInfoLogged(
+              proxy,
+              `> [router] ${ref} context window (${errInfo?.actualContextWindow.toLocaleString() ?? '?'} tokens) < ${minNeeded.toLocaleString()} needed — trying ${largerCandidates.length} larger model(s)…\n\n`
+            );
+            await this.driveStream(
+              proxy, tried, context, options, label2,
+              groupName, undefined, sourceModel
+            );
+            return;
+          }
+
+          // No larger candidates remain — this is a genuine overflow.
           pushError(ref, 'context_overflow (provider rejected prompt as too large)');
           ctx.recordSoftFailure(ref);
           pushStreamError(
