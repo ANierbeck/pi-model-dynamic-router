@@ -137,6 +137,36 @@ describe('selectClassifierCandidates', () => {
     expect(result.length).toBe(5);
   });
 
+  it('interleaves providers round-robin so one provider cannot monopolize the list', () => {
+    // Regression (2026-09-02): OpenRouter free-tier daily limit was exhausted
+    // (429 on all :free models) + guardrails blocked others (404). With a
+    // strict tier-then-provider order, the 12 Tier-B OpenRouter candidates
+    // filled every slot, so Tier-C Mistral models (with a working key) were
+    // never probed → 0 working models → classifier fell through to a heavy
+    // fallback model for every prompt. Round-robin by provider prevents this.
+    const cache: Cache = {
+      available_models: [
+        // 5 cheap OpenRouter models (Tier B — real price, no gdpval)
+        ...Array.from({ length: 5 }, (_, i) => ({ id: `or-${i}`, provider: 'openrouter', cost_per_m: 0 })),
+        // 5 placeholder-$0 Mistral models (Tier C — no real pricing)
+        ...Array.from({ length: 5 }, (_, i) => ({ id: `mistral-${i}`, provider: 'mistral', cost_per_m: 0 })),
+      ],
+      openrouter_pricing: Object.fromEntries(
+        Array.from({ length: 5 }, (_, i) => [`openrouter/or-${i}`, { input: 0, output: 0 }])
+      ),
+    };
+    seedMetrics(baseCfg, cache);
+    const result = selectClassifierCandidates(baseCfg, cache, { maxCandidates: 8 });
+    // Round-robin: first half should be a mix of openrouter + mistral, not
+    // 5 openrouter followed by 3 mistral.
+    const firstFourProviders = result.slice(0, 4).map((r) => r.split('/')[0]);
+    const orCount = firstFourProviders.filter((p) => p === 'openrouter').length;
+    const mistralCount = firstFourProviders.filter((p) => p === 'mistral').length;
+    expect(orCount).toBe(2);
+    expect(mistralCount).toBe(2);
+    expect(result.length).toBe(8);
+  });
+
   it('excludes models with real price ABOVE the threshold (too expensive for classification)', () => {
     const cache: Cache = {
       available_models: [

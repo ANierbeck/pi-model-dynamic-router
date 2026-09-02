@@ -55,8 +55,11 @@ const MAX_OUTPUT_PRICE_PER_M = 5;
  */
 const MAX_GDPVAL_LOW_TIER = 700;
 
-/** Max candidates to probe per scan (bounds probe latency). */
-const MAX_PROBE_CANDIDATES = 12;
+/** Max candidates to probe per scan (bounds probe latency). Raised from
+ * 12 to 20: the probe is cheap (tiny prompt, early-stop at 8 successes) and
+ * a higher cap ensures we reach Tier C (Mistral/placeholder-$0 providers)
+ * even when Tier B (OpenRouter free) has >12 candidates. */
+const MAX_PROBE_CANDIDATES = 20;
 
 /** Max working models to keep in the cached list. */
 const MAX_WORKING_MODELS = 8;
@@ -135,23 +138,54 @@ export function selectClassifierCandidates(
   // Sort Tier B by price asc — cheapest first.
   tierB.sort((a, b) => a.price - b.price);
 
-  // Assemble, respecting maxCandidates. Tier A first, then B, then C.
+  // Assemble with PROVIDER DIVERSITY via round-robin interleaving.
+  //
+  // Why: a strict "Tier A then B then C" order lets one provider monopolize
+  // the candidate list. Observed in production (2026-09-02): the user's
+  // OpenRouter free-tier daily limit was exhausted (429 on all :free models)
+  // AND their OpenRouter guardrails blocked several free models (404). The
+  // 12 Tier-B OpenRouter candidates filled every slot, so Tier C (Mistral
+  // models with a working key) was never probed → 0 working models cached →
+  // classifier fell through to `fallback → tactical` (a heavy model) for
+  // every prompt.
+  //
+  // Round-robin by provider prevents this: we take turns picking one
+  // candidate per provider across all tiers, so a single down/rate-limited
+  // provider can never starve the others. Within each provider's picks,
+  // Tier A comes before B before C (best-first).
+  //
+  // Group candidates by provider, preserving tier order within each provider.
+  const byProvider = new Map<string, string[]>();
+  const addProv = (ref: string) => {
+    const prov = ref.slice(0, ref.indexOf('/'));
+    if (!byProvider.has(prov)) byProvider.set(prov, []);
+    byProvider.get(prov)!.push(ref);
+  };
+  // Per-provider: Tier A first, then B, then C (already sorted within tier).
+  for (const { ref } of tierA) addProv(ref);
+  for (const { ref } of tierB) addProv(ref);
+  for (const ref of tierC) addProv(ref);
+
+  const providers = [...byProvider.keys()];
   const result: string[] = [];
   const seen = new Set<string>();
-  for (const { ref } of tierA) {
-    if (seen.has(ref)) continue;
-    seen.add(ref); result.push(ref);
-    if (result.length >= maxCandidates) return result;
-  }
-  for (const { ref } of tierB) {
-    if (seen.has(ref)) continue;
-    seen.add(ref); result.push(ref);
-    if (result.length >= maxCandidates) return result;
-  }
-  for (const ref of tierC) {
-    if (seen.has(ref)) continue;
-    seen.add(ref); result.push(ref);
-    if (result.length >= maxCandidates) return result;
+  const idx = new Map<string, number>(); // provider → next pick index
+  // Round-robin: keep taking the next candidate from each provider in turn.
+  let madeProgress = true;
+  while (result.length < maxCandidates && madeProgress) {
+    madeProgress = false;
+    for (const prov of providers) {
+      if (result.length >= maxCandidates) break;
+      const picks = byProvider.get(prov)!;
+      const i = idx.get(prov) ?? 0;
+      if (i >= picks.length) continue;
+      idx.set(prov, i + 1);
+      const ref = picks[i];
+      if (seen.has(ref)) continue;
+      seen.add(ref);
+      result.push(ref);
+      madeProgress = true;
+    }
   }
   return result;
 }
