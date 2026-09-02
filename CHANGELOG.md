@@ -79,6 +79,24 @@
   non-escalating abort path. Regression tests:
   `test/abort-text-not-rate-limit.test.ts`,
   `test/abort-not-provider-error.test.ts`.
+- **Cloud classification fallback picks mistral-small (genuinely free) before
+  placeholder-$0 models.** `getCheapestCloudModels()` sorts candidates by
+  `lookupPrice()`, but all 46 mistral-zai models carry `cost_per_m: 0` as a
+  hardcoded placeholder (the scan never fetched real Mistral pricing). So all
+  46 appeared to tie at $0/M; ties broke alphabetically — `zai-glm-5-2` (last
+  among the 46) won even though `mistral-small-latest` is genuinely FREE on
+  Mistral's API and would be far better for classification. Fix: a curated
+  list of known genuinely free/cheap Mistral models is prepended to the
+  `getCheapestCloudModels()` result, so `mistral-small-latest` always
+  appears first regardless of how `lookupPrice()` ranks it. The list is
+  checked against `available_models`, so only models the scan actually found
+  are included. Models: `mistral-zai/mistral-small-latest` (FREE),
+  `mistral/mistral-small-latest` (FREE),
+  `mistral-zai/magistral-small-latest` (very cheap, second-tier),
+  `mistral/mistral-small-2603`, `mistral-zai/mistral-small-2603`.
+  Additionally, the `maxResults` cap now applies only to placeholder models
+  after all curated ones are added (previously it could fill all slots with
+  curated models, preventing any placeholders from appearing).
 - **Cloud classification fallback actually works now (uses pi's `modelRegistry`).**
   The cloud fallback existed since v1.2 but never worked: it rolled its own
   HTTP client (`src/cloud-client.ts`) that read API keys from
