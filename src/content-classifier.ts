@@ -5,6 +5,7 @@ import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
+import { getCachedFallbackModels, selectClassifierCandidates } from './classifier-fallback-probe.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -519,17 +520,34 @@ export async function classifyPrompt(
   // resolution (the old CloudClient path threw "No API key for provider"
   // whenever the key wasn't duplicated into router-config.json).
   //
-  // Model selection reuses getCheapestCloudModels (price-sorted refs). Each
-  // ref is resolved to a pi Model via findModel; completeSimple does the call.
-  // Only activate when allowCloudFallback is true AND cfg/cache + the pi
-  // completeSimple/findModel hooks are available.
+  // Model selection: prefer the probe-verified cached list
+  // (cache.classifier_fallback_models, populated at scan time by
+  // probeAndCache — a tiny "Reply with OK" probe filters broken candidates
+  // like mistral-zai models that 422 on mistral-small). If the probe hasn't
+  // run yet this scan cycle, fall back to selectClassifierCandidates
+  // (price + gdpval tiered discovery) and the try-each loop acts as a lazy
+  // probe. Only activate when allowCloudFallback is true AND cfg/cache + the
+  // pi completeSimple/findModel hooks are available.
   if (allowCloudFallback && cfg && cache && completeSimple && findModel) {
     try {
-      const discovery = new DiscoveryManager(cfg, cache);
-      // Try dynamically discovered cheapest models first (works for any provider)
-      const cloudModels = discovery.getCheapestCloudModels();
-      // Fall back to the static free_models list if dynamic discovery found nothing
-      const modelsToTry = cloudModels.length > 0 ? cloudModels : discovery.getFreeModels();
+      // Prefer the probe-verified cached list (fast path — no probing at
+      // classification time, the probe ran at scan time).
+      let modelsToTry = getCachedFallbackModels(cache);
+      let source = 'probed';
+      if (modelsToTry.length === 0) {
+        // Probe hasn't run or found nothing — lazy discovery as a fallback.
+        // This also handles the first classification before the first scan
+        // completes the probe.
+        modelsToTry = selectClassifierCandidates(cfg, cache);
+        source = 'discovered';
+      }
+      if (modelsToTry.length === 0) {
+        // Last resort: the static free_models list from config.
+        const discovery = new DiscoveryManager(cfg, cache);
+        modelsToTry = discovery.getFreeModels();
+        source = 'static-free';
+      }
+      routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
 
       const classifyCtx: any = {
         messages: [{ role: 'user', content: ollamaPrompt }],

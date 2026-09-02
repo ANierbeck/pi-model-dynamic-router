@@ -79,24 +79,23 @@
   non-escalating abort path. Regression tests:
   `test/abort-text-not-rate-limit.test.ts`,
   `test/abort-not-provider-error.test.ts`.
-- **Cloud classification fallback picks mistral-small (genuinely free) before
-  placeholder-$0 models.** `getCheapestCloudModels()` sorts candidates by
-  `lookupPrice()`, but all 46 mistral-zai models carry `cost_per_m: 0` as a
-  hardcoded placeholder (the scan never fetched real Mistral pricing). So all
-  46 appeared to tie at $0/M; ties broke alphabetically — `zai-glm-5-2` (last
-  among the 46) won even though `mistral-small-latest` is genuinely FREE on
-  Mistral's API and would be far better for classification. Fix: a curated
-  list of known genuinely free/cheap Mistral models is prepended to the
-  `getCheapestCloudModels()` result, so `mistral-small-latest` always
-  appears first regardless of how `lookupPrice()` ranks it. The list is
-  checked against `available_models`, so only models the scan actually found
-  are included. Models: `mistral-zai/mistral-small-latest` (FREE),
-  `mistral/mistral-small-latest` (FREE),
-  `mistral-zai/magistral-small-latest` (very cheap, second-tier),
-  `mistral/mistral-small-2603`, `mistral-zai/mistral-small-2603`.
-  Additionally, the `maxResults` cap now applies only to placeholder models
-  after all curated ones are added (previously it could fill all slots with
-  curated models, preventing any placeholders from appearing).
+- **Cloud classification fallback now uses a dynamic, probe-based discovery
+  (works for ANY user's providers, not a hardcoded list).** The previous fix
+  (a hardcoded `CURATED_FREE_MODELS` list of mistral-small variants) only
+  worked for one user's setup — everyone else got nothing. Replaced with a
+  generic discovery in `src/classifier-fallback-probe.ts`: at `/router scan`
+  time, `selectClassifierCandidates()` picks cheap + low-gdpval candidates
+  from the scan cache (tiered: Tier A = real price + low gdpval, Tier B =
+  real price + unknown gdpval, Tier C = placeholder-$0 providers like
+  mistral-zai), excluding local providers and models currently marked
+  unhealthy. Then `probeAndCache()` pings each candidate with a tiny
+  `completeSimple` call ("Reply with OK") and caches the verified-working
+  refs in `cache.classifier_fallback_models`. The classifier reads that list
+  at fallback time — no re-probing per classification, and broken candidates
+  (like `mistral-zai/mistral-small-latest` which 422s) are filtered out once
+  per scan cycle. The hardcoded `CURATED_FREE_MODELS` constant is removed;
+  `getCheapestCloudModels()` is kept for backward compat but the classifier
+  no longer relies on it as the primary path.
 - **Cloud classification fallback actually works now (uses pi's `modelRegistry`).**
   The cloud fallback existed since v1.2 but never worked: it rolled its own
   HTTP client (`src/cloud-client.ts`) that read API keys from
