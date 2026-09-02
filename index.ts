@@ -1299,6 +1299,7 @@ let previousTokenCount = 0;
     tryStream,
     estimateContextTokens,
     getModelContextWindow,
+    updateModelContextWindow,
     getEmptyResponseTimeout,
     getStallTimeout,
     consumeWithDetection,
@@ -2190,6 +2191,24 @@ let previousTokenCount = 0;
       return typeof cw === 'number' && cw > 0 ? cw : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Updates the model registry with a discovered context window (e.g. learned
+   * at runtime from an overflow error). This makes the value sticky for the
+   * current session so the pre-flight guard in driveStream skips this model
+   * for the current (or similar) context size without needing another error.
+   * Mutates the registry entry in-place; no-op if the model is not found.
+   */
+  function updateModelContextWindow(ref: string, cw: number): void {
+    if (!sessionCtx || !cw) return;
+    const { provider, modelId } = splitRef(ref);
+    try {
+      const model = sessionCtx.modelRegistry.find(provider, modelId) as any;
+      if (model) model.contextWindow = cw;
+    } catch {
+      /* registry error — no-op */
     }
   }
 

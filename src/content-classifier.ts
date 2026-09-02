@@ -1,7 +1,6 @@
 // src/content-classifier.ts
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama } from './ollama-utils.ts';
-import { CloudClient } from './cloud-client.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
@@ -135,6 +134,29 @@ interface ClassificationOptions {
   cfg?: Config;
   cache?: Cache;
   allowCloudFallback?: boolean;
+  /**
+   * Pi's one-shot completion API (modelRegistry.completeSimple). When the
+   * cloud fallback runs, the classifier uses this instead of its own HTTP
+   * client so pi owns auth + provider quirks — the user's keys live in pi's
+   * auth store, not in router-config.json, so the router must NOT roll its
+   * own key resolution. The model is resolved from the ref via findModel.
+   */
+  completeSimple?: (
+    model: any,
+    ctx: any,
+    options?: any
+  ) => Promise<{ content?: any[]; errorMessage?: string; stopReason?: string }>;
+  /**
+   * Resolves a model ref ("provider/id") to a pi Model object from the
+   * registry, so completeSimple can be called. Returns undefined if pi
+   * doesn't know the model.
+   */
+  findModel?: (ref: string) => any | undefined;
+  /**
+   * Pi's available models (modelRegistry.getAvailable()), pre-resolved so the
+   * classifier can pick the cheapest without a second round-trip. Optional.
+   */
+  availableModels?: readonly any[];
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────
@@ -295,6 +317,9 @@ export async function classifyPrompt(
     allowCloudFallback = false,
     cfg,
     cache,
+    completeSimple,
+    findModel,
+    availableModels,
   } = options;
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.
@@ -487,45 +512,63 @@ export async function classifyPrompt(
     return classificationResult;
   }
 
-  // Cloud fallback: Try the cheapest available cloud models.
-  // Discovery-only (B): instead of the hardcoded free_models list, we discover
-  // the cheapest models from whatever providers the user has keys for. This
-  // works out-of-the-box for any user (OpenRouter, Mistral, Requesty, etc.)
-  // without requiring a hand-maintained free_models array.
-  // Only activate when allowCloudFallback is true AND cfg/cache are available.
-  if (allowCloudFallback && cfg && cache) {
+  // Cloud fallback: when Ollama is unavailable, classify using pi's own
+  // model registry (completeSimple) — pi already owns the model list, the
+  // auth (keys live in pi's auth store, not router-config.json), and the
+  // provider HTTP quirks. The router must NOT roll its own HTTP client + key
+  // resolution (the old CloudClient path threw "No API key for provider"
+  // whenever the key wasn't duplicated into router-config.json).
+  //
+  // Model selection reuses getCheapestCloudModels (price-sorted refs). Each
+  // ref is resolved to a pi Model via findModel; completeSimple does the call.
+  // Only activate when allowCloudFallback is true AND cfg/cache + the pi
+  // completeSimple/findModel hooks are available.
+  if (allowCloudFallback && cfg && cache && completeSimple && findModel) {
     try {
       const discovery = new DiscoveryManager(cfg, cache);
       // Try dynamically discovered cheapest models first (works for any provider)
       const cloudModels = discovery.getCheapestCloudModels();
       // Fall back to the static free_models list if dynamic discovery found nothing
       const modelsToTry = cloudModels.length > 0 ? cloudModels : discovery.getFreeModels();
-      
-      if (modelsToTry.length > 0) {
-        const cloudClient = new CloudClient(cfg, {
-          resolveKey: (key) => discovery.resolveKeyValue(key),
-        });
-        
-        for (const modelRef of modelsToTry) {
-          try {
-            const cloudResponse = await cloudClient.callModel(modelRef, ollamaPrompt);
-            const cleaned = cloudResponse.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-            const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-            const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
-            if (isValidFullClassification(parsed)) {
-              routerLog('[classifier] Cloud model ${modelRef} succeeded');
-              // Apply escalation logic to cloud result
-              if (context.lastModel && !context.isCompaction) {
-                const result = applyEscalationLogic(parsed, context.lastModel);
-                if (result) {
-                  return result;
-                }
-              }
-              return parsed;
-            }
-          } catch (cloudError) {
-            routerLog('[classifier] Cloud model ${modelRef} failed', (cloudError as Error).message);
+
+      const classifyCtx: any = {
+        messages: [{ role: 'user', content: ollamaPrompt }],
+      };
+
+      for (const modelRef of modelsToTry) {
+        try {
+          const model = findModel(modelRef);
+          if (!model) {
+            routerLog('[classifier] Cloud model ${modelRef} not in pi registry — skipping');
+            continue;
           }
+          const result = await completeSimple(model, classifyCtx, undefined);
+          if (result.errorMessage || result.stopReason === 'error') {
+            routerLog('[classifier] Cloud model ${modelRef} failed', result.errorMessage ?? 'error');
+            continue;
+          }
+          // AssistantMessage.content is an array of TextContent | ThinkingContent
+          // | ToolCall. Concatenate the text blocks (skip <think> blocks).
+          const raw = (result.content ?? [])
+            .filter((b: any) => b.type === 'text' && typeof b.text === 'string')
+            .map((b: any) => b.text)
+            .join('');
+          const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
+          if (isValidFullClassification(parsed)) {
+            routerLog('[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)');
+            // Apply escalation logic to cloud result
+            if (context.lastModel && !context.isCompaction) {
+              const escalated = applyEscalationLogic(parsed, context.lastModel);
+              if (escalated) {
+                return escalated;
+              }
+            }
+            return parsed;
+          }
+        } catch (cloudError) {
+          routerLog('[classifier] Cloud model ${modelRef} failed', (cloudError as Error).message);
         }
       }
     } catch (cloudFallbackError) {
