@@ -34,3 +34,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0003 — Reject live subscription-usage-API querying](0003-reject-live-subscription-usage-api.md)
 - [0004 — Use pi's `modelRegistry` for cloud classification fallback](0004-cloud-fallback-via-pi-modelregistry.md)
 - [0005 — `registerProvider` replaces (not merges) — Ü1 guard design](0005-registerprovider-replaces-not-merges.md)
+- [0006 — Probe-based discovery for classifier cloud fallback](0006-probe-based-classifier-fallback-discovery.md)

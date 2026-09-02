@@ -140,6 +140,14 @@ routerLog('[classifier] Primary model "${model}" failed, ...');  // literal "${m
 
 ### F3 — Cloud fallback only ever tries free OpenRouter models; subscription GLM-5.2 is invisible (HIGH — core of the user's complaint)
 
+**Status: RESOLVED (2026-09-02).** The probe-based discovery
+(`src/classifier-fallback-probe.ts`, ADR 0006) replaces `getCheapestCloudModels`
+as the classifier's primary path. `selectClassifierCandidates()` includes
+Tier C (placeholder-$0 providers like mistral-zai), and `probeAndCache()`
+actually probes them — so the fallback now reaches working Mistral models
+instead of only OpenRouter free models. Round-robin provider interleaving
+prevents OpenRouter from monopolizing the candidate list.
+
 **Location:** `src/discovery.ts` `getCheapestCloudModels()` lines 415-425
 **Root cause:** The filter is:
 ```ts
@@ -204,8 +212,16 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F9 — OpenRouter free-tier daily rate limit is a single point of failure for the whole router (MEDIUM, operational)
 
-**Evidence:** At 09:14 and 09:26, two cloud models returned HTTP 429 with `X-RateLimit-Remaining: 0` and `X-RateLimit-Reset: 1788393600000` (a daily reset). The user's OpenRouter free tier (50 requests/day) was exhausted. Because F3+F7 mean the cloud fallback only ever tries free OpenRouter models, **exhausting the OpenRouter daily free-tier quota disables the entire cloud classification fallback**.
-**Impact:** This is the immediate trigger for the user's observed failure. The router has a perfectly good mistral-zai subscription (free to the user, high quality) that it cannot reach in the fallback path.
+**Status: RESOLVED (2026-09-02).** With the probe-based discovery (ADR 0006),
+the fallback no longer depends solely on OpenRouter free models. The probe
+reaches Tier C Mistral models (with a working key) via round-robin
+interleaving, so exhausting the OpenRouter daily quota no longer disables
+the entire cloud classification fallback. Verified in production logs:
+`mistral/mistral-small-2603` and `mistral/mistral-large-2512` were probed
+OK and cached while every OpenRouter `:free` model failed 429/404.
+
+**Evidence (historical):** At 09:14 and 09:26, two cloud models returned HTTP 429 with `X-RateLimit-Remaining: 0` and `X-RateLimit-Reset: 1788393600000` (a daily reset). The user's OpenRouter free tier (50 requests/day) was exhausted. Because F3+F7 mean the cloud fallback only ever tries free OpenRouter models, **exhausting the OpenRouter daily free-tier quota disables the entire cloud classification fallback**.
+**Impact (historical):** This is the immediate trigger for the user's observed failure. The router has a perfectly good mistral-zai subscription (free to the user, high quality) that it cannot reach in the fallback path.
 **Fix direction:** Fixing F3 (include subscription models) resolves this — the fallback would use mistral-zai/glm-5-2 instead of the rate-limited OpenRouter free tier.
 
 ### F10 — pi-claude (Sonnet) gets a false-positive 2-hour rate-limit cooldown from cascade-induced aborts (HIGH — the live bug behind "still goes for minimax")

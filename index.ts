@@ -739,7 +739,7 @@ let previousTokenCount = 0;
 
       // Probe classifier-fallback candidates and cache the verified-working
       // list. Runs after the scan saves (so cache.available_models is fresh)
-      // and before generateDynamicConfig. The probe is bounded (max 12
+      // and before generateDynamicConfig. The probe is bounded (max 20
       // candidates, 15s timeout each, stops at 8 successes) and non-fatal —
       // if it fails the classifier falls back to selectClassifierCandidates +
       // the try-each loop at classification time. See
