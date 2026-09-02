@@ -5,7 +5,7 @@ import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
-import { getCachedFallbackModels, selectClassifierCandidates } from './classifier-fallback-probe.ts';
+import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback } from './classifier-fallback-probe.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -270,10 +270,14 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   // recognized. To guard against false positives (the word "hint" in
   // natural prose like "can I get a hint about…"), we require one of:
   //   - a colon after HINT (the explicit form: "HINT: ..."), OR
-  //   - a group-verb (use/nutze/verwende/benutze) immediately after HINT
-  //     (the "HINT use <model>" form).
+  //   - a group-verb (use/nutze/verwende/benutze, optionally followed by
+  //     "modell") immediately after HINT (the "HINT use <model>" form).
   // Bare "HINT <something>" without either is too ambiguous with prose.
-  const match = prompt.match(/^\s*HINT\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?|gruppe)\b))\s*:?\s+(.+)/i);
+  // NOTE: the bare noun `gruppe`/`group` is intentionally NOT in the
+  // lookahead - group hints are recognized via GROUP_VERB_PREFIX below
+  // ("use group X", "verwende gruppe X"), not via the bare noun, so the
+  // English and German forms behave symmetrically (roborev job 451 LOW).
+  const match = prompt.match(/^\s*HINT\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i);
   if (!match) return null;
   const instruction = match[1].trim();
 
@@ -299,7 +303,12 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   );
   if (modelMatch) {
     const target = modelMatch[1].replace(/[,;.]$/, '');
-    if (target.length > 0) {
+    // Guard (roborev job 451 LOW): if the optional verb prefix consumed
+    // nothing and the captured target IS the verb itself (e.g. "HINT use"
+    // with no model), reject - let the LLM classifier handle it instead of
+    // trying to resolve a model literally named "use"/"nutze"/etc.
+    const knownVerbs = new Set(['use', 'nutze', 'verwende', 'benutze', 'benutzt']);
+    if (target.length > 0 && !knownVerbs.has(target.toLowerCase())) {
       return {
         reason: 'User specified model via HINT',
         confidence: 1.0,
@@ -556,6 +565,12 @@ export async function classifyPrompt(
         source = 'static-free';
       }
       routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
+      // Distinguish "probe ran but all candidates failed" from "probe hasn't
+      // run yet" so the empty-list case is diagnosable from logs (roborev
+      // job 445 LOW).
+      if (modelsToTry.length === 0 && source === 'discovered' && hasProbedFallback(cache)) {
+        routerLog('[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.');
+      }
 
       const classifyCtx: any = {
         messages: [{ role: 'user', content: ollamaPrompt }],

@@ -297,6 +297,40 @@ describe('probeAndCache', () => {
     expect(result).not.toContain('openrouter/throwing-model');
   });
 
+  // roborev job 445 MEDIUM: probe failures must be fed into the health system
+  // so a consistently-broken candidate is excluded from the NEXT scan's
+  // selectClassifierCandidates via isUnhealthy (>=2 recent fails).
+  it('records probe failures into the health system (so broken candidates are excluded next scan)', async () => {
+    const cache: Cache = {
+      available_models: [
+        { id: 'broken', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'ok', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/broken': { input: 0, output: 0 },
+        'openrouter/ok': { input: 0, output: 0 },
+      },
+    };
+    seedMetrics(baseCfg, cache);
+
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async (model: any) => {
+        if (model.id === 'broken') throw new Error('422');
+        return { errorMessage: undefined, stopReason: 'stop', content: [] };
+      }),
+    };
+    await probeAndCache(baseCfg, cache, pctx, () => {});
+
+    // The broken model should now have a recorded failure in the health store.
+    const { isUnhealthy } = await import('../src/model-health.js');
+    expect(isUnhealthy(cache, 'openrouter/broken')).toBe(false); // only 1 fail so far
+
+    // Probe again — a second failure should push it to unhealthy (>=2 fails).
+    await probeAndCache(baseCfg, cache, pctx, () => {});
+    expect(isUnhealthy(cache, 'openrouter/broken')).toBe(true);
+  });
+
   it('writes the working list to cache.classifier_fallback_models', async () => {
     const cache: Cache = {
       available_models: [{ id: 'ok', provider: 'openrouter', cost_per_m: 0 }],
