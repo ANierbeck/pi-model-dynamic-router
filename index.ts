@@ -2499,9 +2499,6 @@ let previousTokenCount = 0;
       );
       if (modelsPiKnows.size === provModels.length) continue; // pi knows ALL — skip entirely
 
-      // Register only the models pi does NOT know yet. If pi knows some but not
-      // all (mixed case), call registerProvider with only the new ones — this
-      // adds them without touching pi's existing entries.
       const newModels = provModels.filter((m) => !modelsPiKnows.has(m.id));
       if (!newModels.length) continue;
 
@@ -2521,34 +2518,75 @@ let previousTokenCount = 0;
         return 0;
       };
 
+      // pi.registerProvider's `models` field REPLACES the provider's entire
+      // model list — it is NOT a merge (confirmed against
+      // node_modules/@earendil-works/pi-coding-agent/docs/custom-provider.md:
+      // "When models is provided, it replaces all existing models for that
+      // provider" — also documented in this repo's own CLAUDE.md rule #6).
+      // In the mixed case (pi knows SOME but not all of this provider's
+      // models), passing only `newModels` would silently DELETE pi's existing
+      // registration for the models it already knew — including their compat
+      // flags — which is exactly the destructive overwrite Ü1 exists to
+      // prevent (roborev job 425/426 HIGH finding on an earlier version of
+      // this fix). Round-trip pi's own Model objects for the already-known
+      // models (preserving them byte-for-byte, compat flags included) and
+      // pass the UNION of those plus the new models, so the call is a true
+      // add, not a replace.
+      // Pick only the documented ProviderModelConfig fields (id, name, api,
+      // baseUrl, reasoning, thinkingLevelMap, input, cost, contextWindow,
+      // maxTokens, headers, compat) — pi's Model interface also carries a
+      // `provider` field that ProviderModelConfig doesn't declare, so spread
+      // the whole object less and pick the known-safe fields instead.
+      const existingModels = provModels
+        .filter((m) => modelsPiKnows.has(m.id))
+        .map((m) => ctx.modelRegistry.find(provId, m.id))
+        .filter((m): m is NonNullable<typeof m> => Boolean(m))
+        .map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          ...(m.api !== undefined ? { api: m.api } : {}),
+          ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
+          reasoning: m.reasoning,
+          ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+          input: m.input,
+          cost: m.cost,
+          contextWindow: m.contextWindow,
+          maxTokens: m.maxTokens,
+          ...(m.headers !== undefined ? { headers: m.headers } : {}),
+          ...(m.compat !== undefined ? { compat: m.compat } : {}),
+        }));
+
       try {
         (pi as any).registerProvider(provId, {
           baseUrl: def.baseUrl,
           apiKey,
           api: def.api,
-          // B1: use REAL per-model capabilities from the scan, with conservative
-          // defaults when the provider didn't report a field. Previously every
-          // model got reasoning:true + input:['text','image'] + 200k ctx — which
-          // falsely advertised vision on glm-5-2 (causing 422) and a wrong ctx
-          // window on every model. Now: vision only when the provider confirms
-          // it (default false — never claim what we don't know), reasoning only
-          // when confirmed, contextWindow/maxTokens only when reported (Pi's
-          // own defaults apply otherwise, which are saner than our old 200k/64k).
-          models: newModels.map((m) => {
-            const caps = m.capabilities ?? {};
-            const input: string[] = caps.vision === true ? ['text', 'image'] : ['text'];
-            const costPerM = getCostPerM(m);
-            const entry: Record<string, unknown> = {
-              id: m.id,
-              name: `${provId}/${m.id}`,
-              reasoning: caps.reasoning === true,
-              input,
-              cost: { input: costPerM, output: costPerM, cacheRead: 0, cacheWrite: 0 },
-            };
-            if (typeof caps.contextWindow === 'number') entry.contextWindow = caps.contextWindow;
-            if (typeof caps.maxTokens === 'number') entry.maxTokens = caps.maxTokens;
-            return entry;
-          }),
+          models: [
+            ...existingModels,
+            // B1: use REAL per-model capabilities from the scan, with conservative
+            // defaults when the provider didn't report a field. Previously every
+            // model got reasoning:true + input:['text','image'] + 200k ctx — which
+            // falsely advertised vision on glm-5-2 (causing 422) and a wrong ctx
+            // window on every model. Now: vision only when the provider confirms
+            // it (default false — never claim what we don't know), reasoning only
+            // when confirmed, contextWindow/maxTokens only when reported (Pi's
+            // own defaults apply otherwise, which are saner than our old 200k/64k).
+            ...newModels.map((m) => {
+              const caps = m.capabilities ?? {};
+              const input: string[] = caps.vision === true ? ['text', 'image'] : ['text'];
+              const costPerM = getCostPerM(m);
+              const entry: Record<string, unknown> = {
+                id: m.id,
+                name: `${provId}/${m.id}`,
+                reasoning: caps.reasoning === true,
+                input,
+                cost: { input: costPerM, output: costPerM, cacheRead: 0, cacheWrite: 0 },
+              };
+              if (typeof caps.contextWindow === 'number') entry.contextWindow = caps.contextWindow;
+              if (typeof caps.maxTokens === 'number') entry.maxTokens = caps.maxTokens;
+              return entry;
+            }),
+          ],
         });
       } catch {
         /* provider already registered or config error */
