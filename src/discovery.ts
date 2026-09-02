@@ -8,6 +8,31 @@ import { homedir } from 'node:os';
 
 import type { Config, Cache, ProviderConfig, ProviderKey } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+
+// ── Curated list of known genuinely FREE or near-free models ──────────────────
+//
+// These models are free or cost < $0.01 per classification call on their
+// provider's native API. They are NOT discovered via price lookup (the scan
+// never fetched real Mistral pricing), so they would otherwise be invisible to
+// getCheapestCloudModels — which falls back to placeholder-$0 models like
+// zai-glm-5-2 (alphabetically last among 46 tied models).
+//
+// Each entry: [providerPrefix, modelId]
+// providerPrefix must match the provider key used in the scan cache.
+const CURATED_FREE_MODELS: Array<[provider: string, id: string]> = [
+  // mistral-small-latest is FREE on Mistral's own API (Mistral free tier).
+  // Try mistral-zai first — that is the provider prefix the user already uses
+  // for their other mistral-zai models (zai-glm-5-2 etc.).
+  ['mistral-zai', 'mistral-small-latest'],
+  ['mistral', 'mistral-small-latest'],
+  // magistral-small-latest is very cheap (~$0.15/M input, ~$0.60/M output)
+  // and useful as a second-tier fallback if mistral-small is unavailable.
+  // Note: "magistral" (with i), not "magistral" — matches the scan cache ID.
+  ['mistral-zai', 'magistral-small-latest'],
+  // mistral-small-2603 is an older, still-supported cheap variant.
+  ['mistral', 'mistral-small-2603'],
+  ['mistral-zai', 'mistral-small-2603'],
+];
 import { lookupPrice } from './metrics.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -417,26 +442,16 @@ export class DiscoveryManager {
 
     // 3. Filter by price: must have known output price ≤ threshold.
     //
-    // F3 investigation note (2026-09-02): an earlier version of this function
-    // tried treating any candidate with cache.available_models[].cost_per_m===0
-    // as a free/subscription model whenever lookupPrice(ref) had no data, on
-    // the theory that mistral-zai/glm-5-2 (subscription, free to the user) was
-    // being wrongly excluded. That assumption doesn't hold: per the scan code
-    // in index.ts, cost_per_m is only a REAL, API-verified price signal for
-    // chutes and openrouter (openrouter only pushes a model into
-    // available_models when its own pricing API reports exactly $0). For
-    // "generic direct API provider" scans (mistral, mistral-zai, anthropic,
-    // and anything else matched via modelsUrl+authHeader in PROVIDER_MAP),
-    // cost_per_m is HARDCODED to 0 unconditionally — the scan never fetches
-    // real per-token pricing for those providers at all. So cost_per_m===0
-    // there means "we never checked", not "this is free", and treating it as
-    // free would equally mis-include a genuinely paid, unscored mistral model
-    // (confirmed by test/get-cheapest-cloud-models.test.ts's "filters out
-    // models with unknown pricing" case, which intentionally locks in the
-    // opposite behavior). A correct fix needs a real signal — either fetching
-    // actual Mistral pricing during scan, or the provider explicitly listing
-    // the model in its free_models config (already handled in step 2 above)
-    // — not a blanket trust of the scan's placeholder value.
+    // F3 note (2026-09-02): cost_per_m is only a REAL, API-verified price
+    // signal for chutes and openrouter. For generic direct-API providers
+    // (mistral, mistral-zai, anthropic, … matched via modelsUrl+authHeader in
+    // PROVIDER_MAP), cost_per_m is HARDCODED to 0 unconditionally — the scan
+    // never fetches real per-token pricing for those providers. So cost_per_m===0
+    // there means "we never checked", not "this is free".
+    //
+    // getCheapestCloudModels works around this via step 5 below (curated
+    // free-model preemption), so the correct signal for "which mistral-zai model
+    // is actually free" is NOT in the price lookup — it's in the curated list.
     const priced: { ref: string; output: number }[] = [];
     for (const ref of candidates) {
       const price = lookupPrice(ref);
@@ -449,8 +464,50 @@ export class DiscoveryManager {
 
     // 4. Sort by output price ascending (cheapest first)
     priced.sort((a, b) => a.output - b.output);
+    const pricedResults = priced.slice(0, maxResults).map((p) => p.ref);
 
-    return priced.slice(0, maxResults).map((p) => p.ref);
+    // 5. Curated free-model prepended.
+    //
+    // Problem: all 46 mistral-zai models carry cost_per_m: 0 (hardcoded
+    // placeholder — the scan never fetched real Mistral pricing). After the
+    // price sort, zai-glm-5-2 wins alphabetically as the last of the tied
+    // models, even though mistral-small-latest is genuinely FREE on Mistral's
+    // API and would be a far better classifier choice.
+    //
+    // Solution: prepend the curated list. Each curated ref is resolved against
+    // available_models so we only include models the scan actually found.
+    // findModel in the caller provides a second guard (skips if not in pi's
+    // registry), so no harm if a curated model slips through.
+    const availableIds = new Set(
+      (this.cache.available_models ?? []).map((m) => `${m.provider}/${m.id}`)
+    );
+    const curated = CURATED_FREE_MODELS
+      .filter(([prov, id]) => availableIds.has(`${prov}/${id}`))
+      .map(([prov, id]) => `${prov}/${id}`);
+
+    // De-duplicate: curated models that already appear in pricedResults (e.g.
+    // if someone explicitly priced mistral-small in the future) stay once.
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    // Step 1: all curated models first (curated is pre-authoritative — these are
+    // known genuinely free/cheap; do NOT cap them).
+    for (const ref of curated) {
+      if (!seen.has(ref)) {
+        seen.add(ref);
+        result.push(ref);
+      }
+    }
+
+    // Step 2: append priced results up to maxResults cap.
+    for (const ref of pricedResults) {
+      if (result.length >= maxResults) break;
+      if (!seen.has(ref)) {
+        seen.add(ref);
+        result.push(ref);
+      }
+    }
+    return result;
   }
 
   // ── Getter ─────────────────────────────────────────────────────────────
