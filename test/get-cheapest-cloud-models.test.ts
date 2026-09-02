@@ -218,4 +218,105 @@ describe('DiscoveryManager.getCheapestCloudModels', () => {
     const result = dm.getCheapestCloudModels();
     expect(result).toEqual([]);
   });
+
+  it('prepends curated genuinely-free Mistral models before placeholder-$0 models', () => {
+    // Regression: all 46 mistral-zai models carry cost_per_m: 0 as a hardcoded
+    // placeholder (the scan never fetches real Mistral pricing). getCheapestCloudModels
+    // sorts by lookupPrice, so all 46 appear to cost $0/M. Ties are broken
+    // alphabetically — zai-glm-5-2 wins (last among the tied models), even though
+    // mistral-small-latest is genuinely FREE on Mistral's API and would be a far
+    // better classifier choice.
+    //
+    // The fix: curated free models are prepended to the result, so
+    // mistral-small-latest appears before any placeholder-$0 model.
+    const cache: Cache = {
+      available_models: [
+        // placeholder-$0 models (scan never fetched real pricing)
+        { id: 'zai-glm-5-2', provider: 'mistral-zai', cost_per_m: 0 },
+        { id: 'mistral-medium-latest', provider: 'mistral-zai', cost_per_m: 0 },
+        { id: 'mistral-small-latest', provider: 'mistral-zai', cost_per_m: 0 },
+        { id: 'mistral-small-latest', provider: 'mistral', cost_per_m: 0 },
+        // magistral-small-latest is also in CURATED_FREE_MODELS and must be present
+        // in available_models to be included in results (note: "magistral" with i)
+        { id: 'magistral-small-latest', provider: 'mistral-zai', cost_per_m: 0 },
+      ],
+      // No openrouter_pricing data for any of these
+    };
+
+    // Give zai-glm-5-2 a price via model_metrics. This mirrors reality: the
+    // scan has a placeholder $0 cost for mistral-zai models via the
+    // provider-level cost_per_m fallback in lookupPrice, so zai-glm-5-2 DOES
+    // appear in pricedResults (with output=$0). Without pricing data, pricedResults
+    // would be empty and zai-glm-5-2 would not appear at all — which is the
+    // bug this test is checking the fix for.
+    const cfgWithPrice: Config = {
+      ...baseCfg,
+      model_metrics: {
+        // provider-level fallback gives zai-glm-5-2 a $0 price (placeholder)
+        'mistral-zai/zai-glm-5-2': { cost_per_m: 0, gdpval: 0 },
+        // mistral-medium-latest also gets a placeholder $0 price
+        'mistral-zai/mistral-medium-latest': { cost_per_m: 0, gdpval: 0 },
+      },
+    };
+    seedMetrics(cfgWithPrice, cache);
+
+    const dm = new DiscoveryManager(cfgWithPrice, cache);
+    // maxResults=6 to see placeholders after all 3 matching curated models
+    const result = dm.getCheapestCloudModels(5, 6);
+
+    // curated models must be first (mistral-zai variants first — user's preferred prefix)
+    expect(result[0]).toBe('mistral-zai/mistral-small-latest');
+    expect(result[1]).toBe('mistral/mistral-small-latest');
+    expect(result[2]).toBe('mistral-zai/magistral-small-latest');
+    // zai-glm-5-2 (placeholder-$0, alphabetically last among the 46 tied models)
+    // must come AFTER the curated entries (at index >= 3)
+    expect(result.indexOf('mistral-zai/zai-glm-5-2')).toBeGreaterThanOrEqual(3);
+    // mistral-medium-latest (placeholder-$0) also comes after curated entries
+    expect(result.indexOf('mistral-zai/mistral-medium-latest')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('only includes curated models that are in available_models (notinvented entries)', () => {
+    // If a curated model is not in the scan cache, it should NOT appear in results
+    const cache: Cache = {
+      available_models: [
+        // only mistral-small-latest (mistral-zai) is in the cache
+        { id: 'mistral-small-latest', provider: 'mistral-zai', cost_per_m: 0 },
+        // magistral-small-latest is NOT in the cache
+      ],
+    };
+    seedMetrics(baseCfg, cache);
+
+    const dm = new DiscoveryManager(baseCfg, cache);
+    const result = dm.getCheapestCloudModels();
+
+    // mistral-zai/mistral-small-latest: in cache → included
+    expect(result).toContain('mistral-zai/mistral-small-latest');
+    // magistral-small-latest: NOT in cache → excluded (even though it's in CURATED_FREE_MODELS)
+    expect(result).not.toContain('mistral-zai/magistral-small-latest');
+    // mistral/mistral-small-latest: NOT in cache (only mistral-zai variant) → excluded
+    expect(result).not.toContain('mistral/mistral-small-latest');
+  });
+
+  it('de-duplicates: curated model that also appears in priced results appears only once', () => {
+    // Edge case: if a curated model somehow also has real pricing (e.g. future where
+    // we add per-model pricing for mistral-small), it should appear once, not twice.
+    const cache: Cache = {
+      available_models: [
+        { id: 'mistral-small-latest', provider: 'mistral-zai', cost_per_m: 0 },
+        { id: 'zai-glm-5-2', provider: 'mistral-zai', cost_per_m: 0 },
+      ],
+      // mistral-small-latest has real pricing (hypothetical future state)
+      openrouter_pricing: {
+        'mistral-zai/mistral-small-latest': { input: 0, output: 0 },
+      },
+    };
+    seedMetrics(baseCfg, cache);
+
+    const dm = new DiscoveryManager(baseCfg, cache);
+    const result = dm.getCheapestCloudModels();
+
+    // mistral-small-latest should appear exactly once (curated de-dup takes precedence)
+    const occurrences = result.filter((r) => r === 'mistral-zai/mistral-small-latest');
+    expect(occurrences).toHaveLength(1);
+  });
 });
