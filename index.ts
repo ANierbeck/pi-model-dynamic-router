@@ -2494,12 +2494,21 @@ let previousTokenCount = 0;
       // This prevents overwriting a pi-managed entry (e.g. mistral-zai/zai-glm-5-2
       // with its compat flags) while still making scan-discovered variants
       // (e.g. mistral-zai/glm-5-2 with its gdpval 1497) visible to routing.
-      const modelsPiKnows = new Set(
-        provModels.filter((m) => Boolean(ctx.modelRegistry.find(provId, m.id))).map((m) => m.id)
-      );
-      if (modelsPiKnows.size === provModels.length) continue; // pi knows ALL — skip entirely
+      //
+      // Cache the find() results in a Map keyed by model id (roborev job 429
+      // LOW): modelsPiKnows AND existingModels below both need the resolved
+      // Model object, and calling find() twice per known model is redundant
+      // work. The Map is built once and reused for both the set-membership
+      // check and the round-trip lookup.
+      const piKnownByModel = new Map<string, any>();
+      for (const m of provModels) {
+        const found = ctx.modelRegistry.find(provId, m.id);
+        if (found) piKnownByModel.set(m.id, found);
+      }
+      if (piKnownByModel.size === provModels.length) continue; // pi knows ALL — skip entirely
 
-      const newModels = provModels.filter((m) => !modelsPiKnows.has(m.id));
+      // Register only the models pi does NOT know yet.
+      const newModels = provModels.filter((m) => !piKnownByModel.has(m.id));
       if (!newModels.length) continue;
 
       // Use the scan-reported cost_per_m instead of unconditionally hardcoding
@@ -2537,26 +2546,30 @@ let previousTokenCount = 0;
       // maxTokens, headers, compat) — pi's Model interface also carries a
       // `provider` field that ProviderModelConfig doesn't declare, so spread
       // the whole object less and pick the known-safe fields instead.
-      const existingModels = provModels
-        .filter((m) => modelsPiKnows.has(m.id))
-        .map((m) => ctx.modelRegistry.find(provId, m.id))
-        .filter((m): m is NonNullable<typeof m> => Boolean(m))
-        .map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          ...(m.api !== undefined ? { api: m.api } : {}),
-          ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
-          reasoning: m.reasoning,
-          ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
-          input: m.input,
-          cost: m.cost,
-          contextWindow: m.contextWindow,
-          maxTokens: m.maxTokens,
-          ...(m.headers !== undefined ? { headers: m.headers } : {}),
-          ...(m.compat !== undefined ? { compat: m.compat } : {}),
-        }));
-
       try {
+        // Build the round-tripped entries from the cached find() results
+        // (roborev job 429 LOW: no redundant find calls; roborev job 429
+        // MEDIUM: this lives inside the try so a throw for any single
+        // provider only skips that provider, not the whole loop).
+        const existingModels = provModels
+          .filter((m) => piKnownByModel.has(m.id))
+          .map((m) => piKnownByModel.get(m.id))
+          .filter((m): m is NonNullable<typeof m> => Boolean(m))
+          .map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            ...(m.api !== undefined ? { api: m.api } : {}),
+            ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
+            reasoning: m.reasoning,
+            ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+            input: m.input,
+            cost: m.cost,
+            contextWindow: m.contextWindow,
+            maxTokens: m.maxTokens,
+            ...(m.headers !== undefined ? { headers: m.headers } : {}),
+            ...(m.compat !== undefined ? { compat: m.compat } : {}),
+          }));
+
         (pi as any).registerProvider(provId, {
           baseUrl: def.baseUrl,
           apiKey,
