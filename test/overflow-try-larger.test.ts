@@ -97,10 +97,12 @@ import {
 } from './helpers/router-state-lock.ts';
 
 const repoRoot2 = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-// The module reads router-config.json from its own extDir (dist/), not
-// process.cwd() — so to control the group's candidates we must back up and
-// write dist/router-config.json, restoring it in finally (even on failure).
-const EXT_CFG = path.join(repoRoot2, 'dist', 'router-config.json');
+// Under vitest, import('../index.ts') runs the TS source, so import.meta.url
+// resolves to repoRoot/index.ts and extDir = repoRoot (NOT dist/). loadLayeredConfig
+// layers: extDir/router-config.json (defaults) < ~/.pi/agent (global) <
+// <cwd>/.pi/router-config.json (project override, highest priority). So the
+// per-test override goes to tmpDir/.pi/router-config.json (with cwdSpy→tmpDir),
+// exactly like context-overflow.test.ts — NOT by backing up dist/router-config.
 const dynamicConfigPath2 = path.join(repoRoot2, 'router-config.dynamic.json');
 const scanCachePath2 = path.join(repoRoot2, '.cache', 'scan-cache.json');
 
@@ -123,9 +125,9 @@ async function drainStream2(stream: any) {
 describe('driveStream: context_overflow — try-larger recursion', () => {
   it('overflow on first candidate (parseable error) → tries the larger second candidate and succeeds', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow-trylarge-'));
-    const extCfgBak = `${EXT_CFG}.trylarge-bak`;
-    fs.copyFileSync(EXT_CFG, extCfgBak);
-    fs.writeFileSync(EXT_CFG, TEST_CFG_BODY);
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    // Project-config override (cwd-layer, highest priority in loadLayeredConfig).
+    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.trylarge-bak`);
@@ -183,6 +185,11 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       // small was tried first (overflowed), then big was tried (succeeded).
       expect(streamSimple).toHaveBeenCalledWith(expect.objectContaining({ id: 'small' }), expect.anything(), expect.anything());
       expect(streamSimple).toHaveBeenCalledWith(expect.objectContaining({ id: 'big' }), expect.anything(), expect.anything());
+      // Prove the tests exercise OUR mock models, not incidental production refs:
+      const calledIds = streamSimple.mock.calls.map((c) => c[0]?.id);
+      expect(calledIds).toContain('small');
+      expect(calledIds).toContain('big');
+      expect(calledIds.some((id) => id !== 'small' && id !== 'big')).toBe(false);
       // No overflow error surfaced — big succeeded.
       const errEvent = events.find((e: any) => e.type === 'error');
       expect(errEvent).toBeUndefined();
@@ -194,7 +201,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       removeNoOpScanCache(scanCachePath2);
       if (fs.existsSync(`${dynamicConfigPath2}.trylarge-bak`)) fs.renameSync(`${dynamicConfigPath2}.trylarge-bak`, dynamicConfigPath2);
-      if (fs.existsSync(extCfgBak)) fs.renameSync(extCfgBak, EXT_CFG);
       releaseRouterStateLock();
     }
   });
@@ -206,9 +212,8 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     // unbounded loop. The fix calls recordSoftFailure so cooldown excludes it;
     // this test asserts the overflowing model is NOT retried indefinitely.
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow-unparse-'));
-    const extCfgBak = `${EXT_CFG}.unparse-bak`;
-    fs.copyFileSync(EXT_CFG, extCfgBak);
-    fs.writeFileSync(EXT_CFG, TEST_CFG_BODY);
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.unparse-bak`);
@@ -276,7 +281,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       removeNoOpScanCache(scanCachePath2);
       if (fs.existsSync(`${dynamicConfigPath2}.unparse-bak`)) fs.renameSync(`${dynamicConfigPath2}.unparse-bak`, dynamicConfigPath2);
-      if (fs.existsSync(extCfgBak)) fs.renameSync(extCfgBak, EXT_CFG);
       releaseRouterStateLock();
     }
   });
