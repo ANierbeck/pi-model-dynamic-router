@@ -439,9 +439,12 @@ export class DiscoveryManager {
     // never fetches real per-token pricing for those providers. So cost_per_m===0
     // there means "we never checked", not "this is free".
     //
-    // getCheapestCloudModels works around this via step 5 below (curated
-    // free-model preemption), so the correct signal for "which mistral-zai model
-    // is actually free" is NOT in the price lookup — it's in the curated list.
+    // This function therefore only returns models with REAL OpenRouter/chutes
+    // pricing ≤ the threshold — it cannot see the genuinely-free mistral-zai
+    // models. The classifier's cloud fallback no longer relies on this
+    // function; see src/classifier-fallback-probe.ts (selectClassifierCandidates
+    // + probeAndCache) for the probe-based discovery that handles Tier C
+    // (placeholder-$0) providers by actually probing them.
     const priced: { ref: string; output: number }[] = [];
     for (const ref of candidates) {
       const price = lookupPrice(ref);
