@@ -317,6 +317,47 @@ export function isRateLimitLikeReason(reason: string): boolean {
 }
 
 /**
+ * Patterns indicating a stream was torn down by a client-side or
+ * cascade-induced abort (e.g. a parent subagent fanout crashing, an outer
+ * AbortSignal firing) rather than by the provider itself. pi-ai's own
+ * structured signal for this is an `error` event with `.reason === 'aborted'`
+ * (handled separately, see index.ts's consumeWithDetection userAborted
+ * check — roborev job 345 HIGH). This table catches the SAME situation when
+ * it instead surfaces as free-text inside a generic `error` event whose
+ * `.reason` is NOT `'aborted'` — observed in practice from claude-bridge,
+ * whose own AbortError gets serialized into `errorMessage` as "This operation
+ * was aborted" without setting the structured `reason` field.
+ *
+ * Without this check, such text falls through to the providerErrorDetected
+ * branch and gets classified as `reason: 'provider_error'`, which
+ * isPaidCloudRateLimitFailure treats as rate-limit-shaped for any paid cloud
+ * model — applying a 2-hour hard cooldown to a model that was never actually
+ * rate-limited, just caught in the blast radius of an unrelated crash. This
+ * was the root cause of a live incident: a subagent fanout crashed Ollama,
+ * the crash cascade aborted an in-flight pi-claude/claude-sonnet-5 call, and
+ * the router locked Sonnet out of `tactical`/`strategic` for 2 hours (F10,
+ * 2026-09-02 architecture review).
+ *
+ * Deliberately narrow and evidence-based (matching this file's existing
+ * pattern-table philosophy) rather than a broad "aborted" substring match —
+ * a genuine provider-side rejection could plausibly use similar wording for
+ * an unrelated reason, and understating this list only costs a soft backoff
+ * instead of a 2-hour hard cooldown (a far cheaper false negative than the
+ * reverse).
+ */
+export const ABORT_LIKE_PATTERNS: readonly string[] = [
+  'operation was aborted',
+  'the operation was aborted',
+  'aborterror',
+];
+
+/** True if text matches a client-side/cascade-abort pattern (see above). */
+export function isAbortLikeText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return ABORT_LIKE_PATTERNS.some((p) => lower.includes(p));
+}
+
+/**
  * Single source of truth (roborev job 348 LOW) for "should this failure on
  * `ref` be escalated to a hard rate-limit cooldown + key rotation, instead of
  * the short soft-backoff ladder": a PAID cloud model (not local, not

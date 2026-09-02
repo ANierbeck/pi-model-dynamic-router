@@ -415,7 +415,28 @@ export class DiscoveryManager {
       }
     }
 
-    // 3. Filter by price: must have known output price ≤ threshold
+    // 3. Filter by price: must have known output price ≤ threshold.
+    //
+    // F3 investigation note (2026-09-02): an earlier version of this function
+    // tried treating any candidate with cache.available_models[].cost_per_m===0
+    // as a free/subscription model whenever lookupPrice(ref) had no data, on
+    // the theory that mistral-zai/glm-5-2 (subscription, free to the user) was
+    // being wrongly excluded. That assumption doesn't hold: per the scan code
+    // in index.ts, cost_per_m is only a REAL, API-verified price signal for
+    // chutes and openrouter (openrouter only pushes a model into
+    // available_models when its own pricing API reports exactly $0). For
+    // "generic direct API provider" scans (mistral, mistral-zai, anthropic,
+    // and anything else matched via modelsUrl+authHeader in PROVIDER_MAP),
+    // cost_per_m is HARDCODED to 0 unconditionally — the scan never fetches
+    // real per-token pricing for those providers at all. So cost_per_m===0
+    // there means "we never checked", not "this is free", and treating it as
+    // free would equally mis-include a genuinely paid, unscored mistral model
+    // (confirmed by test/get-cheapest-cloud-models.test.ts's "filters out
+    // models with unknown pricing" case, which intentionally locks in the
+    // opposite behavior). A correct fix needs a real signal — either fetching
+    // actual Mistral pricing during scan, or the provider explicitly listing
+    // the model in its free_models config (already handled in step 2 above)
+    // — not a blanket trust of the scan's placeholder value.
     const priced: { ref: string; output: number }[] = [];
     for (const ref of candidates) {
       const price = lookupPrice(ref);

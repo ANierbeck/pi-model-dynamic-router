@@ -57,6 +57,7 @@ import {
   isRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
+  isAbortLikeText,
   parseResetAtMs,
   isPaidCloudRateLimitFailure,
 } from './src/detection.ts';
@@ -1002,8 +1003,10 @@ let previousTokenCount = 0;
       // are available for the current session without requiring a restart.
       cfg = dynamicConfig as Config;
       router = new Router(cfg, cache, rateLimitManager.getLimits());
-      // Keep stream-orchestrator in sync with the new router instance.
-      streamOrchestrator.ctx.router = router;
+      // streamOrchestrator.ctx.router is now a live getter (see
+      // buildOrchestratorContext) that always reads this module-level `router`
+      // binding, so no explicit resync is needed here anymore — and assigning
+      // to it would throw (getter-only accessor).
       if (sessionCtx) router.setSessionCtx(sessionCtx);
       metricsModule.setConfig(cfg);
       discoveryManager = new DiscoveryManager(cfg, cache);
@@ -1288,11 +1291,33 @@ let previousTokenCount = 0;
     get sessionCtx() { return sessionCtx; },
     get cfg() { return cfg; },
     get cache() { return cache; },
-    router,
+    // router/rateLimitManager/cacheManager are all reassigned by load() (F10
+    // cooldown investigation, 2026-09-02) — load() runs on every session_start
+    // AND on every resolve_model_group/update_model_metrics tool call and
+    // /router slash-command invocation. A plain (non-getter) property here
+    // freezes ctx.router to whichever Router instance existed at
+    // buildOrchestratorContext() call time; every later load() call created a
+    // NEW Router (wrapping a NEW, empty RateLimitManager Map) without updating
+    // this ctx — only one of six load()-adjacent reassignment sites explicitly
+    // re-synced streamOrchestrator.ctx.router. The other five left ctx.router
+    // silently orphaned, pointing at a Map disconnected from the live
+    // rateLimitManager. Result: ctx.isLimited(ref) (a closure that reads the
+    // live module-level `rateLimitManager` variable) correctly reported a ref
+    // as cooled down, but ctx.router.limitSecs(ref) read the stale, empty map
+    // and always reported "0s remaining" — logged as the self-contradictory
+    // "skipped, still in cooldown (0s remaining)". Worse, the total-cooldown-
+    // collapse force-retry logic (ranks candidates by ctx.router.limitSecs to
+    // force-retry the LEAST-cooled-down one) couldn't rank anything correctly
+    // against a disconnected map, so it force-retried candidates that were
+    // still genuinely rate-limited — the "running in circles" symptom. Getters
+    // (matching the existing cfg/cache/activeGroup pattern above) make these
+    // three always resolve the CURRENT module-level binding, eliminating the
+    // whole staleness class instead of patching each load() call site.
+    get router() { return router; },
+    get rateLimitManager() { return rateLimitManager; },
+    get cacheManager() { return cacheManager; },
     escalation,
     costTracker,
-    rateLimitManager,
-    cacheManager,
     resolve,
     isLimited,
     clearLimit,
@@ -1966,6 +1991,36 @@ let previousTokenCount = 0;
             // check both so this works across provider families.
             const errObj = (event as any).error;
             const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
+            // A provider/transport can also report a client-side or
+            // cascade-induced abort as free-text inside an `error` event
+            // whose `.reason` is NOT 'aborted' (observed from claude-bridge,
+            // which serializes its own AbortError into errorMessage as "This
+            // operation was aborted" without setting the structured reason
+            // field). Without this check the text falls through to the
+            // providerErrorDetected branch below and gets classified as
+            // reason:'provider_error', which isPaidCloudRateLimitFailure
+            // treats as rate-limit-shaped — applying a 2-hour hard cooldown to
+            // a model that was never actually rate-limited, just caught in
+            // the blast radius of an unrelated crash (F10, 2026-09-02 review:
+            // a subagent fanout crashed Ollama, the cascade aborted an
+            // in-flight pi-claude/claude-sonnet-5 call, and the router locked
+            // Sonnet out of tactical/strategic for 2 hours).
+            if (isAbortLikeText(errorMsg)) {
+              userAborted = true;
+              // Unlike the structured reason:'aborted' case above, this event
+              // does NOT already carry the 'aborted' signal (that's the whole
+              // point — the provider/transport reported it as free text
+              // instead). Normalize it before forwarding so downstream
+              // consumers (pi-ai's own retry/abort handling) see the same
+              // shape they'd get from a structured abort, instead of a raw
+              // error event they might not recognize as a cancellation.
+              proxy.push({
+                ...(event as any),
+                reason: 'aborted',
+                error: { ...(errObj as any), stopReason: 'aborted' },
+              } as any);
+              return 'done';
+            }
             if (isRateLimitText(errorMsg)) {
               rateLimited = true;
               // Try to extract the reset time from the error text. This lets
@@ -2427,16 +2482,44 @@ let previousTokenCount = 0;
         .filter((m) => m.provider === provId);
       if (!provModels.length) continue;
 
-      // Ü1: if Pi already knows ANY of this provider's models, do NOT register.
-      // This protects models.json entries (with compat flags) and
-      // extension-provided providers from being overwritten. The previous
-      // "alreadyRegistered + existingKey" check only protected providers with
-      // a resolvable key; it missed models.json entries using env-var
-      // placeholder keys. "Pi knows it" is the correct, conservative gate.
-      const piKnowsProvider = provModels.some((m) =>
-        Boolean(ctx.modelRegistry.find(provId, m.id))
+      // Ü1: if Pi already knows a model, do NOT re-register it — this
+      // protects models.json entries (with compat flags) and extension-provided
+      // providers from being overwritten. The previous "alreadyRegistered +
+      // existingKey" check only protected providers with a resolvable key; it
+      // missed models.json entries using env-var placeholder keys.
+      //
+      // However: when pi knows the provider, unscored variants that are NOT yet
+      // in pi's registry should still be registered (F4 fix). The Ü1 guard
+      // should skip individual models pi already knows, but register the rest.
+      // This prevents overwriting a pi-managed entry (e.g. mistral-zai/zai-glm-5-2
+      // with its compat flags) while still making scan-discovered variants
+      // (e.g. mistral-zai/glm-5-2 with its gdpval 1497) visible to routing.
+      const modelsPiKnows = new Set(
+        provModels.filter((m) => Boolean(ctx.modelRegistry.find(provId, m.id))).map((m) => m.id)
       );
-      if (piKnowsProvider) continue;
+      if (modelsPiKnows.size === provModels.length) continue; // pi knows ALL — skip entirely
+
+      // Register only the models pi does NOT know yet. If pi knows some but not
+      // all (mixed case), call registerProvider with only the new ones — this
+      // adds them without touching pi's existing entries.
+      const newModels = provModels.filter((m) => !modelsPiKnows.has(m.id));
+      if (!newModels.length) continue;
+
+      // Use the scan-reported cost_per_m instead of unconditionally hardcoding
+      // 0. This is a real improvement for providers whose scan path fetches
+      // verified pricing (e.g. chutes' cost_per_m comes from the provider's own
+      // pricing API) — for "generic direct API provider" scans (mistral,
+      // mistral-zai, etc.) cost_per_m is still 0 either way (that scan path
+      // never fetches real per-token pricing at all; see the F3 note in
+      // src/discovery.ts's getCheapestCloudModels for why cost_per_m===0 there
+      // is a placeholder, not a verified "this is free" signal). So this does
+      // not, by itself, fix billing-tier accuracy for mistral-zai — only for
+      // providers whose scan already carries real pricing.
+      const getCostPerM = (m: { cost_per_m?: number }): number => {
+        if (typeof m.cost_per_m === 'number') return m.cost_per_m;
+        if (cfg.providers?.[provId]?.cost_per_m !== undefined) return cfg.providers[provId].cost_per_m!;
+        return 0;
+      };
 
       try {
         (pi as any).registerProvider(provId, {
@@ -2451,15 +2534,16 @@ let previousTokenCount = 0;
           // it (default false — never claim what we don't know), reasoning only
           // when confirmed, contextWindow/maxTokens only when reported (Pi's
           // own defaults apply otherwise, which are saner than our old 200k/64k).
-          models: provModels.map((m) => {
+          models: newModels.map((m) => {
             const caps = m.capabilities ?? {};
             const input: string[] = caps.vision === true ? ['text', 'image'] : ['text'];
+            const costPerM = getCostPerM(m);
             const entry: Record<string, unknown> = {
               id: m.id,
               name: `${provId}/${m.id}`,
               reasoning: caps.reasoning === true,
               input,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              cost: { input: costPerM, output: costPerM, cacheRead: 0, cacheWrite: 0 },
             };
             if (typeof caps.contextWindow === 'number') entry.contextWindow = caps.contextWindow;
             if (typeof caps.maxTokens === 'number') entry.maxTokens = caps.maxTokens;
