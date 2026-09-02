@@ -18,7 +18,9 @@ The router uses a **modular architecture** with the following components:
 | **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
 | **cache.ts** | Cache management | Persistent caching, versioning |
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
-| **content-classifier.ts** | Content classification | gemma4:12b-mlx primary, gemma2:2b fallback, cloud fallback |
+| **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
+| **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
+| **content-classifier.ts** | Content classification | gemma4:12b-mlx primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 | **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
 | **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |

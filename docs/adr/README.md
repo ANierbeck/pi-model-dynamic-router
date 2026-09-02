@@ -32,3 +32,5 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0001 — Multi-label classification](0001-multi-label-classification.md)
 - [0002 — Learning from user feedback](0002-learning-from-user-feedback.md)
 - [0003 — Reject live subscription-usage-API querying](0003-reject-live-subscription-usage-api.md)
+- [0004 — Use pi's `modelRegistry` for cloud classification fallback](0004-cloud-fallback-via-pi-modelregistry.md)
+- [0005 — `registerProvider` replaces (not merges) — Ü1 guard design](0005-registerprovider-replaces-not-merges.md)
