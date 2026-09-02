@@ -226,8 +226,15 @@ export class StreamOrchestrator {
             if (i === -1) return undefined;
             return registry.find(ref.slice(0, i), ref.slice(i + 1));
           },
-          completeSimple: (model: any, ctx: any, options: any) =>
-            this.ctx.sessionCtx?.modelRegistry?.completeSimple?.(model, ctx, options),
+          completeSimple: (model: any, ctx: any, options: any) => {
+            // completeSimple is on the private ModelRuntime (registry.runtime),
+            // not the public ModelRegistry facade — same reach-through pattern
+            // hostStreamSimple uses for streamSimple (index.ts:1635). The
+            // pinned harness (pi-coding-agent@0.83.0) exposes neither method
+            // on the facade itself.
+            const registry = this.ctx.sessionCtx?.modelRegistry as any;
+            return registry?.runtime?.completeSimple?.(model, ctx, options);
+          },
           context: {
             lastAssistantSnippet,
             previousUserMessage,
@@ -545,7 +552,16 @@ export class StreamOrchestrator {
 
           // Try larger-context models first before giving up.
           if (largerCandidates.length > 0) {
-            const tried = [...candidates.slice(0, i + 1), ...largerCandidates];
+            // Record the overflow as a soft failure so cooldown excludes this
+            // model from the retry pass — guarding against unbounded recursion
+            // when the error text is unparseable (errInfo === null) and the
+            // registry update didn't happen. Every other failure branch calls
+            // recordSoftFailure; this branch must too.
+            ctx.recordSoftFailure(ref);
+            // Don't re-include the overflowing model: it's already known too
+            // small (parseable) or on cooldown (unparseable). Slicing past i
+            // + the larger candidates avoids retrying the same overflow.
+            const tried = [...largerCandidates];
             const label2 = label ? `${label} (context overflow → trying larger)` : `${groupName ?? ref} (context overflow → trying larger)`;
             pushRouterInfoLogged(
               proxy,
