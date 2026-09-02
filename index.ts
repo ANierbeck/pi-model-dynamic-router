@@ -2495,38 +2495,13 @@ let previousTokenCount = 0;
       // with its compat flags) while still making scan-discovered variants
       // (e.g. mistral-zai/glm-5-2 with its gdpval 1497) visible to routing.
       //
-      // Cache the find() results in a Map keyed by model id (roborev job 429
-      // LOW): modelsPiKnows AND existingModels below both need the resolved
-      // Model object, and calling find() twice per known model is redundant
-      // work. The Map is built once and reused for both the set-membership
-      // check and the round-trip lookup.
-      const piKnownByModel = new Map<string, any>();
-      for (const m of provModels) {
-        const found = ctx.modelRegistry.find(provId, m.id);
-        if (found) piKnownByModel.set(m.id, found);
-      }
-      if (piKnownByModel.size === provModels.length) continue; // pi knows ALL — skip entirely
-
-      // Register only the models pi does NOT know yet.
-      const newModels = provModels.filter((m) => !piKnownByModel.has(m.id));
-      if (!newModels.length) continue;
-
-      // Use the scan-reported cost_per_m instead of unconditionally hardcoding
-      // 0. This is a real improvement for providers whose scan path fetches
-      // verified pricing (e.g. chutes' cost_per_m comes from the provider's own
-      // pricing API) — for "generic direct API provider" scans (mistral,
-      // mistral-zai, etc.) cost_per_m is still 0 either way (that scan path
-      // never fetches real per-token pricing at all; see the F3 note in
-      // src/discovery.ts's getCheapestCloudModels for why cost_per_m===0 there
-      // is a placeholder, not a verified "this is free" signal). So this does
-      // not, by itself, fix billing-tier accuracy for mistral-zai — only for
-      // providers whose scan already carries real pricing.
-      const getCostPerM = (m: { cost_per_m?: number }): number => {
-        if (typeof m.cost_per_m === 'number') return m.cost_per_m;
-        if (cfg.providers?.[provId]?.cost_per_m !== undefined) return cfg.providers[provId].cost_per_m!;
-        return 0;
-      };
-
+      // The entire per-provider body (the find() loop, the existingModels
+      // construction, and the registerProvider call) is wrapped in ONE
+      // try/catch below so a throw for any single provider — including a
+      // throwing modelRegistry.find() (roborev job 432 MEDIUM on an earlier
+      // version that left the find() loop outside the try) — only `continue`s
+      // to the next provider, not aborts the whole PROVIDER_MAP iteration.
+      //
       // pi.registerProvider's `models` field REPLACES the provider's entire
       // model list — it is NOT a merge (confirmed against
       // node_modules/@earendil-works/pi-coding-agent/docs/custom-provider.md:
@@ -2546,11 +2521,40 @@ let previousTokenCount = 0;
       // maxTokens, headers, compat) — pi's Model interface also carries a
       // `provider` field that ProviderModelConfig doesn't declare, so spread
       // the whole object less and pick the known-safe fields instead.
+      //
+      // Use the scan-reported cost_per_m instead of unconditionally hardcoding
+      // 0. This is a real improvement for providers whose scan path fetches
+      // verified pricing (e.g. chutes' cost_per_m comes from the provider's own
+      // pricing API) — for "generic direct API provider" scans (mistral,
+      // mistral-zai, etc.) cost_per_m is still 0 either way (that scan path
+      // never fetches real per-token pricing at all; see the F3 note in
+      // src/discovery.ts's getCheapestCloudModels for why cost_per_m===0 there
+      // is a placeholder, not a verified "this is free" signal). So this does
+      // not, by itself, fix billing-tier accuracy for mistral-zai — only for
+      // providers whose scan already carries real pricing.
       try {
-        // Build the round-tripped entries from the cached find() results
-        // (roborev job 429 LOW: no redundant find calls; roborev job 429
-        // MEDIUM: this lives inside the try so a throw for any single
-        // provider only skips that provider, not the whole loop).
+        // Cache the find() results in a Map keyed by model id (roborev job 429
+        // LOW): the size check AND existingModels below both need the resolved
+        // Model object, and calling find() twice per known model is redundant
+        // work. The Map is built once and reused for both the set-membership
+        // check and the round-trip lookup.
+        const piKnownByModel = new Map<string, any>();
+        for (const m of provModels) {
+          const found = ctx.modelRegistry.find(provId, m.id);
+          if (found) piKnownByModel.set(m.id, found);
+        }
+        if (piKnownByModel.size === provModels.length) continue; // pi knows ALL — skip entirely
+
+        // Register only the models pi does NOT know yet.
+        const newModels = provModels.filter((m) => !piKnownByModel.has(m.id));
+        if (!newModels.length) continue;
+
+        const getCostPerM = (m: { cost_per_m?: number }): number => {
+          if (typeof m.cost_per_m === 'number') return m.cost_per_m;
+          if (cfg.providers?.[provId]?.cost_per_m !== undefined) return cfg.providers[provId].cost_per_m!;
+          return 0;
+        };
+
         const existingModels = provModels
           .filter((m) => piKnownByModel.has(m.id))
           .map((m) => piKnownByModel.get(m.id))
