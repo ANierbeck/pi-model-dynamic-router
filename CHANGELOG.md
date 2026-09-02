@@ -94,8 +94,34 @@
   at fallback time — no re-probing per classification, and broken candidates
   (like `mistral-zai/mistral-small-latest` which 422s) are filtered out once
   per scan cycle. The hardcoded `CURATED_FREE_MODELS` constant is removed;
-  `getCheapestCloudModels()` is kept for backward compat but the classifier
-  no longer relies on it as the primary path.
+  `getCheapestCloudModels()` is deleted (dead code: no production callers
+  after the probe-based path; its pricing-lookup logic is covered by
+  `test/classifier-fallback-probe.test.ts`).
+- **Architecture-audit fixes (F2/F5/F6/F7/F8/F11) from the 2026-09-02
+  review.** All 11 findings (F1-F11) are now resolved or documented:
+  - **F8** — `isScanCacheValid()` now rejects a fresh-but-EMPTY cache (0
+    available_models) and forces a rescan. Previously an empty cache with a
+    fresh `lastScanTimestamp` passed the 30-day check, so neither the empty
+    repo-root `.cache` nor the populated `dist/.cache` triggered a rescan —
+    tests/dev ran against zero models/scores/prices. (Also resolves **F2**.)
+  - **F5** — `applyEscalationLogic` now runs on the hard-coded `{ category:
+    'fallback' }` return path too (the `allowStaticFallback=false` branch),
+    so when Ollama is down AND the cloud fallback fails, the last model's
+    tier still triggers a bump when the task complexity warrants it.
+  - **F6** — `detectHintDirectly`'s regex now accepts an optional colon
+    (`HINT use mistral-zai/glm-5-2 …` works, no colon needed). False-
+    positive guard: require either a colon OR a group-verb after HINT.
+  - **F11** — `stripProvider()` now consults pi's registered provider IDs
+    (`setPiRegisteredProviders` in `src/metrics.ts`) in addition to
+    `PROVIDER_MAP` and `cfg.providers`. `index.ts` publishes
+    `getRegisteredProviderIds()` at `session_start` and after
+    `registerGroupModels`. pi-registered providers like `pi-claude`,
+    `claude-bridge`, and extension providers are now recognized — GDPval/price
+    inference resolves their model ids.
+  - **F7** — `getCheapestCloudModels` deleted (dead code; moot). See the
+    probe-based discovery above.
+  Regression tests: `test/audit-fixes-2026-09-02.test.ts` (F8 + F11 cases)
+  and `test/hint-classification.test.ts` (F6 cases).
 - **Cloud classification fallback actually works now (uses pi's `modelRegistry`).**
   The cloud fallback existed since v1.2 but never worked: it rolled its own
   HTTP client (`src/cloud-client.ts`) that read API keys from
