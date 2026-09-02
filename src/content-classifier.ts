@@ -265,7 +265,15 @@ const GROUP_VERB_PREFIX = /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe|benu
  * group-keyword as a model name.
  */
 export function detectHintDirectly(prompt: string): HintClassificationResult | null {
-  const match = prompt.match(/^\s*HINT\s*:\s*(.+)/i);
+  // F6 (2026-09-02): the colon is OPTIONAL — a user typing "HINT use
+  // mistral-zai/glm-5-2 Please proceed…" (no colon) should still be
+  // recognized. To guard against false positives (the word "hint" in
+  // natural prose like "can I get a hint about…"), we require one of:
+  //   - a colon after HINT (the explicit form: "HINT: ..."), OR
+  //   - a group-verb (use/nutze/verwende/benutze) immediately after HINT
+  //     (the "HINT use <model>" form).
+  // Bare "HINT <something>" without either is too ambiguous with prose.
+  const match = prompt.match(/^\s*HINT\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?|gruppe)\b))\s*:?\s+(.+)/i);
   if (!match) return null;
   const instruction = match[1].trim();
 
@@ -597,7 +605,24 @@ export async function classifyPrompt(
   // Static fallback
   if (!allowStaticFallback) {
     routerLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    return { category: 'fallback', reason: 'Ollama unavailable, static classifier disabled', confidence: 0 };
+    // F5 (2026-09-02): apply escalation to the hard-coded fallback too.
+    // Previously this returned `{ category:'fallback' }` directly, skipping
+    // applyEscalationLogic — so a user on a cheap model who asked a complex
+    // question while Ollama was down got `fallback→tactical`, but tactical's
+    // intent (escalate to a capable model) was never enforced. Now we build
+    // a fallback result and run it through the same escalation path as a
+    // successful classification, so the last model's tier still triggers a
+    // bump when the task complexity warrants it.
+    const fallbackResult: FullClassificationResult = {
+      category: 'fallback',
+      reason: 'Ollama unavailable, static classifier disabled',
+      confidence: 0,
+    };
+    if (context.lastModel && !context.isCompaction) {
+      const escalated = applyEscalationLogic(fallbackResult, context.lastModel);
+      if (escalated) return escalated;
+    }
+    return fallbackResult;
   }
 
   routerLog('[classifier] Ollama and cloud models failed, falling back to static classification');

@@ -33,7 +33,7 @@ import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
-import { lookupGdp } from './src/metrics.ts';
+import { lookupGdp, setPiRegisteredProviders } from './src/metrics.ts';
 import { estimateOllamaModelsGdpvalAsSlugs } from './src/ollama-gdpval.ts';
 import { buildOllamaProviderModels } from './src/ollama-context.ts';
 import { checkScanSanity } from './src/scan-sanity.ts';
@@ -1385,6 +1385,13 @@ let previousTokenCount = 0;
       const providerIds = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
       routerLog(`[diag] pi-ai resolved from: ${piAiPath}`);
       routerLog(`[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`);
+      // F11 (2026-09-02): publish pi's registered provider IDs to the metrics
+      // module so stripProvider() recognizes pi-managed providers (pi-claude,
+      // claude-bridge, extension providers) the router has no static
+      // PROVIDER_MAP entry for. Without this, stripProvider leaves the full
+      // 'pi-claude/claude-sonnet-5' ref intact and GDPval/price inference
+      // never resolves the model id.
+      setPiRegisteredProviders(providerIds);
     } catch (e) {
       routerLog('[diag] version diagnostics failed:', e);
     }
@@ -2678,6 +2685,18 @@ let previousTokenCount = 0;
       }
     } catch (e) {
       routerLog('[router] Ollama registration failed:', e);
+    }
+
+    // F11 (2026-09-02): refresh the metrics module's view of pi's registered
+    // providers after registration. registerGroupModels may have added new
+    // providers via pi.registerProvider (e.g. mistral-zai, chutes) that
+    // weren't in getRegisteredProviderIds() at session_start — stripProvider
+    // needs to recognize them too.
+    try {
+      const ids = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
+      setPiRegisteredProviders(ids);
+    } catch {
+      /* registry may not expose getRegisteredProviderIds — leave the existing set */
     }
 
     // Re-register group providers with updated resolution info

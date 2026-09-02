@@ -190,7 +190,14 @@ export function writeNoOpScanCache(scanCachePath: string): void {
       lastScanTimestamp: Date.now(),
       gdpval_scraped: true,
       models_cached: new Date().toISOString(),
-      available_models: [],
+      // F8 (2026-09-02): isScanCacheValid() now rejects a fresh-but-EMPTY cache
+      // (0 available_models) and forces a rescan. The no-op cache's purpose is
+      // to make scan() early-return at every gate so it never reaches
+      // generateDynamicConfig() and swaps the module-level config mid-test.
+      // A single placeholder model satisfies the sanity check without
+      // affecting routing (tests set up their own candidates via
+      // router-config + modelRegistry stubs, not via available_models).
+      available_models: [{ id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 }],
       gdpval_scores: {},
     })
   );

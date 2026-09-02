@@ -19,11 +19,9 @@ import { PROVIDER_MAP } from './providers.ts';
 //   2. probeAndCache() pings each candidate at scan time and caches the
 //      verified-working ones in cache.classifier_fallback_models.
 //   3. The classifier reads that cached list at fallback time.
-// getCheapestCloudModels() below is kept for backward compatibility (other
-// call sites / tests) but the classifier no longer relies on it as the
-// primary path.
-
-import { lookupPrice } from './metrics.ts';
+// getCheapestCloudModels() was also removed (dead code: no production callers
+// after the classifier moved to the probe-based path). Its pricing-lookup
+// logic is now covered by test/classifier-fallback-probe.test.ts.
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -387,83 +385,6 @@ export class DiscoveryManager {
    */
   hasFreeModels(): boolean {
     return this.getFreeModels().length > 0;
-  }
-
-  // ── Cheapest Cloud Model Discovery ─────────────────────────────────────
-
-  /**
-   * Returns the cheapest cloud models for classification fallback, discovered
-   * dynamically from all scanned providers. Unlike getFreeModels() (which only
-   * returns the hardcoded free_models list), this discovers models from
-   * cache.available_models + free_models, filters out local providers, looks
-   * up real pricing, and returns the cheapest ones.
-   *
-   * This works for ANY user out-of-the-box: whatever providers they have keys
-   * for, the scan discovers models and pricing, and this function finds the
-   * cheapest capable ones.
-   *
-   * @param maxPricePerM  Maximum output price per million tokens (default $5/M
-   *                      — cheap enough for a <100-token classification prompt)
-   * @param maxResults    Maximum number of models to return (default 5 — enough
-   *                      to have fallbacks if the cheapest one is rate-limited)
-   * @returns Array of model refs sorted by output price ascending
-   */
-  getCheapestCloudModels(maxPricePerM = 5, maxResults = 5): string[] {
-    const candidates = new Set<string>();
-
-    // 1. Discovered models from scan (cache.available_models)
-    for (const m of this.cache.available_models ?? []) {
-      const ref = `${m.provider}/${m.id}`;
-      // Skip local providers — those are the primary classifier path, not fallback
-      if (ref.startsWith('ollama/') || ref.startsWith('lm-studio/')) continue;
-      candidates.add(ref);
-    }
-
-    // 2. Also include free_models from config (may not be in scanned cache)
-    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
-      // Only include if provider has keys (user can actually use these models)
-      if (provConfig.free_models && provConfig.free_models.length > 0 && provConfig.keys?.length) {
-        for (const fm of provConfig.free_models) {
-          if (fm.startsWith('ollama/') || fm.startsWith('lm-studio/')) continue;
-          candidates.add(fm);
-        }
-      }
-    }
-
-    // 3. Filter by price: must have known output price ≤ threshold.
-    //
-    // F3 note (2026-09-02): cost_per_m is only a REAL, API-verified price
-    // signal for chutes and openrouter. For generic direct-API providers
-    // (mistral, mistral-zai, anthropic, … matched via modelsUrl+authHeader in
-    // PROVIDER_MAP), cost_per_m is HARDCODED to 0 unconditionally — the scan
-    // never fetches real per-token pricing for those providers. So cost_per_m===0
-    // there means "we never checked", not "this is free".
-    //
-    // This function therefore only returns models with REAL OpenRouter/chutes
-    // pricing ≤ the threshold — it cannot see the genuinely-free mistral-zai
-    // models. The classifier's cloud fallback no longer relies on this
-    // function; see src/classifier-fallback-probe.ts (selectClassifierCandidates
-    // + probeAndCache) for the probe-based discovery that handles Tier C
-    // (placeholder-$0) providers by actually probing them.
-    const priced: { ref: string; output: number }[] = [];
-    for (const ref of candidates) {
-      const price = lookupPrice(ref);
-      if (!price) continue;
-      if (price.output === 'unknown') continue;
-      if (price.output <= maxPricePerM) {
-        priced.push({ ref, output: price.output });
-      }
-    }
-
-    // 4. Sort by output price ascending (cheapest first)
-    priced.sort((a, b) => a.output - b.output);
-    return priced.slice(0, maxResults).map((p) => p.ref);
-    // NOTE: the curated-free-model prepending that used to be Step 5 has been
-    // removed — it was a hardcoded list that only worked for one user. The
-    // probe-based discovery in src/classifier-fallback-probe.ts replaces it:
-    // selectClassifierCandidates() tiers by price + gdpval, and probeAndCache()
-    // filters out broken candidates at scan time. This function is kept for
-    // backward compatibility but the classifier no longer relies on it.
   }
 
   // ── Getter ─────────────────────────────────────────────────────────────

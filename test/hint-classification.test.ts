@@ -29,6 +29,40 @@ describe('detectHintDirectly()', () => {
     expect(detectHintDirectly('HINT:  ')).toBeNull();
   });
 
+  // F6 (2026-09-02): the colon is OPTIONAL. A user typing "HINT use
+  // mistral-zai/glm-5-2 Please proceed…" (no colon) should still be
+  // recognized. The guard against false positives is that HINT must be a
+  // standalone token at the start (the word "hint" in natural prose like
+  // "can I get a hint about…" must NOT match).
+  describe('colon-optional (F6)', () => {
+    it('recognizes HINT without a colon', () => {
+      const r = detectHintDirectly('HINT use mistral-zai/glm-5-2 Please proceed');
+      expect(r).not.toBeNull();
+      expect(r?.hintType).toBe('model');
+      expect(r?.hintTarget).toBe('mistral-zai/glm-5-2');
+    });
+
+    it('still recognizes HINT with a colon (unchanged)', () => {
+      const r = detectHintDirectly('HINT: use mistral-medium-3.5');
+      expect(r).not.toBeNull();
+      expect(r?.hintType).toBe('model');
+      expect(r?.hintTarget).toBe('mistral-medium-3.5');
+    });
+
+    it('does NOT match the word "hint" in natural prose (false-positive guard)', () => {
+      expect(detectHintDirectly('can I get a hint about this code?')).toBeNull();
+      expect(detectHintDirectly('hint me on this one')).toBeNull();
+      expect(detectHintDirectly('a hint: the bug is in the parser')).toBeNull();
+    });
+
+    it('recognizes group hints without a colon too', () => {
+      const r = detectHintDirectly('HINT use group tactical');
+      expect(r).not.toBeNull();
+      expect(r?.hintType).toBe('group');
+      expect(r?.hintTarget).toBe('tactical');
+    });
+  });
+
   describe('model hints', () => {
     it('detects bare model name', () => {
       const r = detectHintDirectly('HINT: mistral-medium-3.5');
