@@ -109,17 +109,26 @@ export function setModelMap(map: ModelMap, wildcards: [string, string | null][])
 
 /**
  * Strip provider prefix from ref: "chutes/deepseek-ai/DeepSeek-V3" → "deepseek-ai/DeepSeek-V3".
- * Only strips a KNOWN provider prefix (PROVIDER_MAP or cfg.providers) — an
- * unrecognized first segment is left alone, since it might be part of the
- * model id itself rather than a provider. This is the only implementation;
- * a second, unconditional-strip copy in utils.ts was dead code (imported
- * nowhere) and has been removed.
+ * Only strips a KNOWN provider prefix — an unrecognized first segment is left
+ * alone, since it might be part of the model id itself rather than a provider.
+ * A provider is "known" if it is in:
+ *   1. PROVIDER_MAP (the router's static provider definitions), OR
+ *   2. cfg.providers (user config), OR
+ *   3. piRegisteredProviders (pi's own modelRegistry — F11, 2026-09-02).
+ * The third source is what makes pi-registered providers like 'pi-claude',
+ * 'claude-bridge', and extension providers work: without it, stripProvider
+ * would leave 'pi-claude/claude-sonnet-5' intact and GDPval/price inference
+ * would never resolve the model id.
+ * This is the only implementation; a second, unconditional-strip copy in
+ * utils.ts was dead code (imported nowhere) and has been removed.
  */
 export function stripProvider(ref: string): string {
   const i = ref.indexOf('/');
   if (i === -1) return ref;
   const prov = ref.slice(0, i);
-  if (PROVIDER_MAP[prov] || cfg.providers?.[prov]) return ref.slice(i + 1);
+  if (PROVIDER_MAP[prov] || cfg.providers?.[prov] || piRegisteredProviders.has(prov)) {
+    return ref.slice(i + 1);
+  }
   return ref;
 }
 
@@ -274,6 +283,35 @@ export function lookupGdp(id: string): number | null {
 let metrics: Record<string, Metrics> = {};
 let cfg: Config = { model_groups: {}, model_metrics: {}, providers: {} };
 let cache: Cache = {};
+
+/**
+ * Provider IDs that pi's own modelRegistry has registered (e.g. 'pi-claude',
+ * 'claude-bridge', 'ollama', 'lm-studio', plus anything an extension
+ * registers). Populated by index.ts from
+ * `sessionCtx.modelRegistry.getRegisteredProviderIds()` so the router
+ * recognizes pi-registered providers it has no static PROVIDER_MAP entry for
+ * (F11, 2026-09-02). Without this, stripProvider() leaves the full
+ * 'pi-claude/claude-sonnet-5' ref intact because 'pi-claude' is neither in
+ * PROVIDER_MAP nor cfg.providers — breaking GDPval/price inference for
+ * every pi-registered provider.
+ */
+let piRegisteredProviders: Set<string> = new Set();
+
+/**
+ * Reports the set of provider IDs pi's modelRegistry has registered, so
+ * stripProvider() and other lookups can recognize pi-managed providers
+ * (F11). Call this from index.ts after `session_start` once
+ * `getRegisteredProviderIds()` is available, and again after any
+ * `registerProvider` call that adds a new provider.
+ */
+export function setPiRegisteredProviders(ids: Iterable<string>): void {
+  piRegisteredProviders = new Set(ids);
+}
+
+/** For tests: read back the registered-provider set. */
+export function getPiRegisteredProviders(): Set<string> {
+  return piRegisteredProviders;
+}
 
 /**
  * Sets the configuration

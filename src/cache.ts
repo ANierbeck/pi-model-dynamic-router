@@ -67,17 +67,34 @@ export class CacheManager {
   }
 
   /**
-   * Checks whether the cache is still valid (max. 30 days old)
+   * Checks whether the cache is still valid (max. 30 days old).
+   *
+   * Also rejects a cache that is timestamp-fresh but EMPTY (0 available
+   * models) — this was F8 in the 2026-09-02 architecture review: the
+   * repo-root `.cache/scan-cache.json` had a fresh `lastScanTimestamp` but
+   * `available_models: 0`, `gdpval_scores: 0`, `openrouter_pricing: 0`.
+   * Both the empty cache and the populated dist cache passed the 30-day
+   * freshness check, so neither triggered a rescan — tests/dev ran against
+   * zero models. An empty-but-fresh cache is almost certainly a write
+   * failure or a partial cache; force a rescan so the next scan repopulates
+   * it rather than silently serving nothing.
    */
   isScanCacheValid(): boolean {
     const lastScan = this.cache.lastScanTimestamp;
     if (lastScan === undefined) return false;
-    
+
     const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
     const now = Date.now();
     const diff = now - lastScan;
     // Check lower bound: diff >= 0 (no future timestamps) and < 30 days
-    return diff >= 0 && diff < thirtyDaysInMs;
+    if (!(diff >= 0 && diff < thirtyDaysInMs)) return false;
+
+    // Sanity check (F8): a fresh timestamp with zero models means the cache
+    // is useless — force a rescan so we don't serve an empty cache forever.
+    const modelCount = this.cache.available_models?.length ?? 0;
+    if (modelCount === 0) return false;
+
+    return true;
   }
 
   /**
