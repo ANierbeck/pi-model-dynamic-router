@@ -1,5 +1,89 @@
 # Changelog
 
+## [Unreleased] — Cloud fallback via pi's modelRegistry, stream-orchestrator extraction, stale-ctx.router fix
+
+### Fixed
+- **Stale `ctx.router` caused "running in circles" on total-cooldown-collapse.**
+  `buildOrchestratorContext()` captured `router`, `rateLimitManager`, and
+  `cacheManager` as plain properties frozen at `StreamOrchestrator` construction
+  time, while `load()` reassigns all three on every `session_start` and tool
+  invocation (6 call sites; only 1 explicitly re-synced). This orphaned
+  `ctx.router` permanently — `ctx.isLimited()` (live closure) correctly
+  reported models as rate-limited, but `ctx.router.limitSecs()` read a stale
+  disconnected Map and always returned 0, producing the self-contradictory
+  "still in cooldown (0s remaining)" log and breaking the total-cooldown-
+  collapse force-retry logic (couldn't rank candidates by real cooldown →
+  re-trying genuinely-limited models in a loop). Fix: `router`,
+  `rateLimitManager`, `cacheManager` are now live getters in
+  `buildOrchestratorContext()`, matching the existing `cfg`/`cache`/
+  `activeGroup` pattern. Regression test:
+  `test/orchestrator-router-context-freshness.test.ts`.
+- **F1: 7 classifier log lines printed `${model}` literally.**
+  `content-classifier.ts` used single quotes where backticks were intended in
+  7 `routerLog(...)` calls, so `${model}`, `${fallbackModel}`, `${modelRef}`
+  printed as literal text instead of the actual values — making the
+  cloud-fallback logs untriageable. Fixed: all 7 now use backtick template
+  literals.
+- **F4: scored GLM-5.2 variant invisible to routing.** pi's `models.json`
+  registers `mistral-zai` with exactly one model, `zai-glm-5-2`, carrying
+  user-curated compat flags. The Ü1 guard in `registerGroupModels`
+  (correctly) refused to overwrite a provider pi already knows — but as a
+  side effect it never registered the other scan-discovered `mistral-zai`
+  models, including `mistral-zai/glm-5-2` (the variant whose slug `glm-5-2`
+  has gdpval 1497.55). The registered `zai-glm-5-2` has slug `zai-glm-5-2`
+  which is unscored → fails `tactical`'s `min_gdpval: 600` → never a
+  candidate. Fix: Ü1 guard now checks models individually — if pi knows ALL
+  → skip; if pi knows SOME → register only the new ones, preserving pi's
+  existing entries. Regression test:
+  `test/register-group-models-merge-not-replace.test.ts`.
+- **F10: cascade-induced aborts locked out pi-claude for 2 hours.**
+  `isRateLimitLikeReason('provider_error')` returned true, so when a cascade
+  (e.g. Ollama crash) aborted an in-flight `pi-claude/claude-sonnet-5` call,
+  the abort was misclassified as a paid-cloud rate-limit failure and
+  `pi-claude` got a 2-hour hard cooldown — even though no rate limit was
+  actually hit. This is why the router "still goes for minimax-m2.7:free"
+  after a restart: Sonnet was locked out by a false positive. Fix:
+  `provider_error` removed from `isRateLimitLikeReason` (now only
+  `empty_response`, `empty_timeout`, `stall_timeout` remain as rate-limit-
+  shaped); `provider_error` goes through `recordSoftFailure` (short ~1min
+  cooldown) instead of `recordLimit` (2h hard cooldown). Additionally,
+  `isAbortLikeText()` was added to `detection.ts` to catch free-text abort
+  signals ("This operation was aborted") inside generic error events
+  without structured `reason:'aborted'` — routing them through the
+  non-escalating abort path. Regression tests:
+  `test/abort-text-not-rate-limit.test.ts`,
+  `test/abort-not-provider-error.test.ts`.
+
+### Changed
+- **Cloud classification fallback now uses pi's `modelRegistry` (not a custom
+  HTTP client).** The classifier's cloud fallback previously rolled its own
+  HTTP client (`src/cloud-client.ts`) that read API keys from
+  `router-config.json` — but the user's OpenRouter key lives in pi's
+  `~/.pi/agent/auth.json`, so the fallback always failed with "No API key for
+  provider: openrouter". `CloudClient` is deleted; the fallback now uses pi's
+  `modelRegistry.completeSimple()` + `registry.find()`, which authenticate
+  through pi's own auth (the same path every other request uses). See ADR
+  0004. `getCheapestCloudModels()` (in `src/discovery.ts`) dynamically
+  discovers the cheapest cloud models for the fallback instead of a
+  hard-coded list.
+- **`registerGroupModels` registers the UNION of known+new models, not
+  just the new ones.** `pi.registerProvider()`'s `models` field REPLACES
+  (not merges) the provider's entire model list. The first version of the
+  F4 fix passed only `newModels` to `registerProvider` in the mixed case (pi
+  knows some but not all models), which would silently DELETE pi's existing
+  model registrations including compat flags — exactly the destructive
+  overwrite Ü1 was meant to prevent (roborev job 426 HIGH). Fix: round-trip
+  pi's own already-known Model objects (preserving compat flags byte-for-
+  byte) and pass the UNION of those plus the new models. See ADR 0005.
+
+### Refactored
+- **`stream-orchestrator.ts` extracted from `index.ts`.** `groupStream`
+  (~430 lines) and `driveStream` (~950 lines) moved out of `index.ts` into
+  `src/stream-orchestrator.ts` (687 lines), accessed via a
+  `buildOrchestratorContext()` factory that exposes live getters for
+  `router`/`rateLimitManager`/`cacheManager` (the stale-property bug above
+  was found and fixed during this extraction).
+
 ## [1.5.0] — 2026-08-28 — Ollama crash prevention, free-model registration, classification caching
 
 ### Fixed

@@ -94,7 +94,7 @@ original "Unknown error" symptom.
     dynamic group config explicitly sets `classifier_cloud_fallback: true` (data-minimization —
     sends raw prompt text externally, so it must not be silently on for anyone with a `free_models`
     provider configured)
-  - Uses `CloudClient.callModel()` for cloud classification
+  - Uses pi's `modelRegistry.completeSimple()` for cloud classification (via `getCheapestCloudModels()` in `src/discovery.ts`, which dynamically discovers the cheapest cloud models). The previous custom HTTP client (`src/cloud-client.ts`) was removed — see ADR 0004.
 
 - [x] **Static classification as ultimate fallback**
   - `classifyStatically(prompt: string): ClassificationResult`

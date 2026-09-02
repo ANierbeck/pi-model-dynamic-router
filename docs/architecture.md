@@ -70,6 +70,71 @@ that had drifted into `utils.ts` as an unused third copy.
 between `hasModelBudget` (index.ts) and `filterByBudget` (routing.ts); both
 now delegate here.
 
+### `src/stream-orchestrator.ts` — Stream orchestration (extracted from index.ts)
+
+`groupStream` (~430 lines) and `driveStream` (~950 lines) were moved out of
+`index.ts` into this module. The orchestrator is constructed via
+`buildOrchestratorContext()`, a factory that exposes **live getters** for
+`router`, `rateLimitManager`, and `cacheManager` — not plain properties.
+
+- **Why live getters (not plain properties):** `load()` reassigns all three
+  on every `session_start` and tool invocation (6 call sites). A plain
+  property captured at `StreamOrchestrator` construction time would be
+  orphaned after the first `load()` — `ctx.isLimited()` (live closure) would
+  correctly report models as rate-limited, but `ctx.router.limitSecs()`
+  would read a stale disconnected Map and always return 0, producing the
+  self-contradictory "still in cooldown (0s remaining)" log and breaking the
+  total-cooldown-collapse force-retry logic (couldn't rank candidates by
+  real cooldown → re-trying genuinely-limited models in a loop). This was
+  a live bug (2026-09-02, "running in circles"); fixed by converting to
+  live getters matching the existing `cfg`/`cache`/`activeGroup` pattern.
+- **Per-provider error isolation in `registerGroupModels`:** the whole
+  per-provider body (the `find()` loop, `existingModels` construction, and
+  `registerProvider` call) is wrapped in one try/catch so a throw for any
+  single provider only skips that provider, not the whole `PROVIDER_MAP`
+  iteration. The Ü1 guard checks models individually: if pi knows ALL →
+  skip; if pi knows SOME → register only the new ones, round-tripping pi's
+  existing entries (compat flags included) so `registerProvider`'s
+  replace-semantics don't delete them. See ADR 0005.
+
+### `src/detection.ts` — Error event detection (single source of truth)
+
+Exports the unified text-pattern detection for stream error events:
+
+- `isRateLimitText(text)` — rate-limit detection for `consumeWithDetection`
+- `isOverflowErrorText(text)` / `isOverflowDeltaText(text)` — context-
+  window overflow (broad for error events, narrow for assistant prose)
+- `isRateLimitLikeReason(reason)` — structured-reason gate for the paid-
+  cloud escalation path. `provider_error` is intentionally NOT in this set
+  (it's too generic — covers cascade aborts, network errors, AND real rate
+  limits). Only `empty_response`, `empty_timeout`, `stall_timeout` remain
+  as rate-limit-shaped.
+- `isAbortLikeText(text)` — catches free-text abort signals ("This
+  operation was aborted") inside generic error events without structured
+  `reason:'aborted'`, routing them through the non-escalating abort path
+  instead of a 2-hour hard cooldown. This was the root cause of
+  `pi-claude/claude-sonnet-5` being locked out after a cascade abort
+  (roborev finding F10, 2026-09-02): the abort text was misclassified as a
+  paid-cloud rate-limit failure.
+- `parseResetAtMs(text)` — parses "resets ..." wall-clock reset times.
+
+Previously `index.ts` had `isRateLimitText` (15 patterns) AND
+`isRateLimitError` (7 patterns, dead code) — divergent. Consolidated here;
+`index.ts` imports the unified functions.
+
+### `src/discovery.ts` — `getCheapestCloudModels()`
+
+`getCheapestCloudModels()` dynamically discovers the cheapest cloud models
+for the classifier's cloud fallback (when `classifier_cloud_fallback: true`
+is set on the `dynamic` group). It filters by `lookupPrice(ref)` and requires
+`price.output <= $5/M`. **Known limitation (finding F3, 2026-09-02):**
+subscription models (`mistral-zai/*`, including the user's free-to-them
+GLM-5.2) have no pricing data in the OpenRouter pricing cache → `lookupPrice`
+returns `null` → they are filtered out. The classifier's cloud fallback
+therefore never tries `mistral-zai/glm-5-2`, only free OpenRouter models. A
+correct fix needs real per-token pricing data, not a bigger scope; documented
+inline in `src/discovery.ts`.
+
 ### `src/exclude.ts` — Personalized support/no-support list
 
 - `isExcluded(ref, ctx)` — checks provider, model-pattern (glob), and
@@ -123,6 +188,15 @@ delegates.
   `utils.ts` versions rather than delegates (unlike `getM`/`effCost`/
   `lookupPrice`/etc., which already delegated correctly) → now imported from
   `utils.ts` instead.
+- **2026-09-02**: `groupStream` (~430 lines) and `driveStream` (~950 lines)
+  extracted from `index.ts` into `src/stream-orchestrator.ts`, accessed via
+  `buildOrchestratorContext()` (live getters for `router`/
+  `rateLimitManager`/`cacheManager`). `isRateLimitText`/`isRateLimitError`
+  (divergent, the latter dead code) in `index.ts` consolidated into
+  `src/detection.ts` (`isRateLimitText`, `isRateLimitLikeReason`,
+  `isAbortLikeText`, `parseResetAtMs`). Custom HTTP client `src/cloud-client.ts`
+  deleted; classifier cloud fallback now uses pi's `modelRegistry.completeSimple`
+  (see ADR 0004).
 
 ## Testing
 
