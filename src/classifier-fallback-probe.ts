@@ -42,7 +42,7 @@
 
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
-import { isUnhealthy } from './model-health.ts';
+import { isUnhealthy, recordModelFailure } from './model-health.ts';
 
 /** Max output price ($/M tokens) for a classification-fallback candidate. */
 const MAX_OUTPUT_PRICE_PER_M = 5;
@@ -247,12 +247,17 @@ export async function probeAndCache(
           log(`[classifier-probe] ${ref} OK`);
         } else {
           log(`[classifier-probe] ${ref} failed: ${result?.errorMessage ?? 'error stop'}`);
+          // Feed the probe failure into the health system so a consistently-
+          // broken candidate (e.g. one that 422s) is excluded from the next
+          // scan's selectClassifierCandidates via isUnhealthy (roborev 445 MEDIUM).
+          recordModelFailure(cache, ref);
         }
       } finally {
         clearTimeout(timer);
       }
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
+      recordModelFailure(cache, ref);
     }
   }
 

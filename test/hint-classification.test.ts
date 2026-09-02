@@ -61,6 +61,31 @@ describe('detectHintDirectly()', () => {
       expect(r?.hintType).toBe('group');
       expect(r?.hintTarget).toBe('tactical');
     });
+
+    // roborev job 451 LOW: the bare noun `gruppe`/`group` is NOT in the
+    // lookahead — group hints go through GROUP_VERB_PREFIX ("use group X"),
+    // so English and German behave symmetrically.
+    it('does NOT match bare "HINT gruppe <x>" (German noun without verb — symmetric with English "group")', () => {
+      const r = detectHintDirectly('HINT gruppe tactical');
+      expect(r).toBeNull();
+    });
+
+    it('does NOT match bare "HINT group <x>" (English noun without verb)', () => {
+      const r = detectHintDirectly('HINT group tactical');
+      expect(r).toBeNull();
+    });
+
+    // roborev job 451 LOW: "HINT use" (verb with no model) must NOT parse
+    // "use" as a model name — let the LLM classifier handle it.
+    it('returns null for "HINT use" with no model (bare verb, no model after)', () => {
+      const r = detectHintDirectly('HINT use');
+      expect(r).toBeNull();
+    });
+
+    it('returns null for "HINT nutze" with no model (bare German verb)', () => {
+      const r = detectHintDirectly('HINT nutze');
+      expect(r).toBeNull();
+    });
   });
 
   describe('model hints', () => {

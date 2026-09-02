@@ -2559,12 +2559,13 @@ let previousTokenCount = 0;
       // 0. This is a real improvement for providers whose scan path fetches
       // verified pricing (e.g. chutes' cost_per_m comes from the provider's own
       // pricing API) — for "generic direct API provider" scans (mistral,
-      // mistral-zai, etc.) cost_per_m is still 0 either way (that scan path
-      // never fetches real per-token pricing at all; see the F3 note in
-      // src/discovery.ts's getCheapestCloudModels for why cost_per_m===0 there
-      // is a placeholder, not a verified "this is free" signal). So this does
-      // not, by itself, fix billing-tier accuracy for mistral-zai — only for
-      // providers whose scan already carries real pricing.
+      // mistral-zai, etc.) cost_per_m is still 0 either way: that scan path
+      // never fetches real per-token pricing, so cost_per_m===0 is a
+      // PLACEHOLDER, not a verified "this is free" signal (this is the F3
+      // rationale, originally documented in the now-deleted
+      // getCheapestCloudModels; see docs/adr/0006-probe-based-classifier-fallback-discovery.md).
+      // So this does not, by itself, fix billing-tier accuracy for mistral-zai
+      // — only for providers whose scan already carries real pricing.
       try {
         // Cache the find() results in a Map keyed by model id (roborev job 429
         // LOW): the size check AND existingModels below both need the resolved
