@@ -408,7 +408,7 @@ export async function classifyPrompt(
       // If category is invalid but structure is valid, map to fallback
       const rawParsed = parsed as any;
       if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
-        routerLog('[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to \'fallback\'');
+        routerLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
         return { category: 'fallback', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
       }
       throw new Error(`Invalid format: ${response}`);
@@ -421,7 +421,7 @@ export async function classifyPrompt(
       
       // Guard: if hintTarget is empty, return explicit fallback
       if (!hintTarget || hintTarget.length === 0) {
-        routerLog('[classifier] Empty HINT target received from LLM: ${parsed.category}');
+        routerLog(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
         return { 
           category: 'fallback', 
           reason: 'Empty HINT target from LLM', 
@@ -433,7 +433,7 @@ export async function classifyPrompt(
         // This is a group hint
         const groupName = hintTarget.slice(6); // Remove 'group:' prefix
         if (!groupName || groupName.length === 0) {
-          routerLog('[classifier] Empty group name in HINT: ${parsed.category}');
+          routerLog(`[classifier] Empty group name in HINT: ${parsed.category}`);
           return { 
             category: 'fallback', 
             reason: 'Empty group name in HINT', 
@@ -487,12 +487,12 @@ export async function classifyPrompt(
     if (model !== fallbackModel) {
       try {
         routerLog(
-          '[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}',
+          `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
           (primaryError as Error).message
         );
         classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
       } catch (fallbackError) {
-        routerLog('[classifier] Fallback model also failed', (fallbackError as Error).message);
+        routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
       }
     }
   }
@@ -539,12 +539,12 @@ export async function classifyPrompt(
         try {
           const model = findModel(modelRef);
           if (!model) {
-            routerLog('[classifier] Cloud model ${modelRef} not in pi registry — skipping');
+            routerLog(`[classifier] Cloud model ${modelRef} not in pi registry — skipping`);
             continue;
           }
           const result = await completeSimple(model, classifyCtx, undefined);
           if (result.errorMessage || result.stopReason === 'error') {
-            routerLog('[classifier] Cloud model ${modelRef} failed', result.errorMessage ?? 'error');
+            routerLog(`[classifier] Cloud model ${modelRef} failed`, result.errorMessage ?? 'error');
             continue;
           }
           // AssistantMessage.content is an array of TextContent | ThinkingContent
@@ -557,7 +557,7 @@ export async function classifyPrompt(
           const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
           const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned) as FullClassificationResult;
           if (isValidFullClassification(parsed)) {
-            routerLog('[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)');
+            routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
             // Apply escalation logic to cloud result
             if (context.lastModel && !context.isCompaction) {
               const escalated = applyEscalationLogic(parsed, context.lastModel);
@@ -568,11 +568,11 @@ export async function classifyPrompt(
             return parsed;
           }
         } catch (cloudError) {
-          routerLog('[classifier] Cloud model ${modelRef} failed', (cloudError as Error).message);
+          routerLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
         }
       }
     } catch (cloudFallbackError) {
-      routerLog('[classifier] Cloud fallback failed', (cloudFallbackError as Error).message);
+      routerLog(`[classifier] Cloud fallback failed`, (cloudFallbackError as Error).message);
     }
   }
 
