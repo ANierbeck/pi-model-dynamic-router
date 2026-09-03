@@ -186,5 +186,5 @@ describe('driveStream: mid-stream provider error (unrecognized finish_reason)', 
         expect(calledIds).toContain('err-finish-model');
       }
     );
-  }, 15000);
+  }, 30000);
 });

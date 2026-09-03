@@ -166,5 +166,5 @@ describe('driveStream: all-candidates-failed errorMessage', () => {
         expect(message.content[0].text).toContain('rate_limit_exceeded');
       }
     );
-  }, 15000);
+  }, 30000);
 });

@@ -29,6 +29,49 @@
   switched all 8 relevant call sites in `index.ts` to use it.
 
 ### Fixed (things that were supposed to work but didn't)
+- **`calculateScore` cap let weak free models outrank strong paid models.**
+  `calculateScore()` in `src/metrics.ts` computed `Math.min(100, gdpval / 10)` —
+  a normalization to 0–100 that was harmless when artificialanalysis.ai's
+  GDPval scores topped out around 700–800. But the benchmark was rescaled and
+  the scan cache now routinely scrapes scores above 1000 (e.g.
+  `claude-sonnet-5` = 1603, `glm-5-2` = 1497, `minimax-m3` = 1380,
+  `minimax-m2-7` = 1157). Once a model crosses gdpval 1000, `/10` reaches 100
+  and the `Math.min(100, …)` cap saturates it there — so **every** elite model
+  tied at exactly 100 and the `method: "best"` sort degenerated to array/
+  insertion order among them. In production this let
+  `openrouter/minimax/minimax-m2.7:free` (gdpval 1157, capped to 100) sit
+  *above* `pi-claude/claude-sonnet-5` (gdpval 1603, also capped to 100) in the
+  `tactical` group's ordered list — so the moment the strong model hit a
+  rate limit and the router "fell through" to the next candidate, it landed
+  on the weak free Minimax model instead of another strong paid/subscription
+  model. This is exactly the "big model steps in but we get downgraded again"
+  pattern observed in the logs. Fix: `calculateScore` now returns the raw
+  gdpval directly (no cap, no `/10`). It is used **only** for sort comparisons
+  (never displayed as a percentage), so uncapping is safe and restores real
+  ranking resolution: claude-sonnet-5 (1603) now correctly outranks
+  minimax-m2.7 (1157). Regression test: `test/calculate-score.test.ts`
+  (includes a dedicated "does not saturate/cap for gdpval scores above 1000"
+  case).
+- **Single-pass cooldown collapse: a live failure that puts the last
+  candidate into cooldown now trips the safety net within the same pass.**
+  `StreamOrchestrator`'s total-cooldown-collapse check used a strict-equality
+  guard (`cooldownSkips === allErrors.length`), which only fired when every
+  candidate was pre-skipped as already-in-cooldown *before* the pass started.
+  It missed the common case where N-1 candidates are pre-skipped as in
+  cooldown and the Nth is tried live, hits a fresh 429, and records its OWN
+  cooldown via `recordStreamFailure` — leaving `cooldownSkips = N-1` but
+  `allErrors.length = N`, so the strict equality failed and the router
+  hard-failed instead of retrying the shortest-cooldown candidate. This is
+  exactly the user's bug scenario: the model that was supposed to be the
+  safety net had just rate-limited itself. Fix: replace the counter equality
+  with `candidates.every((r) => ctx.isLimited(r))`, which captures both the
+  pre-skipped candidates AND any candidate whose live failure just put it
+  into cooldown within this same pass. Strictly more robust than the
+  counter equality. Regression tests: `test/cooldown-collapse.test.ts`
+  (single-pass collapse case),
+  `test/orchestrator-router-context-freshness.test.ts` (updated for the
+  new single-pass behavior — expects 2 `streamSimple` calls on the first
+  `groupStream`: live fail + force-retry).
 - **Stale `ctx.router` caused "running in circles" on total-cooldown-collapse.**
   `buildOrchestratorContext()` captured `router`, `rateLimitManager`, and
   `cacheManager` as plain properties frozen at `StreamOrchestrator` construction
@@ -159,6 +202,20 @@
   `buildOrchestratorContext()` factory that exposes live getters for
   `router`/`rateLimitManager`/`cacheManager` (the stale-property bug above
   was found and fixed during this extraction).
+- **Test suite stabilization + cleanup.** 11 streaming/integration tests
+  (`drainStream`/`groupStream`/`session_start` + `flushBackgroundScan` +
+  router-state-lock work) had explicit `15000`ms timeouts but exceed that
+  under full-suite parallel load — producing intermittent "test timed out"
+  failures that looked like regressions but were really resource-contention
+  flakes (each passes in ~1.5s in isolation). Bumped all to `30000`ms.
+  Deleted `test/classifier-integration.test.ts` (29 lines, 1 test) — fully
+  redundant with `test/hint-classification.test.ts` (45 tests, including
+  the exact "without calling LLM" assertion) and confusingly named twin of
+  `test/classifier.integration.test.ts`. Translated remaining German
+  prose in test comments/descriptions to English (AGENTS.md rule 3);
+  German *test input data* (month names for the date parser, sentences for
+  the repetition guard) correctly left as-is. Net: 72 → 71 test files,
+  602 tests, 2 consecutive green full-suite runs.
 
 ## [1.5.0] — 2026-08-28 — Ollama crash prevention, free-model registration, classification caching
 

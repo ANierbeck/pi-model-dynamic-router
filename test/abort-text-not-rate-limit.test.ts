@@ -160,5 +160,5 @@ describe('driveStream: free-text abort inside an error event (not reason:"aborte
         expect(streamSimple).toHaveBeenCalledTimes(1);
       }
     );
-  }, 15000);
+  }, 30000);
 });

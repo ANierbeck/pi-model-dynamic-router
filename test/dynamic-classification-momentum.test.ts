@@ -199,5 +199,5 @@ describe('dynamic classifier: short-prompt momentum wiring (index.ts -> classify
         expect(turn3Prompt).toContain('yes go ahead');
       }
     );
-  }, 15000);
+  }, 30000);
 });

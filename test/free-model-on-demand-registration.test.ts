@@ -151,7 +151,7 @@ describe('driveStream: on-demand free-model registration', () => {
         expect(openrouterReg).toBeDefined();
       }
     );
-  }, 15000);
+  }, 30000);
 
   it('does NOT overwrite a provider already registered with paid models (Ü1 invariant, roborev job 305)', async () => {
     await withIsolatedRouter(
@@ -250,5 +250,5 @@ describe('driveStream: on-demand free-model registration', () => {
         expect(text).toContain('paid model survived');
       }
     );
-  }, 15000);
+  }, 30000);
 });

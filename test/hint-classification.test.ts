@@ -6,7 +6,7 @@ import { classifyPrompt, classifyStatically, detectHintDirectly } from '../src/c
 import type { ClassificationResult, HintClassificationResult, FullClassificationResult } from '../src/content-classifier.js';
 import { resolveShortModelName } from '../src/utils.js';
 
-// ── Mock für callOllama ─────────────────────────────────────────────────
+// ── Mock for callOllama ─────────────────────────────────────────────────
 
 vi.mock('../src/ollama-utils.js', async () => {
   const actual = await vi.importActual('../src/ollama-utils.js');
@@ -228,7 +228,7 @@ describe('HINT Classification', () => {
   });
 
   describe('Normale Klassifizierung (kein HINT)', () => {
-    it('klassifiziert normale Anfragen ohne HINT', async () => {
+    it('classifies normal requests without HINT', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
       
       // Mock response ohne HINT
@@ -248,7 +248,7 @@ describe('HINT Classification', () => {
       expect(result).not.toHaveProperty('hintTarget');
     });
 
-    it('klassifiziert einfache Anfragen', async () => {
+    it('classifies simple requests', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
       
       vi.mocked(callOllama).mockResolvedValue(

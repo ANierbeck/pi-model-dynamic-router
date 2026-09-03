@@ -154,5 +154,5 @@ describe('registerGroupModels: mixed known/unknown models for one provider', () 
         expect(roundTripped.compat).toEqual({ supportsStore: false });
       }
     );
-  }, 15000);
+  }, 30000);
 });

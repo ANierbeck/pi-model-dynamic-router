@@ -134,7 +134,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
         expect(routerInfoText).toMatch(/\(resets .+\)/);
       }
     );
-  }, 15000);
+  }, 30000);
 
   // roborev job 388 LOW: formatResetMsg is called from 3 separate sites with
   // independently-wired ref/rotated arguments; the rate_limit_exceeded branch
@@ -204,5 +204,5 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
         expect(routerInfoText).toMatch(/\(resets .+\)/);
       }
     );
-  }, 15000);
+  }, 30000);
 });
