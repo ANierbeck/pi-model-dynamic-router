@@ -1,11 +1,6 @@
 # Changelog
 
-## [1.5.1-SNAPSHOT] — Unreleased (snapshot, not published to npm)
-
-> **Snapshot.** This version is under preparation and has **not** been
-> released. `package.json` carries `private: true` so `npm publish` refuses
-> it until the flag is cleared at release time. The entries below are
-> staged for the eventual 1.5.1 release notes.
+## [1.5.1] — 2026-09-02 — Weak-model downgrade fix, single-pass cooldown collapse, test suite stabilization
 
 ### Added (genuine new behavior)
 - **Streak-based escalation trigger.** `SessionEscalation`'s old rule-based
