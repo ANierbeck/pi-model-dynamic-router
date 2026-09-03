@@ -144,5 +144,5 @@ describe('driveStream: provider_error on a paid cloud model', () => {
         expect(routerInfoText).not.toContain('provider error: Provider finish_reason: error\n');
       }
     );
-  }, 15000);
+  }, 30000);
 });

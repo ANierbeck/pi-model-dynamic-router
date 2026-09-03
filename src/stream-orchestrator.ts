@@ -672,8 +672,28 @@ export class StreamOrchestrator {
       return;
     }
 
-    // Total cooldown collapse
-    if (allFailed && cooldownSkips > 0 && cooldownSkips === allErrors.length) {
+    // Total cooldown collapse.
+    // The original strict-equality check (`cooldownSkips === allErrors.length`)
+    // misses an important case: when N-1 candidates are pre-skipped as in
+    // cooldown and the Nth is tried LIVE, hits a fresh 429, and records its
+    // OWN cooldown via recordStreamFailure, then cooldownSkips = N-1 but
+    // allErrors.length = N, so the strict equality fails and the router
+    // hard-fails instead of retrying the shortest-cooldown candidate.
+    // Fix: check whether EVERY candidate is CURRENTLY in cooldown (via
+    // isLimited), which captures both the pre-skipped ones AND any candidate
+    // whose live failure just put it into cooldown. This is strictly more
+    // robust than the counter equality.
+    //
+    // Deliberate invariant: a ref skipped purely via the context-window guard
+    // ("context window too small" short-circuit, ~line 481) does NOT call
+    // recordSoftFailure, so ctx.isLimited() stays false for it and it opts
+    // out of this collapse condition. That's correct — a context-overflow
+    // skip is not a rate-limit cooldown, and a mixed batch (one ctx-too-small
+    // + the rest rate-limited) should NOT trigger the cooldown safety net
+    // (the ctx-too-small ref has nothing to retry). Kept this way on purpose;
+    // a future refactor of the skip logic must preserve this distinction.
+    const allInCooldownNow = allFailed && candidates.every((r) => ctx.isLimited(r));
+    if (allInCooldownNow && candidates.length > 0) {
       let bestRef: string | null = null;
       let bestSecs = Number.POSITIVE_INFINITY;
       for (const ref of candidates) {

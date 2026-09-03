@@ -423,10 +423,23 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
 /**
  * Calculates a quality score for a model reference.
  * Uses GDPval (composite intelligence + throughput + cost-efficiency score from
- * artificialanalysis.ai), normalized to 0–100. Higher is better.
+ * artificialanalysis.ai) directly. Higher is better.
+ *
+ * Deliberately uncapped: scraped gdpval_scores in the scan cache now
+ * routinely exceed 1000 (e.g. claude-sonnet-5=1603, glm-5-2=1497,
+ * minimax-m3=1380) since artificialanalysis.ai rescaled its benchmark.
+ * A Math.min(100, gdpval / 10) cap here used to be harmless when scores
+ * topped out around 700-800, but once several elite models cross the
+ * 1000 threshold they all saturate at the same capped score of 100 and
+ * the 'best' sort degenerates to insertion order among them — observed
+ * in production as openrouter/minimax-m2.7:free (gdpval 1157, capped to
+ * 100) outranking pi-claude/claude-sonnet-5 (gdpval 1603, also capped to
+ * 100) in the tactical group, so a stronger model's rate limit caused a
+ * silent quality downgrade to a much weaker free model instead of falling
+ * through to the next-best paid/subscription candidate.
  */
 export function calculateScore(ref: string, _taskType?: string, _config?: Config): number {
-  return Math.min(100, getM(ref).gdpval / 10);
+  return getM(ref).gdpval;
 }
 
 // ── Billing & Cost ────────────────────────────────────────────────────────

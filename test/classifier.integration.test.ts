@@ -1,8 +1,8 @@
 // test/classifier.integration.test.ts
-// Integrationstests für die inhaltssensitive Klassifizierung mit echten Ollama-Aufrufen
+// Integration tests for content-sensitive classification with real Ollama calls.
 //
-// Diese Tests benötigen laufendes Ollama mit gemma2:2b!
-// Aktivieren mit: TEST_INTEGRATION=true npm test test/classifier.integration.test.ts
+// These tests require a running Ollama with gemma2:2b!
+// Enable with: TEST_INTEGRATION=true npm test test/classifier.integration.test.ts
 
 import { describe, it, expect } from "vitest";
 import { classifyPrompt } from "../src/content-classifier";
@@ -11,20 +11,20 @@ import { classifyPrompt } from "../src/content-classifier";
 const OLLAMA_TIMEOUT = 120_000;
 
 describe.skipIf(!process.env.TEST_INTEGRATION)("classifyPrompt (Integration)", () => {
-  it("klassifiziert einfache Prompts mit Ollama", async () => {
-    const result = await classifyPrompt("Ersetze 'x' mit 'y'");
+  it("classifies simple prompts with Ollama", async () => {
+    const result = await classifyPrompt("Replace 'x' with 'y'");
     console.log("Simple prompt classified as:", result);
     expect(["code_simple", "fallback"]).toContain(result.category);
   }, OLLAMA_TIMEOUT);
 
-  it("klassifiziert komplexe Prompts mit Ollama", async () => {
-    const result = await classifyPrompt("Debugge diese rekursive Funktion");
+  it("classifies complex prompts with Ollama", async () => {
+    const result = await classifyPrompt("Debug this recursive function");
     console.log("Complex prompt classified as:", result);
     expect(["code_complex", "code_simple", "fallback"]).toContain(result.category);
   }, OLLAMA_TIMEOUT);
 
-  it("klassifiziert Design-Prompts mit Ollama", async () => {
-    const result = await classifyPrompt("Entwirf eine Event-Sourcing-Architektur");
+  it("classifies design prompts with Ollama", async () => {
+    const result = await classifyPrompt("Design an event-sourcing architecture");
     console.log("Design prompt classified as:", result);
     expect(["design", "fallback"]).toContain(result.category);
   }, OLLAMA_TIMEOUT);

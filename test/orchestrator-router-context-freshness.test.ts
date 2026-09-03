@@ -153,29 +153,30 @@ describe('StreamOrchestrator context freshness: router/rateLimitManager/cacheMan
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
 
-        // First call: the model fails and gets a hard cooldown recorded
-        // against it (backoff_minutes[0] = 1 minute = 60s).
-        await drainStream(defaultExport.groupStream(groupModel, context, {}));
-        expect(streamSimple).toHaveBeenCalledTimes(1);
-
-        // Second call, same single candidate: with only one candidate in the
-        // group, driveStream's "total cooldown collapse" logic force-retries
-        // it anyway (nothing else to try) rather than reporting a plain skip
-        // — this is the SAME ctx.router.limitSecs() call site (stream-
-        // orchestrator.ts's total-cooldown-collapse branch) that ranks
-        // candidates by remaining cooldown to pick the least-limited one. A
-        // stale ctx.router would report "0s" there too, since its limits Map
-        // never received this cooldown.
-        const secondEvents = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+        // First call: the model fails with a provider error and gets a hard
+        // cooldown recorded against it (backoff_minutes[0] = 1 minute = 60s).
+        // With the single-pass cooldown-collapse fix, the same live failure
+        // that put the only candidate into cooldown also trips the safety net
+        // within this call — so the collapse force-retries the candidate
+        // immediately (streamSimple called twice: fail + force-retry).
+        const firstEvents = await drainStream(defaultExport.groupStream(groupModel, context, {}));
         expect(streamSimple).toHaveBeenCalledTimes(2);
 
-        const secondRouterInfoText = secondEvents
+        // The collapse banner ("All models in cooldown, retrying … (Ns)")
+        // appears in the FIRST call's events now, since the single-pass
+        // collapse fires within the same driveStream pass. This is the SAME
+        // ctx.router.limitSecs() call site (stream-orchestrator.ts's total-
+        // cooldown-collapse branch) that ranks candidates by remaining
+        // cooldown to pick the least-limited one. A stale ctx.router would
+        // report "0s" there too, since its limits Map never received this
+        // cooldown.
+        const routerInfoText = firstEvents
           .filter((e: any) => e.type === 'text_delta')
           .map((e: any) => (e as any).delta ?? '')
           .join('');
 
-        expect(secondRouterInfoText).toContain('cooldown');
-        const match = secondRouterInfoText.match(/(\d+)s\)/);
+        expect(routerInfoText).toContain('cooldown');
+        const match = routerInfoText.match(/(\d+)s\)/);
         expect(match).not.toBeNull();
         // The bug reported an unconditional 0, so explicitly rule that out
         // in addition to the >30 bound below.
@@ -186,7 +187,13 @@ describe('StreamOrchestrator context freshness: router/rateLimitManager/cacheMan
         // is fine).
         expect(remainingSecs).toBeGreaterThan(30);
         expect(remainingSecs).toBeLessThanOrEqual(60);
+
+        // Second call: candidate is already in cooldown from the first call,
+        // so the collapse fires immediately (pre-skip) and force-retries it
+        // again. streamSimple is called once more (3 total).
+        await drainStream(defaultExport.groupStream(groupModel, context, {}));
+        expect(streamSimple).toHaveBeenCalledTimes(3);
       }
     );
-  }, 15000);
+  }, 30000);
 });

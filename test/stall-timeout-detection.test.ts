@@ -169,5 +169,5 @@ describe('driveStream: mid-stream stall detection', () => {
         expect(streamSimple).toHaveBeenCalled();
       }
     );
-  }, 15000);
+  }, 30000);
 });

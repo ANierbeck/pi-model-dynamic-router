@@ -1,5 +1,5 @@
 /**
- * Integration Tests für Router-Funktionalität
+ * Integration tests for router functionality
  * Testet die echte Interaktion zwischen Modulen
  */
 
@@ -12,7 +12,7 @@ import { CacheManager } from '../src/cache.js';
 import type { Config, Cache } from '../src/types.js';
 import { PROVIDER_MAP } from '../src/providers.js';
 
-// Echte Konfiguration für Tests
+// Real configuration for tests
 const testConfig: Config = {
   model_groups: {
     strategic: {
@@ -66,7 +66,7 @@ const testConfig: Config = {
   gdpval_builtin: {},
 };
 
-// Echte Module initialisieren
+// Initialize real modules
 const extDir = '/tmp/test-router';
 const cacheManager = new CacheManager(extDir);
 const cache: Cache = cacheManager.loadCache();
@@ -283,7 +283,7 @@ describe('Router Integration Tests', () => {
     it('should consider exhausted keys', () => {
       // Markiere einen Key als exhausted
       cache.exhausted_keys = {
-        'openai:0': Date.now() + 10000, // Key 0 exhausted für 10 Sekunden
+        'openai:0': Date.now() + 10000, // Key 0 exhausted for 10 seconds
       };
 
       const refs = ['openai/gpt-4'];
@@ -306,7 +306,7 @@ describe('Router Integration Tests', () => {
 
       expect(Array.isArray(sorted)).toBe(true);
       expect(sorted.length).toBe(3);
-      // Das Modell mit dem höchsten gdpval sollte zuerst sein
+      // The model with the highest gdpval should be first
       if (sorted.length >= 1) {
         expect(sorted[0]).toBe('openai/gpt-4');
       }

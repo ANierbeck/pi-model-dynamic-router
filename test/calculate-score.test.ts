@@ -28,11 +28,11 @@ describe('calculateScore', () => {
     setGdpval({});
   });
 
-  test('returns GDPval / 10, clamped to 100', () => {
-    expect(calculateScore('anthropic/claude-4-sonnet')).toBeCloseTo(72.0);
-    expect(calculateScore('anthropic/claude-3-sonnet')).toBeCloseTo(68.0);
-    expect(calculateScore('mistral/devstral-medium-2507')).toBeCloseTo(69.1);
-    expect(calculateScore('mistral/codestral-latest')).toBeCloseTo(52.0);
+  test('returns GDPval unchanged (no normalization/cap)', () => {
+    expect(calculateScore('anthropic/claude-4-sonnet')).toBeCloseTo(720);
+    expect(calculateScore('anthropic/claude-3-sonnet')).toBeCloseTo(680);
+    expect(calculateScore('mistral/devstral-medium-2507')).toBeCloseTo(691);
+    expect(calculateScore('mistral/codestral-latest')).toBeCloseTo(520);
   });
 
   test('score is not affected by taskType argument', () => {
@@ -50,7 +50,7 @@ describe('calculateScore', () => {
     );
   });
 
-  test('score is between 0 and 100 for all models', () => {
+  test('score is non-negative for all models', () => {
     for (const model of [
       'anthropic/claude-3-sonnet',
       'anthropic/claude-4-sonnet',
@@ -59,11 +59,38 @@ describe('calculateScore', () => {
     ]) {
       const score = calculateScore(model);
       expect(score).toBeGreaterThanOrEqual(0);
-      expect(score).toBeLessThanOrEqual(100);
     }
   });
 
-  test('unknown model defaults to gdpval 50 → score 5', () => {
-    expect(calculateScore('unknown/model')).toBeCloseTo(5.0);
+  test('unknown model defaults to gdpval 50 → score 50', () => {
+    expect(calculateScore('unknown/model')).toBeCloseTo(50.0);
+  });
+
+  // Regression: scraped gdpval_scores in the scan cache now routinely exceed
+  // 1000 (e.g. claude-sonnet-5=1603, glm-5-2=1497, minimax-m3=1380). A
+  // previous Math.min(100, gdpval / 10) cap made every elite model tie at
+  // exactly 100 once gdpval crossed 1000, collapsing the 'best' sort to
+  // insertion order among them — in production this let a free
+  // openrouter/minimax-m2.7:free (gdpval 1157) outrank the far stronger
+  // pi-claude/claude-sonnet-5 (gdpval 1603) whenever both happened to be tied
+  // at the cap.
+  test('does not saturate/cap for gdpval scores above 1000 (regression)', () => {
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {
+        'claude-sonnet-5': 1603,
+        'minimax-m2-7': 1157,
+      },
+    });
+    setGdpval({
+      'claude-sonnet-5': 1603,
+      'minimax-m2-7': 1157,
+    });
+    const strong = calculateScore('pi-claude/claude-sonnet-5');
+    const weak = calculateScore('openrouter/minimax-m2-7');
+    expect(strong).toBeGreaterThan(weak);
+    expect(strong).toBeCloseTo(1603);
+    expect(weak).toBeCloseTo(1157);
   });
 });

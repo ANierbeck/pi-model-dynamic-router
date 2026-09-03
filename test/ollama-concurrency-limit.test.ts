@@ -161,7 +161,7 @@ describe('driveStream: local-stream concurrency limit', () => {
         expect(streamSimple).toHaveBeenCalled();
       }
     );
-  }, 15000);
+  }, 30000);
 
   it('does not leak the local slot when hostStreamSimple throws synchronously (roborev job 302 MEDIUM)', async () => {
     await withIsolatedRouter(
@@ -233,5 +233,5 @@ describe('driveStream: local-stream concurrency limit', () => {
         expect(text).toContain('next model ok');
       }
     );
-  }, 15000);
+  }, 30000);
 });

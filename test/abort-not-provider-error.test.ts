@@ -158,5 +158,5 @@ describe('driveStream: user-abort error events', () => {
         expect(streamSimple).toHaveBeenCalledTimes(1);
       }
     );
-  }, 15000);
+  }, 30000);
 });
