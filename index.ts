@@ -33,7 +33,7 @@ import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
-import { lookupGdp, setPiRegisteredProviders } from './src/metrics.ts';
+import { lookupGdp, setPiRegisteredProviders, setModelRegistry } from './src/metrics.ts';
 import { estimateOllamaModelsGdpvalAsSlugs } from './src/ollama-gdpval.ts';
 import { buildOllamaProviderModels } from './src/ollama-context.ts';
 import { checkScanSanity } from './src/scan-sanity.ts';
@@ -1392,6 +1392,18 @@ let previousTokenCount = 0;
       // 'pi-claude/claude-sonnet-5' ref intact and GDPval/price inference
       // never resolves the model id.
       setPiRegisteredProviders(providerIds);
+      // Publish pi's modelRegistry so `lookupPrice()`/`getM()` can read the
+      // real `Model.cost` for any pi-registered provider. `Model.cost` is a
+      // required field populated from the provider's own /v1/models (e.g.
+      // requesty reports `input_price`/`output_price`), so the registry is
+      // the authoritative price source — more reliable than the router's own
+      // fallbacks (cfg.model_metrics / openrouter_pricing / OR-backfill /
+      // cfg.providers), which all silently miss providers Pi registered
+      // through other channels (extensions, models.json, CLI flags).
+      // Uses the same public `ctx.modelRegistry` API the router already uses
+      // for `getAvailable()`/`find()` elsewhere — never reads Pi's setup
+      // files directly.
+      setModelRegistry((ctx as any).modelRegistry);
     } catch (e) {
       routerLog('[diag] version diagnostics failed:', e);
     }
@@ -2696,6 +2708,9 @@ let previousTokenCount = 0;
     try {
       const ids = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
       setPiRegisteredProviders(ids);
+      // Refresh the registry handle too — registerGroupModels above may have
+      // registered new providers whose `Model.cost` we now want to read.
+      setModelRegistry((ctx as any).modelRegistry);
     } catch {
       /* registry may not expose getRegisteredProviderIds — leave the existing set */
     }
