@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Premium models (Opus, glm-5.3) appeared in `trivial`/`simple` groups.**
+  A pi-registered provider (e.g. `requesty-export`, bedrock via an
+  extension) that Pi registered through its own modelRegistry — not the
+  router's `PROVIDER_MAP` scan — had its real per-model cost
+  (`Model.cost`, a required field populated from the provider's own
+  `/v1/models`, e.g. requesty's `input_price`/`output_price`) silently
+  ignored. `lookupPrice()`/`effCost()` queried four fallback sources that
+  ALL bypass the registry (`cfg.model_metrics`, `openrouter_pricing`,
+  OR normalized backfill, `cfg.providers.cost_per_m`); each returned
+  undefined for a pi-registered provider → `effCost` returned `'unknown'` →
+  `sortByMinCostIfAllPriced` fell back to `best gdpval` descending → the
+  strongest (most expensive) model won the cheap-first group. Fix:
+  `lookupPrice()` now queries `modelRegistry.find(provider, modelId).cost`
+  FIRST (Step 0), before any fallback; `getM()` consults the same source
+  before falling through to `'unknown'`. The registry handle is published
+  via the public `ExtensionContext.modelRegistry` API in `session_start`
+  (same API the router already used for `getAvailable()`/`find()`) — no
+  direct access to Pi's setup files, no standalone `/v1/models` fetch for
+  providers Pi already registered. Generic for every provider Pi knows,
+  config-free.
+
 ## [1.5.1] — 2026-09-02 — Weak-model downgrade fix, single-pass cooldown collapse, test suite stabilization
 
 ### Added (genuine new behavior)

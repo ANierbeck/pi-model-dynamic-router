@@ -298,6 +298,24 @@ let cache: Cache = {};
 let piRegisteredProviders: Set<string> = new Set();
 
 /**
+ * Pi's own modelRegistry, set from index.ts `session_start` via the public
+ * `ExtensionContext.modelRegistry` API. The registry is the authoritative
+ * source for a model's real cost — `Model.cost` is a required field
+ * populated from the provider itself (e.g. requesty's /v1/models reports
+ * `input_price`/`output_price` per model). The router MUST query this
+ * instead of reinventing price lookups through its own fallbacks
+ * (cfg.model_metrics / openrouter_pricing / OR-backfill / cfg.providers),
+ * which all silently miss providers Pi registered through other channels
+ * (extensions, models.json, CLI flags) — the router cannot know which
+ * source Pi used, only the registry is guaranteed to have the data.
+ *
+ * Held as `any` because the router never imports Pi's registry type (it
+ * only calls the public `.find(provider, modelId)` and `.getAvailable()`
+ * methods documented in core/model-registry.d.ts).
+ */
+let modelRegistry: any = null;
+
+/**
  * Reports the set of provider IDs pi's modelRegistry has registered, so
  * stripProvider() and other lookups can recognize pi-managed providers
  * (F11). Call this from index.ts after `session_start` once
@@ -311,6 +329,27 @@ export function setPiRegisteredProviders(ids: Iterable<string>): void {
 /** For tests: read back the registered-provider set. */
 export function getPiRegisteredProviders(): Set<string> {
   return piRegisteredProviders;
+}
+
+/**
+ * Publishes Pi's modelRegistry so `lookupPrice()`/`getM()` can read the real
+ * `Model.cost` for any pi-registered provider (the authoritative source —
+ * see the module-state comment above). Call from index.ts `session_start`
+ * with `ctx.modelRegistry`, the same public API the router already uses for
+ * `getAvailable()`/`find()` elsewhere. Pass `null` to clear (e.g. in tests).
+ *
+ * Clears the `metrics` cache: `getM()` snapshots `cost_per_m` on first call,
+ * so a `getM()` that ran before the registry was published would otherwise
+ * pin `'unknown'` forever even after the registry becomes available.
+ */
+export function setModelRegistry(registry: any): void {
+  modelRegistry = registry;
+  metrics = {};
+}
+
+/** For tests: read back the registry handle. */
+export function getModelRegistry(): any {
+  return modelRegistry;
 }
 
 /**
@@ -369,7 +408,8 @@ export function getM(ref: string): Metrics {
   // Check if cost_per_m is explicitly set to 'unknown' in config
   let costPerM: number | 'unknown' = cm.cost_per_m ?? 0;
   
-  // If cost is 0, check if it's a local provider (truly free) or unknown
+  // If cost is 0, check if it's a local provider (truly free), a pi-registered
+  // model with a real price, or unknown.
   if (costPerM === 0) {
     const prov = ref.split('/')[0];
     const provDef = PROVIDER_MAP[prov];
@@ -383,13 +423,25 @@ export function getM(ref: string): Metrics {
     else if (provCfg?.billing === 'subscription') {
       costPerM = 0;
     }
-    // For discovered models, check if cost_per_m is explicitly 0
+    // Pi's modelRegistry has the real per-model cost (authoritative).
+    // Consult it BEFORE the cache fallback — a pi-registered provider
+    // (requesty-export, pi-claude, extension providers) may not be in
+    // cache.available_models at all, and even when it is, the scan
+    // hardcodes cost_per_m: 0 for custom providers (index.ts:716).
     else {
-      const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-      if (discovered?.cost_per_m === 0) {
-        costPerM = 0;
+      const { provider: rp, modelId: rm } = splitRef(ref);
+      const regCost = registryCost(rp, rm);
+      if (regCost) {
+        // Use input price as the representative scalar (matches effCost's
+        // existing convention for the non-registry fallbacks).
+        costPerM = regCost.input;
       } else {
-        costPerM = 'unknown';
+        const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+        if (discovered?.cost_per_m === 0) {
+          costPerM = 0;
+        } else {
+          costPerM = 'unknown';
+        }
       }
     }
   }
@@ -536,10 +588,55 @@ export function isFreeModel(ref: string): boolean {
 }
 
 /**
+ * Reads the real per-model cost from Pi's modelRegistry (the authoritative
+ * source — `Model.cost` is a required field populated from the provider).
+ * Returns `null` when the registry has no entry, or when both input and
+ * output are 0 (the registry's value for a free/subscription model — we let
+ * the caller's own free/local/subscription logic decide, so we don't
+ * mis-classify a genuinely-free model as "unknown" here).
+ *
+ * Per Leitplanke: uses ONLY the public `modelRegistry.find(provider, modelId)`
+ * API — no direct fs access to Pi's setup files, no standalone /v1/models
+ * fetch for providers Pi already registered.
+ */
+function registryCost(
+  provider: string,
+  modelId: string
+): { input: number; output: number } | null {
+  if (!modelRegistry) return null;
+  try {
+    const model = modelRegistry.find(provider, modelId);
+    if (!model?.cost) return null;
+    const { input, output } = model.cost;
+    if (typeof input !== 'number' || typeof output !== 'number') return null;
+    // A model with both prices 0 is registered as free — return null so the
+    // caller's free/local/subscription detection applies (e.g. ollama, or a
+    // subscription provider with sunk cost). Returning {0,0} here would be
+    // ambiguous with "unknown" in downstream `effCost` logic.
+    if (input === 0 && output === 0) return null;
+    return { input, output };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Looks up the price for a reference
  * Returns null if not found, or { input: 'unknown', output: 'unknown' } if model exists but price is unknown
  */
 export function lookupPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+  // 0. Pi's modelRegistry is the authoritative source — ask it FIRST.
+  //    `Model.cost` is populated from the provider's own /v1/models (e.g.
+  //    requesty reports `input_price`/`output_price` per model). The router's
+  //    own fallbacks below were built before the registry was available and
+  //    silently miss any provider Pi registered through other channels
+  //    (extensions, models.json, CLI flags) — they all went to 'unknown',
+  //    causing `min_cost_if_all_priced` groups to fall back to `best gdpval`
+  //    and pick the strongest (most expensive) model in a "trivial" group.
+  const { provider: p0, modelId: m0 } = splitRef(ref);
+  const regCost = registryCost(p0, m0);
+  if (regCost) return regCost;
+
   // 1. Check config metrics first
   const cm = cfg.model_metrics[ref];
   if (cm?.cost_per_m !== undefined) {

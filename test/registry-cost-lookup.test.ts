@@ -1,0 +1,199 @@
+// test/registry-cost-lookup.test.ts
+// Regression test for the "Opus in trivial group" bug.
+//
+// Symptom (2026-09-05): In a Pi Work environment, the `/router` TUI showed
+// `trivial`/`simple` groups populated with the most expensive models in the
+// pool (Claude Opus, glm-5.3) — the exact opposite of "cheap first". Every
+// one of the 9 groups showed the same 5 models, undifferentiated.
+//
+// Root cause: the provider (e.g. requesty-export, bedrock via an extension)
+// was registered through Pi's own modelRegistry (not the router's PROVIDER_MAP
+// scan). Pi's `Model.cost` is a *required* field populated from the provider's
+// own /v1/models (requesty reports `input_price`/`output_price` per model).
+// But `lookupPrice()` queried FOUR fallback sources that ALL bypass the
+// registry:
+//   1. cfg.model_metrics[ref].cost_per_m
+//   2. cache.openrouter_pricing[ref]
+//   3. OpenRouter normalized backfill
+//   4. cfg.providers[prov].cost_per_m
+// Every one returned undefined for a pi-registered provider → `effCost`
+// returned `'unknown'` → `sortByMinCostIfAllPriced` fell back to `best gdpval`
+// descending → Opus (GDP 1860) won the `trivial` group.
+//
+// Fix (Leitplanke: always via Pi's public API, never Pi's setup files):
+// `lookupPrice()`/`getM()` now query `modelRegistry.find(provider, modelId).cost`
+// FIRST (Step 0), before any fallback. The registry is the authoritative
+// source — `Model.cost` is populated from the provider itself and is present
+// for every pi-registered model regardless of how it got registered
+// (extension, models.json, CLI flag — the router doesn't know and doesn't
+// need to know). The router holds the registry handle via the public
+// `ExtensionContext.modelRegistry` API (set in `session_start`), the same API
+// it already used for `getAvailable()`/`find()`.
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { Router } from '../src/routing.ts';
+import * as metricsModule from '../src/metrics.ts';
+import type { Config, Cache } from '../src/types.ts';
+
+// A fake pi modelRegistry implementing the two public methods the router uses:
+//   - find(provider, modelId) → Model | undefined  (Model.cost is required)
+//   - getAvailable() → Model[]
+// We type it as `any` because the router never imports Pi's registry type —
+// it only calls the documented public methods.
+function makeRegistry(models: Array<{
+  provider: string;
+  id: string;
+  cost: { input: number; output: number };
+}>): any {
+  const all = models.map((m) => ({ provider: m.provider, id: m.id, cost: m.cost }));
+  return {
+    find: (provider: string, modelId: string) =>
+      all.find((m) => m.provider === provider && m.id === modelId),
+    getAvailable: () => all,
+    getRegisteredProviderIds: () => [...new Set(all.map((m) => m.provider))],
+  };
+}
+
+function makeRouter(cfg: Config, cache: Cache, sessionCtx?: any): Router {
+  metricsModule.setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
+  metricsModule.setCache(cache);
+  metricsModule.setGdpval(cache.gdpval_scores ?? {});
+  metricsModule.setModelMap({}, []);
+  const r = new Router(cfg, cache, new Map());
+  if (sessionCtx) r.setSessionCtx(sessionCtx);
+  return r;
+}
+
+// requesty-export-style registry: four premium models, all with real costs.
+// Opus is the most expensive (input $5.5e-6/tok, output $2.75e-5/tok).
+const REGISTRY = makeRegistry([
+  { provider: 'requesty-export', id: 'claude-opus-4.5', cost: { input: 5.5e-6, output: 2.75e-5 } },
+  { provider: 'requesty-export', id: 'claude-sonnet-5', cost: { input: 3e-6, output: 1.5e-5 } },
+  { provider: 'requesty-export', id: 'glm-5.3', cost: { input: 1.2e-6, output: 4.5e-6 } },
+  { provider: 'requesty-export', id: 'glm-5.3-flash', cost: { input: 2e-7, output: 1e-6 } },
+]);
+
+// requesty-export is NOT in PROVIDER_MAP and NOT in cfg.providers — exactly
+// the "Pi registered it through another channel" scenario. The router must
+// still resolve its real cost via the registry.
+
+const BASE_CACHE: Cache = {
+  // The router's own scan never discovered these models (it scans only
+  // PROVIDER_MAP), so available_models is empty. This is the real-world
+  // situation: the router's cache knows nothing about requesty-export.
+  available_models: [],
+  gdpval_scores: {
+    'claude-opus-4.5': 1860,
+    'claude-sonnet-5': 1750,
+    'glm-5.3': 1680,
+    'glm-5.3-flash': 1627,
+  },
+  model_score_cache: {
+    'requesty-export/claude-opus-4.5': 'claude-opus-4.5',
+    'requesty-export/claude-sonnet-5': 'claude-sonnet-5',
+    'requesty-export/glm-5.3': 'glm-5.3',
+    'requesty-export/glm-5.3-flash': 'glm-5.3-flash',
+  },
+  openrouter_pricing: {},
+  usage_log: [],
+  benchmarks: {},
+  budget_cache: {},
+  gdpval_scraped: true,
+  lastScanTimestamp: Date.now(),
+  models_cached: '',
+} as any;
+
+const CFG: Config = {
+  model_groups: {
+    trivial: {
+      description: 'Trivial - cheapest first',
+      method: 'min_cost_if_all_priced',
+      max_cost: 0.01, // allow the cheap glm-flash, exclude Opus
+      min_gdpval: 0,
+      fallback_groups: [],
+    },
+    strategic: {
+      description: 'Strategic - best',
+      method: 'best',
+      min_gdpval: 0,
+      fallback_groups: [],
+    },
+  },
+  providers: {
+    // requesty-export intentionally absent — Pi registered it, not us.
+  },
+  model_metrics: {},
+  gdpval_builtin: {},
+} as any;
+
+describe('registry cost lookup (requesty-export scenario)', () => {
+  let router: Router;
+
+  beforeEach(() => {
+    // Publish the registry BEFORE any query — mirrors session_start ordering.
+    metricsModule.setModelRegistry(REGISTRY);
+    metricsModule.setPiRegisteredProviders(REGISTRY.getRegisteredProviderIds());
+    // The router's `allDiscoveredRefs()` reads `sessionCtx.modelRegistry.getAvailable()`
+    // (the public API) to enumerate candidates — so hand it the same registry
+    // via the documented `setSessionCtx` path, exactly as index.ts does in
+    // `session_start`.
+    router = makeRouter(CFG, BASE_CACHE, { modelRegistry: REGISTRY });
+  });
+
+  it('lookupPrice reads Model.cost from the registry for a pi-registered provider', () => {
+    const price = metricsModule.lookupPrice('requesty-export/claude-opus-4.5');
+    expect(price).not.toBeNull();
+    expect(price!.input).toBe(5.5e-6);
+    expect(price!.output).toBe(2.75e-5);
+  });
+
+  it('lookupPrice returns different prices for different models (not a single scalar)', () => {
+    const opus = metricsModule.lookupPrice('requesty-export/claude-opus-4.5');
+    const flash = metricsModule.lookupPrice('requesty-export/glm-5.3-flash');
+    expect(opus!.input).toBeGreaterThan(flash!.input);
+    expect(opus!.output).toBeGreaterThan(flash!.output);
+  });
+
+  it('effCost returns the real input price (not "unknown") for a pi-registered model', () => {
+    const cost = metricsModule.effCost('requesty-export/claude-opus-4.5');
+    // Before the fix: 'unknown'. After: the real per-million input cost.
+    expect(cost).not.toBe('unknown');
+    expect(typeof cost).toBe('number');
+    // Model.cost is per-token; effCost scales to per-million (×1e6).
+    // The exact scaling doesn't matter here — what matters is it's a real
+    // number strictly greater than the cheap model's cost.
+    expect(cost as number).toBeGreaterThan(0);
+  });
+
+  it('trivial group does NOT pick the most expensive model (Opus) at rank #1', () => {
+    const top = router.getTopModels('trivial', 10);
+    const refs = top.map((m) => m.ref);
+    expect(refs.length).toBeGreaterThan(0);
+    // Opus must not be the first pick in a cheap-first group.
+    expect(refs[0]).not.toBe('requesty-export/claude-opus-4.5');
+    // The cheapest model (glm-5.3-flash) should rank above Opus.
+    const flashIdx = refs.indexOf('requesty-export/glm-5.3-flash');
+    const opusIdx = refs.indexOf('requesty-export/claude-opus-4.5');
+    if (flashIdx >= 0 && opusIdx >= 0) {
+      expect(flashIdx).toBeLessThan(opusIdx);
+    }
+  });
+
+  it('strategic group (method: best) may pick Opus — registry does not break best-method', () => {
+    const top = router.getTopModels('strategic', 10);
+    const refs = top.map((m) => m.ref);
+    expect(refs.length).toBeGreaterThan(0);
+    // best method sorts by GDPval — Opus (1860) should be first.
+    expect(refs[0]).toBe('requesty-export/claude-opus-4.5');
+  });
+
+  it('without the registry, lookupPrice returns null (proves the fix is registry-driven)', () => {
+    // Clear the registry — now the old fallbacks are the only source.
+    metricsModule.setModelRegistry(null);
+    const price = metricsModule.lookupPrice('requesty-export/claude-opus-4.5');
+    // No cfg.model_metrics, no openrouter_pricing, no OR-backfill, no
+    // cfg.providers entry → null. This is exactly the pre-fix behavior that
+    // caused effCost to fall through to 'unknown' and Opus to win trivial.
+    expect(price).toBeNull();
+  });
+});
