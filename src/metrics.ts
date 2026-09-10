@@ -439,6 +439,16 @@ export function getM(ref: string): Metrics {
         const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
         if (discovered?.cost_per_m === 0) {
           costPerM = 0;
+        } else if (isFreeModelRef(ref, cfg.providers, cache.available_models)) {
+          // The :free tag (or free_models config list) identifies a known-free
+          // model even when the registry returned {0,0} (→ null) and the
+          // stale cache.available_models doesn't list it. Without this, a
+          // :free model not in the cache would fall to 'unknown' → effCost
+          // returns 'unknown' → sortByMinCostIfAllPriced drops it from the
+          // group (observed 2026-09-10: z-ai/glm-5.2:free vanished from /router
+          // after the reload while inkling-small:free stayed, because the
+          // latter was in the stale cache and the former was not).
+          costPerM = 0;
         } else {
           costPerM = 'unknown';
         }
@@ -605,7 +615,22 @@ function registryCost(
 ): { input: number; output: number } | null {
   if (!modelRegistry) return null;
   try {
-    const model = modelRegistry.find(provider, modelId);
+    // First try the full id as-is. Works for providers that store the exact
+    // id (mistral, mistral-zai, requesty-export, ollama).
+    let model = modelRegistry.find(provider, modelId);
+    // Retry with the `:free` suffix stripped if the full-id lookup failed.
+    // Pi's registry stores OpenRouter model ids WITHOUT the `:free` suffix
+    // (OpenRouter exposes free/paid as separate endpoints, but Pi
+    // normalizes to the base id). Without this retry, `find('openrouter',
+    // 'z-ai/glm-5.2:free')` returns undefined → registryCost returns null →
+    // getM sets cost_per_m='unknown' → effCost returns 'unknown' →
+    // sortByMinCostIfAllPriced drops the model from the group (observed
+    // 2026-09-10: z-ai/glm-5.2:free vanished from /router after the reload
+    // while inkling-small:free stayed, because the latter was in the stale
+    // cache.available_models and the former was not).
+    if (!model && modelId.endsWith(':free')) {
+      model = modelRegistry.find(provider, modelId.slice(0, -':free'.length));
+    }
     if (!model?.cost) return null;
     const { input, output } = model.cost;
     if (typeof input !== 'number' || typeof output !== 'number') return null;

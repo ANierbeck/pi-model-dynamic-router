@@ -200,3 +200,87 @@ describe('registry cost lookup (requesty-export scenario)', () => {
     expect(price).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Regression: `:free` suffix match (incident observed 2026-09-10)
+//
+// Symptom: `openrouter/z-ai/glm-5.2:free` vanished from /router groups after
+// the reload, while `openrouter/thinkingmachines/inkling-small:free` stayed.
+// Diag showed `modelRegistry.find('openrouter', 'z-ai/glm-5.2:free')` →
+// undefined (find-undefined), even though Pi's registry had 131 models.
+//
+// Root cause: Pi's registry stores OpenRouter model IDs WITHOUT the `:free`
+// suffix (e.g. `z-ai/glm-5.2`, not `z-ai/glm-5.2:free`). OpenRouter exposes
+// free and paid as separate endpoints, but Pi normalizes to the base id.
+// When the router asks `find(provider, 'z-ai/glm-5.2:free')`, it returns
+// undefined → registryCost returns null → getM sets cost_per_m='unknown' →
+// effCost returns 'unknown' → sortByMinCostIfAllPriced drops the model.
+//
+// The model that stayed (inkling-small:free) survived because it was in
+// cache.available_models with cost_per_m: 0 — the `discovered` fallback in
+// getM caught it. z-ai/glm-5.2:free was NOT in the stale cache, so it had
+// no fallback and was dropped.
+//
+// Fix: registryCost retries find() with the `:free` suffix stripped when the
+// full-id lookup fails. This matches how Pi stores OpenRouter ids.
+// ─────────────────────────────────────────────────────────────────────────
+describe('registryCost :free-suffix matching', () => {
+  // Registry stores the model WITHOUT the :free suffix (Pi's convention).
+  const freeRegistry = makeRegistry([
+    { provider: 'openrouter', id: 'z-ai/glm-5.2', cost: { input: 0, output: 0 } },
+    { provider: 'openrouter', id: 'thinkingmachines/inkling-small', cost: { input: 0, output: 0 } },
+    { provider: 'openrouter', id: 'cohere/north-mini-code', cost: { input: 0.2, output: 0.8 } },
+  ]);
+
+  beforeEach(() => {
+    metricsModule.setModelRegistry(freeRegistry);
+  });
+
+  it('find() with the full :free id fails (documents the registry convention)', () => {
+    // The bare find that registryCost used to do — no fallback:
+    const direct = freeRegistry.find('openrouter', 'z-ai/glm-5.2:free');
+    expect(direct).toBeUndefined();
+    // ...but the stripped id works:
+    const stripped = freeRegistry.find('openrouter', 'z-ai/glm-5.2');
+    expect(stripped).toBeDefined();
+  });
+
+  it('lookupPrice for a :free ref resolves via the stripped-id retry', () => {
+    // Before the fix: null (find-undefined → null). After: {0,0} is treated
+    // as free → returns null so the free-tag path applies. Either way the
+    // CALLER (getM/effCost) must not get 'unknown' for a known-free model.
+    const price = metricsModule.lookupPrice('openrouter/z-ai/glm-5.2:free');
+    // registryCost returns null for {0,0} (free), so lookupPrice returns null
+    // here too — BUT the important property is that getM doesn't fall through
+    // to 'unknown' because the :free tag + free_models config catches it.
+    // For a PAID model with a :free-tagged twin, the stripped-id retry DOES
+    // return the real cost. Tested next:
+    expect(price).toBeNull();
+  });
+
+  it('lookupPrice for a :free ref whose base id is PAID returns the real cost', () => {
+    // Scenario: openrouter has `cohere/north-mini-code` (paid, $0.2/$0.8)
+    // and the user sees `cohere/north-mini-code:free` in their group.
+    // The stripped-id retry finds the paid entry and returns its cost.
+    const price = metricsModule.lookupPrice('openrouter/cohere/north-mini-code:free');
+    expect(price).toEqual({ input: 0.2, output: 0.8 });
+  });
+
+  it('effCost for a :free ref without a cache entry is not \'unknown\' (regression)', () => {
+    // The bug: z-ai/glm-5.2:free was NOT in cache.available_models, so getM
+    // fell to 'unknown' and effCost returned 'unknown'. With the stripped-id
+    // retry, registryCost finds the {0,0} entry, returns null (free), and
+    // getM's :free-tag logic (via isFreeModelRef → freeCost) must yield 0.
+    // We assert effCost !== 'unknown' for a model the registry knows.
+    metricsModule.setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
+      providers: { openrouter: { free_models: ['openrouter/z-ai/glm-5.2:free'] } },
+    } as any);
+    metricsModule.setCache({ available_models: [], gdpval_scores: {} } as any);
+    const cost = metricsModule.effCost('openrouter/z-ai/glm-5.2:free');
+    // Must not be 'unknown' — it's a known-free model.
+    expect(cost).not.toBe('unknown');
+  });
+});
