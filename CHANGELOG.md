@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.3] — 2026-09-10 — Free-suffix registry-cost fix
+
+### Fixed
+- **Free OpenRouter models vanished from /router after reload.**
+  Pi's modelRegistry stores OpenRouter model IDs without the `:free` suffix
+  (e.g. `z-ai/glm-5.2`, not `z-ai/glm-5.2:free`). When the router asked
+  `modelRegistry.find('openrouter', 'z-ai/glm-5.2:free')`, it returned
+  undefined → `registryCost` returned null → `getM` set `cost_per_m='unknown'`
+  → `effCost` returned `'unknown'` → `sortByMinCostIfAllPriced` dropped the
+  model from the group. Fix: `registryCost` retries `find()` with the `:free`
+  suffix stripped when the full-id lookup fails; `getM` also consults
+  `isFreeModelRef` (which checks the `:free` tag) before falling to
+  `'unknown'`. 4 new regression tests in `test/registry-cost-lookup.test.ts`.
+
 ## [1.5.2] — 2026-09-10 — Registry-cost fix for pi-registered providers
 
 ### Fixed
