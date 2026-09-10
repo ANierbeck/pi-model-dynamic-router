@@ -108,7 +108,10 @@ const CFG: Config = {
     trivial: {
       description: 'Trivial - cheapest first',
       method: 'min_cost_if_all_priced',
-      max_cost: 0.01, // allow the cheap glm-flash, exclude Opus
+      max_cost: 0.01, // per-million; high enough to let all registry models pass.
+      // Opus is excluded from rank #1 not by this filter (Opus at 5.5e-6/tok
+      // ≈ $5.5/M is well under 0.01) but by sortByMinCostIfAllPriced sorting
+      // it below the cheaper glm-flash — that's the actual fix under test.
       min_gdpval: 0,
       fallback_groups: [],
     },
@@ -156,12 +159,12 @@ describe('registry cost lookup (requesty-export scenario)', () => {
 
   it('effCost returns the real input price (not "unknown") for a pi-registered model', () => {
     const cost = metricsModule.effCost('requesty-export/claude-opus-4.5');
-    // Before the fix: 'unknown'. After: the real per-million input cost.
+    // Before the fix: 'unknown'. After: the real per-token input cost from
+    // the registry (effCost does not scale by ×1e6 — it returns base as-is,
+    // so this is per-token; the exact unit doesn't matter for the assertion,
+    // only that it's a real number strictly greater than the cheap model's).
     expect(cost).not.toBe('unknown');
     expect(typeof cost).toBe('number');
-    // Model.cost is per-token; effCost scales to per-million (×1e6).
-    // The exact scaling doesn't matter here — what matters is it's a real
-    // number strictly greater than the cheap model's cost.
     expect(cost as number).toBeGreaterThan(0);
   });
 
