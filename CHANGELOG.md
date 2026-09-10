@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.2] — 2026-09-10 — Registry-cost fix for pi-registered providers
 
 ### Fixed
 - **Premium models (Opus, glm-5.3) appeared in `trivial`/`simple` groups.**
