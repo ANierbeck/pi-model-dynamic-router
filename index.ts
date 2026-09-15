@@ -1272,16 +1272,26 @@ let previousTokenCount = 0;
         apiKey: 'router-virtual', // not used — streamSimple overrides
         api: `router-group-${groupName}`, // unique per group to avoid overwriting global API providers
         streamSimple: groupStream,
-        // IMPORTANT: Do NOT register any models here. The virtual group
-        // provider is only used for routing via streamSimple (groupStream).
-        // Registering a model with id=groupName (e.g. 'trivial') causes a
-        // circular reference: allDiscoveredRefs() picks it up from Pi's
-        // registry, resolve('trivial') sees it as a candidate, and the group
-        // ends up selecting itself (trivial/trivial) as the top model.
-        // The streamSimple hook (groupStream) is still invoked correctly
-        // without any models registered — Pi calls the provider's
-        // streamSimple directly for group routing.
-        models: [],
+        models: [
+          {
+            id: groupName,
+            name: label,
+            reasoning: true,
+            input: ['text', 'image'] as any,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: resolvedMetrics ? 200_000 : 128_000,
+            maxTokens: 64_000,
+          },
+          ...(isDynamicGroup ? [{
+            id: `${groupName}:use-static`,
+            name: `${groupName} → auto-classify (static fallback allowed)`,
+            reasoning: true,
+            input: ['text', 'image'] as any,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: resolvedMetrics ? 200_000 : 128_000,
+            maxTokens: 64_000,
+          }] : []),
+        ],
       });
     }
   }

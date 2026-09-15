@@ -269,6 +269,29 @@ export class Router {
       }
     }
 
+    // Exclude the router's own virtual group-provider models (e.g.
+    // 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static').
+    // registerGroupProviders() registers one of these per group so Pi's
+    // model picker / --model flag can select a group as the active model
+    // (README: "You select `dynamic` group"). Pi's registry surfaces them
+    // via getAvailable(), so without this filter a group could select
+    // ITSELF as its own top candidate — e.g. resolve('trivial') picking
+    // 'trivial/trivial', which has no real cost/gdpval and shows as a
+    // circular "trivial/trivial" entry in /router (regression 2026-09-10).
+    // Filtering here (not by omitting the registration) keeps the group
+    // selectable as an entry point while excluding it as a resolution
+    // candidate.
+    const groupNames = new Set(Object.keys(this.cfg.model_groups));
+    for (const ref of refs) {
+      const slash = ref.indexOf('/');
+      if (slash === -1) continue;
+      const provider = ref.slice(0, slash);
+      const modelId = ref.slice(slash + 1);
+      if (groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`)) {
+        refs.delete(ref);
+      }
+    }
+
     // Honour the user's explicit --models/enabledModels scoping (pi-ai 0.83.0+).
     // Without this, the router could route to a model the user deliberately
     // excluded from the session. Empty scopedModels means no scoping is
