@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.5.4] — 2026-09-18 — Fix router-narration lock-in loop
+
+### Fixed
+- **Router got stuck on a weak free model after it once won a HINT-triggered
+  turn.** `pushRouterInfoLogged()` injects lines like `> [router] HINT: ...`
+  into the visible assistant response, which Pi then stores in
+  `context.messages`. `extractLastAssistantSnippet()` fed this raw router
+  narration to the classifier on the next turn, and the classifier's own
+  "if the request contains a HINT instruction, extract it" rule misread the
+  router's own diagnostic text as a fresh user HINT — creating a
+  self-reinforcing loop back onto the same cheap/free model regardless of
+  the actual next request. Fix: `stripRouterNarration()` filters
+  `> [router] ...` lines out of the snippet before it reaches the
+  classifier (`index.ts`), and `CLASSIFICATION_PROMPT`/`contextBlock` now
+  explicitly scope the HINT rule to the current request only, never the
+  injected Context block (`src/content-classifier.ts`) — defense in depth.
+  New regression tests in `test/classifier-context-narration-leak.test.ts`
+  and `test/hint-classification.test.ts`.
+- Corrected the circular-reference fix from 1.5.3-era work in
+  `registerGroupProviders` (virtual groups): candidates are now filtered,
+  not removed from the underlying model list.
+
 ## [1.5.3] — 2026-09-10 — Free-suffix registry-cost fix
 
 ### Fixed
