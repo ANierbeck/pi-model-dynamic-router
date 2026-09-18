@@ -25,11 +25,22 @@
 - If unsure whether something counts as a release action: **ask first, do not
   act.** Tagging, `gh release create`, `npm publish`, and triggering a publish
   workflow are all release actions.
-- **Roborev review must be clean before a release is even *proposed*** to the
-  user. But a clean roborev is NOT itself approval to release — it's a
-  prerequisite, not a substitute for the user's go-ahead.
-- Use `roborev ... --agent claude-code` for reviews in this repo. The default
-  `pi` agent hangs here.
+- **Code review must be clean before a release is even *proposed*** to the
+  user. Use the `requesting-code-review` skill from the **pi-superpowers**
+  extension — it is NOT in this repo's own `skills/` directory (that only has
+  `content-based-router` and `router-login`); it ships with the pi-superpowers
+  extension and your session's skill listing gives its exact file location.
+  Read that skill's `code-reviewer.md` template and fill in all of its
+  placeholders, not just the SHAs: `{WHAT_WAS_IMPLEMENTED}`,
+  `{PLAN_OR_REQUIREMENTS}`, `{DESCRIPTION}`, `{BASE_SHA}`, `{HEAD_SHA}`.
+  `{BASE_SHA}` is the last release tag (`git describe --tags --abbrev=0`), or
+  `origin/main` if no tags exist yet; `{HEAD_SHA}` is `HEAD`. Dispatch the
+  filled-in prompt with the `subagent` tool using the builtin `reviewer` agent
+  (fresh context) — the skill's own `pi -p "..."` instruction is a fallback
+  for sessions without a subagent dispatch tool, which does not apply here.
+  No Critical or Important findings may remain open. A clean review is NOT
+  itself approval to release — it's a prerequisite, not a substitute for the
+  user's go-ahead.
 
 ## 2. Single source of truth for rules
 
