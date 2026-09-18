@@ -59,7 +59,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 
 import { type ClassificationResult } from './content-classifier.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName } from './utils.ts';
+import { resolveShortModelName, stripRouterNarration } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -794,18 +794,23 @@ export class StreamOrchestrator {
   // ── Private helpers (exclusively used by groupStream/driveStream) ──────
 
   private extractPreviousUserMessage(context: Context): string | undefined {
+    // Stripped of router narration (see stripRouterNarration in ./utils.ts) as
+    // defense in depth: this feeds the classifier's "Context" block, which the
+    // prompt already instructs the classifier to never read a HINT from, but a
+    // weak/local classifier model can still misread "HINT: <model>" wherever
+    // it appears in the combined prompt text.
     try {
       const userMsgs = context.messages.filter((m: any) => m.role === 'user');
       const prev = userMsgs[userMsgs.length - 2];
       if (!prev) return undefined;
       const c = prev.content;
-      if (typeof c === 'string') return c.slice(0, 150);
+      if (typeof c === 'string') return stripRouterNarration(c).slice(0, 150);
       if (Array.isArray(c)) {
         const textContent = (c as any[])
           .filter((b: any) => b.type === 'text')
           .map((b: any) => b.text as string)
           .join('');
-        return textContent.slice(0, 150);
+        return stripRouterNarration(textContent).slice(0, 150);
       }
     } catch { /* context shape unknown */ }
     return undefined;
