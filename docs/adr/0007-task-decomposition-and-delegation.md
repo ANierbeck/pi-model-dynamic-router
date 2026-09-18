@@ -57,11 +57,37 @@ without an external platform dependency.
 The router is a **Pi extension that intercepts `streamSimple` for a single
 model reference**. It has no visibility into:
 
-- What Claude/Pi is about to do with a tool call (it's not a `PreToolUse`
-  hook — the router only sees `Context`/messages when *it* is asked to
-  stream a completion, not when Pi's main agent loop decides to call `Read`).
+- What Claude/Pi is about to do with a tool call — the router only sees
+  `Context`/messages when *it* is asked to stream a completion, not when
+  Pi's main agent loop decides to call `Read`.
 - Multi-step task planning. The router resolves ONE model ref per request; it
   is stateless across turns and has no task/subtask model.
+
+**Correction (2026-09-18, follow-up discussion)**: the original draft of this
+ADR claimed Pi has no `PreToolUse`-equivalent hook at all, concluding that
+Spotify's *enforced* interception (vs. advisory-only delegation) simply isn't
+buildable in Pi. That claim was wrong and has been removed. Pi's extension
+API (`node_modules/@earendil-works/pi-coding-agent/docs/extensions.md`) DOES
+expose exactly this seam:
+
+- **`tool_call`** — fires before a tool executes, can `{ block: true, reason
+  }` it (Spotify's `shunt` pattern: block a large `read`, tell the agent to
+  use a delegation path instead).
+- **`tool_result`** — fires after a tool executes, can transparently replace
+  its `content` before the calling model ever sees it. This is strictly
+  better than blocking for this use case: call a cheap model to summarize a
+  large `read` result and substitute the summary, with no dependence on the
+  orchestrating model cooperating with a redirect instruction.
+
+So an enforced, Spotify-equivalent (or better) delegation layer IS technically
+buildable in Pi. It still does not belong inside `pi-model-dynamic-router`,
+for the same scope reason as before: intercepting tool calls/results is a
+different extension point than resolving a model ref for a completion
+request, and conflating them would mean this router starts making
+tool-execution decisions it has no context for. It would have to be a
+**separate, new Pi extension** — one that could reuse `pi-model-dynamic-router`
+groups (via `trivial/trivial` etc., same as the subagent path above) as its
+cheap-model backend, closing the loop without merging the two concerns.
 
 **Decomposing a command into subtasks and orchestrating cheap-model +
 expensive-model steps is an agent-loop / orchestration concern, not a model
@@ -144,11 +170,45 @@ via `dynamic/<group>` model refs, which it already does.
   extensions) would be a different extension point entirely, not something
   `pi-model-dynamic-router` should absorb.
 
+## Who actually decomposes a task today? (2026-09-18, follow-up)
+
+The subagent path above proves cheap groups are *addressable*, but it does
+not answer who *decides* to split a task. As of this writing:
+
+- **Nobody does it automatically.** `pi-subagents`' own operating rules
+  explicitly say subagents should be invoked only when the operator
+  requested delegation — "task size, complexity, risk, tool-call count,
+  recipe fit, or an available specialist does not independently authorize
+  delegation." So the orchestrating agent (Claude, in this environment) does
+  not proactively decompose "read a file, then implement based on it" into a
+  cheap-read + expensive-implement split unless a human asks for it, per
+  request.
+- **An enforced version is technically buildable** (see the `tool_call` /
+  `tool_result` correction above), but does not exist as any installed
+  extension in this environment today. It would require a new, separate Pi
+  extension implementing the equivalent of Spotify's `shunt` — most cleanly
+  via a `tool_result` hook on `read` (and maybe `bash cat/head/tail`) that
+  summarizes oversized results with a cheap model before the expensive model
+  sees them.
+- **A weaker, advisory-only alternative** (a skill/CLAUDE.md instruction
+  telling the orchestrating agent to proactively delegate large reads) has
+  the same failure mode Spotify identified with their own first version:
+  "the rules were advisory, not enforced — Claude could ignore them."
+
+**Conclusion: this is a real, currently-unfilled gap**, not a solved problem.
+Building the enforced version is a legitimate, separate project (a new Pi
+extension, not a `pi-model-dynamic-router` change) if the token-cost savings
+are worth the engineering effort — not yet scoped or decided.
+
 ## Next step
 
-Done — see the "Verified live" note above for the research finding (no
-separate research doc was needed; `pi-subagents`, already a listed skill in
-this environment, is sufficient). The only remaining router-side deliverable
-is the docs addition in point 1 above (README section with a concrete
-`subagent(...)` example). No ADR status change to "Accepted" is needed
-because no router code changes.
+1. Done — the subagent-addressability research and the README example
+   (point 1 above) are both in place; `pi-subagents`, already a listed skill
+   in this environment, is sufficient for *manually invoked* delegation.
+2. Open — decide whether to scope and build the separate enforced-delegation
+   extension described above (`tool_result` hook + cheap-model summarization).
+   Not started; no code exists for it yet in this repo or elsewhere in this
+   environment as far as this investigation found.
+
+No ADR status change to "Accepted" is needed because no `pi-model-dynamic-router`
+code changes are implied by either point.
