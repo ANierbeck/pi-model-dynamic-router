@@ -2387,6 +2387,26 @@ let previousTokenCount = 0;
     return messageDrop || tokenDrop || absoluteMessageDrop || absoluteTokenDrop;
   }
 
+  // pushRouterInfo/pushRouterInfoLogged (src/stream-driver.ts) prepend lines
+  // like "> [router] HINT: mistral/foo · mistral/foo\n\n" to the assistant's
+  // VISIBLE response before the model's real text. Those lines end up stored
+  // in context.messages as part of the assistant turn, so on the next turn
+  // extractLastAssistantSnippet() would otherwise hand the classifier its own
+  // prior routing narration instead of the model's actual answer — and
+  // because that narration can itself contain the literal substring
+  // "HINT: <model>", the classifier's own HINT-detection instructions then
+  // misread the router's diagnostic output as a fresh user-issued HINT,
+  // routing back to whatever model was last narrated and creating a
+  // self-reinforcing lock-in loop (observed 2026-09-18: session stuck on
+  // openrouter/cohere/north-mini-code:free / ling-3.0-flash-vl:free).
+  function stripRouterNarration(text: string): string {
+    return text
+      .split('\n')
+      .filter((line) => !/^>\s*\[router\]/.test(line.trim()))
+      .join('\n')
+      .trim();
+  }
+
   function extractLastAssistantSnippet(context: Context): string | undefined {
     // Extract the last assistant response (compact for fast classification)
     // Max 150 chars (matches the limit in classifyPrompt)
@@ -2395,13 +2415,13 @@ let previousTokenCount = 0;
       const last = assistantMsgs[assistantMsgs.length - 1];
       if (!last) return undefined;
       const c = last.content as string | Array<{ type: string; text: string }> | unknown;
-      if (typeof c === 'string') return c.slice(0, 150);
+      if (typeof c === 'string') return stripRouterNarration(c).slice(0, 150);
       if (Array.isArray(c)) {
         const textContent = c
           .filter((b: any) => b.type === 'text')
           .map((b: any) => b.text as string)
           .join('');
-        return textContent.slice(0, 150);
+        return stripRouterNarration(textContent).slice(0, 150);
       }
     } catch {
       /* context shape unknown */
