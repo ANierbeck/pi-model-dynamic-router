@@ -340,6 +340,36 @@ This ensures **automatic recovery** when subscription limits are hit.
 
 When a streaming response fails mid-stream (empty body, connection drop, timeout), the group automatically retries with the next ranked candidate without requiring the user to resend the prompt. Soft failures are distinguished from hard errors: a 4xx response is not retried, but an interrupted stream or empty response is.
 
+---
+
+### Delegating subtasks to cheap groups (Pi subagents)
+
+The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `trivial/trivial`, `scout/scout`, `strategic/strategic`) is a valid `model` value for `subagent(...)` calls, exactly like any other provider/model pair Pi knows about.
+
+This lets you fan out I/O-heavy work (reading/summarizing several files) to a cheap group in parallel, then run one expensive-group call over the collected results — without any router code changes:
+
+```js
+subagent({
+  workflowScript: `
+    const files = ["src/a.ts", "src/b.ts", "src/c.ts"];
+    const summaries = await runs.all(files.map((f) => ({
+      key: f,
+      agent: "scout",
+      model: "trivial/trivial",
+      task: "Summarize the public API of " + f,
+    })));
+    const combined = summaries.map((s) => s.output).join("\\n\\n");
+    return runs.run("synthesize", {
+      agent: "worker",
+      model: "strategic/strategic",
+      task: "Given these file summaries, propose a refactor:\\n\\n" + combined,
+    });
+  `,
+});
+```
+
+See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-decomposition-and-delegation.md) for why this lives in the subagent layer rather than in the router.
+
 ## Configuration
 
 ### Main Configuration File

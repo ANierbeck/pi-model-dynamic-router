@@ -146,9 +146,9 @@ via `dynamic/<group>` model refs, which it already does.
 
 ## Next step
 
-See the companion research note on existing Pi subagent/task-parallelization
-tooling: `docs/research-pi-subagent-ecosystem-2026-09-18.md`. If that
-confirms `pi-subagents` (already a listed skill in this environment) is
-sufficient, the only router-side deliverable is the docs addition in point 1
-above — no ADR status change to "Accepted" is needed because no router code
-changes.
+Done — see the "Verified live" note above for the research finding (no
+separate research doc was needed; `pi-subagents`, already a listed skill in
+this environment, is sufficient). The only remaining router-side deliverable
+is the docs addition in point 1 above (README section with a concrete
+`subagent(...)` example). No ADR status change to "Accepted" is needed
+because no router code changes.
