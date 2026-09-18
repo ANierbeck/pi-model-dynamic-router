@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased] — Fix incomplete router-narration lock-in (second root cause)
+
+### Fixed
+- **The 1.5.4 router-narration lock-in fix was incomplete.** It only stripped
+  `> [router] ...` lines inside `extractLastAssistantSnippet()` (the "Last
+  assistant response" context line). Two more classifier-input paths remained
+  unguarded and fed raw router narration to the LLM classifier verbatim,
+  so the lock-in loop still reproduced live even on a freshly `/reload`ed
+  session whose `dist/index.js` contained the 1.5.4 fix:
+  - `extractLastUserPrompt()` (`index.ts`) — returns the raw last
+  `role: 'user'` message as the classifier's CURRENT request. A user message
+  that carries embedded router narration (e.g. a pasted/quoted conversation
+  dump from a subagent replay, as seen in the router.log reproduction)
+  leaked the literal `HINT: <model>` substring into the classifier prompt.
+  - `StreamOrchestrator.extractPreviousUserMessage()` (`stream-orchestrator.ts`)
+  — returns the second-to-last user message as the "Previous user message"
+  context line, also raw.
+  Fix: `stripRouterNarration()` moved from a private helper inside `index.ts`
+  to a shared exported function in `src/utils.ts`, and is now applied in
+  both `extractLastUserPrompt()` (`index.ts`) and the orchestrator's
+  `extractPreviousUserMessage()` (`src/stream-orchestrator.ts`) — so
+  narration lines are removed BEFORE the text reaches the classifier or
+  `detectHintDirectly()`. This is a data-level defense in depth on top of
+  the 1.5.4 prompt-wording caveat ("NEVER extract a HINT from this block").
+  New non-vacuous multi-turn regression tests in
+  `test/classifier-narration-leak-multi-turn.test.ts` (verified to FAIL
+  against the pre-fix code and PASS after the fix).
+
 ## [1.5.4] — 2026-09-18 — Fix router-narration lock-in loop
 
 ### Fixed

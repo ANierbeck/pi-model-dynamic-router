@@ -28,7 +28,14 @@ import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
 import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
-import { splitRef, stripDateSuffix, resolveShortModelName, fmt, fmtTime } from './src/utils.ts';
+import {
+  splitRef,
+  stripDateSuffix,
+  resolveShortModelName,
+  fmt,
+  fmtTime,
+  stripRouterNarration,
+} from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
@@ -2230,17 +2237,27 @@ let previousTokenCount = 0;
    * On failure, records the model as soft-limited and tries the next candidate.
    */
   function extractLastUserPrompt(context: Context): string {
+    // Stripped of router narration (see stripRouterNarration in src/utils.ts):
+    // this text becomes the classifier's "current request", and a subagent
+    // task that replays prior turns verbatim can carry an old
+    // "> [router] HINT: ..." line anywhere in its body, not just at the
+    // start — the classifier's "contains a HINT instruction" rule would
+    // otherwise misread it as a fresh instruction (2026-09-18 lock-in loop,
+    // reproduced live even after the narration-leak fix in 26e99f0 because
+    // that fix only covered extractLastAssistantSnippet(), not this path).
     try {
       const userMsgs = context.messages.filter((m) => m.role === 'user');
       const last = userMsgs[userMsgs.length - 1];
       if (!last) return '';
       const c = last.content;
-      if (typeof c === 'string') return c;
+      if (typeof c === 'string') return stripRouterNarration(c);
       if (Array.isArray(c))
-        return c
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text)
-          .join('');
+        return stripRouterNarration(
+          c
+            .filter((b: any) => b.type === 'text')
+            .map((b: any) => b.text)
+            .join('')
+        );
     } catch {
       /* context shape unknown */
     }
@@ -2399,14 +2416,6 @@ let previousTokenCount = 0;
   // routing back to whatever model was last narrated and creating a
   // self-reinforcing lock-in loop (observed 2026-09-18: session stuck on
   // openrouter/cohere/north-mini-code:free / ling-3.0-flash-vl:free).
-  function stripRouterNarration(text: string): string {
-    return text
-      .split('\n')
-      .filter((line) => !/^>\s*\[router\]/.test(line.trim()))
-      .join('\n')
-      .trim();
-  }
-
   function extractLastAssistantSnippet(context: Context): string | undefined {
     // Extract the last assistant response (compact for fast classification)
     // Max 150 chars (matches the limit in classifyPrompt)

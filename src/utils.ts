@@ -56,6 +56,27 @@ export function fmtTime(ms: number): string {
   return `${Math.floor(m / 60)}h${m % 60 ? (m % 60) + 'm' : ''}`;
 }
 
+/**
+ * pushRouterInfo/pushRouterInfoLogged (src/stream-driver.ts) prepend lines
+ * like "> [router] HINT: mistral/foo · mistral/foo\n\n" to the assistant's
+ * VISIBLE response before the model's real text. Those lines end up stored in
+ * context.messages, so any text extracted from message history for the
+ * classifier must have them stripped first — otherwise the narration's own
+ * literal "HINT: <model>" substring gets misread as a fresh user-issued HINT,
+ * creating a self-reinforcing lock-in loop. This must run on every extraction
+ * path that feeds classifier input (last user prompt, last assistant
+ * snippet, previous user message), not just one of them: a subagent task
+ * that replays prior turns verbatim (e.g. wrapped in "<conversation>...")
+ * carries old narration lines anywhere in its body, not only at the start.
+ */
+export function stripRouterNarration(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !/^>\s*\[router\]/.test(line.trim()))
+    .join('\n')
+    .trim();
+}
+
 // ── Model Token Utilities ─────────────────────────────────────────────────
 
 /**
