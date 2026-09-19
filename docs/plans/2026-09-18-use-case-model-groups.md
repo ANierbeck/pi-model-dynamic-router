@@ -2,30 +2,29 @@
 
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
 >
-> **STATUS (2026-09-18, late — PAUSED before execution; design REVISED twice):**
-> The design in Tasks 1 & 4 below is **STALE**. Final decision:
+> **STATUS (2026-09-19 — REVISED, ready to execute):** Design finalized. The
+> `bulk_reader`/`code_writer` quality gate uses two existing/new filters, no
+> denylist:
 >
-> - **No `exclude_models` denylist and no new `allow_unscored` field.** The
->   user's correction (2026-09-18, late): we already have the cost gate we
->   need — `max_cost: 0`. It excludes expensive models (e.g.
->   `claude-bridge/claude-opus-5`, `cost_per_m: 0.0000015`, NOT free) that
->   would "burn the Pro abo in 5 minutes", because `max_cost: 0` keeps a
->   model only if `isFreeModel && isTokenBased` (`src/dynamic-config.ts:112`).
->   Verified: Opus 5 is not `:free`, not in any `free_models` list, and has
->   `cost_per_m !== 0` → `isFreeModel === false` → excluded. No leak.
-> - **`bulk_reader` = `min_context_length: 64000` (new filter) + `max_cost: 0`
->   + `min_gdpval` omitted (no gate, so unscored glm-5.2 is admitted) +
->   `billing_preference: "local_first"`.** Two axes covered: too-expensive
->   (max_cost:0 → Opus out) and too-small-context (min_context_length →
->   gemma2-2b 8k out). Residual edge (free + large-context + weak) is
->   accepted by the user — it costs $0, unlike the Opus case.
-> - **`code_writer` = symmetric: `min_context_length: 32000` + `max_cost: 0` +
->   `min_gdpval` omitted + `billing_preference: "local_first"`.**
+> - **`max_cost: 0`** (existing filter) excludes expensive pay-per-token
+>   models (e.g. `claude-bridge/claude-opus-5`, not free — would burn a Pro
+>   subscription's budget in minutes). Verified: `max_cost: 0` keeps a model
+>   only if `isFreeModel && isTokenBased` (`src/dynamic-config.ts:112`); Opus
+>   5 is not `:free`, not in any `free_models` list, `cost_per_m !== 0` →
+>   excluded. No leak.
+> - **`min_context_length`** (new filter, this plan) excludes small-context
+>   free models (e.g. `gemma2-2b`, 8k context) that can't hold the use
+>   case's input.
+> - **No `min_gdpval`** on either group (omitted, not `0` — same numeric
+>   effect but avoids implying a quality gate exists). This admits unscored
+>   free models like `z-ai/glm-5.2:free`, which has no GDPval entry in
+>   `gdpval_builtin` (only `glm-4`/`glm-4-6` are scored) but is a capable
+>   model — a strict `min_gdpval` would wrongly exclude it.
+> - **No `exclude_models` denylist.** Considered and rejected: the two
+>   filters above already cover both failure modes (too expensive, too
+>   small) without a hand-maintained list.
 >
-> **Before executing, REVISE:** Task 1 (drop any `exclude_models`/denylist
-> mention — only `min_context_length` is new), Task 4 (rewrite the two group
-> configs to the `max_cost: 0` + `min_context_length` form above, NOT the
-> `min_gdpval: 0`-only form currently in the file).
+> Task 4 below reflects this design.
 
 **Goal:** Add a `min_context_length` group filter and two documented default
 groups (`bulk_reader`, `code_writer`) so subagent workflows can address a
@@ -424,7 +423,7 @@ entry and add these two, comma-separated as appropriate to valid JSON):
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
       "method": "tiered",
       "billing_preference": "local_first",
-      "min_gdpval": 0,
+      "max_cost": 0,
       "min_context_length": 64000,
       "fallback_groups": ["scout", "operational", "fallback"]
     },
@@ -432,7 +431,7 @@ entry and add these two, comma-separated as appropriate to valid JSON):
       "description": "Cheap-and-fast models with enough context for a spec+one reference file (boilerplate generation). Addressable as code_writer/code_writer from subagent workflows.",
       "method": "tiered",
       "billing_preference": "local_first",
-      "min_gdpval": 300,
+      "max_cost": 0,
       "min_context_length": 32000,
       "fallback_groups": ["operational", "scout", "fallback"]
     }
@@ -444,9 +443,16 @@ entry and add these two, comma-separated as appropriate to valid JSON):
   baseline so a too-small cheap model is not picked for a multi-file read.
 - `code_writer` `min_context_length: 32000` — holds a spec + one reference
   file; lower floor than `bulk_reader` because the input is smaller.
-- `min_gdpval: 0` (bulk_reader) / `300` (code_writer) — keep the pool cheap;
-  `code_writer` keeps a modest quality floor since generated code must at
-  least compile-ish.
+- `max_cost: 0` (both groups) — the cost gate, not `min_gdpval`. Excludes
+  expensive pay-per-token models (e.g. Opus via claude-bridge) that would
+  burn a subscription budget on a bulk read; keeps the pool to genuinely
+  free models. Deliberately no `min_gdpval` — a strict quality gate would
+  drop unscored-but-capable free models like `z-ai/glm-5.2:free` (no
+  `gdpval_builtin` entry) alongside the actually-weak ones, and there's no
+  cheap way to tell them apart from GDPval alone. `min_context_length`
+  already filters out the weak-and-small free models (e.g. `gemma2-2b`,
+  8k context); a free-and-large-context-but-still-weak model is an accepted
+  residual risk (costs $0, unlike the Opus case `max_cost: 0` prevents).
 - `billing_preference: "local_first"` — prefer local $0 models (Ollama)
   first for these I/O-heavy tasks, exactly like `scout`.
 
