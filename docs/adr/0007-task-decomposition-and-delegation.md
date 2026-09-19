@@ -24,6 +24,61 @@ internal system (Backstage-based) not available outside Spotify. The
 the expensive model for reasoning — is the reusable idea, not their specific
 implementation.
 
+## Spotify's reference architecture (detail lost in the first draft)
+
+The Context section above compressed `shunt` into four bullets. The
+underlying architecture has details that matter for judging feasibility of
+a Pi equivalent, so they're captured here explicitly.
+
+**Three layers, degrading gracefully:**
+
+1. **Hooks** (`PreToolUse`) — `check-file-size` blocks any `Read` over a
+   configurable line threshold (default 350, `SHUNT_MIN_LINES` env var) and
+   tells Claude to use the `/bulk-reader` skill instead. `check-bash-read`
+   does the same for `cat`/`head`/`tail`/`less`/`more` on large files.
+   **Targeted reads pass through untouched**: a `Read` with `offset`/`limit`,
+   or a piped `cat file | grep ...`, is assumed to already be narrow enough
+   that delegation wouldn't help.
+2. **Scripts** — two bash wrappers around the Portal CLI. `bulk-read` wraps
+   each file in XML tags and sends them + a question to the `bulk-reader`
+   mode; safe to call repeatedly with the same paths for follow-up
+   questions because each invocation is stateless/ephemeral (nothing stored
+   server-side) and the file corpus never enters Claude's own context.
+   `code-write` sends a spec + a *required* reference file to the
+   `code-writer` mode, strips markdown fences from the output, and writes
+   straight to disk — Claude never sees the generated code as output
+   tokens.
+3. **Skills** — markdown files telling Claude when/how to call the
+   scripts. Purely advisory on their own, but layered under the hooks so
+   **the system degrades gracefully**: even if Claude ignores the skill,
+   the hook still blocks the oversized read. This is the key structural
+   idea — enforcement doesn't depend on the orchestrating model cooperating.
+
+**Two modes** (the "worker" side; Gemini 2.5 Flash in the article's
+examples, but model-agnostic — `model` accepts anything configured on the
+Portal instance):
+- `bulk-reader` — read + summarize into structured bullets, no prose, no
+  preambles.
+- `code-writer` — generate code matching an existing reference file's
+  conventions exactly, output only code (explicitly "no markdown fences" —
+  the article notes this instruction matters, otherwise Claude has to parse
+  fences back out of the response).
+
+**What explicitly does NOT work** (the article's own "What doesn't work"
+section — directly relevant to scoping any Pi equivalent):
+- **Can't delegate editing.** Worker summaries don't carry reliable line
+  numbers, so Claude still reads the specific section directly before
+  editing. Delegation only saves tokens on *understanding*, not on the
+  read-before-edit step.
+- **Can't delegate reasoning.** The worker model found surface-level
+  patterns but missed a subtle thread-safety bug that Claude caught in
+  seconds once given the right context. Routing explicitly excludes
+  debugging, architectural decisions, and safety-critical code.
+- **Latency.** Each delegation is a network round-trip (10-30s typical,
+  Portal caps a single invocation at 30s). Acceptable for large reads,
+  counterproductive for small ones — this is *why* the line threshold
+  exists, not an incidental detail.
+
 ## What the router already does (baseline)
 
 - **Group-based cost/quality routing** (`router-config.json` /
@@ -199,6 +254,54 @@ not answer who *decides* to split a task. As of this writing:
 Building the enforced version is a legitimate, separate project (a new Pi
 extension, not a `pi-model-dynamic-router` change) if the token-cost savings
 are worth the engineering effort — not yet scoped or decided.
+
+## Feasibility check against this repo's own preconditions (AGENTS.md / AGENT.md)
+
+Before treating any of the above as a green light, checked both (a) this
+revision's docs-only change and (b) the hypothetical future
+enforced-delegation extension against this repo's hard rules (`AGENTS.md`)
+and architecture notes (`AGENT.md`):
+
+- **This revision (docs-only)**: fully compliant. English-only throughout
+  (rule 3), no release action implied (rule 1 N/A), no code touched so
+  rules 4/6 don't apply yet, commit will use the `docs:` prefix (rule 5).
+- **Ü1 invariant** (rule 6, `AGENTS.md`; "Provider Registration" section,
+  `AGENT.md`): `pi.registerProvider` replaces a provider's model list
+  wholesale, so any new registration must not clobber an existing one. The
+  hypothetical future extension does **not** need to register any provider
+  of its own — it would address the router's already-registered virtual
+  group providers (`trivial/trivial`, `scout/scout`, ...) by model ref,
+  exactly as the subagent-addressability verification above already
+  confirmed live. By construction it inherits zero Ü1 risk. Worth stating
+  explicitly so a future implementer doesn't "helpfully" register a
+  dedicated `delegate-worker` provider instead of reusing the existing
+  groups — that would reintroduce the exact risk Ü1 guards against.
+- **Tests & verification** (rule 4): N/A to this docs-only revision. Would
+  apply in full (`tsc --noEmit`, `vitest run`, non-vacuous regression
+  tests per the "Ü1 invariant test" lesson) to the future extension's own
+  codebase, wherever it lives — it would not inherit this repo's
+  `vitest.config.ts` coverage thresholds since it's a separate
+  extension/repo per the scope decision above.
+- **Release approval** (rule 1): N/A — no tag/publish implied by this ADR
+  edit. Flagged here only so it isn't forgotten later: the future
+  extension, if built, is its own release surface with its own explicit,
+  named approval gate — this router's release process doesn't cover it.
+- **Single source of truth** (rule 2): the future extension's own
+  operating rules (which tool calls trigger delegation, threshold
+  defaults, etc.) belong in *that* extension's own `AGENTS.md`, not bolted
+  onto this router's. This ADR documents the *decision*, not the future
+  extension's operating rules.
+
+**Conclusion: yes, implementable.** Nothing in this repo's preconditions
+blocks either the docs-only change proposed here or the hypothetical
+future extension — the two are cleanly decoupled by the scope decision
+already made above. The one still-untested technical claim: the
+`tool_result` hook's documented ability to attach nested `usage` for a
+sub-model call (`docs/extensions.md` shows the type signature: `return {
+content: [...], usage: nestedModelUsage }`) has been read, not exercised
+against a live Pi session in this investigation. Worth a small spike
+before committing engineering time to the full extension — not a blocker
+to documenting the design now.
 
 ## Next step
 
