@@ -54,7 +54,7 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
   const router = new Router(testConfig, cache, new Map());
 
   it('collapses same-provider aliases (mistral/*) to a single entry', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     const mistralRefs = top.filter((m) => m.ref.startsWith('mistral/'));
     // 3 mistral/* aliases (2604, 3.5, latest) all resolve to the same slug →
     // only ONE should survive, matching resolveGroup's dedup behavior.
@@ -62,7 +62,7 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
   });
 
   it('collapses same-provider aliases (mistral-zai/*) to a single entry', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     // After coalescing + seenSlugs dedup, all variants of the same slug are
     // collapsed to ONE entry — mistral-zai resolves to mistral-medium-3-5
     // (same slug as mistral variants), so it is deduplicated away.
@@ -71,7 +71,7 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
   });
 
   it('keeps ONE entry per MODEL across all providers (display collapses cross-provider same-model)', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     // All variants (mistral/* and mistral-zai/*) resolve to the same slug
     // mistral-medium-3-5 → coalescing collapses them to a single row.
     // The display shows "which models are available", not "which providers".
@@ -79,7 +79,7 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
   });
 
   it('prefers the canonical versioned variant over aliases when deduping', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     const mistralEntry = top.find((m) => m.ref.startsWith('mistral/'));
     // mistral-medium-3.5 is the CANONICAL ref (normalized id ≡ slug
     // mistral-medium-3-5); -2604 is a dated-snapshot alias and -latest is a
@@ -134,7 +134,7 @@ describe('coalesceBySlug — clusters cross-provider same-slug entries together'
 
 
   it('collapses cross-provider same-slug entries to ONE row in the display', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     // coalesceBySlug clusters all glm-5-2 variants into one slot — the display
     // shows "which models are available", not "which providers offer this model".
     // The routing path keeps all variants internally for correct failover.
@@ -150,7 +150,7 @@ describe('coalesceBySlug — clusters cross-provider same-slug entries together'
   });
 
   it('the best-ranked model (highest GDPval) appears first in the display', () => {
-    const top = router.getTopModels('tactical', 10);
+    const { models: top } = router.getTopModels('tactical', 10);
     // glm-5-2 (1497.55) ranks above other-model (500) → glm-5-2 is first.
     // After collapse, top[0] is the single best glm-5-2 row.
     expect(top[0].ref).toMatch(/glm-5-2/);
@@ -184,7 +184,7 @@ describe('coalesceBySlug — clusters cross-provider same-slug entries together'
     );
     metricsModule.setCache(explicitVsLatestCache);
     const explicitRouter = new Router(explicitVsLatestConfig, explicitVsLatestCache, new Map());
-    const result = explicitRouter.getTopModels('tactical', 10);
+    const { models: result } = explicitRouter.getTopModels('tactical', 10);
     expect(result.map((m) => m.ref)).toEqual(['mistral/mistral-medium-3.5']);
 
     // Restore the outer suite's shared state for subsequent tests.

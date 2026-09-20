@@ -169,7 +169,7 @@ describe('registry cost lookup (requesty-export scenario)', () => {
   });
 
   it('trivial group does NOT pick the most expensive model (Opus) at rank #1', () => {
-    const top = router.getTopModels('trivial', 10);
+    const { models: top } = router.getTopModels('trivial', 10);
     const refs = top.map((m) => m.ref);
     expect(refs.length).toBeGreaterThan(0);
     // Opus must not be the first pick in a cheap-first group.
@@ -183,7 +183,7 @@ describe('registry cost lookup (requesty-export scenario)', () => {
   });
 
   it('strategic group (method: best) may pick Opus — registry does not break best-method', () => {
-    const top = router.getTopModels('strategic', 10);
+    const { models: top } = router.getTopModels('strategic', 10);
     const refs = top.map((m) => m.ref);
     expect(refs.length).toBeGreaterThan(0);
     // best method sorts by GDPval — Opus (1860) should be first.

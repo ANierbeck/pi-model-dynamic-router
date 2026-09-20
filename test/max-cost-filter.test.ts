@@ -86,7 +86,7 @@ describe('max_cost filter with unknown-cost models', () => {
   });
 
   it('trivial group (max_cost: 0) includes ollama and openrouter free models', () => {
-    const top = router.getTopModels('trivial', 10);
+    const { models: top } = router.getTopModels('trivial', 10);
     const refs = top.map((m) => m.ref);
     // Ollama models are local → cost 0 → included
     expect(refs.some((r) => r.startsWith('ollama/'))).toBe(true);
@@ -95,7 +95,7 @@ describe('max_cost filter with unknown-cost models', () => {
   });
 
   it('trivial group (max_cost: 0) includes mistral models with cost_per_m: 0', () => {
-    const top = router.getTopModels('trivial', 10);
+    const { models: top } = router.getTopModels('trivial', 10);
     const refs = top.map((m) => m.ref);
     // Mistral models have cost_per_m: 0 in cache → effCost returns 0 → included
     // This was the bug: effCost returned 0.000020 (fallback) for cost_per_m: 0
@@ -103,7 +103,7 @@ describe('max_cost filter with unknown-cost models', () => {
   });
 
   it('scout group (no max_cost) includes all models', () => {
-    const top = router.getTopModels('scout', 10);
+    const { models: top } = router.getTopModels('scout', 10);
     const refs = top.map((m) => m.ref);
     // Mistral models should be in scout (no max_cost filter)
     expect(refs.some((r) => r.startsWith('mistral/'))).toBe(true);

@@ -222,21 +222,21 @@ describe('Router Integration Tests', () => {
 
   describe('getTopModels()', () => {
     it('should return top 3 models', () => {
-      const topModels = router.getTopModels('strategic', 3);
+      const { models: topModels } = router.getTopModels('strategic', 3);
 
       expect(Array.isArray(topModels)).toBe(true);
       expect(topModels.length).toBeLessThanOrEqual(3);
     });
 
     it('should return all models when count is high', () => {
-      const allModels = router.getTopModels('strategic', 100);
+      const { models: allModels } = router.getTopModels('strategic', 100);
 
       expect(Array.isArray(allModels)).toBe(true);
       expect(allModels.length).toBeGreaterThanOrEqual(0);
     });
 
     it('should return empty array for 0 models', () => {
-      const zeroModels = router.getTopModels('strategic', 0);
+      const { models: zeroModels } = router.getTopModels('strategic', 0);
       expect(zeroModels).toEqual([]);
     });
 
@@ -244,7 +244,7 @@ describe('Router Integration Tests', () => {
       // getTopModels() ranks all discovered models by group criteria (min_gdpval, cost,
       // method) — it no longer restricts candidates to the group's static `models` list.
       const discovered = router.allDiscoveredRefs();
-      const topModels = router.getTopModels('strategic', 10);
+      const { models: topModels } = router.getTopModels('strategic', 10);
       for (const m of topModels) {
         expect(discovered).toContain(m.ref);
       }
@@ -252,7 +252,7 @@ describe('Router Integration Tests', () => {
 
     it('should return only refs from allDiscoveredRefs() for tactical group', () => {
       const discovered = router.allDiscoveredRefs();
-      const topModels = router.getTopModels('tactical', 10);
+      const { models: topModels } = router.getTopModels('tactical', 10);
       for (const m of topModels) {
         expect(discovered).toContain(m.ref);
       }

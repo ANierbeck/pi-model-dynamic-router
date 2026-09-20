@@ -41,7 +41,6 @@ import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug } from './slug-matcher.ts';
 
-
 // ── Constants ────────────────────────────────────────────────────────────
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
@@ -550,6 +549,62 @@ export function setMetrics(newMetrics: Record<string, Metrics>): void {
   metrics = newMetrics;
 }
 
+// ── Cost Resolution Helpers ────────────────────────────────────────────
+
+/**
+ * Resolves cost_per_m for a reference using the authoritative chain:
+ * 1) registryCost (modelRegistry.find(provider,modelId).cost)
+ * 2) local provider (truly free)
+ * 3) subscription provider with no registry price → free
+ * 4) cache-discovered cost_per_m: 0
+ * 5) :free tag / free_models list → free
+ * 6) otherwise 'unknown'
+ * 
+ * This helper is used by both the config-default path and the early-return
+ * healing path.
+ */
+function resolveCostPerM(ref: string): number | 'unknown' {
+  const prov = ref.split('/')[0];
+  const provDef = PROVIDER_MAP[prov];
+  const provCfg = cfg.providers?.[prov];
+
+  // 1. Registry is authoritative — try it first. The real registryCost()
+  //    (not a naive find) handles pricingAlias and same-slug sibling ids
+  //    (e.g. registry knows the model as 'zai-glm-5-2' while we ask for
+  //    'glm-5-2'), and returns null for {0,0} registry costs so the free/
+  //    local/subscription detection below applies.
+  const { provider: rp, modelId: rm } = splitRef(ref);
+  const regCost = registryCost(rp, rm);
+  if (regCost) {
+    // Use input price as the representative scalar (matches effCost's convention).
+    return regCost.input;
+  }
+
+  // 2. Local providers are truly free
+  if (provDef?.local) {
+    return 0;
+  }
+
+  // 3. Subscription providers with no registry price → free
+  if (provCfg?.billing === 'subscription') {
+    return 0;
+  }
+
+  // 4. Cache-discovered placeholder 0
+  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+  if (discovered?.cost_per_m === 0) {
+    return 0;
+  }
+
+  // 5. :free tag / free_models list
+  if (isFreeModelRef(ref, cfg.providers, cache.available_models)) {
+    return 0;
+  }
+
+  // 6. Unknown
+  return 'unknown';
+}
+
 /**
  * Returns the metrics for a reference
  * Including benchmark data if available
@@ -559,60 +614,32 @@ export function getM(ref: string): Metrics {
     // gdpval is NOT cached — it can change as model-map / scraped scores
     // load. Always recompute it so the TUI reflects the current state.
     metrics[ref].gdpval = lookupGdp(ref) ?? cfg.model_metrics?.[ref]?.gdpval ?? 50;
+    
+    // Heal stale cost_per_m PLACEHOLDERS only: 'unknown' (written before the
+    // registry was published, e.g. pi-claude) and 0 (scan placeholders for
+    // custom providers) are re-resolved via the authoritative chain. A
+    // resolved non-zero value is REAL (user-configured or registry-priced)
+    // and must never be overwritten — otherwise an explicit cost_per_m
+    // (e.g. model_metrics zai-glm-5-3: 1.4) would be clobbered back to the
+    // chain's subscription-zero, defeating dedup-before-cost-gates
+    // (regression: slug-canon-dedup "capped group" test).
+    if (metrics[ref].cost_per_m === 0 || metrics[ref].cost_per_m === 'unknown') {
+      metrics[ref].cost_per_m = resolveCostPerM(ref);
+    }
     return metrics[ref];
   }
 
   const cm = cfg.model_metrics[ref] ?? {};
   
-  // Check if cost_per_m is explicitly set to 'unknown' in config
+  // Start with user config; default to 0 (will be healed below)
   let costPerM: number | 'unknown' = cm.cost_per_m ?? 0;
   
-  // If cost is 0, check if it's a local provider (truly free), a pi-registered
-  // model with a real price, or unknown.
+  // If cost is 0 (default or explicit), resolve via authoritative chain.
+  // This also handles explicit user 0: registry price wins over user 0
+  // (matching the pre-existing config-default semantics — 0 is "unpriced",
+  // not "forced free"; the :free tag / free_models list is the escape hatch).
   if (costPerM === 0) {
-    const prov = ref.split('/')[0];
-    const provDef = PROVIDER_MAP[prov];
-    const provCfg = cfg.providers?.[prov];
-    
-    // Local providers are truly free
-    if (provDef?.local) {
-      costPerM = 0;
-    }
-    // Subscription providers with no pricing data are free
-    else if (provCfg?.billing === 'subscription') {
-      costPerM = 0;
-    }
-    // Pi's modelRegistry has the real per-model cost (authoritative).
-    // Consult it BEFORE the cache fallback — a pi-registered provider
-    // (requesty-export, pi-claude, extension providers) may not be in
-    // cache.available_models at all, and even when it is, the scan
-    // hardcodes cost_per_m: 0 for custom providers (index.ts:716).
-    else {
-      const { provider: rp, modelId: rm } = splitRef(ref);
-      const regCost = registryCost(rp, rm);
-      if (regCost) {
-        // Use input price as the representative scalar (matches effCost's
-        // existing convention for the non-registry fallbacks).
-        costPerM = regCost.input;
-      } else {
-        const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-        if (discovered?.cost_per_m === 0) {
-          costPerM = 0;
-        } else if (isFreeModelRef(ref, cfg.providers, cache.available_models)) {
-          // The :free tag (or free_models config list) identifies a known-free
-          // model even when the registry returned {0,0} (→ null) and the
-          // stale cache.available_models doesn't list it. Without this, a
-          // :free model not in the cache would fall to 'unknown' → effCost
-          // returns 'unknown' → sortByMinCostIfAllPriced drops it from the
-          // group (observed 2026-09-10: z-ai/glm-5.2:free vanished from /router
-          // after the reload while inkling-small:free stayed, because the
-          // latter was in the stale cache and the former was not).
-          costPerM = 0;
-        } else {
-          costPerM = 'unknown';
-        }
-      }
-    }
+    costPerM = resolveCostPerM(ref);
   }
 
   return (metrics[ref] = {

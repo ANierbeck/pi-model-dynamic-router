@@ -1312,7 +1312,7 @@ let previousTokenCount = 0;
   function getTopModels(
     groupName: string,
     n: number
-  ): { ref: string; limited: boolean; rank: number }[] {
+  ): { models: { ref: string; limited: boolean; rank: number }[]; total: number } {
     return router.getTopModels(groupName, n);
   }
 
@@ -2978,7 +2978,8 @@ async function registerGroupModels(ctx: any) {
 
       // Group tables with top 5 models (3 available + up to 2 limited)
       for (const [groupName, g] of Object.entries(cfg.model_groups)) {
-        const top = getTopModels(groupName, 5);
+        const n = 5;
+        const { models: topModels, total } = getTopModels(groupName, n);
         const method =
           g.method === 'pipeline'
             ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
@@ -3003,7 +3004,7 @@ async function registerGroupModels(ctx: any) {
         // Group header
         lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`);
 
-        if (top.length === 0 && g.method === 'dynamic') {
+        if (topModels.length === 0 && g.method === 'dynamic') {
           const cats = [
             'code_simple→operational',
             'code_complex→tactical',
@@ -3013,11 +3014,11 @@ async function registerGroupModels(ctx: any) {
           ];
           lines.push('│ Routes per prompt via Ollama (gemma2:2b):');
           cats.forEach((c) => lines.push(`│   ${c}`));
-        } else if (top.length === 0) {
+        } else if (topModels.length === 0) {
           lines.push('│ (no models configured)');
         } else {
           // Compute max model name width (capped at 38)
-          const MW = Math.min(38, Math.max(5, ...top.map((t) => t.ref.length)));
+          const MW = Math.min(38, Math.max(5, ...topModels.map((t) => t.ref.length)));
 
           // Table header
           lines.push(
@@ -3027,7 +3028,7 @@ async function registerGroupModels(ctx: any) {
             `│ ${'─'.padEnd(3)} ${'─'.repeat(MW)}  ${'────'}  ${'─────'}  ${'────'}  ${'───────────'}  ${'───────────────'}  ${'──────'}  ──────`
           );
 
-          for (const { ref, limited, rank } of top) {
+          for (const { ref, limited, rank } of topModels) {
             const m = getM(ref);
             const prov = ref.split('/')[0];
             const mux = costMux(prov);
@@ -3069,6 +3070,10 @@ async function registerGroupModels(ctx: any) {
               `│ ${String(rank + 1).padEnd(3)} ${modelShort.padEnd(MW)}  ${String(m.gdpval).padStart(4)}  ${String(Math.round(m.avg_latency_ms)).padStart(5)}  ${String(Math.round(m.throughput_tps)).padStart(4)}  ${costDisplay.padStart(11)}  ${usageDisplay.padStart(15)}  ${budgetDisplay.padStart(6)} ${status}${sel}`
             );
           }
+        }
+        // Footer: show total count if more than shown
+        if (total > n) {
+          lines.push(`│    … +${total - n} weitere (sortiert nach ${g.method})`);
         }
         lines.push('│');
       }
