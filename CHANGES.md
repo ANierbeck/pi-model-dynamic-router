@@ -45,3 +45,15 @@
 
 ---
 **Fragen?** Gerne Bescheid geben, ob die Änderungen so passen oder ob noch Anpassungen gewünscht sind!
+
+## 3) Test-suite consolidation (audit 2026-09-20, subagent-driven)
+
+- **Goal**: consolidate the ~800-test suite by removing outdated/unused tests (plan: `docs/plans/2026-09-20-consolidate-tests.md`).
+- **Data-driven findings** (Tasks 1–3, see `docs/plans/candidates_consolidation.md` + `docs/plans/redundancy-analysis.md`):
+  - Age criterion (>6 months) matches ZERO files — the suite is young (oldest: 2026-06-13).
+  - The two originally suspected files (`test/cache.test.ts`, `test/scratch-slug-debug.test.ts`) do not exist.
+  - All four examined candidates test LIVE features (HINT resolution, ghost purge, classifier cache, router-cache refresh) → **no `.skip`/deletion justified**.
+  - Timeout tuning rejected: the 10 slowest files (~86s of 116s) wait on REAL production time windows (rate-limit cooldowns, malus accumulation) — no artificial delays to tune.
+- **Executed merge (the only real duplication)**: removed 5 exact-duplicate assertions from `test/refactor-golden-master.test.ts` (explicit-null, map-vs-token-set, self-heal-from-cache, no-clobber, builtin-overrides) — each has a living counterpart in `test/metrics-selfheal.test.ts`. Unique coverage kept: wildcard match, pure token-set fallback, builtin non-shadowing, null-when-no-match, bare `mistral/glm-5-2` provider-prefix form. NOTE comments document each removal in place.
+- **Result**: 806 → **801 tests** (798 passed / 3 skipped), `tsc --noEmit` clean, 11.7s wall time, zero unique-coverage loss. Fixes a real drift risk: both files pinned the same lookupGdp contracts with diverging values (1506 vs 1506.11).
+- **Flaky observation** (documented in redundancy-analysis.md §4): one intermittent failure (~3/17 runs, load-correlated, name not captured due to output piping — lesson recorded). No action; watch CI.
