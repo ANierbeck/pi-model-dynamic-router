@@ -1,7 +1,15 @@
 /**
  * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
- * `read` results with a cheap summarizer model BEFORE the main model sees
- * them — Spotify's "bulk-reader" pattern, built into the router.
+ * file-inspection tool results with a cheap summarizer model BEFORE the
+ * main model sees them — Spotify's "bulk-reader" pattern, built into the
+ * router.
+ *
+ * Coverage (default: `read` AND `bash`, configurable via delegation.tools):
+ * log evidence from 2026-09-20 showed zero real-session fires — every file
+ * inspection in the observed sessions ran through bash (sed/grep/cat),
+ * which a read-only hook never saw. Bash output reaches the same 50 KB
+ * truncation ceiling as read output, so both dominant inspection tools
+ * are covered out of the box.
  *
  * Design: docs/plans/2026-09-20-enforced-delegation-spike-and-design.md
  *
@@ -16,19 +24,21 @@
  * to router internals; zero provider registration (no Ü1 risk).
  */
 
-import type { Config } from './types.ts';
+import type { Config, DelegationConfig } from './types.ts';
 import type { Usage } from '@earendil-works/pi-ai';
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
 export interface DelegationSettings {
   enabled: boolean;
-  /** Minimum joined text length of a read result to be delegated. */
+  /** Minimum joined text length of a tool result to be delegated. */
   min_chars: number;
   /** Router group whose models perform the summarization. */
   group: string;
   /** Cap of raw text passed to the summarizer (protects the sub-call prompt). */
   max_raw_chars: number;
+  /** Tool names whose oversized results get delegated. */
+  tools: string[];
 }
 
 const DEFAULTS: DelegationSettings = {
@@ -36,21 +46,32 @@ const DEFAULTS: DelegationSettings = {
   min_chars: 20000,
   group: 'bulk_reader',
   max_raw_chars: 60000,
+  tools: ['read', 'bash'],
 };
 
 /**
  * Effective delegation settings for the given config. Missing config or
  * missing `delegation` block → disabled (fail-open by default; the fork's
  * router-config.json opts in).
+ *
+ * `tools` is trusted only as a whole: a non-array value or any non-string /
+ * empty-string entry discards the entire list and falls back to the default
+ * — a partially-trusted list would silently delegate the wrong tools.
  */
 export function delegationSettings(cfg: Config | undefined): DelegationSettings {
   const d = cfg?.delegation ?? {};
+  const toolsRaw = (d as DelegationConfig).tools;
+  const tools =
+    Array.isArray(toolsRaw) && toolsRaw.every((t) => typeof t === 'string' && t.trim().length > 0)
+      ? toolsRaw.map((t) => t.trim())
+      : DEFAULTS.tools;
   return {
     enabled: d.enabled === true,
     min_chars: typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
     group: typeof d.group === 'string' && d.group ? d.group : DEFAULTS.group,
     max_raw_chars:
       typeof d.max_raw_chars === 'number' && d.max_raw_chars > 0 ? d.max_raw_chars : DEFAULTS.max_raw_chars,
+    tools,
   };
 }
 
@@ -155,11 +176,12 @@ export interface DelegationOutcome {
 
 /**
  * tool_result delegation handler. Returns the replacement
- * ({ content, usage }) for an oversized read, or undefined to pass the
- * original through (every miss and every failure).
+ * ({ content, usage }) for an oversized covered tool result, or undefined
+ * to pass the original through (every miss and every failure).
  *
  * The replacement is marked so the orchestrating model knows a targeted
- * re-read (offset/limit — never delegated) is available for exact lines.
+ * re-read (offset/limit — never delegated) or a narrower re-run is
+ * available for exact content.
  */
 export async function handleReadDelegation(
   event: { toolName?: string; content?: unknown; isError?: boolean },
@@ -170,7 +192,8 @@ export async function handleReadDelegation(
   try {
     const settings = delegationSettings(cfg);
     if (!settings.enabled) return undefined;
-    if (event?.toolName !== 'read' || event?.isError) return undefined;
+    const tool = typeof event?.toolName === 'string' ? event.toolName : '';
+    if (!settings.tools.includes(tool) || event.isError) return undefined;
 
     const raw = extractTextContent(event.content);
     if (raw === null || raw.length < settings.min_chars) return undefined;
@@ -199,11 +222,11 @@ export async function handleReadDelegation(
     }
 
     const replacement =
-      `[delegated summary of a ${raw.length}-char read result — ` +
-      `re-read with offset/limit for exact lines]\n\n` +
+      `[delegated summary of a ${raw.length}-char ${tool} result — ` +
+      `re-read with offset/limit or re-run with narrower output for exact content]\n\n` +
       summary;
 
-    log?.(`[delegation] replaced ${raw.length}-char read result with ${summary.length}-char summary via ${settings.group}`);
+    log?.(`[delegation] replaced ${raw.length}-char ${tool} result with ${summary.length}-char summary via ${settings.group}`);
     const outcome: DelegationOutcome = { content: [{ type: 'text', text: replacement }] };
     if (usage) outcome.usage = usage;
     return outcome;
