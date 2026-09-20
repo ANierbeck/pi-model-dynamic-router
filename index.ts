@@ -111,7 +111,8 @@ let localStreamsInFlight = 0;
 // reaching for console.* (which bypasses Pi's TUI and can land in the user's
 // input field). Re-imported here for index.ts's own use.
 import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
-import { handleReadDelegation } from './src/delegation.ts';
+import { handleReadDelegation, delegationSettings } from './src/delegation.ts';
+import { checkReadBlock, executeBulkRead } from './src/bulk-read.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 
 const defaultExport = function (pi: ExtensionAPI) {
@@ -1614,6 +1615,21 @@ let previousTokenCount = 0;
     }
   });
 
+  // ── Pre-call read block (shunt Layer 1, ADR-0007 revision 2026-09-20) ──
+  // A full-file read (no offset/limit) of a file above delegation.block_lines
+  // (default 350, shunt's SHUNT_MIN_LINES) is blocked BEFORE execution and
+  // redirected to bulk_read / a targeted read. Fail-open: every miss passes.
+  pi.on('tool_call', (ev) => {
+    const block = checkReadBlock(ev, cfg);
+    if (block) {
+      routerLog(
+        `[bulk_read] blocked a full-file read of "${(ev as any)?.input?.path}" — redirected to bulk_read/targeted read`
+      );
+      return block;
+    }
+    return undefined;
+  });
+
   pi.on('tool_result', async (ev, ctx) => {
     // ── Enforced delegation (ADR-0007, revised 2026-09-20) ──────────────
     // Shrink oversized `read` results with a cheap summarizer (routed via
@@ -1645,6 +1661,38 @@ let previousTokenCount = 0;
   pi.on('session_shutdown', async () => saveCache());
 
   // ── Tools ──────────────────────────────────────────────────────────────
+
+  // bulk_read (shunt Layer 2, ADR-0007 revision 2026-09-20): question-based
+  // multi-file reading via the delegation group. Registered unconditionally;
+  // when delegation is disabled the call throws and the model falls back to
+  // targeted reads (no load-order trap at registration time).
+  pi.registerTool({
+    name: 'bulk_read',
+    label: 'Bulk Read',
+    description:
+      'Ask a question about one or more files and get a concise, precise answer WITHOUT loading the file contents into your context. A cheap reader model reads the files (within the delegation size cap) and answers with structured bullets led by exact names, types, and line numbers. Use it for exploration and multi-file questions; use targeted reads (offset/limit) when you need exact lines for an edit.',
+    promptSnippet: 'Answer questions about files cheaply via a reader model',
+    promptGuidelines: [
+      'Use bulk_read with a question and file paths when you need to understand one or more files instead of reading them fully — the raw file content never enters your context.',
+    ],
+    parameters: Type.Object({
+      question: Type.String({ description: 'What to find out about the files' }),
+      paths: Type.Array(Type.String(), { description: 'File paths to read and answer from' }),
+    }) as any,
+    async execute(
+      _id: string,
+      params: { question: string; paths: string[] },
+      _signal: AbortSignal | undefined,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) {
+      const result = await executeBulkRead(params, ctx, cfg, routerLog);
+      return {
+        ...result,
+        details: { tool: 'bulk_read', files: params.paths.length },
+      };
+    },
+  });
 
   pi.registerTool({
     name: 'set_model_from_group',

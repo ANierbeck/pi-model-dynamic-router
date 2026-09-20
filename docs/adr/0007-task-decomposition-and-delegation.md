@@ -398,6 +398,36 @@ re-read narrowly (untouched) for exact lines.
   requires. Bulk reads (plain full-file `read`, plain `cat`/`head` dumps)
   stay delegable.
 - Design detail: `docs/plans/2026-09-20-enforced-delegation-spike-and-design.md`.
-- Still rejected (unchanged): task decomposition/planning inside
-  `streamSimple`, tool-blocking shunts, and any orchestration of multi-step
-  subtasks — that remains Pi's subagent system's domain.
+
+### Revision 2026-09-20 (b): read pre-block + bulk_read accepted
+
+The Portal/shunt writeup (engineering.atspotify.com) convinced us to accept
+a bounded slice of the previously rejected tool-blocking shunts. The lesson
+from shunt's own history: advisory routing in CLAUDE.md failed because "the
+rules were advisory, not enforced" — enforcement is the load-bearing layer.
+
+Accepted now:
+
+- **Read pre-block** (`src/bulk-read.ts`, `checkReadBlock`): a full-file
+  `read` (no offset/limit) of a file above `delegation.block_lines`
+  (default 350, shunt's SHUNT_MIN_LINES) is blocked in Pi's `tool_call`
+  hook BEFORE execution. The reason redirects to `bulk_read` or a targeted
+  (offset/limit) read. Fail-open everywhere: targeted reads, small files,
+  stat failures, and every other tool pass untouched. `block_lines: 0`
+  disables the block while the shrinker keeps working.
+- **`bulk_read` tool** (`executeBulkRead`): question-based multi-file
+  reading. The tool reads the files from disk itself (XML-wrapped, capped
+  by `max_raw_chars`) and sends them to the delegation group via Pi's
+  public registry API; only the concise answer returns. The expensive
+  model pays for the answer, never for the corpus — the ~90% bulk-read
+  saving shunt measured. Errors THROW (Pi marks `isError: true`), the
+  orchestrator falls back to targeted reads.
+- Deliberate divergence from shunt: bash is NOT pre-blocked. shunt parses
+  command strings for `cat`/`head` on big files; a bash command is far too
+  brittle to parse reliably (pipes, globs, subshells). The shrinker already
+  covers oversized bash post-hoc — the block stays read-only.
+
+Still rejected (narrowed): task decomposition/planning inside
+`streamSimple`, general-purpose tool-blocking shunts beyond the read
+pre-block above, and any orchestration of multi-step subtasks — that
+remains Pi's subagent system's domain.

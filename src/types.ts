@@ -157,6 +157,9 @@ export interface DelegationConfig {
    * inspect files predominantly via bash (sed/grep/cat), so a read-only
    * default never fires. Set ['read'] to restore the original behavior. */
   tools?: string[];
+  /** Pre-call block threshold for full-file reads, in lines (shunt's
+   * SHUNT_MIN_LINES). Default 350; 0 disables pre-call blocking. */
+  block_lines?: number;
 }
 
 /**

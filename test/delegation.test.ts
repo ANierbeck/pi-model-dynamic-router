@@ -70,6 +70,7 @@ describe('delegationSettings', () => {
       group: 'trivial',
       max_raw_chars: 1000,
       tools: ['read'],
+      block_lines: 350,
     });
   });
 
