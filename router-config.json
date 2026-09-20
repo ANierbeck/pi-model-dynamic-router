@@ -98,6 +98,22 @@
         "scout",
         "fallback"
       ]
+    },
+    "bulk_reader": {
+      "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
+      "method": "tiered",
+      "billing_preference": "local_first",
+      "max_cost": 0,
+      "min_context_length": 64000,
+      "fallback_groups": ["scout", "operational", "fallback"]
+    },
+    "code_writer": {
+      "description": "Cheap-and-fast models with enough context for a spec+one reference file (boilerplate generation). Addressable as code_writer/code_writer from subagent workflows.",
+      "method": "tiered",
+      "billing_preference": "local_first",
+      "max_cost": 0,
+      "min_context_length": 32000,
+      "fallback_groups": ["operational", "scout", "fallback"]
     }
   },
   "model_metrics": {
