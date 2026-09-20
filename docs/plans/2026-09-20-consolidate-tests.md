@@ -1,5 +1,19 @@
 # Test Suite Konsolidierung — Implementierungsplan
 
+> **AUSFÜHRUNGS-PROTOKOLL (2026-09-20, nach Abschluss eingefügt):**
+> Die datengetriebene Ausführung hat den Plan **teilweise invertiert** — das ist das erwartbare Ergebnis eines Audits:
+>
+> - **Task 1 (Inventur):** Alterskriterium (>6 Monate) trifft auf **NULL** Dateien zu (älteste: 2026-06-13). Zwei Plan-Kandidaten (`test/cache.test.ts`, `test/scratch-slug-debug.test.ts`) **existieren nicht**.
+> - **Task 2 (Kandidaten):** Alle 4 existierenden Kandidaten testen **Live-Features** (HINT-Resolution, Ghost-Purge, Classifier-Cache, Router-Cache-Refresh) → **KEIN .skip gerechtfertigt**. → `docs/plans/candidates_consolidation.md`
+> - **Tasks 5–8 (.skip-Löschungen): GESTRICHEN** (datenbasierte Entscheidung des Owners: „Nur Merges falls Doppelungen").
+> - **Task 3 (Redundanz):** Genau EIN echter Merge-Kandidat: lookupGdp-Describes in `refactor-golden-master.test.ts` duplizieren `metrics-selfheal.test.ts`. Wildcard- und Token-Set-Fallback-Tests sind **unique** und blieben erhalten. → `docs/plans/redundancy-analysis.md`
+> - **Phase-3-Ausführung:** 5 exakte Duplikate chirurgisch aus `refactor-golden-master.test.ts` entfernt (nicht whole-file .skip), mit NOTE-Kommentaren am jeweiligen Ort. Suite: 806 → **801 Tests**, alle grün, tsc clean, **null Unique-Coverage-Verlust**.
+> - **Task 4 (Flaky):** Ein intermittierender Failure (~3/17 Läufe, nur unter Last, Name nicht capturebar — Output-Piping-Fehler des Orchestrators, als Lesson dokumentiert). Keine Deaktivierung. → redundancy-analysis.md §4
+> - **Timeout-Tuning: ABGELEHNT** (Sackgasse lt. Analyse): Die 10 langsamsten Dateien warten **echte Produktions-Zeitfenster** ab (Rate-Limit-Cooldowns, Malus-Akkumulation) — keine künstlichen Delays zum Kürzen.
+> - **Tasks 11–12 (PR/finale Löschung): entfallen** — es gab nichts zu löschen; die Konsolidierung lief als direkter Commit auf main (Projekt-Konvention).
+>
+> **Fazit:** Die Suite ist gesund — jung, fast redundanzfrei, mit bewusster Multi-Pfad-Abdeckung. Der einzige echte Hebel war die Doppel-Dokumentation desselben lookupGdp-Vertrags in zwei Dateien (Drift-Risiko 1506 vs. 1506.11 — jetzt behoben).
+
 > **REQUIRED SUB-SKILL:** Verwende nach diesem Plan das `/skill:executing-plans`, um die Tasks Schritt für Schritt umzusetzen.
 
 **Goal:** Reduziere die ~800 Tests auf eine wartbare, performante Suite durch Identifikation und Deaktivierung veralteter/unbenutzter Tests, ohne funktionale Abdeckung zu verlieren. Erhalte Reversibilität durch `.skip` statt Löschen.

@@ -57,12 +57,6 @@ describe('golden master: model-map lookup', () => {
     expect(metricsModule.lookupGdp('claude-sonnet-4-5-20250929')).toBe(720);
   });
 
-  it('explicit null exclusion: "turbo" → null → returns null', () => {
-    metricsModule.setModelMap({ 'zai-org/GLM-5-Turbo': null }, []);
-    metricsModule.setGdpval({ 'glm-5': 1418 });
-    expect(metricsModule.lookupGdp('zai-org/GLM-5-Turbo')).toBeNull();
-  });
-
   it('provider prefix stripped before lookup: "mistral/glm-5-2" → "glm-5-2"', () => {
     metricsModule.setModelMap({ 'glm-5-2': 'glm-5-2' }, []);
     metricsModule.setGdpval({ 'glm-5-2': 1506 });
@@ -70,13 +64,12 @@ describe('golden master: model-map lookup', () => {
     expect(metricsModule.lookupGdp('mistral-zai/glm-5-2')).toBe(1506);
   });
 
-  it('map entry beats token-set fallback (zai-glm-5-2 → glm-5-2 not glm-4)', () => {
-    // zai-glm-5-2 tokens {zai,glm,5,2} would NOT match glm-5-2 {glm,5,2} via
-    // token-set. The map entry must win.
-    metricsModule.setModelMap({ 'zai-glm-5-2': 'glm-5-2' }, []);
-    metricsModule.setGdpval({ 'glm-5-2': 1506, 'glm-4': 400 });
-    expect(metricsModule.lookupGdp('zai-glm-5-2')).toBe(1506);
-  });
+  // NOTE (consolidation 2026-09-20): the former "explicit null exclusion" and
+  // "map entry beats token-set fallback" tests were exact duplicates of
+  // metrics-selfheal.test.ts ('explicit null in model-map excludes the model',
+  // 'model-map exact match beats token-set fallback') and were removed. The
+  // provider-prefix variant is kept: metrics-selfheal only covers zai-prefixed
+  // slugs, not the bare mistral/glm-5-2 form.
 });
 
 // ── 2. GDPval lookup: tiers and self-healing ──────────────────────────────
@@ -94,36 +87,21 @@ describe('golden master: GDPval lookup tiers', () => {
     expect(metricsModule.lookupGdp('mistral/glm-5-2')).toBe(1506);
   });
 
-  it('self-heals from cache.gdpval_scores when gdpval is empty', () => {
-    // Simulate the race: gdpval emptied, cache still has scores.
-    metricsModule.setModelMap({ 'zai-glm-5-2': 'glm-5-2' }, []);
-    // Don't call setGdpval (leave empty), but set cache with scores.
-    metricsModule.setCache({ gdpval_scores: { 'glm-5-2': 1506 } });
-    // lookupGdp must self-heal from cache.
-    expect(metricsModule.lookupGdp('zai-glm-5-2')).toBe(1506);
-  });
-
-  it('does not clobber populated gdpval with stale cache (idempotent)', () => {
-    metricsModule.setModelMap({ 'glm-5-2': 'glm-5-2' }, []);
-    metricsModule.setCache({ gdpval_scores: { 'glm-5-2': 999 } }); // stale
-    metricsModule.setGdpval({ 'glm-5-2': 1506 }); // fresh (simulating scan)
-    expect(metricsModule.lookupGdp('glm-5-2')).toBe(1506);
-  });
+  // NOTE (consolidation 2026-09-20): the former "self-heals from cache" and
+  // "does not clobber populated gdpval" tests were exact duplicates of
+  // metrics-selfheal.test.ts ('self-heals: loads gdpval_scores from cache',
+  // 'does NOT clobber a populated gdpval') and were removed. Both contracts
+  // remain pinned in metrics-selfheal.test.ts.
 });
 
 // ── 3. gdpval_builtin overrides ───────────────────────────────────────────
 
 describe('golden master: gdpval_builtin overrides', () => {
-  it('builtin overrides scraped score (manual override wins)', () => {
-    metricsModule.setConfig({
-      model_groups: {},
-      model_metrics: {},
-      gdpval_builtin: { 'glm-4': 999 },
-    });
-    metricsModule.setCache({ gdpval_scores: { 'glm-4': 400 } });
-    metricsModule.setModelMap({ 'glm-4': 'glm-4' }, []);
-    expect(metricsModule.lookupGdp('glm-4')).toBe(999);
-  });
+  // NOTE (consolidation 2026-09-20): the former "builtin overrides scraped
+  // score" test was an exact duplicate of metrics-selfheal.test.ts
+  // ('gdpval_builtin overrides take precedence over cache scores') and was
+  // removed. The negative case below is kept — metrics-selfheal has no
+  // non-shadowing coverage.
 
   it('builtin does NOT shadow a model not in builtin (glm-5-2 survives)', () => {
     metricsModule.setConfig({
