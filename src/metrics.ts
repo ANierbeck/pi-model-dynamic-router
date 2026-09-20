@@ -334,18 +334,47 @@ let cfg: Config = { model_groups: {}, model_metrics: {}, providers: {} };
 let cache: Cache = {};
 
 /**
- * Returns the scanned context window (in tokens) for a model ref, or null
- * when the model is unknown or its context window was not reported by the
- * scan. Reads `cache.available_models[].capabilities.contextWindow` — the
- * same field `src/capabilities.ts` normalizes from Mistral
- * (`max_context_length`), OpenRouter (`context_length`), and Ollama
- * (`model_info.*.context_length`).
+ * Returns the context window (in tokens) for a model ref, or null when
+ * unknown. Registry-first, mirroring lookupPrice's Step 0 (PR #1 Sourcery
+ * findings 1–4, 2026-09-20): models that live only in Pi's model registry —
+ * including static free_models, which are deliberately never scanned — used
+ * to get null from the scan-cache-only lookup and were unconditionally
+ * dropped from every positive min_context_length group (bulk_reader /
+ * code_writer) despite having a usable registered context window. The
+ * registry is the source of truth for models Pi can actually stream; the
+ * scan cache may never have seen them (or hold stale capabilities).
+ *
+ * Step 0: Pi's model registry (mandatory contextWindow field, like cost) —
+ *        including the `:free`-suffix and model-map alias retries that
+ *        findRegistryModel already handles.
+ * Step 1: scan-cache `capabilities.contextWindow` — the field
+ *        `src/capabilities.ts` normalizes from Mistral
+ *        (`max_context_length`), OpenRouter (`context_length`), and Ollama
+ *        (`model_info.*.context_length`) — for models that were scanned
+ *        but are not (or no longer) in the registry.
  *
  * Null is authoritative for "unknown" — callers that need a floor (e.g. the
  * `min_context_length` group filter) must treat null as "fails the gate",
  * mirroring `lookupGdp`'s strict semantics, never as 0 or Infinity.
  */
 export function lookupContextWindow(ref: string): number | null {
+  // Step 0: Pi's model registry. Split only on the FIRST slash so
+  // OpenRouter ids with slashes ("openrouter/z-ai/glm-5.2:free") resolve
+  // correctly; findRegistryModel handles the `:free` suffix retry.
+  const slashIdx = ref.indexOf('/');
+  if (slashIdx > 0 && modelRegistry) {
+    try {
+      const registryModel = findRegistryModel(ref.slice(0, slashIdx), ref.slice(slashIdx + 1));
+      const registryCw = (registryModel as any)?.contextWindow;
+      if (typeof registryCw === 'number' && registryCw > 0) return registryCw;
+    } catch {
+      // Degraded registry (e.g. harness without a full mock) — fall through
+      // to the scan cache instead of crashing the gate.
+    }
+  }
+
+  // Step 1: scanned capabilities (fallback for models the registry doesn't
+  // know — e.g. scanned-but-unregistered cache entries).
   const discovered = (cache.available_models ?? []).find(
     (m) => `${m.provider}/${m.id}` === ref,
   );
