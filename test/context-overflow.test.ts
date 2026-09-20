@@ -162,6 +162,14 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       path.join(tmpDir, '.pi', 'router-config.json'),
       JSON.stringify({
         free_models: [],
+        // phantom-provider is deliberately find()=null ("available but not
+        // registered"). The bundled router-config.json leaks max_cost:5.0
+        // into this group; an unknown-cost pay_per_token model would be dropped
+        // at the filter stage and never reach driveStream's "not registered"
+        // skip path this test exercises. billing:subscription marks it as a
+        // sunk-cost provider so applyGroupFilters keeps it (mirrors a real
+        // subscription model the registry has temporarily lost).
+        providers: { 'phantom-provider': { billing: 'subscription' } },
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
