@@ -32,6 +32,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as metricsModule from '../src/metrics.ts';
 import { applyGroupFilters, Router } from '../src/routing.ts';
 import { normalizeModelId } from '../src/slug-matcher.ts';
+import { collapseSameSlugClusters, filterModelsForGroup, ModelWithMetadata } from '../src/dynamic-config.ts';
 import type { Config, Group, Cache } from '../src/types.ts';
 
 /** GDPval scrape excerpt with the duplicate-spelling artifacts. */
@@ -200,5 +201,58 @@ describe('Router: cluster collapses to the honest canonical model', () => {
     expect(refs).toContain('mistral/zai-glm-5-3');
     expect(refs).not.toContain('mistral/zai-glm-latest');
     expect(refs).not.toContain('mistral/zai-glm-5');
+  });
+});
+
+// ── Persist path: cluster collapse BEFORE filterModelsForGroup ───────────
+// The generated dynamic config (router-config.dynamic.json, written at
+// session start) had its own instance of the same bug: filterModelsForGroup
+// cost-filters BEFORE collectGroupModels dedups, so in max_cost-0 groups the
+// honest registry-priced twin was dropped first and the fake-priced alias
+// (cost_per_m-0 scan placeholder) survived as the cluster representative —
+// trivial/simple/scout/fallback listed mistral/zai-glm-5 at $0.0.
+
+describe('persist path: collapse clusters before the cost filter', () => {
+  const withMeta = (ref: string, cost: number | 'unknown', isFree = false): ModelWithMetadata => ({
+    ref,
+    gdpval: metricsModule.lookupGdp(ref) ?? 50,
+    cost,
+    price: typeof cost === 'number' ? { input: cost, output: cost * 2 } : undefined,
+    isFreeModel: isFree,
+    contextWindow: 128_000,
+  });
+
+  // Rank order deliberately puts the aliases first — the cluster rep must
+  // still be the canonical variant.
+  const cluster = [
+    withMeta('mistral/zai-glm-latest', 0),
+    withMeta('mistral/zai-glm-5', 0),
+    withMeta('mistral/zai-glm-5-3', 1.4),
+  ];
+
+  it('collapseSameSlugClusters keeps the canonical representative', () => {
+    const reps = collapseSameSlugClusters(cluster);
+    expect(reps.map((m) => m.ref)).toEqual(['mistral/zai-glm-5-3']);
+  });
+
+  it('a max_cost-0 group then contains NO zai at all (honest cluster dropped)', () => {
+    const g: Group = { method: 'best', max_cost: 0 } as any;
+    const out = filterModelsForGroup(collapseSameSlugClusters(cluster), g, CFG);
+    expect(out.map((m) => m.ref)).toEqual([]);
+  });
+
+  it('an uncapped group keeps the honest canonical model', () => {
+    const g: Group = { method: 'best' } as any;
+    const out = filterModelsForGroup(collapseSameSlugClusters(cluster), g, CFG);
+    expect(out.map((m) => m.ref)).toEqual(['mistral/zai-glm-5-3']);
+  });
+
+  it('cross-provider same-slug variants are NOT collapsed here (phase-2 collectGroupModels handles those)', () => {
+    const cross = [
+      withMeta('mistral/glm-5-2', 0.6),
+      withMeta('openrouter/z-ai/glm-5.2:free', 0, true),
+    ];
+    const reps = collapseSameSlugClusters(cross);
+    expect(reps.map((m) => m.ref)).toEqual(cross.map((m) => m.ref));
   });
 });
