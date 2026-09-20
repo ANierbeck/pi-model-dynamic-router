@@ -12,7 +12,7 @@
 
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
-import { effCost, lookupGdp, lookupPrice } from './metrics.ts';
+import { effCost, lookupGdp, lookupPrice, lookupContextWindow } from './metrics.ts';
 import type { Config, Group } from './types.ts';
 
 export interface ModelWithMetadata {
@@ -21,6 +21,15 @@ export interface ModelWithMetadata {
   cost: number | 'unknown';
   price: { input: number | 'unknown'; output: number | 'unknown' } | null;
   isFreeModel: boolean;
+  /**
+   * Scanned context window (tokens), or null when the scan reported none.
+   * Populated from cache.available_models[].capabilities.contextWindow via
+   * lookupContextWindow — the same field src/capabilities.ts normalizes from
+   * Mistral/OpenRouter/Ollama. Null is authoritative for "unknown"; the
+   * min_context_length group filter treats null as failing the gate
+   * (strict, mirroring min_gdpval).
+   */
+  contextWindow?: number | null;
 }
 
 /**
@@ -76,7 +85,9 @@ export function buildModelsWithMetadata(
         ref.includes(':free') ||
         (cost === 0 && isTokenBased);
 
-      return { ref, gdpval, cost, price, isFreeModel };
+      const contextWindow = lookupContextWindow(ref);
+
+      return { ref, gdpval, cost, price, isFreeModel, contextWindow };
     })
     .filter((m) => {
       if (staticModelRefs.has(m.ref)) return true;
@@ -120,6 +131,17 @@ export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: G
 
       if (m.cost === 'unknown') return false;
       return m.cost <= groupConfig.max_cost!;
+    });
+  }
+
+  // min_context_length (strict: unknown context window fails the gate,
+  // mirroring min_gdpval's null-fails semantics — never silently admit a
+  // model whose capacity is unverified into a group that *needs* a large
+  // context window). Absent/0 means "no context-length gate".
+  if (groupConfig.min_context_length != null && groupConfig.min_context_length > 0) {
+    filtered = filtered.filter((m) => {
+      const cw = m.contextWindow;
+      return typeof cw === 'number' && cw >= groupConfig.min_context_length!;
     });
   }
 
