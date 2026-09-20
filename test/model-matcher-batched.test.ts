@@ -109,8 +109,10 @@ describe('matchModelsWithLLMBatched', () => {
     // 10 plausible models, batch size 4 → 3 batches (4, 4, 2).
     const plausible = Array.from({ length: 10 }, (_, i) => `x/glm-${i}`);
     const callLlm: LlmCaller = vi.fn().mockImplementation(async (prompt: string) => {
-      // Echo back matches for whatever was in the prompt.
-      const ids = [...prompt.matchAll(/- (x\/glm-\d+)/g)].map((m) => m[1]);
+      // Echo back matches for every model id that appears in the prompt
+      // (both the per-model candidates block `- Model ID: "x/glm-N"` and the
+      // no-candidates block `- x/glm-N`).
+      const ids = [...prompt.matchAll(/x\/glm-\d+/g)].map((m) => m[0]);
       const obj: Record<string, string> = {};
       for (const id of ids) obj[id] = 'glm-5-2';
       return JSON.stringify(obj);

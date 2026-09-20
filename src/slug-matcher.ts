@@ -85,6 +85,95 @@ export function normalizeModelId(ref: string): string {
   return s;
 }
 
+/**
+ * Same normalization pipeline as normalizeModelId, but separator runs become
+ * SPACES instead of being removed. Used for Stage 4 token extraction so that
+ * multi-word names tokenize into separate letter-tokens
+ * ("devstral-small" → {devstral, small}) and version segments stay separate
+ * numbers ("3-5" → [3, 5], not the concatenated [35]).
+ *
+ * Why this matters (2026-09-20 design,
+ * docs/plans/2026-09-20-latest-alias-slug-matching-design.md):
+ * - The concatenated form made subset matching impossible: slug `devstral`
+ * (token {devstral}) was never a subset of ref `devstral-small-2505`
+ * (token {devstralsmall} — one unbreakable mega-token) → GDPval null.
+ * - Concatenated versions ([35] from "3-5") cannot be compared for the
+ * newest-version tie-break and made bare-major refs (`glm-5`, numbers [5])
+ * incompatible with their own family slugs ([52]).
+ */
+export function normalizeSpacedId(ref: string): string {
+  let s = stripProviderPrefix(ref).toLowerCase();
+
+  s = s.replace(/[-:](?:mlx|q[0-9](?:_[0-9]+)?|f?16|f?32|iq[0-9]_[a-z]+|fp[0-9]+)$/g, '');
+  s = s.replace(/:(?:free|latest|api)$/g, '');
+
+  for (const vp of VENDOR_PREFIXES) {
+    if (s.startsWith(vp)) {
+      s = s.slice(vp.length);
+      break;
+    }
+  }
+
+  for (const tag of TAG_SUFFIXES) {
+    s = s.replace(new RegExp(tag + '$', 'g'), '');
+  }
+
+  s = s.replace(DATE_SUFFIX_RE, '');
+
+  // Separator runs become spaces (keep alphanumerics)
+  return s.replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * Extracts letter-tokens and version numbers from a SPACED normalized id.
+ * Letters: [a-z]+ runs; numbers: \d+ runs — "mistral medium 3 5" →
+ * letters {mistral, medium}, numbers [3, 5].
+ */
+function extractTokens(s: string): { letters: Set<string>; numbers: number[] } {
+  const letters = new Set(s.match(/[a-z]+/g) ?? []);
+  const numbers = (s.match(/\d+/g) ?? []).map(Number);
+  return { letters, numbers };
+}
+
+/**
+ * Element-wise version-tuple comparison; a shorter prefix counts as LOWER
+ * (glm-4 [4] < glm-4-6 [4,6], mistral-small-3-1 [3,1] < [3,2]). Used as the
+ * newest-version tie-break among equal-score slug candidates so `-latest`
+ * aliases and dated snapshots resolve to the NEWEST version of their family
+ * instead of whichever slug iterates first.
+ */
+function versionTupleGT(a: number[], b: number[]): boolean {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return a.length > b.length;
+}
+
+/**
+ * Sort key for slug candidates. Order of precedence:
+ *   1. score (letter-overlap) descending,
+ *   2. EXACT version-tuple match beats non-exact — so `gemma4:12b` [4,12]
+ *      picks slug `gemma4-12b` [4,12] over `gemma4-27b` [4,27] (parameter
+ *      counts are sizes, not "newer is better"), while a version-less ref
+ *      (`-latest`, dated snapshot) has no exact match and falls through to
+ *      the newest-version tie-break below,
+ *   3. NEWEST version tuple first — `-latest` and dated snapshots resolve
+ *      to the newest version of their family (mistral-small-latest → 3-2),
+ *   4. more letter-tokens first (more specific match).
+ */
+interface CandRank { score: number; exact: boolean; tuple: number[]; tokenCount: number }
+function compareCand(a: CandRank, b: CandRank): number {
+  if (a.score !== b.score) return b.score - a.score;
+  if (a.exact !== b.exact) return a.exact ? -1 : 1;
+  if (versionTupleGT(b.tuple, a.tuple)) return 1;
+  if (versionTupleGT(a.tuple, b.tuple)) return -1;
+  return b.tokenCount - a.tokenCount;
+}
+function isExactTuple(slugNums: number[], refNums: number[]): boolean {
+  return slugNums.length === refNums.length && slugNums.every((n, i) => n === refNums[i]);
+}
+
 // ── Stage 2: Exclusion ────────────────────────────────────────────────────
 
 // Small models (by parameter count) that are too weak for GDPval benchmarks.
@@ -152,29 +241,29 @@ export function matchSlug(
   // Stage 4: Token-set fuzzy match with version-awareness
   //
   // Token extraction: split into letters and numbers.
-  // "mistralmedium2604" → letters {mistral, medium}, numbers [2604]
-  // "glm52" → letters {glm}, numbers [5, 2]
+  // "mistral medium 2604" → letters {mistral, medium}, numbers [2604]
+  // "glm 5 2" → letters {glm}, numbers [5, 2]
+  // (Numbers stay SEPARATE — see normalizeSpacedId — so version tuples can
+  // be compared for the newest-version tie-break.)
   //
   // Matching rules:
   // 1. All letter-tokens of the slug must be in the ref (e.g. "medium" must match)
   // 2. If both slug and ref have version numbers, the major version must match
   //    (e.g. glm-5-x must NOT match glm-4-x — different model family)
-  // 3. If the ref has no version number, accept any version (e.g. "mistral-medium-latest")
-  const extractTokens = (s: string) => {
-    const letters = new Set((s.match(/[a-z]+/g) ?? []));
-    const numbers = (s.match(/\d+/g) ?? []).map(Number);
-    return { letters, numbers };
-  };
-
-  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalized);
+  // 3. If the ref has no version number, accept any version (e.g. "mistral-medium-latest",
+  //    or dated snapshots whose date suffix was stripped by normalizeSpacedId)
+  //
+  // Tie-break among equal-score candidates (see compareCand): an EXACT
+  // version-tuple match wins (gemma4:12b → gemma4-12b, not gemma4-27b);
+  // otherwise the NEWEST version wins (-latest / dated snapshot → newest
+  // family version); then more letter-tokens (more specific).
+  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalizeSpacedId(ref));
 
   let bestSlug: string | undefined;
-  let bestScore = 0;
-  let bestSlugTokenCount = 0;
+  let best: CandRank | undefined;
 
   for (const slug of gdpvalSlugs) {
-    const normalizedSlug = normalizeModelId(slug);
-    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizedSlug);
+    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
@@ -191,17 +280,20 @@ export function matchSlug(
     // Score: how many slug letter-tokens are in the ref?
     const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
     const score = overlap / slugLetters.size;
-
-    // Prefer longer matches (more tokens = more specific)
-    if (score > bestScore || (score === bestScore && slugLetters.size > bestSlugTokenCount)) {
-      bestScore = score;
+    const cand: CandRank = {
+      score,
+      exact: isExactTuple(slugNumbers, refNumbers),
+      tuple: slugNumbers,
+      tokenCount: slugLetters.size,
+    };
+    if (best === undefined || compareCand(cand, best) < 0) {
+      best = cand;
       bestSlug = slug;
-      bestSlugTokenCount = slugLetters.size;
     }
   }
 
   // Only accept if score is high enough (all slug tokens found)
-  if (bestScore >= 1.0) return bestSlug;
+  if (best !== undefined && best.score >= 1.0) return bestSlug;
 
   return undefined;
 }
@@ -223,20 +315,12 @@ export function candidateSlugs(
   // Check exclusion first
   if (shouldExclude(ref)) return [];
 
-  const normalized = normalizeModelId(ref);
-  const extractTokens = (s: string) => {
-    const letters = new Set((s.match(/[a-z]+/g) ?? []));
-    const numbers = (s.match(/\d+/g) ?? []).map(Number);
-    return { letters, numbers };
-  };
+  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalizeSpacedId(ref));
 
-  const { letters: refLetters, numbers: refNumbers } = extractTokens(normalized);
-
-  const candidates: { slug: string; score: number; tokenCount: number }[] = [];
+  const candidates: { slug: string; rank: CandRank }[] = [];
 
   for (const slug of gdpvalSlugs) {
-    const normalizedSlug = normalizeModelId(slug);
-    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizedSlug);
+    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
@@ -253,11 +337,16 @@ export function candidateSlugs(
     const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
     const score = overlap / slugLetters.size;
 
-    candidates.push({ slug, score, tokenCount: slugLetters.size });
+    candidates.push({
+      slug,
+      rank: { score, exact: isExactTuple(slugNumbers, refNumbers), tuple: slugNumbers, tokenCount: slugLetters.size },
+    });
   }
 
-  // Sort by score descending, then by token count (more specific = higher)
-  candidates.sort((a, b) => b.score - a.score || b.tokenCount - a.tokenCount);
+  // Sort by the shared candidate ranker (see compareCand): exact version
+  // match first, then newest version, then specificity — so the LLM pre-filter
+  // is presented the same ordering matchSlug would pick.
+  candidates.sort((a, b) => compareCand(a.rank, b.rank));
 
-  return candidates.slice(0, maxK).map(c => c.slug);
+  return candidates.slice(0, maxK).map((c) => c.slug);
 }

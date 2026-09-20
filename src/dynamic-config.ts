@@ -12,8 +12,9 @@
 
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
-import { effCost, lookupGdp, lookupPrice, lookupContextWindow } from './metrics.ts';
+import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug } from './metrics.ts';
 import type { Config, Group } from './types.ts';
+import { normalizeModelId } from './slug-matcher.ts';
 
 export interface ModelWithMetadata {
   ref: string;
@@ -202,8 +203,13 @@ export function sortModelsForGroup(
 /**
  * Merges a group's hand-curated static models (router-config.json `models`,
  * re-filtered against the same gates) with the sorted dynamic candidates,
- * deduplicating by token signature so e.g. "mistral/mistral-medium-3.5" and
- * "mistral/mistral-medium-3-5" don't both end up in the final list.
+ * deduplicating by model identity (GDPval slug, falling back to token
+ * signature for unmatched refs) so e.g. "mistral/mistral-medium-3.5",
+ * "mistral/mistral-medium-latest" and "mistral/mistral-medium-2604" — all
+ * resolving to slug mistral-medium-3-5 — don't end up as three entries.
+ * Within an identity cluster the CANONICAL ref (whose normalized id equals
+ * its matched slug) replaces alias forms; a static curated entry is never
+ * displaced by a dynamic sibling (hand-curated allow-list = explicit intent).
  */
 export function collectGroupModels(
   groupConfig: Group,
@@ -213,8 +219,21 @@ export function collectGroupModels(
   staticFreeModelsLookup: Set<string>
 ): string[] {
   const modelsToInclude = new Set<string>();
-  const includedSigs = new Set<string>();
   const modelSig = (ref: string) => [...baseTokens(ref)].sort().join('|');
+  // Identity key: matched GDPval slug when one exists, else the token signature
+  // (so unmatched refs still dedup by their tokens and never collapse with a
+  // different unmatched model).
+  const identityKey = (ref: string) => getMatchedSlug(ref) ?? modelSig(ref);
+  // Canonical: the ref whose normalized id equals its matched slug — the real
+  // versioned name that -latest / dated-snapshot aliases point at.
+  const isCanonicalRef = (ref: string): boolean => {
+    const slug = getMatchedSlug(ref);
+    if (!slug) return true; // unmatched refs use their signature as identity
+    const modelId = ref.split('/').pop() ?? ref;
+    return normalizeModelId(modelId) === normalizeModelId(slug);
+  };
+  const includedByKey = new Map<string, string>(); // key → the ref currently held
+  const staticIncluded = new Set<string>();
 
   const originalModels = groupConfig.models ?? [];
   for (const origModel of originalModels) {
@@ -264,15 +283,29 @@ export function collectGroupModels(
     }
 
     modelsToInclude.add(origModel);
-    includedSigs.add(modelSig(origModel));
+    includedByKey.set(identityKey(origModel), origModel);
+    staticIncluded.add(origModel);
   }
 
   for (const model of sortedGroupModels) {
     if (modelsToInclude.has(model.ref)) continue;
-    const sig = modelSig(model.ref);
-    if (includedSigs.has(sig)) continue;
+    const key = identityKey(model.ref);
+    const existing = includedByKey.get(key);
+    if (existing !== undefined) {
+      // Same identity already included.
+      // - A STATIC curated entry is explicit user intent and is never
+      //   displaced by a dynamic sibling (even a canonical one).
+      // - Otherwise replace an alias form with the canonical ref (so the
+      //   generated group names the real versioned model, not -latest).
+      if (!staticIncluded.has(existing) && !isCanonicalRef(existing) && isCanonicalRef(model.ref)) {
+        modelsToInclude.delete(existing);
+        modelsToInclude.add(model.ref);
+        includedByKey.set(key, model.ref);
+      }
+      continue;
+    }
     modelsToInclude.add(model.ref);
-    includedSigs.add(sig);
+    includedByKey.set(key, model.ref);
   }
 
   return Array.from(modelsToInclude);
