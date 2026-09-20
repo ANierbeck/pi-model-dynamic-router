@@ -14,6 +14,7 @@ import type {
 import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
+import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
@@ -23,6 +24,64 @@ import { getGroupForCategory } from './content-classifier.ts';
 // ── Constants ────────────────────────────────────────────────────────────
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
+
+/**
+ * Pick ONE representative ref per GDPval-slug cluster, in first-occurrence
+ * order. Within a cluster the representative is chosen by:
+ *   (1) non-limited beats rate-limited (a usable sibling must not be hidden
+ *       behind a temporarily throttled top-ranked alias), then
+ *   (2) canonical beats alias — the ref whose normalized id equals its matched
+ *       slug (e.g. mistral-medium-3.5 ≡ mistral-medium-3-5) wins over -latest
+ *       and dated snapshots, which are aliases that point at it, then
+ *   (3) first by rank (highest-priority in the input order) as a stable tie.
+ *
+ * Refs with no matched slug each form their own singleton cluster (key = the
+ * ref itself) and pass through unchanged, so unmatched models are never
+ * collapsed together.
+ *
+ * This collapses the noise the 2026-09-20 design targets — a group no longer
+ * lists mistral-medium-latest, mistral-medium-3.5 AND mistral-medium-2604 as
+ * three separate models when they all resolve to the same GDPval slug
+ * mistral-medium-3-5.
+ */
+export function pickSlugClusterRepresentatives(
+  refs: string[],
+  isLimited: (ref: string) => boolean
+): string[] {
+  const canonical = (ref: string): boolean => {
+    const slug = getMatchedSlug(ref);
+    if (!slug) return false;
+    const modelId = ref.split('/').pop() ?? ref;
+    return normalizeModelId(modelId) === normalizeModelId(slug);
+  };
+
+  const representative = new Map<string, string>();
+  const order: string[] = [];
+
+  for (const ref of refs) {
+    const key = getMatchedSlug(ref) ?? ref;
+    const existing = representative.get(key);
+    if (existing === undefined) {
+      representative.set(key, ref);
+      order.push(key);
+      continue;
+    }
+    // (1) non-limited beats limited
+    if (isLimited(existing) && !isLimited(ref)) {
+      representative.set(key, ref);
+      continue;
+    }
+    if (!isLimited(existing) && isLimited(ref)) continue;
+    // (2) canonical beats alias (both same limited-state here)
+    if (!canonical(existing) && canonical(ref)) {
+      representative.set(key, ref);
+      continue;
+    }
+    // (3) keep the first-ranked (no change)
+  }
+
+  return order.map((key) => representative.get(key)!);
+}
 
 // ── Shared group filters (A1 consolidation) ─────────────────────────────────
 
@@ -637,31 +696,43 @@ export class Router {
    * Determine if a model ref is a BETTER variant than another.
    * Used by dedupByModelIdentity to pick the best among duplicates.
    *
-   * Preference order (highest first):
-   * 1. Versioned (has a date or version number): mistral-medium-2604
-   * 2. Explicit version name: mistral-medium-3.5
-   * 3. -latest (alias, least preferred): mistral-medium-latest
+   * Preference order (highest first), per the 2026-09-20 design
+   * (docs/plans/2026-09-20-latest-alias-slug-matching-design.md):
+   * 1. Canonical — the ref whose normalized id equals its matched GDPval slug
+   *    (e.g. mistral-medium-3.5 ≡ mistral-medium-3-5). This is the REAL
+   *    versioned name; aliases like -latest and dated snapshots point at it.
+   * 2. Dated snapshot (e.g. mistral-medium-2604): a reproducible alias that
+   *    pins a specific version.
+   * 3. Explicit version name (e.g. mistral-medium-3-5): versioned but not the
+   *    GDPval slug form.
+   * 4. -latest (rolling alias): least preferred — changes when a new version
+   *    is released, so it is not reproducible.
    */
   private isBetterModelVariant(ref: string, than: string): boolean {
     const refModel = ref.split('/').pop() ?? ref;
     const thanModel = than.split('/').pop() ?? than;
-    const refScore = this.modelVariantPreference(refModel);
-    const thanScore = this.modelVariantPreference(thanModel);
+    const refScore = this.modelVariantPreference(refModel, getMatchedSlug(ref));
+    const thanScore = this.modelVariantPreference(thanModel, getMatchedSlug(than));
     return refScore > thanScore;
   }
 
   /**
    * Score a model variant by preference (higher = better to keep).
-   * 3 = versioned (date or number suffix), 2 = explicit version name, 1 = -latest
+   * 4 = canonical (id ≡ GDPval slug), 3 = dated snapshot, 2 = version name,
+   * 1 = -latest alias, 0 = no version marker and unmatched.
    */
-  private modelVariantPreference(modelId: string): number {
-    // -latest suffix = alias, least preferred (changes when new version released)
+  private modelVariantPreference(modelId: string, slug: string | null): number {
+    // Canonical: the ref IS the GDPval slug (e.g. mistral-medium-3.5 ≡
+    // mistral-medium-3-5 after normalization). This is the real versioned
+    // name that every alias (-latest, dated snapshot) points at.
+    if (slug && normalizeModelId(modelId) === normalizeModelId(slug)) return 4;
+    // -latest suffix = rolling alias, least preferred (changes on new release)
     if (/-(latest|preview)$/i.test(modelId)) return 1;
-    // Date suffix (YYMM or YYYYMMDD) = versioned, most preferred (reproducible)
+    // Date suffix (YYMM or YYYYMMDD) = dated snapshot alias, reproducible
     if (/-(?:\d{4}|\d{6}|\d{8})$/i.test(modelId)) return 3;
     // Version number (e.g. -3.5, -3-5, -5-2) = explicit version name
     if (/[-.]\d/i.test(modelId)) return 2;
-    // No version info = keep as-is (score 0)
+    // No version marker at all
     return 0;
   }
 
@@ -905,27 +976,7 @@ export class Router {
     // variants of a slug are limited, any one serves as the representative —
     // it correctly lands in the limited bucket.
     c = this.coalesceBySlug(c);
-    {
-      // Map: slug key -> best representative ref (non-limited wins).
-      const representative = new Map<string, string>();
-      for (const ref of c) {
-        const key = getMatchedSlug(ref) ?? ref;
-        if (!representative.has(key)) {
-          representative.set(key, ref); // first = best-ranked by score
-        } else if (this.isLimited(representative.get(key)!) && !this.isLimited(ref)) {
-          representative.set(key, ref); // swap in healthy sibling
-        }
-      }
-      // Map each slug cluster to its representative, then dedupe to one per slug.
-      const seen = new Set<string>();
-      c = c
-        .map((ref) => representative.get(getMatchedSlug(ref) ?? ref) ?? ref)
-        .filter((ref) => {
-          if (seen.has(ref)) return false;
-          seen.add(ref);
-          return true;
-        });
-    }
+    c = pickSlugClusterRepresentatives(c, (ref) => this.isLimited(ref));
     const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];

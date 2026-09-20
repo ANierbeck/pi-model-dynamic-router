@@ -78,12 +78,13 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
     expect(top.length).toBe(1);
   });
 
-  it('prefers the versioned variant over -latest when deduping', () => {
+  it('prefers the canonical versioned variant over aliases when deduping', () => {
     const top = router.getTopModels('tactical', 10);
     const mistralEntry = top.find((m) => m.ref.startsWith('mistral/'));
-    // mistral-medium-2604 (date-versioned, score 3) must win over
-    // mistral-medium-latest (alias, score 1)
-    expect(mistralEntry?.ref).toBe('mistral/mistral-medium-2604');
+    // mistral-medium-3.5 is the CANONICAL ref (normalized id ≡ slug
+    // mistral-medium-3-5); -2604 is a dated-snapshot alias and -latest is a
+    // rolling alias, both pointing at 3.5 — the canonical name wins.
+    expect(mistralEntry?.ref).toBe('mistral/mistral-medium-3.5');
   });
 
 describe('coalesceBySlug — clusters cross-provider same-slug entries together', () => {

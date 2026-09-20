@@ -124,8 +124,8 @@ describe('matchSlug', () => {
     expect(matchSlug('mistral/magistral-small-latest', GDPVAL_SLUGS)).toBe('magistral-small');
   });
 
-  it('matches mistral-small-2603 → mistral-small-3-1', () => {
-    expect(matchSlug('mistral/mistral-small-2603', GDPVAL_SLUGS)).toBe('mistral-small-3-1');
+  it('matches mistral-small-2603 → mistral-small-3-2 (newest of the family, not iteration order)', () => {
+    expect(matchSlug('mistral/mistral-small-2603', GDPVAL_SLUGS)).toBe('mistral-small-3-2');
   });
 
   it('matches codestral-latest → codestral-latest', () => {
