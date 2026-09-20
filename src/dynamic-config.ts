@@ -97,6 +97,43 @@ export function buildModelsWithMetadata(
 }
 
 /** Applies a group's min_gdpval / max_cost_per_m / max_cost gates to the scored candidate pool. */
+/**
+ * Collapses same-provider slug clusters to their canonical representative —
+ * the persist-path mirror of applyGroupFilters' dedup-before-gates step
+ * (2026-09-20). MUST run BEFORE filterModelsForGroup: the per-group cost
+ * filter otherwise drops the honest registry-priced twin (zai-glm-5-3,
+ * $1.4) first and the fake-priced alias (cost_per_m-0 scan placeholder)
+ * survives as the cluster's representative — the generated dynamic config
+ * listed mistral/zai-glm-5 at $0.0 in trivial/simple/scout/fallback.
+ *
+ * Keying is provider:slug — cross-provider same-slug variants are genuinely
+ * different endpoints/prices and stay for collectGroupModels' phase-2 slug
+ * dedup among the survivors. Unmatched refs (no slug) never collapse.
+ */
+export function collapseSameSlugClusters(models: ModelWithMetadata[]): ModelWithMetadata[] {
+  // Canonical: the ref whose normalized id equals its matched slug — the
+  // real versioned name that -latest / dated-snapshot aliases point at
+  // (same rule as collectGroupModels' isCanonicalRef).
+  const isCanonical = (ref: string): boolean => {
+    const slug = getMatchedSlug(ref);
+    if (!slug) return true;
+    const modelId = ref.split('/').pop() ?? ref;
+    return normalizeModelId(modelId) === normalizeModelId(slug);
+  };
+  const best = new Map<string, ModelWithMetadata>();
+  for (const m of models) {
+    const slug = getMatchedSlug(m.ref);
+    const key = slug ? `${m.ref.split('/')[0]}:${slug}` : m.ref;
+    const existing = best.get(key);
+    if (existing === undefined) {
+      best.set(key, m);
+    } else if (isCanonical(m.ref) && !isCanonical(existing.ref)) {
+      best.set(key, m);
+    }
+  }
+  return [...best.values()];
+}
+
 export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: Group, cfg: Config): ModelWithMetadata[] {
   let filtered = [...models];
 

@@ -56,6 +56,7 @@ import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
   buildStaticFreeModelsLookup,
   buildModelsWithMetadata,
+  collapseSameSlugClusters,
   filterModelsForGroup,
   sortModelsForGroup,
   collectGroupModels,
@@ -1000,7 +1001,13 @@ let previousTokenCount = 0;
       }
 
       routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
-      
+
+      // Collapse same-provider slug clusters ONCE, before the per-group
+      // filters: the cost gates must see the canonical cluster
+      // representative, not whichever fake-priced alias survives them
+      // (2026-09-20 — see collapseSameSlugClusters).
+      const clusterRepModels = collapseSameSlugClusters(modelsWithMetadata);
+
       // 5. Dynamische Gruppen-Konfiguration generieren
       const dynamicGroups: Record<string, any> = {};
       
@@ -1024,7 +1031,7 @@ let previousTokenCount = 0;
         // trivial/simple groups' free-only guarantee. Only min_gdpval and
         // the group-level exclude_providers/exclude_models (applied earlier
         // via the global staticCfg.exclude) are shared in spirit.
-        let filteredModels = filterModelsForGroup(modelsWithMetadata, groupConfig, cfg);
+        let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, cfg);
         
         // 7. Sortierung basierend auf Gruppen-Methode
         let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, groupName, cfg, metricsModule.calculateScore);
