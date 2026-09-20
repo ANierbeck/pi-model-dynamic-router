@@ -13,7 +13,7 @@ import type {
 } from './types.ts';
 import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore } from './metrics.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
@@ -76,6 +76,9 @@ function billingFor(cfg: Config, prov: string): string {
  *     make a good decision without a concrete price).
  *   - `min_gdpval` uses `lookupGdp(ref) ?? null`; a null score (unscored
  *     model) fails the quality gate, matching filterByQualityMin.
+ *   - `min_context_length` uses `lookupContextWindow(ref) ?? null`; a null
+ *     context window (unscanned model) fails the gate, mirroring
+ *     `min_gdpval`'s strict null-fails semantics.
  */
 export function applyGroupFilters(
   refs: string[],
@@ -130,6 +133,16 @@ export function applyGroupFilters(
       const price = lookupPrice(ref);
       if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
       return price.input <= g.max_cost_per_m!;
+    });
+  }
+  // 6. min_context_length (strict: unknown context window fails the gate,
+  //    mirroring min_gdpval's null-fails semantics — never silently admit a
+  //    model whose capacity is unverified into a group that *needs* a large
+  //    context window). Absent/0 means "no context-length gate".
+  if (g.min_context_length != null && g.min_context_length > 0) {
+    c = c.filter(ref => {
+      const cw = lookupContextWindow(ref);
+      return cw !== null && cw >= g.min_context_length!;
     });
   }
 

@@ -55,6 +55,16 @@ export interface Group {
   min_gdpval?: number;
   max_cost?: number;
   max_cost_per_m?: number;
+
+  /**
+   * Minimum model context window (in tokens) required for this group.
+   * Models whose scanned `capabilities.contextWindow` is unknown or below
+   * this value are dropped — matching the strict (null-fails) semantics of
+   * `min_gdpval`. Use this for use-case groups that must hold large inputs
+   * (e.g. `bulk_reader` reading several files at once). Absent/0 = no
+   * context-length gate (default; preserves existing behaviour).
+   */
+  min_context_length?: number;
   exclude_providers?: string[];
   exclude_models?: string[];
   /**

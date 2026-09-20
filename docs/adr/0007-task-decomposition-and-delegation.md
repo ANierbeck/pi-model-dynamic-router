@@ -194,14 +194,16 @@ via `dynamic/<group>` model refs, which it already does.
 
 ## Where the router *could* still help (in-scope, incremental)
 
-1. **Document the pattern**: add a section (README or a skill) showing how to
-   call `pi-model-dynamic-router` groups from a subagent workflow, e.g.
-   `subagent({ workflowScript: "return runs.all([...files.map(f => ({key: f, agent: 'scout', model: 'trivial/trivial', task: 'Summarize ' + f}))])" })`
-   fanned out in parallel, followed by one `strategic/strategic` synthesis
-   call over the collected summaries. This costs nothing to build — it's a
-   docs-only change — and directly delivers the "cheap model reads, expensive
-   model reasons" value the user wants, using infrastructure that already
-   exists and is verified working (see verification note above).
+1. **Document the pattern** — *delivered (2026-09-18):* README's
+   "Delegating subtasks to cheap groups" section now shows the
+   `bulk_reader/bulk_reader` fan-out + `strategic/strategic` synthesis
+   pattern, and the router ships two dedicated use-case groups
+   (`bulk_reader`, `code_writer`) that add a `min_context_length` floor so a
+   cheap model is guaranteed to hold the large inputs the use case demands.
+   This is the router's entire, in-scope contribution: resolving a named
+   group to a model ref. The decision to *split* a task still belongs to
+   the subagent/orchestrating layer (see "Who actually decomposes a task
+   today?" below).
 2. **Nothing else changes in the router's code** for this specific ask. No
    new group method, no new `delegate` provider, no PreToolUse hook — those
    would duplicate subagent orchestration inside the router, which is exactly
