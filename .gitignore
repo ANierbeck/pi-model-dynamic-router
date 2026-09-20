@@ -19,5 +19,9 @@ router-config.dynamic.json.*-bak
 
 # Coverage-Berichte
 coverage/
+
+# Git worktrees (isolated workspaces)
+.worktrees/
+
 .pi/
 *.tgz
