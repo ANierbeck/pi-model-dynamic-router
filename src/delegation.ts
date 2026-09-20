@@ -1,0 +1,215 @@
+/**
+ * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
+ * `read` results with a cheap summarizer model BEFORE the main model sees
+ * them — Spotify's "bulk-reader" pattern, built into the router.
+ *
+ * Design: docs/plans/2026-09-20-enforced-delegation-spike-and-design.md
+ *
+ * Everything here is strictly fail-open: on ANY miss, error, or suspicious
+ * sub-call output, the handler returns undefined and the original tool
+ * result passes through untouched. The main model must never lose content
+ * because delegation broke.
+ *
+ * All model access goes through Pi's public registry API (ctx.modelRegistry)
+ * — the delegation group (default `bulk_reader`) is a router group provider,
+ * so the summarization call is itself routed by the router. Zero coupling
+ * to router internals; zero provider registration (no Ü1 risk).
+ */
+
+import type { Config } from './types.ts';
+import type { Usage } from '@earendil-works/pi-ai';
+
+// ── Settings ─────────────────────────────────────────────────────────────
+
+export interface DelegationSettings {
+  enabled: boolean;
+  /** Minimum joined text length of a read result to be delegated. */
+  min_chars: number;
+  /** Router group whose models perform the summarization. */
+  group: string;
+  /** Cap of raw text passed to the summarizer (protects the sub-call prompt). */
+  max_raw_chars: number;
+}
+
+const DEFAULTS: DelegationSettings = {
+  enabled: false,
+  min_chars: 20000,
+  group: 'bulk_reader',
+  max_raw_chars: 60000,
+};
+
+/**
+ * Effective delegation settings for the given config. Missing config or
+ * missing `delegation` block → disabled (fail-open by default; the fork's
+ * router-config.json opts in).
+ */
+export function delegationSettings(cfg: Config | undefined): DelegationSettings {
+  const d = cfg?.delegation ?? {};
+  return {
+    enabled: d.enabled === true,
+    min_chars: typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
+    group: typeof d.group === 'string' && d.group ? d.group : DEFAULTS.group,
+    max_raw_chars:
+      typeof d.max_raw_chars === 'number' && d.max_raw_chars > 0 ? d.max_raw_chars : DEFAULTS.max_raw_chars,
+  };
+}
+
+// ── Content shape safety ─────────────────────────────────────────────────
+
+/**
+ * Joins an all-text content block array into a single string.
+ * Returns null when content is missing/empty or contains ANY non-text
+ * block (images, attachments …) — partial summarization would lie to the
+ * model about what the tool returned, so mixed content passes through.
+ */
+export function extractTextContent(content: unknown): string | null {
+  if (!Array.isArray(content) || content.length === 0) return null;
+  const parts: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object' || (block as any).type !== 'text') return null;
+    parts.push(String((block as any).text ?? ''));
+  }
+  return parts.join('\n');
+}
+
+// ── Router-narration hygiene (spike finding 2026-09-20) ──────────────────
+
+/**
+ * Removes router cascade narration from machine-facing sub-call output.
+ *
+ * The router narrates candidate outcomes ("> [router] X — rate limited,
+ * trying Y", "> [router] MHINT: …") as text_delta lines into the sub-call
+ * stream. Intended for human sessions, pure noise for a summarizer
+ * consumer — the live spike saw ~5 KB of narration around a 108-token
+ * summary. Strip every line starting with "> [router]" and collapse the
+ * blank-line runs they leave behind.
+ */
+export function stripRouterNarration(text: string): string {
+  const kept = text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('> [router]'));
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// ── Summary prompt ───────────────────────────────────────────────────────
+
+/**
+ * Builds the summarization user message. The summarizer must preserve what
+ * a coding orchestrator needs for follow-up turns (symbols, paths, values)
+ * without pretending line accuracy — exact lines come from targeted
+ * re-reads, which delegation never touches.
+ */
+export function buildSummaryPrompt(raw: string): string {
+  return (
+    'Summarize the following tool output into at most 10 concise bullet points. ' +
+    'Preserve every file path, function/symbol name, identifier, command, key number, and error message ' +
+    'exactly as written — the reader is a coding agent that may act on them. ' +
+    'Do NOT pad with prose; write only the bullets.\n\n' +
+    raw
+  );
+}
+
+// ── Sub-call stream draining ─────────────────────────────────────────────
+
+/** Minimum stripped output length for a replacement to be trusted. */
+const MIN_SUMMARY_CHARS = 50;
+
+interface SubCallOutcome {
+  text: string;
+  /** Present when the sub-model reported usage (pi-ai Usage shape). */
+  usage?: Usage;
+}
+
+/**
+ * Drains a streamSimple sub-call: accumulates text_delta content and grabs
+ * the nested usage (same event shapes the live spike observed — usage rides
+ * on stream events / message_end). Throws on error events so callers
+ * fail open.
+ */
+async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOutcome> {
+  let text = '';
+  let usage: Usage | undefined;
+  for await (const ev of stream) {
+    const t = ev?.type;
+    if (t === 'text_delta') {
+      text += String(ev.delta ?? '');
+    } else if (t === 'error') {
+      throw new Error(`sub-model stream error: ${String(ev.error ?? 'unknown')}`);
+    } else {
+      const u = ev?.usage ?? ev?.message?.usage;
+      if (u) usage = u;
+    }
+  }
+  const out: SubCallOutcome = { text };
+  if (usage) out.usage = usage;
+  return out;
+}
+
+// ── The handler ──────────────────────────────────────────────────────────
+
+export interface DelegationOutcome {
+  content: Array<{ type: 'text'; text: string }>;
+  /** Nested usage for accounting; attached when the sub-model reported one. */
+  usage?: Usage;
+}
+
+/**
+ * tool_result delegation handler. Returns the replacement
+ * ({ content, usage }) for an oversized read, or undefined to pass the
+ * original through (every miss and every failure).
+ *
+ * The replacement is marked so the orchestrating model knows a targeted
+ * re-read (offset/limit — never delegated) is available for exact lines.
+ */
+export async function handleReadDelegation(
+  event: { toolName?: string; content?: unknown; isError?: boolean },
+  ctx: any,
+  cfg: Config | undefined,
+  log?: (msg: string) => void
+): Promise<DelegationOutcome | undefined> {
+  try {
+    const settings = delegationSettings(cfg);
+    if (!settings.enabled) return undefined;
+    if (event?.toolName !== 'read' || event?.isError) return undefined;
+
+    const raw = extractTextContent(event.content);
+    if (raw === null || raw.length < settings.min_chars) return undefined;
+
+    // Resolve the delegation group through Pi's public registry API —
+    // the router's group interception routes to the cheap model.
+    const model = ctx?.modelRegistry?.find?.(settings.group, settings.group);
+    if (!model) {
+      log?.(`[delegation] group "${settings.group}" not registered — passing through`);
+      return undefined;
+    }
+
+    const context = {
+      messages: [{ role: 'user', content: buildSummaryPrompt(raw.slice(0, settings.max_raw_chars)) }],
+    };
+    const stream = ctx.modelRegistry.runtime.streamSimple(model, context, { signal: ctx?.signal });
+    const { text, usage } = await drainSubCallStream(stream);
+
+    // Narration hygiene (spike finding) + trust check: a cascade that only
+    // narrated (all candidates failed) leaves no real summary — pass the
+    // ORIGINAL through rather than replacing content with noise.
+    const summary = stripRouterNarration(text);
+    if (summary.length < MIN_SUMMARY_CHARS) {
+      log?.(`[delegation] sub-call produced no usable summary (${summary.length} chars) — passing through`);
+      return undefined;
+    }
+
+    const replacement =
+      `[delegated summary of a ${raw.length}-char read result — ` +
+      `re-read with offset/limit for exact lines]\n\n` +
+      summary;
+
+    log?.(`[delegation] replaced ${raw.length}-char read result with ${summary.length}-char summary via ${settings.group}`);
+    const outcome: DelegationOutcome = { content: [{ type: 'text', text: replacement }] };
+    if (usage) outcome.usage = usage;
+    return outcome;
+  } catch (err) {
+    // Fail-open: the main model must never lose the original result.
+    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}

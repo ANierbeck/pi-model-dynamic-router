@@ -1,7 +1,10 @@
 # ADR-0007: Task decomposition and delegation to cheap worker models
 
-**Status**: Exploratory — no code changes yet. This document captures the
-2026-09-15/18 discussion and analysis before any implementation decision.
+**Status**: Revised 2026-09-20 — enforced delegation (tool_result
+result-shrinking) accepted as an **in-router module** (`src/delegation.ts`);
+see "Revision (2026-09-20)" at the end. The task-planner rejection below
+STANDS unchanged. Original exploratory text from 2026-09-15/18 retained
+for the decision trail.
 
 ## Context
 
@@ -317,3 +320,74 @@ to documenting the design now.
 
 No ADR status change to "Accepted" is needed because no `pi-model-dynamic-router`
 code changes are implied by either point.
+
+## Revision (2026-09-20): enforced delegation moves INTO the router
+
+**Decision reversal by the project owner.** The separation argued above
+("a separate, new Pi extension") was re-evaluated on 2026-09-20 and
+overturned for the tool_result result-shrinker — while the task-planner
+rejection (decomposition/orchestration inside `streamSimple`) stands
+unchanged.
+
+### Why the separation argument doesn't hold for the result-shrinker
+
+The ADR's scope argument was: "intercepting tool calls/results is a different
+extension point than resolving a model ref … the router starts making
+tool-execution decisions it has no context for." Two observations dissolve
+this for the result-shrinking case:
+
+1. **Choosing which model summarizes a read result is a routing decision** —
+   it is the same "which model handles which work" policy the router already
+   applies per completion request, just at finer granularity (per tool
+   result instead of per turn). No tool-execution decision is made: the read
+   still executes exactly as issued; only the *presentation of its output*
+   is routed through a cheaper model.
+2. **A separate extension would be coupled to the router anyway.** The
+   summarizer call resolves `bulk_reader/bulk_reader` through Pi's
+   `modelRegistry` — i.e. through the router's own group interception. The
+   coupling the separation was supposed to prevent already exists through
+   the public registry API; a separate extension would import nothing less,
+   it would merely add a second install/config/update surface for the same
+   dependency.
+
+Architecturally the in-router module is also the *lower-risk* option:
+no new provider registration (zero `registerProvider`/Ü1 risk), strictly
+fail-open, behind a config flag, and extractable into a separate extension
+later if the concern ever materializes (the module boundary — pure
+functions + one handler in `src/delegation.ts` — was drawn for exactly
+that).
+
+### Spike verification (2026-09-20, live headless run)
+
+All previously-open technical claims were verified against a live Pi
+session (probe extension, oversized `read` → `bulk_reader/bulk_reader` →
+summary replacement):
+
+1. `tool_call` fires for `read` with full input ✅
+2. `tool_result` delivers full content before the model sees it ✅
+3. Replacement reaches the calling model ✅ (answer quoted the replacement)
+4. Sub-call routes through the router group — full target architecture ✅
+5. Nested `usage` attached and accounted ✅ (12,081 tokens, $0.00048)
+
+Plus one design-relevant **finding**: the router narrates its candidate
+cascade as `> [router]` text_delta lines into the sub-call stream —
+intended for human sessions, noise for machine consumers. The delegation
+module strips `> [router]` lines from sub-call output before replacing a
+tool result, and fails open if no real summary remains.
+
+Targeted reads pass through untouched — verified live (an `offset:1,
+limit:1` read of 179 chars was correctly not delegated). This is the
+degradation path the design depends on: understand broadly via summary,
+re-read narrowly (untouched) for exact lines.
+
+### Scope of the accepted piece
+
+- `src/delegation.ts`: `read`-only interception initially, threshold-gated
+  (default `min_chars` 20,000), summarization via the configured router
+  group (default `bulk_reader`), strict fail-open, config namespace
+  `delegation: { enabled, min_chars, group, max_raw_chars }` (always from
+  the static layered config, like `exclude`).
+- Design detail: `docs/plans/2026-09-20-enforced-delegation-spike-and-design.md`.
+- Still rejected (unchanged): task decomposition/planning inside
+  `streamSimple`, tool-blocking shunts, and any orchestration of multi-step
+  subtasks — that remains Pi's subagent system's domain.

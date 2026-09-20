@@ -110,6 +110,7 @@ let localStreamsInFlight = 0;
 // reaching for console.* (which bypasses Pi's TUI and can land in the user's
 // input field). Re-imported here for index.ts's own use.
 import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
+import { handleReadDelegation } from './src/delegation.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 
 const defaultExport = function (pi: ExtensionAPI) {
@@ -278,6 +279,9 @@ let previousTokenCount = 0;
           dynamicCfg.exclude = staticCfg.exclude;
           dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
           dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
+          // Delegation settings are user intent (ADR-0007 revision) — always
+          // from the static layered config, like exclude above.
+          dynamicCfg.delegation = staticCfg.delegation;
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
@@ -1081,6 +1085,13 @@ let previousTokenCount = 0;
 
       // Update in-memory cfg immediately so the new fallback_groups and model lists
       // are available for the current session without requiring a restart.
+      // Delegation settings are user intent (ADR-0007 revision) — always
+      // from the static layered config, never from the dynamic config.
+      if (staticCfg.delegation) {
+        (dynamicConfig as Config).delegation = staticCfg.delegation;
+      } else {
+        delete (dynamicConfig as Config).delegation;
+      }
       cfg = dynamicConfig as Config;
       router = new Router(cfg, cache, rateLimitManager.getLimits());
       // streamOrchestrator.ctx.router is now a live getter (see
@@ -1597,6 +1608,13 @@ let previousTokenCount = 0;
   });
 
   pi.on('tool_result', async (ev, ctx) => {
+    // ── Enforced delegation (ADR-0007, revised 2026-09-20) ──────────────
+    // Shrink oversized `read` results with a cheap summarizer (routed via
+    // the delegation group — default bulk_reader) BEFORE the main model
+    // sees them. Strictly fail-open: undefined → original passes through.
+    const replacement = await handleReadDelegation(ev, ctx, cfg, routerLog);
+    if (replacement) return replacement;
+
     if (ev.isError && curModel) {
       const txt = ev.content?.map((c: any) => c.text ?? '').join('') ?? '';
       if (txt.includes('429') || txt.toLowerCase().includes('rate limit')) {
@@ -1609,6 +1627,8 @@ let previousTokenCount = 0;
         }
       }
     }
+    // All non-delegation paths intentionally fall through with no replacement.
+    return undefined;
   });
 
   let turns = 0;
