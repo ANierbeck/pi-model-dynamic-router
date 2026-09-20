@@ -97,7 +97,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
         provider: 'mistral-zai',
         id: 'glm-5-2',
         api: 'openai-completions',
-        contextWindow: 1_000_000,
+        contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         reasoning: true, // pi-ai's Model.reasoning is a boolean, not a ThinkingLevel string
       };
       const streamSimple = vi.fn((model: any) => {
@@ -192,7 +192,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
         provider: 'mistral',
         id: 'mistral-small-latest',
         api: 'openai-completions',
-        contextWindow: 1_000_000,
+        contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };
       const streamSimple = vi.fn((model: any) => {
         return (async function* () {

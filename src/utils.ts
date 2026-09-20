@@ -102,15 +102,47 @@ export function baseTokens(s: string): Set<string> {
  * - Returns null when the short name is not found in any group, so callers can
  *   distinguish a genuine lookup miss from a successful exact-match resolution.
  */
+/**
+ * Normalizes a model hint target for second-chance matching: lowercase,
+ * dots and underscores mapped to dashes, collapsed repeats (2026-09-20
+ * "HINT funktioniert nicht mehr" incident — `zai-glm-5.3` / `zai-glm-5_3`
+ * must resolve to `zai-glm-5-3`). Exact matching always runs FIRST; this
+ * normalization only fires as a fallback so registry ids that genuinely
+ * contain dots (e.g. `mistral-medium-3.5`) keep their exact-match priority.
+ */
+export function normalizeHintName(name: string): string {
+  return name.toLowerCase().replace(/[._\s]+/g, '-').replace(/-+/g, '-');
+}
+
+/**
+ * Whether a bare hint target matches a "provider/modelId" ref — exact id
+ * equality first, then separator-normalized equality (both sides), so
+ * `zai-glm-5.3` matches `mistral/zai-glm-5-3` but `zai-glm-5-2` never
+ * matches `zai-glm-5-3`.
+ */
+export function hintTargetMatches(target: string, ref: string): boolean {
+  const modelId = ref.includes('/') ? ref.slice(ref.lastIndexOf('/') + 1) : ref;
+  if (modelId === target || ref === target) return true;
+  return normalizeHintName(modelId) === normalizeHintName(target);
+}
+
 export function resolveShortModelName(
   target: string,
   allDiscoveredRefs: string[]
 ): string | null {
   if (target.includes('/')) return target;
+  // Exact match keeps first priority — never regress exact lookups.
   const match = allDiscoveredRefs.find(
     (m: string) => m === target || m.endsWith('/' + target) || m.split('/').pop() === target
   );
-  return match || null;
+  if (match) return match;
+  // Second chance: separator-normalized comparison (dot/underscore/case
+  // variants of the same model name resolve to the same model).
+  const normalized = normalizeHintName(target);
+  const fuzzyMatch = allDiscoveredRefs.find(
+    (m: string) => normalizeHintName(m.split('/').pop() ?? m) === normalized
+  );
+  return fuzzyMatch || null;
 }
 
 

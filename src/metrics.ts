@@ -51,6 +51,7 @@ const SUB_DISCOUNT = 0.5; // Subscription discount factor
 type ModelMap = Record<string, string | null>;
 let modelMap: ModelMap = {};
 let modelMapWildcards: [string, string | null][] = []; // [prefix, slug]
+let modelMapVersion = 0;
 let gdpval: Record<string, number> = {};
 let gdpvalVersion = 0;
 let gdpvalIndex: Map<string, number> | null = null;
@@ -75,6 +76,7 @@ export function loadModelMap(extDir: string): void {
     }
     // Sort wildcards longest-first for most specific match
     modelMapWildcards.sort((a, b) => b[0].length - a[0].length);
+    modelMapVersion++;
   } catch (err) {
     // CRITICAL: a parse error (e.g. duplicate YAML keys) leaves modelMap EMPTY,
     // so ALL model-map overrides silently stop working and every model falls
@@ -83,6 +85,7 @@ export function loadModelMap(extDir: string): void {
     routerLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : String(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
     modelMap = {};
     modelMapWildcards = [];
+    modelMapVersion++;
   }
 }
 
@@ -105,6 +108,7 @@ export function getGdpval(): Record<string, number> {
 export function setModelMap(map: ModelMap, wildcards: [string, string | null][]): void {
   modelMap = map;
   modelMapWildcards = wildcards;
+  modelMapVersion++;
 }
 
 /**
@@ -144,6 +148,51 @@ export function mapLookup(ref: string): string | null | undefined {
     if (modelId.startsWith(prefix)) return slug;
   }
   return undefined; // not in map
+}
+
+// ── Model-id aliases (same underlying model, different id strings) ────────
+//
+// model-map.yaml routinely lists several raw ids under the same GDPval slug
+// (e.g. `glm-5-2: glm-5-2` and `zai-glm-5-2: glm-5-2` — a provider's own API
+// canonical id and its alias both point to one model). registryCost() needs
+// this same grouping to retry a failed Pi-registry lookup under a sibling id:
+// Mistral's /v1/models reports the canonical id "glm-5-2", but Pi's own
+// model catalog (refreshed by `pi update --models`) indexes the identical
+// model under "zai-glm-5-2" instead. Without an alias retry, registryCost
+// silently returns null for "glm-5-2", and callers fall back to the scan's
+// cost_per_m:0 placeholder (ADR-0006 "F3") — wrongly treating a real,
+// priced model as free.
+let modelMapAliasIndex: Map<string, string[]> | null = null;
+let modelMapAliasIndexVersion = -1;
+
+function buildModelMapAliasIndex(): void {
+  const bySlug = new Map<string, string[]>();
+  for (const [key, slug] of Object.entries(modelMap)) {
+    // Only bare model ids (no "/") are usable as a registry lookup id —
+    // provider-prefixed keys (e.g. "mistral/zai-glm-5-2") exist in
+    // model-map.yaml purely to disambiguate GDPval slugs, not as ids a
+    // provider's own registry would recognize.
+    if (slug == null || key.includes('/')) continue;
+    const group = bySlug.get(slug);
+    if (group) group.push(key);
+    else bySlug.set(slug, [key]);
+  }
+  modelMapAliasIndex = bySlug;
+  modelMapAliasIndexVersion = modelMapVersion;
+}
+
+/**
+ * Returns other model-map.yaml ids that share `modelId`'s GDPval slug (i.e.
+ * known aliases for the same underlying model), excluding `modelId` itself.
+ * Empty when `modelId` isn't in model-map.yaml or has no siblings.
+ */
+function aliasesFor(modelId: string): string[] {
+  const slug = modelMap[modelId];
+  if (slug == null) return [];
+  if (modelMapAliasIndex === null || modelMapAliasIndexVersion !== modelMapVersion) {
+    buildModelMapAliasIndex();
+  }
+  return (modelMapAliasIndex!.get(slug) ?? []).filter((k) => k !== modelId);
 }
 
 /**
@@ -629,27 +678,68 @@ export function isFreeModel(ref: string): boolean {
  * API — no direct fs access to Pi's setup files, no standalone /v1/models
  * fetch for providers Pi already registered.
  */
+/**
+ * Tries `modelRegistry.find(provider, id)` for `modelId`, its `:free`-suffix-
+ * stripped form, and every model-map.yaml sibling id — in that order. Shared
+ * by registryCost()'s direct-provider attempt and its `pricingAlias` retry
+ * (a provider that is the same upstream account under a different
+ * router-internal key, e.g. mistral-zai → mistral), so both go through
+ * identical id-matching logic.
+ */
+/**
+ * Public streamability probe for the persist path (dynamic config
+ * generation): whether `findRegistryModel` would resolve this ref at stream
+ * time. Wraps the same id-matching logic (direct id, `:free`-stripped id,
+ * model-map siblings) the router itself uses, so generated configs only
+ * ever contain refs that can actually stream.
+ */
+export function hasRegistryModel(provider: string, modelId: string): boolean {
+  return !!findRegistryModel(provider, modelId);
+}
+
+function findRegistryModel(provider: string, modelId: string): any {
+  let model = modelRegistry.find(provider, modelId);
+  // Retry with the `:free` suffix stripped if the full-id lookup failed.
+  // Pi's registry stores OpenRouter model ids WITHOUT the `:free` suffix
+  // (OpenRouter exposes free/paid as separate endpoints, but Pi
+  // normalizes to the base id). Without this retry, `find('openrouter',
+  // 'z-ai/glm-5.2:free')` returns undefined → registryCost returns null →
+  // getM sets cost_per_m='unknown' → effCost returns 'unknown' →
+  // sortByMinCostIfAllPriced drops the model from the group (observed
+  // 2026-09-10: z-ai/glm-5.2:free vanished from /router after the reload
+  // while inkling-small:free stayed, because the latter was in the stale
+  // cache.available_models and the former was not).
+  if (!model && modelId.endsWith(':free')) {
+    model = modelRegistry.find(provider, modelId.slice(0, -':free'.length));
+  }
+  // Retry under known model-map.yaml aliases (same underlying model,
+  // different id string) — e.g. Mistral's API reports the canonical id
+  // "glm-5-2", but Pi's own catalog indexes the identical model under its
+  // alias "zai-glm-5-2". See aliasesFor()'s doc comment for the full
+  // rationale (ADR-0006 "F3" placeholder-cost mixup this fixes).
+  if (!model) {
+    for (const alias of aliasesFor(modelId)) {
+      model = modelRegistry.find(provider, alias);
+      if (model) break;
+    }
+  }
+  return model;
+}
+
 function registryCost(
   provider: string,
   modelId: string
 ): { input: number; output: number } | null {
   if (!modelRegistry) return null;
   try {
-    // First try the full id as-is. Works for providers that store the exact
-    // id (mistral, mistral-zai, requesty-export, ollama).
-    let model = modelRegistry.find(provider, modelId);
-    // Retry with the `:free` suffix stripped if the full-id lookup failed.
-    // Pi's registry stores OpenRouter model ids WITHOUT the `:free` suffix
-    // (OpenRouter exposes free/paid as separate endpoints, but Pi
-    // normalizes to the base id). Without this retry, `find('openrouter',
-    // 'z-ai/glm-5.2:free')` returns undefined → registryCost returns null →
-    // getM sets cost_per_m='unknown' → effCost returns 'unknown' →
-    // sortByMinCostIfAllPriced drops the model from the group (observed
-    // 2026-09-10: z-ai/glm-5.2:free vanished from /router after the reload
-    // while inkling-small:free stayed, because the latter was in the stale
-    // cache.available_models and the former was not).
-    if (!model && modelId.endsWith(':free')) {
-      model = modelRegistry.find(provider, modelId.slice(0, -':free'.length));
+    let model = findRegistryModel(provider, modelId);
+    // Retry under the provider's `pricingAlias` (same upstream account/API,
+    // different router-internal provider key — e.g. mistral-zai → mistral).
+    // Pi's own catalog only ever registers the primary key, so a
+    // router-internal alias provider always misses on its own name.
+    if (!model) {
+      const aliasProvider = PROVIDER_MAP[provider]?.pricingAlias;
+      if (aliasProvider) model = findRegistryModel(aliasProvider, modelId);
     }
     if (!model?.cost) return null;
     const { input, output } = model.cost;

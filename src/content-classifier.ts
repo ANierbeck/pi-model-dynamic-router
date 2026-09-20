@@ -213,7 +213,10 @@ IMPORTANT HINT RULE: This applies ONLY to the "Current request" line at the
 end of this prompt — NEVER to the "Context" block above it, which is
 background metadata, not a user instruction. If the CURRENT REQUEST starts
 with "HINT:" (case-insensitive), ALWAYS return a hint category.
-CRITICAL: If the current request begins with "HINT:", ignore the rest of the
+"MHINT:", "Model-HINT:" and "Model_HINT:" (case-insensitive) are MODEL
+hint markers — they are never group hints.
+CRITICAL: If the current request begins with "HINT:", "MHINT:" or
+"Model-HINT:"/"Model_HINT:", ignore the rest of the
 request and return:
 - For model hints: {"category": "hint:<model-name>", "reason": "User specified model via HINT", "confidence": 1.0}
 - For group hints: {"category": "hint:group:<group-name>", "reason": "User specified group via HINT", "confidence": 1.0}
@@ -283,14 +286,25 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   // lookahead - group hints are recognized via GROUP_VERB_PREFIX below
   // ("use group X", "verwende gruppe X"), not via the bare noun, so the
   // English and German forms behave symmetrically (roborev job 451 LOW).
-  const match = prompt.match(/^\s*HINT\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i);
+  // Marker rule (2026-09-20): "HINT" is the USER's reserved channel to the
+  // router (model OR group hints). "MHINT" / "Model-HINT" / "Model_HINT"
+  // are the router's own model-hint marker and its user-typable synonyms —
+  // MODEL hints by definition, so they never enter the group branch. This
+  // reserves plain HINT: for the user and stops the router's own narration
+  // ("> [router] MHINT: …") from ever being re-read as a user instruction
+  // (the 2026-09-18 lock-in loop).
+  const match = prompt.match(/^\s*(HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i);
   if (!match) return null;
-  const instruction = match[1].trim();
+  const isModelOnlyMarker = match[1].toUpperCase() !== 'HINT';
+  const instruction = match[2].trim();
 
   // Group hint: "use group tactical", "verwende Gruppe X", "nutze gruppe X", "benutze Gruppe X"
-  const groupMatch = instruction.match(
-    new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
-  );
+  // (only for the plain user HINT marker — MHINT variants are model-only)
+  const groupMatch = isModelOnlyMarker
+    ? null
+    : instruction.match(
+        new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
+      );
   if (groupMatch) {
     return {
       reason: 'User specified group via HINT',

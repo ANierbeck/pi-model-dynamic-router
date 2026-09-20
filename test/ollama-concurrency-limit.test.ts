@@ -90,9 +90,9 @@ describe('driveStream: local-stream concurrency limit', () => {
         };
         defaultExport(pi);
 
-        const bigModel = { provider: 'ollama', id: 'big-model', api: 'openai-completions', contextWindow: 1_000_000 };
-        const otherBigModel = { provider: 'ollama', id: 'other-big-model', api: 'openai-completions', contextWindow: 1_000_000 };
-        const cloudModel = { provider: 'cloud', id: 'fallback-model', api: 'openai-completions', contextWindow: 1_000_000 };
+        const bigModel = { provider: 'ollama', id: 'big-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
+        const otherBigModel = { provider: 'ollama', id: 'other-big-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
+        const cloudModel = { provider: 'cloud', id: 'fallback-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
         const modelsByRef: Record<string, any> = {
           'ollama/big-model': bigModel,
           'ollama/other-big-model': otherBigModel,
@@ -188,8 +188,8 @@ describe('driveStream: local-stream concurrency limit', () => {
         };
         defaultExport(pi);
 
-        const throwingModel = { provider: 'ollama', id: 'throwing-model', api: 'openai-completions', contextWindow: 1_000_000 };
-        const nextModel = { provider: 'ollama', id: 'next-model', api: 'openai-completions', contextWindow: 1_000_000 };
+        const throwingModel = { provider: 'ollama', id: 'throwing-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
+        const nextModel = { provider: 'ollama', id: 'next-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
         const modelsByRef: Record<string, any> = {
           'ollama/throwing-model': throwingModel,
           'ollama/next-model': nextModel,

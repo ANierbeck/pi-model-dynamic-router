@@ -112,7 +112,7 @@ describe('driveStream: all-candidates-failed errorMessage', () => {
           provider: 'broken-provider',
           id: 'broken-model',
           api: 'openai-completions',
-          contextWindow: 1_000_000,
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const modelsByRef: Record<string, any> = {
           'broken-provider/broken-model': brokenModel,

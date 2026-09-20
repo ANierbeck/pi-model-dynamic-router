@@ -84,6 +84,10 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
     authHeader: (k) => ({ Authorization: `Bearer ${k}` }),
     baseUrl: 'https://api.mistral.ai/v1',
     api: 'openai-completions',
+    // Same account/API as `mistral` (see comment above) — Pi's own model
+    // catalog never registers this router-internal key, so it has no
+    // pricing of its own to find. Borrow mistral's registry pricing.
+    pricingAlias: 'mistral',
   },
 
   groq: {

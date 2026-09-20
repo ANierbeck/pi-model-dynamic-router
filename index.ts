@@ -46,6 +46,8 @@ import { buildOllamaProviderModels } from './src/ollama-context.ts';
 import { checkScanSanity } from './src/scan-sanity.ts';
 import { extractCapabilities } from './src/capabilities.ts';
 import { CacheManager } from './src/cache.ts';
+import { redundantAliasProviders, pruneRedundantCacheEntries } from './src/provider-shadow.ts';
+import { isStreamableRef } from './src/streamable-refs.ts';
 import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
@@ -584,8 +586,9 @@ let previousTokenCount = 0;
             const pricing: Record<string, { input: number; output: number }> =
               cache.openrouter_pricing ?? {};
             for (const m of d.data ?? []) {
+              const caps = extractCapabilities('openrouter', m);
               if (String(m.pricing?.prompt ?? '1') === '0')
-                models.push({ id: m.id, provider: 'openrouter', cost_per_m: 0 });
+                models.push({ id: m.id, provider: 'openrouter', cost_per_m: 0, ...(caps ? { capabilities: caps } : {}) });
               const inp = parseFloat(m.pricing?.prompt ?? '0') * 1_000_000;
               const out = parseFloat(m.pricing?.completion ?? '0') * 1_000_000;
               if (inp >= 0 && out >= 0) {
@@ -683,9 +686,17 @@ let previousTokenCount = 0;
             }
           } catch {}
         }
+        // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
+        // Leitplanke 1): a provider whose `pricingAlias` target pi already
+        // serves duplicates pi's catalog under a router-internal key — and
+        // its scan entries carry `cost_per_m: 0` PLACEHOLDERS that later get
+        // baked into Pi's registry as real prices by registerGroupModels.
+        // The ghost duplicates (best GDPval, $0.0 "cost") then won every
+        // cost-sorted group. Never scan shadowed alias providers.
+        const redundantProviders = redundantAliasProviders(PROVIDER_MAP, piKnownProviders);
         const providerScans = Object.entries(PROVIDER_MAP)
           .filter(([, def]) => def.modelsUrl && def.authHeader)
-          .filter(([provId]) => !piKnownProviders.has(provId))
+          .filter(([provId]) => !piKnownProviders.has(provId) && !redundantProviders.has(provId))
           .map(async ([provId, def]) => {
             const keys = cfg.providers?.[provId]?.keys;
             if (!keys?.length) return;
@@ -732,8 +743,15 @@ let previousTokenCount = 0;
             }
           });
         await Promise.allSettled(providerScans);
+        // Prune stale entries of shadowed alias providers even when THIS scan
+        // pass found nothing (all fetches failing must not keep ghosts alive).
+        // Pure cache hygiene — runs on every completed scan pass.
+        cache.available_models = pruneRedundantCacheEntries(
+          cache.available_models ?? [],
+          redundantProviders
+        );
         if (models.length) {
-          // Merge: keep existing entries for providers not scanned (or whose scan failed)
+          // Merge: keep existing entries for providers not scanned (or whose scan failed).
           const scannedProviders = new Set(models.map((m) => m.provider));
           const kept = (cache.available_models ?? []).filter(
             (m) => !scannedProviders.has(m.provider)
@@ -884,6 +902,35 @@ let previousTokenCount = 0;
         });
         if (excluded.length) {
           routerLog(`[router] Exclude rules removed ${excluded.length} model(s): ${excluded.slice(0, 15).join(', ')}${excluded.length > 15 ? ' ...' : ''}`);
+        }
+      }
+
+      // 2d. Streamability filter (2026-09-20 ghost-model incident): the
+      // pool above merges scan-cache refs directly, so stale entries for
+      // providers pi no longer serves (mistral-zai/* with fake $0.0 scan
+      // placeholders) flowed straight into the generated group configs —
+      // where the ghost (best GDPval, $0.0) won every cost-sorted group and
+      // then failed at stream time. A ref may only be persisted if it can
+      // actually stream: resolvable in pi's registry, served by a local
+      // runtime, or explicitly listed as a free model in the config.
+      // Fail-open: when no registry is available (e.g. degraded headless
+      // runs), keep the previous behavior instead of emptying the pool.
+      if (sessionCtx?.modelRegistry) {
+        const before = effectiveModelRefs.length;
+        const freeModelRefs = new Set<string>(staticFreeModels);
+        const streamableCtx = {
+          hasRegistryModel: (provider: string, modelId: string) =>
+            metricsModule.hasRegistryModel(provider, modelId),
+          isLocalProvider: (provider: string) =>
+            PROVIDER_MAP[provider]?.local === true,
+          freeModelRefs,
+        };
+        effectiveModelRefs = effectiveModelRefs.filter((ref) =>
+          isStreamableRef(ref, streamableCtx)
+        );
+        const dropped = before - effectiveModelRefs.length;
+        if (dropped > 0) {
+          routerLog(`[router] Streamability filter removed ${dropped} unstreamable model ref(s) (not in pi's registry, not local, not configured free models)`);
         }
       }
 
@@ -2516,7 +2563,23 @@ let previousTokenCount = 0;
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
 
-  async function registerGroupModels(ctx: any) {
+  /**
+ * The set of provider ids pi's model registry currently serves. Used by the
+ * scan loop and registerGroupModels for the alias-shadow rule (providers
+ * whose pricingAlias target is pi-served duplicate pi's catalog under a
+ * router-internal key — see src/provider-shadow.ts).
+ */
+function piKnownProviderSet(ctx: any): Set<string> {
+  const known = new Set<string>();
+  try {
+    for (const model of ctx?.modelRegistry?.getAvailable?.() ?? []) {
+      if (typeof model?.provider === 'string') known.add(model.provider);
+    }
+  } catch {}
+  return known;
+}
+
+async function registerGroupModels(ctx: any) {
     // B1/Ü1 fix: previously this registered every discovered provider with
     // hardcoded, same-for-all-models capabilities (reasoning: true,
     // input: ['text','image'], contextWindow: 200_000, maxTokens: 64_000) and
@@ -2535,6 +2598,20 @@ let previousTokenCount = 0;
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
       if (!def.baseUrl || !def.api) continue;
       if (SKIP_REGISTRATION.has(provId)) continue;
+      // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
+      // Leitplanke 1): if this provider's `pricingAlias` target is served
+      // by pi's own registry (e.g. mistral-zai → mistral), registering the
+      // alias duplicates pi's catalog under a router-internal key with
+      // scan-placeholder costs ($0.0) baked in as REAL prices — the ghost
+      // (best GDPval, $0.0) then won every cost-sorted group while real
+      // money was billed upstream. Pi's catalog is the source of truth;
+      // shadowed alias providers must never be (re-)registered.
+      if (
+        typeof def.pricingAlias === 'string' &&
+        piKnownProviderSet(ctx).has(def.pricingAlias)
+      ) {
+        continue;
+      }
       // Keys can come from router-config.json OR from auth.json (via authKey).
       const keys = cfg.providers?.[provId]?.keys;
       let rawKey: string | undefined;
