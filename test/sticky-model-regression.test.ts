@@ -126,11 +126,13 @@ describe('Sticky model regression (driveStream must never call pi.setModel)', ()
         provider: 'fake-provider-a',
         id: 'claude-sonnet-4-6',
         api: 'fake-api',
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       },
       'fake-provider-b/claude-opus-4-6': {
         provider: 'fake-provider-b',
         id: 'claude-opus-4-6',
         api: 'fake-api',
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       },
     };
 

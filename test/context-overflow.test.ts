@@ -91,6 +91,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
         id: 'claude-sonnet-4-6',
         api: 'small-api',
         contextWindow: 8_000,
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };
       const modelRegistry = {
         getAvailable: () => [smallCtxModel],
@@ -196,6 +197,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
         id: 'claude-sonnet-4-6',
         api: 'phantom-api',
         contextWindow: 1_000_000,
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };
       const modelRegistry = {
         getAvailable: () => [phantomModel],
@@ -288,12 +290,14 @@ describe('driveStream: context overflow triggers native compaction signal', () =
         id: 'small-model',
         api: 'small-api',
         contextWindow: 8_000,
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };
       const bigCtxModel = {
         provider: 'big-ctx-provider',
         id: 'big-model',
         api: 'big-api',
         contextWindow: 1_000_000,
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };
       const modelsByRef: Record<string, any> = {
         'small-ctx-provider/small-model': smallCtxModel,
