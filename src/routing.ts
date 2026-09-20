@@ -156,7 +156,18 @@ export function applyGroupFilters(
   if (g.exclude_models?.length) {
     c = c.filter(ref => !g.exclude_models!.includes(ref));
   }
-  // 3. min_gdpval / min_gdpval_pct
+  // 3. Same-provider same-slug dedup — BEFORE the quality/cost/context
+  //    gates (2026-09-20). The gates must act on the CANONICAL cluster
+  //    representative, not on whichever fake-priced alias survives them:
+  //    previously max_cost dropped the honest registry-priced twin
+  //    (zai-glm-5-3, $1.4) first, so the dedup only ever saw the
+  //    cost_per_m-0 scan aliases and kept those — capped groups displayed
+  //    and routed the dishonest variant. With dedup first, a capped group
+  //    either keeps the honest model or drops the whole cluster.
+  //    Quality gates are slug-based (same slug = same score), so running
+  //    dedup before them cannot change their outcomes.
+  if (dedup && dedupFn) c = dedupFn(c);
+  // 4. min_gdpval / min_gdpval_pct
   // min_gdpval <= 0 means "no quality gate" — pass everything through (matches
   // the historical filterByQualityMin guard against min <= 0). A null score
   // (unscored model) fails a STRICT positive threshold; this is the fix for
@@ -175,7 +186,7 @@ export function applyGroupFilters(
       c = c.filter(ref => { const v = lookupGdp(ref); return v !== null && v >= thresh; });
     }
   }
-  // 4. max_cost (billing-aware unknown handling)
+  // 5. max_cost (billing-aware unknown handling)
   if (g.max_cost !== undefined) {
     c = c.filter(ref => {
       const cost = effCost(ref);
@@ -186,7 +197,7 @@ export function applyGroupFilters(
       return cost <= g.max_cost!;
     });
   }
-  // 5. max_cost_per_m (unknown price → always drop)
+  // 6. max_cost_per_m (unknown price → always drop)
   if (g.max_cost_per_m !== undefined) {
     c = c.filter(ref => {
       const price = lookupPrice(ref);
@@ -194,7 +205,7 @@ export function applyGroupFilters(
       return price.input <= g.max_cost_per_m!;
     });
   }
-  // 6. min_context_length (strict: unknown context window fails the gate,
+  // 7. min_context_length (strict: unknown context window fails the gate,
   //    mirroring min_gdpval's null-fails semantics — never silently admit a
   //    model whose capacity is unverified into a group that *needs* a large
   //    context window). Absent/0 means "no context-length gate".
@@ -205,8 +216,6 @@ export function applyGroupFilters(
     });
   }
 
-  // Optional dedup (live + display paths); persist path handles its own.
-  if (dedup && dedupFn) c = dedupFn(c);
   return c;
 }
 
@@ -778,10 +787,10 @@ export class Router {
     }
 
     // Shared method-independent filters (A1): exclude_providers, exclude_models,
-    // min_gdpval/pct, max_cost, max_cost_per_m. Unknown-cost handling is
+    // dedup, min_gdpval/pct, max_cost, max_cost_per_m. Unknown-cost handling is
     // billing-aware (subscription/local kept, payg dropped) — see
     // applyGroupFilters INVARIANTS.
-    c = applyGroupFilters(c, g, this.cfg, false);
+    c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r));
 
     // Filter by budget availability (subscription providers)
     // This ensures we only use models with remaining tokens in their window
@@ -790,7 +799,6 @@ export class Router {
     // Deduplicate: remove models that are the SAME underlying model
     // (e.g. mistral-medium-2604 and mistral-medium-latest both match
     // slug mistral-medium-3-5 — keep only the first one)
-    c = this.dedupByModelIdentity(c);
 
     // Sorting.
     //
