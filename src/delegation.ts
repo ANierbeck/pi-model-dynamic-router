@@ -39,6 +39,10 @@ export interface DelegationSettings {
   max_raw_chars: number;
   /** Tool names whose oversized results get delegated. */
   tools: string[];
+  /** Pre-call block threshold for full-file reads, in lines (shunt's
+   *  SHUNT_MIN_LINES). 0 disables pre-call blocking; the shrinker keeps
+   *  working regardless. */
+  block_lines: number;
 }
 
 const DEFAULTS: DelegationSettings = {
@@ -53,7 +57,10 @@ const DEFAULTS: DelegationSettings = {
   group: 'bulk_reader',
   max_raw_chars: 60000,
   tools: ['read', 'bash'],
-};
+  // shunt's check-file-size blocks full reads above 350 lines pre-execution
+  // and redirects to the bulk reader. Same default, same meaning.
+  block_lines: 350,
+};;
 
 /**
  * Effective delegation settings for the given config. Missing config or
@@ -78,6 +85,9 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
     max_raw_chars:
       typeof d.max_raw_chars === 'number' && d.max_raw_chars > 0 ? d.max_raw_chars : DEFAULTS.max_raw_chars,
     tools,
+    // 0 explicitly disables pre-call blocking; negative/non-number falls back.
+    block_lines:
+      typeof d.block_lines === 'number' && d.block_lines >= 0 ? d.block_lines : DEFAULTS.block_lines,
   };
 }
 
@@ -153,7 +163,7 @@ interface SubCallOutcome {
  * on stream events / message_end). Throws on error events so callers
  * fail open.
  */
-async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOutcome> {
+export async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOutcome> {
   let text = '';
   let usage: Usage | undefined;
   for await (const ev of stream) {
@@ -182,7 +192,7 @@ async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOu
  * lines. Delegating a targeted read only adds latency and destroys the
  * precision an edit requires.
  */
-function isTargetedRead(input: unknown): boolean {
+export function isTargetedReadInput(input: unknown): boolean {
   if (!input || typeof input !== 'object') return false;
   const i = input as Record<string, unknown>;
   return i.offset != null || i.limit != null;
@@ -236,7 +246,7 @@ export async function handleReadDelegation(
     // the orchestrator needs exactly — delegating it only adds latency and
     // destroys the precision an edit requires. Mirrors shunt's check-file-size
     // ("Targeted reads pass through") and check-bash-read (pipes pass through).
-    if (tool === 'read' && isTargetedRead(event.input)) return undefined;
+    if (tool === 'read' && isTargetedReadInput(event.input)) return undefined;
     if (tool === 'bash' && isTargetedBash(event.input)) return undefined;
 
     const raw = extractTextContent(event.content);
