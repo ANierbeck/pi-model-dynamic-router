@@ -151,6 +151,13 @@ use `min_gdpval: 0` (anything), `tactical`/`strategic` raise the GDPval floor to
 600/700. A classified prompt maps to a group via `CATEGORY_TO_GROUP`
 (content-classifier.ts), and the group's own filters do the rest.
 
+A group may also set `min_context_length` to require a minimum model context
+window (in tokens). Models whose scanned context window is unknown or below
+the threshold are dropped — strict, like `min_gdpval`. This lets a
+use-case-specific group (e.g. `bulk_reader`) guarantee its cheap models can
+actually hold the large inputs the use case demands, instead of falling back
+to the smallest free model that would truncate.
+
 > **Historical note:** an earlier separate "Cost Tier System" (free/budget/premium
 > buckets, `src/cost-tiers.ts`) existed as a second filter layer on top of groups,
 > but was removed — it was redundant with the group thresholds and conflicted
@@ -367,6 +374,34 @@ subagent({
   `,
 });
 ```
+
+The `bulk_reader` group adds a `min_context_length` floor so the cheap model
+it resolves to is guaranteed to hold several files at once — exactly the
+property a trivial/scout group does *not* guarantee:
+
+```js
+subagent({
+  workflowScript: `
+    const files = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"];
+    const summaries = await runs.all(files.map((f) => ({
+      key: f,
+      agent: "scout",
+      model: "bulk_reader/bulk_reader",
+      task: "Read " + f + " and return a bullet list of its public API.",
+    })));
+    return runs.run("synthesize", {
+      agent: "worker",
+      model: "strategic/strategic",
+      task: "Given these file summaries, propose a refactor:\\n\\n" +
+        summaries.map((s) => s.output).join("\\n\\n"),
+    });
+  `,
+});
+```
+
+`code_writer/code_writer` is the symmetric counterpart: a cheap group with
+enough context for a spec + one reference file, used to generate boilerplate
+the expensive model never has to read back as output tokens.
 
 See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-decomposition-and-delegation.md) for why this lives in the subagent layer rather than in the router.
 
