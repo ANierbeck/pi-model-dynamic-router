@@ -128,11 +128,30 @@ export function normalizeSpacedId(ref: string): string {
  * Extracts letter-tokens and version numbers from a SPACED normalized id.
  * Letters: [a-z]+ runs; numbers: \d+ runs — "mistral medium 3 5" →
  * letters {mistral, medium}, numbers [3, 5].
+ *
+ * `version` is the ORDERING tuple with multi-digit runs split digit-wise
+ * ('glm-52' → [5,2], 'mistral-small-2603' → [2,6,0,3]). GDPval scrapes
+ * write dotted versions without dashes ('glm-53' = GLM 5.3), and a
+ * concatenated run parsed whole ([53]) beats every real multi-part
+ * version ([5,3]: 53 > 5) in -latest resolution — 2026-09-20 this made
+ * zai-glm-latest resolve to 'glm-52'/'glm-53' instead of 'glm-5-3'.
+ * Raw `numbers` stay intact: exact matching must NOT equate a 'glm-5.2'
+ * ref with slug 'glm-52' (GDPval's non-reasoning variant).
  */
-function extractTokens(s: string): { letters: Set<string>; numbers: number[] } {
+function extractTokens(s: string): { letters: Set<string>; numbers: number[]; version: number[] } {
   const letters = new Set(s.match(/[a-z]+/g) ?? []);
-  const numbers = (s.match(/\d+/g) ?? []).map(Number);
-  return { letters, numbers };
+  const numbers: number[] = [];
+  const version: number[] = [];
+  for (const run of s.match(/\d+/g) ?? []) {
+    const n = Number(run);
+    numbers.push(n);
+    if (run.length >= 2) {
+      for (const d of run.split('')) version.push(Number(d));
+    } else {
+      version.push(n);
+    }
+  }
+  return { letters, numbers, version };
 }
 
 /**
@@ -230,10 +249,28 @@ export function matchSlug(
   // This ensures models like "gemma2:2b" (which IS in the GDPval DB) are matched
   // even though they have a parameter count in the name.
   // Normalize BOTH the ref and the slug the same way.
+  //
+  // Dash-erasing makes DIFFERENT slugs normalize identically: 'glm-5-2' ≡
+  // 'glm-52' (both 'glm52'). GDPval carries both as distinct models
+  // (reasoning vs non-reasoning, different scores), so among equal-normalized
+  // slugs prefer the one whose SPACED number tuple exactly matches the
+  // ref's — ref 'glm-5.2' [5,2] picks slug 'glm-5-2', ref 'glm-52' [52]
+  // picks slug 'glm-52' (2026-09-20: without this, iteration order decided
+  // and 'mistral/glm-52' scored as glm-5-2, the wrong model).
+  const refNums = extractTokens(normalizeSpacedId(ref)).numbers;
+  let exactNumHit: string | undefined;
+  let exactHit: string | undefined;
   for (const slug of gdpvalSlugs) {
     const normalizedSlug = normalizeModelId(slug);
-    if (normalized === normalizedSlug) return slug;
+    if (normalized !== normalizedSlug) continue;
+    if (exactNumHit === undefined && isExactTuple(extractTokens(normalizeSpacedId(slug)).numbers, refNums)) {
+      exactNumHit = slug;
+    } else if (exactHit === undefined) {
+      exactHit = slug;
+    }
   }
+  if (exactNumHit !== undefined) return exactNumHit;
+  if (exactHit !== undefined) return exactHit;
 
   // Stage 2: Exclusion — only for models NOT in the GDPval DB
   if (shouldExclude(ref)) return null;
@@ -263,7 +300,7 @@ export function matchSlug(
   let best: CandRank | undefined;
 
   for (const slug of gdpvalSlugs) {
-    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizeSpacedId(slug));
+    const { letters: slugLetters, numbers: slugNumbers, version: slugVersion } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
@@ -283,7 +320,7 @@ export function matchSlug(
     const cand: CandRank = {
       score,
       exact: isExactTuple(slugNumbers, refNumbers),
-      tuple: slugNumbers,
+      tuple: slugVersion,
       tokenCount: slugLetters.size,
     };
     if (best === undefined || compareCand(cand, best) < 0) {
@@ -320,7 +357,7 @@ export function candidateSlugs(
   const candidates: { slug: string; rank: CandRank }[] = [];
 
   for (const slug of gdpvalSlugs) {
-    const { letters: slugLetters, numbers: slugNumbers } = extractTokens(normalizeSpacedId(slug));
+    const { letters: slugLetters, numbers: slugNumbers, version: slugVersion } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
@@ -339,7 +376,7 @@ export function candidateSlugs(
 
     candidates.push({
       slug,
-      rank: { score, exact: isExactTuple(slugNumbers, refNumbers), tuple: slugNumbers, tokenCount: slugLetters.size },
+      rank: { score, exact: isExactTuple(slugNumbers, refNumbers), tuple: slugVersion, tokenCount: slugLetters.size },
     });
   }
 

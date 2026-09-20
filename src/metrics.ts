@@ -239,6 +239,57 @@ export function setLlmMatches(matches: Record<string, string>): void {
  *   1. LLM-assisted match (in-memory + cached)
  *   2. algorithmic slug-matcher (fuzzy token-set)
  */
+// ── GDPval duplicate-spelling canonicalization (2026-09-20) ──────────
+
+/**
+ * Splits pure multi-digit version segments into single digits: 'glm-53' →
+ * 'glm-5-3'. Used ONLY to detect GDPval scrape duplicates — never applied
+ * to model refs. Segments containing letters ('31b', '4o', 'm1') and
+ * single digits are untouched.
+ */
+function splatVersionRuns(slug: string): string {
+  return slug
+    .split('-')
+    .map((seg) => (/^\d{2,}$/.test(seg) ? seg.split('').join('-') : seg))
+    .join('-');
+}
+
+let slugCanonScores: Record<string, number> | null = null;
+let slugCanon: Map<string, string> = new Map();
+
+/**
+ * Canonical map for GDPval duplicate spellings ('glm-53' → 'glm-5-3').
+ *
+ * The Artificial Analysis scrape lists the same model under two spellings
+ * when the version contains a dot. The non-dashed key is a real
+ * gdpval_scores entry and version-tuple parsing reads it as version [53],
+ * which beats every real multi-part version ([5,3]: 53 > 5) in -latest
+ * resolution — so 'zai-glm-latest' resolved to 'glm-53' while
+ * 'zai-glm-5-3' resolved to 'glm-5-3': same model, DIFFERENT identity
+ * keys, and same-slug dedup never fired (2026-09-20 /router panel showed
+ * zai-glm-5, zai-glm-latest AND zai-glm-5-3 as three separate models).
+ *
+ * A key maps to its splatted twin ONLY when that twin EXISTS and carries
+ * the SAME score — true duplicates collapse. Score-different twins stay
+ * distinct: 'glm-52' (1232.78) is GDPval's non-reasoning variant, not a
+ * duplicate of 'glm-5-2' (1357.35). Splatted keys without an existing
+ * twin (dates like 'mistral-small-2603') are untouched.
+ */
+function getSlugCanon(scores: Record<string, number>): Map<string, string> {
+  if (slugCanonScores !== scores) {
+    const canon = new Map<string, string>();
+    for (const key of Object.keys(scores)) {
+      const twin = splatVersionRuns(key);
+      if (twin !== key && twin in scores && scores[twin] === scores[key]) {
+        canon.set(key, twin);
+      }
+    }
+    slugCanon = canon;
+    slugCanonScores = scores;
+  }
+  return slugCanon;
+}
+
 export function resolveSlug(ref: string): string | null | undefined {
   // SELF-HEALING, two independent checks:
   //
@@ -280,20 +331,30 @@ export function resolveSlug(ref: string): string | null | undefined {
   if (mapped === null) return null; // explicitly excluded
   if (mapped !== undefined) return mapped; // explicit slug — authoritative
 
+  // Canonicalization applies to every non-explicit stage below: all stages
+  // must agree on ONE identity per model, or same-slug dedup splits.
+  const scores = Object.keys(gdpval).length > 0 ? gdpval : (cache.gdpval_scores ?? {});
+  const canon = getSlugCanon(scores);
+
   // Stage 1: LLM-assisted match (semantically understands versions)
   // The LLM can distinguish glm-5-2 from glm-5-3, and knows that
   // mistral-medium-2604 = mistral-medium-3-5 (date-versioned).
-  if (llmModelMatches[ref]) return llmModelMatches[ref];
+  if (llmModelMatches[ref]) return canon.get(llmModelMatches[ref]) ?? llmModelMatches[ref];
   // Cached LLM matches (from cache.model_score_cache). Needed because esbuild
   // may bundle two instances of this module, and the routing.ts instance
-  // doesn't share in-memory state with index.ts.
+  // doesn't share in-memory state with index.ts. A cached match may point at
+  // a duplicate spelling — canonicalize like a fresh match.
   const cached = (cache as any)?.model_score_cache?.[ref];
-  if (cached && typeof cached === 'string') return cached;
+  if (cached && typeof cached === 'string') return canon.get(cached) ?? cached;
 
-  // Stage 2: algorithmic slug-matcher (FALLBACK — only if LLM didn't match)
-  const scores = Object.keys(gdpval).length > 0 ? gdpval : (cache.gdpval_scores ?? {});
-  const slugKeys = Object.keys(scores);
-  return matchSlug(ref, slugKeys);
+  // Stage 2: algorithmic slug-matcher (FALLBACK — only if LLM didn't match).
+  // Duplicate-spelling keys are collapsed to their canonical twin BEFORE
+  // matching, so version-tuple comparison never sees a [53] digit-run that
+  // would beat every real multi-part version.
+  const slugKeys = [...new Set(Object.keys(scores).map((k) => canon.get(k) ?? k))];
+  const matched = matchSlug(ref, slugKeys);
+  if (matched === null || matched === undefined) return matched;
+  return canon.get(matched) ?? matched;
 }
 
 /**
