@@ -111,8 +111,8 @@ describe('driveStream: total cooldown collapse', () => {
       };
       defaultExport(pi);
       const modelRegistry = {
-        getAvailable: () => [{ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000 }],
-        find: () => ({ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000 }),
+        getAvailable: () => [{ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }],
+        find: () => ({ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }),
         getApiKeyForProvider: async () => null,
         runtime: { streamSimple },
       };
@@ -212,8 +212,8 @@ describe('driveStream: total cooldown collapse', () => {
         })();
       });
       const modelRegistry = {
-        getAvailable: () => [{ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000 }],
-        find: () => ({ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000 }),
+        getAvailable: () => [{ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }],
+        find: () => ({ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }),
         getApiKeyForProvider: async () => null,
         runtime: { streamSimple },
       };

@@ -94,7 +94,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
           provider: 'some-provider',
           id: 'rate-limited-model',
           api: 'openai-completions',
-          contextWindow: 1_000_000,
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const modelsByRef: Record<string, any> = {
           'some-provider/rate-limited-model': model,
@@ -167,7 +167,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
           provider: 'paid-cloud-provider',
           id: 'paid-model',
           api: 'openai-completions',
-          contextWindow: 1_000_000,
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const modelsByRef: Record<string, any> = {
           'paid-cloud-provider/paid-model': paidModel,

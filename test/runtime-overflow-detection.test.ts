@@ -100,7 +100,7 @@ describe('estimateContextTokens: array message content', () => {
           provider: 'small-ctx-provider',
           id: 'claude-sonnet-4-6',
           api: 'small-api',
-          contextWindow: 8_000,
+          contextWindow: 8_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const modelRegistry = {
           getAvailable: () => [smallCtxModel],
@@ -166,7 +166,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144,
+          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const streamSimple = vi.fn(() => {
           return (async function* () {
@@ -225,7 +225,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144,
+          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const streamSimple = vi.fn(() => (async function* () {})());
         const modelRegistry = {
@@ -282,7 +282,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144,
+          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const streamSimple = vi.fn(() => {
           return (async function* () {

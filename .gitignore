@@ -16,6 +16,8 @@ router-config.dynamic.json
 router-config.dynamic.*.json
 # Test/scan backup artifacts the router writes during runs
 router-config.dynamic.json.*-bak
+# Playwright-MCP browser session snapshots
+/.playwright-mcp/
 
 # Coverage-Berichte
 coverage/

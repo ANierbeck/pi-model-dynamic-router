@@ -59,7 +59,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 
 import { type ClassificationResult } from './content-classifier.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName, stripRouterNarration } from './utils.ts';
+import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -301,8 +301,12 @@ export class StreamOrchestrator {
             const addMatch = (ref: string) => {
               if (ref && !matches.includes(ref)) matches.push(ref);
             };
+            // Exact match first, then separator-normalized second chance
+            // (2026-09-20: "zai-glm-5.3"/"zai-glm-5_3" must resolve to
+            // "zai-glm-5-3" — exact-only matching made every HINT variant
+            // fail with "not found; using as-is").
             const namesMatch = (ref: string) =>
-              ref === shortName || ref.endsWith('/' + bareName) || ref.split('/').pop() === bareName;
+              ref === shortName || ref.endsWith('/' + bareName) || hintTargetMatches(shortName, ref);
             for (const ref of router.allDiscoveredRefs()) {
               if (namesMatch(ref)) addMatch(ref);
             }
@@ -312,8 +316,13 @@ export class StreamOrchestrator {
                 ...Object.keys(cfg.providers ?? {}),
                 ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
               ]);
+              const normalizedBare = normalizeHintName(bareName);
               for (const provider of knownProviders) {
-                const model = this.ctx.sessionCtx.modelRegistry.find(provider, bareName);
+                const model =
+                  this.ctx.sessionCtx.modelRegistry.find(provider, bareName) ??
+                  (normalizedBare !== bareName
+                    ? this.ctx.sessionCtx.modelRegistry.find(provider, normalizedBare)
+                    : undefined);
                 if (model) addMatch(`${provider}/${model.id}`);
               }
             }
@@ -369,7 +378,11 @@ export class StreamOrchestrator {
                 }
               }
               this.ctx.lastDynamicModel = hintSiblings[0];
-              dynamicLabel = `HINT: ${classification.hintTarget}`;
+              // MHINT (not HINT): the router's OWN model-hint narration must
+              // never collide with the user's reserved "HINT:" channel —
+              // quoted narration re-read as a fresh HINT locked a session
+              // into one model for hours (2026-09-18 incident).
+              dynamicLabel = `MHINT: ${classification.hintTarget}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${hintSiblings[0]}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
               costTracker.trackRequest(hintSiblings[0], 1000, 500);
@@ -381,7 +394,7 @@ export class StreamOrchestrator {
               routerLog(`[dynamic] HINT model "${shortName}" not found; using as-is`);
               candidates = [shortName];
               this.ctx.lastDynamicModel = shortName;
-              dynamicLabel = `HINT: ${classification.hintTarget}`;
+              dynamicLabel = `MHINT: ${classification.hintTarget}`;
             }
           }
         }

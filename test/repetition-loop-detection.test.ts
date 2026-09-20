@@ -93,13 +93,13 @@ describe('driveStream: repetition loop detection', () => {
           provider: 'loopy-provider',
           id: 'loopy-model',
           api: 'loopy-api',
-          contextWindow: 1_000_000,
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const healthyModel = {
           provider: 'healthy-provider',
           id: 'healthy-model',
           api: 'healthy-api',
-          contextWindow: 1_000_000,
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
         const modelsByRef: Record<string, any> = {
           'loopy-provider/loopy-model': loopyModel,

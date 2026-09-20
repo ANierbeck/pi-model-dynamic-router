@@ -19,53 +19,60 @@
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": ["scout", "operational", "fallback"]
+      "fallback_groups": ["simple", "operational", "fallback"]
     },
     "simple": {
-      "description": "Simple tasks - free models only",
+      "description": "Simple tasks - free or very cheap models",
       "method": "min_cost_if_all_priced",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": ["trivial", "scout", "operational", "fallback"]
+      "fallback_groups": ["operational", "fallback"]
     },
     "standard": {
-      "description": "Standard tasks - cost-effective models",
+      "description": "Standard tasks - cost-effective models (GDPval >=500, cost <=5.0)",
       "method": "tiered",
       "min_gdpval": 500,
+      "max_cost": 5.0,
       "fallback_groups": ["complex", "operational", "scout", "fallback"]
     },
     "complex": {
-      "description": "Complex tasks - GDPval >=600 (mistral-medium tier), best available",
-      "method": "best",
+      "description": "Complex tasks - strong models (GDPval >=600, cost <=10.0)",
+      "method": "tiered",
       "min_gdpval": 600,
+      "max_cost": 10.0,
       "fallback_groups": ["strategic", "tactical", "operational", "scout", "fallback"]
     },
     "strategic": {
-      "description": "Best available model by intelligence (max GDPval)",
+      "description": "Best available model by intelligence (max GDPval) - for heavy tasks",
       "method": "best",
       "min_gdpval": 700,
       "fallback_groups": [
         "tactical",
+        "complex",
         "operational",
         "scout",
         "fallback"
       ]
     },
     "tactical": {
-      "description": "GDPval >=600: mistral-medium tier, best available",
+      "description": "High-end models for demanding tasks (best GDPval)",
       "method": "best",
       "min_gdpval": 600,
       "fallback_groups": [
+        "strategic",
+        "complex",
         "operational",
         "scout",
         "fallback"
       ]
     },
     "operational": {
-      "description": "GDPval >=300: broad quality pool, cheapest first",
+      "description": "Broad quality pool - cheap but capable (GDPval >=300, cost <=2.0)",
       "method": "tiered",
       "min_gdpval": 300,
+      "max_cost": 2.0,
       "fallback_groups": [
+        "standard",
         "scout",
         "fallback"
       ]
@@ -74,6 +81,7 @@
       "description": "Any available model, cheapest first — local $0-Modelle bevorzugt",
       "method": "tiered",
       "billing_preference": "local_first",
+      "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": [
         "fallback"
@@ -82,6 +90,7 @@
     "fallback": {
       "description": "Any available, cheapest first",
       "method": "tiered",
+      "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": []
     },
@@ -103,15 +112,15 @@
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
       "method": "tiered",
       "billing_preference": "local_first",
-      "max_cost": 0,
+      "max_cost": 2.0,
       "min_context_length": 64000,
-      "fallback_groups": ["scout", "operational", "fallback"]
+      "fallback_groups": ["operational", "scout", "fallback"]
     },
     "code_writer": {
       "description": "Cheap-and-fast models with enough context for a spec+one reference file (boilerplate generation). Addressable as code_writer/code_writer from subagent workflows.",
       "method": "tiered",
       "billing_preference": "local_first",
-      "max_cost": 0,
+      "max_cost": 2.0,
       "min_context_length": 32000,
       "fallback_groups": ["operational", "scout", "fallback"]
     }

@@ -218,6 +218,18 @@ export interface ProviderDef {
    * string, matched case-insensitive against the full id.
    */
   modelFilter?: string;
+  /**
+   * Another provider key whose Pi-registry pricing applies to this one too —
+   * for a provider that is the SAME upstream API/account under a different
+   * router-internal key (e.g. mistral-zai is Mistral "Le Platform" with a
+   * separate API key, not a separate service — see its PROVIDER_MAP entry).
+   * Pi's own model catalog only ever registers the primary key (mistral),
+   * never the router-internal alias, so registryCost() retries under this
+   * provider when the direct lookup finds nothing — otherwise every model
+   * from an aliased provider is permanently priced as the scan's
+   * cost_per_m:0 placeholder (ADR-0006 "F3"), never the real price.
+   */
+  pricingAlias?: string;
 }
 
 // ── Classification Types ───────────────────────────────────────────────
