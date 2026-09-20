@@ -37,12 +37,16 @@ import type { Config } from '../src/types';
 // ── delegationSettings ──────────────────────────────────────────────────
 
 describe('delegationSettings', () => {
-  it('defaults to disabled with sane thresholds', () => {
+  it('defaults to disabled with sane thresholds covering read AND bash', () => {
     const s = delegationSettings({ model_groups: {} } as Config);
     expect(s.enabled).toBe(false);
     expect(s.min_chars).toBe(20000);
     expect(s.group).toBe('bulk_reader');
     expect(s.max_raw_chars).toBe(60000);
+    // Real-world finding (2026-09-20): file inspection in agent sessions runs
+    // predominantly through `bash` (sed/grep/cat), so a read-only default
+    // never fires. Both file-inspection tools are covered out of the box.
+    expect(s.tools).toEqual(['read', 'bash']);
   });
 
   it('treats a missing config as disabled (fail-open)', () => {
@@ -52,7 +56,7 @@ describe('delegationSettings', () => {
   it('respects full user overrides', () => {
     const cfg = {
       model_groups: {},
-      delegation: { enabled: true, min_chars: 5000, group: 'trivial', max_raw_chars: 1000 },
+      delegation: { enabled: true, min_chars: 5000, group: 'trivial', max_raw_chars: 1000, tools: ['read'] },
     } as Config;
     const s = delegationSettings(cfg);
     expect(s).toEqual({
@@ -60,7 +64,29 @@ describe('delegationSettings', () => {
       min_chars: 5000,
       group: 'trivial',
       max_raw_chars: 1000,
+      tools: ['read'],
     });
+  });
+
+  it('falls back to the default tool list for invalid tools values', () => {
+    // Not an array
+    const notArray = {
+      model_groups: {},
+      delegation: { enabled: true, tools: 'read' },
+    } as unknown as Config;
+    expect(delegationSettings(notArray).tools).toEqual(['read', 'bash']);
+    // Non-string entries poison the whole list — never partially trust it
+    const mixed = {
+      model_groups: {},
+      delegation: { enabled: true, tools: ['read', 42] },
+    } as unknown as Config;
+    expect(delegationSettings(mixed).tools).toEqual(['read', 'bash']);
+    // Empty strings are not tools either
+    const withEmpty = {
+      model_groups: {},
+      delegation: { enabled: true, tools: ['read', ''] },
+    } as unknown as Config;
+    expect(delegationSettings(withEmpty).tools).toEqual(['read', 'bash']);
   });
 });
 
@@ -182,12 +208,43 @@ describe('handleReadDelegation: gating (fail-open, stream never called)', () => 
     expect(streamSimple).not.toHaveBeenCalled();
   });
 
-  it('enabled but not a read tool → undefined', async () => {
+  it('enabled but tool not in the covered list (edit) → undefined', async () => {
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'bash', content: [{ type: 'text', text: BIG }] },
+      { toolName: 'edit', content: [{ type: 'text', text: BIG }] },
       ctx,
       enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it('oversized bash result IS delegated (real-world dominant inspection path)', async () => {
+    // 2026-09-20 log evidence: zero real-session fires — every file read in
+    // the sessions ran through bash (sed/grep/cat), which the read-only hook
+    // never saw. The default tool list must cover it.
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents('The command printed a long numbered listing of scanned model entries.')
+    );
+    const out = await handleReadDelegation(
+      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeDefined();
+    expect(streamSimple).toHaveBeenCalledTimes(1);
+    const text = out!.content[0].text as string;
+    // Marker names the actual tool so the model knows what was summarized.
+    expect(text).toMatch(/delegated summary of a 21000-char bash result/);
+    expect(text).not.toContain('[router]');
+  });
+
+  it('a tools override can restrict coverage back to read-only', async () => {
+    const { ctx, streamSimple } = makeCtx(summaryEvents('unused'));
+    const out = await handleReadDelegation(
+      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false },
+      ctx,
+      { model_groups: {}, delegation: { enabled: true, tools: ['read'] } } as Config
     );
     expect(out).toBeUndefined();
     expect(streamSimple).not.toHaveBeenCalled();

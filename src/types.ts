@@ -129,10 +129,10 @@ export interface Config {
   exclude?: ExcludeRules;
   /**
    * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
-   * `read` results with a cheap summarizer model (via a router group)
-   * BEFORE the main model sees them. Strictly fail-open. Like `exclude`, this
-   * is user intent and is ALWAYS taken from the static layered config — a
-   * dynamic config can never silently change it.
+   * file-inspection tool results (`read`, `bash`) with a cheap summarizer
+   * model (via a router group) BEFORE the main model sees them. Strictly
+   * fail-open. Like `exclude`, this is user intent and is ALWAYS taken from
+   * the static layered config — a dynamic config can never silently change it.
    */
   delegation?: DelegationConfig;
 }
@@ -144,12 +144,17 @@ export interface Config {
 export interface DelegationConfig {
   /** Master switch. Default false (fork's router-config.json opts in). */
   enabled?: boolean;
-  /** Minimum joined text length of a read result to be delegated. Default 20000. */
+  /** Minimum joined text length of a tool result to be delegated. Default 20000. */
   min_chars?: number;
   /** Router group whose models summarize. Default 'bulk_reader'. */
   group?: string;
   /** Cap of raw text passed to the summarizer. Default 60000. */
   max_raw_chars?: number;
+  /** Tool names whose oversized results get delegated.
+   * Default ['read', 'bash'] — log evidence (2026-09-20): agent sessions
+   * inspect files predominantly via bash (sed/grep/cat), so a read-only
+   * default never fires. Set ['read'] to restore the original behavior. */
+  tools?: string[];
 }
 
 /**
