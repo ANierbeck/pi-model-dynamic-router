@@ -285,6 +285,26 @@ let cfg: Config = { model_groups: {}, model_metrics: {}, providers: {} };
 let cache: Cache = {};
 
 /**
+ * Returns the scanned context window (in tokens) for a model ref, or null
+ * when the model is unknown or its context window was not reported by the
+ * scan. Reads `cache.available_models[].capabilities.contextWindow` — the
+ * same field `src/capabilities.ts` normalizes from Mistral
+ * (`max_context_length`), OpenRouter (`context_length`), and Ollama
+ * (`model_info.*.context_length`).
+ *
+ * Null is authoritative for "unknown" — callers that need a floor (e.g. the
+ * `min_context_length` group filter) must treat null as "fails the gate",
+ * mirroring `lookupGdp`'s strict semantics, never as 0 or Infinity.
+ */
+export function lookupContextWindow(ref: string): number | null {
+  const discovered = (cache.available_models ?? []).find(
+    (m) => `${m.provider}/${m.id}` === ref,
+  );
+  const cw = discovered?.capabilities?.contextWindow;
+  return typeof cw === 'number' ? cw : null;
+}
+
+/**
  * Provider IDs that pi's own modelRegistry has registered (e.g. 'pi-claude',
  * 'claude-bridge', 'ollama', 'lm-studio', plus anything an extension
  * registers). Populated by index.ts from
