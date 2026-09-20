@@ -1,59 +1,63 @@
-# Zusammenfassung der durchgeführten Änderungen
+# Change Log — pi-model-dynamic-router
+
+> **Note**: This file was previously in German; it is now translated to English to comply with AGENTS.md rule 3 ("All documentation and comments must be in English").
 
 ## 1) effCost Registry-First Fix (src/metrics.ts)
-- **Problem**: `getM()` setzte `cost_per_m = 0` für alle `billing === 'subscription'`-Anbieter, **bevor** die Registry abgefragt wurde. Dadurch wurden Mistral-Abos mit echtem Preis ($1.4) als "free" eingestuft und landeten in max_cost:0-Gruppen.
-- **Lösung**:
-  - Neue Hilfsfunktion `resolveCostPerM(ref)` extrahiert die autoritative Kostenauflösungskette (Registry → local → subscription → cache → :free → unknown).
-  - Kette neu geordnet: Registry **vor** dem Subscription-Zeroing. Abos mit Registry-Preis werden nun korrekt mit 1.4 (×0.5 via SUB_DISCOUNT → 0.7) bewertet.
-  - Heilung im Early-Return-Pfad von `getM()`: Falls `cost_per_m === 0` oder `'unknown'`, wird die Kette neu aufgelöst. Behebt veraltete Einträge, die vor dem Registry-Publish geschrieben wurden (z.B. pi-claude).
-  - Test-Helfer `injectModelRegistry(reg)` injiziert Mock-Registries in die Tests.
-- **Tests**: `test/metrics-cost-heal.test.ts` (11 Tests) deckt alle Fälle ab (Abo mit Preis, Abo ohne Preis, Free-Modelle, :free-Tags, Unknown, Heilung von 0/'unknown', User-Overrides).
 
-## 2) Anzeige-Fußzeile für `/router status` (src/routing.ts + index.ts)
-- **Problem**: `/router` zeigt nur die Top-5 Modelle pro Gruppe. Teure Modelle (z.B. pi-claude) sind zwar vorhanden, aber in kosten-sortierten Gruppen auf Rang >5 → Nutzer sehen sie nicht und denken sie seien "weg".
-- **Lösung**:
-  - Rückgabetyp von `getTopModels` geändert: von `ModelWithLimits[]` zu `{ models: ModelWithLimits[]; total: number }`.
-  - Alle Aufrufer aktualisiert, um `{ models, total }` zu entpacken:
-    - index.ts: Status-Rendering-Schleife nutzt nun `top.models` und `top.models.length`
-    - stream-orchestrator.ts: Iteration über `models`
-    - Alle Testdateien angepasst (Destrukturierung + `models.length`)
-- **Tests**: `test/get-top-models-total.test.ts` (3 Tests) prüft:
-  - `total >= shown` wenn >N Kandidaten
-  - `total === shown` wenn genau N Kandidaten
-  - Leere Liste und `total = 0` wenn keine Kandidaten
+- **Problem**: `getM()` set `cost_per_m = 0` for any provider with `billing === 'subscription'` **before** querying the registry. This caused Mistral subscriptions with real prices ($1.4) to be treated as free, landing in `max_cost:0` groups and being excluded from expensive tiers.
+- **Solution**:
+  - Introduced `resolveCostPerM(ref)` to perform authoritative cost resolution: Registry → local → subscription → cache → `:free` → `unknown`.
+  - Registry lookup now happens **before** the subscription-zeroing step. Subscriptions with registry prices are now correctly priced at 1.4 (×0.5 via `SUB_DISCOUNT` → 0.7).
+  - Healing in the early-return path of `getM()`: if `cost_per_m === 0` or `'unknown'`, the chain is re-resolved. Fixes stale entries written before registry publish (e.g., pi-claude).
+  - Test helper `injectModelRegistry(reg)` injects mock registries into tests.
+- **Tests**: `test/metrics-cost-heal.test.ts` (11 tests) covers all cases (subscription with/without price, free models, `:free` tags, unknown, healing, user overrides).
 
-## 3) Mechanische Anpassungen
-- 8+ Testdateien aktualisiert, um `models` aus `getTopModels` zu entpacken.
-- TypeScript-Fehler in index.ts, routing.ts, stream-orchestrator.ts und metrics.ts behoben.
-- Unnötiges `@ts-expect-error` entfernt.
+## 2) Footer for `/router status` (src/routing.ts + index.ts)
 
-## Prüfung
-- TypeScript: `npx tsc --noEmit` ✅ sauber
+- **Problem**: `/router status` only shows the top-5 models per group. Expensive models (e.g., pi-claude) may exist at rank >5 → users think they are "missing".
+- **Solution**:
+  - Return type of `getTopModels` changed from `ModelWithLimits[]` to `{ models: ModelWithLimits[]; total: number }`.
+  - All callers updated to destructure `{ models, total }` and iterate over `models`; footer rendering uses `top.models.length`.
+  - Updated files: index.ts, stream-orchestrator.ts, and all test files (destructuring + `models.length`).
+- **Tests**: `test/get-top-models-total.test.ts` (3 tests) verifies: `total >= shown`, `total === shown`, empty list.
+
+## 3) Mechanical fixes
+
+- Updated 8+ test files to unpack `models` from `getTopModels` destructuring.
+- Fixed TypeScript errors in index.ts, routing.ts, stream-orchestrator.ts, metrics.ts.
+- Removed unnecessary `@ts-expect-error` directives.
+
+## 4) Verification
+
+- TypeScript: `npx tsc --noEmit` ✅ clean.
 - Tests:
-  - Neue Tests: 14/14 ✅
-  - Delegation + bulk_read: 54/54 ✅
-  - Gesamtsuite: 789/804 ✅ (12 fehlschlagende Tests sind unrelated flakes/vorhanden, z.B. capped group resolves to null in slug-canon-dedup.test.ts)
+  - New tests: 14/14 ✅.
+  - Delegation + bulk_read: 54/54 ✅.
+  - Full suite: 789/804 ✅ (12 unrelated flakes, e.g., `slug-canon-dedup.test.ts`).
 
-## Nächste Schritte (optional)
-- Footer-Polish in `/router status`: Fußzeile wie `│ … +9 weitere (sortiert nach [method])` anzeigen (Anpassung in index.ts Footer).
-- Die 12 verbleibenden Test-Flakes prüfen, falls nicht bereits vorhanden.
+## 5) Next steps (optional)
 
-## Auswirkung
-- **Live-Routing**: Abos mit Registry-Preis werden nun mit 0.7 (nicht 0) bewertet → aus max_cost:0-Gruppen ausgeschlossen, in tiered-Gruppen mittig einsortiert.
-- **Persist-Pfad**: Gleiche Semantik wie Live (keine Divergenz mehr bei falsch eingestuften Abos).
-- **Anzeige**: Nutzer sehen Gesamtanzahl Kandidaten pro Gruppe → weniger Verwirrung über "fehlende" Modelle.
+- Footer polish in `/router status`: show footer like `│ … +9 weitere (sortiert nach [method])` (adjust in index.ts footer).
+- Investigate remaining 12 test flakes.
 
----
-**Fragen?** Gerne Bescheid geben, ob die Änderungen so passen oder ob noch Anpassungen gewünscht sind!
+## 6) Impact
 
-## 3) Test-suite consolidation (audit 2026-09-20, subagent-driven)
+- **Live routing**: Subscriptions with registry prices are now priced at 0.7 (not 0) → excluded from `max_cost:0` groups, placed mid-tier in tiered groups.
+- **Persist path**: Same semantics as live (no divergence anymore).
+- **UI**: Users see total candidate count per group → less confusion about "missing" models.
 
-- **Goal**: consolidate the ~800-test suite by removing outdated/unused tests (plan: `docs/plans/2026-09-20-consolidate-tests.md`).
-- **Data-driven findings** (Tasks 1–3, see `docs/plans/candidates_consolidation.md` + `docs/plans/redundancy-analysis.md`):
-  - Age criterion (>6 months) matches ZERO files — the suite is young (oldest: 2026-06-13).
-  - The two originally suspected files (`test/cache.test.ts`, `test/scratch-slug-debug.test.ts`) do not exist.
-  - All four examined candidates test LIVE features (HINT resolution, ghost purge, classifier cache, router-cache refresh) → **no `.skip`/deletion justified**.
-  - Timeout tuning rejected: the 10 slowest files (~86s of 116s) wait on REAL production time windows (rate-limit cooldowns, malus accumulation) — no artificial delays to tune.
-- **Executed merge (the only real duplication)**: removed 5 exact-duplicate assertions from `test/refactor-golden-master.test.ts` (explicit-null, map-vs-token-set, self-heal-from-cache, no-clobber, builtin-overrides) — each has a living counterpart in `test/metrics-selfheal.test.ts`. Unique coverage kept: wildcard match, pure token-set fallback, builtin non-shadowing, null-when-no-match, bare `mistral/glm-5-2` provider-prefix form. NOTE comments document each removal in place.
-- **Result**: 806 → **801 tests** (798 passed / 3 skipped), `tsc --noEmit` clean, 11.7s wall time, zero unique-coverage loss. Fixes a real drift risk: both files pinned the same lookupGdp contracts with diverging values (1506 vs 1506.11).
-- **Flaky observation** (documented in redundancy-analysis.md §4): one intermittent failure (~3/17 runs, load-correlated, name not captured due to output piping — lesson recorded). No action; watch CI.
+## 7) Test-suite consolidation (audit 2026-09-20)
+
+- **Goal**: consolidate the ~800-test suite (plan: `docs/plans/2026-09-20-consolidate-tests.md`).
+- **Findings**:
+  - Age criterion (>6 months) matches **zero files** — the suite is young (oldest test: `2026-06-13`).
+  - Suspected files (`test/cache.test.ts`, `test/scratch-slug-debug.test.ts`) do not exist.
+  - All four examined candidates test **live features** (HINT resolution, ghost purge, classifier cache, router cache refresh) → **no `.skip`/deletion justified**.
+  - Timeout tuning rejected: the 10 slowest files (~86s of 116s) wait on **real production time windows** (rate-limit cooldowns, malus accumulation) → no artificial delays to tune.
+- **Executed merge**:
+  - Removed 5 exact-duplicate assertions from `test/refactor-golden-master.test.ts` (e.g., explicit-null exclusion, map-vs-token-set fallback, self-heal-from-cache, no-clobber, builtin-overrides).
+  - Living counterparts in `test/metrics-selfheal.test.ts` retained.
+  - **Result**: 806 → **801 tests** (798 passed / 3 skipped), `tsc --noEmit` clean, 11.7s wall time, **zero unique-coverage loss**.
+  - Fixes real drift risk: both files pinned the same `lookupGdp` contracts with diverging values (1506 vs 1506.11).
+- **Flaky observation**:
+  - One intermittent failure (~3/17 runs, load-correlated, name not captured) documented in `redundancy-analysis.md` §4 → no action; watch CI.
