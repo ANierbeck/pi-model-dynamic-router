@@ -259,14 +259,14 @@ describe('golden master: GLM-5-2 end-to-end regression', () => {
 
   it('getTopModels(strategic) includes a GLM-5-2 model', () => {
     const router = new Router(cfg, cache, new Map());
-    const top = router.getTopModels('strategic', 20);
+    const { models: top } = router.getTopModels('strategic', 20);
     const refs = top.map((t) => t.ref);
     expect(refs.some((r) => r.toLowerCase().includes('glm-5-2'))).toBe(true);
   });
 
   it('getTopModels(strategic) does NOT include glm-4 (too low)', () => {
     const router = new Router(cfg, cache, new Map());
-    const top = router.getTopModels('strategic', 20);
+    const { models: top } = router.getTopModels('strategic', 20);
     const refs = top.map((t) => t.ref);
     // glm-4.6:cloud resolves to glm-4 (400) via token-set match, below
     // strategic's 700 threshold. If it appears here, the GDPval lookup for

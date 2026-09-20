@@ -196,7 +196,7 @@ describe('Router: cluster collapses to the honest canonical model', () => {
   });
 
   it('display getTopModels shows the canonical model once, at its honest rank', () => {
-    const top = router.getTopModels('uncapped', 5);
+    const { models: top } = router.getTopModels('uncapped', 5);
     const refs = top.map((t) => t.ref);
     expect(refs).toContain('mistral/zai-glm-5-3');
     expect(refs).not.toContain('mistral/zai-glm-latest');

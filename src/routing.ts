@@ -935,10 +935,10 @@ export class Router {
    *   - `method: 'dynamic'` groups return `[]` (they're resolved at prompt
    *     time by the classifier, not enumerable as a static list).
    */
-  getTopModels(groupName: string, n: number): ModelWithLimits[] {
+  getTopModels(groupName: string, n: number): { models: ModelWithLimits[]; total: number } {
     const g = this.cfg.model_groups[groupName];
-    if (!g) return [];
-    if (g.method === 'dynamic') return []; // resolved at prompt-time via classifier
+    if (!g) return { models: [], total: 0 };
+    if (g.method === 'dynamic') return { models: [], total: 0 }; // resolved at prompt-time via classifier
 
     // Use all discovered models (from Pi's registry + free_models + cached)
     // Groups are filtered by min_gdpval and other criteria, not by explicit model lists.
@@ -988,7 +988,9 @@ export class Router {
     const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
-    return ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));
+    const total = ranked.length;
+    const models = ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));
+    return { models, total };
   }
 
   // ── Getter ────────────────────────────────────────────────────────────────

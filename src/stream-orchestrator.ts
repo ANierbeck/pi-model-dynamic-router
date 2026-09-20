@@ -330,7 +330,8 @@ export class StreamOrchestrator {
               const allGroupModels: string[] = [];
               for (const [groupName] of Object.entries(cfg.model_groups)) {
                 try {
-                  for (const item of router.getTopModels(groupName, 100)) allGroupModels.push(item.ref);
+                  const { models } = router.getTopModels(groupName, 100);
+                  for (const item of models) allGroupModels.push(item.ref);
                 } catch (_) { /* ignore */ }
               }
               const viaGroups = resolveShortModelName(bareName, allGroupModels);
