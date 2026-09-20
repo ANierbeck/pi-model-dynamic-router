@@ -43,7 +43,13 @@ export interface DelegationSettings {
 
 const DEFAULTS: DelegationSettings = {
   enabled: false,
-  min_chars: 20000,
+  // Portal/shunt-aligned (Spotify engineering, 2026-09): shunt blocks full
+  // reads > 350 lines (~3500 chars at ~10 chars/line). Below this the 10-30s
+  // delegation latency exceeds the savings; above it the expensive model was
+  // burning tokens on bulk I/O it barely reasoned about. The old 20000-char
+  // default let the dominant real-world case (100-500-line reads) pass the
+  // expensive model untouched — the exact waste the shunt pattern targets.
+  min_chars: 3500,
   group: 'bulk_reader',
   max_raw_chars: 60000,
   tools: ['read', 'bash'],
@@ -166,6 +172,36 @@ async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOu
   return out;
 }
 
+// ── Targeted-read / piped-bash exemption (shunt, Phase 1) ───────────────
+
+/**
+ * A `read` is targeted when the caller already knows the section it needs
+ * (offset and/or limit). shunt's check-file-size lets these pass through
+ * unblocked — and we let them pass unsummarized — because the orchestrator
+ * fetched that window deliberately (often for an edit) and needs the exact
+ * lines. Delegating a targeted read only adds latency and destroys the
+ * precision an edit requires.
+ */
+function isTargetedRead(input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const i = input as Record<string, unknown>;
+  return i.offset != null || i.limit != null;
+}
+
+/**
+ * A `bash` command is a targeted extract (not a bulk dump) when it pipes
+ * output or uses a selective tool (grep/rg/sed/awk). shunt: "Piped commands
+ * (cat file | grep) pass through since those are targeted reads." A plain
+ * `cat`/`head`/`tail` of a big file is a bulk read and stays delegable.
+ */
+function isTargetedBash(input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const cmd = (input as Record<string, unknown>).command;
+  if (typeof cmd !== 'string') return false;
+  if (cmd.includes('|')) return true;
+  return /\b(?:grep|rg|sed|awk)\b/.test(cmd);
+}
+
 // ── The handler ──────────────────────────────────────────────────────────
 
 export interface DelegationOutcome {
@@ -184,7 +220,7 @@ export interface DelegationOutcome {
  * available for exact content.
  */
 export async function handleReadDelegation(
-  event: { toolName?: string; content?: unknown; isError?: boolean },
+  event: { toolName?: string; content?: unknown; isError?: boolean; input?: unknown },
   ctx: any,
   cfg: Config | undefined,
   log?: (msg: string) => void
@@ -194,6 +230,14 @@ export async function handleReadDelegation(
     if (!settings.enabled) return undefined;
     const tool = typeof event?.toolName === 'string' ? event.toolName : '';
     if (!settings.tools.includes(tool) || event.isError) return undefined;
+
+    // Phase 1: shunt targeted-read / piped-bash exemption. A targeted read
+    // (offset/limit) or a piped/grep'd bash command is a selective extract
+    // the orchestrator needs exactly — delegating it only adds latency and
+    // destroys the precision an edit requires. Mirrors shunt's check-file-size
+    // ("Targeted reads pass through") and check-bash-read (pipes pass through).
+    if (tool === 'read' && isTargetedRead(event.input)) return undefined;
+    if (tool === 'bash' && isTargetedBash(event.input)) return undefined;
 
     const raw = extractTextContent(event.content);
     if (raw === null || raw.length < settings.min_chars) return undefined;

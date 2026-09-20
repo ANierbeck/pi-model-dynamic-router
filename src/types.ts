@@ -144,7 +144,9 @@ export interface Config {
 export interface DelegationConfig {
   /** Master switch. Default false (fork's router-config.json opts in). */
   enabled?: boolean;
-  /** Minimum joined text length of a tool result to be delegated. Default 20000. */
+  /** Minimum joined text length of a tool result to be delegated.
+   * Default 3500 (Portal/shunt-aligned: ~350 lines at ~10 chars/line —
+   * below this the 10-30s delegation latency exceeds the savings). */
   min_chars?: number;
   /** Router group whose models summarize. Default 'bulk_reader'. */
   group?: string;

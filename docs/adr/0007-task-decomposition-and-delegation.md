@@ -382,11 +382,21 @@ re-read narrowly (untouched) for exact lines.
 
 ### Scope of the accepted piece
 
-- `src/delegation.ts`: `read`-only interception initially, threshold-gated
-  (default `min_chars` 20,000), summarization via the configured router
-  group (default `bulk_reader`), strict fail-open, config namespace
-  `delegation: { enabled, min_chars, group, max_raw_chars }` (always from
-  the static layered config, like `exclude`).
+- `src/delegation.ts`: `read` + `bash` interception (default `tools:
+  ['read', 'bash']`), threshold-gated (default `min_chars` 3500,
+  Portal/shunt-aligned: ~350 lines at ~10 chars/line — below that the
+  10-30 s delegation latency exceeds the savings), summarization via the
+  configured router group (default `bulk_reader`), strict fail-open,
+  config namespace `delegation: { enabled, min_chars, group,
+  max_raw_chars, tools }` (always from the static layered config, like
+  `exclude`).
+- Targeted reads and targeted bash pass through untouched even when
+  oversized (shunt exemption, 2026-09-20): a `read` with `offset` and/or
+  `limit` and a bash command that pipes output or uses a selective tool
+  (grep/rg/sed/awk) fetched exactly the section the orchestrator needs —
+  delegating it would only add latency and destroy the precision an edit
+  requires. Bulk reads (plain full-file `read`, plain `cat`/`head` dumps)
+  stay delegable.
 - Design detail: `docs/plans/2026-09-20-enforced-delegation-spike-and-design.md`.
 - Still rejected (unchanged): task decomposition/planning inside
   `streamSimple`, tool-blocking shunts, and any orchestration of multi-step

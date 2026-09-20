@@ -37,10 +37,15 @@ import type { Config } from '../src/types';
 // ── delegationSettings ──────────────────────────────────────────────────
 
 describe('delegationSettings', () => {
-  it('defaults to disabled with sane thresholds covering read AND bash', () => {
+  it('defaults to disabled with Portal/shunt-aligned threshold covering read AND bash', () => {
     const s = delegationSettings({ model_groups: {} } as Config);
     expect(s.enabled).toBe(false);
-    expect(s.min_chars).toBe(20000);
+    // Portal/shunt (Spotify engineering, 2026-09) blocks full reads > 350 lines.
+    // At ~10 chars/line that is ~3500 chars — the threshold below which the
+    // 10-30s delegation overhead exceeds the savings. The old 20000-char
+    // default let the vast majority of real reads (100-500 lines) pass the
+    // expensive model untouched — the exact waste the shunt pattern targets.
+    expect(s.min_chars).toBe(3500);
     expect(s.group).toBe('bulk_reader');
     expect(s.max_raw_chars).toBe(60000);
     // Real-world finding (2026-09-20): file inspection in agent sessions runs
@@ -181,7 +186,7 @@ function makeCtx(events: any[] = [], opts: { groupModel?: unknown | null } = {})
   };
 }
 
-const BIG = 'x'.repeat(21000); // > default min_chars 20000
+const BIG = 'x'.repeat(21000); // > default min_chars 3500 (also covers the old 20K case)
 const bigReadEvent = {
   toolName: 'read',
   content: [{ type: 'text', text: BIG }],
@@ -277,6 +282,118 @@ describe('handleReadDelegation: gating (fail-open, stream never called)', () => 
     );
     expect(out).toBeUndefined();
     expect(streamSimple).not.toHaveBeenCalled();
+  });
+});
+
+// ── Phase 1: Portal/shunt threshold + targeted-read/piped-bash exemption ──
+//
+// shunt (Spotify) exempts targeted reads — Claude already knows the section
+// it needs, so delegating them only adds latency and destroys the exact
+// lines an edit needs. The same applies to piped/grep'd bash commands
+// (selective extracts), while a plain `cat`/`head` of a big file is a bulk
+// read the shunt pattern deliberately shrinks.
+const OVER = 'x'.repeat(4000); // > default min_chars 3500
+
+describe('handleReadDelegation: Portal/shunt threshold (default 3500)', () => {
+  const enabledCfg = { model_groups: {}, delegation: { enabled: true } } as Config;
+
+  it('a read just over the new 3500-char threshold IS delegated (the core fix)', async () => {
+    // Previously this sat under the 20000 threshold and passed the expensive
+    // model untouched — the dominant real-world case the shunt pattern fixes.
+    const { ctx, streamSimple } = makeCtx(summaryEvents('SUMMARY: the small file holds a few exported symbols and one large constant table.'));
+    const out = await handleReadDelegation(
+      { toolName: 'read', content: [{ type: 'text', text: OVER }], isError: false },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeDefined();
+    expect(streamSimple).toHaveBeenCalledTimes(1);
+    expect(out!.content[0].text).toMatch(/delegated summary of a 4000-char read result/);
+  });
+});
+
+describe('handleReadDelegation: targeted reads pass through (shunt exemption)', () => {
+  const enabledCfg = { model_groups: {}, delegation: { enabled: true } } as Config;
+
+  it('a read with offset is targeted → passes through even when oversized', async () => {
+    // shunt: "Targeted reads pass through - Claude already knows what section
+    // it needs." An offset read is a section fetch (often for an edit), so
+    // delegating it would destroy the exact lines the orchestrator needs.
+    const { ctx, streamSimple } = makeCtx();
+    const out = await handleReadDelegation(
+      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', offset: 100 } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it('a read with limit is targeted → passes through even when oversized', async () => {
+    // A limit-only read fetches the first N lines — a targeted window.
+    const { ctx, streamSimple } = makeCtx();
+    const out = await handleReadDelegation(
+      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', limit: 50 } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it('a read with BOTH offset and limit is targeted → passes through', async () => {
+    const { ctx, streamSimple } = makeCtx();
+    const out = await handleReadDelegation(
+      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', offset: 10, limit: 20 } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleReadDelegation: piped/grep bash is targeted (shunt exemption)', () => {
+  const enabledCfg = { model_groups: {}, delegation: { enabled: true } } as Config;
+
+  it('a piped bash command (cat file | grep) passes through even when oversized', async () => {
+    // shunt: "Piped commands (cat file | grep) pass through since those are
+    // targeted reads." The model asked for matches — it needs them exactly.
+    const { ctx, streamSimple } = makeCtx();
+    const out = await handleReadDelegation(
+      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'cat big.log | grep ERROR' } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it('a grep/rg/sed/awk command is targeted → passes through even when oversized', async () => {
+    const { ctx, streamSimple } = makeCtx();
+    const out = await handleReadDelegation(
+      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'grep -rn TODO src/' } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeUndefined();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it('a plain cat/head dump of a big file is a BULK read → still delegated', async () => {
+    // No pipe, no selective tool — a full-file dump is exactly the bulk
+    // read the shunt pattern shrinks. This is the existing bash test's
+    // intent, now with an explicit non-targeted command.
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents('The command printed a long numbered listing of scanned model entries.')
+    );
+    const out = await handleReadDelegation(
+      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'cat big.log' } },
+      ctx,
+      enabledCfg
+    );
+    expect(out).toBeDefined();
+    expect(streamSimple).toHaveBeenCalledTimes(1);
   });
 });
 
