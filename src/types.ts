@@ -127,6 +127,29 @@ export interface Config {
    * models (e.g. claude-fable-5), or whole providers, regardless of group.
    */
   exclude?: ExcludeRules;
+  /**
+   * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
+   * `read` results with a cheap summarizer model (via a router group)
+   * BEFORE the main model sees them. Strictly fail-open. Like `exclude`, this
+   * is user intent and is ALWAYS taken from the static layered config — a
+   * dynamic config can never silently change it.
+   */
+  delegation?: DelegationConfig;
+}
+
+/**
+ * Settings for the enforced-delegation result shrinker (src/delegation.ts).
+ * All fields optional; omitted → disabled with defaults.
+ */
+export interface DelegationConfig {
+  /** Master switch. Default false (fork's router-config.json opts in). */
+  enabled?: boolean;
+  /** Minimum joined text length of a read result to be delegated. Default 20000. */
+  min_chars?: number;
+  /** Router group whose models summarize. Default 'bulk_reader'. */
+  group?: string;
+  /** Cap of raw text passed to the summarizer. Default 60000. */
+  max_raw_chars?: number;
 }
 
 /**

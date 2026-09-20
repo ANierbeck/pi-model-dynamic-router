@@ -169,5 +169,8 @@
     "granite-4-micro": 280,
     "glm-4": 400,
     "glm-4-6": 520
+  },
+  "delegation": {
+    "enabled": true
   }
 }
