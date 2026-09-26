@@ -177,8 +177,41 @@ interface ClassificationOptions {
 
 // ── Defaults ────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gemma4:12b-mlx';
-const DEFAULT_TIMEOUT = 45_000; // gemma4:12b-mlx needs ~22s on M3 Max
+// mistral-nemo:latest (12b, GGUF via llama-server) answers structured
+// output directly (~4-5s warm on M3 Max; schema capability verified live
+// 2026-09-26 via an /api/chat schema probe). The previous default,
+// gemma4:12b-mlx, runs on Ollama's MLX backend, which rejects every
+// JSON-schema call with HTTP 501 "structured output is unavailable" —
+// each classification burned a guaranteed-501 hop before the fallback
+// answered (live incident 2026-09-26). If a future primary ever rejects
+// structured output again, the 501 marks it in cache.classifier_no_schema
+// and subsequent calls skip it entirely.
+const DEFAULT_MODEL = 'mistral-nemo:latest';
+const DEFAULT_TIMEOUT = 45_000; // generous cold-start bound for a ~12b local model
+
+// ── No-structured-output self-healing (live incident 2026-09-26) ───────────
+// Ollama's MLX backend answers JSON-schema calls with HTTP 501
+// "structured output is unavailable" — a permanent property of the backend,
+// not a transient failure. Retrying the marked model on every prompt wastes
+// one guaranteed-501 hop per classification, so we persist the observation in
+// the cache and skip the model as primary. A TTL keeps the mark self-healing:
+// if an Ollama upgrade adds schema support to the backend, the primary is
+// retried after expiry.
+const NO_SCHEMA_MARKER = 'structured output is unavailable';
+const CLASSIFIER_NO_SCHEMA_TTL_MS = 24 * 60 * 60_000; // 24h
+
+/** True if the local model is marked as rejecting structured output (within TTL). */
+function isMarkedNoSchema(cache: Cache | undefined, model: string): boolean {
+  const ts = cache?.classifier_no_schema?.[model];
+  return typeof ts === 'number' && Date.now() - ts < CLASSIFIER_NO_SCHEMA_TTL_MS;
+}
+
+/** Persist a 501 "structured output is unavailable" observation in the cache. */
+function markNoSchema(cache: Cache | undefined, model: string): void {
+  if (!cache) return; // no cache to persist into — the 501 hop just repeats this session
+  if (!cache.classifier_no_schema) cache.classifier_no_schema = {};
+  cache.classifier_no_schema[model] = Date.now();
+}
 
 // ── Classification cache (LRU + TTL) ────────────────────────────────────────
 // Repeated identical prompts (subagent fan-out, retry loops, re-asks) would
@@ -507,19 +540,44 @@ export async function classifyPrompt(
   // burning primary+fallback timeouts on every prompt.
   let classificationResult: FullClassificationResult | null = null;
   if (await isOllamaAvailable()) {
-    try {
-      classificationResult = await tryClassify(model, timeoutMs);
-    } catch (primaryError) {
-      // Cold-start timeout or load error → retry immediately with the fallback model
-      if (model !== fallbackModel) {
-        try {
-          routerLog(
-            `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
-            (primaryError as Error).message
-          );
-          classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
-        } catch (fallbackError) {
-          routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+    // Self-healing: a primary marked as rejecting structured output (a 501
+    // from e.g. the MLX backend — permanent for that backend, not transient)
+    // is skipped entirely. No guaranteed-501 hop on every prompt.
+    if (model !== fallbackModel && isMarkedNoSchema(cache, model)) {
+      routerLog(
+        `[classifier] Primary model "${model}" marked no-structured-output (501) — trying ${fallbackModel} directly`
+      );
+      try {
+        classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
+      } catch (fallbackError) {
+        routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+      }
+    } else {
+      try {
+        classificationResult = await tryClassify(model, timeoutMs);
+      } catch (primaryError) {
+        const primaryMsg = String((primaryError as Error)?.message ?? '');
+        // Cold-start timeout or load error → retry immediately with the fallback model
+        if (model !== fallbackModel) {
+          if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
+            // Permanent backend property, not transient — mark and never
+            // burn this hop again while the mark is within its TTL.
+            markNoSchema(cache, model);
+            routerLog(
+              `[classifier] Primary model "${model}" rejects structured output (501) — marked in cache, retrying with ${fallbackModel}`,
+              primaryMsg
+            );
+          } else {
+            routerLog(
+              `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
+              primaryMsg
+            );
+          }
+          try {
+            classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
+          } catch (fallbackError) {
+            routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+          }
         }
       }
     }

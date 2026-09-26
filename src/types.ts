@@ -243,6 +243,15 @@ export interface Cache {
    */
   model_health?: Record<string, { fails: number; last_fail: number }>;
   /**
+   * Local models that answered a classifier call with HTTP 501
+   * "structured output is unavailable" (e.g. Ollama's MLX backend rejects
+   * JSON-schema calls). Keyed by local model name, value = observation
+   * timestamp. The classifier skips these as primary; entries expire after
+   * CLASSIFIER_NO_SCHEMA_TTL_MS (24h) so a backend upgrade that adds
+   * schema support self-heals.
+   */
+  classifier_no_schema?: Record<string, number>;
+  /**
    * Verified-working cloud models for the classifier's cloud fallback.
    * Populated by probeAndCache() at scan time (a quality probe with real
    * classification cases — incl. the HINT-narration trap — filters out
