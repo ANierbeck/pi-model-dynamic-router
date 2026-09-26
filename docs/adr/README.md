@@ -35,3 +35,5 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0004 — Use pi's `modelRegistry` for cloud classification fallback](0004-cloud-fallback-via-pi-modelregistry.md)
 - [0005 — `registerProvider` replaces (not merges) — Ü1 guard design](0005-registerprovider-replaces-not-merges.md)
 - [0006 — Probe-based discovery for classifier cloud fallback](0006-probe-based-classifier-fallback-discovery.md)
+- [0007 — Task decomposition and delegation](0007-task-decomposition-and-delegation.md)
+- [0008 — Learned model blocklist (auto-block from observed permanent failures)](0008-learned-model-blocklist.md)
