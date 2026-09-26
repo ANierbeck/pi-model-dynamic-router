@@ -165,3 +165,48 @@ describe('checkScanSanity — edge cases', () => {
     expect(result.reason).toMatch(/scoring collapse/);
   });
 });
+
+describe('checkScanSanity — regression against the previous snapshot', () => {
+  const refs = (n: number) => Array.from({ length: n }, (_, i) => `p/m${i}`);
+
+  it('refuses a small scan that would replace a much larger good snapshot (the 1-model collapse)', () => {
+    const r = checkScanSanity({
+      scannedRefs: refs(2),
+      survivorRefs: refs(1),
+      explicitlyMappedRefs: [],
+      explicitlyMappedScoredRefs: [],
+      previousSurvivorCount: 37,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/1 .*37/);
+  });
+
+  it('accepts a moderate shrink', () => {
+    const r = checkScanSanity({
+      scannedRefs: refs(30),
+      survivorRefs: refs(20),
+      explicitlyMappedRefs: [],
+      explicitlyMappedScoredRefs: [],
+      previousSurvivorCount: 37,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('skips the comparison when the config changed (user excluded models on purpose)', () => {
+    const r = checkScanSanity({
+      scannedRefs: refs(5),
+      survivorRefs: refs(5),
+      explicitlyMappedRefs: [],
+      explicitlyMappedScoredRefs: [],
+      previousSurvivorCount: 37,
+      configChanged: true,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('skips the comparison when the previous snapshot was small or absent', () => {
+    const base = { scannedRefs: refs(1), survivorRefs: refs(1), explicitlyMappedRefs: [], explicitlyMappedScoredRefs: [] };
+    expect(checkScanSanity({ ...base, previousSurvivorCount: 8 }).ok).toBe(true);
+    expect(checkScanSanity(base).ok).toBe(true);
+  });
+});

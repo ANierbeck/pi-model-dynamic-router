@@ -53,6 +53,19 @@ export interface ScanSanityParams {
    * complete score coverage — that's a data-curation concern, not a sanity one.
    */
   minExplicitMapCoverage?: number;
+  /**
+   * Survivor count of the dynamic config currently on disk (`_dynamic.model_count`).
+   * A new scan that shrinks far below it is refused (check 3): small scans skip
+   * check 1, so a 1-model snapshot (e.g. registry not ready at session start)
+   * used to overwrite a good 37-model config.
+   */
+  previousSurvivorCount?: number;
+  /** True when excludes/providers/groups changed since that snapshot: a shrink is then expected. */
+  configChanged?: boolean;
+  /** Check 3 only applies when the previous snapshot had at least this many survivors. Default 10. */
+  minPreviousForRegressionCheck?: number;
+  /** Refuse when survivors fall below this fraction of the previous count. Default 0.5. */
+  minRetainedRatio?: number;
 }
 
 export interface ScanSanityResult {
@@ -85,6 +98,10 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
     minSurvivorCountFloor = 20,
     minExplicitMapSizeForCheck = 8,
     minExplicitMapCoverage = 0.4,
+    previousSurvivorCount,
+    configChanged = false,
+    minPreviousForRegressionCheck = 10,
+    minRetainedRatio = 0.5,
   } = params;
 
   const scannedCount = scannedRefs.length;
@@ -140,6 +157,24 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
         `${explicitlyMappedCount} explicitly-mapped models (${(explicitMapCoverage * 100).toFixed(1)}%) ` +
         `scored > 0 — expected near 100%. model-map.yaml or gdpval_builtin likely ` +
         `didn't load correctly for this scan.`,
+    };
+  }
+
+  // Check 3: regression against the snapshot on disk. Catches collapses that
+  // are too small for check 1 (it skips scans under minScanSizeForRatioCheck).
+  if (
+    !configChanged &&
+    previousSurvivorCount !== undefined &&
+    previousSurvivorCount >= minPreviousForRegressionCheck &&
+    survivorCount < previousSurvivorCount * minRetainedRatio
+  ) {
+    return {
+      ...result,
+      ok: false,
+      reason:
+        `regression vs. the persisted snapshot: ${survivorCount} usable models now, ` +
+        `${previousSurvivorCount} before, with an unchanged config. This usually means ` +
+        `discovery ran before the model registry was ready. Run /router scan to accept it anyway.`,
     };
   }
 

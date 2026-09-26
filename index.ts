@@ -22,6 +22,7 @@ import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import { Type } from '@sinclair/typebox';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
@@ -117,6 +118,20 @@ import { routerLog, debugLog, debugLogOnce, forgetDebugOnce, setLogLevel, writeL
 import { handleReadDelegation, delegationSettings } from './src/delegation.ts';
 import { checkReadBlock, executeBulkRead, resolveReadBlockStreamRef } from './src/bulk-read.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
+
+/**
+ * Fingerprint of the config inputs that legitimately change how many models a
+ * scan keeps (exclusions, providers, groups). Stored in the dynamic config so
+ * the scan-sanity regression check can tell a deliberate shrink from a collapse.
+ */
+function dynamicConfigFingerprint(c: Config): string {
+  const basis = JSON.stringify({
+    exclude: c.exclude ?? null,
+    providers: Object.keys(c.providers ?? {}).sort(),
+    groups: Object.keys(c.model_groups ?? {}).sort(),
+  });
+  return createHash('sha1').update(basis).digest('hex').slice(0, 12);
+}
 
 const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
@@ -1046,11 +1061,28 @@ let previousTokenCount = 0;
       // (933 GDPval) from "tactical" for hours across many session restarts.
       const explicitlyMappedRefs = effectiveModelRefs.filter((ref) => typeof metricsModule.mapLookup(ref) === 'string');
       const explicitlyMappedScoredRefs = explicitlyMappedRefs.filter((ref) => (lookupGdp(ref) ?? 0) > 0);
+      // Compare against the snapshot on disk (check 3), unless the user forced
+      // this scan (/router scan) to accept whatever it finds.
+      const configFingerprint = dynamicConfigFingerprint(staticCfg);
+      let previousSurvivorCount: number | undefined;
+      let configChanged = false;
+      try {
+        const prevPath = path.join(stateDir, 'router-config.dynamic.json');
+        if (!force && fs.existsSync(prevPath)) {
+          const prev = JSON.parse(fs.readFileSync(prevPath, 'utf-8'))?._dynamic;
+          if (typeof prev?.model_count === 'number') previousSurvivorCount = prev.model_count;
+          if (typeof prev?.config_fingerprint === 'string') configChanged = prev.config_fingerprint !== configFingerprint;
+        }
+      } catch {
+        // Unreadable previous snapshot: nothing to protect.
+      }
       const sanity = checkScanSanity({
         scannedRefs: effectiveModelRefs,
         survivorRefs: modelsWithMetadata.map((m) => m.ref),
         explicitlyMappedRefs,
         explicitlyMappedScoredRefs,
+        ...(previousSurvivorCount !== undefined ? { previousSurvivorCount } : {}),
+        configChanged,
       });
       if (!sanity.ok) {
         routerLog(
@@ -1139,7 +1171,8 @@ let previousTokenCount = 0;
           model_count: modelsWithMetadata.length,
           base_config: 'router-config.json',
           free_models_count: staticFreeModels.length,
-          scanned_models_count: scannedModels.length
+          scanned_models_count: scannedModels.length,
+          config_fingerprint: configFingerprint,
         }
       };
       

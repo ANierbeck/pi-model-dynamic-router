@@ -18,11 +18,12 @@ async function waitFor(check: () => boolean, ms = 3_000): Promise<boolean> {
   return check();
 }
 
-async function startRouterWithCache(extraCache: Record<string, unknown>) {
+async function startRouterWithCache(extraCache: Record<string, unknown>, existingDynamic?: unknown) {
   const stateDir = process.env.PI_ROUTER_STATE_DIR!;
   const dynamicPath = path.join(stateDir, 'router-config.dynamic.json');
   const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
   fs.rmSync(dynamicPath, { force: true });
+  if (existingDynamic) fs.writeFileSync(dynamicPath, JSON.stringify(existingDynamic));
   fs.writeFileSync(
     cachePath,
     JSON.stringify({
@@ -88,6 +89,25 @@ describe('valid scan cache but missing router-config.dynamic.json', () => {
     const { dynamicPath, cleanup } = await startRouterWithCache({ dynamic_config_expected: false });
     try {
       expect(await waitFor(() => fs.existsSync(dynamicPath), 500)).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () => {
+  it('keeps a 37-model snapshot when a new scan finds only one usable model', async () => {
+    const good = {
+      _dynamic: { generated_at: '2026-09-26T16:50:23.212Z', model_count: 37 },
+      model_groups: { standard: { method: 'best', models: ['healthy-provider/model-a'] } },
+    };
+    // lastScanTimestamp 0 = expired cache, so generateDynamicConfig runs.
+    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0 }, good);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      const onDisk = JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'));
+      expect(onDisk._dynamic.model_count).toBe(37);
+      expect(onDisk._dynamic.generated_at).toBe('2026-09-26T16:50:23.212Z');
     } finally {
       cleanup();
     }
