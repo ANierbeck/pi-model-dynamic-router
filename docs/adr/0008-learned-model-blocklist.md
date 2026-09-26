@@ -1,9 +1,10 @@
 # ADR-0008: Learned model blocklist (auto-block from observed permanent failures)
 
-**Status**: Proposed (2026-09-26). Awaiting the owner's pick on the Tier-2
-policy and the self-heal TTL. The static `exclude.models` list shipped in
-commit `fce3f2b` is the interim stopgap this ADR is meant to replace for the
-general case (see Option A).
+**Status**: Accepted (2026-09-26). The owner confirmed all three open
+thresholds the same day: Tier-1 blocks on first occurrence, Tier-2 promotes
+at N=5 (zero successes, spanning ≥ 1h), blocklist TTL is 7 days. The static
+`exclude.models` list shipped in commit `fce3f2b` remains in place as the
+manual override on top of the learned list (see Decision point 7).
 
 ## Context
 
@@ -176,7 +177,7 @@ exactly (the 403/404 signatures from 2026-09-26) with zero false-positive
 risk; Tier 2 means a future unknown-permanent failure mode doesn't require
 a code change to eventually stop burning.
 
-## Decision (proposed — pending owner confirmation)
+## Decision (accepted 2026-09-26)
 
 Adopt **Option D** (hybrid). Concretely:
 
@@ -206,14 +207,14 @@ Adopt **Option D** (hybrid). Concretely:
    `cache.model_blocklist` (within TTL). One filter point keeps static
    `exclude.models` (manual override) and the learned list in the same
    place — they compose instead of competing.
-5. **Self-heal** via TTL on the blocklist entry. **Open question for the
-   owner**: 7 days (aggressive re-probe, cheap on the common case where
-   the block re-confirms immediately) vs 30 days (quiet, minimal wasted
-   re-probes). The classifier analogue uses 24h, but model decommissions
-   and guardrails change far less often than Ollama schema support, so
-   longer seems right. On TTL expiry the ref is *re-tried once* on the
-   next walk; a re-confirmation re-blocks (occurrences++) and resets the
-   TTL; a success clears the block.
+5. **Self-heal** via TTL on the blocklist entry: **7 days** (confirmed by
+   the owner 2026-09-26). The classifier analogue uses 24h, but model
+   decommissions and guardrails change far less often than Ollama schema
+   support, so a longer window is right — and re-probing is cheap, because
+   a re-confirmation re-blocks immediately and resets the TTL. On TTL
+   expiry the ref is *re-tried once* on the next walk; a re-confirmation
+   re-blocks (occurrences++) and resets the TTL; a success clears the
+   block.
 6. **Surface** via `/router`: a `blocklist` sub-command (or a section in
    the existing status dump) listing each blocked ref with `reason`,
    `code`, `first_seen`, `occurrences`, and time-to-next-reprobe. Never
@@ -223,17 +224,21 @@ Adopt **Option D** (hybrid). Concretely:
    live-incident 14 refs can stay static, or migrate to learned once the
    system re-observes them — owner's call.
 
-### Thresholds to confirm with the owner
+### Thresholds (confirmed by the owner, 2026-09-26)
 
-- **Tier-1 immediate block**: on first occurrence of a known-permanent
-  signature? Or require 2 confirmations within a short window (one extra
-  burned hop, guards against a one-off parse glitch)? The
-  `classifier_no_schema` precedent blocks on first occurrence; recommend
-  the same — the signatures are deterministic.
-- **Tier-2 promotion threshold**: propose **5** consecutive same-signature
-  failures, **zero** successes, spanning **≥ 1 hour** (not a single burst),
-  before an unknown signature is promoted. Tunable later.
-- **Blocklist TTL**: 7d (recommended) vs 30d.
+- **Tier-1 immediate block**: **block on first occurrence** of a
+  known-permanent signature. The signatures are deterministic — the same
+  structural response comes back every time — so one observation is
+  reliable evidence. The `classifier_no_schema` precedent (commit
+  `d3a51e3`) blocks on first occurrence for the same reason; no 2×
+  confirmation round-trip is burned.
+- **Tier-2 promotion threshold**: **5** consecutive same-signature
+  failures, **zero** successes, spanning **≥ 1 hour** (not a single
+  burst), before an unknown signature is promoted. Tunable later.
+- **Blocklist TTL**: **7 days.** Aggressive re-probe beats quiet: the
+  common case (block re-confirms immediately) costs one wasted hop per
+  week, while a shorter window self-heals faster after a guardrail or
+  policy change.
 
 ## Consequences
 
