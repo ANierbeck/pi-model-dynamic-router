@@ -297,7 +297,7 @@ describe('HINT Classification', () => {
         hintTarget: 'mistral-medium-3.5'
       };
       
-      // Sollte kein category Feld haben
+      // Should have no category field
       expect(hintResult).not.toHaveProperty('category');
       expect(hintResult.hintType).toBe('model');
       expect(hintResult.hintTarget).toBe('mistral-medium-3.5');

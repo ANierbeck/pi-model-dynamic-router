@@ -95,7 +95,7 @@ const router = new Router(
 
 describe('Router Integration Tests', () => {
   beforeAll(() => {
-    // Initialisiere Cache mit Test-Daten
+    // Initialize the cache with test data
     cache.available_models = [
       { provider: 'anthropic', id: 'claude-3-sonnet', cost_per_m: 0.003 },
       { provider: 'openai', id: 'gpt-4', cost_per_m: 0.002 },
@@ -269,7 +269,7 @@ describe('Router Integration Tests', () => {
 
       const filtered = router.filterAvailable(refs, {});
 
-      // Ohne Limits sollten alle Modelle durchkommen
+      // Without limits, all models should pass through
       expect(filtered).toContain('anthropic/claude-3-sonnet');
       expect(filtered).toContain('openai/gpt-4');
       expect(filtered).toContain('google/gemini-1.5-pro');
@@ -289,7 +289,7 @@ describe('Router Integration Tests', () => {
       const refs = ['openai/gpt-4'];
       const filtered = router.filterAvailable(refs, { openai: 0 });
 
-      // Da Key 0 exhausted ist, sollte das Modell gefiltert werden
+      // Since key 0 is exhausted, the model should be filtered out
       expect(filtered).not.toContain('openai/gpt-4');
     });
   });

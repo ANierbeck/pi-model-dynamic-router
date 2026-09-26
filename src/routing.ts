@@ -267,6 +267,28 @@ export function getFallbackGroup(
   return null;
 }
 
+/**
+ * Is `ref` one of the router's own virtual group-provider models (e.g.
+ * 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static')?
+ * registerGroupProviders() registers one per group so Pi's model picker /
+ * --model flag can select a group as the active model. These virtual models
+ * carry no real cost or GDPval (their registry cost is {0,0} → null →
+ * 'unknown'), so they must be excluded both as resolution candidates
+ * (allDiscoveredRefs) and from cost diagnostics (the "unknown cost" scan
+ * log), where they would otherwise pollute the list with routing artefacts
+ * the user can neither price nor exclude.
+ */
+export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>): boolean {
+  const slash = ref.indexOf('/');
+  if (slash === -1) return false;
+  const provider = ref.slice(0, slash);
+  const modelId = ref.slice(slash + 1);
+  return (
+    groupNames.has(provider) &&
+    (modelId === provider || modelId === `${provider}:use-static`)
+  );
+}
+
 // ── Routing Logic ─────────────────────────────────────────────────────────
 
 /**
@@ -445,13 +467,7 @@ export class Router {
     // candidate.
     const groupNames = new Set(Object.keys(this.cfg.model_groups));
     for (const ref of refs) {
-      const slash = ref.indexOf('/');
-      if (slash === -1) continue;
-      const provider = ref.slice(0, slash);
-      const modelId = ref.slice(slash + 1);
-      if (groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`)) {
-        refs.delete(ref);
-      }
+      if (isVirtualGroupRef(ref, groupNames)) refs.delete(ref);
     }
 
     // Honour the user's explicit --models/enabledModels scoping (pi-ai 0.83.0+).

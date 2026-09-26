@@ -233,13 +233,12 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
 };
 
 /**
- * Liste der Provider, die nicht automatisch registriert werden sollen.
- * Das umfasst:
- * - Built-in Pi Provider (anthropic, openai, google)
- * - Provider, die durch Extensions registriert werden (ollama, lm-studio, claude-bridge, etc.)
- * 
- * Der Router registriert nur Provider, die Pi nicht selbst kennt
- * (z.B. OpenRouter für kostenlose Modelle).
+ * Providers that must NOT be auto-registered. This covers:
+ * - built-in Pi providers (anthropic, openai, google)
+ * - providers registered by extensions (ollama, lm-studio, claude-bridge, etc.)
+ *
+ * The router only registers providers Pi does not already know
+ * (e.g. OpenRouter for free models).
  */
 export const SKIP_REGISTRATION = new Set([
   // Built-in Pi providers

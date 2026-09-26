@@ -48,6 +48,7 @@ import { extractCapabilities } from './src/capabilities.ts';
 import { CacheManager } from './src/cache.ts';
 import { redundantAliasProviders, pruneRedundantCacheEntries } from './src/provider-shadow.ts';
 import { isStreamableRef } from './src/streamable-refs.ts';
+import { readRouterVersion } from './src/version.ts';
 import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
@@ -73,7 +74,7 @@ import {
 } from './src/detection.ts';
 import { hasBudget } from './src/budget.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
-import { Router, getFallbackGroup } from './src/routing.ts';
+import { Router, getFallbackGroup, isVirtualGroupRef } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { probeAndCache, getCachedFallbackModels, selectClassifierCandidates } from './src/classifier-fallback-probe.ts';
@@ -131,6 +132,10 @@ const defaultExport = function (pi: ExtensionAPI) {
   let scanning = false;
   let sessionStart = Date.now();
   let turnStart = 0;
+  // The router's own version, read lazily from package.json on the first
+  // load() and logged once per process — so the log identifies WHICH
+  // installation is active (important when several installs coexist).
+  let routerVersion: string | null = null;
   let curModel = '';
   let activeGroup: string | null = null;
   let lastDynamicModel = '';
@@ -253,6 +258,14 @@ let previousTokenCount = 0;
   // ── Config + Cache ─────────────────────────────────────────────────────
 
   function load() {
+    // Log the active version once per process (first load). load() also
+    // runs mid-turn from tools (resolve_model_group, update_model_metrics)
+    // and on every session_start, so gating on routerVersion===null keeps
+    // the log free of repeats while still emitting exactly once.
+    if (routerVersion === null) {
+      routerVersion = readRouterVersion();
+      routerLog(`[router] pi-model-router v${routerVersion} loaded`);
+    }
     // Layered config: embedded defaults → global user override → project override.
     // Deep-merge so users only specify the keys they want to change.
     const { config: layeredCfg, sources } = loadLayeredConfig(extDir, process.cwd(), routerLog);
@@ -261,7 +274,7 @@ let previousTokenCount = 0;
       routerLog(`[router] Config loaded from ${sources.length} layer(s): ${sources.join(' → ')}`);
     }
 
-    // Versuche die dynamische Konfiguration zu laden
+    // Try to load the dynamic configuration
     const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
     
@@ -292,7 +305,7 @@ let previousTokenCount = 0;
       routerLog('[router] Error loading dynamic configuration, falling back to static config:', error);
     }
     
-    // Falls keine dynamische Konfiguration, verwende die statische
+    // If there is no dynamic configuration, use the static one
     if (!loadedFromDynamic) {
       cfg = staticCfg;
     }
@@ -806,7 +819,7 @@ let previousTokenCount = 0;
         routerLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
       
-      // Generiere dynamische Konfiguration nach dem Scan
+      // Generate the dynamic configuration after the scan
       await generateDynamicConfig(force);
     } finally {
       scanning = false;
@@ -895,8 +908,8 @@ let previousTokenCount = 0;
       // These models are NOT scanned but taken directly from router-config.json
       const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(staticCfg);
       
-      // 2b. Alle Modelle kombinieren: statische free_models + gescannte Modelle + registry-Refs
-      // (Gruppen-Modelle werden dynamisch aus allDiscoveredRefs() geholt, nicht mehr statisch)
+      // 2b. Combine all models: static free_models + scanned models + registry refs
+      // (group models are now resolved dynamically from allDiscoveredRefs(), no longer static)
       const allModelRefs = [...new Set([
         ...staticFreeModels,
         ...scannedModels.map(m => `${m.provider}/${m.id}`),
@@ -914,7 +927,14 @@ let previousTokenCount = 0;
       // models still weaken cost gates and confuse cost-based sorting —
       // log them so pricing can be added (config, model-map, registry) or
       // the model excluded.
-      const unknownCostRefs = metricsModule.collectUnknownCostRefs(allModelRefs);
+      // Exclude the router's own virtual group-provider models from the
+      // cost diagnostics: their registry cost is {0,0} (→ null → 'unknown'),
+      // so without this filter the "unknown cost" log would list routing
+      // artefacts like 'trivial/trivial' that the user can neither price nor
+      // exclude. Same predicate as allDiscoveredRefs() (routing.ts).
+      const groupNames = new Set(Object.keys(cfg.model_groups));
+      const diagnosticRefs = allModelRefs.filter((r) => !isVirtualGroupRef(r, groupNames));
+      const unknownCostRefs = metricsModule.collectUnknownCostRefs(diagnosticRefs);
       if (unknownCostRefs.length) {
         routerLog(
           `[scan] ${unknownCostRefs.length} model(s) with unknown cost: ` +
@@ -980,7 +1000,7 @@ let previousTokenCount = 0;
         }
       }
       
-      // 4. Modelle mit GDPval und Kosten anreichern
+      // 4. Enrich the models with GDPval and cost
       // All models are now dynamic, no separate static models
       const staticModelRefs = new Set([...staticFreeModels]);
 
@@ -1046,7 +1066,7 @@ let previousTokenCount = 0;
           continue;
         }
         
-        // 6. Filter Modelle basierend auf Gruppen-Kriterien
+        // 6. Filter models by the group's criteria
         //
         // NOTE (A1): The live path (Router.resolveGroup) and the display path
         // (Router.getTopModels) share the method-independent filters via
@@ -1069,7 +1089,7 @@ let previousTokenCount = 0;
         // and the fail-open direction (unknown provider → excluded).
         let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, cfg);
         
-        // 7. Sortierung basierend auf Gruppen-Methode
+        // 7. Sort the models according to the group's method
         let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, groupName, cfg, metricsModule.calculateScore);
         
         // 8. Collect models: static first (highest priority), then dynamic additions
@@ -1082,7 +1102,7 @@ let previousTokenCount = 0;
           routerLog(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
         }
         
-        // Erstelle die dynamische Gruppen-Konfiguration
+        // Build the dynamic group configuration
         dynamicGroups[groupName] = {
           ...groupConfig,
           models: finalModels
@@ -1095,16 +1115,15 @@ let previousTokenCount = 0;
       // escalates before it degrades. Groups with no models are skipped.
       computeFallbackGroups(dynamicGroups);
 
-      // 10. Dynamische Konfiguration speichern
-      // WICHTIG: Der Objekt-Literal spreadet weiterhin von `cfg` (der
-      // potenziell veralteten dynamischen Config), NICHT von staticCfg — nur
-      // die einzelnen User-Override-Felder unten (exclude, die beiden Timeout-
-      // Werte) werden explizit aus staticCfg erzwungen. staticCfg ist die
-      // layered Config (defaults + user override) und damit die einzige Quelle
-      // der Wahrheit fuer diese Felder; cfg kann sie verloren haben, wenn der
-      // User zwischenzeitlich router-config.json/router-config.user.json
-      // geaendert hat, seit die zuletzt persistierte dynamische Config
-      // geschrieben wurde.
+      // 10. Persist the dynamic configuration.
+      // IMPORTANT: the object literal still spreads from `cfg` (which may be a
+      // stale dynamic config), NOT from staticCfg — only the individual
+      // user-override fields below (exclude and the two timeout values) are
+      // forced explicitly from staticCfg. staticCfg is the layered config
+      // (defaults + user override) and therefore the single source of truth
+      // for these fields; cfg may have lost them if the user edited
+      // router-config.json / router-config.user.json since the last persisted
+      // dynamic configuration was written.
       const dynamicConfig = {
         ...cfg,
         // Preserve critical global config from staticCfg (layered config).
@@ -1153,7 +1172,7 @@ let previousTokenCount = 0;
       metricsModule.setConfig(cfg);
       discoveryManager = new DiscoveryManager(cfg, cache);
 
-      // Setze den Timestamp des letzten Scans
+      // Set the timestamp of the last scan
       cacheManager.setLastScanTimestamp();
 
       routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
