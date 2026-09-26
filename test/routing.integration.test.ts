@@ -67,7 +67,7 @@ const testConfig: Config = {
 };
 
 // Initialize real modules
-const extDir = '/tmp/test-router';
+const extDir = process.env.PI_ROUTER_STATE_DIR!;
 const cacheManager = new CacheManager(extDir);
 const cache: Cache = cacheManager.loadCache();
 

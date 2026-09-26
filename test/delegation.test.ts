@@ -19,19 +19,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  acquireRouterStateLock,
-  releaseRouterStateLock,
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
-} from './helpers/router-state-lock.ts';
+} from './helpers/noop-scan-cache.ts';
 import {
   delegationSettings,
   extractTextContent,
-  stripRouterNarration,
   buildSummaryPrompt,
   handleReadDelegation,
 } from '../src/delegation';
+import { stripRouterNarration } from '../src/utils';
 import type { Config } from '../src/types';
 
 // ── delegationSettings ──────────────────────────────────────────────────
@@ -140,6 +138,14 @@ describe('stripRouterNarration', () => {
   it('collapses blank-line runs left by removed narration', () => {
     const out = stripRouterNarration('> [router] a\n\n\n\n> [router] b\n\ncontent');
     expect(out).toBe('content');
+  });
+
+  it('collapses blank-line runs left by narration in the middle of the text', () => {
+    expect(stripRouterNarration('first\n\n> [router] x\n\nsecond')).toBe('first\n\nsecond');
+  });
+
+  it('also strips narration without a space after ">" (single shared implementation)', () => {
+    expect(stripRouterNarration('>[router] MHINT: foo\nanswer')).toBe('answer');
   });
 
   it('leaves narration-free text untouched', () => {
@@ -494,8 +500,8 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
 
 describe('default export wiring: tool_result returns the delegation replacement', () => {
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
-  const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
+  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
   // Production-realistic registry model (cost is mandatory on real models).
   const KNOWN_MODEL = {
@@ -521,7 +527,6 @@ describe('default export wiring: tool_result returns the delegation replacement'
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.delegation-bak`;
-    await acquireRouterStateLock();
     const hadDyn = fs.existsSync(dynamicConfigPath);
     if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
     writeNoOpScanCache(scanCachePath);
@@ -594,7 +599,6 @@ describe('default export wiring: tool_result returns the delegation replacement'
       fs.rmSync(tmpDir, { recursive: true, force: true });
       if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      releaseRouterStateLock();
     }
   });
 });
@@ -607,8 +611,8 @@ describe('default export wiring: tool_result returns the delegation replacement'
 // block/pass decisions) — not the module logic, which the unit tests cover.
 describe('default export wiring: tool_call pre-call read block', () => {
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
-  const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
+  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
   const KNOWN_MODEL = {
     provider: 'mistral',
@@ -630,7 +634,6 @@ describe('default export wiring: tool_call pre-call read block', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.readblock-bak`;
-    await acquireRouterStateLock();
     const hadDyn = fs.existsSync(dynamicConfigPath);
     if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
     writeNoOpScanCache(scanCachePath);
@@ -676,7 +679,6 @@ describe('default export wiring: tool_call pre-call read block', () => {
           fs.rmSync(tmpDir, { recursive: true, force: true });
           if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
           removeNoOpScanCache(scanCachePath);
-          releaseRouterStateLock();
         },
       };
     } catch (err) {
@@ -684,7 +686,6 @@ describe('default export wiring: tool_call pre-call read block', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      releaseRouterStateLock();
       throw err;
     }
   }

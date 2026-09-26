@@ -19,7 +19,8 @@ The persisted `models` list of a group is an **allow-list** at resolve time:
 `g.models`. Effectively, the live result is the **intersection** of both
 pipelines.
 
-The two code comments contradict each other. The doc comment on
+Until 2026-09-26 the two code comments contradicted each other (the
+`applyGroupFilters` doc comment has since been corrected). The doc comment on
 `applyGroupFilters` says it is shared by all three paths, including
 `generateDynamicConfig` ("A1 consolidation"). The comment at the call site in
 `index.ts` (step 6 of `generateDynamicConfig`) says the persist path does
@@ -120,7 +121,8 @@ If B is adopted:
   construction.
 - `test/dynamic-config.test.ts` and `test/apply-group-filters.test.ts`
   need one reconciled expectation for `max_cost_per_m`.
-- The `applyGroupFilters` doc comment becomes true.
+- The `applyGroupFilters` doc comment can again describe one shared
+  pipeline.
 
 Until then, `/router` output and the persisted `router-config.dynamic.json`
 may disagree for `max_cost`/`max_cost_per_m` groups, and an empty `$0`

@@ -15,12 +15,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireRouterStateLock, releaseRouterStateLock, writeNoOpScanCache, removeNoOpScanCache } from './helpers/router-state-lock.ts';
+import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
+const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const dynamicConfigBackupPath = `${dynamicConfigPath}.label-test-bak`;
-const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
+const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
 describe('registerGroupProviders(): dynamic-method group labeling', () => {
   it('labels the dynamic group "auto-classify" instead of the misleading "→ none"', async () => {
@@ -38,7 +38,6 @@ describe('registerGroupProviders(): dynamic-method group labeling', () => {
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
     writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
@@ -84,7 +83,6 @@ describe('registerGroupProviders(): dynamic-method group labeling', () => {
       removeNoOpScanCache(scanCachePath);
 
       if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
-      releaseRouterStateLock();
     }
   });
 });

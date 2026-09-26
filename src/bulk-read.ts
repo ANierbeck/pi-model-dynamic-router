@@ -34,9 +34,9 @@ import {
   delegationSettings,
   type DelegationSettings,
   isTargetedReadInput,
-  stripRouterNarration,
   drainSubCallStream,
 } from './delegation.ts';
+import { stripRouterNarration } from './utils.ts';
 
 // ── line counting ────────────────────────────────────────────────────────
 

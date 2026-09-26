@@ -68,12 +68,15 @@ export function fmtTime(ms: number): string {
  * snippet, previous user message), not just one of them: a subagent task
  * that replays prior turns verbatim (e.g. wrapped in "<conversation>...")
  * carries old narration lines anywhere in its body, not only at the start.
+ * Delegation/bulk-read sub-call output goes through the same function, so
+ * blank-line runs left by removed lines are collapsed too.
  */
 export function stripRouterNarration(text: string): string {
   return text
     .split('\n')
     .filter((line) => !/^>\s*\[router\]/.test(line.trim()))
     .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

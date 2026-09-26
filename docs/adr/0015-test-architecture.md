@@ -1,8 +1,8 @@
-# ADR-0015: Test architecture — regression-first suite, shared-state lock, home isolation
+# ADR-0015: Test architecture — regression-first suite, per-file state and home isolation
 
 **Status**: Accepted (documented 2026-09-26). It describes the suite as it
-is after the 2026-09-26 consolidation (902 tests in 102 files, CI green)
-and lists the known debt.
+is after the 2026-09-26 consolidation and isolation work (~900 tests in 102
+files, CI green) and lists the remaining debt.
 
 ## Context
 
@@ -38,15 +38,20 @@ problems surfaced along the way:
    Duplicates across files are merged, not skipped. The
    2026-09-20 and 2026-09-26 passes were verified by a per-statement
    coverage diff.
-2. **Cross-process lock for shared repo state**
-   (`test/helpers/router-state-lock.ts`). It is an atomic `mkdir` mutex,
-   stale locks are reclaimed after 5 min, and acquisition waits up to 180 s.
-   `testTimeout`/`hookTimeout` are 200 s so vitest never kills a legitimate
-   wait. Currently 26 test files use it.
+2. **Per-file router state directory** (since 2026-09-26). `index.ts` reads
+   and writes `router-config.dynamic.json` and `.cache/scan-cache.json` in
+   `PI_ROUTER_STATE_DIR` (default: the extension directory, unchanged in
+   production). The test setup points it at a fresh temp directory per test
+   file. Tests no longer touch the checkout, and the cross-process lock
+   (`router-state-lock.ts`, an atomic `mkdir` mutex that serialized 26 files
+   with 180 s waits and 200 s test timeouts) was removed together with the
+   raised timeouts. Full suite: ~12 s → ~3.5 s wall clock, ~113 s → ~17 s
+   test time. `test/helpers/noop-scan-cache.ts` still keeps the unawaited
+   `session_start` scan from swapping the config mid-test.
 3. **Home isolation** (`test/setup/home-root.ts` + `isolate-home.ts`). Each
    test file sees a fresh temp home via a `node:os` `homedir()` mock and
-   matching `HOME`. The root is removed in global teardown. Guarded by
-   `test/home-isolation.test.ts`.
+   matching `HOME`, next to its state directory. The root is removed in
+   global teardown. Guarded by `test/home-isolation.test.ts`.
 4. **Coverage is a floor, not a target.** The thresholds in
    `vitest.config.ts` (63/76/63/63) sit well below the measured ~80 %
    lines / ~84 % branches, because of the timing variance above.
@@ -59,13 +64,9 @@ problems surfaced along the way:
 
 ## Consequences / known debt
 
-- The lock serializes about a quarter of the suite. The real fix is to
-  point `index.ts`'s dynamic-config and scan-cache paths at a per-test
-  directory, the same way `homedir()` is now isolated. The tests then
-  would no longer touch the working copy's real
-  `router-config.dynamic.json`.
-- The lock helper's comment still says "9 test files". The number is 26.
 - Timing-dependent `index.ts` branches keep the coverage floor low until
   a fake clock is injected.
+- Resolved on 2026-09-26: the shared-state lock and the checkout writes
+  (see point 2).
 
 Related: ADR-0009 (home leak incident).

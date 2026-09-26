@@ -15,8 +15,8 @@ export class CacheManager {
   private cache: Cache;
   private cachePath: string;
 
-  constructor(extDir: string) {
-    this.cachePath = path.join(extDir, '.cache', 'scan-cache.json');
+  constructor(stateDir: string) {
+    this.cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
     this.cache = this.loadCache();
   }
 

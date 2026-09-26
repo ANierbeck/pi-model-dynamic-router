@@ -97,13 +97,14 @@ function billingFor(cfg: Config, prov: string): string {
 /**
  * Applies the method-independent group filters to a candidate list.
  *
- * This is the shared filter pipeline (A1) used by all three group-candidate
- * paths — {@link Router.resolveGroup} (live selection),
- * {@link Router.getTopModels} (display), and `generateDynamicConfig` in
- * index.ts (persisted config). It encodes ONLY the filters that must behave
- * identically across the three paths; method-specific sorting, health
- * demotion, budget filtering, rate-limit splitting, static-model
- * preservation, and persistence stay in their respective callers.
+ * This is the shared filter pipeline (A1) for the live selection path
+ * ({@link Router.resolveGroup}) and the display path
+ * ({@link Router.getTopModels}). The persist path (`generateDynamicConfig` in
+ * index.ts) does NOT use it: it runs `filterModelsForGroup`
+ * (src/dynamic-config.ts), whose max_cost / max_cost_per_m semantics differ
+ * on purpose (see the step-6 note in generateDynamicConfig and ADR-0010).
+ * Method-specific sorting, health demotion, budget filtering, rate-limit
+ * splitting, static-model preservation, and persistence stay in the callers.
  *
  * Filter order (matters for correctness, not just performance):
  *   1. exclude_providers  — drop whole providers (group-level override)
@@ -116,9 +117,9 @@ function billingFor(cfg: Config, prov: string): string {
  * INPUT CONTRACT: `refs` are provider/id strings; `g` is the group config;
  * `cfg` is the live Config (for per-provider billing overrides). `dedup` is
  * optional and, when true, runs {@link Router.dedupByModelIdentity} after the
- * filters — the live and display paths dedup, the persist path uses its own
- * token-signature dedup (which also preserves pinned static models), so it
- * passes `dedup: false` and handles dedup itself.
+ * filters. The persist path does not call this function; it collapses
+ * clusters with `collapseSameSlugClusters` and dedups by token signature in
+ * `collectGroupModels` (which also preserves pinned static models).
  *
  * OUTPUT CONTRACT: returns a NEW filtered array (does not mutate input).
  *
@@ -131,8 +132,9 @@ function billingFor(cfg: Config, prov: string): string {
  *     semantics; the display path historically diverged (dropped all
  *     unknowns) which made `/router` show models the live path would never
  *     pick — the consolidation fixes that divergence.
- *   - `max_cost_per_m` with unknown price: always excluded (neither path can
- *     make a good decision without a concrete price).
+ *   - `max_cost_per_m` with unknown price: always excluded here (no good
+ *     decision without a concrete price). The persist path keeps
+ *     non-pay_per_token models instead — an open divergence, see ADR-0010.
  *   - `min_gdpval` uses `lookupGdp(ref) ?? null`; a null score (unscored
  *     model) fails the quality gate, matching filterByQualityMin.
  *   - `min_context_length` uses `lookupContextWindow(ref) ?? null`; a null

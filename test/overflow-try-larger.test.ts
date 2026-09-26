@@ -89,12 +89,10 @@ describe('extractContextWindowFromError', () => {
 // mock modelRegistry.runtime.streamSimple to yield provider events, and a
 // find() that maps refs to models with known context windows.
 import {
-  acquireRouterStateLock,
-  releaseRouterStateLock,
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
-} from './helpers/router-state-lock.ts';
+} from './helpers/noop-scan-cache.ts';
 
 const repoRoot2 = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // Under vitest, import('../index.ts') runs the TS source, so import.meta.url
@@ -103,8 +101,8 @@ const repoRoot2 = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // <cwd>/.pi/router-config.json (project override, highest priority). So the
 // per-test override goes to tmpDir/.pi/router-config.json (with cwdSpy→tmpDir),
 // exactly like context-overflow.test.ts — NOT by backing up dist/router-config.
-const dynamicConfigPath2 = path.join(repoRoot2, 'router-config.dynamic.json');
-const scanCachePath2 = path.join(repoRoot2, '.cache', 'scan-cache.json');
+const dynamicConfigPath2 = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+const scanCachePath2 = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
 // A minimal config whose 'standard' group lists exactly the two refs the
 // mock find() recognizes. min_gdpval:0 so the unscored mock models aren't
@@ -129,7 +127,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     // Project-config override (cwd-layer, highest priority in loadLayeredConfig).
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-    await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.trylarge-bak`);
     writeNoOpScanCache(scanCachePath2);
     try {
@@ -201,7 +198,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       removeNoOpScanCache(scanCachePath2);
       if (fs.existsSync(`${dynamicConfigPath2}.trylarge-bak`)) fs.renameSync(`${dynamicConfigPath2}.trylarge-bak`, dynamicConfigPath2);
-      releaseRouterStateLock();
     }
   });
 
@@ -215,7 +211,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-    await acquireRouterStateLock();
     if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.unparse-bak`);
     writeNoOpScanCache(scanCachePath2);
     try {
@@ -281,7 +276,6 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
       removeNoOpScanCache(scanCachePath2);
       if (fs.existsSync(`${dynamicConfigPath2}.unparse-bak`)) fs.renameSync(`${dynamicConfigPath2}.unparse-bak`, dynamicConfigPath2);
-      releaseRouterStateLock();
     }
   });
 });

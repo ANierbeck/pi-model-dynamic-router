@@ -119,6 +119,10 @@ import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream
 const defaultExport = function (pi: ExtensionAPI) {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
   const cfgPath = path.join(extDir, 'router-config.json');
+  // Generated state (router-config.dynamic.json, .cache/scan-cache.json)
+  // lives next to the extension unless PI_ROUTER_STATE_DIR points elsewhere.
+  // The test harness uses this to keep every test file off the checkout.
+  const stateDir = process.env.PI_ROUTER_STATE_DIR || extDir;
 
   const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
@@ -275,7 +279,7 @@ let previousTokenCount = 0;
     }
 
     // Try to load the dynamic configuration
-    const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+    const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
     
     try {
@@ -332,7 +336,7 @@ let previousTokenCount = 0;
       const currentScores = metricsModule.getGdpval();
       metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
     }
-    cacheManager = new CacheManager(extDir);
+    cacheManager = new CacheManager(stateDir);
     // load() does not only run at boot: tools call it directly
     // (resolve_model_group, update_model_metrics) and EVERY session_start
     // fires it — including subagent sessions, which share this module-level
@@ -1142,7 +1146,7 @@ let previousTokenCount = 0;
         }
       };
       
-      const dynamicConfigPath = path.join(extDir, 'router-config.dynamic.json');
+      const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
 
       // Update in-memory cfg immediately so the new fallback_groups and model lists

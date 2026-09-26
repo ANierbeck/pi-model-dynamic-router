@@ -26,16 +26,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  acquireRouterStateLock,
-  releaseRouterStateLock,
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
-} from './helpers/router-state-lock.ts';
+} from './helpers/noop-scan-cache.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
-const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
+const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
 async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
   const events: AssistantMessageEvent[] = [];
@@ -54,7 +52,6 @@ async function withIsolatedRouter(
 
   const dynBak = `${dynamicConfigPath}.abort-bak`;
   const cacheBak = `${scanCachePath}.abort-bak`;
-  await acquireRouterStateLock();
   const hadDyn = fs.existsSync(dynamicConfigPath);
   const hadCache = fs.existsSync(scanCachePath);
   if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
@@ -72,7 +69,6 @@ async function withIsolatedRouter(
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
     removeNoOpScanCache(scanCachePath);
     if (hadCache) fs.renameSync(cacheBak, scanCachePath);
-    releaseRouterStateLock();
   }
 }
 

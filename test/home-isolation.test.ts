@@ -23,4 +23,12 @@ describe('test home isolation', () => {
     const { sources } = loadLayeredConfig(repoRoot, os.tmpdir());
     expect(sources.some((s) => s.endsWith('router-config.user.json'))).toBe(false);
   });
+
+  it('router state (dynamic config, scan cache) lives in a per-file temp dir, not the checkout', () => {
+    const repoRoot = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
+    const stateDir = process.env.PI_ROUTER_STATE_DIR;
+    expect(stateDir).toBeTruthy();
+    expect(fs.realpathSync(stateDir!)).not.toBe(fs.realpathSync(repoRoot));
+    expect(fs.existsSync(path.join(stateDir!, '.cache'))).toBe(true);
+  });
 });

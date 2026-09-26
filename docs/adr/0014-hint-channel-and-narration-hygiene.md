@@ -5,8 +5,7 @@ in commits `26e99f0` (1.5.4, lock-in loop fix, 2026-09-18), `80f60ab`
 (strip narration on all classifier-input paths) and `5ff46e6` (MHINT
 reserved for router narration, 2026-09-20). Sources:
 `src/content-classifier.ts` (`detectHintDirectly`),
-`src/classification-prompt.ts`, `src/utils.ts` and `src/delegation.ts`
-(`stripRouterNarration`), `src/stream-orchestrator.ts`.
+`src/classification-prompt.ts`, `src/utils.ts` (`stripRouterNarration`), `src/stream-orchestrator.ts`.
 
 ## Context
 
@@ -68,9 +67,10 @@ two free OpenRouter models for many turns.
 - Narration can stay verbose for humans without risking control flow.
 - Any new path that feeds text to the classifier must call
   `stripRouterNarration`.
-- There are two `stripRouterNarration` implementations. The one in
-  `src/delegation.ts` also collapses blank-line runs for summarizer output.
-  They should be merged into one when either changes.
+- `stripRouterNarration` (`src/utils.ts`) is the single implementation for
+  classifier input and for delegation/bulk-read sub-call output. It also
+  collapses blank-line runs. The former copy in `src/delegation.ts` was
+  removed on 2026-09-26.
 
 Tests pinning this: `hint-classification`, `detect-hint-synonyms`,
 `hint-normalization`, `hint-resolution`, `classifier-context-narration-leak`,

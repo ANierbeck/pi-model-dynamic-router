@@ -26,6 +26,7 @@
 
 import type { Config, DelegationConfig } from './types.ts';
 import type { Usage } from '@earendil-works/pi-ai';
+import { stripRouterNarration } from './utils.ts';
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
@@ -135,25 +136,6 @@ export function extractTextContent(content: unknown): string | null {
     parts.push(String((block as any).text ?? ''));
   }
   return parts.join('\n');
-}
-
-// ── Router-narration hygiene (spike finding 2026-09-20) ──────────────────
-
-/**
- * Removes router cascade narration from machine-facing sub-call output.
- *
- * The router narrates candidate outcomes ("> [router] X — rate limited,
- * trying Y", "> [router] MHINT: …") as text_delta lines into the sub-call
- * stream. Intended for human sessions, pure noise for a summarizer
- * consumer — the live spike saw ~5 KB of narration around a 108-token
- * summary. Strip every line starting with "> [router]" and collapse the
- * blank-line runs they leave behind.
- */
-export function stripRouterNarration(text: string): string {
-  const kept = text
-    .split('\n')
-    .filter((line) => !line.trimStart().startsWith('> [router]'));
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ── Summary prompt ───────────────────────────────────────────────────────

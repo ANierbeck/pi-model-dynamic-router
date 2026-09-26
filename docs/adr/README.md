@@ -43,4 +43,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0012 — Model identity: slug resolution tiers and canonical cluster dedup](0012-model-identity-slug-resolution-and-dedup.md)
 - [0013 — Failure classification and failover in stream orchestration](0013-failure-classification-and-failover.md)
 - [0014 — HINT is the user's channel, MHINT is the router's; narration never feeds classification](0014-hint-channel-and-narration-hygiene.md)
-- [0015 — Test architecture: regression-first suite, shared-state lock, home isolation](0015-test-architecture.md)
+- [0015 — Test architecture: regression-first suite, per-file state and home isolation](0015-test-architecture.md)
