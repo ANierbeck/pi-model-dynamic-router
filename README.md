@@ -577,6 +577,14 @@ If both Ollama models are unavailable, the classifier falls back to a free cloud
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router reload` | Hot-reload config and cache |
 
+### Logging
+
+The router logs to `~/.pi/logs/router.log` (mirrored to `<project>/.pi/logs/router.log`).
+Each file rotates at 20 MB into `router.log.1` … `router.log.4`; older data is dropped.
+`[diag]` lines are written only at log level `debug`: set `"log_level": "debug"` in
+`~/.pi/agent/router-config.user.json`, or `ROUTER_LOG_LEVEL=debug` (overrides the config).
+The recurring "tryStream skipped" line is written once per model until its reason changes.
+
 ### KPI audit
 
 `npm run audit:kpi -- [--since 7d|24h|<ISO date>] [--log <path>] [--json]` summarizes

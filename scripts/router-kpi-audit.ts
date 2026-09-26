@@ -4,9 +4,9 @@
 // local-provider watchdog (ADR-0016).
 //
 // Usage: node scripts/router-kpi-audit.ts [--log <path>] [--since <7d|24h|ISO>] [--json]
-// The log is streamed line by line; it routinely exceeds 300 MB.
+// Reads the log and its rotations (<log>.N … <log>.1, oldest first), line by line.
 
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -150,6 +150,13 @@ export function formatReport(k: Kpis): string {
   return out.join('\n');
 }
 
+/** The log and its rotated predecessors, oldest first (see src/logger.ts). */
+export function logFiles(base: string, maxRotations = 20): string[] {
+  const rotated: string[] = [];
+  for (let i = maxRotations; i >= 1; i--) if (existsSync(`${base}.${i}`)) rotated.push(`${base}.${i}`);
+  return existsSync(base) ? [...rotated, base] : rotated;
+}
+
 /** Parses `7d`, `24h`, `30m` or an ISO date into epoch ms. */
 export function parseSince(value: string, now: number = Date.now()): number {
   const rel = /^(\d+)([dhm])$/.exec(value);
@@ -171,8 +178,10 @@ async function main(argv: string[]): Promise<void> {
   const sinceArg = arg('--since');
   const sinceMs = sinceArg ? parseSince(sinceArg) : undefined;
   const k = createKpis();
-  const rl = createInterface({ input: createReadStream(logPath, 'utf-8'), crlfDelay: Infinity });
-  for await (const line of rl) ingestLine(k, line, sinceMs);
+  for (const file of logFiles(logPath)) {
+    const rl = createInterface({ input: createReadStream(file, 'utf-8'), crlfDelay: Infinity });
+    for await (const line of rl) ingestLine(k, line, sinceMs);
+  }
   console.log(argv.includes('--json') ? JSON.stringify(k, null, 2) : formatReport(k));
 }
 

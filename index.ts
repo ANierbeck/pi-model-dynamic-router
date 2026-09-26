@@ -113,7 +113,7 @@ let localStreamsInFlight = 0;
 // setProjectLogDir live in src/logger.ts so every src/ module can log without
 // reaching for console.* (which bypasses Pi's TUI and can land in the user's
 // input field). Re-imported here for index.ts's own use.
-import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
+import { routerLog, debugLog, debugLogOnce, forgetDebugOnce, setLogLevel, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
 import { handleReadDelegation, delegationSettings } from './src/delegation.ts';
 import { checkReadBlock, executeBulkRead, resolveReadBlockStreamRef } from './src/bulk-read.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
@@ -275,6 +275,7 @@ let previousTokenCount = 0;
     // Layered config: embedded defaults → global user override → project override.
     // Deep-merge so users only specify the keys they want to change.
     const { config: layeredCfg, sources } = loadLayeredConfig(extDir, process.cwd(), routerLog);
+    setLogLevel(layeredCfg.log_level);
     staticCfg = layeredCfg;
     if (sources.length > 1) {
       routerLog(`[router] Config loaded from ${sources.length} layer(s): ${sources.join(' → ')}`);
@@ -1547,8 +1548,8 @@ let previousTokenCount = 0;
     try {
       const piAiPath = fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'));
       const providerIds = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
-      routerLog(`[diag] pi-ai resolved from: ${piAiPath}`);
-      routerLog(`[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`);
+      debugLog(`[diag] pi-ai resolved from: ${piAiPath}`);
+      debugLog(`[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`);
       // F11 (2026-09-02): publish pi's registered provider IDs to the metrics
       // module so stripProvider() recognizes pi-managed providers (pi-claude,
       // claude-bridge, extension providers) the router has no static
@@ -1569,7 +1570,7 @@ let previousTokenCount = 0;
       // files directly.
       setModelRegistry((ctx as any).modelRegistry);
     } catch (e) {
-      routerLog('[diag] version diagnostics failed:', e);
+      debugLog('[diag] version diagnostics failed:', e);
     }
     load();
     metricsModule.loadModelMap(extDir);
@@ -2074,7 +2075,7 @@ let previousTokenCount = 0;
   ): Promise<{ stream: AssistantMessageEventStream; ref: string } | null> {
     const skip = (reason: string): null => {
       skipReasons.set(ref, reason);
-      routerLog(`[diag] tryStream skipped "${ref}": ${reason}`);
+      debugLogOnce(`tryStream-skip:${ref}`, `[diag] tryStream skipped "${ref}": ${reason}`);
       return null;
     };
     skipReasons.delete(ref);
@@ -2121,7 +2122,8 @@ let previousTokenCount = 0;
     // Diagnostic: log exactly what the router resolved for this ref, so a failure
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
-    routerLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
+    forgetDebugOnce(`tryStream-skip:${ref}`);
+    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
     const apiKey = await sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
@@ -2167,7 +2169,7 @@ let previousTokenCount = 0;
     // release happens in driveStream's finally block after consumeWithDetection
     // settles — we can't release here because tryStream doesn't consume the
     // stream, it only opens it. (Slot already reserved above, pre-await.)
-    routerLog(`[diag] tryStream streaming "${ref}" via host runtime`);
+    debugLog(`[diag] tryStream streaming "${ref}" via host runtime`);
     return { stream, ref };
   }
 

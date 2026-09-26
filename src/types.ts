@@ -132,6 +132,8 @@ export interface Config {
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
   /** Override the default first-token empty-response timeout (ms). */
+  /** Router log level: "debug" also writes [diag] lines. ROUTER_LOG_LEVEL overrides it. */
+  log_level?: 'info' | 'debug';
   empty_response_timeout_ms?: number;
   /** Override the first-token timeout for reasoning/thinking models (ms). */
   reasoning_empty_response_timeout_ms?: number;

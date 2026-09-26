@@ -2,7 +2,10 @@
 // The KPI audit parses real router.log line shapes (verbatim samples).
 
 import { describe, it, expect } from 'vitest';
-import { createKpis, ingestLine, formatReport, parseSince } from '../scripts/router-kpi-audit.ts';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { createKpis, ingestLine, formatReport, parseSince, logFiles } from '../scripts/router-kpi-audit.ts';
 
 const LINES = [
   '2026-09-26T16:00:00.000Z  [delegation] replaced 21000-char read result with 65-char summary via bulk_reader',
@@ -59,5 +62,15 @@ describe('router KPI audit', () => {
     expect(parseSince('24h', now)).toBe(now - 86_400_000);
     expect(parseSince('2026-09-20', now)).toBe(Date.parse('2026-09-20'));
     expect(() => parseSince('soon', now)).toThrow(/cannot parse/);
+  });
+});
+
+describe('rotated log files', () => {
+  it('lists rotations oldest first, then the live log', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kpi-rot-'));
+    const base = path.join(dir, 'router.log');
+    for (const f of ['router.log', 'router.log.1', 'router.log.3']) fs.writeFileSync(path.join(dir, f), '');
+    expect(logFiles(base)).toEqual([`${base}.3`, `${base}.1`, base]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
