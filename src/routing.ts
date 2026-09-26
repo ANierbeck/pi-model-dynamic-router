@@ -280,10 +280,71 @@ export class Router {
   private activeGroup: string | null = null;
   private curModel: string = '';
   private curModelAt: number = 0;
+  /**
+   * The turn's DRIVING model: the FIRST ref that opened a stream in the
+   * current turn. Distinct from `curModel`, which every nested stream
+   * overwrites — the bulk_reader delegation sub-call sets it to a cheap
+   * ref mid-turn (stream-orchestrator groupStream), after which
+   * getCurModel() would report the CHEAP ref and the expensive-model
+   * read block (bulk-read checkReadBlock) would let the expensive model's
+   * subsequent full-file reads through.
+   */
+  private turnDriverRef: string = '';
+  private turnDriverAt: number = 0;
+  /** Start of the current turn, as reported by noteTurnStart(). 0 = unknown. */
+  private turnBoundaryAt: number = 0;
+
+  /**
+   * Marks the start of a new turn. Called from the turn_start hook BEFORE
+   * any stream opens — the driving ref is not known yet, so the pin is not
+   * set here; it is set by the first setCurModel() of the turn.
+   */
+  noteTurnStart(turnStartMs: number): void {
+    if (typeof turnStartMs === 'number' && turnStartMs > this.turnBoundaryAt) {
+      this.turnBoundaryAt = turnStartMs;
+    }
+  }
 
   setCurModel(model: string): void {
     this.curModel = model;
     this.curModelAt = Date.now();
+    // Pin the FIRST stream ref of the turn as its driver. Later (nested)
+    // setCurModel calls update curModel but leave the pin alone. Without a
+    // turn_start (turnBoundaryAt 0) the very first ref of the session is
+    // pinned; the stale guard in getTurnDriverRef() keeps such a pin from
+    // matching once a real turnStart is passed, so this fails open.
+    if (this.turnDriverAt === 0 || this.turnDriverAt < this.turnBoundaryAt) {
+      this.turnDriverRef = model;
+      this.turnDriverAt = this.curModelAt;
+    }
+  }
+
+  /**
+   * Carries the current turn's driving ref across a Router REPLACEMENT
+   * (index.ts load() swaps in a new Router when the dynamic config is
+   * regenerated). Without this the pin would be lost mid-turn and the
+   * expensive-model read block would silently un-protect the rest of the
+   * turn. A no-op for an empty ref (nothing to carry).
+   */
+  adoptTurnDriverRef(ref: string): void {
+    if (!ref) return;
+    this.turnDriverRef = ref;
+    this.turnDriverAt = Date.now();
+  }
+
+  /**
+   * The turn's driving ref — the model the turn is actually driven by,
+   * immune to nested delegation streams overwriting the current ref.
+   * With turnStartMs: '' when the pin predates the turn (nothing has
+   * streamed yet this turn, or the Router was replaced mid-turn), which
+   * callers must treat as "unknown" and fail open on. Without
+   * turnStartMs: the last pinned ref.
+   */
+  getTurnDriverRef(turnStartMs?: number): string {
+    if (typeof turnStartMs === 'number' && turnStartMs > 0 && this.turnDriverAt < turnStartMs) {
+      return '';
+    }
+    return this.turnDriverRef;
   }
 
   /**

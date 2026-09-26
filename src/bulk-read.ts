@@ -119,6 +119,29 @@ export function isExpensiveModelRef(
 }
 
 /**
+ * Resolves the ref the read block should judge the caller by, in priority
+ * order:
+ *   1. the turn's PINNED driving ref (Router.getTurnDriverRef) — immune to
+ *      nested delegation streams overwriting the live ref mid-turn,
+ *   2. the live stream ref (Router.getCurModel), subject to its stale guard,
+ *   3. the session ref (model_select / turn_start) for fixed sessions that
+ *      never routed.
+ * Any step may be empty (''); the result is then the next fallback, and ''
+ * overall means "unknown caller" — checkReadBlock then applies size-only
+ * blocking (fail-open).
+ *
+ * Extracted from the index.ts tool_call hook so the wiring is unit-testable
+ * without booting the whole extension; the hook calls it verbatim.
+ */
+export function resolveReadBlockStreamRef(
+  router: { getTurnDriverRef(turnStartMs?: number): string; getCurModel(turnStartMs?: number): string },
+  turnStartMs: number,
+  sessionRef: string
+): string {
+  return router.getTurnDriverRef(turnStartMs) || router.getCurModel(turnStartMs) || sessionRef;
+}
+
+/**
  * Pre-call block for full-file reads (tool_call handler in index.ts).
  * Returns { block, reason } when the read should be shunted to bulk_read /
  * a targeted read; undefined when it passes.

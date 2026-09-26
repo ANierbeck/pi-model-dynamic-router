@@ -143,6 +143,13 @@ describe('filterModelsForGroup', () => {
     { ref: 'payg/expensive', gdpval: 800, cost: 20, price: { input: 20, output: 20 }, isFreeModel: false },
     { ref: 'payg/free', gdpval: 400, cost: 0, price: { input: 0, output: 0 }, isFreeModel: true },
     { ref: 'sub/subscribed', gdpval: 900, cost: 'unknown', price: null, isFreeModel: false },
+    // Local daemon model: $0 variable cost, but PROVIDER_MAP labels ollama
+    // `billing: 'subscription'` — the SAME label a real cloud subscription
+    // model carries. isFreeModel stays false here (buildModelsWithMetadata
+    // only sets it for token-based $0 models, and ollama is not token-based),
+    // so the max_cost=0 gate must recognise "local" by provider, not by
+    // billing label.
+    { ref: 'ollama/qwen:8b', gdpval: 250, cost: 0, price: null, isFreeModel: false },
   ];
 
   it('applies min_gdpval as a floor', () => {
@@ -155,14 +162,34 @@ describe('filterModelsForGroup', () => {
     const g: Group = { method: 'best', max_cost_per_m: 5 };
     const filtered = filterModelsForGroup(models, g, baseCfg);
     const refs = filtered.map((m) => m.ref).sort();
-    expect(refs).toEqual(['payg/cheap', 'payg/free', 'sub/subscribed']);
+    // ollama/qwen:8b passes as a non-token-based provider (`!isTokenBased`
+    // → pass) — unchanged by this fix; it is listed here because the local
+    // fixture is shared across this describe block.
+    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free', 'sub/subscribed']);
     expect(refs).not.toContain('payg/expensive');
   });
 
-  it('applies max_cost=0: only genuinely free token-based models survive', () => {
+  it('applies max_cost=0: free token-based AND local $0 models survive, cloud subscription stays out', () => {
+    // Regression (2026-09-26): the gate was `isFreeModel && isTokenBased`,
+    // which excluded local daemon models entirely. Because the materialized
+    // `models` list is a hard allow-list at resolve time, a newly scanned
+    // local model could never enter trivial/simple/scout/fallback — even
+    // though those groups are configured billing_preference: "strict_local"
+    // ("local daemon first"). Local models cost $0 variable, so they belong
+    // in a $0 group.
+    //
+    // The A1 note (index.ts) requires cloud subscription models that cost
+    // real money to STAY excluded. The billing label cannot discriminate
+    // (PROVIDER_MAP bills ollama as 'subscription' too) and neither can
+    // effCost — verified: effCost('ollama/qwen:8b') === 0 AND
+    // effCost('mistral/mistral-medium-3.5') === 0 (a subscription provider
+    // with no registry price resolves to 0). Only the provider-level
+    // PROVIDER_MAP[prov].local flag separates them.
     const g: Group = { method: 'best', max_cost: 0 };
     const filtered = filterModelsForGroup(models, g, baseCfg);
-    expect(filtered.map((m) => m.ref)).toEqual(['payg/free']);
+    expect(filtered.map((m) => m.ref).sort()).toEqual(['ollama/qwen:8b', 'payg/free']);
+    // Cloud subscription model (real money) must stay out.
+    expect(filtered.map((m) => m.ref)).not.toContain('sub/subscribed');
   });
 
   it('applies max_cost>0: free passes, paid under budget passes, paid over budget drops', () => {
@@ -174,7 +201,9 @@ describe('filterModelsForGroup', () => {
     const g: Group = { method: 'best', max_cost: 2 };
     const filtered = filterModelsForGroup(models, g, baseCfg);
     const refs = filtered.map((m) => m.ref).sort();
-    expect(refs).toEqual(['payg/cheap', 'payg/free']);
+    // ollama/qwen:8b (cost 0) was already admitted here before the max_cost=0
+    // fix — cost 0 <= 2. Listed because the fixture is shared.
+    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free']);
   });
 
   it('drops paid models with unknown price under max_cost_per_m', () => {
@@ -294,6 +323,21 @@ describe('collectGroupModels', () => {
     const g: Group = { method: 'best', models: ['payg/pricey', 'payg/free'], max_cost: 0 };
     const result = collectGroupModels(g, [], [], cfg, new Set(['payg/free']));
     expect(result).toEqual(['payg/free']);
+  });
+
+  it('max_cost=0: a hand-curated LOCAL model survives, a hand-curated cloud subscription model does not', () => {
+    // The persist-path twin of the filterModelsForGroup regression: the
+    // static-model loop has its own max_cost=0 branch, and it must apply
+    // the same "local $0 is admitted" rule — otherwise a hand-curated
+    // ollama entry in a cheap group is silently dropped at persist time.
+    setGdpval({ 'qwen:8b': 600, 'mistral-medium-3.5': 600 });
+    const g: Group = {
+      method: 'tiered',
+      models: ['ollama/qwen:8b', 'mistral/mistral-medium-3.5'],
+      max_cost: 0,
+    };
+    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    expect(result).toEqual(['ollama/qwen:8b']);
   });
 
   it('returns an empty array when no static or dynamic candidates qualify', () => {

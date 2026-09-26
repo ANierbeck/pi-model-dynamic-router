@@ -112,7 +112,7 @@ let localStreamsInFlight = 0;
 // input field). Re-imported here for index.ts's own use.
 import { routerLog, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
 import { handleReadDelegation, delegationSettings } from './src/delegation.ts';
-import { checkReadBlock, executeBulkRead } from './src/bulk-read.ts';
+import { checkReadBlock, executeBulkRead, resolveReadBlockStreamRef } from './src/bulk-read.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 
 const defaultExport = function (pi: ExtensionAPI) {
@@ -1040,13 +1040,21 @@ let previousTokenCount = 0;
         // (Router.getTopModels) share the method-independent filters via
         // applyGroupFilters() in routing.ts. This persist path does NOT use
         // that helper, DELIBERATELY: its max_cost/max_cost_per_m semantics
-        // diverge (max_cost=0 groups admit ONLY genuine $0 token-based free
-        // models, excluding subscription models that cost real money; the
-        // live path instead treats max_cost=0 like max_cost=N and keeps
-        // unknown-cost subscription/local). Consolidating would break the
-        // trivial/simple groups' free-only guarantee. Only min_gdpval and
-        // the group-level exclude_providers/exclude_models (applied earlier
+        // diverge (max_cost=0 groups admit genuine $0 models — free
+        // token-based ones AND local daemon models like ollama/lm-studio,
+        // which cost $0 variable — but exclude subscription models that cost
+        // real money; the live path instead treats max_cost=0 like max_cost=N
+        // and keeps unknown-cost subscription/local). Consolidating would
+        // break the trivial/simple groups' free-only guarantee. Only min_gdpval
+        // and the group-level exclude_providers/exclude_models (applied earlier
         // via the global staticCfg.exclude) are shared in spirit.
+        //
+        // Local admission is by PROVIDER_MAP[prov].local, never by the billing
+        // label: ollama is labelled 'subscription' in PROVIDER_MAP, exactly
+        // like cloud providers that bill real money, and effCost() returns 0
+        // for both — so neither the label nor the cost can separate them.
+        // See admitsZeroCostGroup() in dynamic-config.ts for the full rule
+        // and the fail-open direction (unknown provider → excluded).
         let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, cfg);
         
         // 7. Sortierung basierend auf Gruppen-Methode
@@ -1116,7 +1124,15 @@ let previousTokenCount = 0;
         delete (dynamicConfig as Config).delegation;
       }
       cfg = dynamicConfig as Config;
+      // A mid-turn scan (a tool calling load()) replaces the Router, which
+      // would drop both curModel and the turn's pinned driving ref — leaving
+      // the expensive-model read block un-protected for the rest of the turn.
+      // Carry the pin (and the turn boundary) over to the new instance.
+      const carriedTurnDriver = router.getTurnDriverRef(turnStart);
+      const carriedTurnBoundary = turnStart;
       router = new Router(cfg, cache, rateLimitManager.getLimits());
+      if (carriedTurnBoundary > 0) router.noteTurnStart(carriedTurnBoundary);
+      router.adoptTurnDriverRef(carriedTurnDriver);
       // streamOrchestrator.ctx.router is now a live getter (see
       // buildOrchestratorContext) that always reads this module-level `router`
       // binding, so no explicit resync is needed here anymore — and assigning
@@ -1585,6 +1601,10 @@ let previousTokenCount = 0;
   });
   pi.on('turn_start', async (_ev, ctx) => {
     turnStart = Date.now();
+    // Mark the turn boundary on the router so the first setCurModel() of
+    // this turn re-pins the driving ref (a nested delegation stream must
+    // not be able to overwrite the pin — see Router.noteTurnStart).
+    router.noteTurnStart(turnStart);
     if (ctx.model) curModel = `${ctx.model.provider}/${ctx.model.id}`;
   });
 
@@ -1639,7 +1659,13 @@ let previousTokenCount = 0;
     // (set by the stream orchestrator for THIS turn) — not the session's
     // group provider. A fixed-session model that never routed falls back
     // to the session ref (model_select/turn_start).
-    const streamRef = router.getCurModel(turnStart) || curModel;
+    //
+    // resolveReadBlockStreamRef prefers the turn's PINNED driving ref over
+    // the live ref: a nested bulk_reader delegation stream sets the live ref
+    // to a cheap ref mid-turn, after which the live ref alone would let the
+    // expensive model's own full-file reads pass the block. Both fall back to
+    // the session ref; '' (nothing pinned/stale) fails open to size-only.
+    const streamRef = resolveReadBlockStreamRef(router, turnStart, curModel);
     const block = checkReadBlock(ev, cfg, streamRef);
     if (block) {
       routerLog(

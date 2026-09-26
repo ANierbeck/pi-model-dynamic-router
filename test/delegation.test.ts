@@ -598,3 +598,165 @@ describe('default export wiring: tool_result returns the delegation replacement'
     }
   });
 });
+
+// The tool_call hook (index.ts) composes the ref it judges the caller by:
+//   resolveReadBlockStreamRef(router, turnStart, curModel)
+// = pinned driving ref → live stream ref → session ref. It had NO coverage
+// before this test. Booting the real extension and invoking the captured
+// handler pins the wiring (turn_start → curModel, checkReadBlock, the
+// block/pass decisions) — not the module logic, which the unit tests cover.
+describe('default export wiring: tool_call pre-call read block', () => {
+  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const dynamicConfigPath = path.join(repoRoot, 'router-config.dynamic.json');
+  const scanCachePath = path.join(repoRoot, '.cache', 'scan-cache.json');
+
+  const KNOWN_MODEL = {
+    provider: 'mistral',
+    id: 'mistral-medium-3.5',
+    api: 'openai-completions',
+    contextWindow: 128_000,
+    cost: { input: 0.4, output: 1.2, cacheRead: 0.04, cacheWrite: 0 },
+  };
+
+  /**
+   * Boots the extension in an isolated CWD with the given config, runs
+   * session_start, and returns the captured handlers plus the tmp dir.
+   * Caller is responsible for the finally-block cleanup.
+   */
+  async function bootWithConfig(config: Record<string, unknown>) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-read-block-'));
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(config));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+    const dynBak = `${dynamicConfigPath}.readblock-bak`;
+    await acquireRouterStateLock();
+    const hadDyn = fs.existsSync(dynamicConfigPath);
+    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+    writeNoOpScanCache(scanCachePath);
+
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+      const registryOf = (models: any[]) => ({
+        getAvailable: () => models,
+        getRegisteredProviderIds: () => [] as string[],
+        find: (provider: string, modelId: string) =>
+          models.find((m) => m.provider === provider && m.id === modelId) ?? null,
+        getApiKeyForProvider: async () => 'test-key',
+        runtime: { streamSimple: vi.fn() },
+      });
+      const pi: any = {
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn((event: string, handler: any) => {
+          onHandlers[event] = handler;
+        }),
+      };
+      (mod.default as any)(pi);
+
+      const sessionCtx = {
+        modelRegistry: registryOf([KNOWN_MODEL]),
+        cwd: tmpDir,
+        ui: { setFooter: vi.fn() },
+      };
+      await onHandlers['session_start']?.({}, sessionCtx);
+      await flushBackgroundScan();
+
+      return {
+        onHandlers,
+        tmpDir,
+        cleanup() {
+          cwdSpy.mockRestore();
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+          if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+          removeNoOpScanCache(scanCachePath);
+          releaseRouterStateLock();
+        },
+      };
+    } catch (err) {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+      removeNoOpScanCache(scanCachePath);
+      releaseRouterStateLock();
+      throw err;
+    }
+  }
+
+  const baseConfig = {
+    free_models: [],
+    providers: {},
+    model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+    delegation: { enabled: true, block_lines: 350, expensive_providers: ['pi-claude'] },
+  };
+
+  function writeFiles(dir: string): { small: string; large: string } {
+    const small = path.join(dir, 'small.ts');
+    const large = path.join(dir, 'large.ts');
+    fs.writeFileSync(small, Array.from({ length: 20 }, (_, i) => `// line ${i + 1}`).join('\n'));
+    fs.writeFileSync(large, Array.from({ length: 800 }, (_, i) => `// line ${i + 1}`).join('\n'));
+    return { small, large };
+  }
+
+  it('blocks a full-file read by an expensive session model (expensive_providers)', async () => {
+    const boot = await bootWithConfig(baseConfig);
+    try {
+      const { small } = writeFiles(boot.tmpDir);
+      // turn_start is what sets turnStart and the session ref the hook
+      // falls back to when nothing has streamed yet.
+      await boot.onHandlers['turn_start']?.({}, {
+        model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
+      });
+
+      const out = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } });
+      expect(out).toBeDefined();
+      expect(out.expensive).toBe(true);
+      expect(out.reason).toContain('expensive models');
+    } finally {
+      boot.cleanup();
+    }
+  });
+
+  it('stale/unpinned ref: a cheap session model falls through to size-only blocking', async () => {
+    const boot = await bootWithConfig(baseConfig);
+    try {
+      const { small, large } = writeFiles(boot.tmpDir);
+      // Nothing streamed yet this turn → both the pinned and the live ref
+      // are empty, so the hook resolves the cheap session ref. The
+      // 20-line file is far below block_lines → passes.
+      await boot.onHandlers['turn_start']?.({}, {
+        model: { provider: 'mistral', id: 'mistral-medium-3.5' },
+      });
+
+      expect(boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } })).toBeUndefined();
+      // The 800-line file still hits the size block (not the expensive one).
+      const big = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: large } });
+      expect(big).toBeDefined();
+      expect(big.expensive).toBeUndefined();
+      expect(big.reason).toContain('800 lines');
+    } finally {
+      boot.cleanup();
+    }
+  });
+
+  it('targeted reads are never blocked, even for an expensive session model', async () => {
+    const boot = await bootWithConfig(baseConfig);
+    try {
+      const { large } = writeFiles(boot.tmpDir);
+      await boot.onHandlers['turn_start']?.({}, {
+        model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
+      });
+
+      expect(
+        boot.onHandlers['tool_call']({ toolName: 'read', input: { path: large, offset: 1, limit: 50 } })
+      ).toBeUndefined();
+    } finally {
+      boot.cleanup();
+    }
+  });
+
+});

@@ -96,6 +96,33 @@ export function buildModelsWithMetadata(
     });
 }
 
+/**
+ * Whether a model may enter a `max_cost: 0` group ("costs nothing per call").
+ *
+ * Two disjoint admissions:
+ *   1. LOCAL daemon models (PROVIDER_MAP[prov].local — ollama, lm-studio):
+ *      $0 variable cost, so they belong in a $0 group. Admitted by PROVIDER
+ *      DEFINITION, not by cost: PROVIDER_MAP bills ollama as 'subscription',
+ *      and `effCost` returns 0 for BOTH an ollama ref and a real cloud
+ *      subscription ref (verified: a subscription provider with no registry
+ *      price resolves to 0 via resolveCostPerM step 3), so neither the billing
+ *      label nor the effective cost can tell the two apart. Only the
+ *      provider-level `local` flag does.
+ *   2. Genuinely free TOKEN-BASED models (:free tags, free_models lists):
+ *      admitted only when the provider is pay_per_token, which is what keeps
+ *      the "real money" subscription models out (A1 invariant).
+ *
+ * Fail-open is deliberately NOT applied here: an unknown provider is treated
+ * as neither local nor free, so it stays out of the $0 groups. That is the
+ * conservative direction — a $0 group must never admit a model that might
+ * bill money.
+ */
+function admitsZeroCostGroup(ref: string, isFreeModel: boolean, isTokenBased: boolean): boolean {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local) return true;
+  return isFreeModel && isTokenBased;
+}
+
 /** Applies a group's min_gdpval / max_cost_per_m / max_cost gates to the scored candidate pool. */
 /**
  * Collapses same-provider slug clusters to their canonical representative —
@@ -162,7 +189,7 @@ export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: G
       const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
 
       if (groupConfig.max_cost === 0) {
-        return m.isFreeModel && isTokenBased;
+        return admitsZeroCostGroup(m.ref, m.isFreeModel, isTokenBased);
       }
 
       if (m.isFreeModel) return true;
@@ -306,7 +333,7 @@ export function collectGroupModels(
     }
     if (groupConfig.max_cost !== undefined) {
       if (groupConfig.max_cost === 0) {
-        if (!(isFree && isTokenBased)) continue;
+        if (!admitsZeroCostGroup(origModel, isFree, isTokenBased)) continue;
       } else {
         if (isFree && isTokenBased) {
           // ok
