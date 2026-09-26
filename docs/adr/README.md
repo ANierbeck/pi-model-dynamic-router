@@ -38,3 +38,9 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0007 — Task decomposition and delegation](0007-task-decomposition-and-delegation.md)
 - [0008 — Learned model blocklist (auto-block from observed permanent failures)](0008-learned-model-blocklist.md)
 - [0009 — Union-merge for `exclude.*` arrays; bundled classifier model as source of truth](0009-exclude-union-merge-and-config-classifier-model.md)
+- [0010 — Two group-filter pipelines (persist vs live): current state and divergences](0010-two-group-filter-pipelines.md) *(proposed)*
+- [0011 — Registry-first pricing, the free definition, and unknown-cost semantics](0011-registry-first-pricing-and-cost-semantics.md)
+- [0012 — Model identity: slug resolution tiers and canonical cluster dedup](0012-model-identity-slug-resolution-and-dedup.md)
+- [0013 — Failure classification and failover in stream orchestration](0013-failure-classification-and-failover.md)
+- [0014 — HINT is the user's channel, MHINT is the router's; narration never feeds classification](0014-hint-channel-and-narration-hygiene.md)
+- [0015 — Test architecture: regression-first suite, shared-state lock, home isolation](0015-test-architecture.md)
