@@ -46,6 +46,9 @@ export function writeNoOpScanCache(scanCachePath: string): void {
       // affecting routing (tests set up their own candidates via
       // router-config + modelRegistry stubs, not via available_models).
       available_models: [{ id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 }],
+      // No router-config.dynamic.json belongs to this fixture: without this,
+      // the missing file would trigger a regeneration mid-test.
+      dynamic_config_expected: false,
       gdpval_scores: {},
     })
   );

@@ -903,9 +903,20 @@ let previousTokenCount = 0;
       // Always regenerate if cache is invalid or force is true.
       const hasNewRegistryRefs = false;
 
-      if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid()) {
+      // lastScanTimestamp is only set after a dynamic config was written, so a
+      // valid cache with no config file means the file was lost (e.g. dist/
+      // was recreated) — regenerate instead of running on the static config
+      // for up to 30 days. `dynamic_config_expected: false` marks caches that
+      // never had one (test fixtures).
+      const dynamicConfigMissing =
+        !fs.existsSync(path.join(stateDir, 'router-config.dynamic.json')) &&
+        cacheManager.getCache().dynamic_config_expected !== false;
+      if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid() && !dynamicConfigMissing) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
+      }
+      if (!force && dynamicConfigMissing && cacheManager.isScanCacheValid()) {
+        routerLog('[router] Scan cache is valid but router-config.dynamic.json is missing — regenerating it');
       }
       
       // 1. Get all available models (from cache)
