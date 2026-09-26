@@ -11,7 +11,7 @@
 //   1. model-map lookup (exact, wildcard, null exclusion, provider-prefix strip)
 //   2. GDPval lookup (map → token-set → self-heal from cache)
 //   3. gdpval_builtin overrides vs scraped scores
-//   4. Router.allDiscoveredRefs + getTopModels honour exclude rules
+//   4. (exclude rules — moved to routing-exclude.test.ts)
 //   5. The GLM-5-2 regression end-to-end (the bug that motivated all this)
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -19,7 +19,6 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { Router } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
-import { isExcluded } from '../src/exclude.js';
 import type { Config, Cache } from '../src/types.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -115,72 +114,11 @@ describe('golden master: gdpval_builtin overrides', () => {
   });
 });
 
-// ── 4. Exclude rules (live table filtering) ───────────────────────────────
-
-describe('golden master: exclude rules in allDiscoveredRefs', () => {
-  const cache: Cache = {
-    available_models: [
-      { id: 'glm-5-2', provider: 'mistral', cost_per_m: 0 },
-      { id: 'anthropic/claude-opus-5', provider: 'openrouter', cost_per_m: 5 },
-      { id: 'anthropic/claude-fable-5', provider: 'openrouter', cost_per_m: 10 },
-      { id: 'qwen3-4b:free', provider: 'openrouter', cost_per_m: 0 },
-      { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-    ],
-  };
-  const baseCfg: Config = {
-    model_groups: { strategic: { method: 'best', min_gdpval: 0 }, scout: { method: 'tiered', min_gdpval: 0 } },
-    model_metrics: {},
-  };
-
-  function makeRouter(exclude: Config['exclude']): Router {
-    const cfg: Config = { ...baseCfg, exclude };
-    metricsModule.setConfig(cfg);
-    metricsModule.setCache(cache);
-    metricsModule.loadModelMap(EXT_DIR);
-    return new Router(cfg, cache, new Map());
-  }
-
-  it('no exclude → all refs returned', () => {
-    const refs = makeRouter(undefined).allDiscoveredRefs();
-    expect(refs).toContain('mistral/glm-5-2');
-    expect(refs).toContain('openrouter/anthropic/claude-opus-5');
-    expect(refs).toContain('openrouter/anthropic/claude-fable-5');
-  });
-
-  it('exclude.providers drops a whole provider', () => {
-    const refs = makeRouter({ providers: ['openrouter'] }).allDiscoveredRefs();
-    expect(refs.filter((r) => r.startsWith('openrouter/'))).toEqual([]);
-    expect(refs).toContain('mistral/glm-5-2');
-  });
-
-  it('exclude.models glob drops matching models', () => {
-    const refs = makeRouter({ models: ['*fable*'] }).allDiscoveredRefs();
-    expect(refs).not.toContain('openrouter/anthropic/claude-fable-5');
-    expect(refs).toContain('openrouter/anthropic/claude-opus-5');
-  });
-
-  it('paid_models_from keeps :free tier, drops paid', () => {
-    const cfg: Config = {
-      ...baseCfg,
-      providers: {
-        openrouter: {
-          billing: 'pay_per_token',
-          free_models: ['openrouter/qwen3-4b:free'],
-        },
-      },
-      exclude: { paid_models_from: ['openrouter'] },
-    };
-    metricsModule.setConfig(cfg);
-    metricsModule.setCache(cache);
-    metricsModule.loadModelMap(EXT_DIR);
-    const router = new Router(cfg, cache, new Map());
-    const refs = router.allDiscoveredRefs();
-    expect(refs).not.toContain('openrouter/anthropic/claude-opus-5');
-    expect(refs).not.toContain('openrouter/anthropic/claude-fable-5');
-    expect(refs).toContain('openrouter/qwen3-4b:free');
-    expect(refs).toContain('mistral/glm-5-2');
-  });
-});
+// ── 4. Exclude rules ──────────────────────────────────────────────────────
+// NOTE (consolidation 2026-09-26): the four allDiscoveredRefs exclude tests
+// (none / providers / models glob / paid_models_from) duplicated
+// routing-exclude.test.ts, which covers the same cases plus combined rules
+// and free_models discovery. Removed here.
 
 // ── 5. GLM-5-2 end-to-end regression ──────────────────────────────────────
 // Self-contained fixture (cache/cfg built inline below) plus the real

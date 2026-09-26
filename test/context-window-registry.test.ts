@@ -127,4 +127,13 @@ describe('lookupContextWindow: registry-first (PR #1 Sourcery findings 1–4)', 
     });
     expect(lookupContextWindow('odd/odd-model')).toBe(32_768);
   });
+
+  it('returns null for a scanned model without capabilities (known model, unknown window)', () => {
+    setModelRegistry(registryWith([]));
+    setCache({
+      available_models: [{ provider: 'openrouter', id: 'unknown-ctx-model', cost_per_m: 0 }],
+      gdpval_scores: {},
+    });
+    expect(lookupContextWindow('openrouter/unknown-ctx-model')).toBe(null);
+  });
 });

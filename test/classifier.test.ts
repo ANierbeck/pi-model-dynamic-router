@@ -182,5 +182,19 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.category).toBe("fallback");
       expect(result.reason).toContain("Could not classify");
     });
+
+    it.each([
+      ["what is in this file?", "trivial", "trivial"],
+      ["please explain this briefly", "simple", "Simple question"],
+      ["fix the typo in the import line of that code file", "code_simple", ""],
+      ["refactor the whole parser for edge cases", "code_complex", "Complex code task"],
+      ["plan the roadmap for next quarter", "planning", ""],
+      ["brainstorm some ideas for the launch", "exploration", ""],
+      ["xqzwk unrelated gibberish", "fallback", "Could not classify"],
+    ])("alternate phrasing %j → %s", (prompt, category, reason) => {
+      const result = classifyStatically(prompt);
+      expect(result.category).toBe(category);
+      expect(result.reason).toContain(reason);
+    });
   });
 });

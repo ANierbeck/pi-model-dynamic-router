@@ -63,6 +63,26 @@ describe('extractCapabilities — OpenRouter shape', () => {
     });
     expect(c?.vision).toBe(true);
     expect(c?.reasoning).toBe(false);
+    expect(c?.contextWindow).toBe(131072);
+  });
+
+  // Null-fails contract: an unknown context window must NOT pass
+  // min_context_length (regression: bulk_reader/code_writer showed only
+  // Mistral models because OpenRouter entries had no contextWindow).
+  it('leaves contextWindow undefined when context_length is missing', () => {
+    const c = extractCapabilities('openrouter', { id: 'some/model-no-ctx', architecture: { input_modalities: ['text'] } });
+    expect(c).toBeDefined();
+    expect(c!.contextWindow).toBeUndefined();
+  });
+
+  it('leaves contextWindow undefined when context_length is not a number', () => {
+    const c = extractCapabilities('openrouter', {
+      id: 'some/model-bad-ctx',
+      architecture: { input_modalities: ['text'] },
+      context_length: '131072',
+    });
+    expect(c).toBeDefined();
+    expect(c!.contextWindow).toBeUndefined();
   });
 });
 

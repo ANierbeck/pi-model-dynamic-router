@@ -42,13 +42,23 @@ describe('detectHintDirectly()', () => {
       expect(r).not.toBeNull();
       expect(r?.hintType).toBe('model');
       expect(r?.hintTarget).toBe('mistral-zai/glm-5-2');
+      // German verb, model name containing a colon, trailing prose
+      expect(detectHintDirectly('HINT nutze gemma4:12b-mlx bitte weiter')?.hintTarget).toBe('gemma4:12b-mlx');
     });
 
     it('still recognizes HINT with a colon (unchanged)', () => {
-      const r = detectHintDirectly('HINT: use mistral-medium-3.5');
-      expect(r).not.toBeNull();
-      expect(r?.hintType).toBe('model');
-      expect(r?.hintTarget).toBe('mistral-medium-3.5');
+      expect(detectHintDirectly('HINT: use mistral-medium-3.5')).toEqual({
+        reason: 'User specified model via HINT',
+        confidence: 1.0,
+        hintType: 'model',
+        hintTarget: 'mistral-medium-3.5',
+      });
+      expect(detectHintDirectly('HINT: verwende Gruppe Tactical')).toEqual({
+        reason: 'User specified group via HINT',
+        confidence: 1.0,
+        hintType: 'group',
+        hintTarget: 'tactical',
+      });
     });
 
     it('does NOT match the word "hint" in natural prose (false-positive guard)', () => {
@@ -317,31 +327,8 @@ describe('HINT Classification', () => {
   });
 });
 
+// Exact, not-found and already-qualified cases live in hint-normalization.test.ts.
 describe('resolveShortModelName()', () => {
-  // resolveShortModelName takes a flat list of discovered refs (router.allDiscoveredRefs()),
-  // not a model-groups object — group membership is resolved upstream by the caller.
-  const allRefs = [
-    'mistral/mistral-medium-3.5',
-    'chutes/Qwen/Qwen3-32B-TEE',
-    'anthropic/claude-3-sonnet',
-    'openrouter/meta-llama/llama-3.1-70b',
-  ];
-
-  it('resolves short name to fully-qualified ref via endsWith match', () => {
-    const result = resolveShortModelName('mistral-medium-3.5', allRefs);
-    expect(result).toBe('mistral/mistral-medium-3.5');
-  });
-
-  it('returns already-qualified ref unchanged', () => {
-    const result = resolveShortModelName('mistral/mistral-medium-3.5', allRefs);
-    expect(result).toBe('mistral/mistral-medium-3.5');
-  });
-
-  it('returns null when short name is not found in any group', () => {
-    const result = resolveShortModelName('typo-model-name', allRefs);
-    expect(result).toBeNull();
-  });
-
   it('stops at first match (break-on-first-match behavior)', () => {
     // Array.prototype.find() returns the first match in iteration order — intentional.
     const refs = ['providerA/same-model', 'providerB/same-model'];
@@ -401,18 +388,7 @@ describe('compaction model-continuity hint', () => {
     expect(result).toMatchObject({ category: 'code_complex' });
   });
 
-  it('still routes small local models to strategic during compaction, regardless of cooldown', async () => {
-    const result = await classifyPrompt('summarize the conversation', {
-      context: {
-        isCompaction: true,
-        lastModel: 'ollama/gemma4:12b',
-        lastModelLimited: false,
-      },
-    });
-    expect('hintType' in result).toBe(false);
-    expect(result).toMatchObject({ category: 'code_complex' });
-  });
-
+  // Small-local → strategic during compaction: see compaction-context.test.ts.
   it('an explicit user "HINT: <model>" prefix is not tagged as auto', () => {
     const r = detectHintDirectly('HINT: mistral-medium-3.5');
     expect(r?.origin).not.toBe('auto');

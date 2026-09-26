@@ -58,17 +58,12 @@ describe('matchSlug: -latest resolves to the NEWEST version of the family', () =
   });
 });
 
+// YYMM (mistral-medium-2604), multi-version dated (mistral-small-2603) and
+// codestral-latest exact-slug cases run in slug-matcher.test.ts against the
+// full GDPval slug list (more distractors).
 describe('matchSlug: dated snapshots resolve as version-less aliases', () => {
-  it('YYMM form: mistral-medium-2604 → mistral-medium-3-5', () => {
-    expect(matchSlug('mistral/mistral-medium-2604', MISTRAL_FAMILY_SLUGS)).toBe('mistral-medium-3-5');
-  });
-
   it('MMDD form: mistral-medium-0426 → mistral-medium-3-5', () => {
     expect(matchSlug('mistral/mistral-medium-0426', MISTRAL_FAMILY_SLUGS)).toBe('mistral-medium-3-5');
-  });
-
-  it('dated snapshot in a multi-version family picks the newest (mistral-small-2603 → 3-2)', () => {
-    expect(matchSlug('mistral/mistral-small-2603', MISTRAL_FAMILY_SLUGS)).toBe('mistral-small-3-2');
   });
 
   it('MMDD form with leading zero (deepseek-r1-0528) is date-like, not a version', () => {
@@ -103,10 +98,6 @@ describe('matchSlug: regressions — exact and major-checked matches unchanged',
 
   it('parameter counts are not date-marked (gemma3-12b keeps version semantics)', () => {
     expect(matchSlug('ollama/gemma3-12b', ['gemma3-12b', 'gemma3-27b'])).toBe('gemma3-12b');
-  });
-
-  it('codestral-latest exact slug still wins (Stage 3 before exclusion)', () => {
-    expect(matchSlug('mistral/codestral-latest', MISTRAL_FAMILY_SLUGS)).toBe('codestral-latest');
   });
 });
 

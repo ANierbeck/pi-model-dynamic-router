@@ -1,5 +1,6 @@
 /**
  * Regression tests for the model-hint marker collision (2026-09-20).
+ * Plain HINT: parsing is covered in hint-classification.test.ts.
  *
  * The user's reserved channel to the router is "HINT:" — but the router's
  * OWN model narration used the same literal ("HINT: <model>"), so quoted
@@ -13,32 +14,6 @@
  */
 import { describe, it, expect } from 'vitest';
 import { detectHintDirectly } from '../src/content-classifier.ts';
-
-describe('detectHintDirectly: HINT stays the user channel', () => {
-  it('recognizes a plain model HINT exactly as before', () => {
-    const r = detectHintDirectly('HINT: use mistral-medium-3.5');
-    expect(r?.hintType).toBe('model');
-    expect(r?.hintTarget).toBe('mistral-medium-3.5');
-  });
-
-  it('recognizes a bare model HINT without a verb', () => {
-    const r = detectHintDirectly('HINT: zai-glm-5-3');
-    expect(r?.hintType).toBe('model');
-    expect(r?.hintTarget).toBe('zai-glm-5-3');
-  });
-
-  it('still recognizes group hints', () => {
-    const r = detectHintDirectly('HINT: use group tactical');
-    expect(r?.hintType).toBe('group');
-    expect(r?.hintTarget).toBe('tactical');
-  });
-
-  it('still recognizes the colon-less "HINT use <model>" form', () => {
-    const r = detectHintDirectly('HINT use mistral-medium-3.5 please proceed');
-    expect(r?.hintType).toBe('model');
-    expect(r?.hintTarget).toBe('mistral-medium-3.5');
-  });
-});
 
 describe('detectHintDirectly: MHINT markers are model hints', () => {
   it('recognizes "MHINT: <model>"', () => {
@@ -70,12 +45,8 @@ describe('detectHintDirectly: MHINT markers are model hints', () => {
     const r = detectHintDirectly('MHINT: tactical');
     expect(r?.hintType).toBe('model');
     expect(r?.hintTarget).toBe('tactical');
-  });
-});
-
-describe('detectHintDirectly: prose safety', () => {
-  it('does not fire on natural prose containing the word hint', () => {
-    expect(detectHintDirectly('can I get a hint about the config?')).toBeNull();
-    expect(detectHintDirectly('a hint: this might be wrong')).toBeNull();
+    // A group verb after MHINT falls through to the LLM classifier (null):
+    // literal extraction would otherwise target "use".
+    expect(detectHintDirectly('MHINT: use group tactical')).toBeNull();
   });
 });
