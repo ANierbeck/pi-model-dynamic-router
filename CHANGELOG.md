@@ -27,6 +27,16 @@
   refs are cached in `cache.classifier_fallback_models` and reused until
   the next `/router` scan.
 
+### Added
+- **`strict_local` billing preference — trivial/simple route local-first.**
+  Both groups were `min_cost_if_all_priced`; even fully priced, $0-ties
+  (subscription = free) fall back to gdpval and the strongest $0 model
+  wins — burning the Claude subscription time limit on throwaway prompts
+  (live finding, 2026-09-26). The new `billing_preference: "strict_local"`
+  (method `tiered`) sorts local daemon (Ollama) → free → subscription →
+  payg, so a trivial prompt now hits the local daemon first (best latency,
+  no quota burn). trivial/simple in router-config.json switched to it.
+
 ### Fixed
 - **The 1.5.4 router-narration lock-in fix was incomplete.** It only stripped
   `> [router] ...` lines inside `extractLastAssistantSnippet()` (the "Last
@@ -69,6 +79,18 @@
   next candidate. Also fixes pinned-model ordering: a pinned ref already
   in the probe-verified list now moves to position 0 instead of being
   silently ignored (the documented tried-FIRST contract).
+- **One unpriced candidate flipped whole cheap groups to "strongest
+  model first"** (live /router scan finding, 2026-09-26).
+  `sortByMinCostIfAllPriced` sorted the ENTIRE list by gdpval as soon as
+  ONE model had `unknown` effCost — putting pi-claude/claude-sonnet-5
+  (gdpval 1603) on rank 1 of the trivial group. Unknown-cost models now
+  sort to the END while priced models keep their cost ordering, and the
+  /router scan logs which refs are unpriced (diagnostic, so pricing can
+  be added or the model excluded).
+- **Escalation LLM loop detection spammed "fetch failed" with a stopped
+  Ollama daemon.** `detectLoopWithLLM` now guards with `isOllamaAvailable`
+  (the classifier's 1.5s-cap / 15s-negative-cache probe) and falls back
+  to the rule-based path without fetch noise.
 
 ## [1.5.4] — 2026-09-18 — Fix router-narration lock-in loop
 

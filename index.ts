@@ -896,6 +896,20 @@ let previousTokenCount = 0;
         return;
       }
 
+      // 2b2. Diagnostics (2026-09-26): surface unpriced models. An 'unknown'
+      // effCost can no longer flip min_cost_if_all_priced groups onto
+      // best-gdpval ordering (sortByMinCostIfAllPriced fix), but unpriced
+      // models still weaken cost gates and confuse cost-based sorting —
+      // log them so pricing can be added (config, model-map, registry) or
+      // the model excluded.
+      const unknownCostRefs = metricsModule.collectUnknownCostRefs(allModelRefs);
+      if (unknownCostRefs.length) {
+        routerLog(
+          `[scan] ${unknownCostRefs.length} model(s) with unknown cost: ` +
+            `${unknownCostRefs.slice(0, 20).join(', ')}${unknownCostRefs.length > 20 ? ' …' : ''}`
+        );
+      }
+
       // 2c. Apply global exclusion rules (personalized support list).
       // Excludes providers, model patterns, and paid models from certain
       // providers — applying to ALL groups, before scoring.

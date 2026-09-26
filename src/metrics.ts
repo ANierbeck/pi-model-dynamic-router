@@ -940,6 +940,17 @@ export function lookupPrice(ref: string): { input: number | 'unknown'; output: n
  * Calculates the effective cost for a reference
  * Returns 'unknown' if cost cannot be determined
  */
+/**
+ * Diagnostic helper for the /router scan: which of the given refs have
+ * 'unknown' effCost? These are the models that can no longer flip a
+ * min_cost_if_all_priced group (2026-09-26 fix), but an unpriced model is
+ * still a data gap worth surfacing — the scan logs them so the operator
+ * can add pricing (config, model-map, or registry) or exclude them.
+ */
+export function collectUnknownCostRefs(refs: string[]): string[] {
+  return refs.filter((r) => effCost(r) === 'unknown');
+}
+
 export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];

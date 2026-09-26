@@ -19,6 +19,8 @@ const testConfig: Config = {
     'ollama/gemma4:12b-mlx': { gdpval: 460, throughput_tps: 40, avg_latency_ms: 500 },
     'ollama/qwen3-8-27b': { gdpval: 580, throughput_tps: 35, avg_latency_ms: 600 },
     'openai/gpt-4': { gdpval: 980, throughput_tps: 15, avg_latency_ms: 150 },
+    // Free tier-0 fixture for the strict_local ordering tests.
+    'openrouter/ling-3.0-flash-fin:free': { gdpval: 1092, throughput_tps: 100, avg_latency_ms: 1000 },
   },
   providers: {
     mistral: { billing: 'subscription' },
@@ -36,6 +38,11 @@ const cache: Cache = {
     { id: 'gpt-4', provider: 'openai', cost_per_m: 10 },
   ],
 };
+
+// NOTE: 'openrouter/ling-3.0-flash-fin:free' has NO available_models entry
+// and NO registry entry — its tier comes from the :free tag alone
+// (billingTier: ref.includes(':free') → tier 0), and its cost resolves to
+// $0 via the same tag. That mirrors the production free models.
 
 beforeAll(() => {
   metricsModule.setConfig(testConfig);
@@ -64,6 +71,60 @@ describe('sortByBillingPreference — default ordering (free → subscription �
     expect(sorted[0]).toBe('mistral/mistral-medium-latest');
     expect(sorted[1]).toBe('ollama/gemma4:12b-mlx');
     expect(sorted[2]).toBe('openai/gpt-4');
+  });
+});
+
+describe('sortByBillingPreference — strict_local override (local → free → subscription → payg)', () => {
+  // 2026-09-26: trivial/simple groups need LOCAL models first — a cheap
+  // prompt should hit the local Ollama daemon (latency + no quota burn),
+  // then truly-free remote models, and only then subscription models whose
+  // $0 nominal cost hides a hard time/token limit (pi-claude). strict_local
+  // ranks local AHEAD of free — unlike local_first which keeps free on top.
+  const router = new Router(testConfig, cache, new Map());
+
+  it('ranks local (Ollama) AHEAD of free models with strict_local', () => {
+    const sorted = router.sortByBillingPreference(
+      ['openrouter/ling-3.0-flash-fin:free', 'ollama/gemma4:12b-mlx'],
+      'strict_local'
+    );
+    expect(sorted[0]).toBe('ollama/gemma4:12b-mlx');
+    expect(sorted[1]).toBe('openrouter/ling-3.0-flash-fin:free');
+  });
+
+  it('ranks free AHEAD of subscription with strict_local', () => {
+    const sorted = router.sortByBillingPreference(
+      ['mistral/mistral-medium-latest', 'openrouter/ling-3.0-flash-fin:free'],
+      'strict_local'
+    );
+    expect(sorted[0]).toBe('openrouter/ling-3.0-flash-fin:free');
+    expect(sorted[1]).toBe('mistral/mistral-medium-latest');
+  });
+
+  it('full order: local → free → subscription → payg', () => {
+    const sorted = router.sortByBillingPreference(
+      [
+        'openai/gpt-4',
+        'mistral/mistral-medium-latest',
+        'openrouter/ling-3.0-flash-fin:free',
+        'ollama/qwen3-8-27b',
+      ],
+      'strict_local'
+    );
+    expect(sorted).toEqual([
+      'ollama/qwen3-8-27b',
+      'openrouter/ling-3.0-flash-fin:free',
+      'mistral/mistral-medium-latest',
+      'openai/gpt-4',
+    ]);
+  });
+
+  it('higher gdpval still wins within the same tier', () => {
+    const sorted = router.sortByBillingPreference(
+      ['ollama/gemma4:12b-mlx', 'ollama/qwen3-8-27b'],
+      'strict_local'
+    );
+    // Both local; gdpval 580 > 460.
+    expect(sorted).toEqual(['ollama/qwen3-8-27b', 'ollama/gemma4:12b-mlx']);
   });
 });
 

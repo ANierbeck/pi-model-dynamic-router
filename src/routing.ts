@@ -482,15 +482,40 @@ export class Router {
   /**
    * Sorts models by billing preference
    */
-  sortByBillingPreference(refs: string[], billingPreference: 'default' | 'local_first' = 'default'): string[] {
+  sortByBillingPreference(
+    refs: string[],
+    billingPreference: 'default' | 'local_first' | 'strict_local' = 'default'
+  ): string[] {
+    // strict_local: local (tier 2) → free (tier 0) → subscription (tier 1)
+    // → payg (tier 3). Unlike local_first (which keeps truly-free models
+    // on top), strict_local puts the local daemon FIRST — for cheap groups
+    // (trivial/simple) a prompt should hit the local Ollama daemon (best
+    // latency, no quota burn), then free remote models, and only then
+    // subscription models whose $0 nominal cost hides a hard time/token
+    // limit (the pi-claude incident, 2026-09-26).
+    const strictRank = (t: number) => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
     return [...refs].sort((a, b) => {
       const ta = billingTier(a),
         tb = billingTier(b);
       // "local_first" override: rank local models (tier 2) AHEAD of
       // subscription models (tier 1), but keep truly-free models (tier 0)
       // on top. payg (tier 3) stays last. Only affects this group's sort.
-      const ra = billingPreference === 'local_first' ? (ta === 2 ? 0.5 : ta) : ta;
-      const rb = billingPreference === 'local_first' ? (tb === 2 ? 0.5 : tb) : tb;
+      const ra =
+        billingPreference === 'strict_local'
+          ? strictRank(ta)
+          : billingPreference === 'local_first'
+            ? ta === 2
+              ? 0.5
+              : ta
+            : ta;
+      const rb =
+        billingPreference === 'strict_local'
+          ? strictRank(tb)
+          : billingPreference === 'local_first'
+            ? tb === 2
+              ? 0.5
+              : tb
+            : tb;
       if (ra !== rb) return ra - rb;
       // Within subscription tier, prefer lower rate-limit pressure first, then cost
       if (ta === 1) {
@@ -542,21 +567,15 @@ export class Router {
    * Otherwise falls back to sorting by GDPval (best first)
    */
   sortByMinCostIfAllPriced(refs: string[]): string[] {
-    const s = [...refs];
-    
-    // Check if all models have known costs
-    const allPriced = s.every(ref => {
-      const cost = effCost(ref);
-      return cost !== 'unknown';
-    });
-    
-    if (allPriced) {
-      // All models have known costs - sort by cost
-      return this.sortByMinCost(s);
-    } else {
-      // Not all models have known costs - fall back to GDPval
-      return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
-    }
+    // 2026-09-26 fix (live /router scan finding): this used to flip the
+    // ENTIRE list to best-gdpval ordering as soon as ONE model had
+    // 'unknown' effCost — "cheapest first" silently became "strongest
+    // first", which put pi-claude/claude-sonnet-5 (gdpval 1603) on rank 1
+    // of the trivial group and routed trivial prompts to the most expensive
+    // subscription model. Unknown-cost models now simply sort to the END
+    // (sortByMinCost's existing convention) while priced models keep their
+    // cost ordering, with the usual gdpval tiebreak on cost ties.
+    return this.sortByMinCost(refs);
   }
 
   // ── Resolution ────────────────────────────────────────────────────────
