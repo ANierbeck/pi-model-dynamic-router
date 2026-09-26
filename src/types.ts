@@ -134,6 +134,12 @@ export interface Config {
   /** Override the default first-token empty-response timeout (ms). */
   /** Router log level: "debug" also writes [diag] lines. ROUTER_LOG_LEVEL overrides it. */
   log_level?: 'info' | 'debug';
+  /**
+   * Milliseconds after start before a scan counts as "settled" (model registry
+   * loaded). Only a settled scan may confirm a smaller result refused by the
+   * scan-sanity regression check. Default 60000.
+   */
+  scan_settle_ms?: number;
   empty_response_timeout_ms?: number;
   /** Override the first-token timeout for reasoning/thinking models (ms). */
   reasoning_empty_response_timeout_ms?: number;

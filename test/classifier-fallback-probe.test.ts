@@ -516,6 +516,20 @@ describe('probeAndCache — quality validation', () => {
     expect(cache.model_blocklist?.['openrouter/voxtral']).toBeUndefined();
   });
 
+  it('an error stop without text neither blocks nor clears the streak', async () => {
+    const cache = makeCache('silent');
+    const streak = { signature: '400:x', count: 4, first_seen: Date.now() - 3_600_000, last_seen: Date.now() };
+    cache.model_failure_streaks = { 'openrouter/silent': { ...streak } };
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => ({ stopReason: 'error', content: [] })),
+    };
+    await probeAndCache(baseCfg, cache, pctx, () => {});
+    expect(cache.model_failure_streaks?.['openrouter/silent']).toMatchObject({ count: 4 });
+    expect(cache.model_blocklist?.['openrouter/silent']).toBeUndefined();
+  });
+
   it('a provider error during the probe does feed the blocklist', async () => {
     const cache = makeCache('gated');
     seedMetrics(baseCfg, cache);

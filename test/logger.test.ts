@@ -79,4 +79,15 @@ describe('rotation', () => {
     expect(read()).not.toContain('other process line');
     expect(read(`${logPath()}.1`)).toContain('other process line');
   });
+
+  it('keeps the line when rotation fails (e.g. another process rotated first)', () => {
+    configureLogRotation({ maxBytes: 100, keep: 2 });
+    fs.mkdirSync(path.dirname(logPath()), { recursive: true });
+    fs.writeFileSync(logPath(), 'x'.repeat(200));
+    // An undeletable router.log.1 makes the rotation throw.
+    fs.mkdirSync(`${logPath()}.1`);
+    fs.writeFileSync(path.join(`${logPath()}.1`, 'blocker'), '');
+    routerLog('[router] must not be lost');
+    expect(read()).toContain('must not be lost');
+  });
 });

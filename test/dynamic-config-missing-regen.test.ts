@@ -18,7 +18,11 @@ async function waitFor(check: () => boolean, ms = 3_000): Promise<boolean> {
   return check();
 }
 
-async function startRouterWithCache(extraCache: Record<string, unknown>, existingDynamic?: unknown) {
+async function startRouterWithCache(
+  extraCache: Record<string, unknown>,
+  existingDynamic?: unknown,
+  projectConfig?: Record<string, unknown>
+) {
   const stateDir = process.env.PI_ROUTER_STATE_DIR!;
   const dynamicPath = path.join(stateDir, 'router-config.dynamic.json');
   const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
@@ -36,6 +40,10 @@ async function startRouterWithCache(extraCache: Record<string, unknown>, existin
     })
   );
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-dyn-missing-'));
+  if (projectConfig) {
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(projectConfig));
+  }
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (() => Promise.reject(new Error('network disabled in test'))) as typeof fetch;
@@ -118,30 +126,70 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
     }
   });
 
-  it('accepts the smaller result when a second scan returns the same (a real shrink, review 2026-09-27)', async () => {
-    const good = {
-      _dynamic: { generated_at: '2026-09-26T16:50:23.212Z', model_count: 37 },
-      model_groups: { standard: { method: 'best', models: ['healthy-provider/model-a'] } },
-    };
-    const cachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const GOOD = {
+    _dynamic: { generated_at: '2026-09-26T16:50:23.212Z', model_count: 37 },
+    model_groups: { standard: { method: 'best', models: ['healthy-provider/model-a'] } },
+  };
+  const cachePath = () => path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const readCache = () => JSON.parse(fs.readFileSync(cachePath(), 'utf-8'));
 
-    // First scan: refused, refusal recorded.
-    const first = await startRouterWithCache({ lastScanTimestamp: 0 }, good);
-    let refusal: { survivors: number } | undefined;
+  async function firstRefusal(): Promise<{ survivors: number; previous: number; at: number }> {
+    const first = await startRouterWithCache({ lastScanTimestamp: 0 }, GOOD);
     try {
-      expect(await waitFor(() => !!JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal)).toBe(true);
-      refusal = JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal;
+      expect(await waitFor(() => !!readCache().scan_sanity_refusal)).toBe(true);
+      // Let this instance's background scan finish before the next router
+      // starts: both write the same state dir.
+      await new Promise((r) => setTimeout(r, 500));
+      return readCache().scan_sanity_refusal;
     } finally {
       first.cleanup();
     }
+  }
 
-    // Second scan with the same result: accepted, refusal cleared.
-    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0, scan_sanity_refusal: refusal }, good);
+  it('a settled scan with the same smaller result accepts it (real shrink, review 2026-09-27)', async () => {
+    const refusal = await firstRefusal();
+    const { dynamicPath, cleanup } = await startRouterWithCache(
+      { lastScanTimestamp: 0, scan_sanity_refusal: refusal }, GOOD, { scan_settle_ms: 0 }
+    );
     try {
-      expect(
-        await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count === refusal!.survivors)
-      ).toBe(true);
-      expect(JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal).toBeUndefined();
+      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count === refusal.survivors)).toBe(true);
+      expect(readCache().scan_sanity_refusal).toBeUndefined();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a repeated start-up result is not accepted: an unsettled scan never confirms a shrink', async () => {
+    const refusal = await firstRefusal();
+    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0, scan_sanity_refusal: refusal }, GOOD);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count).toBe(37);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('after a start-up refusal, one settled re-check in the same session accepts a real shrink', async () => {
+    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0 }, GOOD, { scan_settle_ms: 300 });
+    try {
+      expect(await waitFor(() => !!readCache().scan_sanity_refusal, 1_000)).toBe(true);
+      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count < 37, 3_000)).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('ignores a refusal older than 24 h', async () => {
+    const refusal = await firstRefusal();
+    const stale = { ...refusal, at: Date.now() - 25 * 60 * 60_000 };
+    const { dynamicPath, cleanup } = await startRouterWithCache(
+      { lastScanTimestamp: 0, scan_sanity_refusal: stale }, GOOD, { scan_settle_ms: 0 }
+    );
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count).toBe(37);
+      expect(readCache().scan_sanity_refusal.at).toBeGreaterThan(stale.at);
     } finally {
       cleanup();
     }

@@ -36,13 +36,18 @@ import {
 } from './helpers/noop-scan-cache.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
-
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
+  // Own state dir per router instance: the previous test's unawaited
+  // background scan may still save its (pruned) cache when this one starts.
+  const fileStateDir = process.env.PI_ROUTER_STATE_DIR!;
+  const stateDir = fs.mkdtempSync(path.join(fileStateDir, 'instance-'));
+  fs.mkdirSync(path.join(stateDir, '.cache'), { recursive: true });
+  process.env.PI_ROUTER_STATE_DIR = stateDir;
+  const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
+  const scanCachePath = path.join(stateDir, '.cache', 'scan-cache.json');
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ghost-purge-'));
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
@@ -69,7 +74,10 @@ async function withIsolatedRouter(
       ],
       gdpval_scores: {},
       openrouter_pricing: {},
-      lastScanTimestamp: new Date().toISOString(),
+      // Numeric epoch ms (an ISO string is not a valid timestamp and made the
+      // background scan regenerate and write into the next test).
+      lastScanTimestamp: Date.now(),
+      dynamic_config_expected: false,
       gdpval_scraped: true,
       models_cached: new Date().toISOString(),
     })
@@ -80,6 +88,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any, tmpDir);
   } finally {
+    process.env.PI_ROUTER_STATE_DIR = fileStateDir;
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);

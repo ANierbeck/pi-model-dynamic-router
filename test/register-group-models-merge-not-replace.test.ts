@@ -64,7 +64,10 @@ async function withIsolatedRouter(
       ],
       gdpval_scores: { 'glm-5-2': 1497 },
       openrouter_pricing: {},
-      lastScanTimestamp: new Date().toISOString(),
+      // Numeric epoch ms (an ISO string is not a valid timestamp and made the
+      // background scan regenerate and write into the next test).
+      lastScanTimestamp: Date.now(),
+      dynamic_config_expected: false,
     })
   );
 

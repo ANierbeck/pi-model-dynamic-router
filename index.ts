@@ -140,11 +140,21 @@ const defaultExport = function (pi: ExtensionAPI) {
   // lives next to the extension unless PI_ROUTER_STATE_DIR points elsewhere.
   // The test harness uses this to keep every test file off the checkout.
   const stateDir = process.env.PI_ROUTER_STATE_DIR || extDir;
+  // Scan-sanity acceptance of a smaller result requires a "settled" scan:
+  // one that runs at least scan_settle_ms after start, when the model registry
+  // is certainly loaded. A start-up race can repeat on every session start,
+  // but it never produces a settled scan (review 2026-09-27).
+  const routerStartedAt = Date.now();
+  let settleRetryScheduled = false;
+  const SCAN_REFUSAL_MAX_AGE_MS = 24 * 60 * 60_000;
 
   const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
   let staticCfg: Config; // Statische Konfiguration (immer router-config.json)
   let cache: Cache = {};
+  // True once loadCache() read the cache from disk; until then a rebuilt
+  // CacheManager must read disk itself instead of adopting the empty object.
+  let cacheLoadedFromDisk = false;
   let rateLimitManager: RateLimitManager;
   let discoveryManager: DiscoveryManager;
   let cacheManager: CacheManager;
@@ -237,7 +247,7 @@ let previousTokenCount = 0;
       // only persist the plausible cachedHits + fresh result.matches.)
       const merged = { ...cachedHits, ...result.matches };
       cache.model_score_cache = merged;
-      cacheManager.saveCache();
+      cacheManager.saveCache(cache);
       metricsModule.setLlmMatches(merged);
 
       // Distinguish "LLM call failed" (error) from "LLM answered but no matches".
@@ -354,7 +364,9 @@ let previousTokenCount = 0;
       const currentScores = metricsModule.getGdpval();
       metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
     }
-    cacheManager = new CacheManager(stateDir);
+    // Hand over the in-memory cache: one shared object for index.ts and the
+    // manager (review 2026-09-27). Before the first disk load there is none.
+    cacheManager = new CacheManager(stateDir, cacheLoadedFromDisk ? cache : undefined);
     // load() does not only run at boot: tools call it directly
     // (resolve_model_group, update_model_metrics) and EVERY session_start
     // fires it — including subagent sessions, which share this module-level
@@ -387,6 +399,7 @@ let previousTokenCount = 0;
 
   function loadCache() {
     cache = cacheManager.loadCache();
+    cacheLoadedFromDisk = true;
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
     router?.updateCache(cache);
@@ -925,12 +938,12 @@ let previousTokenCount = 0;
       // never had one (test fixtures).
       const dynamicConfigMissing =
         !fs.existsSync(path.join(stateDir, 'router-config.dynamic.json')) &&
-        cacheManager.getCache().dynamic_config_expected !== false;
-      if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid() && !dynamicConfigMissing) {
+        cache.dynamic_config_expected !== false;
+      if (!force && !hasNewRegistryRefs && cacheManager.isScanCacheValid(cache) && !dynamicConfigMissing) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }
-      if (!force && dynamicConfigMissing && cacheManager.isScanCacheValid()) {
+      if (!force && dynamicConfigMissing && cacheManager.isScanCacheValid(cache)) {
         routerLog('[router] Scan cache is valid but router-config.dynamic.json is missing — regenerating it');
       }
       
@@ -1087,14 +1100,19 @@ let previousTokenCount = 0;
       // A regression refusal that repeats with the same smaller result is a
       // real shrink (provider removed, key revoked, catalogue change), not a
       // start-up race: accept it instead of refusing on every session.
-      const prevRefusal = cacheManager.getCache().scan_sanity_refusal;
+      const prevRefusal = cache.scan_sanity_refusal;
+      const settleMs = staticCfg.scan_settle_ms ?? 60_000;
+      const elapsed = Date.now() - routerStartedAt;
+      const settled = elapsed >= settleMs;
       const sameAsLastRefusal =
         sanity.check === 'regression' &&
+        settled &&
         prevRefusal !== undefined &&
+        Date.now() - prevRefusal.at < SCAN_REFUSAL_MAX_AGE_MS &&
         Math.abs(prevRefusal.survivors - sanity.survivorCount) <= Math.max(1, Math.round(prevRefusal.survivors * 0.1));
       if (sameAsLastRefusal) {
         routerLog(
-          `[router] Scan sanity: the smaller result (${sanity.survivorCount} models) came back on a second scan — accepting it as real`
+          `[router] Scan sanity: a settled scan returned the same smaller result (${sanity.survivorCount} models) — accepting it as real`
         );
       }
       if (!sanity.ok && !sameAsLastRefusal) {
@@ -1102,11 +1120,22 @@ let previousTokenCount = 0;
           `[router] Scan sanity check FAILED, refusing to persist dynamic config: ${sanity.reason}`
         );
         if (sanity.check === 'regression') {
-          cacheManager.updateCache({
-            scan_sanity_refusal: { survivors: sanity.survivorCount, previous: previousSurvivorCount ?? 0, at: Date.now() },
-          });
+          cache.scan_sanity_refusal = {
+            survivors: sanity.survivorCount,
+            previous: previousSurvivorCount ?? 0,
+            at: Date.now(),
+          };
+          cacheManager.saveCache(cache);
+          // Re-check once the registry has certainly settled: a real shrink is
+          // then accepted within this session, a start-up race is replaced by
+          // the full result.
+          if (!settled && !settleRetryScheduled) {
+            settleRetryScheduled = true;
+            const timer = setTimeout(() => void generateDynamicConfig(false), settleMs - elapsed);
+            timer.unref?.();
+          }
         }
-        // Deliberately do NOT call cacheManager.setLastScanTimestamp() here —
+        // Deliberately do NOT bump cache.lastScanTimestamp here —
         // leaving it unset (or stale) means the next session/scan retries
         // instead of freezing this broken snapshot for up to 30 days. Any
         // existing router-config.dynamic.json on disk is left untouched
@@ -1116,10 +1145,9 @@ let previousTokenCount = 0;
         return;
       }
 
-      const managedCache = cacheManager.getCache();
-      if (managedCache.scan_sanity_refusal) {
-        delete managedCache.scan_sanity_refusal;
-        cacheManager.saveCache();
+      if (cache.scan_sanity_refusal) {
+        delete cache.scan_sanity_refusal;
+        cacheManager.saveCache(cache);
       }
 
       routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
@@ -1231,7 +1259,10 @@ let previousTokenCount = 0;
       discoveryManager = new DiscoveryManager(cfg, cache);
 
       // Set the timestamp of the last scan
-      cacheManager.setLastScanTimestamp();
+      // Write through the router's own cache object: the manager's internal
+      // copy can be stale and would overwrite fresh scan data (review 2026-09-27).
+      cache.lastScanTimestamp = Date.now();
+      cacheManager.saveCache(cache);
 
       routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
@@ -3300,12 +3331,12 @@ async function registerGroupModels(ctx: any) {
       }
 
       // Refused automatic scan (scan sanity check 3)
-      const refusal = cacheManager.getCache().scan_sanity_refusal;
+      const refusal = cache.scan_sanity_refusal;
       if (refusal) {
         lines.push('├─ Scan '.padEnd(72, '─'));
         lines.push(
           `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
-            'Accepted if the next scan agrees; /router scan accepts it now.'
+            'Accepted if a settled scan agrees; /router scan accepts it now.'
         );
       }
 

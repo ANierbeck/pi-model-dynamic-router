@@ -329,6 +329,7 @@ export async function probeAndCache(
       // A provider error (the API refused) feeds the blocklist; a wrong
       // classification does not — the model answered, so the API works.
       let providerError = '';
+      let answered = false;
       for (const tc of PROBE_CASES) {
         const prompt = buildClassificationPrompt(tc.prompt, tc.contextBlock ?? '');
         // Per-case timeout via AbortController-style options if supported;
@@ -346,6 +347,7 @@ export async function probeAndCache(
             providerError = result?.errorMessage ?? '';
             break;
           }
+          answered = true;
           const raw = (result.content ?? [])
             .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
             .map((b: any) => b.text)
@@ -370,8 +372,9 @@ export async function probeAndCache(
         // (roborev 445 MEDIUM).
         recordModelFailure(cache, ref);
       }
+      // An error stop without text is neither: it proves nothing either way.
       if (providerError) recordBlocklistFailure(cache, ref, providerError);
-      else recordBlocklistSuccess(cache, ref);
+      else if (answered) recordBlocklistSuccess(cache, ref);
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
       recordModelFailure(cache, ref);

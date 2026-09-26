@@ -62,7 +62,14 @@ function rotate(logPath: string): void {
 function append(logPath: string, line: string): void {
   ensureLogDirFor(logPath);
   const size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes) rotate(logPath);
+  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes) {
+    try {
+      rotate(logPath);
+    } catch {
+      // Another process rotated in between (ENOENT) or a slot is blocked:
+      // never lose the line over it — append to whatever is there now.
+    }
+  }
   fs.appendFileSync(logPath, line + '\n');
 }
 

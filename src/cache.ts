@@ -15,15 +15,16 @@ export class CacheManager {
   private cache: Cache;
   private cachePath: string;
 
-  constructor(stateDir: string) {
+  /**
+   * `existing` is the caller's in-memory cache: a manager rebuilt on reload
+   * must keep writing that one object instead of a fresh copy from disk.
+   */
+  constructor(stateDir: string, existing?: Cache) {
     this.cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
-    this.cache = this.loadCache();
+    this.cache = existing ?? this.readFromDisk();
   }
 
-  /**
-   * Loads the cache from the file
-   */
-  loadCache(): Cache {
+  private readFromDisk(): Cache {
     try {
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
       if (fs.existsSync(this.cachePath)) {
@@ -33,6 +34,17 @@ export class CacheManager {
       /* first run */
     }
     return {};
+  }
+
+  /**
+   * Re-reads the cache from disk and returns the manager's object. Callers
+   * must keep using this one object: a separately parsed copy lets manager
+   * writes (setLastScanTimestamp, updateCache) and caller writes
+   * (saveCache(cache)) overwrite each other on disk (review 2026-09-27).
+   */
+  loadCache(): Cache {
+    this.cache = this.readFromDisk();
+    return this.cache;
   }
 
   /**
@@ -55,7 +67,7 @@ export class CacheManager {
    * Updates the cache
    */
   updateCache(updates: Partial<Cache>): void {
-    this.cache = { ...this.cache, ...updates };
+    Object.assign(this.cache, updates);
     this.saveCache();
   }
 
@@ -79,8 +91,8 @@ export class CacheManager {
    * failure or a partial cache; force a rescan so the next scan repopulates
    * it rather than silently serving nothing.
    */
-  isScanCacheValid(): boolean {
-    const lastScan = this.cache.lastScanTimestamp;
+  isScanCacheValid(cache: Cache = this.cache): boolean {
+    const lastScan = cache.lastScanTimestamp;
     if (lastScan === undefined) return false;
 
     const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
@@ -91,7 +103,7 @@ export class CacheManager {
 
     // Sanity check (F8): a fresh timestamp with zero models means the cache
     // is useless — force a rescan so we don't serve an empty cache forever.
-    const modelCount = this.cache.available_models?.length ?? 0;
+    const modelCount = cache.available_models?.length ?? 0;
     if (modelCount === 0) return false;
 
     return true;
@@ -101,7 +113,7 @@ export class CacheManager {
    * Resets the cache
    */
   resetCache(): void {
-    this.cache = {};
+    for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
     this.saveCache();
   }
 
