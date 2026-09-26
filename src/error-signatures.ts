@@ -1,14 +1,21 @@
 // src/error-signatures.ts
-// Tier-1 catalogue of provider failure signatures (ADR-0008).
+// Provider failure classification for the learned blocklist (ADR-0008).
 //
-// A failure is `permanent` only when its signature is a property of the
-// model/account that retrying can never fix. Everything else is `transient`
-// (rate limits, timeouts, unknown text) or `request` (depends on the request,
-// e.g. tool use) and must never block a model. Signatures are scoped per
-// provider: the same HTTP status means something different elsewhere
-// (Ollama's 404 "model not found" is fixed by `ollama pull`).
+// Verdicts:
+//   permanent — a known signature that is a property of the model/account;
+//               retrying can never fix it (Tier 1 blocks on first sight).
+//   request   — depends on the request (e.g. tool use), never blocks.
+//   transient — known to heal: rate limits, 429/5xx, timeouts, network
+//               errors, aborts, overflows, empty text. Never counts.
+//   unknown   — anything else. Tier 2 may promote a repeated unknown
+//               signature (see model-blocklist.ts).
+// Tier-1 signatures are scoped per provider: the same HTTP status means
+// something different elsewhere (Ollama's 404 "model not found" is fixed by
+// `ollama pull`).
 
-export type FailureVerdict = 'permanent' | 'request' | 'transient';
+import { isRateLimitText, isOverflowErrorText, isAbortLikeText } from './detection.ts';
+
+export type FailureVerdict = 'permanent' | 'request' | 'transient' | 'unknown';
 
 export interface FailureClassification {
   verdict: FailureVerdict;
@@ -16,14 +23,14 @@ export interface FailureClassification {
   reason?: string;
   /** HTTP status parsed from the failure text, when present. */
   code?: number;
-  /** Normalised key: `<code>:<reason>` or `transient`. */
+  /** Normalised key: `<code>:<reason>`, `transient`, or `<code|x>:<message>` for unknown. */
   signature: string;
 }
 
 interface Signature {
   code: number;
   reason: string;
-  verdict: Exclude<FailureVerdict, 'transient'>;
+  verdict: Exclude<FailureVerdict, 'unknown'>;
   matches(message: string, routingStep: string | undefined, ineligibility: string[]): boolean;
 }
 
@@ -63,9 +70,22 @@ const OPENROUTER_SIGNATURES: readonly Signature[] = [
   },
 ];
 
+// Mistral answers an exhausted daily quota with a bare 422 or 403
+// ("status code (no body)"); it resets the next day, so a 7-day block would
+// be wrong (observed 2026-09-26).
+const MISTRAL_SIGNATURES: readonly Signature[] = [
+  { code: 422, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },
+  { code: 403, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },
+];
+
 const SIGNATURES_BY_PROVIDER: Record<string, readonly Signature[]> = {
   openrouter: OPENROUTER_SIGNATURES,
+  mistral: MISTRAL_SIGNATURES,
+  'mistral-zai': MISTRAL_SIGNATURES,
 };
+
+// Request-dependent wording from any provider: the model works without tools.
+const REQUEST_TEXT = /does not support tools|support tool use/i;
 
 function parseBody(text: string): { message: string; routingStep?: string; ineligibility: string[] } {
   const start = text.indexOf('{');
@@ -87,19 +107,67 @@ function parseBody(text: string): { message: string; routingStep?: string; ineli
   return { message: text, ineligibility: [] };
 }
 
+// Known-transient wording. Includes generic upstream and stream-level
+// failures (OpenRouter's "Provider returned error", finish_reason/stop errors,
+// injected SSE errors): they cannot be told apart from flakiness, and the
+// ADR's asymmetry says not to block without confidence.
+const TRANSIENT_TEXT = new RegExp(
+  [
+    'timeout', 'timed out', 'econnreset', 'econnrefused', 'etimedout', 'enotfound', 'eai_again',
+    'fetch failed', 'socket hang up', 'network', 'connection error', 'overloaded',
+    'temporarily unavailable', 'service unavailable', 'provider returned error',
+    'finish_reason: error', 'stopped with: error', 'ended without a finish reason',
+    'error injected into sse stream',
+  ].map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  'i'
+);
+
+/** Lowercases and strips ids, numbers and quotes so repeats of one error share a key. */
+function normalizeMessage(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[0-9a-f]{8,}/g, '')
+    .replace(/\d+/g, '#')
+    .replace(/["'`\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
 /** Classifies a failure observed for `ref` (provider/model) from its error text. */
 export function classifyFailure(ref: string, text: string): FailureClassification {
+  if (!text.trim()) return { verdict: 'transient', signature: 'transient' };
   const provider = ref.split('/')[0];
-  const signatures = SIGNATURES_BY_PROVIDER[provider];
   const codeMatch = /\b([45]\d\d)\b/.exec(text);
   const code = codeMatch ? Number(codeMatch[1]) : undefined;
-  if (!signatures || code === undefined) return { verdict: 'transient', signature: 'transient' };
-
   const { message, routingStep, ineligibility } = parseBody(text);
-  for (const sig of signatures) {
-    if (sig.code === code && sig.matches(message, routingStep, ineligibility)) {
-      return { verdict: sig.verdict, reason: sig.reason, code, signature: `${code}:${sig.reason}` };
+
+  const signatures = SIGNATURES_BY_PROVIDER[provider];
+  if (signatures && code !== undefined) {
+    for (const sig of signatures) {
+      if (sig.code === code && sig.matches(message, routingStep, ineligibility)) {
+        return { verdict: sig.verdict, reason: sig.reason, code, signature: `${code}:${sig.reason}` };
+      }
     }
   }
-  return { verdict: 'transient', code, signature: 'transient' };
+
+  if (REQUEST_TEXT.test(text)) {
+    return { verdict: 'request', reason: 'no-tool-support', ...(code !== undefined ? { code } : {}), signature: 'request:no-tool-support' };
+  }
+  if (
+    code === 429 ||
+    (code !== undefined && code >= 500) ||
+    isRateLimitText(text) ||
+    isOverflowErrorText(text) ||
+    isAbortLikeText(text) ||
+    TRANSIENT_TEXT.test(text)
+  ) {
+    return { verdict: 'transient', ...(code !== undefined ? { code } : {}), signature: 'transient' };
+  }
+  return {
+    verdict: 'unknown',
+    ...(code !== undefined ? { code } : {}),
+    signature: `${code ?? 'x'}:${normalizeMessage(message)}`,
+  };
 }

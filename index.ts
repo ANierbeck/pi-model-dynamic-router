@@ -53,7 +53,7 @@ import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from '.
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
-import { recordBlocklistFailure, clearBlock, activeBlocks } from './src/model-blocklist.ts';
+import { recordBlocklistFailure, recordBlocklistSuccess, activeBlocks } from './src/model-blocklist.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
   buildStaticFreeModelsLookup,
@@ -1206,7 +1206,7 @@ let previousTokenCount = 0;
   function recordOk(ref: string) {
     rateLimitManager.recordOk(ref);
     recordModelSuccess(cache, ref);
-    if (clearBlock(cache, ref)) {
+    if (recordBlocklistSuccess(cache, ref)) {
       routerLog(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
       cacheManager.saveCache(cache);
     }
@@ -1219,9 +1219,11 @@ let previousTokenCount = 0;
     const days = (ms: number) => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
     const lines = [`Blocklist (${blocked.length}) — re-probed automatically when the block expires`, ''];
     for (const { ref, entry, reprobeInMs } of blocked) {
+      const code = entry.code ? `HTTP ${entry.code}` : 'no HTTP code';
+      const detail = entry.reason === 'unknown-signature' ? `\n   signature: ${entry.signature}` : '';
       lines.push(
-        `🚫 ${ref}\n   ${entry.reason} (HTTP ${entry.code}) · since ${new Date(entry.first_seen).toISOString().slice(0, 10)}` +
-          ` · seen ${entry.occurrences}× · re-probe in ${days(reprobeInMs)}`
+        `🚫 ${ref}\n   ${entry.reason} (${code}) · since ${new Date(entry.first_seen).toISOString().slice(0, 10)}` +
+          ` · seen ${entry.occurrences}× · re-probe in ${days(reprobeInMs)}${detail}`
       );
     }
     return lines.join('\n');
@@ -1232,7 +1234,8 @@ let previousTokenCount = 0;
     const entry = recordBlocklistFailure(cache, ref, failureText);
     if (!entry) return;
     routerLog(
-      `[router] ${ref} blocked for 7 days: ${entry.reason} (HTTP ${entry.code}, seen ${entry.occurrences}×)`
+      `[router] ${ref} blocked for 7 days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, ` +
+        `signature ${entry.signature}, seen ${entry.occurrences}×)`
     );
     cacheManager.saveCache(cache);
   }

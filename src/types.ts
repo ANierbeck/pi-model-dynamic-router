@@ -265,6 +265,16 @@ export interface Cache {
     occurrences: number;
   }>;
   /**
+   * Tier-2 failure streaks (ADR-0008): consecutive failures per ref with the
+   * same unknown signature, reset by a success or a different signature.
+   */
+  model_failure_streaks?: Record<string, {
+    signature: string;
+    count: number;
+    first_seen: number;
+    last_seen: number;
+  }>;
+  /**
    * Verified-working cloud models for the classifier's cloud fallback.
    * Populated by probeAndCache() at scan time (a quality probe with real
    * classification cases — incl. the HINT-narration trap — filters out

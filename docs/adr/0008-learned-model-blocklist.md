@@ -1,7 +1,7 @@
 # ADR-0008: Learned model blocklist (auto-block from observed permanent failures)
 
-**Status**: Accepted (2026-09-26). **Tier 1 implemented 2026-09-27**
-(points 1–7 below, without Tier-2 promotion); Tier 2 is the next step.
+**Status**: Accepted (2026-09-26). **Implemented 2026-09-27**: Tier 1 and
+Tier 2 (points 1–7 below, see "Implementation").
 Thresholds confirmed by the owner: Tier-1 blocks on first occurrence,
 Tier-2 promotes at N=5 (zero successes, spanning ≥ 1h), blocklist TTL is
 7 days. The static `exclude.models` list from `fce3f2b` stays as the manual
@@ -298,7 +298,8 @@ Adopt **Option D** (hybrid). Concretely:
   (403), `workspace-guardrail` (404, both wordings and the
   `ineligibility_reasons` enum), `free-variant-retired` (404),
   `decommissioned` (404 "No endpoints found for"). `no-tool-support` is
-  classified as `request` and never blocks. Everything else is `transient`.
+  classified as `request` and never blocks. Everything else goes through the
+  generic transient/unknown classification described under Tier 2.
 - `src/model-blocklist.ts`: `cache.model_blocklist` state (record, TTL check,
   clear, active list).
 - Hooks: every `consumeWithDetection` failure with a `detail` text and every
@@ -322,6 +323,43 @@ Adopt **Option D** (hybrid). Concretely:
   the next request skips it, the block is persisted; fails without the
   orchestrator hooks), and a probe-selection case in
   `test/classifier-fallback-probe.test.ts`.
+
+## Implementation (Tier 2, 2026-09-27)
+
+- Classification has four verdicts: `permanent`, `request`, `transient`,
+  `unknown`. Only `unknown` feeds Tier 2. `transient` covers 429, 5xx,
+  rate-limit, overflow and abort text, network and timeout wording, and
+  generic upstream or stream-level failures. The unknown signature is
+  `<HTTP code or x>:<normalised message>`, with ids, digits, URLs and quotes
+  stripped so repeats share one key.
+- `cache.model_failure_streaks` counts consecutive failures per model with the
+  same unknown signature. The model is blocked at 5 failures spanning at least
+  1 h (`reason: unknown-signature`). A success resets the streak, and so does a
+  different unknown signature. Known-transient failures neither count nor
+  reset. A streak whose last failure is older than the TTL restarts. An
+  expired block re-blocks on the first failure with the same signature, as in
+  Tier 1.
+- Local providers are never promoted: their failures are daemon trouble,
+  not model properties.
+- Hooks only feed `provider_error` details and thrown stream errors. Overflow
+  and repetition details never reach the blocklist.
+- Streak updates are persisted whenever the cache is saved (at the latest on
+  the next block or scan). A restart can therefore lose a partial streak.
+  That errs toward not blocking.
+
+**Calibration against the real log (2026-09-26, 138 distinct provider-error
+texts).** Before the catalogue was tightened, these would have fed Tier 2:
+- Mistral's bare `422`/`403 status code (no body)`, 33 texts. This is the
+  daily quota and resets the next day, so a 7-day block would be wrong. Now
+  classified as transient per provider.
+- "Connection error.", OpenRouter's "Provider returned error", and stream
+  aborts ("finish_reason: error", "stopped with: error", "ended without a
+  finish reason", "JSON error injected into SSE stream"). Now transient.
+- "does not support tools". Now `request`, from any provider.
+
+What remains `unknown` are mainly Mistral's "Invalid model: …" (400) and a bare
+`400 status code (no body)` for models that cannot chat (e.g. OCR). These
+are the failures Tier 2 is meant to catch.
 
 ## Consequences
 

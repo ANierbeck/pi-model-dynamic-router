@@ -36,7 +36,7 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0005 — `registerProvider` replaces (not merges) — Ü1 guard design](0005-registerprovider-replaces-not-merges.md)
 - [0006 — Probe-based discovery for classifier cloud fallback](0006-probe-based-classifier-fallback-discovery.md)
 - [0007 — Task decomposition and delegation](0007-task-decomposition-and-delegation.md)
-- [0008 — Learned model blocklist (auto-block from observed permanent failures)](0008-learned-model-blocklist.md) *(Tier 1 implemented)*
+- [0008 — Learned model blocklist (auto-block from observed permanent failures)](0008-learned-model-blocklist.md)
 - [0009 — Union-merge for `exclude.*` arrays; bundled classifier model as source of truth](0009-exclude-union-merge-and-config-classifier-model.md)
 - [0010 — One group-filter rule set for persist, live and display](0010-two-group-filter-pipelines.md)
 - [0011 — Registry-first pricing, the free definition, and unknown-cost semantics](0011-registry-first-pricing-and-cost-semantics.md)

@@ -10,7 +10,7 @@ import {
   BLOCKLIST_TTL_MS,
   recordBlocklistFailure,
   isBlocked,
-  clearBlock,
+  recordBlocklistSuccess,
   activeBlocks,
 } from '../src/model-blocklist.ts';
 import type { Cache, Config } from '../src/types.ts';
@@ -73,7 +73,7 @@ describe('model blocklist state (cache.model_blocklist)', () => {
     expect(cache.model_blocklist?.[OR]).toBeDefined();
   });
 
-  it('does not block on transient or request-dependent failures', () => {
+  it('does not block on known-transient or request-dependent failures', () => {
     const cache: Cache = {};
     expect(recordBlocklistFailure(cache, OR, RATE_LIMIT, 1_000)).toBeNull();
     expect(recordBlocklistFailure(cache, OR, TOOL_USE, 1_000)).toBeNull();
@@ -98,9 +98,9 @@ describe('model blocklist state (cache.model_blocklist)', () => {
   it('a success clears the block', () => {
     const cache: Cache = {};
     recordBlocklistFailure(cache, OR, AGENTIC, 0);
-    expect(clearBlock(cache, OR)).toBe(true);
+    expect(recordBlocklistSuccess(cache, OR)).toBe(true);
     expect(isBlocked(cache, OR, 1)).toBe(false);
-    expect(clearBlock(cache, OR)).toBe(false);
+    expect(recordBlocklistSuccess(cache, OR)).toBe(false);
   });
 
   it('activeBlocks lists unexpired entries with time to the next re-probe', () => {
@@ -132,5 +132,131 @@ describe('runtime filter: Router.allDiscoveredRefs drops blocked models', () => 
 
     cache.model_blocklist![OR].last_seen = Date.now() - BLOCKLIST_TTL_MS - 1;
     expect(router.allDiscoveredRefs()).toContain(OR);
+  });
+});
+
+// ── Tier 2 (ADR-0008): unknown signatures ──────────────────────────────────
+
+const UNKNOWN_400 = '400: {"message":"Invalid request: unsupported parameter \'reasoning_effort\'","code":400}';
+const UNKNOWN_400_OTHER = '400: {"message":"Invalid request: context must start with a user turn","code":400}';
+const HOUR = 60 * 60_000;
+const T2 = 'openrouter/vendor/flaky-model';
+
+function failTimes(cache: Cache, ref: string, text: string, times: number, start: number, stepMs: number) {
+  let last: ReturnType<typeof recordBlocklistFailure> = null;
+  for (let i = 0; i < times; i++) last = recordBlocklistFailure(cache, ref, text, start + i * stepMs);
+  return last;
+}
+
+describe('classifyFailure — unknown vs known-transient', () => {
+  it('marks an unmatched 4xx as unknown with a stable, id-free signature', () => {
+    const a = classifyFailure(T2, UNKNOWN_400);
+    const b = classifyFailure(T2, UNKNOWN_400.replace("'reasoning_effort'", "'reasoning_effort'  "));
+    expect(a.verdict).toBe('unknown');
+    expect(a.signature).toBe(b.signature);
+    expect(classifyFailure(T2, UNKNOWN_400_OTHER).signature).not.toBe(a.signature);
+  });
+
+  it.each([
+    ['429 status code (no body)'],
+    ['503: {"message":"Service Unavailable","code":503}'],
+    ['fetch failed: ECONNRESET'],
+    ['no response within timeout'],
+    ['This operation was aborted'],
+    [''],
+  ])('treats %j as known-transient', (text) => {
+    expect(classifyFailure(T2, text).verdict).toBe('transient');
+  });
+
+  // Real router.log texts (2026-09-26) that must never feed Tier 2.
+  it.each([
+    ['mistral-zai/codestral-2508', '422 status code (no body)'], // Mistral daily quota
+    ['mistral/labs-leanstral-1-5', '403 status code (no body)'], // Mistral daily quota
+    ['mistral-zai/zai-glm-5-2', 'Connection error.'],
+    ['openrouter/minimax/minimax-m3:free', '400: {"message":"Provider returned error","code":400}'],
+    ['err-provider/m', 'Provider finish_reason: error'],
+    ['mistral/mistral-small-2603', 'Provider stopped with: error'],
+    ['mistral/zai-glm-5-3', 'Mistral stream ended without a finish reason'],
+    ['openrouter/stealth/space-bunny-alpha', 'JSON error injected into SSE stream'],
+  ])('treats %s "%s" as known-transient', (ref, text) => {
+    expect(classifyFailure(ref, text).verdict).toBe('transient');
+  });
+
+  it('treats "does not support tools" from any provider as request-dependent', () => {
+    expect(classifyFailure('openrouter/x/y', '400: {"message":"x does not support tools"}').verdict).toBe('request');
+  });
+
+  it('leaves a Mistral "Invalid model" 400 as unknown (Tier-2 candidate)', () => {
+    const c = classifyFailure(
+      'mistral/mistral-large-2411',
+      'Mistral API error (400): {"object":"error","message":"Invalid model: mistral-large-2411","type":"invalid_model"}'
+    );
+    expect(c.verdict).toBe('unknown');
+    expect(c.code).toBe(400);
+  });
+});
+
+describe('Tier 2 promotion', () => {
+  it('blocks after 5 same-signature failures spanning at least one hour', () => {
+    const cache: Cache = {};
+    expect(failTimes(cache, T2, UNKNOWN_400, 4, 0, HOUR / 4)).toBeNull();
+    const entry = recordBlocklistFailure(cache, T2, UNKNOWN_400, HOUR);
+    expect(entry).toMatchObject({ reason: 'unknown-signature', code: 400, occurrences: 1 });
+    expect(isBlocked(cache, T2, HOUR + 1)).toBe(true);
+    expect(cache.model_failure_streaks?.[T2]).toBeUndefined();
+  });
+
+  it('does not block a burst of 5 failures inside one hour', () => {
+    const cache: Cache = {};
+    expect(failTimes(cache, T2, UNKNOWN_400, 5, 0, 60_000)).toBeNull();
+    expect(isBlocked(cache, T2, 5 * 60_000)).toBe(false);
+    // ...but the streak keeps counting, so the next failure past the hour blocks.
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, HOUR)).not.toBeNull();
+  });
+
+  it('a success resets the streak', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 4, 0, HOUR / 4);
+    recordBlocklistSuccess(cache, T2);
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, 2 * HOUR)).toBeNull();
+    expect(cache.model_failure_streaks?.[T2]?.count).toBe(1);
+  });
+
+  it('a different unknown signature restarts the streak', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 4, 0, HOUR / 4);
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400_OTHER, HOUR)).toBeNull();
+    expect(cache.model_failure_streaks?.[T2]?.count).toBe(1);
+  });
+
+  it('known-transient failures in between neither count nor reset', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 4, 0, HOUR / 4);
+    recordBlocklistFailure(cache, T2, '429 status code (no body)', HOUR - 1);
+    expect(cache.model_failure_streaks?.[T2]?.count).toBe(4);
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, HOUR)).not.toBeNull();
+  });
+
+  it('never promotes local providers (daemon trouble, not a model property)', () => {
+    const cache: Cache = {};
+    const local = 'ollama/qwen3:8b';
+    failTimes(cache, local, '404: {"error":"model \\"qwen3:8b\\" not found, try pulling it first"}', 10, 0, HOUR / 2);
+    expect(isBlocked(cache, local, 6 * HOUR)).toBe(false);
+  });
+
+  it('restarts a streak whose last failure is older than the TTL', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 4, 0, HOUR / 4);
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, BLOCKLIST_TTL_MS + HOUR)).toBeNull();
+    expect(cache.model_failure_streaks?.[T2]?.count).toBe(1);
+  });
+
+  it('an expired Tier-2 block re-blocks on the first failure with the same signature', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 5, 0, HOUR / 4);
+    const later = BLOCKLIST_TTL_MS + 2 * HOUR;
+    expect(isBlocked(cache, T2, later)).toBe(false);
+    expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, later)).toMatchObject({ occurrences: 2 });
+    expect(isBlocked(cache, T2, later + 1)).toBe(true);
   });
 });

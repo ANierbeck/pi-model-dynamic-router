@@ -539,7 +539,7 @@ export class StreamOrchestrator {
           return;
         }
         if (result.reason === 'aborted') return;
-        if (result.detail) ctx.observeFailure(ref, result.detail);
+        if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(ref, result.detail);
 
         if (result.reason === 'rate_limit_exceeded') {
           const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs);
@@ -750,7 +750,7 @@ export class StreamOrchestrator {
               return;
             }
             if (result.reason === 'aborted') return;
-            if (result.detail) ctx.observeFailure(bestRef, result.detail);
+            if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(bestRef, result.detail);
             pushError(bestRef, String(result.reason));
             if (result.reason === 'context_overflow') {
               ctx.recordSoftFailure(bestRef);
