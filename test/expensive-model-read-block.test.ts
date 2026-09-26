@@ -238,6 +238,83 @@ describe('checkReadBlock expensive-model escalation', () => {
 
 // ── Router.getCurModel stale guard ─────────────────────────────────────────
 
+// ── checkReadBlock live group resolver (live bug 2026-09-26) ────────────────
+// The HINT group test exposed a live-only gap: in production the tool_call
+// hook sees the STATIC config (model_groups WITHOUT materialized models
+// arrays — either no scan snapshot exists, or a stale/degenerate one was
+// loaded), while the Router resolves groups LIVE over the registry. The cfg
+// check alone therefore never matched and Layer 1 was a no-op live. The fix:
+// the hook passes a liveGroupRefs resolver (Router.getTopModels — the display
+// path, which ignores allow-lists) in addition to the cfg check.
+
+/** Static-config shape as shipped in router-config.json: model_groups have
+ *  method/floor fields but NO materialized `models` arrays. */
+function makeStaticCfg(overrides?: Record<string, unknown>): Config {
+  const delegation: Record<string, unknown> = { enabled: true, block_lines: 350, ...overrides };
+  return {
+    delegation,
+    model_groups: {
+      strategic: { method: 'best', min_gdpval: 1000 },
+      tactical: { method: 'best', min_gdpval: 900 },
+      trivial: { method: 'best', min_gdpval: 1 },
+    },
+  } as unknown as Config;
+}
+
+describe('checkReadBlock live group resolver (live bug 2026-09-26)', () => {
+  it('live resolver blocks an expensive member when cfg has NO materialized lists (the live bug, fixed)', () => {
+    const liveRefs = (group: string): string[] =>
+      group === 'strategic' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
+    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
+    expect(out?.block).to.equal(true);
+    expect(out?.expensive).to.equal(true);
+    expect(out?.reason).to.match(/expensive models/i);
+  });
+
+  it('live resolver blocks a member resolved via the second expensive group (tactical)', () => {
+    const liveRefs = (group: string): string[] => (group === 'tactical' ? ['mistral/zai-glm-5-2'] : []);
+    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), 'mistral/zai-glm-5-2', liveRefs);
+    expect(out?.block).to.equal(true);
+    expect(out?.expensive).to.equal(true);
+  });
+
+  it('documents the live bug: WITHOUT a resolver, a static cfg lets the expensive member pass (fail-open)', () => {
+    // This is exactly the pre-fix production state that the HINT group
+    // test exposed — kept as a guard so nothing silently over-blocks when
+    // no resolver is available (e.g. pure-cfg callers, old tests).
+    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER);
+    expect(out).to.equal(undefined);
+  });
+
+  it('resolver that throws or returns junk fails open (never blocks)', () => {
+    const throwing = (): string[] => { throw new Error('boom'); };
+    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, throwing)).to.equal(undefined);
+    const junk = (): string[] => undefined as unknown as string[];
+    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, junk)).to.equal(undefined);
+  });
+
+  it('resolver without the ref does not block (cheap member passes)', () => {
+    const liveRefs = (group: string): string[] =>
+      group === 'strategic' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
+    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_LOCAL, liveRefs)).to.equal(undefined);
+    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_FREE, liveRefs)).to.equal(undefined);
+  });
+
+  it('targeted reads are never blocked, even for live-resolved expensive members', () => {
+    const liveRefs = (group: string): string[] => (group === 'strategic' ? [EXPENSIVE_GROUP_MEMBER] : []);
+    const withOffset = checkReadBlock({ toolName: 'read', input: { path: smallFile, offset: 1, limit: 5 } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
+    expect(withOffset).to.equal(undefined);
+  });
+
+  it('resolver and cfg check are OR-combined (cfg list still blocks without a resolver)', () => {
+    // Backwards compatibility for pure-cfg callers (existing tests, scan
+    // snapshots WITH materialized lists): the cfg path stays authoritative.
+    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), EXPENSIVE_GROUP_MEMBER);
+    expect(out?.block).to.equal(true);
+    expect(out?.expensive).to.equal(true);
+  });
+});
+
 describe('Router.getCurModel stale guard', () => {
   const mkRouter = () => new Router(makeCfg(), {} as never, new Map() as never);
 

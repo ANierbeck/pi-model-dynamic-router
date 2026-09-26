@@ -127,6 +127,37 @@ export function isExpensiveModelRef(
 }
 
 /**
+ * Live-membership check for expensive groups via a resolver callback
+ * (ADR-0007 live fix, 2026-09-26): the tool_call hook passes a resolver that
+ * reads the Router's live group resolution (getTopModels — the display path,
+ * which ignores `g.models` allow-lists). This is the authoritative LIVE source:
+ * in production the hook's cfg is the STATIC config (model_groups WITHOUT
+ * materialized `models` arrays) or a stale/degenerate scan snapshot, in which
+ * case the cfg check alone matches nothing and Layer 1 would be a live no-op
+ * — exactly the bug the HINT group test exposed.
+ *
+ * Fail-open: a missing resolver, a resolver that throws, or junk return
+ * values never block (OR-combined with the cfg check, never replacing it).
+ */
+export function isExpensiveViaLiveRefs(
+  ref: string,
+  settings: DelegationSettings,
+  liveGroupRefs?: (group: string) => string[]
+): boolean {
+  if (!ref || !liveGroupRefs) return false;
+  for (const name of settings.expensive_groups) {
+    let refs: string[];
+    try {
+      refs = liveGroupRefs(name);
+    } catch {
+      continue; // fail-open: a broken resolver never blocks
+    }
+    if (Array.isArray(refs) && refs.includes(ref)) return true;
+  }
+  return false;
+}
+
+/**
  * Resolves the ref the read block should judge the caller by, in priority
  * order:
  *   1. the turn's PINNED driving ref (Router.getTurnDriverRef) — immune to
@@ -161,7 +192,8 @@ export function resolveReadBlockStreamRef(
 export function checkReadBlock(
   event: { toolName?: string; input?: unknown },
   cfg: Config | undefined,
-  curModel?: string
+  curModel?: string,
+  liveGroupRefs?: (group: string) => string[]
 ): ReadBlockResult | undefined {
   try {
     const settings = delegationSettings(cfg);
@@ -189,7 +221,10 @@ export function checkReadBlock(
     // (fail-open: a read we cannot assess is never blocked) and BEFORE
     // the size prefilter (expensive blocks fire at any size). Targeted
     // reads passed above; an unknown curModel falls through to size-only.
-    if (curModel && isExpensiveModelRef(curModel, cfg, settings)) {
+    // Membership is OR-combined from two sources: the LIVE resolver
+    // (Router.getTopModels — authoritative, covers the static-cfg live
+    // bug) and the cfg's materialized lists (scan snapshots, tests).
+    if (curModel && (isExpensiveModelRef(curModel, cfg, settings) || isExpensiveViaLiveRefs(curModel, settings, liveGroupRefs))) {
       return {
         block: true,
         expensive: true,

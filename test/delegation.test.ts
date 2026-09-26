@@ -730,8 +730,13 @@ describe('default export wiring: tool_call pre-call read block', () => {
       // Nothing streamed yet this turn → both the pinned and the live ref
       // are empty, so the hook resolves the cheap session ref. The
       // 20-line file is far below block_lines → passes.
+      // NOTE (live resolver, 2026-09-26): the session model must be genuinely
+      // cheap under the LIVE source too — mistral-medium-3.5, previously
+      // used here, is a strategic member via the PROVIDER_MAP gdpval and is
+      // now CORRECTLY blocked by the live resolver. A local ollama model
+      // never resolves into an expensive group.
       await boot.onHandlers['turn_start']?.({}, {
-        model: { provider: 'mistral', id: 'mistral-medium-3.5' },
+        model: { provider: 'ollama', id: 'qwen3.8:27b-mlx' },
       });
 
       expect(boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } })).toBeUndefined();

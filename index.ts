@@ -1697,7 +1697,20 @@ let previousTokenCount = 0;
     // expensive model's own full-file reads pass the block. Both fall back to
     // the session ref; '' (nothing pinned/stale) fails open to size-only.
     const streamRef = resolveReadBlockStreamRef(router, turnStart, curModel);
-    const block = checkReadBlock(ev, cfg, streamRef);
+    // Live membership source (ADR-0007 live fix, 2026-09-26): cfg may be the
+    // STATIC config (no materialized model_groups[].models) or a stale scan
+    // snapshot — the cfg check alone never matched live and Layer 1 was a
+    // no-op (exposed by the HINT group test). getTopModels is the Router's
+    // live group resolution (display path, ignores allow-lists) and reflects
+    // what can actually drive each expensive group. try/catch → fail-open.
+    const block = checkReadBlock(ev, cfg, streamRef, (group) => {
+      try {
+        const { models } = router.getTopModels(group, 200);
+        return (models ?? []).map((m) => m.ref);
+      } catch {
+        return [];
+      }
+    });
     if (block) {
       routerLog(
         (block as { expensive?: boolean }).expensive
