@@ -4,9 +4,10 @@
 
 ## 1.6.0-SNAPSHOT (unreleased, pre-release)
 
-**Content**: everything on `main` since `v1.5.4` — 29 commits, 72 files,
-+7112 / −318 lines. See `docs/v1.6.0-release-plan.md` for the full
-breakdown.
+**Content**: everything on `main` since `v1.5.4` — 34 commits, 89 files,
++8743 / −513 lines. See `docs/v1.6.0-release-plan.md` for the full
+breakdown (sections 1–7 plus section 8: robust cloud classifier fallback +
+quality probe).
 
 ## 1) effCost Registry-First Fix (src/metrics.ts)
 
