@@ -16,6 +16,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // and-forget by design, not synchronously observable from recordTurn()).
 vi.mock('../src/ollama-utils.ts', () => ({
   callOllama: vi.fn().mockRejectedValue(new Error('mocked: no ollama in tests')),
+  // Daemon probed as reachable so the mocked failure path stays exercised.
+  isOllamaAvailable: vi.fn(async () => true),
 }));
 
 import { SessionEscalation } from '../src/escalation.ts';

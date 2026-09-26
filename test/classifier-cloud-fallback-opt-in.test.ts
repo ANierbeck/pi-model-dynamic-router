@@ -12,6 +12,8 @@ import type { Config, Cache } from '../src/types.ts';
 
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
+  // Daemon probed as reachable so the mocked Ollama path stays exercised.
+  isOllamaAvailable: vi.fn(async () => true),
 }));
 
 const originalFetch = globalThis.fetch;

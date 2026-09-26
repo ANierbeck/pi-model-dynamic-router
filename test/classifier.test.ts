@@ -9,6 +9,8 @@ import * as ollamaUtils from "../src/ollama-utils";
 
 vi.mock("../src/ollama-utils", () => ({
   callOllama: vi.fn(),
+  // Daemon probed as reachable so the mocked Ollama path stays exercised.
+  isOllamaAvailable: vi.fn(async () => true),
 }));
 
 // ── Test cases ───────────────────────────────────────────────────────────
@@ -111,9 +113,15 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.category).toBe("fallback");
     });
 
-    it("classifies 'What is in this file?' as 'simple'", () => {
+    // Restored design intent (regression 2026-09-26): a literal backspace
+    // control character (0x08) inside the trivialKeywords regex silently
+    // killed the trivial branch, so "What is in this file?" fell through to
+    // 'simple'. Commit d944afa codified that symptom as expected behavior;
+    // the 0x08 is fixed, so the original trivial expectation (c67b7b4)
+    // applies again.
+    it("classifies 'What is in this file?' as 'trivial'", () => {
       const result = classifyStatically("What is in this file?");
-      expect(result.category).toBe("simple");
+      expect(result.category).toBe("trivial");
     });
 
 

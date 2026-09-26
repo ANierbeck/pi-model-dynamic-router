@@ -53,6 +53,55 @@ export async function callOllama(
   return response.trim();
 }
 
+// ── Availability Probe ───────────────────────────────────────────────
+
+/** Timeout for the Ollama availability probe (GET /api/tags). */
+const AVAILABILITY_PROBE_TIMEOUT_MS = 1_500;
+
+/**
+ * How long a "down" probe result is cached before re-probing (ms). Bounds
+ * the hanging-port worst case to one probe per TTL window per process,
+ * while self-healing shortly after the daemon comes back up.
+ */
+const AVAILABILITY_NEGATIVE_TTL_MS = 15_000;
+
+let lastProbeDownAt = 0;
+
+/**
+ * Checks whether the local Ollama daemon is reachable via a cheap
+ * GET /api/tags request with a short timeout.
+ *
+ * Purpose: when the daemon is down, fetch-based calls fail fast with
+ * ECONNREFUSED anyway, but a *hanging* port (overloaded daemon, firewall
+ * drop, suspended machine) would otherwise burn the full classification
+ * timeouts (primary + fallback model) on every prompt. This probe bounds
+ * that to a single short request, letting the classifier jump straight
+ * to its cloud fallback chain.
+ *
+ * Note: availability != the model being loaded. If the daemon is up but
+ * a model is missing, callOllama still fails — the existing
+ * primary→fallback→cloud chain handles that case.
+ */
+export async function isOllamaAvailable(
+  timeoutMs: number = AVAILABILITY_PROBE_TIMEOUT_MS
+): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastProbeDownAt < AVAILABILITY_NEGATIVE_TTL_MS) return false;
+  try {
+    const response = await fetch('http://localhost:11434/api/tags', {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      lastProbeDownAt = now;
+      return false;
+    }
+    return true;
+  } catch {
+    lastProbeDownAt = now;
+    return false;
+  }
+}
+
 // ── Fallback Handling ───────────────────────────────────────────────────
 
 /**

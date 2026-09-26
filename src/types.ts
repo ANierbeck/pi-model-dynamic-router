@@ -82,6 +82,15 @@ export interface Group {
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
   classifier_fallback?: string;
   /**
+   * Pinned cloud classifier model ref ("provider/id") for the dynamic
+   * group's cloud fallback. When set, the classifier tries this model
+   * FIRST — before the probe-verified cached list — so a specific (e.g.
+   * subscription-covered) model classifies deterministically, regardless
+   * of what the scan-time probe ranked first. If pi's model registry
+   * cannot resolve the ref, the fallback chain continues unchanged.
+   */
+  classifier_cloud_model?: string;
+  /**
    * Opt-in: if both classifier_model and classifier_fallback are unavailable,
    * send the (raw) prompt to a free cloud model (via a provider's configured
    * free_models) purely to classify it. Off by default (data minimization --
