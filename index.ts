@@ -768,10 +768,11 @@ let previousTokenCount = 0;
       }
       saveCache();
 
-      // Probe classifier-fallback candidates and cache the verified-working
+      // Probe classifier-fallback candidates and cache the quality-verified
       // list. Runs after the scan saves (so cache.available_models is fresh)
       // and before generateDynamicConfig. The probe is bounded (max 20
-      // candidates, 15s timeout each, stops at 8 successes) and non-fatal —
+      // candidates, 15s timeout per classification case — 3 cases per
+      // candidate, stops at 8 successes) and non-fatal —
       // if it fails the classifier falls back to selectClassifierCandidates +
       // the try-each loop at classification time. See
       // src/classifier-fallback-probe.ts.

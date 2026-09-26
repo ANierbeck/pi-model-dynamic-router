@@ -204,6 +204,83 @@ describe('classifyPrompt fallback chain', () => {
       expect(result.category).toBe('fallback');
     });
 
+    it('rejects a spurious hint:* echo from a cloud model and tries the next one (voxtral regression, review 2026-09-26 Important #1)', async () => {
+      vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+      // Pinned model echoes the HINT it copied out of the narration context —
+      // the exact voxtral-small incident mode (2026-09-26). The user prompt
+      // itself contains NO HINT, so the reply is spurious and must be skipped
+      // like any other bad reply instead of being returned raw (which
+      // polluted lastClassifiedCategory and misrouted via CATEGORY_TO_GROUP
+      // miss → 'fallback' → tactical).
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValueOnce(
+          cloudReply({ category: 'hint:group:tactical', reason: 'copied from context', confidence: 1.0 })
+        )
+        .mockResolvedValueOnce(
+          cloudReply({ category: 'standard', reason: 'from cached', confidence: 0.8 })
+        );
+      const findModel = vi.fn().mockReturnValue(mockModel);
+
+      const result = await classifyPrompt('Check the pull request comments about our middleware stack', {
+        allowCloudFallback: true,
+        pinnedCloudModel: 'prov/pinned',
+        cfg: {} as any,
+        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        completeSimple,
+        findModel,
+        context: {
+          previousUserMessage: 'Can you refactor the auth module next?',
+          lastAssistantSnippet:
+            '[router] HINT: use group tactical — routing the next request to a stronger model. The previous task is complete.',
+        },
+      });
+
+      // The pinned model was tried first and REJECTED; the cached model
+      // produced the real answer.
+      expect(completeSimple).toHaveBeenCalledTimes(2);
+      expect(findModel.mock.calls[0]?.[0]).toBe('prov/pinned');
+      expect(findModel.mock.calls[1]?.[0]).toBe('prov/cached');
+      expect(result).toEqual({ category: 'standard', reason: 'from cached', confidence: 0.8 });
+      // No hint semantics may leak into the routed classification.
+      expect((result as any).hintType).toBeUndefined();
+      expect((result as any).hintTarget).toBeUndefined();
+      expect((result as any).category ?? '').not.toMatch(/^hint:/);
+    });
+
+    it('converts a legitimate mid-prompt HINT reply from a cloud model into a processed hint', async () => {
+      vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValueOnce(
+          cloudReply({ category: 'hint:group:strategic', reason: 'user asked for strategic', confidence: 1.0 })
+        );
+      const findModel = vi.fn().mockReturnValue(mockModel);
+
+      // The HINT is mid-prompt (not at the start), so detectHintDirectly does
+      // not preempt it — the LLM legitimately sees it and may answer with a
+      // hint:* category, which the cloud loop must convert EXACTLY like the
+      // Ollama path (review 2026-09-26, Important #1).
+      const result = await classifyPrompt(
+        'Please review the auth refactor and HINT: use group strategic for the follow-up question',
+        {
+          allowCloudFallback: true,
+          cfg: {} as any,
+          cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+          completeSimple,
+          findModel,
+        }
+      );
+
+      expect(completeSimple).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        reason: 'user asked for strategic',
+        confidence: 1.0,
+        hintType: 'group',
+        hintTarget: 'strategic',
+      });
+    });
+
     it('falls through an empty cloud candidate list to static classification', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
 
@@ -248,6 +325,30 @@ describe('classifyPrompt fallback chain', () => {
       expect(findModel).toHaveBeenCalledWith('prov/pinned');
       expect(completeSimple).toHaveBeenCalledTimes(1);
       expect(result).toEqual({ category: 'standard', reason: 'from pinned', confidence: 0.9 });
+    });
+
+    it('moves a pinned model that is already in the cached list to position 0 — no duplicate tries (review 2026-09-26, Minor #3)', async () => {
+      vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+      const completeSimple = vi.fn().mockResolvedValue(
+        cloudReply({ category: 'exploration', reason: 'from pinned', confidence: 0.9 })
+      );
+      // findModel resolves refs in call order: the pinned ref must be FIRST.
+      const findModel = vi.fn((ref: string) => (ref === 'prov/cached-b' || ref === 'prov/cached-a' ? mockModel : undefined));
+
+      const result = await classifyPrompt('Merge the release branch notes into our changelog today', {
+        allowCloudFallback: true,
+        // 'prov/cached-b' sits at list position 1 — the pinned contract says
+        // it must still be tried FIRST, deduplicated, not skipped in place.
+        pinnedCloudModel: 'prov/cached-b',
+        cfg: {} as any,
+        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'] } as any,
+        completeSimple,
+        findModel,
+      });
+
+      expect(findModel.mock.calls[0]?.[0]).toBe('prov/cached-b');
+      expect(completeSimple).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({ category: 'exploration', reason: 'from pinned', confidence: 0.9 });
     });
 
     it('skips an unresolvable pinned model and continues with the cached list', async () => {
