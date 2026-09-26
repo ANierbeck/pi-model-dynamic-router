@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import type { Config } from './types.ts';
 import {
   delegationSettings,
+  type DelegationSettings,
   isTargetedReadInput,
   stripRouterNarration,
   drainSubCallStream,
@@ -79,6 +80,42 @@ export function buildBulkReadPrompt(question: string, files: BulkReadFile[]): st
 export interface ReadBlockResult {
   block: true;
   reason: string;
+  /** True when the block fired because of the expensive-model escalation
+   *  (not the size threshold) — lets the tool_call hook log the cause. */
+  expensive?: boolean;
+}
+
+/**
+ * Whether `ref` belongs to a delegation-expensive group (default:
+ * strategic, tactical) or sits behind an expensive provider prefix
+ * (default: none). Expensive models never do full-file reads — they
+ * orchestrate; file inspection belongs to the cheap delegation group.
+ *
+ * Group membership is matched against the ACTIVE config's materialized
+ * model lists (the scan writes model_groups.<name>.models; entries are
+ * plain refs, { ref } objects are tolerated defensively). A config
+ * without materialized lists (static-only) matches nothing — fail-open,
+ * the size threshold keeps protecting on its own.
+ */
+export function isExpensiveModelRef(
+  ref: string,
+  cfg: Config | undefined,
+  settings: DelegationSettings
+): boolean {
+  if (!ref) return false;
+  const groups = cfg?.model_groups;
+  for (const name of settings.expensive_groups) {
+    const models = (groups as Record<string, { models?: unknown }> | undefined)?.[name]?.models;
+    if (!Array.isArray(models)) continue;
+    for (const m of models) {
+      const r = typeof m === 'string' ? m : (m as { ref?: unknown })?.ref;
+      if (r === ref) return true;
+    }
+  }
+  for (const prefix of settings.expensive_providers) {
+    if (ref === prefix || ref.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')) return true;
+  }
+  return false;
 }
 
 /**
@@ -92,7 +129,8 @@ export interface ReadBlockResult {
  */
 export function checkReadBlock(
   event: { toolName?: string; input?: unknown },
-  cfg: Config | undefined
+  cfg: Config | undefined,
+  curModel?: string
 ): ReadBlockResult | undefined {
   try {
     const settings = delegationSettings(cfg);
@@ -112,6 +150,26 @@ export function checkReadBlock(
     } catch {
       return undefined; // nonexistent file: the read tool reports that itself
     }
+
+    // ADR-0007 escalation (2026-09-26): members of expensive groups
+    // (default strategic/tactical) never read full files, regardless of
+    // size — their context is paid for orchestration, file inspection
+    // goes to the cheap delegation group. Sits AFTER the stat check
+    // (fail-open: a read we cannot assess is never blocked) and BEFORE
+    // the size prefilter (expensive blocks fire at any size). Targeted
+    // reads passed above; an unknown curModel falls through to size-only.
+    if (curModel && isExpensiveModelRef(curModel, cfg, settings)) {
+      return {
+        block: true,
+        expensive: true,
+        reason:
+          `Full-file reads are blocked for expensive models (${curModel}) — keep your context for ` +
+          `orchestration and reasoning. Use the bulk_read tool with { question, paths } — a cheap ` +
+          `reader answers without loading the file into your context. For a specific section use ` +
+          `read with offset/limit — targeted reads are never blocked.`,
+      };
+    }
+
     // Cheap prefilter: N lines need at least N-1 newline bytes, so a file
     // smaller than block_lines can never reach the threshold.
     if (size < settings.block_lines) return undefined;

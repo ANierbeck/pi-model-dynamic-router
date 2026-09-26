@@ -176,6 +176,16 @@ export interface DelegationConfig {
   /** Pre-call block threshold for full-file reads, in lines (shunt's
    * SHUNT_MIN_LINES). Default 350; 0 disables pre-call blocking. */
   block_lines?: number;
+  /** Router groups whose members never do full-file reads regardless of
+   *  size (ADR-0007 escalation): expensive models orchestrate and reason;
+   *  file inspection belongs to the cheap delegation group. Matched against
+   *  the ACTIVE config's materialized model lists (scan output). Defaults
+   *  to ['strategic', 'tactical']; an empty array disables the group check. */
+  expensive_groups?: string[];
+  /** Provider prefixes (e.g. 'pi-claude') whose models count as expensive
+   *  regardless of group membership — for fixed (non-routed) sessions whose
+   *  model never appears in any group list. Defaults to none. */
+  expensive_providers?: string[];
 }
 
 /**

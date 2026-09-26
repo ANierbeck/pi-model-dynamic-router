@@ -173,6 +173,8 @@
     "glm-4-6": 520
   },
   "delegation": {
-    "enabled": true
+    "enabled": true,
+    "expensive_groups": ["strategic", "tactical"],
+    "expensive_providers": []
   }
 }

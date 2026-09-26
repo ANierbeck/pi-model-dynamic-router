@@ -1635,10 +1635,17 @@ let previousTokenCount = 0;
   // (default 350, shunt's SHUNT_MIN_LINES) is blocked BEFORE execution and
   // redirected to bulk_read / a targeted read. Fail-open: every miss passes.
   pi.on('tool_call', (ev) => {
-    const block = checkReadBlock(ev, cfg);
+    // Layer 1 (ADR-0007 escalation, 2026-09-26): the factual stream ref
+    // (set by the stream orchestrator for THIS turn) — not the session's
+    // group provider. A fixed-session model that never routed falls back
+    // to the session ref (model_select/turn_start).
+    const streamRef = router.getCurModel(turnStart) || curModel;
+    const block = checkReadBlock(ev, cfg, streamRef);
     if (block) {
       routerLog(
-        `[bulk_read] blocked a full-file read of "${(ev as any)?.input?.path}" — redirected to bulk_read/targeted read`
+        (block as { expensive?: boolean }).expensive
+          ? `[bulk_read] blocked a full-file read by expensive model "${streamRef}" — redirected to bulk_read/targeted read`
+          : `[bulk_read] blocked a full-file read of "${(ev as any)?.input?.path}" — redirected to bulk_read/targeted read`
       );
       return block;
     }

@@ -43,6 +43,13 @@ export interface DelegationSettings {
    *  SHUNT_MIN_LINES). 0 disables pre-call blocking; the shrinker keeps
    *  working regardless. */
   block_lines: number;
+  /** Router groups whose members never do full-file reads (ADR-0007
+   *  escalation, 2026-09-26): expensive models orchestrate; file inspection
+   *  goes to the cheap delegation group. */
+  expensive_groups: string[];
+  /** Provider prefixes whose models count as expensive regardless of
+   *  group membership. Empty by default. */
+  expensive_providers: string[];
 }
 
 const DEFAULTS: DelegationSettings = {
@@ -60,6 +67,12 @@ const DEFAULTS: DelegationSettings = {
   // shunt's check-file-size blocks full reads above 350 lines pre-execution
   // and redirects to the bulk reader. Same default, same meaning.
   block_lines: 350,
+  // ADR-0007 escalation (2026-09-26): expensive reasoning groups must not
+  // burn context on file I/O the bulk_reader answers for ~$0 — and pi-claude
+  // file tool calls crash on the broken kendex bridge anyway, so routing
+  // file inspection through bulk_read avoids the broken path entirely.
+  expensive_groups: ['strategic', 'tactical'],
+  expensive_providers: [],
 };;
 
 /**
@@ -78,6 +91,14 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
     Array.isArray(toolsRaw) && toolsRaw.every((t) => typeof t === 'string' && t.trim().length > 0)
       ? toolsRaw.map((t) => t.trim())
       : DEFAULTS.tools;
+  // Whole-list trust like `tools`: a partially-valid list would silently
+  // block the wrong models. Invalid → default; [] (valid empty) → check off.
+  const strList = (raw: unknown, fallback: string[]): string[] =>
+    Array.isArray(raw) && raw.every((x) => typeof x === 'string' && x.trim().length > 0)
+      ? (raw as string[]).map((x) => x.trim())
+      : fallback;
+  const expensiveGroups = strList((d as DelegationConfig).expensive_groups, DEFAULTS.expensive_groups);
+  const expensiveProviders = strList((d as DelegationConfig).expensive_providers, DEFAULTS.expensive_providers);
   return {
     enabled: d.enabled === true,
     min_chars: typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
@@ -88,6 +109,8 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
     // 0 explicitly disables pre-call blocking; negative/non-number falls back.
     block_lines:
       typeof d.block_lines === 'number' && d.block_lines >= 0 ? d.block_lines : DEFAULTS.block_lines,
+    expensive_groups: expensiveGroups,
+    expensive_providers: expensiveProviders,
   };
 }
 
