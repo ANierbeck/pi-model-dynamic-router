@@ -1,6 +1,31 @@
 # Changelog
 
-## [Unreleased] — Fix incomplete router-narration lock-in (second root cause)
+## [Unreleased] — v1.6.0 content (pending release)
+
+> Everything since v1.5.4. Full breakdown: `docs/v1.6.0-release-plan.md`.
+
+### Added
+- **Robust cloud classifier fallback for offline Ollama** (`6444371`)
+  When the local daemon is unavailable, classification no longer burns
+  primary + fallback timeouts on every prompt: `isOllamaAvailable()`
+  (GET /api/tags, 1.5s cap, 15s negative cache) guards both local attempts
+  and jumps straight to the cloud fallback chain. The chain tries, in
+  order: the pinned model (`classifier_cloud_model`), the scan-time
+  probe-verified list, tiered discovery, configured free models — and
+  finally static classification (never throws). New dynamic-group option
+  `classifier_cloud_fallback` opts in; `classifier_cloud_model` pins a
+  specific cloud model as the FIRST cloud candidate (unresolvable refs
+  are skipped via findModel). 42 new regression tests.
+- **Quality probe for cloud classifier fallback candidates** (`65998ee`)
+  A reachability probe ("Reply with OK") cannot catch models that answer
+  garbage on real prompts (voxtral-small incident, 2026-09-26: passed
+  reachability, then echoed the `HINT:` narration out of the context
+  block instead of classifying — misroute to tactical). The scan-time
+  probe now sends three real classification cases through the SAME
+  shared prompt surface as the runtime classifier, including a
+  hint-narration trap that rejects any `hint:*` reply. Verified-working
+  refs are cached in `cache.classifier_fallback_models` and reused until
+  the next `/router` scan.
 
 ### Fixed
 - **The 1.5.4 router-narration lock-in fix was incomplete.** It only stripped
@@ -27,6 +52,23 @@
   New non-vacuous multi-turn regression tests in
   `test/classifier-narration-leak-multi-turn.test.ts` (verified to FAIL
   against the pre-fix code and PASS after the fix).
+- **Dead trivial branch: 0x08 control byte in the trivialKeywords regex**
+  (`6444371`). A literal backspace (0x08) had slipped in where a `\b`
+  word-boundary escape was intended, so the regex could never match and
+  every "what's in this file?"-style prompt fell through to 'simple'
+  instead of 'trivial'. The 0x08 is removed and the original trivial
+  expectation restored.
+- **Spurious hint echoes from cloud classifier models** (`09fa5b6`, code
+  review 2026-09-26, Important #1). The cloud fallback loop returned raw
+  `{category: 'hint:*'}` objects as the routed classification — an
+  invalid category that polluted `lastClassifiedCategory` (inherited by
+  short-prompt momentum) and misrouted via the CATEGORY_TO_GROUP miss.
+  Hint replies now share the Ollama path's conversion
+  (`toHintClassification`) and are only accepted when the current request
+  itself carries a HINT marker; narrated-HINT echoes are skipped to the
+  next candidate. Also fixes pinned-model ordering: a pinned ref already
+  in the probe-verified list now moves to position 0 instead of being
+  silently ignored (the documented tried-FIRST contract).
 
 ## [1.5.4] — 2026-09-18 — Fix router-narration lock-in loop
 
