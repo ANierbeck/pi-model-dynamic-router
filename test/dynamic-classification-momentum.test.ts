@@ -31,6 +31,8 @@ vi.mock('../src/ollama-utils.ts', () => ({
   callOllama: vi.fn(async () =>
     JSON.stringify({ category: 'code_complex', reason: 'complex refactor', confidence: 0.9 })
   ),
+  // Daemon probed as reachable so the mocked Ollama path stays exercised.
+  isOllamaAvailable: vi.fn(async () => true),
 }));
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));

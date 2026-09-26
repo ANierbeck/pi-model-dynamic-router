@@ -13,6 +13,8 @@ vi.mock('../src/ollama-utils.js', async () => {
   return {
     ...actual,
     callOllama: vi.fn(),
+    // Daemon probed as reachable so the mocked Ollama path stays exercised.
+    isOllamaAvailable: vi.fn(async () => true),
   };
 });
 

@@ -10,6 +10,8 @@ vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(async (_model: string, _prompt: string, _opts: any) =>
     JSON.stringify({ category: 'code_complex', reason: 'cached test', confidence: 0.9 })
   ),
+  // Daemon probed as reachable so the mocked Ollama path stays exercised.
+  isOllamaAvailable: vi.fn(async () => true),
 }));
 
 // Import AFTER the mock is registered.

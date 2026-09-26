@@ -246,6 +246,9 @@ export class StreamOrchestrator {
         };
         if (dynamicGroupCfg?.classifier_model) classifyOpts.model = stripOllama(dynamicGroupCfg.classifier_model);
         if (dynamicGroupCfg?.classifier_fallback) classifyOpts.fallbackModel = stripOllama(dynamicGroupCfg.classifier_fallback);
+        // Cloud ref is NOT ollama-stripped — findModel needs the full
+        // "provider/id" form to resolve it against pi's model registry.
+        if (dynamicGroupCfg?.classifier_cloud_model) classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
 
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
 
