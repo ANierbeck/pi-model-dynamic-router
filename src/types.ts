@@ -225,9 +225,10 @@ export interface Cache {
   model_health?: Record<string, { fails: number; last_fail: number }>;
   /**
    * Verified-working cloud models for the classifier's cloud fallback.
-   * Populated by probeAndCache() at scan time (a tiny "Reply with OK" probe
-   * filters out broken/unavailable candidates like mistral-zai models that
-   * 422 on mistral-small). Reused by the classifier until the next /router
+   * Populated by probeAndCache() at scan time (a quality probe with real
+   * classification cases — incl. the HINT-narration trap — filters out
+   * broken/unavailable and misclassifying candidates). Reused by the
+   * classifier until the next /router
    * scan regenerates the cache. Empty array = probe ran but all failed;
    * absent = probe hasn't run yet this scan cycle.
    */

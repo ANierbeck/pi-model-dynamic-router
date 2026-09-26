@@ -10,6 +10,7 @@ import {
   buildContextBlock,
   buildClassificationPrompt,
   extractClassificationJson,
+  isHintCategory,
 } from './classification-prompt.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -305,6 +306,66 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   return null;
 }
 
+/**
+ * Converts a raw LLM `hint:*` classification (e.g. {category:
+ * 'hint:group:tactical', reason}) into a processed HintClassificationResult
+ * (hintType + hintTarget). Shared by the Ollama path and the cloud fallback
+ * loop inside classifyPrompt so both produce identical hint semantics.
+ * Returns null when the hint target is empty or malformed — callers degrade
+ * (Ollama: explicit fallback classification; cloud: skip to next model).
+ * Takes the raw parsed JSON object (any, guarded internally with typeof
+ * checks — same convention as isValidFullClassification).
+ */
+function toHintClassification(parsed: any): FullClassificationResult | null {
+  const category = typeof parsed.category === 'string' ? parsed.category : '';
+  if (!isHintCategory(category)) return null;
+  const hintTarget = category.slice(5).trim(); // Remove 'hint:' prefix
+  if (!hintTarget) return null;
+
+  if (hintTarget.startsWith('group:')) {
+    // This is a group hint
+    const groupName = hintTarget.slice(6).trim(); // Remove 'group:' prefix
+    if (!groupName) return null;
+    return {
+      reason: parsed.reason || 'User specified group via HINT',
+      confidence: 1.0,
+      hintType: 'group',
+      hintTarget: groupName,
+    };
+  }
+
+  // This is a model hint — clean up common prefixes like "use ", "nutze ".
+  let cleanHintTarget = hintTarget;
+  const verbPrefixes = ['use ', 'use:', 'nutze ', 'nutze:', 'utilise ', 'utilise:', 'utilizar ', 'utilizar:'];
+  for (const prefix of verbPrefixes) {
+    if (cleanHintTarget.toLowerCase().startsWith(prefix)) {
+      cleanHintTarget = cleanHintTarget.slice(prefix.length).trim();
+      break;
+    }
+  }
+  if (!cleanHintTarget) return null; // e.g. "hint:use" with nothing after the verb
+  return {
+    reason: parsed.reason || 'User specified model via HINT',
+    confidence: 1.0,
+    hintType: 'model',
+    hintTarget: cleanHintTarget,
+  };
+}
+
+/**
+ * True when the user request itself carries a HINT marker ANYWHERE — not
+ * only at the start (start-position hints are handled by detectHintDirectly
+ * before any LLM path). This is the spurious guard for raw hint:* LLM
+ * replies in the cloud fallback loop: without a marker in the CURRENT
+ * request, such a reply means the model copied HINT narration out of the
+ * context block (voxtral incident 2026-09-26) and must not be trusted.
+ * Mirrors detectHintDirectly's colon/verb-lookahead disambiguation so prose
+ * like "can I get a hint about…" does not count.
+ */
+function containsHintMarker(prompt: string): boolean {
+  return /(?:^|[^A-Za-z0-9_-])(?:HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+\S/i.test(prompt);
+}
+
 export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
@@ -412,57 +473,21 @@ export async function classifyPrompt(
       throw new Error(`Invalid format: ${response}`);
     }
     
-    // Check for HINT override in the classification result
-    if (parsed.category && parsed.category.startsWith('hint:')) {
-      // Extract the hint target from the category
-      const hintTarget = parsed.category.slice(5); // Remove 'hint:' prefix
-      
-      // Guard: if hintTarget is empty, return explicit fallback
-      if (!hintTarget || hintTarget.length === 0) {
-        routerLog(`[classifier] Empty HINT target received from LLM: ${parsed.category}`);
-        return { 
-          category: 'fallback', 
-          reason: 'Empty HINT target from LLM', 
-          confidence: 0.5 
+    // Check for HINT override in the classification result.
+    // Conversion is shared with the cloud fallback loop via
+    // toHintClassification so both paths produce identical hint semantics
+    // (code review 2026-09-26, Important #1).
+    if (isHintCategory(parsed.category)) {
+      const hint = toHintClassification(parsed);
+      if (!hint) {
+        routerLog(`[classifier] Unusable HINT target received from LLM: ${parsed.category}`);
+        return {
+          category: 'fallback',
+          reason: 'Empty or malformed HINT target from LLM',
+          confidence: 0.5,
         };
       }
-      
-      if (hintTarget.startsWith('group:')) {
-        // This is a group hint
-        const groupName = hintTarget.slice(6); // Remove 'group:' prefix
-        if (!groupName || groupName.length === 0) {
-          routerLog(`[classifier] Empty group name in HINT: ${parsed.category}`);
-          return { 
-            category: 'fallback', 
-            reason: 'Empty group name in HINT', 
-            confidence: 0.5 
-          };
-        }
-        return {
-          reason: parsed.reason || 'User specified group via HINT',
-          confidence: 1.0,
-          hintType: 'group',
-          hintTarget: groupName,
-        };
-      } else {
-        // This is a model hint - clean up common prefixes like "use ", "nutze ", etc.
-        // Extract just the model name by removing common verbs
-        let cleanHintTarget = hintTarget.trim();
-        const verbPrefixes = ['use ', 'use:', 'nutze ', 'nutze:', 'utilise ', 'utilise:', 'utilizar ', 'utilizar:'];
-        for (const prefix of verbPrefixes) {
-          if (cleanHintTarget.toLowerCase().startsWith(prefix)) {
-            cleanHintTarget = cleanHintTarget.slice(prefix.length).trim();
-            break;
-          }
-        }
-        
-        return {
-          reason: parsed.reason || 'User specified model via HINT',
-          confidence: 1.0,
-          hintType: 'model',
-          hintTarget: cleanHintTarget,
-        };
-      }
+      return hint;
     }
     
     if (parsed.confidence !== undefined && parsed.confidence < MIN_CONFIDENCE) {
@@ -526,8 +551,9 @@ export async function classifyPrompt(
   //
   // Model selection: prefer the probe-verified cached list
   // (cache.classifier_fallback_models, populated at scan time by
-  // probeAndCache — a tiny "Reply with OK" probe filters broken candidates
-  // like mistral-zai models that 422 on mistral-small). If the probe hasn't
+  // probeAndCache — a quality probe with real classification cases, incl.
+  // the HINT-narration trap, filters broken/misclassifying candidates). If
+  // the probe hasn't
   // run yet this scan cycle, fall back to selectClassifierCandidates
   // (price + gdpval tiered discovery) and the try-each loop acts as a lazy
   // probe. Only activate when allowCloudFallback is true AND cfg/cache + the
@@ -555,8 +581,11 @@ export async function classifyPrompt(
       // tried FIRST — before the probe-verified list — so a user-pinned
       // (e.g. subscription-covered) model classifies deterministically. The
       // findModel guard in the loop below skips it if pi doesn't know it.
-      if (pinnedCloudModel && !modelsToTry.includes(pinnedCloudModel)) {
-        modelsToTry = [pinnedCloudModel, ...modelsToTry];
+      if (pinnedCloudModel) {
+        // Tried FIRST — dedup instead of skip so a pinned ref that already
+        // sits in the probe-verified list still moves to position 0 (code
+        // review 2026-09-26, Minor #3).
+        modelsToTry = [pinnedCloudModel, ...modelsToTry.filter((m) => m !== pinnedCloudModel)];
         source = `pinned+${source}`;
       }
       routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
@@ -598,6 +627,30 @@ export async function classifyPrompt(
           }
           const parsed = extracted as FullClassificationResult;
           if (isValidFullClassification(parsed)) {
+            // HINT replies need conversion + a spurious guard (code review
+            // 2026-09-26, Important #1): the Ollama path converts raw hint:*
+            // categories into processed hints, but this loop returned them
+            // AS-IS — an invalid category that pollutes lastClassifiedCategory
+            // (short-prompt momentum) and misroutes via the CATEGORY_TO_GROUP
+            // miss. A hint:* reply is legitimate only when the CURRENT request
+            // itself carries a HINT marker (start-position hints already
+            // returned via detectHintDirectly before this loop); otherwise the
+            // model copied HINT narration out of the context block (voxtral
+            // incident 2026-09-26) and the candidate is skipped like any other
+            // bad reply.
+            if (isHintCategory((extracted as any).category)) {
+              if (!containsHintMarker(prompt)) {
+                throw new Error(
+                  `Cloud model ${modelRef} echoed a spurious HINT (${(extracted as any).category}) — no HINT in the current request`
+                );
+              }
+              const hint = toHintClassification(extracted);
+              if (!hint) {
+                throw new Error(`Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`);
+              }
+              routerLog(`[classifier] Cloud model ${modelRef} succeeded (HINT conversion via pi completeSimple)`);
+              return hint;
+            }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
             // Apply escalation logic to cloud result
             if (context.lastModel && !context.isCompaction) {
