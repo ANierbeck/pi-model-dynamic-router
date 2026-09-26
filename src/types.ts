@@ -68,20 +68,22 @@ export interface Group {
   exclude_providers?: string[];
   exclude_models?: string[];
   /**
-   * Override the default billing-tier ordering used by `method: "tiered"".
-   * Default ordering is free(0) → subscription(1) → local(2) → payg(3),
-   * i.e. already-paid subscription models rank ahead of local compute.
-   * Set to "local_first" to rank local models AHEAD of subscription models
-   * (but still after truly-free $0 models). Useful for scout/operational
-   * groups where local $0-Modelle should be preferred over cloud
-   * subscription models when their GDPval qualifies.
-   */
-  /**
-   * Billing-tier ordering override for method 'tiered' groups.
-   * - 'default': free → subscription → local → payg.
-   * - 'local_first': free → local → subscription → payg.
+   * Billing-tier ranking override, applied as a post-sort pass by
+   * `resolveGroup()` (live selection) and `getTopModels()` (display) AFTER
+   * the group's `method` has ordered the candidates. It re-ranks by billing
+   * tier only; it does not change which models passed the filters.
+   *
+   * Orderings (see `Router.sortByBillingPreference`):
+   * - 'default':      free → subscription → local → payg
+   * - 'local_first':  free → local → subscription → payg
    * - 'strict_local': local → free → subscription → payg — for cheap groups
-   *   (trivial/simple) where the local daemon should answer first.
+   *   (trivial/simple) where the local daemon should answer first: best
+   *   latency and no quota burn, ahead of even the $0 remote models.
+   *
+   * Note that a subscription model's nominal $0 cost does NOT mean it is
+   * free — those plans hide a hard time/token limit (the pi-claude
+   * incident, 2026-09-26). Prefer the local daemon or a genuine `:free`
+   * model over a subscription model for cheap work.
    */
   billing_preference?: 'default' | 'local_first' | 'strict_local';
   /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */

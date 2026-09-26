@@ -440,17 +440,66 @@ See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-deco
 
 #### Billing Preference (per-group tier override)
 
-By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local $0-Modelle conceptually belong on top.
+By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local models conceptually belong on top.
 
-Set `billing_preference: "local_first"` on a group to rank **local models ahead of subscription** (but still after truly-free $0 models). payg stays last. This is opt-in per group — other groups keep the default ordering.
+`billing_preference` re-ranks a group by billing tier after its `method` has ordered the candidates. It does not change which models passed the filters — only their order. Three values:
+
+| Value | Ordering | Use for |
+|-------|----------|---------|
+| `"default"` (or omitted) | free → subscription → local → payg | Groups where an already-paid subscription model is the cheaper choice in time/quota terms. |
+| `"local_first"` | free → local → subscription → payg | scout / operational groups where local models should rank ahead of subscription, but genuinely-free remote models still win. |
+| `"strict_local"` | local → free → subscription → payg | Cheap groups (trivial / simple) where the local daemon should answer **first**, ahead of even the $0 remote models — best latency and no quota burn. |
+
+`payg` is always last. This is opt-in per group — other groups keep the default ordering.
+
+> **A subscription model's $0 cost is not free.** Flat-rate plans like pi-claude hide a hard time/token limit, so a trivial prompt routed there is the single most expensive thing the router can do. Prefer a local model or a genuine `:free` model for cheap work.
 
 ```json
 "scout": {
   "method": "tiered",
   "billing_preference": "local_first",
   "min_gdpval": 0
+},
+"trivial": {
+  "method": "tiered",
+  "billing_preference": "strict_local",
+  "min_gdpval": 0
 }
 ```
+
+#### Read Delegation (bulk reads)
+
+Delegation has two halves. A large `read`/`bash` result is **replaced** by a summary produced by a cheap `bulk_reader` group, and a full-file `read` is **blocked before it runs** and redirected to a targeted `offset`/`limit` read. Both are off by default.
+
+```json
+"delegation": {
+  "enabled": true,
+  "group": "bulk_reader",
+  "tools": ["read", "bash"],
+  "min_chars": 3500,
+  "max_raw_chars": 60000,
+  "block_lines": 350,
+  "expensive_groups": ["strategic", "tactical"],
+  "expensive_providers": []
+}
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | Master switch. Anything other than `true` is off (fail-open). |
+| `group` | `"bulk_reader"` | Model group that produces the summary. Must be registered as a group so the router intercepts it. |
+| `tools` | `["read", "bash"]` | Result-bearing tools to delegate. Trusted **as a whole**: a non-array, or any non-string/empty entry, discards the entire list and uses the default. |
+| `min_chars` | `3500` | Minimum result size before delegating. Below this, delegation latency exceeds the savings. |
+| `max_raw_chars` | `60000` | Cap on result text sent to the sub-call. |
+| `block_lines` | `350` | Pre-call block for full-file reads. `0` **disables** pre-call blocking explicitly; negative or non-numeric falls back to the default. |
+| `expensive_groups` | `["strategic", "tactical"]` | Groups whose models may not do full-file reads. Matched against the **active** config's materialized model lists. |
+| `expensive_providers` | `[]` | Provider **prefixes** whose models count as expensive regardless of group — e.g. `["pi-claude"]` matches `pi-claude/claude-sonnet-5`. |
+
+Targeted reads (any `read` with `offset` or `limit`) and piped/grep'd `bash` commands are **always** delegated around — they are precise extracts the orchestrator needs verbatim, and the pre-call block never fires for them.
+
+Group and provider lists are trusted as a whole, like `tools`: a partially-valid list would silently block or delegate the wrong models, so an invalid list falls back to the default and an empty list (`[]`) genuinely disables the check. A config whose `model_groups` have no materialized `models` arrays (static-only) matches nothing on `expensive_groups` — the size threshold still protects on its own.
+
+The expensive-model pre-call block judges the caller by the **driving** model of the turn — the first model that streamed — not by whatever model streamed most recently. A nested `bulk_reader` sub-call mid-turn does not un-block the expensive model's subsequent reads.
 
 #### Provider Configuration
 
@@ -470,7 +519,7 @@ Set `billing_preference: "local_first"` on a group to rank **local models ahead 
 | **`cost_per_m`** | Cost per million tokens (for estimates) | `0.0000015` |
 | **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
 | **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933, "qwen3-8-27b": 580 }` |
-| **`billing_preference`** | Per-group tier ordering override (`"local_first"` ranks local models ahead of subscription) | `"local_first"` |
+| **`billing_preference`** | Per-group tier ordering override (`"local_first"` / `"strict_local"` rank local models ahead of subscription) | `"local_first"` |
 | **`modelFilter`** (PROVIDER_MAP) | Regex to constrain scanned model ids per provider | `"^(zai-)?glm"` |
 
 Groups need no `models` arrays — everything is auto-discovered **plus** any explicitly listed models.

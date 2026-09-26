@@ -93,9 +93,17 @@ export interface ReadBlockResult {
  *
  * Group membership is matched against the ACTIVE config's materialized
  * model lists (the scan writes model_groups.<name>.models; entries are
- * plain refs, { ref } objects are tolerated defensively). A config
- * without materialized lists (static-only) matches nothing — fail-open,
- * the size threshold keeps protecting on its own.
+ * plain refs, { ref } objects are tolerated defensively). The generated
+ * dynamic config uses plain strings, but a hand-written or
+ * third-party-generated config may use `{ ref }` entries, so BOTH shapes
+ * are accepted rather than silently failing to match.
+ *
+ * `cfg.model_groups[name].models` is typed loosely (the scan writes plain
+ * string refs, which is not the `string[]` the shared ModelGroup type
+ * implies), hence the local cast to `unknown` + the entry-shape check.
+ *
+ * A config without materialized lists (static-only) matches nothing —
+ * fail-open, the size threshold keeps protecting on its own.
  */
 export function isExpensiveModelRef(
   ref: string,

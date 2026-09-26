@@ -644,18 +644,19 @@ export class Router {
   }
 
   /**
-   * Sorts models by minimum cost only if ALL models have known prices
-   * Otherwise falls back to sorting by GDPval (best first)
+   * Sorts models by minimum cost, leaving unknown-cost models at the end.
+   *
+   * Despite the name, there is no "if all priced" precondition left: the
+   * original implementation flipped the WHOLE list to best-gdpval ordering
+   * as soon as a single model had 'unknown' effCost, so "cheapest first"
+   * silently became "strongest first" and put pi-claude/claude-sonnet-5
+   * (gdpval 1603) on rank 1 of the trivial group, routing trivial prompts
+   * to the most expensive subscription model (found by a live /router
+   * scan, 2026-09-26). It is now a plain sortByMinCost call — priced
+   * models keep their cost ordering, unknown-cost models sort last, and
+   * cost ties break on gdpval.
    */
   sortByMinCostIfAllPriced(refs: string[]): string[] {
-    // 2026-09-26 fix (live /router scan finding): this used to flip the
-    // ENTIRE list to best-gdpval ordering as soon as ONE model had
-    // 'unknown' effCost — "cheapest first" silently became "strongest
-    // first", which put pi-claude/claude-sonnet-5 (gdpval 1603) on rank 1
-    // of the trivial group and routed trivial prompts to the most expensive
-    // subscription model. Unknown-cost models now simply sort to the END
-    // (sortByMinCost's existing convention) while priced models keep their
-    // cost ordering, with the usual gdpval tiebreak on cost ties.
     return this.sortByMinCost(refs);
   }
 

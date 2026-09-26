@@ -73,12 +73,17 @@ const DEFAULTS: DelegationSettings = {
   // file inspection through bulk_read avoids the broken path entirely.
   expensive_groups: ['strategic', 'tactical'],
   expensive_providers: [],
-};;
+};
 
 /**
  * Effective delegation settings for the given config. Missing config or
  * missing `delegation` block → disabled (fail-open by default; the fork's
  * router-config.json opts in).
+ *
+ * The config arrives already LAYERED — index.ts merges router-config.json →
+ * the user config → the project config before the router sees it, so this
+ * function only ever reads the merged result and never resolves layers
+ * itself.
  *
  * `tools` is trusted only as a whole: a non-array value or any non-string /
  * empty-string entry discards the entire list and falls back to the default
