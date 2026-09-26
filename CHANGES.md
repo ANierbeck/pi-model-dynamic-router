@@ -2,6 +2,12 @@
 
 > **Note**: This file was previously in German; it is now translated to English to comply with AGENTS.md rule 3 ("All documentation and comments must be in English").
 
+## 1.6.0-SNAPSHOT (unreleased, pre-release)
+
+**Content**: everything on `main` since `v1.5.4` — 29 commits, 72 files,
++7112 / −318 lines. See `docs/v1.6.0-release-plan.md` for the full
+breakdown.
+
 ## 1) effCost Registry-First Fix (src/metrics.ts)
 
 - **Problem**: `getM()` set `cost_per_m = 0` for any provider with `billing === 'subscription'` **before** querying the registry. This caused Mistral subscriptions with real prices ($1.4) to be treated as free, landing in `max_cost:0` groups and being excluded from expensive tiers.
