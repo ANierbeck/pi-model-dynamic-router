@@ -1072,32 +1072,15 @@ let previousTokenCount = 0;
         
         // 6. Filter models by the group's criteria
         //
-        // NOTE (A1): The live path (Router.resolveGroup) and the display path
-        // (Router.getTopModels) share the method-independent filters via
-        // applyGroupFilters() in routing.ts. This persist path does NOT use
-        // that helper, DELIBERATELY: its max_cost/max_cost_per_m semantics
-        // diverge (max_cost=0 groups admit genuine $0 models — free
-        // token-based ones AND local daemon models like ollama/lm-studio,
-        // which cost $0 variable — but exclude subscription models that cost
-        // real money; the live path instead treats max_cost=0 like max_cost=N
-        // and keeps unknown-cost subscription/local). Consolidating would
-        // break the trivial/simple groups' free-only guarantee. Only min_gdpval
-        // and the group-level exclude_providers/exclude_models (applied earlier
-        // via the global staticCfg.exclude) are shared in spirit.
-        //
-        // Local admission is by PROVIDER_MAP[prov].local, never by the billing
-        // label: ollama is labelled 'subscription' in PROVIDER_MAP, exactly
-        // like cloud providers that bill real money, and effCost() returns 0
-        // for both — so neither the label nor the cost can separate them.
-        // See admitsZeroCostGroup() in dynamic-config.ts for the full rule
-        // and the fail-open direction (unknown provider → excluded).
+        // Same gate rules as the live and display paths (applyGroupFilters,
+        // ADR-0010), fed with the per-model values computed above.
         let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, cfg);
         
         // 7. Sort the models according to the group's method
         let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, groupName, cfg, metricsModule.calculateScore);
         
         // 8. Collect models: static first (highest priority), then dynamic additions
-        const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, cfg, staticFreeModelsLookup);
+        const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, cfg);
         const originalModels = groupConfig.models ?? [];
         
         // Debug-Logging

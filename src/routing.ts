@@ -13,7 +13,7 @@ import type {
 } from './types.ts';
 import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow, isFreeModel } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
@@ -95,51 +95,107 @@ function billingFor(cfg: Config, prov: string): string {
 }
 
 /**
+ * Explicitly pay_per_token (cfg override or PROVIDER_MAP). Unlike
+ * {@link billingFor}, an unknown provider is NOT token-based here, so it can
+ * never be admitted as "free" into a $0 group.
+ */
+function isTokenBased(cfg: Config, prov: string): boolean {
+  return (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
+}
+
+/**
+ * Per-ref data the group gates read. The live and display paths use the
+ * metrics module; the persist path passes the values it already computed
+ * per model (see filterModelsForGroup), so both apply the SAME rules.
+ */
+export interface GroupFilterLookups {
+  gdp(ref: string): number | null;
+  cost(ref: string): number | 'unknown';
+  price(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null;
+  contextWindow(ref: string): number | null;
+  isFree(ref: string): boolean;
+}
+
+export function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
+  return {
+    gdp: lookupGdp,
+    cost: effCost,
+    price: lookupPrice,
+    contextWindow: lookupContextWindow,
+    isFree: (ref) => {
+      if (ref.includes(':free') || isFreeModel(ref)) return true;
+      const price = lookupPrice(ref);
+      if (price !== null && price.input === 0 && price.output === 0) return true;
+      return effCost(ref) === 0 && isTokenBased(cfg, ref.split('/')[0]);
+    },
+  };
+}
+
+/**
+ * Whether a model may enter a `max_cost: 0` group ("costs nothing per call").
+ *
+ * Two disjoint admissions:
+ *   1. LOCAL daemon models (PROVIDER_MAP[prov].local — ollama, lm-studio):
+ *      $0 variable cost. Admitted by PROVIDER DEFINITION, not by cost:
+ *      PROVIDER_MAP bills ollama as 'subscription', and `effCost` returns 0
+ *      for BOTH an ollama ref and a real cloud subscription ref without a
+ *      registry price, so neither the billing label nor the effective cost
+ *      can tell the two apart. Only the provider-level `local` flag does.
+ *   2. Genuinely free TOKEN-BASED models (:free tags, free_models lists,
+ *      $0 prices): admitted only when the provider is pay_per_token, which
+ *      keeps cloud subscription models (real money) out.
+ *
+ * Fail-open is deliberately NOT applied: an unknown provider is neither
+ * local nor token-based, so it stays out of the $0 groups.
+ */
+export function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local) return true;
+  return isFree && isTokenBased(cfg, prov);
+}
+
+/**
  * Applies the method-independent group filters to a candidate list.
  *
- * This is the shared filter pipeline (A1) for the live selection path
- * ({@link Router.resolveGroup}) and the display path
- * ({@link Router.getTopModels}). The persist path (`generateDynamicConfig` in
- * index.ts) does NOT use it: it runs `filterModelsForGroup`
- * (src/dynamic-config.ts), whose max_cost / max_cost_per_m semantics differ
- * on purpose (see the step-6 note in generateDynamicConfig and ADR-0010).
- * Method-specific sorting, health demotion, budget filtering, rate-limit
- * splitting, static-model preservation, and persistence stay in the callers.
+ * This is the single group-gate rule set (A1, ADR-0010) for all three
+ * group-candidate paths: {@link Router.resolveGroup} (live selection),
+ * {@link Router.getTopModels} (display), and the persist path
+ * (`filterModelsForGroup` and the static-model loop in `collectGroupModels`,
+ * src/dynamic-config.ts). The persist path passes its own per-model values
+ * via `lookups`; live and display read the metrics module. Method-specific
+ * sorting, health demotion, budget filtering, rate-limit splitting,
+ * static-model preservation, and persistence stay in the callers.
  *
  * Filter order (matters for correctness, not just performance):
  *   1. exclude_providers  — drop whole providers (group-level override)
  *   2. exclude_models     — drop exact model refs (group-level override)
- *   3. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
- *   4. max_cost           — total cost cap; unknown-cost handling is
- *                           billing-aware (see INVARIANTS)
- *   5. max_cost_per_m     — per-million input-price cap
+ *   3. dedup (optional)   — same-slug clusters before the gates
+ *   4. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
+ *   5. max_cost           — total cost cap
+ *   6. max_cost_per_m     — per-million input-price cap
+ *   7. min_context_length — context window floor
  *
  * INPUT CONTRACT: `refs` are provider/id strings; `g` is the group config;
  * `cfg` is the live Config (for per-provider billing overrides). `dedup` is
- * optional and, when true, runs {@link Router.dedupByModelIdentity} after the
- * filters. The persist path does not call this function; it collapses
- * clusters with `collapseSameSlugClusters` and dedups by token signature in
- * `collectGroupModels` (which also preserves pinned static models).
+ * optional and, when true, runs `dedupFn` (live/display: dedupByModelIdentity).
+ * The persist path collapses clusters itself (collapseSameSlugClusters)
+ * before calling this and passes `dedup: false`.
  *
  * OUTPUT CONTRACT: returns a NEW filtered array (does not mutate input).
  *
- * SIDE EFFECTS: none. Pure w.r.t. the in-memory metrics/cost lookups.
+ * SIDE EFFECTS: none. Pure w.r.t. the lookups.
  *
- * INVARIANTS (must be preserved across all callers):
- *   - `max_cost` with unknown cost: included iff the provider is NOT
- *     pay_per_token (subscription/local = sunk cost), excluded for
- *     pay_per_token (genuinely unknown price). This is the live-path
- *     semantics; the display path historically diverged (dropped all
- *     unknowns) which made `/router` show models the live path would never
- *     pick — the consolidation fixes that divergence.
- *   - `max_cost_per_m` with unknown price: always excluded here (no good
- *     decision without a concrete price). The persist path keeps
- *     non-pay_per_token models instead — an open divergence, see ADR-0010.
- *   - `min_gdpval` uses `lookupGdp(ref) ?? null`; a null score (unscored
- *     model) fails the quality gate, matching filterByQualityMin.
- *   - `min_context_length` uses `lookupContextWindow(ref) ?? null`; a null
- *     context window (unscanned model) fails the gate, mirroring
- *     `min_gdpval`'s strict null-fails semantics.
+ * INVARIANTS:
+ *   - `max_cost: 0` admits only local providers and genuinely free
+ *     token-based models (admitsZeroCostGroup). Cloud subscription models
+ *     stay out even though their effCost is 0 without a registry price.
+ *   - `max_cost > 0`: free models pass; unknown cost is kept for
+ *     subscription/local (sunk cost) and dropped for pay_per_token.
+ *   - `max_cost_per_m`: local and free token-based models pass; everything
+ *     else needs a concrete price under the cap, so a subscription model
+ *     without a price drops out.
+ *   - `min_gdpval` / `min_context_length`: a null value fails a positive
+ *     threshold (strict null-fails semantics).
  */
 export function applyGroupFilters(
   refs: string[],
@@ -147,8 +203,10 @@ export function applyGroupFilters(
   cfg: Config,
   dedup: boolean = false,
   dedupFn?: (refs: string[]) => string[],
+  lookups: GroupFilterLookups = liveGroupFilterLookups(cfg),
 ): string[] {
   let c = refs;
+  const L = lookups;
 
   // 1. exclude_providers
   if (g.exclude_providers?.length) {
@@ -176,34 +234,42 @@ export function applyGroupFilters(
   // the 13/148-style collapse where unscored models leaked past the gate via
   // the old `return filtered.length ? filtered : refs` fallback.
   if (g.min_gdpval != null && g.min_gdpval > 0) {
-    c = c.filter(ref => { const v = lookupGdp(ref); return v !== null && v >= g.min_gdpval!; });
+    c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v >= g.min_gdpval!; });
   } else if (g.min_gdpval_pct != null && g.min_gdpval_pct > 0) {
     // delegate to the existing quality-pct filter for identical semantics
     // (compute max once; filterByQualityPct is on the Router instance, so
     // replicate the simple percentile gate here for the module function)
-    const all = refs.map(r => lookupGdp(r)).filter((v): v is number => v !== null);
+    const all = refs.map(r => L.gdp(r)).filter((v): v is number => v !== null);
     if (all.length) {
       const max = Math.max(...all);
       const thresh = (g.min_gdpval_pct! / 100) * max;
-      c = c.filter(ref => { const v = lookupGdp(ref); return v !== null && v >= thresh; });
+      c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
     }
   }
-  // 5. max_cost (billing-aware unknown handling)
+  // 5. max_cost. `max_cost: 0` admits only local and genuinely free
+  //    token-based models (admitsZeroCostGroup) — a cloud subscription model
+  //    resolves to effCost 0 without a registry price and must NOT slip in.
+  //    For a positive cap, free models pass and unknown cost is billing-aware
+  //    (subscription/local = sunk cost → keep; pay_per_token → drop).
   if (g.max_cost !== undefined) {
     c = c.filter(ref => {
-      const cost = effCost(ref);
-      if (cost === 'unknown') {
-        // subscription/local = sunk cost → keep; pay_per_token → drop
-        return billingFor(cfg, ref.split('/')[0]) !== 'pay_per_token';
-      }
+      const isFree = L.isFree(ref);
+      if (g.max_cost === 0) return admitsZeroCostGroup(ref, isFree, cfg);
+      if (isFree) return true;
+      const cost = L.cost(ref);
+      if (cost === 'unknown') return billingFor(cfg, ref.split('/')[0]) !== 'pay_per_token';
       return cost <= g.max_cost!;
     });
   }
-  // 6. max_cost_per_m (unknown price → always drop)
+  // 6. max_cost_per_m. Local and genuinely free token-based models pass
+  //    (their per-call price is $0). Everything else needs a concrete price
+  //    under the cap — a subscription model without a registry price drops
+  //    out (owner decision, ADR-0010).
   if (g.max_cost_per_m !== undefined) {
     c = c.filter(ref => {
-      const price = lookupPrice(ref);
-      if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
+      if (admitsZeroCostGroup(ref, L.isFree(ref), cfg)) return true;
+      const price = L.price(ref);
+      if (!price || typeof price.input !== 'number' || price.output === 'unknown') return false;
       return price.input <= g.max_cost_per_m!;
     });
   }
@@ -213,7 +279,7 @@ export function applyGroupFilters(
   //    context window). Absent/0 means "no context-length gate".
   if (g.min_context_length != null && g.min_context_length > 0) {
     c = c.filter(ref => {
-      const cw = lookupContextWindow(ref);
+      const cw = L.contextWindow(ref);
       return cw !== null && cw >= g.min_context_length!;
     });
   }

@@ -13,6 +13,7 @@
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
 import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug } from './metrics.ts';
+import { applyGroupFilters, type GroupFilterLookups } from './routing.ts';
 import type { Config, Group } from './types.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 
@@ -96,32 +97,6 @@ export function buildModelsWithMetadata(
     });
 }
 
-/**
- * Whether a model may enter a `max_cost: 0` group ("costs nothing per call").
- *
- * Two disjoint admissions:
- *   1. LOCAL daemon models (PROVIDER_MAP[prov].local — ollama, lm-studio):
- *      $0 variable cost, so they belong in a $0 group. Admitted by PROVIDER
- *      DEFINITION, not by cost: PROVIDER_MAP bills ollama as 'subscription',
- *      and `effCost` returns 0 for BOTH an ollama ref and a real cloud
- *      subscription ref (verified: a subscription provider with no registry
- *      price resolves to 0 via resolveCostPerM step 3), so neither the billing
- *      label nor the effective cost can tell the two apart. Only the
- *      provider-level `local` flag does.
- *   2. Genuinely free TOKEN-BASED models (:free tags, free_models lists):
- *      admitted only when the provider is pay_per_token, which is what keeps
- *      the "real money" subscription models out (A1 invariant).
- *
- * Fail-open is deliberately NOT applied here: an unknown provider is treated
- * as neither local nor free, so it stays out of the $0 groups. That is the
- * conservative direction — a $0 group must never admit a model that might
- * bill money.
- */
-function admitsZeroCostGroup(ref: string, isFreeModel: boolean, isTokenBased: boolean): boolean {
-  const prov = ref.split('/')[0];
-  if (PROVIDER_MAP[prov]?.local) return true;
-  return isFreeModel && isTokenBased;
-}
 
 /** Applies a group's min_gdpval / max_cost_per_m / max_cost gates to the scored candidate pool. */
 /**
@@ -161,56 +136,25 @@ export function collapseSameSlugClusters(models: ModelWithMetadata[]): ModelWith
   return [...best.values()];
 }
 
+/**
+ * Applies a group's gates to the scored candidate pool through the SAME rule
+ * set as the live path (applyGroupFilters, ADR-0010), fed with the values
+ * this path already computed per model.
+ */
 export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: Group, cfg: Config): ModelWithMetadata[] {
-  let filtered = [...models];
-
-  if (groupConfig.min_gdpval !== undefined) {
-    filtered = filtered.filter((m) => m.gdpval >= groupConfig.min_gdpval!);
-  }
-
-  if (groupConfig.max_cost_per_m !== undefined) {
-    filtered = filtered.filter((m) => {
-      const prov = m.ref.split('/')[0];
-      const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
-
-      if (m.isFreeModel && isTokenBased) return true;
-      if (!isTokenBased) return true;
-
-      const price = m.price;
-      if (!price || price.input === 'unknown' || price.output === 'unknown') return false;
-      if (typeof price.input !== 'number') return false;
-      return price.input <= groupConfig.max_cost_per_m!;
-    });
-  }
-
-  if (groupConfig.max_cost !== undefined) {
-    filtered = filtered.filter((m) => {
-      const prov = m.ref.split('/')[0];
-      const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
-
-      if (groupConfig.max_cost === 0) {
-        return admitsZeroCostGroup(m.ref, m.isFreeModel, isTokenBased);
-      }
-
-      if (m.isFreeModel) return true;
-
-      if (m.cost === 'unknown') return false;
-      return m.cost <= groupConfig.max_cost!;
-    });
-  }
-
-  // min_context_length (strict: unknown context window fails the gate,
-  // mirroring min_gdpval's null-fails semantics — never silently admit a
-  // model whose capacity is unverified into a group that *needs* a large
-  // context window). Absent/0 means "no context-length gate".
-  if (groupConfig.min_context_length != null && groupConfig.min_context_length > 0) {
-    filtered = filtered.filter((m) => {
-      const cw = m.contextWindow;
-      return typeof cw === 'number' && cw >= groupConfig.min_context_length!;
-    });
-  }
-
-  return filtered;
+  const byRef = new Map(models.map((m) => [m.ref, m]));
+  const lookups: GroupFilterLookups = {
+    gdp: (ref) => {
+      const v = byRef.get(ref)?.gdpval;
+      return v !== undefined && v > 0 ? v : null;
+    },
+    cost: (ref) => byRef.get(ref)?.cost ?? 'unknown',
+    price: (ref) => byRef.get(ref)?.price ?? null,
+    contextWindow: (ref) => byRef.get(ref)?.contextWindow ?? null,
+    isFree: (ref) => byRef.get(ref)?.isFreeModel ?? false,
+  };
+  const kept = new Set(applyGroupFilters([...byRef.keys()], groupConfig, cfg, false, undefined, lookups));
+  return models.filter((m) => kept.has(m.ref));
 }
 
 /** Orders a group's filtered candidates per its `method` (best/max_gdpval/min_cost/tiered). */
@@ -279,8 +223,7 @@ export function collectGroupModels(
   groupConfig: Group,
   filteredModels: ModelWithMetadata[],
   sortedGroupModels: ModelWithMetadata[],
-  cfg: Config,
-  staticFreeModelsLookup: Set<string>
+  cfg: Config
 ): string[] {
   const modelsToInclude = new Set<string>();
   const modelSig = (ref: string) => [...baseTokens(ref)].sort().join('|');
@@ -301,50 +244,10 @@ export function collectGroupModels(
 
   const originalModels = groupConfig.models ?? [];
   for (const origModel of originalModels) {
-    const origGdpval = lookupGdp(origModel);
-
-    if (origGdpval === null) continue;
-
-    if (
-      groupConfig.min_gdpval !== undefined &&
-      origGdpval !== undefined &&
-      origGdpval !== null &&
-      origGdpval < groupConfig.min_gdpval
-    ) {
-      continue;
-    }
-
-    const isFree = staticFreeModelsLookup.has(origModel);
-    const origProv = origModel.split('/')[0];
-    const isTokenBased = (cfg.providers?.[origProv]?.billing ?? PROVIDER_MAP[origProv]?.billing) === 'pay_per_token';
-
-    if (groupConfig.max_cost_per_m !== undefined) {
-      if (isFree && isTokenBased) {
-        // ok
-      } else if (!isTokenBased) {
-        // Subscription models always pass through
-      } else {
-        const price = lookupPrice(origModel);
-        if (price) {
-          if (price.input === 'unknown' || price.output === 'unknown') continue;
-          if (typeof price.input === 'number' && price.input > groupConfig.max_cost_per_m) continue;
-        }
-      }
-    }
-    if (groupConfig.max_cost !== undefined) {
-      if (groupConfig.max_cost === 0) {
-        if (!admitsZeroCostGroup(origModel, isFree, isTokenBased)) continue;
-      } else {
-        if (isFree && isTokenBased) {
-          // ok
-        } else if (!isTokenBased) {
-          // Subscription models always pass through
-        } else {
-          const cost = effCost(origModel);
-          if (cost === 'unknown' || (typeof cost === 'number' && cost > groupConfig.max_cost)) continue;
-        }
-      }
-    }
+    // Hand-curated models must still resolve to a score, then pass the same
+    // gates as every other candidate (ADR-0010).
+    if (lookupGdp(origModel) === null) continue;
+    if (applyGroupFilters([origModel], groupConfig, cfg).length === 0) continue;
 
     modelsToInclude.add(origModel);
     includedByKey.set(identityKey(origModel), origModel);

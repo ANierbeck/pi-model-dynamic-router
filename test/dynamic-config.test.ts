@@ -158,15 +158,14 @@ describe('filterModelsForGroup', () => {
     expect(filtered.map((m) => m.ref).sort()).toEqual(['payg/expensive', 'sub/subscribed']);
   });
 
-  it('applies max_cost_per_m: keeps free token-based, keeps subscription, drops over-budget paid', () => {
+  it('applies max_cost_per_m: keeps local and free token-based, drops unpriced subscription and over-budget paid', () => {
+    // ADR-0010 (owner decision 2026-09-26): a subscription model without a
+    // concrete price drops out of a max_cost_per_m group — same rule as the
+    // live path. Local ($0 variable) and free token-based models pass.
     const g: Group = { method: 'best', max_cost_per_m: 5 };
     const filtered = filterModelsForGroup(models, g, baseCfg);
     const refs = filtered.map((m) => m.ref).sort();
-    // ollama/qwen:8b passes as a non-token-based provider (`!isTokenBased`
-    // → pass) — unchanged by this fix; it is listed here because the local
-    // fixture is shared across this describe block.
-    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free', 'sub/subscribed']);
-    expect(refs).not.toContain('payg/expensive');
+    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free']);
   });
 
   it('applies max_cost=0: free token-based AND local $0 models survive, cloud subscription stays out', () => {
@@ -192,18 +191,13 @@ describe('filterModelsForGroup', () => {
     expect(filtered.map((m) => m.ref)).not.toContain('sub/subscribed');
   });
 
-  it('applies max_cost>0: free passes, paid under budget passes, paid over budget drops', () => {
-    // Unlike max_cost_per_m, max_cost has NO subscription/non-token-based
-    // bypass in the original code (preserved as-is by the C1 extraction) —
-    // a subscription model with an unknown cost is genuinely dropped here,
-    // not passed through. This looks like an inconsistency but is existing,
-    // intentional-by-omission behavior, not something this refactor changed.
+  it('applies max_cost>0: free passes, paid under budget passes, paid over budget drops, unknown-cost subscription is kept', () => {
+    // Shared rule (ADR-0010): unknown cost is sunk cost for subscription/local
+    // providers, so the subscription model stays; pay_per_token needs a price.
     const g: Group = { method: 'best', max_cost: 2 };
     const filtered = filterModelsForGroup(models, g, baseCfg);
     const refs = filtered.map((m) => m.ref).sort();
-    // ollama/qwen:8b (cost 0) was already admitted here before the max_cost=0
-    // fix — cost 0 <= 2. Listed because the fixture is shared.
-    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free']);
+    expect(refs).toEqual(['ollama/qwen:8b', 'payg/cheap', 'payg/free', 'sub/subscribed']);
   });
 
   it('drops paid models with unknown price under max_cost_per_m', () => {
@@ -296,7 +290,7 @@ describe('collectGroupModels', () => {
       price: null,
       isFreeModel: false,
     };
-    const result = collectGroupModels(g, [], [dynamicCandidate, unrelated], baseCfg, new Set());
+    const result = collectGroupModels(g, [], [dynamicCandidate, unrelated], baseCfg);
     expect(result).toContain('payg/pinned-model');
     expect(result).toContain('payg/other-model');
     // The dynamic duplicate of the already-included static model is dropped.
@@ -306,22 +300,27 @@ describe('collectGroupModels', () => {
   it('drops a static model with no resolvable GDPval score', () => {
     setGdpval({});
     const g: Group = { method: 'best', models: ['payg/unscored-static'] };
-    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    const result = collectGroupModels(g, [], [], baseCfg);
     expect(result).toEqual([]);
   });
 
   it('drops a static model below the group min_gdpval floor', () => {
     setGdpval({ 'low-score-model': 100 });
     const g: Group = { method: 'best', models: ['payg/low-score-model'], min_gdpval: 500 };
-    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    const result = collectGroupModels(g, [], [], baseCfg);
     expect(result).toEqual([]);
   });
 
   it('drops a static paid model over max_cost, but keeps a static free one', () => {
     setGdpval({ pricey: 600, free: 600 });
-    const cfg = { ...baseCfg, model_metrics: { 'payg/pricey': { cost_per_m: 50 } } };
+    const cfg = {
+      ...baseCfg,
+      providers: { ...baseCfg.providers, payg: { ...baseCfg.providers?.payg, free_models: ['payg/free'] } },
+      model_metrics: { 'payg/pricey': { cost_per_m: 50 } },
+    };
+    setConfig(cfg);
     const g: Group = { method: 'best', models: ['payg/pricey', 'payg/free'], max_cost: 0 };
-    const result = collectGroupModels(g, [], [], cfg, new Set(['payg/free']));
+    const result = collectGroupModels(g, [], [], cfg);
     expect(result).toEqual(['payg/free']);
   });
 
@@ -336,13 +335,13 @@ describe('collectGroupModels', () => {
       models: ['ollama/qwen:8b', 'mistral/mistral-medium-3.5'],
       max_cost: 0,
     };
-    const result = collectGroupModels(g, [], [], baseCfg, new Set());
+    const result = collectGroupModels(g, [], [], baseCfg);
     expect(result).toEqual(['ollama/qwen:8b']);
   });
 
   it('returns an empty array when no static or dynamic candidates qualify', () => {
     const g: Group = { method: 'best' };
-    expect(collectGroupModels(g, [], [], baseCfg, new Set())).toEqual([]);
+    expect(collectGroupModels(g, [], [], baseCfg)).toEqual([]);
   });
 });
 

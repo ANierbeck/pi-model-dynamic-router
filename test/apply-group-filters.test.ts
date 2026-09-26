@@ -113,14 +113,21 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
   });
 
   describe('max_cost — billing-aware unknown handling (the A1 display-path fix)', () => {
-    it('keeps unknown-cost subscription/local models (sunk cost)', () => {
-      // mistral = subscription, no OpenRouter price → unknown cost. The OLD
-      // display path dropped these; the live path kept them. The helper
-      // follows live semantics so /router matches what the live path picks.
-      const g: Group = { method: 'best', max_cost: 0 } as any;
+    it('keeps unknown-cost subscription/local models under a positive cap (sunk cost)', () => {
+      const g: Group = { method: 'best', max_cost: 1 } as any;
       const out = applyGroupFilters(REFS, g, CFG);
       expect(out.some(r => r.startsWith('mistral/'))).toBe(true);
       expect(out.some(r => r.startsWith('ollama/'))).toBe(true);
+    });
+
+    // Regression (ADR-0010): a cloud subscription model resolves to effCost 0
+    // without a registry price, and max_cost: 0 used to admit it on the live
+    // path whenever the persisted group list was empty or absent.
+    it('max_cost: 0 admits local models but keeps cloud subscription models out', () => {
+      const g: Group = { method: 'best', max_cost: 0 } as any;
+      const out = applyGroupFilters(REFS, g, CFG);
+      expect(out.some(r => r.startsWith('ollama/'))).toBe(true);
+      expect(out.some(r => r.startsWith('mistral/'))).toBe(false);
     });
 
     it('drops unknown-cost pay_per_token models (genuinely unknown price)', () => {

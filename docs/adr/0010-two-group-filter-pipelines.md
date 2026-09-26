@@ -1,8 +1,8 @@
-# ADR-0010: Two group-filter pipelines (persist vs live) — current state and divergences
+# ADR-0010: One group-filter rule set for persist, live and display
 
-**Status**: Proposed (2026-09-26). This ADR records the current state, which
-was found during a test-suite analysis, and proposes a fix. The fix needs the
-owner's decision (see "Decision").
+**Status**: Accepted and implemented (2026-09-26). The state below was found
+during a test-suite analysis. The owner chose option B and decided that a
+subscription model without a price drops out of `max_cost_per_m` groups.
 
 ## Context
 
@@ -109,21 +109,53 @@ as "no list"** in `resolveGroup` (distinguish `models: []` from
 
 ## Decision
 
-Pending owner confirmation. Recommendation: **B**, plus the empty-list
-guard as a separate small fix. Open question for the owner: for
-`max_cost_per_m` with an unknown price, should subscription/local models be
-kept (persist semantics) or dropped (live semantics)?
+Option **B**, implemented on 2026-09-26:
+
+1. **One rule set.** `applyGroupFilters` (src/routing.ts) is the only place
+   the group gates are implemented. It takes an optional `lookups` argument
+   (`GroupFilterLookups`: gdp, cost, price, contextWindow, isFree). Live and
+   display use the metrics module (`liveGroupFilterLookups`). The persist
+   path's `filterModelsForGroup` passes the values it already computed per
+   model. The static-model loop in `collectGroupModels`, a third copy of the
+   cost gates found during implementation, now calls `applyGroupFilters` as
+   well.
+2. **`max_cost: 0`**: the persist rule wins. `admitsZeroCostGroup` moved to
+   routing.ts: local providers, or free models on explicitly pay_per_token
+   providers. Cloud subscription models stay out on every path.
+3. **`max_cost > 0`**: free models pass. Unknown cost is billing-aware
+   (subscription/local kept, pay_per_token dropped). This was the live
+   semantic. The persist path used to drop unknown-cost subscription models.
+4. **`max_cost_per_m`** (owner decision): local and free token-based models
+   pass. Everything else needs a concrete price under the cap, so a
+   subscription model without a price **drops out**.
+5. **No empty-list guard.** It was proposed above, but it was not adopted.
+   Persisted groups can legitimately be empty (observed: `complex`,
+   `strategic` and `tactical` with `models: []`), and those groups then
+   route through all discovered refs. Treating `[]` as "no candidates" would
+   switch them off. The guard is also no longer needed: the leak it targeted
+   came from the live `max_cost: 0` rule, and that rule now keeps cloud
+   subscription models out on its own.
+
+Observed while implementing: the live install (`dist/`) had no
+`router-config.dynamic.json` after a rebuild while the scan cache was still
+valid. All groups therefore ran without persisted lists, and the `$0` leak
+was active. The unified rule closes it regardless of whether a persisted
+list exists.
 
 ## Consequences
 
-If B is adopted:
-- One implementation per gate; display, live and persist agree by
-  construction.
-- `test/dynamic-config.test.ts` and `test/apply-group-filters.test.ts`
-  need one reconciled expectation for `max_cost_per_m`.
-- The `applyGroupFilters` doc comment can again describe one shared
-  pipeline.
-
-Until then, `/router` output and the persisted `router-config.dynamic.json`
-may disagree for `max_cost`/`max_cost_per_m` groups, and an empty `$0`
-group can leak cloud subscription models at request time.
+- Display, live and persist agree by construction. The rule text lives in
+  one doc comment (`applyGroupFilters` INVARIANTS). Guarded by
+  `test/group-filter-parity.test.ts`, which compares both paths on the same
+  data for `max_cost` 0/2, `max_cost_per_m`, `min_gdpval` and
+  `exclude_providers`, and fails on the pre-change code.
+- Behaviour changes:
+  - Subscription models without a price leave `max_cost_per_m` groups
+    (persist path). No bundled group uses `max_cost_per_m`.
+  - Unknown-cost subscription models stay in positive `max_cost` groups
+    (persist path).
+  - Cloud subscription models leave `$0` groups (live and display paths).
+  - Group-level `exclude_providers`, `exclude_models`, `min_gdpval_pct` and
+    the registry-first context window now also apply at persist time.
+- `test/dynamic-config.test.ts` and `test/apply-group-filters.test.ts` were
+  reconciled to these rules.

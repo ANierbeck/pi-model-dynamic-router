@@ -61,8 +61,11 @@ best-GDPval ordering and picked the most expensive model in `trivial`.
    `cost_per_m === 0`. `billingTier` (0 free, 1 subscription, 2 local,
    3 payg) builds on it. Local models are free in the cost sense but form
    their own tier for ordering.
-6. **Unknown cost in gates**: see ADR-0010 for the current per-path
-   semantics and their divergence.
+6. **Unknown cost in gates**: one rule set for all paths, see ADR-0010.
+   `max_cost: 0` admits only local and free token-based models;
+   `max_cost > 0` keeps unknown-cost subscription/local models;
+   `max_cost_per_m` needs a concrete price except for local and free
+   token-based models.
 
 ## Consequences
 

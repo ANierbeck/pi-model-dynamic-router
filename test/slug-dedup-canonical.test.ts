@@ -118,8 +118,7 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       { min_gdpval: 0, fallback_groups: [] },
       [],
       sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any,
-      new Set()
+      { model_groups: {}, model_metrics: {}, providers: {} } as any
     );
     expect(result).toEqual(['mistral/mistral-medium-3.5']);
   });
@@ -133,8 +132,7 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       { min_gdpval: 0, fallback_groups: [] },
       [],
       sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any,
-      new Set()
+      { model_groups: {}, model_metrics: {}, providers: {} } as any
     );
     expect(result).toEqual(['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5']);
   });
@@ -149,8 +147,7 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       { min_gdpval: 0, fallback_groups: [] },
       [],
       sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any,
-      new Set()
+      { model_groups: {}, model_metrics: {}, providers: {} } as any
     );
     expect(result).toEqual(['mistral/mistral-small-3-2']);
   });
@@ -161,8 +158,7 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       { min_gdpval: 0, models: ['mistral/mistral-medium-latest'], fallback_groups: [] },
       [],
       sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any,
-      new Set()
+      { model_groups: {}, model_metrics: {}, providers: {} } as any
     );
     expect(result).toEqual(['mistral/mistral-medium-latest']);
     // The static curated entry wins (hand-curated allow-list is explicit
@@ -172,8 +168,7 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       { min_gdpval: 0, models: ['mistral/mistral-medium-latest'], fallback_groups: [] },
       [],
       [withMeta('mistral/mistral-medium-3.5', 933)],
-      { model_groups: {}, model_metrics: {}, providers: {} } as any,
-      new Set()
+      { model_groups: {}, model_metrics: {}, providers: {} } as any
     );
     expect(resultBoth).toHaveLength(1);
   });
