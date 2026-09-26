@@ -320,7 +320,19 @@ let previousTokenCount = 0;
       metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
     }
     cacheManager = new CacheManager(extDir);
+    // load() does not only run at boot: tools call it directly
+    // (resolve_model_group, update_model_metrics) and EVERY session_start
+    // fires it — including subagent sessions, which share this module-level
+    // Router while a parent turn is still running. Rebuilding without
+    // carrying the turn's pinned driver would silently un-protect the
+    // expensive-model read block for the rest of that turn (same carry as
+    // the Router rebuild in generateDynamicConfig — see the block there).
+    // router is undefined on the very first boot; getTurnDriverRef then has
+    // nothing to carry and adoptTurnDriverRef('') is a no-op.
+    const carriedTurnDriver = router?.getTurnDriverRef(turnStart) ?? '';
     router = new Router(cfg, cache, rateLimitManager.getLimits());
+    if (turnStart > 0) router.noteTurnStart(turnStart);
+    router.adoptTurnDriverRef(carriedTurnDriver);
     // load() runs on every session_start (and other reload paths) and replaces
     // the Router instance wholesale, which drops its private sessionCtx field.
     // Without this, group resolution silently falls back to the stale on-disk
