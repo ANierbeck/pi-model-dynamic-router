@@ -48,6 +48,7 @@
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
+import { isBlocked, recordBlocklistFailure } from './model-blocklist.ts';
 import {
   VALID_CATEGORIES,
   buildClassificationPrompt,
@@ -197,6 +198,8 @@ export function selectClassifierCandidates(
     // Skip models currently marked unhealthy (failed ≥2× recently).
     // Health decays after 15 min, so a recovered model gets re-probed next scan.
     if (isUnhealthy(cache, ref)) continue;
+    // Skip models on the learned blocklist (ADR-0008) until their TTL expires.
+    if (isBlocked(cache, ref)) continue;
 
     const price = lookupPrice(ref);
     // gdpval lookup: model_score_cache maps ref → slug; gdpval_scores maps slug → score.
@@ -360,12 +363,14 @@ export async function probeAndCache(
         // Feed the probe failure into the health system so a consistently-
         // broken candidate (e.g. one that 422s or misclassifies) is excluded
         // from the next scan's selectClassifierCandidates via isUnhealthy
-        // (roborev 445 MEDIUM).
+        // (roborev 445 MEDIUM), and into the learned blocklist (ADR-0008).
         recordModelFailure(cache, ref);
+        recordBlocklistFailure(cache, ref, failReason);
       }
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
       recordModelFailure(cache, ref);
+      recordBlocklistFailure(cache, ref, (e as Error).message);
     }
   }
 

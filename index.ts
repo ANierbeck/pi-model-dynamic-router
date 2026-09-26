@@ -53,6 +53,7 @@ import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from '.
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
+import { recordBlocklistFailure, clearBlock, activeBlocks } from './src/model-blocklist.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
   buildStaticFreeModelsLookup,
@@ -1205,6 +1206,35 @@ let previousTokenCount = 0;
   function recordOk(ref: string) {
     rateLimitManager.recordOk(ref);
     recordModelSuccess(cache, ref);
+    if (clearBlock(cache, ref)) {
+      routerLog(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
+      cacheManager.saveCache(cache);
+    }
+  }
+
+  /** Text for `/router blocklist`: every active block with reason and re-probe time. */
+  function formatBlocklist(): string {
+    const blocked = activeBlocks(cache);
+    if (!blocked.length) return 'Blocklist: empty — no model has shown a permanent provider failure.';
+    const days = (ms: number) => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
+    const lines = [`Blocklist (${blocked.length}) — re-probed automatically when the block expires`, ''];
+    for (const { ref, entry, reprobeInMs } of blocked) {
+      lines.push(
+        `🚫 ${ref}\n   ${entry.reason} (HTTP ${entry.code}) · since ${new Date(entry.first_seen).toISOString().slice(0, 10)}` +
+          ` · seen ${entry.occurrences}× · re-probe in ${days(reprobeInMs)}`
+      );
+    }
+    return lines.join('\n');
+  }
+
+  /** Feeds a failure text into the learned blocklist (ADR-0008, Tier 1). */
+  function observeFailure(ref: string, failureText: string): void {
+    const entry = recordBlocklistFailure(cache, ref, failureText);
+    if (!entry) return;
+    routerLog(
+      `[router] ${ref} blocked for 7 days: ${entry.reason} (HTTP ${entry.code}, seen ${entry.occurrences}×)`
+    );
+    cacheManager.saveCache(cache);
   }
 
   function clearLimit(ref: string): void {
@@ -1483,6 +1513,7 @@ let previousTokenCount = 0;
     },
     recordSoftFailure,
     recordOk,
+    observeFailure,
     recordStreamFailure,
     formatResetMsg,
     classifyPrompt,
@@ -2982,12 +3013,13 @@ async function registerGroupModels(ctx: any) {
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan|cost]',
+    description: 'Model router status. Usage: /router [group|scan|cost|blocklist]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
         { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
         { value: 'cost', label: 'cost', description: 'Show accumulated cost-tracker summary' },
+        { value: 'blocklist', label: 'blocklist', description: 'Show models blocked after permanent provider failures' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(cfg.model_groups ?? {}).map((g) => {
         const desc = cfg.model_groups?.[g]?.description;
@@ -3035,6 +3067,11 @@ async function registerGroupModels(ctx: any) {
           // costs on demand, and formatSummary() does NOT reset metrics, so
           // repeated calls keep showing the same accumulating totals.
           ctx.ui.notify(costTracker.formatSummary(), 'info');
+          return;
+        }
+
+        if (arg === 'blocklist') {
+          ctx.ui.notify(formatBlocklist(), 'info');
           return;
         }
 
@@ -3167,8 +3204,15 @@ async function registerGroupModels(ctx: any) {
         }
       }
 
+      // Learned blocklist summary (details: /router blocklist)
+      const blocked = activeBlocks(cache);
+      if (blocked.length) {
+        lines.push('├─ Blocked (permanent provider failures) '.padEnd(72, '─'));
+        lines.push(`│ 🚫 ${blocked.length} model(s) — see /router blocklist`);
+      }
+
       lines.push('└' + '─'.repeat(71));
-      lines.push('', '/router <group> | scan | cost');
+      lines.push('', '/router <group> | scan | cost | blocklist');
       ctx.ui.notify(lines.join('\n'), 'info');
       } finally {
         // Always restore previous session context

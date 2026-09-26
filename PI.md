@@ -309,6 +309,7 @@ Filter out specific providers or models from selection:
 | `/router` | Show status of all model groups |
 | `/router <group>` | Details for a specific group (e.g., `/router strategic`) |
 | `/router scan` | Re-scan models and GDPval scores |
+| `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router reload` | Reload config and cache |
 
 ## Tools

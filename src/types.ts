@@ -252,6 +252,19 @@ export interface Cache {
    */
   classifier_no_schema?: Record<string, number>;
   /**
+   * Learned blocklist (ADR-0008): models whose failures matched a
+   * known-permanent signature, keyed by "provider/id" ref. Entries expire
+   * after BLOCKLIST_TTL_MS (7 days) from last_seen; see src/model-blocklist.ts.
+   */
+  model_blocklist?: Record<string, {
+    reason: string;
+    code: number;
+    signature: string;
+    first_seen: number;
+    last_seen: number;
+    occurrences: number;
+  }>;
+  /**
    * Verified-working cloud models for the classifier's cloud fallback.
    * Populated by probeAndCache() at scan time (a quality probe with real
    * classification cases — incl. the HINT-narration trap — filters out

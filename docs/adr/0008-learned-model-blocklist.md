@@ -1,10 +1,11 @@
 # ADR-0008: Learned model blocklist (auto-block from observed permanent failures)
 
-**Status**: Accepted (2026-09-26). The owner confirmed all three open
-thresholds the same day: Tier-1 blocks on first occurrence, Tier-2 promotes
-at N=5 (zero successes, spanning ≥ 1h), blocklist TTL is 7 days. The static
-`exclude.models` list shipped in commit `fce3f2b` remains in place as the
-manual override on top of the learned list (see Decision point 7).
+**Status**: Accepted (2026-09-26). **Tier 1 implemented 2026-09-27**
+(points 1–7 below, without Tier-2 promotion); Tier 2 is the next step.
+Thresholds confirmed by the owner: Tier-1 blocks on first occurrence,
+Tier-2 promotes at N=5 (zero successes, spanning ≥ 1h), blocklist TTL is
+7 days. The static `exclude.models` list from `fce3f2b` stays as the manual
+override (point 7).
 
 ## Context
 
@@ -289,6 +290,38 @@ Adopt **Option D** (hybrid). Concretely:
   common case (block re-confirms immediately) costs one wasted hop per
   week, while a shorter window self-heals faster after a guardrail or
   policy change.
+
+## Implementation (Tier 1, 2026-09-27)
+
+- `src/error-signatures.ts`: provider-scoped signature catalogue
+  (`classifyFailure`). OpenRouter only for now: `agentic-harness-gate`
+  (403), `workspace-guardrail` (404, both wordings and the
+  `ineligibility_reasons` enum), `free-variant-retired` (404),
+  `decommissioned` (404 "No endpoints found for"). `no-tool-support` is
+  classified as `request` and never blocks. Everything else is `transient`.
+- `src/model-blocklist.ts`: `cache.model_blocklist` state (record, TTL check,
+  clear, active list).
+- Hooks: every `consumeWithDetection` failure with a `detail` text and every
+  thrown stream error in `StreamOrchestrator` (main loop and cooldown-collapse
+  retry) call `ctx.observeFailure`. The classifier probe feeds its failures
+  too, and skips blocked refs when selecting candidates. A new block is logged
+  and the cache is saved immediately. `recordOk` clears a block after a
+  successful re-probe.
+- **Filter location differs from point 4.** The persist path
+  (`generateDynamicConfig`) also calls `isExcluded`, so putting the
+  blocklist inside `isExcluded` would bake blocks into the persisted config
+  and defeat the TTL. The runtime filter sits in `Router.allDiscoveredRefs`
+  (live and display) and in the HINT fallback pool instead. The intent of
+  point 4 (runtime only) is kept.
+- Visibility: `/router blocklist` lists every active block with reason,
+  HTTP code, first-seen date, occurrences and time to re-probe. The `/router`
+  overview shows a one-line count.
+- Tests: `test/model-blocklist.test.ts` (catalogue on the real 2026-09-26
+  error texts, state, TTL, clear, router filter),
+  `test/blocklist-drivestream.test.ts` (end to end: a 403 blocks the model,
+  the next request skips it, the block is persisted; fails without the
+  orchestrator hooks), and a probe-selection case in
+  `test/classifier-fallback-probe.test.ts`.
 
 ## Consequences
 

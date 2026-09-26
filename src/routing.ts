@@ -16,6 +16,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
+import { isBlocked } from './model-blocklist.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
 import { isRefLimited, refLimitSecs } from './rate-limit.ts';
@@ -568,7 +569,10 @@ export class Router {
     if (this.cfg.exclude) {
       result = this.applyExcludes(result);
     }
-    return result;
+    // Learned blocklist (ADR-0008): runtime only. Deliberately not inside
+    // isExcluded, which the persist path also calls — a block baked into the
+    // persisted config would outlive its 7-day TTL.
+    return result.filter((ref) => !isBlocked(this.cache, ref));
   }
 
   // ── Filtering ─────────────────────────────────────────────────────────────

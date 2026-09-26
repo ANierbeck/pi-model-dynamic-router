@@ -64,6 +64,7 @@ import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
+import { isBlocked } from './model-blocklist.ts';
 import { appendRawLog, routerLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
@@ -128,6 +129,8 @@ export interface StreamOrchestratorContext {
   releaseLocalSlot: (ref: string) => void;
   recordSoftFailure: (ref: string) => void;
   recordOk: (ref: string) => void;
+  /** Feeds a failure text into the learned blocklist (ADR-0008). */
+  observeFailure: (ref: string, failureText: string) => void;
   recordStreamFailure: (
     ref: string,
     reason: string,
@@ -363,6 +366,7 @@ export class StreamOrchestrator {
                   .getAvailable()
                   .map((m: any) => `${m.provider}/${m.id}` as string)
                   .filter((ref: string) => {
+                    if (isBlocked(cache, ref)) return false;
                     if (!cfg.exclude) return true;
                     return !isExcluded(ref, { rules: cfg.exclude, cfg, cache });
                   });
@@ -535,6 +539,7 @@ export class StreamOrchestrator {
           return;
         }
         if (result.reason === 'aborted') return;
+        if (result.detail) ctx.observeFailure(ref, result.detail);
 
         if (result.reason === 'rate_limit_exceeded') {
           const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs);
@@ -646,6 +651,7 @@ export class StreamOrchestrator {
       } catch (streamError) {
         const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
         pushError(ref, errorMsg);
+        ctx.observeFailure(ref, errorMsg);
         ctx.recordSoftFailure(ref);
         const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
@@ -744,6 +750,7 @@ export class StreamOrchestrator {
               return;
             }
             if (result.reason === 'aborted') return;
+            if (result.detail) ctx.observeFailure(bestRef, result.detail);
             pushError(bestRef, String(result.reason));
             if (result.reason === 'context_overflow') {
               ctx.recordSoftFailure(bestRef);
@@ -782,6 +789,7 @@ export class StreamOrchestrator {
           } catch (streamError) {
             const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
             pushError(bestRef, errorMsg);
+            ctx.observeFailure(bestRef, errorMsg);
             ctx.recordSoftFailure(bestRef);
           } finally {
             // Release the local concurrency slot acquired in tryStream for

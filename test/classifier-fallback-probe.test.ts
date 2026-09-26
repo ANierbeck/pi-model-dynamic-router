@@ -129,6 +129,29 @@ describe('selectClassifierCandidates', () => {
     expect(result).toContain('mistral-zai/mistral-model');
   });
 
+  it('excludes models on the learned blocklist (ADR-0008) until the block expires', () => {
+    const cache: Cache = {
+      available_models: [
+        { id: 'healthy-model', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'gated-model', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/healthy-model': { input: 0, output: 0 },
+        'openrouter/gated-model': { input: 0, output: 0 },
+      },
+      model_blocklist: {
+        'openrouter/gated-model': {
+          reason: 'agentic-harness-gate', code: 403, signature: '403:agentic-harness-gate',
+          first_seen: Date.now(), last_seen: Date.now(), occurrences: 1,
+        },
+      },
+    };
+    seedMetrics(baseCfg, cache);
+    const result = selectClassifierCandidates(baseCfg, cache);
+    expect(result).toContain('openrouter/healthy-model');
+    expect(result).not.toContain('openrouter/gated-model');
+  });
+
   it('excludes models currently marked unhealthy (failed >=2x recently)', () => {
     const cache: Cache = {
       available_models: [
