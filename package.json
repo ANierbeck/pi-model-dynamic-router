@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
+    "audit:kpi": "node scripts/router-kpi-audit.ts",
     "prepublishOnly": "if [ -z \"$(git tag --points-at HEAD 2>/dev/null)\" ]; then echo 'No git tag found at current commit, skipping publish'; exit 1; fi"
   },
   "keywords": [

@@ -577,6 +577,13 @@ If both Ollama models are unavailable, the classifier falls back to a free cloud
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router reload` | Hot-reload config and cache |
 
+### KPI audit
+
+`npm run audit:kpi -- [--since 7d|24h|<ISO date>] [--log <path>] [--json]` summarizes
+`~/.pi/logs/router.log`: delegation savings and failures, blocked full-file reads,
+failed hops by reason and model, total failovers, learned blocklist entries,
+watchdog wedge events and classifier health.
+
 ## Tools
 
 | Tool | Purpose |

@@ -826,6 +826,7 @@ export class StreamOrchestrator {
         ? '\n(Detected overflow in stream — Pi should compact and retry.)'
         : '';
       const errorMsg = `[router] All ${allErrors.length} candidate(s) failed:\n${failureLines}${overflowLine}`;
+      routerLog(`[router] All ${allErrors.length} candidate(s) failed for group ${groupName ?? label ?? '?'}`);
       pushStreamError(
         proxy,
         errorMsg,
