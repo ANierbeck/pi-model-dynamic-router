@@ -1,6 +1,7 @@
 // src/content-classifier.ts
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
+import { recordLocalTimeout, recordLocalSuccess, isProviderWedged } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
@@ -487,7 +488,19 @@ export async function classifyPrompt(
   const ollamaPrompt = buildClassificationPrompt(prompt, contextBlock);
 
   const tryClassify = async (m: string, t: number): Promise<FullClassificationResult> => {
-    const response = await callOllama(m, ollamaPrompt, { timeoutMs: t });
+    let response: string;
+    try {
+      response = await callOllama(m, ollamaPrompt, { timeoutMs: t });
+    } catch (err) {
+      // Feed generation timeouts to the local-provider watchdog (ADR-0016).
+      if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
+        if (recordLocalTimeout(cache, `ollama/${m}`)) {
+          routerLog('[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for 5 min');
+        }
+      }
+      throw err;
+    }
+    if (cache) recordLocalSuccess(cache, `ollama/${m}`);
     // Strip reasoning blocks and extract the first JSON object — shared
     // helper (identical to the former inline extraction; null means
     // unparseable, which degrades exactly like the old thrown SyntaxError).
@@ -539,7 +552,8 @@ export async function classifyPrompt(
   // hanging port), we skip straight to the cloud fallback chain instead of
   // burning primary+fallback timeouts on every prompt.
   let classificationResult: FullClassificationResult | null = null;
-  if (await isOllamaAvailable()) {
+  const ollamaWedged = isProviderWedged(cache, 'ollama');
+  if (!ollamaWedged && (await isOllamaAvailable())) {
     // Self-healing: a primary marked as rejecting structured output (a 501
     // from e.g. the MLX backend — permanent for that backend, not transient)
     // is skipped entirely. No guaranteed-501 hop on every prompt.
@@ -581,6 +595,8 @@ export async function classifyPrompt(
         }
       }
     }
+  } else if (ollamaWedged) {
+    routerLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
   } else {
     routerLog('[classifier] Ollama daemon unreachable — skipping both local models');
   }

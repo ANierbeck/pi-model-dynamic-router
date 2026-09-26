@@ -131,6 +131,9 @@ export interface StreamOrchestratorContext {
   recordOk: (ref: string) => void;
   /** Feeds a failure text into the learned blocklist (ADR-0008). */
   observeFailure: (ref: string, failureText: string) => void;
+  /** Local-provider watchdog (ADR-0016): true when this timeout newly marks the provider wedged. */
+  observeLocalTimeout: (ref: string) => boolean;
+  isProviderWedged: (ref: string) => boolean;
   recordStreamFailure: (
     ref: string,
     reason: string,
@@ -498,6 +501,11 @@ export class StreamOrchestrator {
         cooldownSkips++;
         continue;
       }
+      if (ctx.isProviderWedged(ref)) {
+        pushError(ref, 'skipped, local provider looks wedged (watchdog)');
+        cooldownSkips++;
+        continue;
+      }
       const ctxWindow = ctx.getModelContextWindow(ref);
       if (ctxWindow && contextTokens > ctxWindow) {
         pushError(ref, `skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
@@ -638,6 +646,17 @@ export class StreamOrchestrator {
         // Soft failure
         pushError(ref, String(result.reason));
         ctx.recordSoftFailure(ref);
+        if (
+          (result.reason === 'empty_timeout' || result.reason === 'stall_timeout') &&
+          ctx.observeLocalTimeout(ref)
+        ) {
+          const provider = ref.split('/')[0];
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] ${provider} looks wedged: generations time out on several local models while the daemon still answers. ` +
+              `Skipping ${provider} models for 5 min. Fix: restart the daemon (e.g. \`pkill ollama\`; a launch agent or service restarts it).\n\n`
+          );
+        }
         const reason = result.reason === 'empty_timeout'
           ? 'no response within timeout'
           : result.reason === 'stall_timeout'

@@ -54,6 +54,7 @@ import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
 import { recordBlocklistFailure, recordBlocklistSuccess, activeBlocks } from './src/model-blocklist.ts';
+import { recordLocalTimeout, recordLocalSuccess, isProviderWedged } from './src/provider-watchdog.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
   buildStaticFreeModelsLookup,
@@ -1206,6 +1207,7 @@ let previousTokenCount = 0;
   function recordOk(ref: string) {
     rateLimitManager.recordOk(ref);
     recordModelSuccess(cache, ref);
+    recordLocalSuccess(cache, ref);
     if (recordBlocklistSuccess(cache, ref)) {
       routerLog(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
       cacheManager.saveCache(cache);
@@ -1517,6 +1519,12 @@ let previousTokenCount = 0;
     recordSoftFailure,
     recordOk,
     observeFailure,
+    observeLocalTimeout: (ref: string) => {
+      const newlyWedged = recordLocalTimeout(cache, ref);
+      if (newlyWedged) routerLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for 5 min`);
+      return newlyWedged;
+    },
+    isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),
     recordStreamFailure,
     formatResetMsg,
     classifyPrompt,
@@ -3205,6 +3213,14 @@ async function registerGroupModels(ctx: any) {
           const { provider, modelId } = splitRef(r);
           lines.push(`│ ⛔ ${provider}/${modelId} (${limitSecs(r)}s remaining)`);
         }
+      }
+
+      // Local-provider watchdog (ADR-0016)
+      for (const [provider, h] of Object.entries(cache.local_provider_health ?? {})) {
+        if (!isProviderWedged(cache, provider)) continue;
+        const secs = Math.ceil(((h.wedged_until ?? 0) - Date.now()) / 1000);
+        lines.push('├─ Local provider watchdog '.padEnd(72, '─'));
+        lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s. Restart the daemon (e.g. \`pkill ${provider}\`).`);
       }
 
       // Learned blocklist summary (details: /router blocklist)

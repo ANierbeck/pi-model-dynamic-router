@@ -268,6 +268,14 @@ export interface Cache {
    * Tier-2 failure streaks (ADR-0008): consecutive failures per ref with the
    * same unknown signature, reset by a success or a different signature.
    */
+  /**
+   * Local-provider watchdog (ADR-0016), keyed by provider id: recent
+   * generation timeouts per local model ref, and the wedge expiry.
+   */
+  local_provider_health?: Record<string, {
+    timeouts: Record<string, number>;
+    wedged_until?: number;
+  }>;
   model_failure_streaks?: Record<string, {
     signature: string;
     count: number;
