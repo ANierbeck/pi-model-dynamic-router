@@ -71,6 +71,8 @@ describe('delegationSettings', () => {
       max_raw_chars: 1000,
       tools: ['read'],
       block_lines: 350,
+      expensive_groups: ['strategic', 'tactical'],
+      expensive_providers: [],
     });
   });
 

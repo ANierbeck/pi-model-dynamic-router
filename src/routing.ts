@@ -279,9 +279,29 @@ export class Router {
   private rrCounters: Record<string, number> = {};
   private activeGroup: string | null = null;
   private curModel: string = '';
+  private curModelAt: number = 0;
 
   setCurModel(model: string): void {
     this.curModel = model;
+    this.curModelAt = Date.now();
+  }
+
+  /**
+   * The factual stream ref (the candidate actually streaming, e.g.
+   * 'mistral/zai-glm-5-3' after a HINT → tactical) — set by the stream
+   * orchestrator on every successful stream open.
+   *
+   * With turnStartMs: the ref ONLY when it was set during the CURRENT turn
+   * (curModelAt >= turnStartMs). A ref left over from a previous turn
+   * returns '' — stale refs must never mark the current model as
+   * expensive for Layer-1 blocking. Without turnStartMs: the last ref
+   * (status-line display use).
+   */
+  getCurModel(turnStartMs?: number): string {
+    if (typeof turnStartMs === 'number' && turnStartMs > 0 && this.curModelAt < turnStartMs) {
+      return '';
+    }
+    return this.curModel;
   }
   private sessionCtx: ExtensionContext | null = null;
 

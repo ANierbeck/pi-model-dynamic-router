@@ -37,6 +37,24 @@
   payg, so a trivial prompt now hits the local daemon first (best latency,
   no quota burn). trivial/simple in router-config.json switched to it.
 
+- **Expensive-model Layer-1 escalation (ADR-0007)**: models in expensive
+  groups (default `strategic` + `tactical`, configurable via
+  `delegation.expensive_groups`) or behind `delegation.expensive_providers`
+  prefixes never do full-file reads: EVERY full-file read (no offset/limit)
+  is blocked and redirected to `bulk_read`/targeted reads, regardless of
+  file size — their context is paid for orchestration and reasoning, file
+  inspection belongs to the cheap bulk_reader group (and pi-claude file
+  tool calls crash on the broken kendex bridge anyway, live finding
+  2026-09-26). Targeted reads (offset/limit) always pass;
+  `block_lines: 0` still disables all pre-call blocking. The block matches
+  the factual stream ref of the CURRENT turn — new `Router.getCurModel()`
+  with a stale-turn guard (`setCurModel` timestamps), fed by the stream
+  orchestrator — so it also works through dynamic/HINT routing, not just
+  fixed sessions (which fall back to the session ref via
+  `expensive_providers`). Fail-open preserved: unknown model, missing
+  group lists, nonexistent files, stat errors — everything passes.
+  24 new regression tests.
+
 ### Fixed
 - **The 1.5.4 router-narration lock-in fix was incomplete.** It only stripped
   `> [router] ...` lines inside `extractLastAssistantSnippet()` (the "Last
