@@ -18,8 +18,17 @@ load or a transient outage but a *property* of the setup:
 - **404 "free-model-training-violation"** — the user's workspace guardrails
   (a deliberate data policy) exclude the endpoint. Permanent *for this
   account's guardrails*.
-- **404 "model not found / does not exist"** — the model was decommissioned.
+- **404 "No endpoints found for X"** — the model was decommissioned.
   Permanent *until OpenRouter re-lists it*.
+- **404 "This model is unavailable for X. The paid version is available
+  now"** — the free variant was retired (38 log lines on 2026-09-26).
+  Permanent for the `:free` ref.
+
+Not every OpenRouter 404 is a property of the model: **404 "No endpoints
+found that support tool use"** (59 log lines, e.g. `z-ai/glm-5.2:free`)
+fails only for requests that carry tools. The same model can still answer
+tool-free classifier and reader calls, so this is a property of the
+*request*, not the model (see "Request-dependent signatures" below).
 
 Live evidence 2026-09-26 (`router.log`): the two `thinkingmachines/inkling:*`
 models alone burned ~750 candidate attempts in a single evening (319 + 174
@@ -130,9 +139,26 @@ with the parsed reason. Examples:
 |---|---|
 | 403 + `only available on agentic harnesses` + `failed_routing_step: "Gate Free Endpoints by Agentic Harness"` | permanent (OR-side gate) |
 | 404 + `ineligibility_reasons[].reason: "free-model-training-violation-by-guardrail"` | permanent (workspace guardrail) |
-| 404 + `model not found` / `does not exist` | permanent (decommissioned) |
+| 404 + `No endpoints available matching your guardrail restrictions` | permanent (workspace guardrail, older wording) |
+| 404 + `No endpoints found for <model>` | permanent (decommissioned) |
+| 404 + `This model is unavailable for <model>. The paid version is available now` | permanent (free variant retired) |
+| 404 + `No endpoints found that support tool use` | **request-dependent** — never a model block |
 | 429 / `rate limit` / `spend limit reached` | **transient** — never block |
 | timeout / ECONNRESET / empty stream | **transient** — never block |
+| Ollama 404 `model not found` | **never block** — "not pulled yet" is fixed by `ollama pull`, and a 7-day block would outlive the fix |
+
+The catalogue is **scoped per provider**: the OpenRouter rows match only
+refs whose provider is `openrouter`. A bare "404 / not found" pattern would
+also hit Ollama (and any OpenAI-compatible provider), where the same status
+means something different.
+
+**Request-dependent signatures** (tool-use 404 today; context-length or
+modality mismatches are the same class) are never promoted to a
+model-level block, in Tier 1 or Tier 2. Blocking would also remove the model
+from tool-free classifier and reader calls where it works. If these burn
+too many hops, the right fix is capability-aware candidate filtering
+(skip models without tool support for tool-carrying requests). That is
+out of scope for this ADR.
 
 - **Pros**:
   - **Right on the first try.** These signatures are deterministic — the
@@ -163,8 +189,16 @@ reason). Tier 2 = a cautious statistical backstop for *unknown* failure
 signatures: a ref that fails N consecutive times with the **same** unknown
 signature, spanning a minimum time window (so it isn't a single burst),
 with **zero** successes in between, is promoted to the blocklist tagged
-`reason: unknown-signature (N× <sig>)`. A single success clears the streak
-(reuse `model-health.ts`'s success-clears-streak).
+`reason: unknown-signature (N× <sig>)`. A single success clears the streak.
+
+Tier 2 **cannot** reuse `model-health.ts`'s counter. That streak resets
+after 15 minutes (`HEALTH_DECAY_MS`), and after 2 failures (`UNHEALTHY_AT`)
+the model is demoted and tried less often. "5 consecutive failures
+spanning ≥ 1 h" would therefore almost never accumulate. Tier 2 needs its
+own persisted counter per `(ref, signature)` with no short decay:
+`{ count, first_seen, last_seen }`, reset on any success for that ref and
+reset when the signature changes. Only the success-clears-streak *idea* is
+reused, not the storage.
 
 - **Pros**: immediate + safe for the signatures we know; adaptive for the
   ones we don't, without ever blocking a model mid-transient-burst (the
@@ -181,10 +215,15 @@ a code change to eventually stop burning.
 
 Adopt **Option D** (hybrid). Concretely:
 
-1. **Observe** failures where the router already observes them — the
-   stream-orchestrator's `tryStream` catch path (and the classifier probe
-   path, for symmetry with `classifier_no_schema`). Capture
-   `{ ref, httpStatus, message, routingStep, ineligibilityReasons }`.
+1. **Observe** failures where they actually surface. The incident's
+   403/404s do **not** reject `tryStream`. They arrive as stream results
+   with `reason === 'provider_error'` from `consumeWithDetection`
+   (`src/stream-orchestrator.ts`, both consumption sites), logged as
+   `provider error: 403: {...}`. That result path is the primary hook.
+   The `tryStream` catch path and the classifier probe path are secondary
+   hooks. A classifier wired only to the catch path would see none of the
+   incident failures. Capture
+   `{ ref, provider, httpStatus, message, routingStep, ineligibilityReasons }`.
 2. **Classify** into `permanent` / `transient` / `unknown` via the Tier-1
    signature catalogue (a small module, e.g. `src/error-signatures.ts`,
    so the signatures are reviewable in one place).
@@ -202,11 +241,17 @@ Adopt **Option D** (hybrid). Concretely:
    State lives in the cache object (same rationale as `model-health.ts`:
    esbuild bundles some modules twice and module-level state would diverge
    between instances).
-4. **Filter** at the existing single point: extend `isExcluded` (or
-   `generateDynamicConfig`) to also drop refs present in
-   `cache.model_blocklist` (within TTL). One filter point keeps static
-   `exclude.models` (manual override) and the learned list in the same
-   place — they compose instead of competing.
+4. **Filter at runtime only**: extend `isExcluded` to also drop refs
+   present in `cache.model_blocklist` (within TTL). It is already called
+   per request from `routing.ts` (`applyExcludes`) and
+   `stream-orchestrator.ts`. It must **not** filter inside
+   `generateDynamicConfig`. That output is baked into
+   `router-config.dynamic.json`, whose group `models` lists act as
+   allow-lists for up to 30 days (`isScanCacheValid`). A new block would
+   then apply only after the next scan, and an expired block would never
+   come back for its re-probe, which breaks the 7-day TTL. Static
+   `exclude.models` and the learned list meet in `isExcluded`, so they
+   compose instead of competing.
 5. **Self-heal** via TTL on the blocklist entry: **7 days** (confirmed by
    the owner 2026-09-26). The classifier analogue uses 24h, but model
    decommissions and guardrails change far less often than Ollama schema
@@ -223,6 +268,12 @@ Adopt **Option D** (hybrid). Concretely:
    (for cases the owner wants blocked *now and regardless*). The
    live-incident 14 refs can stay static, or migrate to learned once the
    system re-observes them — owner's call.
+   **Known pitfall**: `deepMergeConfig` (`src/config-loader.ts`) replaces
+   arrays wholesale. A user config with its own `exclude.models` silently
+   drops the bundled list (observed on the owner's machine 2026-09-26). The
+   learned list lives in the cache, so it is immune. The static override is
+   only reliable if the user config carries the full list or `exclude.models`
+   gets union-merge semantics.
 
 ### Thresholds (confirmed by the owner, 2026-09-26)
 
