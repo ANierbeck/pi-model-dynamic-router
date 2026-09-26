@@ -119,12 +119,16 @@ drift apart again.
   default". The only bundled entries are the 14 permanently failing refs,
   so no working model is lost.
 
-**Open follow-up (not decided here):** tests still read the real
-`~/.pi/agent/router-config.user.json`. This change removes the specific
-masking effect (the user list now unions instead of replacing), but other
-user settings (e.g. `paid_models_from`) can still make local results differ
-from CI. Isolating `homedir()` in the test harness is the proper fix, and
-checking the CI result after every push remains mandatory.
+**Follow-up (done, 2026-09-26):** tests no longer see the developer's
+home. `test/setup/home-root.ts` (vitest `globalSetup`) creates one temp root
+and removes it on teardown. `test/setup/isolate-home.ts` (`setupFiles`)
+mocks `node:os.homedir()` to a fresh subdirectory per test file and sets
+`HOME` to match. Tests therefore neither read the real
+`~/.pi/agent/router-config.user.json` / `auth.json` nor write to the real
+`~/.pi/logs/router.log`. Cleanup happens at the root because vitest skips
+`afterAll` in fully skipped files (e.g. `classifier.integration.test.ts`
+without `TEST_INTEGRATION`). Guarded by `test/home-isolation.test.ts`.
+Checking the CI result after every push remains mandatory.
 
 ## Tests
 

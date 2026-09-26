@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { classifyPrompt } from "../src/content-classifier";
 
-// primary model (gemma4:12b-mlx) up to 45s cold-start + fallback (gemma2:2b) 10s → allow 120s
+// primary model (mistral-nemo:latest) up to 45s cold-start + fallback (gemma2:2b) 10s → allow 120s
 const OLLAMA_TIMEOUT = 120_000;
 
 describe.skipIf(!process.env.TEST_INTEGRATION)("classifyPrompt (Integration)", () => {

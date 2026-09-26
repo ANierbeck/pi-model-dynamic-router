@@ -42,6 +42,8 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['test/**/*.test.ts'],
+    globalSetup: ['test/setup/home-root.ts'],
+    setupFiles: ['test/setup/isolate-home.ts'],
     // Several driveStream regression tests share one physical scan-cache /
     // dynamic-config file and serialize on a cross-process lock (see
     // test/helpers/router-state-lock.ts) to avoid racing each other.
