@@ -16,8 +16,9 @@ import { PROVIDER_MAP } from './providers.ts';
 // probe-based discovery in src/classifier-fallback-probe.ts:
 //   1. selectClassifierCandidates() picks cheap + low-gdpval candidates
 //      from the scan cache (works for ANY user's providers).
-//   2. probeAndCache() pings each candidate at scan time and caches the
-//      verified-working ones in cache.classifier_fallback_models.
+//   2. probeAndCache() quality-probes each candidate at scan time (real
+//      classification cases, incl. the HINT-narration trap) and caches the
+//      ones that classify correctly in cache.classifier_fallback_models.
 //   3. The classifier reads that cached list at fallback time.
 // getCheapestCloudModels() was also removed (dead code: no production callers
 // after the classifier moved to the probe-based path). Its pricing-lookup

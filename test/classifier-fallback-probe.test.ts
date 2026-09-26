@@ -12,6 +12,7 @@ import {
   getCachedFallbackModels,
   probeAndCache,
   hasProbedFallback,
+  PROBE_CASES,
   type ProbeContext,
 } from '../src/classifier-fallback-probe.js';
 import * as metrics from '../src/metrics.js';
@@ -31,6 +32,33 @@ const baseCfg: Config = {
   model_groups: {},
   model_metrics: {},
 };
+
+// --- Quality-probe mock helpers -------------------------------------------
+// The probe validates the CLASSIFICATION task (not just reachability), so
+// test mocks must answer with valid classification JSON per probe case.
+
+/** A successful completeSimple result carrying a valid classification. */
+function okReply(category: string) {
+  return {
+    errorMessage: undefined,
+    stopReason: 'stop',
+    content: [{ type: 'text', text: JSON.stringify({ category, reason: 'probe reply', confidence: 0.9 }) }],
+  };
+}
+
+/**
+ * Case-aware mock that answers EVERY probe case with an accepted category.
+ * Matches on the case prompts' stable marker substrings.
+ */
+function goodClassifierMock() {
+  return vi.fn(async (_model: any, prompt: any) => {
+    const content: string = prompt?.messages?.[0]?.content ?? '';
+    if (content.includes('What is in this file?')) return okReply('trivial');
+    if (content.includes('Fix the typo in line 3 of the parse function')) return okReply('code_simple');
+    if (content.includes('Explain what a closure is briefly')) return okReply('simple');
+    return okReply('standard');
+  });
+}
 
 describe('selectClassifierCandidates', () => {
   beforeEach(() => {
@@ -209,11 +237,15 @@ describe('probeAndCache', () => {
 
     const pctx: ProbeContext = {
       findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
-      completeSimple: vi.fn(async (model: any) => {
+      completeSimple: vi.fn(async (model: any, prompt: any) => {
         if (model.id === 'broken-model') {
           return { errorMessage: '422', stopReason: 'error', content: [] };
         }
-        return { errorMessage: undefined, stopReason: 'stop', content: [{ type: 'text', text: 'OK' }] };
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        if (content.includes('Explain what a closure is briefly')) return okReply('simple');
+        return okReply('standard');
       }),
     };
     const logs: string[] = [];
@@ -240,7 +272,7 @@ describe('probeAndCache', () => {
 
     const pctx: ProbeContext = {
       findModel: (ref) => (ref === 'openrouter/registered' ? { provider: 'openrouter', id: 'registered' } : undefined),
-      completeSimple: vi.fn(async () => ({ errorMessage: undefined, stopReason: 'stop', content: [] })),
+      completeSimple: goodClassifierMock(),
     };
     const result = await probeAndCache(baseCfg, cache, pctx);
     expect(result).toContain('openrouter/registered');
@@ -260,16 +292,19 @@ describe('probeAndCache', () => {
     seedMetrics(baseCfg, cache);
 
     let callCount = 0;
+    const baseMock = goodClassifierMock();
     const pctx: ProbeContext = {
       findModel: (ref) => ({ provider: 'openrouter', id: ref.split('/')[1] }),
-      completeSimple: vi.fn(async () => {
+      completeSimple: vi.fn(async (model: any, prompt: any) => {
         callCount++;
-        return { errorMessage: undefined, stopReason: 'stop', content: [] };
+        return baseMock(model, prompt);
       }),
     };
     const result = await probeAndCache(baseCfg, cache, pctx);
     expect(result.length).toBeLessThanOrEqual(8);
-    expect(callCount).toBeLessThanOrEqual(8);
+    // Each candidate now answers PROBE_CASES.length classification cases
+    // (not one OK ping), so the early-stop bound scales with the case count.
+    expect(callCount).toBeLessThanOrEqual(8 * PROBE_CASES.length);
   });
 
   it('handles probe errors gracefully (candidate skipped, not fatal)', async () => {
@@ -287,9 +322,13 @@ describe('probeAndCache', () => {
 
     const pctx: ProbeContext = {
       findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
-      completeSimple: vi.fn(async (model: any) => {
+      completeSimple: vi.fn(async (model: any, prompt: any) => {
         if (model.id === 'throwing-model') throw new Error('network error');
-        return { errorMessage: undefined, stopReason: 'stop', content: [] };
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        if (content.includes('Explain what a closure is briefly')) return okReply('simple');
+        return okReply('standard');
       }),
     };
     const result = await probeAndCache(baseCfg, cache, pctx, () => {});
@@ -315,9 +354,13 @@ describe('probeAndCache', () => {
 
     const pctx: ProbeContext = {
       findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
-      completeSimple: vi.fn(async (model: any) => {
+      completeSimple: vi.fn(async (model: any, prompt: any) => {
         if (model.id === 'broken') throw new Error('422');
-        return { errorMessage: undefined, stopReason: 'stop', content: [] };
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        if (content.includes('Explain what a closure is briefly')) return okReply('simple');
+        return okReply('standard');
       }),
     };
     await probeAndCache(baseCfg, cache, pctx, () => {});
@@ -340,7 +383,7 @@ describe('probeAndCache', () => {
     expect(cache.classifier_fallback_models).toBeUndefined();
     const pctx: ProbeContext = {
       findModel: (ref) => ({ provider: 'openrouter', id: 'ok' }),
-      completeSimple: vi.fn(async () => ({ errorMessage: undefined, stopReason: 'stop', content: [] })),
+      completeSimple: goodClassifierMock(),
     };
     await probeAndCache(baseCfg, cache, pctx);
     expect(cache.classifier_fallback_models).toEqual(['openrouter/ok']);
@@ -366,5 +409,160 @@ describe('getCachedFallbackModels + hasProbedFallback', () => {
     const cache: Cache = { classifier_fallback_models: [] };
     expect(getCachedFallbackModels(cache)).toEqual([]);
     expect(hasProbedFallback(cache)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Quality probe: the probe validates the CLASSIFICATION task, not just
+// reachability. Regression context: an audio model (voxtral-small) repeatedly
+// passed the old "Reply with OK" reachability check but then copied
+// "hint:group:tactical" out of the router narration context instead of
+// classifying the actual request (2026-09-26). The probe cases therefore
+// include a HINT-narration trap: a model that swallows the bait is rejected.
+// ---------------------------------------------------------------------------
+describe('probeAndCache — quality validation', () => {
+  function makeCache(id = 'candidate'): Cache {
+    return {
+      available_models: [{ id, provider: 'openrouter', cost_per_m: 0 }],
+      openrouter_pricing: { [`openrouter/${id}`]: { input: 0, output: 0 } },
+    };
+  }
+
+  beforeEach(() => {
+    seedMetrics(baseCfg, {});
+  });
+  afterEach(() => {
+    metrics.setConfig({ model_groups: {}, model_metrics: {}, providers: {} });
+    metrics.setCache({});
+  });
+
+  it('ACCEPTS a model that classifies every probe case with an accepted category', async () => {
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const mock = goodClassifierMock();
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: mock,
+    };
+    const result = await probeAndCache(baseCfg, cache, pctx);
+    expect(result).toEqual(['openrouter/candidate']);
+    // All cases must be answered — one call per probe case.
+    expect(mock).toHaveBeenCalledTimes(PROBE_CASES.length);
+  });
+
+  it('REJECTS a model that copies the HINT narration from the context block (voxtral incident 2026-09-26)', async () => {
+    // The trap case embeds router narration containing "HINT: use group ..."
+    // in the context block. A model that echoes hint:* instead of classifying
+    // the plain question would misroute production traffic into hint sticks.
+    const cache = makeCache('voxtral');
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async (_m: any, prompt: any) => {
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        // Fails ONLY the trap case — passes the two plain cases first.
+        if (content.includes('Explain what a closure is briefly')) {
+          return okReply('hint:group:tactical');
+        }
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        return okReply('standard');
+      }),
+    };
+    const logs: string[] = [];
+    const result = await probeAndCache(baseCfg, cache, pctx, (m) => logs.push(m));
+    expect(result).not.toContain('openrouter/voxtral');
+    expect(logs.some((l) => l.toLowerCase().includes('hint'))).toBe(true);
+    // The quality failure must feed the health system (like any probe failure).
+    expect(cache.model_health?.['openrouter/voxtral']).toBeDefined();
+  });
+
+  it('REJECTS prose replies (no classification JSON at all)', async () => {
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => ({
+        errorMessage: undefined,
+        stopReason: 'stop',
+        content: [{ type: 'text', text: 'This looks like a simple file question.' }],
+      })),
+    };
+    const result = await probeAndCache(baseCfg, cache, pctx);
+    expect(result).toEqual([]);
+  });
+
+  it('REJECTS a category outside the case accept list (misclassification)', async () => {
+    // The read-file case accepts trivial|simple|standard — 'planning' shows the
+    // model did not understand the classification task.
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => okReply('planning')),
+    };
+    const result = await probeAndCache(baseCfg, cache, pctx);
+    expect(result).toEqual([]);
+  });
+
+  it('REJECTS an invalid category name (not in VALID_CATEGORIES)', async () => {
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => okReply('banana')),
+    };
+    const result = await probeAndCache(baseCfg, cache, pctx);
+    expect(result).toEqual([]);
+  });
+
+  it('accepts ANY non-hint valid category in the trap case (breadth documented)', async () => {
+    // The trap case's primary criterion is "does NOT echo hint:*". Which normal
+    // category the model picks for "explain closures" is deliberately lenient
+    // (simple/standard/... all acceptable) — we must not throw out usable
+    // models over borderline category judgment calls.
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async (_m: any, prompt: any) => {
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        if (content.includes('Explain what a closure is briefly')) return okReply('standard');
+        return okReply('simple');
+      }),
+    };
+    const result = await probeAndCache(baseCfg, cache, pctx);
+    expect(result).toEqual(['openrouter/candidate']);
+  });
+
+  it('sends the production prompt surface: case prompt AND trap narration reach the model', async () => {
+    // Verifies the probe uses the shared buildClassificationPrompt surface —
+    // the same prompt the runtime classifier sends. A probe that validates a
+    // different prompt validates a different task.
+    const cache = makeCache();
+    seedMetrics(baseCfg, cache);
+    const seenPrompts: string[] = [];
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async (_m: any, prompt: any) => {
+        seenPrompts.push(prompt?.messages?.[0]?.content ?? '');
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        return okReply('simple');
+      }),
+    };
+    await probeAndCache(baseCfg, cache, pctx);
+    expect(seenPrompts.length).toBe(PROBE_CASES.length);
+    // Every case carries its user prompt.
+    for (const tc of PROBE_CASES) {
+      expect(seenPrompts.some((p) => p.includes(tc.prompt))).toBe(true);
+    }
+    // The trap case additionally carries the HINT narration (the bait).
+    const trap = PROBE_CASES.find((tc) => tc.contextBlock);
+    expect(trap).toBeDefined();
+    expect(seenPrompts.some((p) => p.includes('HINT: use group'))).toBe(true);
   });
 });

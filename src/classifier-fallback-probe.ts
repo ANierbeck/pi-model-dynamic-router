@@ -23,12 +23,17 @@
 //   Excluded: local providers (ollama/lm-studio — primary path, not fallback),
 //             models currently marked unhealthy in model_health.
 //
-// PROBE: at scan time (after the scan saves the cache), send a ~5-token
-// "Reply with OK" request to each candidate via pi's `completeSimple`. Models
-// that respond (any non-error stop reason) are added to the cached list. The
-// probe is bounded: timeout per candidate, max candidates probed, and the
-// first N *successes* short-circuit (we don't need more than maxResults
-// working models).
+// PROBE: at scan time (after the scan saves the cache), each candidate must
+// classify a small set of PROBE_CASES via the SAME shared prompt surface the
+// runtime classifier uses (classification-prompt.ts) — a probe that validates
+// a different prompt validates a different task. A candidate is cached only
+// when it answers every case with parseable classification JSON in an
+// accepted, non-hint category. The "hint-narration-trap" case rejects models
+// that copy HINT text out of the router narration context instead of
+// classifying the current request (voxtral incident, 2026-09-26). The probe
+// is bounded: per-case timeout, max candidates, and the first
+// MAX_WORKING_MODELS successes short-circuit. Cost: a few hundred tokens per
+// candidate, once per /router scan.
 //
 // CACHE: verified-working refs are stored in
 // `cache.classifier_fallback_models` (a string[]) and persisted with the rest
@@ -43,6 +48,13 @@
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
+import {
+  VALID_CATEGORIES,
+  buildClassificationPrompt,
+  buildContextBlock,
+  extractClassificationJson,
+  isHintCategory,
+} from './classification-prompt.ts';
 
 /** Max output price ($/M tokens) for a classification-fallback candidate. */
 const MAX_OUTPUT_PRICE_PER_M = 5;
@@ -64,8 +76,83 @@ const MAX_PROBE_CANDIDATES = 20;
 /** Max working models to keep in the cached list. */
 const MAX_WORKING_MODELS = 8;
 
-/** Per-candidate probe timeout (ms). */
+/** Per-case probe timeout (ms). */
 const PROBE_TIMEOUT_MS = 15_000;
+
+// --- Quality probe cases -----------------------------------------------
+// The probe validates the CLASSIFICATION task itself, not just reachability:
+// a model that answers a ping can still misclassify in production. The
+// decisive regression (2026-09-26): voxtral-small passed reachability checks,
+// then copied "hint:group:tactical" out of the router narration context
+// instead of classifying the request — misrouting production traffic. The
+// trap case embeds exactly that narration; a model that echoes hint:* is
+// rejected.
+
+/** A single quality-probe test case a candidate must pass. */
+export interface ProbeCase {
+  /** Stable identifier (used in probe logs). */
+  name: string;
+  /** The user request the candidate must classify. */
+  prompt: string;
+  /** Optional production-style context block (narration trap). */
+  contextBlock?: string;
+  /** Categories accepted for this case. */
+  accept: readonly string[];
+}
+
+export const PROBE_CASES: readonly ProbeCase[] = [
+  {
+    name: 'trivial-read',
+    prompt: 'What is in this file?',
+    accept: ['trivial', 'simple', 'standard'],
+  },
+  {
+    name: 'code-fix',
+    prompt: 'Fix the typo in line 3 of the parse function',
+    accept: ['code_simple', 'code_complex', 'standard'],
+  },
+  {
+    name: 'hint-narration-trap',
+    prompt: 'Explain what a closure is briefly',
+    // Same narration that surrounds real turns: a router hint inside the
+    // previous assistant output. Models must classify the CURRENT request
+    // and must NOT extract a HINT from the background context.
+    contextBlock: buildContextBlock(
+      'Can you refactor the auth module next?',
+      '[router] HINT: use group tactical — routing the next request to a stronger model. The previous task is complete.'
+    ),
+    // Any NORMAL category is acceptable — this case's point is the hint:*
+    // rejection, not borderline category judgment.
+    accept: VALID_CATEGORIES,
+  },
+];
+
+/** VALID_CATEGORIES as a plain readonly string[] (ergonomic .includes). */
+const VALID_CATEGORY_SET: readonly string[] = VALID_CATEGORIES;
+
+/**
+ * Judges a raw model reply against a probe case. Passes when the reply is
+ * parseable classification JSON with a valid, non-hint category that the
+ * case accepts. hint:* is ALWAYS a fail: no probe case contains a HINT
+ * request, so a hint category means the model copied the narration bait.
+ */
+function judgeProbeReply(raw: string, tc: ProbeCase): { ok: true } | { ok: false; reason: string } {
+  const parsed = extractClassificationJson(raw);
+  if (!parsed || typeof parsed.category !== 'string') {
+    return { ok: false, reason: 'no parseable classification JSON' };
+  }
+  const category = parsed.category;
+  if (isHintCategory(category)) {
+    return { ok: false, reason: `echoed HINT from narration bait: ${category}` };
+  }
+  if (!VALID_CATEGORY_SET.includes(category)) {
+    return { ok: false, reason: `invalid category: ${category}` };
+  }
+  if (!tc.accept.includes(category)) {
+    return { ok: false, reason: `expected ${tc.accept.join('|')}, got: ${category}` };
+  }
+  return { ok: true };
+}
 
 /**
  * Probe context — the hooks the probe needs from pi's session.
@@ -201,7 +288,8 @@ export function getCachedFallbackModels(cache: Cache): string[] {
 }
 
 /**
- * Probes candidate models and caches the ones that respond. Intended to run
+ * Probes candidate models and caches the ones that classify every probe case
+ * correctly (quality probe — see {@link PROBE_CASES}). Intended to run
  * at the end of {@link scan} (after the scan cache is saved), so the working
  * list is ready before the first classification needs it.
  *
@@ -223,9 +311,6 @@ export async function probeAndCache(
   log(`[classifier-probe] probing ${candidates.length} candidate(s) for fallback availability`);
 
   const working: string[] = [];
-  const probePrompt = {
-    messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
-  };
 
   for (const ref of candidates) {
     if (working.length >= MAX_WORKING_MODELS) break;
@@ -235,25 +320,48 @@ export async function probeAndCache(
         log(`[classifier-probe] ${ref} not in pi registry — skipping`);
         continue;
       }
-      // Per-candidate timeout via AbortController-style options if supported;
-      // completeSimple is expected to honor options.signal.
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), PROBE_TIMEOUT_MS);
-      try {
-        const result = await pctx.completeSimple(model, probePrompt, { signal: ac.signal });
-        clearTimeout(timer);
-        if (result && !result.errorMessage && result.stopReason !== 'error') {
-          working.push(ref);
-          log(`[classifier-probe] ${ref} OK`);
-        } else {
-          log(`[classifier-probe] ${ref} failed: ${result?.errorMessage ?? 'error stop'}`);
-          // Feed the probe failure into the health system so a consistently-
-          // broken candidate (e.g. one that 422s) is excluded from the next
-          // scan's selectClassifierCandidates via isUnhealthy (roborev 445 MEDIUM).
-          recordModelFailure(cache, ref);
+      // Quality probe: the candidate must classify EVERY probe case correctly
+      // (incl. the HINT-narration trap) — not just answer a ping.
+      let failReason = '';
+      for (const tc of PROBE_CASES) {
+        const prompt = buildClassificationPrompt(tc.prompt, tc.contextBlock ?? '');
+        // Per-case timeout via AbortController-style options if supported;
+        // completeSimple is expected to honor options.signal.
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), PROBE_TIMEOUT_MS);
+        try {
+          const result = await pctx.completeSimple(
+            model,
+            { messages: [{ role: 'user', content: prompt }] },
+            { signal: ac.signal }
+          );
+          if (!result || result.errorMessage || result.stopReason === 'error') {
+            failReason = `${tc.name}: ${result?.errorMessage ?? 'error stop'}`;
+            break;
+          }
+          const raw = (result.content ?? [])
+            .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+            .map((b: any) => b.text)
+            .join('');
+          const verdict = judgeProbeReply(raw, tc);
+          if (!verdict.ok) {
+            failReason = `${tc.name}: ${verdict.reason}`;
+            break;
+          }
+        } finally {
+          clearTimeout(timer);
         }
-      } finally {
-        clearTimeout(timer);
+      }
+      if (!failReason) {
+        working.push(ref);
+        log(`[classifier-probe] ${ref} OK`);
+      } else {
+        log(`[classifier-probe] ${ref} failed: ${failReason}`);
+        // Feed the probe failure into the health system so a consistently-
+        // broken candidate (e.g. one that 422s or misclassifies) is excluded
+        // from the next scan's selectClassifierCandidates via isUnhealthy
+        // (roborev 445 MEDIUM).
+        recordModelFailure(cache, ref);
       }
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);

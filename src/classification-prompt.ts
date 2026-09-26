@@ -4,15 +4,14 @@
 // production CLASSIFICATION_PROMPT, the context-block builder, the
 // user-prompt assembly, and the response-JSON extraction.
 //
-// Used by src/content-classifier.ts (the production classifier). The
-// scan-time quality probe (src/classifier-fallback-probe.ts) still carries
-// its own inline prompt copy — aligning it with this module is a planned
-// follow-up so both exercise the IDENTICAL prompt. A probe that validates
-// a different task lets unsuitable models (e.g. a speech model that
-// spuriously copies the hint example) pass the availability check while
-// misclassifying in production. This module also exists to break the
-// circular dependency (content-classifier → classifier-fallback-probe)
-// that a direct prompt import from the probe would create.
+// Used by BOTH the production classifier (src/content-classifier.ts) and
+// the scan-time quality probe (src/classifier-fallback-probe.ts) — both
+// exercise the IDENTICAL prompt, because a probe that validates a different
+// task lets unsuitable models (e.g. a speech model that spuriously copies
+// the hint example) pass the availability check while misclassifying in
+// production. The module also breaks the circular dependency
+// (content-classifier → classifier-fallback-probe) that a direct prompt
+// import between the two would create.
 
 /**
  * The categories a valid (non-hint) classification may return.
