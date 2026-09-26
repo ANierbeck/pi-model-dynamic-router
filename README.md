@@ -575,6 +575,7 @@ If both Ollama models are unavailable, the classifier falls back to a free cloud
 | `/router <group>` | Detailed view of a group with ranked candidates |
 | `/router scan` | Re-scan models and GDPval scores |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
+| `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 | `/router reload` | Hot-reload config and cache |
 
 ### Logging

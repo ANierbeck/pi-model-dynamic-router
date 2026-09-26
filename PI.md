@@ -310,6 +310,7 @@ Filter out specific providers or models from selection:
 | `/router <group>` | Details for a specific group (e.g., `/router strategic`) |
 | `/router scan` | Re-scan models and GDPval scores |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
+| `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 | `/router reload` | Reload config and cache |
 
 ## Tools

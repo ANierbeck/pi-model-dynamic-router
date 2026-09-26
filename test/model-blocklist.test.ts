@@ -11,6 +11,7 @@ import {
   recordBlocklistFailure,
   isBlocked,
   recordBlocklistSuccess,
+  clearBlocklist,
   activeBlocks,
 } from '../src/model-blocklist.ts';
 import type { Cache, Config } from '../src/types.ts';
@@ -258,5 +259,36 @@ describe('Tier 2 promotion', () => {
     expect(isBlocked(cache, T2, later)).toBe(false);
     expect(recordBlocklistFailure(cache, T2, UNKNOWN_400, later)).toMatchObject({ occurrences: 2 });
     expect(isBlocked(cache, T2, later + 1)).toBe(true);
+  });
+});
+
+// ── Review 2026-09-27: account-wide failures and manual unblock ────────────
+
+describe('account-wide failures never block a model', () => {
+  it.each([
+    ['401: {"message":"User not found.","code":401}'],
+    ['401 status code (no body)'],
+    ['Invalid API key provided'],
+    ['403: {"message":"Unauthorized: authentication failed","code":403}'],
+  ])('%s is not a Tier-2 candidate', (text) => {
+    expect(classifyFailure(T2, text).verdict).toBe('transient');
+    const cache: Cache = {};
+    for (let i = 0; i < 6; i++) recordBlocklistFailure(cache, T2, text, i * HOUR);
+    expect(isBlocked(cache, T2, 6 * HOUR)).toBe(false);
+  });
+});
+
+describe('clearBlocklist (/router blocklist clear)', () => {
+  it('clears one ref or everything, including Tier-2 streaks', () => {
+    const cache: Cache = {};
+    recordBlocklistFailure(cache, OR, AGENTIC, 0);
+    recordBlocklistFailure(cache, 'openrouter/b:free', GUARDRAIL, 0);
+    recordBlocklistFailure(cache, T2, UNKNOWN_400, 0);
+    expect(clearBlocklist(cache, OR)).toBe(1);
+    expect(isBlocked(cache, OR, 1)).toBe(false);
+    expect(isBlocked(cache, 'openrouter/b:free', 1)).toBe(true);
+    expect(clearBlocklist(cache)).toBe(1);
+    expect(cache.model_blocklist).toEqual({});
+    expect(cache.model_failure_streaks).toEqual({});
   });
 });

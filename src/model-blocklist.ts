@@ -103,6 +103,24 @@ export function recordBlocklistSuccess(cache: Cache, ref: string): boolean {
   return true;
 }
 
+/**
+ * Manual unblock (`/router blocklist clear [ref]`): removes the block and
+ * Tier-2 streak for `ref`, or for every model when `ref` is omitted.
+ * Returns the number of blocks removed.
+ */
+export function clearBlocklist(cache: Cache, ref?: string): number {
+  if (ref) {
+    const had = cache.model_blocklist?.[ref] ? 1 : 0;
+    if (cache.model_blocklist) delete cache.model_blocklist[ref];
+    if (cache.model_failure_streaks) delete cache.model_failure_streaks[ref];
+    return had;
+  }
+  const count = Object.keys(cache.model_blocklist ?? {}).length;
+  cache.model_blocklist = {};
+  cache.model_failure_streaks = {};
+  return count;
+}
+
 export function activeBlocks(
   cache: Cache,
   now: number = Date.now()

@@ -500,6 +500,37 @@ describe('probeAndCache — quality validation', () => {
     expect(cache.model_health?.['openrouter/voxtral']).toBeDefined();
   });
 
+  it('a quality failure never feeds the blocklist and resets an existing failure streak (review 2026-09-27)', async () => {
+    const cache = makeCache('voxtral');
+    cache.model_failure_streaks = {
+      'openrouter/voxtral': { signature: '400:x', count: 4, first_seen: Date.now() - 3_600_000, last_seen: Date.now() },
+    };
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => okReply('hint:group:tactical')),
+    };
+    await probeAndCache(baseCfg, cache, pctx, () => {});
+    // The model answered: the API works, only the classification was wrong.
+    expect(cache.model_failure_streaks?.['openrouter/voxtral']).toBeUndefined();
+    expect(cache.model_blocklist?.['openrouter/voxtral']).toBeUndefined();
+  });
+
+  it('a provider error during the probe does feed the blocklist', async () => {
+    const cache = makeCache('gated');
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async () => ({
+        stopReason: 'error',
+        errorMessage: '403: {"message":"x is only available on agentic harnesses","code":403}',
+        content: [],
+      })),
+    };
+    await probeAndCache(baseCfg, cache, pctx, () => {});
+    expect(cache.model_blocklist?.['openrouter/gated']).toMatchObject({ reason: 'agentic-harness-gate' });
+  });
+
   it('REJECTS prose replies (no classification JSON at all)', async () => {
     const cache = makeCache();
     seedMetrics(baseCfg, cache);

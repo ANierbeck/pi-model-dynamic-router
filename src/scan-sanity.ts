@@ -71,6 +71,8 @@ export interface ScanSanityParams {
 export interface ScanSanityResult {
   ok: boolean;
   reason?: string;
+  /** Which check refused the scan. */
+  check?: 'collapse' | 'coverage' | 'regression';
   scannedCount: number;
   survivorCount: number;
   survivalRatio: number;
@@ -133,6 +135,7 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
     return {
       ...result,
       ok: false,
+      check: 'collapse',
       reason:
         `scoring collapse: only ${survivorCount}/${scannedCount} scanned models ` +
         `(${(survivalRatio * 100).toFixed(1)}%) received a usable GDPval score — ` +
@@ -152,6 +155,7 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
     return {
       ...result,
       ok: false,
+      check: 'coverage',
       reason:
         `explicit model-map coverage too low: only ${explicitlyMappedScoredCount}/` +
         `${explicitlyMappedCount} explicitly-mapped models (${(explicitMapCoverage * 100).toFixed(1)}%) ` +
@@ -171,10 +175,12 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
     return {
       ...result,
       ok: false,
+      check: 'regression',
       reason:
         `regression vs. the persisted snapshot: ${survivorCount} usable models now, ` +
         `${previousSurvivorCount} before, with an unchanged config. This usually means ` +
-        `discovery ran before the model registry was ready. Run /router scan to accept it anyway.`,
+        `discovery ran before the model registry was ready. If the next scan returns the ` +
+        `same result it is accepted as real; /router scan accepts it now.`,
     };
   }
 

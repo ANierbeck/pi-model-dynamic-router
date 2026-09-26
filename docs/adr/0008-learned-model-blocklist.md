@@ -361,6 +361,20 @@ What remains `unknown` are mainly Mistral's "Invalid model: …" (400) and a bar
 `400 status code (no body)` for models that cannot chat (e.g. OCR). These
 are the failures Tier 2 is meant to catch.
 
+## Review corrections (2026-09-27)
+
+- **Classifier probe:** only provider errors (`errorMessage` / error stop, or
+  a thrown error) feed the blocklist. A wrong classification means the model
+  answered, so it counts as a success and resets the Tier-2 streak.
+  Otherwise a model that works for chat could be blocked from every group
+  over classifier quality.
+- **Account-wide failures:** 401 and auth wording ("invalid API key",
+  "unauthorized", "user not found", …) are `transient` with reason
+  `account-auth`. They hit every model of a provider and heal when the key
+  is fixed, so a per-model block would outlive the fix.
+- **Manual unblock:** `/router blocklist clear [provider/model]` removes one
+  block or all blocks, including Tier-2 streaks.
+
 ## Consequences
 
 **Makes easier:**

@@ -48,7 +48,7 @@
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
-import { isBlocked, recordBlocklistFailure } from './model-blocklist.ts';
+import { isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
 import {
   VALID_CATEGORIES,
   buildClassificationPrompt,
@@ -326,6 +326,9 @@ export async function probeAndCache(
       // Quality probe: the candidate must classify EVERY probe case correctly
       // (incl. the HINT-narration trap) — not just answer a ping.
       let failReason = '';
+      // A provider error (the API refused) feeds the blocklist; a wrong
+      // classification does not — the model answered, so the API works.
+      let providerError = '';
       for (const tc of PROBE_CASES) {
         const prompt = buildClassificationPrompt(tc.prompt, tc.contextBlock ?? '');
         // Per-case timeout via AbortController-style options if supported;
@@ -340,6 +343,7 @@ export async function probeAndCache(
           );
           if (!result || result.errorMessage || result.stopReason === 'error') {
             failReason = `${tc.name}: ${result?.errorMessage ?? 'error stop'}`;
+            providerError = result?.errorMessage ?? '';
             break;
           }
           const raw = (result.content ?? [])
@@ -363,10 +367,11 @@ export async function probeAndCache(
         // Feed the probe failure into the health system so a consistently-
         // broken candidate (e.g. one that 422s or misclassifies) is excluded
         // from the next scan's selectClassifierCandidates via isUnhealthy
-        // (roborev 445 MEDIUM), and into the learned blocklist (ADR-0008).
+        // (roborev 445 MEDIUM).
         recordModelFailure(cache, ref);
-        recordBlocklistFailure(cache, ref, failReason);
       }
+      if (providerError) recordBlocklistFailure(cache, ref, providerError);
+      else recordBlocklistSuccess(cache, ref);
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
       recordModelFailure(cache, ref);

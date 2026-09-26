@@ -108,6 +108,40 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
       const onDisk = JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'));
       expect(onDisk._dynamic.model_count).toBe(37);
       expect(onDisk._dynamic.generated_at).toBe('2026-09-26T16:50:23.212Z');
+      const cacheOnDisk = JSON.parse(
+        fs.readFileSync(path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json'), 'utf-8')
+      );
+      expect(cacheOnDisk.scan_sanity_refusal).toMatchObject({ previous: 37 });
+      expect(cacheOnDisk.scan_sanity_refusal.survivors).toBeLessThan(37 / 2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('accepts the smaller result when a second scan returns the same (a real shrink, review 2026-09-27)', async () => {
+    const good = {
+      _dynamic: { generated_at: '2026-09-26T16:50:23.212Z', model_count: 37 },
+      model_groups: { standard: { method: 'best', models: ['healthy-provider/model-a'] } },
+    };
+    const cachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+
+    // First scan: refused, refusal recorded.
+    const first = await startRouterWithCache({ lastScanTimestamp: 0 }, good);
+    let refusal: { survivors: number } | undefined;
+    try {
+      expect(await waitFor(() => !!JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal)).toBe(true);
+      refusal = JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal;
+    } finally {
+      first.cleanup();
+    }
+
+    // Second scan with the same result: accepted, refusal cleared.
+    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0, scan_sanity_refusal: refusal }, good);
+    try {
+      expect(
+        await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count === refusal!.survivors)
+      ).toBe(true);
+      expect(JSON.parse(fs.readFileSync(cachePath, 'utf-8')).scan_sanity_refusal).toBeUndefined();
     } finally {
       cleanup();
     }

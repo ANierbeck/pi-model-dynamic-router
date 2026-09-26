@@ -68,4 +68,15 @@ describe('rotation', () => {
     expect(read()).not.toContain('old');
     expect(read(`${logPath()}.1`)).toContain('old');
   });
+
+  it('sees writes from other processes (shared log file, review 2026-09-27)', () => {
+    configureLogRotation({ maxBytes: 300, keep: 3 });
+    routerLog('[router] mine');
+    // Another Pi session appends to the same file.
+    fs.appendFileSync(logPath(), 'other process line\n'.repeat(30));
+    routerLog('[router] mine again');
+    expect(read()).toContain('mine again');
+    expect(read()).not.toContain('other process line');
+    expect(read(`${logPath()}.1`)).toContain('other process line');
+  });
 });

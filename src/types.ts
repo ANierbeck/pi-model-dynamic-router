@@ -264,6 +264,12 @@ export interface Cache {
    * and is regenerated when missing.
    */
   dynamic_config_expected?: boolean;
+  /**
+   * Last scan refused by the scan-sanity regression check (survivor count,
+   * previous snapshot count, time). A second scan with the same result is
+   * accepted as a real shrink.
+   */
+  scan_sanity_refusal?: { survivors: number; previous: number; at: number };
   model_blocklist?: Record<string, {
     reason: string;
     code: number;

@@ -54,7 +54,7 @@ import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from '.
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
-import { recordBlocklistFailure, recordBlocklistSuccess, activeBlocks } from './src/model-blocklist.ts';
+import { recordBlocklistFailure, recordBlocklistSuccess, activeBlocks, clearBlocklist } from './src/model-blocklist.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged } from './src/provider-watchdog.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
@@ -1084,10 +1084,28 @@ let previousTokenCount = 0;
         ...(previousSurvivorCount !== undefined ? { previousSurvivorCount } : {}),
         configChanged,
       });
-      if (!sanity.ok) {
+      // A regression refusal that repeats with the same smaller result is a
+      // real shrink (provider removed, key revoked, catalogue change), not a
+      // start-up race: accept it instead of refusing on every session.
+      const prevRefusal = cacheManager.getCache().scan_sanity_refusal;
+      const sameAsLastRefusal =
+        sanity.check === 'regression' &&
+        prevRefusal !== undefined &&
+        Math.abs(prevRefusal.survivors - sanity.survivorCount) <= Math.max(1, Math.round(prevRefusal.survivors * 0.1));
+      if (sameAsLastRefusal) {
+        routerLog(
+          `[router] Scan sanity: the smaller result (${sanity.survivorCount} models) came back on a second scan — accepting it as real`
+        );
+      }
+      if (!sanity.ok && !sameAsLastRefusal) {
         routerLog(
           `[router] Scan sanity check FAILED, refusing to persist dynamic config: ${sanity.reason}`
         );
+        if (sanity.check === 'regression') {
+          cacheManager.updateCache({
+            scan_sanity_refusal: { survivors: sanity.survivorCount, previous: previousSurvivorCount ?? 0, at: Date.now() },
+          });
+        }
         // Deliberately do NOT call cacheManager.setLastScanTimestamp() here —
         // leaving it unset (or stale) means the next session/scan retries
         // instead of freezing this broken snapshot for up to 30 days. Any
@@ -1096,6 +1114,12 @@ let previousTokenCount = 0;
         // none exists, load() falls back to staticCfg, which resolves groups
         // via live discovery (verified safe).
         return;
+      }
+
+      const managedCache = cacheManager.getCache();
+      if (managedCache.scan_sanity_refusal) {
+        delete managedCache.scan_sanity_refusal;
+        cacheManager.saveCache();
       }
 
       routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
@@ -3070,13 +3094,14 @@ async function registerGroupModels(ctx: any) {
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan|cost|blocklist]',
+    description: 'Model router status. Usage: /router [group|scan|cost|blocklist [clear [ref]]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
         { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
         { value: 'cost', label: 'cost', description: 'Show accumulated cost-tracker summary' },
         { value: 'blocklist', label: 'blocklist', description: 'Show models blocked after permanent provider failures' },
+        { value: 'blocklist clear', label: 'blocklist clear', description: 'Unblock all models, or one: blocklist clear <provider/model>' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(cfg.model_groups ?? {}).map((g) => {
         const desc = cfg.model_groups?.[g]?.description;
@@ -3129,6 +3154,19 @@ async function registerGroupModels(ctx: any) {
 
         if (arg === 'blocklist') {
           ctx.ui.notify(formatBlocklist(), 'info');
+          return;
+        }
+        if (arg?.startsWith('blocklist clear')) {
+          const target = arg.slice('blocklist clear'.length).trim() || undefined;
+          const removed = clearBlocklist(cache, target);
+          cacheManager.saveCache(cache);
+          routerLog(`[router] blocklist cleared manually (${target ?? 'all'}): ${removed} block(s) removed`);
+          ctx.ui.notify(
+            target
+              ? removed ? `Unblocked ${target}.` : `${target} was not blocked.`
+              : `Blocklist cleared (${removed} model(s)).`,
+            'info'
+          );
           return;
         }
 
@@ -3259,6 +3297,16 @@ async function registerGroupModels(ctx: any) {
           const { provider, modelId } = splitRef(r);
           lines.push(`│ ⛔ ${provider}/${modelId} (${limitSecs(r)}s remaining)`);
         }
+      }
+
+      // Refused automatic scan (scan sanity check 3)
+      const refusal = cacheManager.getCache().scan_sanity_refusal;
+      if (refusal) {
+        lines.push('├─ Scan '.padEnd(72, '─'));
+        lines.push(
+          `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
+            'Accepted if the next scan agrees; /router scan accepts it now.'
+        );
       }
 
       // Local-provider watchdog (ADR-0016)

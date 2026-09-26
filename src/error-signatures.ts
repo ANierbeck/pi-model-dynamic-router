@@ -6,7 +6,8 @@
 //               retrying can never fix it (Tier 1 blocks on first sight).
 //   request   — depends on the request (e.g. tool use), never blocks.
 //   transient — known to heal: rate limits, 429/5xx, timeouts, network
-//               errors, aborts, overflows, empty text. Never counts.
+//               errors, aborts, overflows, empty text, account-wide auth
+//               failures (401, invalid key). Never counts.
 //   unknown   — anything else. Tier 2 may promote a repeated unknown
 //               signature (see model-blocklist.ts).
 // Tier-1 signatures are scoped per provider: the same HTTP status means
@@ -84,6 +85,12 @@ const SIGNATURES_BY_PROVIDER: Record<string, readonly Signature[]> = {
   'mistral-zai': MISTRAL_SIGNATURES,
 };
 
+// Account-wide failures (bad/expired key, auth): they hit every model of the
+// provider and heal when the user fixes the key, so they must never block
+// individual models — a per-model block would outlive the fix (review
+// 2026-09-27).
+const ACCOUNT_TEXT = /invalid api key|incorrect api key|unauthori[sz]ed|authentication|user not found|no auth credentials|api key (?:is )?(?:missing|expired|revoked)/i;
+
 // Request-dependent wording from any provider: the model works without tools.
 const REQUEST_TEXT = /does not support tools|support tool use/i;
 
@@ -152,6 +159,9 @@ export function classifyFailure(ref: string, text: string): FailureClassificatio
     }
   }
 
+  if (code === 401 || ACCOUNT_TEXT.test(text)) {
+    return { verdict: 'transient', reason: 'account-auth', ...(code !== undefined ? { code } : {}), signature: 'transient' };
+  }
   if (REQUEST_TEXT.test(text)) {
     return { verdict: 'request', reason: 'no-tool-support', ...(code !== undefined ? { code } : {}), signature: 'request:no-tool-support' };
   }

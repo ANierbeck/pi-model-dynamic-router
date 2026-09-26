@@ -37,7 +37,6 @@ let level: LogLevel = process.env.ROUTER_LOG_LEVEL === 'debug' ? 'debug' : 'info
 let rotation = { maxBytes: 20 * 1024 * 1024, keep: 5 };
 
 const ensuredDirs = new Set<string>();
-const sizes = new Map<string, number>();
 const lastOnce = new Map<string, string>();
 
 function ensureLogDirFor(logPath: string): void {
@@ -57,16 +56,14 @@ function rotate(logPath: string): void {
   else fs.rmSync(logPath);
 }
 
+// The size is read from disk on every write rather than counted per process:
+// several Pi sessions append to the same file, and a per-process counter
+// rotated too late and then rotated a fresh file again (review 2026-09-27).
 function append(logPath: string, line: string): void {
   ensureLogDirFor(logPath);
-  let size = sizes.get(logPath);
-  if (size === undefined) size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-  if (size > 0 && size + line.length + 1 > rotation.maxBytes) {
-    rotate(logPath);
-    size = 0;
-  }
+  const size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
+  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes) rotate(logPath);
   fs.appendFileSync(logPath, line + '\n');
-  sizes.set(logPath, size + Buffer.byteLength(line) + 1);
 }
 
 /** Write a single line to both the global and project-local router logs. */
@@ -94,7 +91,6 @@ export function setLogLevel(configured: LogLevel | undefined): void {
 
 export function configureLogRotation(opts: { maxBytes: number; keep: number }): void {
   rotation = { maxBytes: opts.maxBytes, keep: Math.max(1, opts.keep) };
-  sizes.clear();
 }
 
 /** Write a raw (already-formatted) line to both router logs. */
