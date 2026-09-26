@@ -3,10 +3,10 @@
 // per-model values) and the live path (applyGroupFilters, reading the
 // metrics module) must admit the same models for the same data.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { applyGroupFilters } from '../src/routing.ts';
 import { buildModelsWithMetadata, buildStaticFreeModelsLookup, filterModelsForGroup } from '../src/dynamic-config.ts';
-import { setConfig, setCache, setGdpval, setModelMap, setMetrics } from '../src/metrics.ts';
+import { setConfig, setCache, setGdpval, setModelMap, setMetrics, setModelRegistry, getModelRegistry } from '../src/metrics.ts';
 import type { Config, Group } from '../src/types.ts';
 
 const cfg: Config = {
@@ -26,15 +26,28 @@ const REFS = [
   'payg/mystery',
   'sub/unpriced',
   'ollama/local-model',
+  // Scan placeholder $0, but the registry knows the real price (the zai
+  // glm-5-3 alias pattern). Must be treated as priced, not free.
+  'payg/scan-zero-alias',
 ];
 
+let previousRegistry: unknown;
+
 beforeEach(() => {
+  previousRegistry = getModelRegistry();
+  setModelRegistry({
+    find: (provider: string, id: string) =>
+      provider === 'payg' && id === 'scan-zero-alias'
+        ? { provider, id, cost: { input: 1.4, output: 4, cacheRead: 0, cacheWrite: 0 } }
+        : null,
+    getAvailable: () => [],
+  } as any);
   setConfig(cfg);
   setModelMap({}, []);
   setMetrics({});
   setGdpval({
     cheap: 400, expensive: 900, 'listed-free': 500, 'tagged': 450, 'tagged:free': 450,
-    mystery: 600, unpriced: 800, 'local-model': 300,
+    mystery: 600, unpriced: 800, 'local-model': 300, 'scan-zero-alias': 700,
   });
   setCache({
     available_models: [
@@ -45,8 +58,13 @@ beforeEach(() => {
       { id: 'mystery', provider: 'payg' },
       { id: 'unpriced', provider: 'sub' },
       { id: 'local-model', provider: 'ollama', cost_per_m: 0 },
+      { id: 'scan-zero-alias', provider: 'payg', cost_per_m: 0 },
     ],
   } as any);
+});
+
+afterEach(() => {
+  setModelRegistry(previousRegistry);
 });
 
 const GROUPS: Array<[string, Group]> = [
@@ -64,6 +82,12 @@ describe('persist and live group filters agree (ADR-0010)', () => {
     const persist = filterModelsForGroup(meta, g, cfg).map((m) => m.ref).sort();
     const live = applyGroupFilters(meta.map((m) => m.ref), g, cfg).sort();
     expect(persist).toEqual(live);
+  });
+
+  it('treats a scan-$0 model with a registry price as priced, not free (registry-first)', () => {
+    expect(applyGroupFilters(REFS, GROUPS[0][1], cfg)).not.toContain('payg/scan-zero-alias');
+    expect(applyGroupFilters(REFS, { method: 'best', max_cost: 1 }, cfg)).not.toContain('payg/scan-zero-alias');
+    expect(applyGroupFilters(REFS, { method: 'best', max_cost_per_m: 1 }, cfg)).not.toContain('payg/scan-zero-alias');
   });
 
   it('keeps the unpriced cloud subscription model out of $0 and per-million-capped groups', () => {

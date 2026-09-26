@@ -157,5 +157,16 @@ list exists.
   - Cloud subscription models leave `$0` groups (live and display paths).
   - Group-level `exclude_providers`, `exclude_models`, `min_gdpval_pct` and
     the registry-first context window now also apply at persist time.
+  - Hand-listed group `models` now pass the same gates as discovered ones,
+    including `min_context_length`. A pinned model whose context window is
+    unknown in both the registry and the scan cache drops out of a group
+    with `min_context_length`, following the strict null-fails rule. Before,
+    the static loop only checked score and cost.
+- The live "is free" check uses the same definition as the persist path:
+  `:free` tag, `free_models` list, a $0/$0 price, or `effCost === 0` on a
+  pay_per_token provider. It does **not** use the scan cache's
+  `cost_per_m === 0`, so a scan placeholder never overrides a registry
+  price. The first implementation got this wrong; a code review caught it
+  on 2026-09-27.
 - `test/dynamic-config.test.ts` and `test/apply-group-filters.test.ts` were
   reconciled to these rules.

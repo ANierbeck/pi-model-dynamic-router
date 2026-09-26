@@ -13,7 +13,7 @@ import type {
 } from './types.ts';
 import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow, isFreeModel } from './metrics.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { demoteUnhealthy } from './model-health.ts';
@@ -116,14 +116,26 @@ export interface GroupFilterLookups {
   isFree(ref: string): boolean;
 }
 
+/** Whether `ref` is listed in its provider's `free_models` (prefixed or bare). */
+function inFreeModelsList(cfg: Config, ref: string): boolean {
+  const prov = ref.split('/')[0];
+  const list = cfg.providers?.[prov]?.free_models;
+  if (!list?.length) return false;
+  const bare = ref.slice(prov.length + 1);
+  return list.includes(ref) || list.includes(bare);
+}
+
 export function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
   return {
     gdp: lookupGdp,
     cost: effCost,
     price: lookupPrice,
     contextWindow: lookupContextWindow,
+    // Same definition as buildModelsWithMetadata's isFreeModel (persist
+    // path). Registry-first via lookupPrice/effCost: a scan placeholder
+    // cost_per_m of 0 must not make a registry-priced model "free".
     isFree: (ref) => {
-      if (ref.includes(':free') || isFreeModel(ref)) return true;
+      if (ref.includes(':free') || inFreeModelsList(cfg, ref)) return true;
       const price = lookupPrice(ref);
       if (price !== null && price.input === 0 && price.output === 0) return true;
       return effCost(ref) === 0 && isTokenBased(cfg, ref.split('/')[0]);
