@@ -70,12 +70,12 @@ describe('driveStream: on-demand free-model registration', () => {
           // NOT in cache.available_models (simulating the real situation:
           // statically-configured free models never go through the scan path).
           openrouter: {
-            free_models: ['openrouter/z-ai/glm-5.2:free'],
+            free_models: ['openrouter/test-vendor/fixture-model:free'],
             keys: [{ key: 'sk-or-test-fake-key' }],
           },
         },
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        gdpval_builtin: { 'openrouter/z-ai/glm-5.2:free': 900 },
+        gdpval_builtin: { 'openrouter/test-vendor/fixture-model:free': 900 },
       },
       async (defaultExport, tmpDir) => {
         const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
@@ -99,14 +99,14 @@ describe('driveStream: on-demand free-model registration', () => {
         };
         defaultExport(pi);
 
-        const freeModel = { provider: 'openrouter', id: 'z-ai/glm-5.2:free', api: 'openai-completions', contextWindow: 128_000 };
+        const freeModel = { provider: 'openrouter', id: 'test-vendor/fixture-model:free', api: 'openai-completions', contextWindow: 128_000 };
         // The model registry starts with the free model NOT findable (it's
         // not registered yet). After tryStream's on-demand registration
         // calls pi.registerProvider, the registry must find it — simulate
         // that by making find() return the model once registerProvider has
         // been called for openrouter with that model id in the models list.
         const modelsByRef: Record<string, any> = {
-          'openrouter/z-ai/glm-5.2:free': freeModel,
+          'openrouter/test-vendor/fixture-model:free': freeModel,
         };
         let openrouterRegistered = false;
         const modelRegistry = {
@@ -159,13 +159,13 @@ describe('driveStream: on-demand free-model registration', () => {
         free_models: [],
         providers: {
           openrouter: {
-            free_models: ['openrouter/z-ai/glm-5.2:free', 'openrouter/some-paid-model'],
+            free_models: ['openrouter/test-vendor/fixture-model:free', 'openrouter/some-paid-model'],
             keys: [{ key: 'sk-or-test-fake-key' }],
           },
         },
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: {
-          'openrouter/z-ai/glm-5.2:free': 1000,
+          'openrouter/test-vendor/fixture-model:free': 1000,
           'openrouter/some-paid-model': 950,
         },
       },
@@ -192,7 +192,7 @@ describe('driveStream: on-demand free-model registration', () => {
         // null for the free ref until it's explicitly registered, which the
         // Ü1 guard must prevent from happening).
         const paidModel = { provider: 'openrouter', id: 'some-paid-model', api: 'openai-completions', contextWindow: 128_000 };
-        const freeModel = { provider: 'openrouter', id: 'z-ai/glm-5.2:free', api: 'openai-completions', contextWindow: 128_000 };
+        const freeModel = { provider: 'openrouter', id: 'test-vendor/fixture-model:free', api: 'openai-completions', contextWindow: 128_000 };
         const modelRegistry = {
           getAvailable: () => [paidModel, freeModel],
           // Paid model is findable (already registered); free model is NOT

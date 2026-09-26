@@ -11,8 +11,11 @@
 // (e.g. exclude, providers.openrouter) merge key-by-key rather than replacing
 // the whole block.
 //
-// Arrays are REPLACED (not merged) — e.g. exclude.models = [...] overrides the
-// default list entirely. This is the least surprising behaviour for lists.
+// Arrays are REPLACED (not merged), with one exception: arrays directly under
+// the top-level `exclude` block are UNIONED across layers (ADR-0009). An
+// exclusion is a safety property — a user config listing its own
+// exclude.models must not silently re-admit the bundled blocklist. Ordered
+// lists (fallback_groups, group models) keep replace semantics.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -21,12 +24,20 @@ import type { Config } from './types.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
- * merged recursively; arrays and primitives are replaced.
+ * merged recursively; arrays and primitives are replaced — except arrays
+ * under the top-level `exclude` block, which are unioned (base order first).
  */
-export function deepMergeConfig(base: Config, override: Partial<Config>): Config {
+export function deepMergeConfig(
+  base: Config,
+  override: Partial<Config>,
+  path: readonly string[] = []
+): Config {
   const result: Record<string, unknown> = { ...base };
+  const inExclude = path.length === 1 && path[0] === 'exclude';
   for (const [key, val] of Object.entries(override)) {
-    if (
+    if (inExclude && Array.isArray(val) && Array.isArray(result[key])) {
+      result[key] = [...new Set([...(result[key] as unknown[]), ...val])];
+    } else if (
       val !== null &&
       typeof val === 'object' &&
       !Array.isArray(val) &&
@@ -34,7 +45,7 @@ export function deepMergeConfig(base: Config, override: Partial<Config>): Config
       !Array.isArray(result[key])
     ) {
       // Both are plain objects → recurse.
-      result[key] = deepMergeConfig(result[key] as Config, val as Partial<Config>);
+      result[key] = deepMergeConfig(result[key] as Config, val as Partial<Config>, [...path, key]);
     } else {
       // Primitive, array, or type mismatch → replace.
       result[key] = val;

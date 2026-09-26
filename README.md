@@ -20,7 +20,7 @@ The router uses a **modular architecture** with the following components:
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
 | **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
 | **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
-| **content-classifier.ts** | Content classification | gemma4:12b-mlx primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
+| **content-classifier.ts** | Content classification | mistral-nemo:latest primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 | **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
 | **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |
@@ -64,7 +64,7 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback) for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses Ollama (**mistral-nemo:latest** primary, **gemma2:2b** fallback) for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
 
 #### Categories for Classification
 
@@ -92,14 +92,14 @@ Each category maps to a specific model group:
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that uses Ollama (**gemma4:12b-mlx** primary, **gemma2:2b** fallback) to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that uses Ollama (**mistral-nemo:latest** primary, **gemma2:2b** fallback) to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
 To use the **`dynamic`** group, you need:
 - **Ollama** installed and running locally (`ollama serve`)
-- **gemma4:12b-mlx** pulled for best classification quality (`ollama pull gemma4:12b-mlx`)
-- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
+- **mistral-nemo:latest** pulled for best classification quality (`ollama pull mistral-nemo:latest`)
+- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
 If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
@@ -561,8 +561,8 @@ Or manually:
 
 To use the **`dynamic`** group, you need:
 - **Ollama** installed and running locally (`ollama serve`)
-- **gemma4:12b-mlx** pulled for best classification quality (`ollama pull gemma4:12b-mlx`)
-- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if gemma4:12b-mlx fails
+- **mistral-nemo:latest** pulled for best classification quality (`ollama pull mistral-nemo:latest`)
+- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
 If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.

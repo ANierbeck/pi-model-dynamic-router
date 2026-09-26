@@ -14,7 +14,8 @@ The router deep-merges config from three layers (later layers win):
 
 Each override file is a **partial config** (a "patch"): it only needs to contain
 the keys you want to change. Nested objects are merged key-by-key; arrays are
-replaced entirely.
+replaced entirely — except the `exclude.*` lists, which accumulate across layers
+(see Merge semantics).
 
 ## Quick start
 
@@ -108,8 +109,12 @@ Add or override benchmark scores for models not in the scraped table:
 ## Merge semantics
 
 - **Plain objects** (`exclude`, `providers.openrouter`, …) are merged recursively.
-- **Arrays** (`exclude.models`, `free_models`, `fallback_groups`) are **replaced**,
-  not merged. If you set `exclude.models`, it replaces the default list entirely.
+- **Arrays** (`free_models`, `fallback_groups`, group `models`) are **replaced**,
+  not merged.
+- **Exception — `exclude.*` arrays** (`exclude.models`, `exclude.providers`,
+  `exclude.paid_models_from`) are **unioned** across layers (ADR-0009). Your
+  `exclude.models` adds to the bundled blocklist instead of replacing it. A
+  lower layer's exclusion cannot be removed by a higher layer.
 - **Primitives** are overwritten.
 
 ## Verification

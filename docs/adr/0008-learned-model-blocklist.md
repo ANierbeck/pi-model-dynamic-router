@@ -271,9 +271,8 @@ Adopt **Option D** (hybrid). Concretely:
    **Known pitfall**: `deepMergeConfig` (`src/config-loader.ts`) replaces
    arrays wholesale. A user config with its own `exclude.models` silently
    drops the bundled list (observed on the owner's machine 2026-09-26). The
-   learned list lives in the cache, so it is immune. The static override is
-   only reliable if the user config carries the full list or `exclude.models`
-   gets union-merge semantics.
+   learned list lives in the cache, so it is immune. Resolved by ADR-0009:
+   `exclude.*` arrays are now unioned across config layers.
 
 ### Thresholds (confirmed by the owner, 2026-09-26)
 

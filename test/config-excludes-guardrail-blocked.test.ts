@@ -81,3 +81,21 @@ describe('router-config.json static blocklist (guardrail-blocked models, live in
     }
   });
 });
+
+describe('bundled blocklist survives a user exclude.models override (ADR-0009)', () => {
+  it('keeps every bundled ref excluded after merging a user config with its own exclude.models', async () => {
+    const { deepMergeConfig } = await import('../src/config-loader.js');
+    // Shape of the owner's ~/.pi/agent/router-config.user.json on 2026-09-26.
+    const merged = deepMergeConfig(repoCfg, {
+      exclude: {
+        paid_models_from: ['openrouter'],
+        models: ['*fable*', '*opus*', '*nemotron-3*', 'deepseek-v4-flash-0731'],
+      },
+    });
+    const ctx: ExcludeContext = { rules: merged.exclude!, cfg: merged, cache: { available_models: [] } };
+    for (const ref of PERMANENTLY_BLOCKED) {
+      expect(isExcluded(ref, ctx), ref).toBe(true);
+    }
+    expect(isExcluded('claude-bridge/claude-fable-5', ctx)).toBe(true);
+  });
+});

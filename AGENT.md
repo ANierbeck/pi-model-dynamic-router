@@ -42,8 +42,8 @@ The `dynamic` group classifies prompts into these categories:
 
 For **dynamic routing** to work:
 - Ollama must be installed and running (`ollama serve`)
-- Required models: `gemma4:12b-mlx` (primary) and `gemma2:2b` (fallback)
-- Install models: `ollama pull gemma4:12b-mlx` and `ollama pull gemma2:2b`
+- Required models: `mistral-nemo:latest` (primary) and `gemma2:2b` (fallback)
+- Install models: `ollama pull mistral-nemo:latest` and `ollama pull gemma2:2b`
 
 ### 4. Common Commands
 

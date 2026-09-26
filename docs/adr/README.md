@@ -37,3 +37,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0006 — Probe-based discovery for classifier cloud fallback](0006-probe-based-classifier-fallback-discovery.md)
 - [0007 — Task decomposition and delegation](0007-task-decomposition-and-delegation.md)
 - [0008 — Learned model blocklist (auto-block from observed permanent failures)](0008-learned-model-blocklist.md)
+- [0009 — Union-merge for `exclude.*` arrays; bundled classifier model as source of truth](0009-exclude-union-merge-and-config-classifier-model.md)

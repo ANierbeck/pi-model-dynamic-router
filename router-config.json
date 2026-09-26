@@ -117,7 +117,7 @@
     "dynamic": {
       "description": "Classifies each prompt via Ollama and routes to the appropriate group",
       "method": "dynamic",
-      "classifier_model": "ollama/gemma4:12b-mlx",
+      "classifier_model": "ollama/mistral-nemo:latest",
       "classifier_fallback": "ollama/gemma2:2b",
       "classifier_cloud_fallback": true,
       "fallback_groups": [

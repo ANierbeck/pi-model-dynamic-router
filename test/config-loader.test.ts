@@ -75,15 +75,36 @@ describe('deepMergeConfig', () => {
     expect(result.providers?.openrouter?.keys).toEqual([{ key: 'or-test-key' }]);
   });
 
-  it('REPLACES arrays rather than merging them (exclude.models overrides)', () => {
+  // ADR-0009: exclusions accumulate across layers. A user config with its own
+  // exclude.models must not silently drop the bundled blocklist.
+  it('UNIONS exclude.* arrays across layers (base order first, deduplicated)', () => {
     const base: Config = {
       ...DEFAULT_CONFIG,
-      exclude: { models: ['default-a', 'default-b'] },
+      exclude: { models: ['default-a', 'default-b'], providers: ['p1'] },
     };
     const result = deepMergeConfig(base, {
-      exclude: { models: ['override-only'] },
+      exclude: { models: ['override-only', 'default-a'], paid_models_from: ['openrouter'] },
     });
-    expect(result.exclude?.models).toEqual(['override-only']);
+    expect(result.exclude?.models).toEqual(['default-a', 'default-b', 'override-only']);
+    expect(result.exclude?.providers).toEqual(['p1']);
+    expect(result.exclude?.paid_models_from).toEqual(['openrouter']);
+  });
+
+  it('still REPLACES arrays outside exclude (ordered lists like fallback_groups)', () => {
+    const base: Config = {
+      ...DEFAULT_CONFIG,
+      model_groups: { g: { method: 'best', fallback_groups: ['a', 'b'] } },
+    };
+    const result = deepMergeConfig(base, {
+      model_groups: { g: { fallback_groups: ['c'] } },
+    });
+    expect(result.model_groups?.g?.fallback_groups).toEqual(['c']);
+  });
+
+  it('does not union a nested key merely named "exclude" below top level', () => {
+    const base = { ...DEFAULT_CONFIG, providers: { x: { exclude: ['a'] } } } as unknown as Config;
+    const result = deepMergeConfig(base, { providers: { x: { exclude: ['b'] } } } as any);
+    expect((result.providers as any).x.exclude).toEqual(['b']);
   });
 
   it('overrides a primitive value', () => {
@@ -167,13 +188,13 @@ describe('loadLayeredConfig', () => {
     expect(sources).toHaveLength(2);
   });
 
-  it('project override wins over global override (applied last)', () => {
+  it('project exclusions accumulate on top of global ones (ADR-0009 union)', () => {
     // Global sets exclude.models = ['global-only']
     fs.writeFileSync(
       path.join(globalDir, 'router-config.user.json'),
       JSON.stringify({ exclude: { models: ['global-only'], paid_models_from: ['openrouter'] } })
     );
-    // Project sets exclude.models = ['project-only'] (should REPLACE global's list)
+    // Project adds exclude.models = ['project-only'] (unioned with global's list)
     fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
     fs.writeFileSync(
       path.join(cwdDir, '.pi', 'router-config.json'),
@@ -181,8 +202,7 @@ describe('loadLayeredConfig', () => {
     );
 
     const { config } = loadLayeredConfig(extDir, cwdDir);
-    // models REPLACED by project (arrays replace, not merge)
-    expect(config.exclude?.models).toEqual(['project-only']);
+    expect(config.exclude?.models).toEqual(['global-only', 'project-only']);
     // paid_models_from from global preserved (project didn't touch it)
     expect(config.exclude?.paid_models_from).toEqual(['openrouter']);
   });
