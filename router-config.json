@@ -15,15 +15,17 @@
   },
   "model_groups": {
     "trivial": {
-      "description": "Trivial tasks - free models only",
-      "method": "min_cost_if_all_priced",
+      "description": "Trivial tasks - local daemon first, then free models",
+      "method": "tiered",
+      "billing_preference": "strict_local",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": ["simple", "operational", "fallback"]
     },
     "simple": {
-      "description": "Simple tasks - free or very cheap models",
-      "method": "min_cost_if_all_priced",
+      "description": "Simple tasks - local daemon first, then free or very cheap models",
+      "method": "tiered",
+      "billing_preference": "strict_local",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": ["operational", "fallback"]

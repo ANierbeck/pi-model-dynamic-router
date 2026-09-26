@@ -2,7 +2,7 @@
 // Session loop detection and model-group escalation.
 // Owns all escalation state so index.ts stays clean.
 
-import { callOllama } from './ollama-utils.ts';
+import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 
 export type EscalationLevel = 'operational' | 'tactical' | 'strategic';
@@ -81,6 +81,14 @@ export async function detectLoopWithLLM(
     .map((t, i) => `Turn ${i + 1}:\nUser: ${t.prompt.slice(0, 200)}\nAssistant: ${t.response.slice(0, 200)}`)
     .join('\n\n');
   const prompt = LOOP_DETECTION_PROMPT_TEMPLATE.replace('{{history}}', historyText);
+
+  // Availability guard (2026-09-26 fix): with the daemon stopped, every
+  // periodic check burned a fetch attempt and logged "TypeError: fetch
+  // failed". Reuse the classifier's probe (1.5s cap, 15s negative cache) —
+  // daemon down → skip straight to the rule-based path, no fetch noise.
+  if (!(await isOllamaAvailable())) {
+    return { shouldEscalate: false, reason: 'Ollama unavailable, using rule-based detection' };
+  }
 
   try {
     const modelRef = options.model ?? 'ollama/gemma2:2b';

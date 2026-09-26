@@ -76,7 +76,14 @@ export interface Group {
    * groups where local $0-Modelle should be preferred over cloud
    * subscription models when their GDPval qualifies.
    */
-  billing_preference?: 'default' | 'local_first';
+  /**
+   * Billing-tier ordering override for method 'tiered' groups.
+   * - 'default': free → subscription → local → payg.
+   * - 'local_first': free → local → subscription → payg.
+   * - 'strict_local': local → free → subscription → payg — for cheap groups
+   *   (trivial/simple) where the local daemon should answer first.
+   */
+  billing_preference?: 'default' | 'local_first' | 'strict_local';
   /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
   classifier_model?: string;
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
