@@ -178,8 +178,12 @@ describe('load(): timeout overrides are re-synced from staticCfg, not the stale 
         defaultExport(pi);
 
         const chatModel = {
+          // Agent-capable family (the 2026-09-27 capability tier filters
+          // mistral-small-* out of every group — this test is about timeout
+          // overrides, not the model, so the fixture must be one the router
+          // still routes to).
           provider: 'mistral',
-          id: 'mistral-small-latest',
+          id: 'mistral-medium-3-5',
           api: 'openai-completions',
           contextWindow: 1_000_000,
         };

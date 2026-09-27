@@ -181,8 +181,13 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
       // delay before first token. The short (100ms) timeout must fire and
       // abort this stream as an empty response.
       const chatModel = {
+        // Agent-capable family (the 2026-09-27 capability tier filters
+        // mistral-small-* out of every group; this test is about the
+        // NON-reasoning first-token timeout, and the fixture stays
+        // non-reasoning — no `reasoning`/`thinking` field — so the intent
+        // is preserved).
         provider: 'mistral',
-        id: 'mistral-small-latest',
+        id: 'mistral-medium-3-5',
         api: 'openai-completions',
         contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
       };

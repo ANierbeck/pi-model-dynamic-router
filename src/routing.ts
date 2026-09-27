@@ -16,6 +16,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
+import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { demoteUnhealthy } from './model-health.ts';
 import { hasBudget } from './budget.ts';
@@ -183,6 +184,9 @@ export function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): 
  *   1. exclude_providers  — drop whole providers (group-level override)
  *   2. exclude_models     — drop exact model refs (group-level override)
  *   3. dedup (optional)   — same-slug clusters before the gates
+ *   3b. agent-capability tier — curated non-agent families (see
+ *       src/agent-capability.ts) drop out of EVERY group; the prompt
+ *       classifier chain never passes through here and keeps them
  *   4. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
  *   5. max_cost           — total cost cap
  *   6. max_cost_per_m     — per-million input-price cap
@@ -240,6 +244,14 @@ export function applyGroupFilters(
   //    Quality gates are slug-based (same slug = same score), so running
   //    dedup before them cannot change their outcomes.
   if (dedup && dedupFn) c = dedupFn(c);
+  // 3b. Agent-capability tier: curated non-agent families (small/code/audio
+  // models that pass GDPval floors but cannot carry main-agent work — the
+  // 2026-09-27 incidents; see src/agent-capability.ts for the evidence).
+  // Floor-INDEPENDENT and group-independent: without this, trivial/simple
+  // stay a zoo door and operational/tactical keep magistral-small (665).
+  // The prompt classifier chain does not pass through applyGroupFilters,
+  // so classification keeps these models (owner requirement 2026-09-27).
+  c = c.filter(isAgentCapableRef);
   // 4. min_gdpval / min_gdpval_pct
   // min_gdpval <= 0 means "no quality gate" — pass everything through (matches
   // the historical filterByQualityMin guard against min <= 0). A null score
