@@ -123,7 +123,8 @@ export interface StreamOrchestratorContext {
     stream: AssistantMessageEventStream,
     proxy: AssistantMessageEventStream,
     emptyResponseTimeoutMs: number,
-    stallTimeoutMs: number
+    stallTimeoutMs: number,
+    ref: string
   ) => Promise<{ ok: boolean; reason?: string; resetAtMs?: number; detail?: string | undefined }>;
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
@@ -540,7 +541,8 @@ export class StreamOrchestrator {
         const result = await ctx.consumeWithDetection(
           target.stream, proxy,
           ctx.getEmptyResponseTimeout(ref),
-          ctx.getStallTimeout(ref)
+          ctx.getStallTimeout(ref),
+          String(ref)
         );
 
         if (result.ok) {
@@ -626,6 +628,17 @@ export class StreamOrchestrator {
           pushRouterInfoLogged(
             proxy,
             `> [router] ${ref} — stuck in a repetition loop (${result.detail ?? 'loop detected'})${suffix}\n\n`
+          );
+          continue;
+        }
+        if (result.reason === 'truncated_length') {
+          pushError(ref, 'truncated_length (hit max output tokens — answer incomplete)');
+          ctx.recordSoftFailure(ref);
+          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const suffix = nextRef ? `, trying ${nextRef} …` : '';
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] ${ref} — output truncated at max tokens (task incomplete)${suffix}\n\n`
           );
           continue;
         }
@@ -763,7 +776,8 @@ export class StreamOrchestrator {
             const result = await ctx.consumeWithDetection(
               target.stream, proxy,
               ctx.getEmptyResponseTimeout(bestRef),
-              ctx.getStallTimeout(bestRef)
+              ctx.getStallTimeout(bestRef),
+              bestRef as string
             );
             if (result.ok) {
               ctx.recordOk(bestRef);
@@ -784,11 +798,11 @@ export class StreamOrchestrator {
               );
               return;
             }
-            if (result.reason === 'repetition_loop') {
+            if (result.reason === 'repetition_loop' || result.reason === 'truncated_length') {
               ctx.recordSoftFailure(bestRef);
               pushRouterInfoLogged(
                 proxy,
-                `> [router] ${bestRef} — stuck in a repetition loop (${result.detail ?? 'loop detected'})\n\n`
+                `> [router] ${bestRef} — ${result.reason === 'repetition_loop' ? 'stuck in a repetition loop' : 'output truncated at max tokens (task incomplete)'}\n\n`
               );
             } else {
               const frResult = ctx.recordStreamFailure(bestRef, String(result.reason), result.resetAtMs);

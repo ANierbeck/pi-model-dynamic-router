@@ -2302,7 +2302,8 @@ let previousTokenCount = 0;
     upstream: AssistantMessageEventStream,
     proxy: AssistantMessageEventStream,
     timeoutMs: number,
-    stallMs: number
+    stallMs: number,
+    ref: string
   ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined; resetAtMs?: number }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -2358,6 +2359,7 @@ let previousTokenCount = 0;
     let userAborted = false; // event.reason === 'aborted' (Ctrl-C or an outer abort signal) — not a model failure
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
     let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
+    let truncatedByLength = false; // stopReason 'length' detected (max output tokens hit)
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -2518,6 +2520,29 @@ let previousTokenCount = 0;
               }
             }
           }
+          // Intercept the terminal done event to capture the stopReason.
+          // pi-ai's stream protocol: done carries reason 'stop' | 'length' |
+          // 'toolUse' on the final AssistantMessage. 'length' means max output
+          // tokens were hit — the answer is truncated and the task incomplete.
+          // Pre-fix this was never inspected: a content-streaming stream that
+          // ended cleanly was ALWAYS { ok: true }, so a truncating model
+          // (mistral/mistral-small-latest, 2026-09-27: "it just stops, never
+          // finishes the task") recorded success and was picked again next
+          // turn. Now 'length' is a soft failure so driveStream falls over to
+          // the next candidate. The done event is NOT forwarded in that case:
+          // forwarding it would terminate the proxy stream and silently drop
+          // every later event of the cascade (same pattern as the rate-limit /
+          // overflow / repetition early returns above).
+          if ((event as any).type === 'done') {
+            const doneReason = String((event as any).reason ?? '');
+            routerLog(`[stream] ${ref} finished (stopReason: ${doneReason}, ${accumulatedText.length} chars)`);
+            if (doneReason === 'length') {
+              truncatedByLength = true;
+              clearTimer();
+              // Stop consuming — don't forward the terminal done event
+              return 'done';
+            }
+          }
           proxy.push(event);
         }
       } catch (err) {
@@ -2584,6 +2609,11 @@ let previousTokenCount = 0;
       // a provider that streams partial content and THEN errors still needs
       // this branch, since hadContent alone would otherwise report success.
       return { ok: false, reason: 'provider_error', detail: providerErrorDetail || undefined };
+    }
+
+    if (truncatedByLength) {
+      // stopReason 'length' means max output tokens hit — answer truncated, task incomplete.
+      return { ok: false, reason: 'truncated_length' };
     }
 
     if (!hadContent) {
