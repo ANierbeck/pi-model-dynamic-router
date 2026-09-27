@@ -44,6 +44,7 @@ export class CostTracker {
       totalOutputTokens: 0,
       requestsByModel: {},
       costByModel: {},
+      tokensByModel: {},
     };
   }
 
@@ -74,27 +75,23 @@ export class CostTracker {
    */
   trackRequest(modelRef: string, inputTokens: number, outputTokens: number): void {
     const price = lookupPrice(modelRef);
-    if (!price) {
-      // Routine, not actionable — many models (subscription, local, newly
-      // discovered) legitimately have no resolvable price yet. Spamming this
-      // to stdout on every request corrupts the TUI's input prompt rendering
-      // (raw console.* writes bypass ctx.ui.notify entirely). Opt-in only.
+    // Models without a resolvable price (subscription via registry gap,
+    // local, newly discovered) still COUNT — requests and in/out tokens are
+    // recorded with marginal cost $0, so the audit-depth /router cost report
+    // shows ALL models that actually served the session instead of silently
+    // dropping them (owner decision 2026-09-27). Diagnostics stay opt-in:
+    // unconditional stdout corrupts the TUI's input prompt rendering.
+    if (!price || price.input === 'unknown' || price.output === 'unknown') {
       if (process.env.DEBUG_COST_TRACKER === 'true') {
         routerLog('[cost-tracker] No price info for model', modelRef);
       }
-      return;
-    }
-
-    // Check if price contains 'unknown' values
-    if (price.input === 'unknown' || price.output === 'unknown') {
-      if (process.env.DEBUG_COST_TRACKER === 'true') {
-        routerLog('[cost-tracker] Price is unknown for model', modelRef);
-      }
-      return;
     }
 
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
-    const cost = (inputTokens * price.input + outputTokens * price.output) / 1_000_000;
+    const cost =
+      price && price.input !== 'unknown' && price.output !== 'unknown'
+        ? (inputTokens * (price.input as number) + outputTokens * (price.output as number)) / 1_000_000
+        : 0;
 
     // Update metrics
     this.metrics.totalCost += cost;
@@ -104,6 +101,11 @@ export class CostTracker {
     // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
     this.metrics.costByModel[modelRef] = (this.metrics.costByModel[modelRef] || 0) + cost;
+    if (!this.metrics.tokensByModel) this.metrics.tokensByModel = {};
+    const tok = this.metrics.tokensByModel[modelRef] ?? { in: 0, out: 0 };
+    tok.in += inputTokens;
+    tok.out += outputTokens;
+    this.metrics.tokensByModel[modelRef] = tok;
 
     // Debug log (optional)
     if (process.env.DEBUG_COST_TRACKER === 'true') {
@@ -124,6 +126,18 @@ export class CostTracker {
   resetMetrics(): void {
     this.metrics = this.createEmptyMetrics();
     this.startTime = new Date();
+  }
+
+  /**
+   * Clears the scheduled midnight-summary timer (test hygiene — review K2,
+   * 2026-09-27: every `new CostTracker()` schedules an unref'd timeout that
+   * fires logSummary hours later; harmless, but tests shouldn't leak them).
+   */
+  dispose(): void {
+    if (this.logInterval) {
+      clearTimeout(this.logInterval);
+      this.logInterval = null;
+    }
   }
 
   /**
@@ -153,6 +167,95 @@ export class CostTracker {
         ),
       `==========================`,
     ].join('\n');
+  }
+
+  /**
+   * Full-audit /router cost report (owner decision 2026-09-27: "volle
+   * Audittiefe"). Session section lists ALL models — requests, in/out
+   * tokens, accumulated marginal cost, billing tier with a sunk marker for
+   * subscription prices (the cost_per_m sunk-cost convention — virtual
+   * prices, NOT real spend) — sorted by marginal cost desc. Windows section
+   * shows persistent token usage 1d/7d/30d (usage_log) with a blended-price
+   * estimate, labeled ≈: usage_log records only TOTAL tokens per request,
+   * so the honest estimate is tokens × (pIn+pOut)/2 / 1M; models without a
+   * known price show tokens only. Deps are injected (metrics module +
+   * usage_log windows) to keep CostTracker free of config/cache imports.
+   */
+  formatCostReport(deps: {
+    billingTier: (ref: string) => number;
+    windowsAll: () => Record<string, { d1: number; d7: number; d30: number }>;
+    price: (ref: string) => { input: number; output: number } | undefined;
+  }): string {
+    const uptime = new Date().getTime() - this.startTime.getTime();
+    const uptimeHours = (uptime / (1000 * 60 * 60)).toFixed(1);
+    const tok = this.metrics.tokensByModel ?? {};
+    const models = Object.keys(this.metrics.requestsByModel);
+
+    const fmtK = (n: number): string =>
+      n >= 1_000_000
+        ? `${(n / 1_000_000).toFixed(1)}M`
+        : n >= 1000
+          ? `${(n / 1000).toFixed(1)}k`
+          : String(n);
+    const fmtCost = (n: number): string =>
+      n === 0 ? '$0.0' : n < 0.01 ? `$${n.toFixed(6)}` : `$${n.toFixed(4)}`;
+    const tierLabel = (ref: string): string => {
+      const t = deps.billingTier(ref);
+      if (t === 0) return 'free';
+      if (t === 1) return 'sub (sunk)';
+      if (t === 2) return 'local';
+      return 'payg';
+    };
+
+    const lines: string[] = [`=== Cost Tracker (Session, ${uptimeHours}h) ===`];
+
+    // Session table — only when this process actually served requests.
+    if (models.length === 0) {
+      lines.push('No requests yet this session.');
+    } else {
+      lines.push(
+        `Total: $${this.metrics.totalCost.toFixed(6)} (in ${fmtK(this.metrics.totalInputTokens)}, out ${fmtK(this.metrics.totalOutputTokens)}, ${Object.values(this.metrics.requestsByModel).reduce((a, b) => a + b, 0)} req)`,
+        ``,
+        `${'Model'.padEnd(30)} ${'Req'.padStart(3)} ${'In/Out'.padStart(6)}/${''.padEnd(6)} ${'Marginal'.padStart(9)}  Tier`
+      );
+      const rows = models
+        .map((ref) => ({ ref, cost: this.metrics.costByModel[ref] ?? 0 }))
+        .sort((a, b) => b.cost - a.cost);
+      for (const { ref, cost } of rows) {
+        const t = tok[ref] ?? { in: 0, out: 0 };
+        lines.push(
+          `${ref.slice(0, 30).padEnd(30)} ${String(this.metrics.requestsByModel[ref]).padStart(3)} ${fmtK(t.in).padStart(6)}/${fmtK(t.out).padEnd(6)} ${fmtCost(cost).padStart(9)}  ${tierLabel(ref)}`
+        );
+      }
+    }
+
+    // Windows (persistent usage_log) + blended estimate. Keyed by the refs
+    // that actually HAVE logged usage (session models ∪ usage_log refs), so
+    // the persistent half is visible even right after a restart when the
+    // session table is still empty (review I1: per-model lookups over an
+    // empty session table hid the windows entirely).
+    const win = deps.windowsAll();
+    const winRefs = [...new Set([...models, ...Object.keys(win)])].sort(
+      (a, b) => (win[b]?.d30 ?? 0) - (win[a]?.d30 ?? 0)
+    );
+    if (winRefs.length > 0) {
+      lines.push(``, `--- Windows (usage_log; ≈ = blended-price estimate) ---`);
+      lines.push(
+        `${'Model'.padEnd(28)} ${'1d'.padStart(7)} ${'7d'.padStart(9)} ${'30d'.padStart(9)}   ≈30d`
+      );
+      for (const ref of winRefs) {
+        const w = win[ref] ?? { d1: 0, d7: 0, d30: 0 };
+        const price = deps.price(ref);
+        const est =
+          price && w.d30 > 0
+            ? `≈$${((w.d30 * (price.input + price.output) / 2) / 1_000_000).toFixed(4)}`
+            : '-';
+        lines.push(
+          `${ref.slice(0, 28).padEnd(28)} ${fmtK(w.d1).padStart(7)} ${fmtK(w.d7).padStart(9)} ${fmtK(w.d30).padStart(9)}  ${est}`
+        );
+      }
+    }
+    return lines.join('\n');
   }
 
   /**

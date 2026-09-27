@@ -247,6 +247,19 @@ export interface ExcludeRules {
 
 // ── Cache Types ───────────────────────────────────────────────────────────
 
+/**
+ * One failed main-session stream attempt, recorded by recordStreamFailure
+ * (index.ts) into the cache.session_errors ring buffer. Single source of
+ * truth for the status-line counter and /router errors (2026-09-27).
+ */
+export interface SessionError {
+  ts: number;
+  ref: string;
+  reason: string;
+  detail?: string;
+  consequence: string;
+}
+
 export interface Cache {
   gdpval_scores?: Record<string, number>;
   gdpval_scraped?: boolean;
@@ -259,6 +272,9 @@ export interface Cache {
   exhausted_keys?: Record<string, number>; // "provider:keyIdx" → exhausted_until timestamp
   openrouter_pricing?: Record<string, { input: number; output: number }>; // provider/modelId ref → $/1M
   usage_log?: { ref: string; tokens: number; ts: number }[]; // token usage history
+  /** Ring buffer of main-session stream failures (single source of truth for
+   * the status-line error counter and /router errors — src/session-errors.ts). */
+  session_errors?: SessionError[];
   // Budget tracking for subscription providers. Nothing currently writes to
   // this — there is no live API to query remaining subscription quota (see
   // docs/adr/0003-reject-live-subscription-usage-api.md). The field and the
@@ -479,4 +495,6 @@ export interface CostMetrics {
   totalOutputTokens: number;
   requestsByModel: Record<string, number>;
   costByModel: Record<string, number>;
+  /** Per-model token split for the /router cost report (audit depth, 2026-09-27). */
+  tokensByModel?: Record<string, { in: number; out: number }>;
 }

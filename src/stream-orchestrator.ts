@@ -137,7 +137,10 @@ export interface StreamOrchestratorContext {
   cache: Cache;
   router: Router;
   escalation: SessionEscalation;
-  costTracker: CostTracker;
+  /** Retained for interface compatibility; cost tracking moved to turn_end
+   * in index.ts (2026-09-27, review I2 — selection-time tracking passed
+   * fabricated token counts). */
+  costTracker?: CostTracker;
   rateLimitManager: RateLimitManager;
   cacheManager: CacheManager;
 
@@ -172,7 +175,6 @@ export interface StreamOrchestratorContext {
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
   releaseLocalSlot: (ref: string) => void;
-  recordSoftFailure: (ref: string) => void;
   recordOk: (ref: string) => void;
   /** Feeds a failure text into the learned blocklist (ADR-0008). */
   observeFailure: (ref: string, failureText: string) => void;
@@ -212,7 +214,7 @@ export class StreamOrchestrator {
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
-    const { cfg, cache, router, costTracker } = this.ctx;
+    const { cfg, cache, router } = this.ctx;
     const useStaticMatch = model.id.match(/^(.+):use-static$/);
     const useStatic = useStaticMatch !== null;
     const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
@@ -225,7 +227,10 @@ export class StreamOrchestrator {
       if (!res) throw new Error(`No available models for group "${groupName}"`);
       const proxy = createAssistantMessageEventStream();
       const candidates = [...res.candidates];
-      costTracker.trackRequest(res.selected, 1000, 500);
+      // Cost tracking moved to turn_end (2026-09-27, review I2): the old
+      // selection-time call passed hardcoded 1000/500 tokens — fabricated
+      // audit data. Only completed turns with REAL provider-reported usage
+      // are tracked now.
       this.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
@@ -327,7 +332,8 @@ export class StreamOrchestrator {
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
-              costTracker.trackRequest(res.selected, 1000, 500);
+              // Cost tracking moved to turn_end (review I2 — hardcoded
+              // 1000/500 here were fabricated audit data).
               await this.driveStream(
                 proxy,
                 candidates,
@@ -442,7 +448,8 @@ export class StreamOrchestrator {
               dynamicLabel = `MHINT: ${classification.hintTarget}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${hintSiblings[0]}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
-              costTracker.trackRequest(hintSiblings[0], 1000, 500);
+              // Cost tracking moved to turn_end (review I2 — hardcoded
+              // 1000/500 here were fabricated audit data).
               const resolvedGdpval = this.ctx.lookupGdp(hintSiblings[0]) ?? 0;
               const hintStartGroup = resolvedGdpval >= 700 ? 'strategic' : resolvedGdpval >= 300 ? 'tactical' : 'scout';
               await this.driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
@@ -486,7 +493,8 @@ export class StreamOrchestrator {
         dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
         appendRawLog(logLine);
-        costTracker.trackRequest(res.selected, 1000, 500);
+        // Cost tracking moved to turn_end (review I2 — hardcoded
+        // 1000/500 here were fabricated audit data).
       } catch (err) {
         routerLog('[dynamic] classification failed, using fallback:', err);
         resolvedGroup = 'fallback';
@@ -569,7 +577,12 @@ export class StreamOrchestrator {
         const isExpectedError = isExpectedTransientError(errorMsg);
         if (!isExpectedError) routerLog(`[router] Skipping ${ref}: ${errorMsg}`);
         pushError(ref, errorMsg);
-        ctx.recordSoftFailure(ref);
+        // Routed through recordStreamFailure (review round 2, Finding 1):
+        // every main-loop failure must reach the session_errors ring buffer,
+        // not just the rate-limit sites. The seam evaluates
+        // isPaidCloudRateLimitFailure on the error text — a 429-shaped open
+        // failure now correctly takes the hard path instead of a soft hop.
+        ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
         pushRouterInfoLogged(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
         return null;
       });
@@ -577,7 +590,7 @@ export class StreamOrchestrator {
         attempt.abandon();
         const why = ctx.skipReasons.get(ref);
         if (why) pushError(ref, why);
-        ctx.recordSoftFailure(ref);
+        ctx.recordStreamFailure(ref, 'provider_error', undefined, why ? String(why) : undefined);
         continue;
       }
 
@@ -703,9 +716,10 @@ export class StreamOrchestrator {
             // Record the overflow as a soft failure so cooldown excludes this
             // model from the retry pass — guarding against unbounded recursion
             // when the error text is unparseable (errInfo === null) and the
-            // registry update didn't happen. Every other failure branch calls
-            // recordSoftFailure; this branch must too.
-            ctx.recordSoftFailure(ref);
+            // registry update didn't happen (via the recordStreamFailure
+            // seam, which also feeds the session_errors buffer — review
+            // round 2, Finding 1).
+            ctx.recordStreamFailure(ref, 'context_overflow', undefined, result.detail);
             // Don't re-include the overflowing model: it's already known too
             // small (parseable) or on cooldown (unparseable). Slicing past i
             // + the larger candidates avoids retrying the same overflow.
@@ -724,7 +738,7 @@ export class StreamOrchestrator {
 
           // No larger candidates remain — this is a genuine overflow.
           pushError(ref, 'context_overflow (provider rejected prompt as too large)');
-          ctx.recordSoftFailure(ref);
+          ctx.recordStreamFailure(ref, 'context_overflow', undefined, result.detail);
           pushStreamError(
             proxy,
             `[router] ${ref} rejected the prompt as too large for its context window — triggering compaction.`,
@@ -737,7 +751,7 @@ export class StreamOrchestrator {
         }
         if (result.reason === 'repetition_loop') {
           pushError(ref, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
-          ctx.recordSoftFailure(ref);
+          ctx.recordStreamFailure(ref, 'repetition_loop', undefined, result.detail);
           const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(
@@ -748,7 +762,7 @@ export class StreamOrchestrator {
         }
         if (result.reason === 'truncated_length') {
           pushError(ref, 'truncated_length (hit max output tokens — answer incomplete)');
-          ctx.recordSoftFailure(ref);
+          ctx.recordStreamFailure(ref, 'truncated_length');
           const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(
@@ -777,9 +791,12 @@ export class StreamOrchestrator {
           pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
           continue;
         }
-        // Soft failure
+        // Soft failure — through the seam so it reaches the ring buffer
+        // too (review round 2, Finding 1). isPaidCloudRateLimitFailure was
+        // evaluated FALSE just above with the SAME reason+detail, so this is
+        // deterministically soft here.
         pushError(ref, String(result.reason));
-        ctx.recordSoftFailure(ref);
+        ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
         if (
           (result.reason === 'empty_timeout' || result.reason === 'stall_timeout') &&
           ctx.observeLocalTimeout(ref)
@@ -805,7 +822,10 @@ export class StreamOrchestrator {
         const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
         pushError(ref, errorMsg);
         ctx.observeFailure(ref, errorMsg);
-        ctx.recordSoftFailure(ref);
+        // Seam (review round 2, Finding 1): stream exceptions must land in
+        // the session_errors buffer as well — this catch is where the
+        // 2026-09-27 422/timeout waves would have been invisible.
+        ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
         const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
@@ -918,7 +938,7 @@ export class StreamOrchestrator {
         const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
           const errorMsg = err instanceof Error ? err.message : String(err);
           pushError(bestRef!, errorMsg);
-          ctx.recordSoftFailure(bestRef!);
+          ctx.recordStreamFailure(bestRef!, 'provider_error', undefined, errorMsg);
           return null;
         });
         if (!target) collapseAttempt.abandon();
@@ -940,7 +960,7 @@ export class StreamOrchestrator {
             if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(bestRef, result.detail);
             pushError(bestRef, String(result.reason));
             if (result.reason === 'context_overflow') {
-              ctx.recordSoftFailure(bestRef);
+              ctx.recordStreamFailure(bestRef, 'context_overflow', undefined, result.detail);
               pushStreamError(
                 proxy,
                 `[router] ${bestRef} rejected the prompt as too large for its context window — triggering compaction.`,
@@ -952,7 +972,7 @@ export class StreamOrchestrator {
               return;
             }
             if (result.reason === 'repetition_loop' || result.reason === 'truncated_length') {
-              ctx.recordSoftFailure(bestRef);
+              ctx.recordStreamFailure(bestRef, String(result.reason), undefined, result.detail);
               pushRouterInfoLogged(
                 proxy,
                 `> [router] ${bestRef} — ${result.reason === 'repetition_loop' ? 'stuck in a repetition loop' : 'output truncated at max tokens (task incomplete)'}\n\n`
@@ -977,7 +997,7 @@ export class StreamOrchestrator {
             const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
             pushError(bestRef, errorMsg);
             ctx.observeFailure(bestRef, errorMsg);
-            ctx.recordSoftFailure(bestRef);
+            ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
           } finally {
             if (!collapseSucceeded) collapseAttempt.abandon();
             // Release the local concurrency slot acquired in tryStream for

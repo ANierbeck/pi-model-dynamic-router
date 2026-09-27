@@ -55,6 +55,8 @@ describe('CostTracker', () => {
   afterEach(() => {
     // Reset metrics instead of destroying, to keep the singleton
     tracker.resetMetrics();
+    // Clear the scheduled midnight-summary timer (review K2, 2026-09-27).
+    tracker.dispose();
   });
 
   describe('trackRequest', () => {
@@ -97,10 +99,17 @@ describe('CostTracker', () => {
 
       expect(consoleWarnSpy).not.toHaveBeenCalled();
 
+      // Audit depth (owner decision 2026-09-27): unpriced models are now
+      // TRACKED (requests + tokens, marginal cost $0) so the /router cost
+      // report shows every model that served the session; previously the
+      // early return silently dropped them entirely. Cost stays 0 — no
+      // fabricated spend for a model without a resolvable price.
       const metrics = tracker.getMetrics();
       expect(metrics.totalCost).toBe(0);
-      expect(metrics.totalInputTokens).toBe(0);
-      expect(metrics.totalOutputTokens).toBe(0);
+      expect(metrics.totalInputTokens).toBe(1000);
+      expect(metrics.totalOutputTokens).toBe(500);
+      expect(metrics.requestsByModel['unknown/model']).toBe(1);
+      expect(metrics.tokensByModel?.['unknown/model']).toEqual({ in: 1000, out: 500 });
 
       consoleWarnSpy.mockRestore();
     });

@@ -42,6 +42,7 @@ import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
+import { countSessionErrorsSince, formatErrorsReport, recordSessionErrorFromFailure } from './src/session-errors.ts';
 import { lookupGdp, setPiRegisteredProviders, setModelRegistry } from './src/metrics.ts';
 import { estimateOllamaModelsGdpvalAsSlugs } from './src/ollama-gdpval.ts';
 import { buildOllamaProviderModels } from './src/ollama-context.ts';
@@ -174,6 +175,48 @@ const defaultExport = function (pi: ExtensionAPI) {
   // gdpval/modelMap/lookupGdp state lives in metrics.ts (single source of truth).
   let scanning = false;
   let sessionStart = Date.now();
+  // Whether sessionStart was set by THIS process's first session_start (the
+  // anchor-reset rule lives in the session_start handler, review M2).
+  let sessionAnchorInit = false;
+  // Immediate re-render trigger for the footer error counter: pi's
+  // setStatus (setExtensionStatus). The COUNT is not state of its own — it
+  // is derived from the cache.session_errors ring buffer (entries with
+  // ts >= sessionStart) and rendered directly as a footer part by the
+  // router's own footer (which replaces pi's built-in footer — the only
+  // renderer of extension statuses, review C1). setStatus additionally
+  // triggers requestRender so a new error shows up immediately instead of
+  // on the next 30s footer tick. One buffer, one anchor, one count: the
+  // status line and /router errors stay 1:1 correlatable (owner requirement
+  // 2026-09-27).
+  let statusUpdater: ((key: string, text: string) => void) | null = null;
+  function updateErrorStatusLine(): void {
+    const n = countSessionErrorsSince(cache, sessionStart);
+    try {
+      statusUpdater?.('router', n > 0 ? `\u26A0${n} err` : '');
+    } catch {
+      // No TUI in print/RPC modes — the buffer still records everything.
+    }
+  }
+
+  // Debounced persistence for the session_errors ring buffer (review M1):
+  // saveCache is a synchronous full-file JSON write; a candidate-chain burn
+  // (17-18 failures in quick succession, the 2026-09-27 incident pattern)
+  // must not trigger 17-18 synchronous writes. 2s coalescing bounds the
+  // worst-case loss on a hard crash to one window; session_shutdown and the
+  // every-10-turns save cover normal exits.
+  let sessionErrorSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSessionErrorSave(): void {
+    if (sessionErrorSaveTimer) return;
+    sessionErrorSaveTimer = setTimeout(() => {
+      sessionErrorSaveTimer = null;
+      try {
+        saveCache();
+      } catch {
+        // Best-effort: the next failure/shutdown save retries.
+      }
+    }, 2000);
+    sessionErrorSaveTimer.unref?.();
+  }
   let turnStart = 0;
   // The router's own version, read lazily from package.json on the first
   // load() and logged once per process — so the log identifies WHICH
@@ -1414,6 +1457,12 @@ let previousTokenCount = 0;
    * force-retry, so a force-retried candidate that turns out to still be
    * rate-limited escalates the same way instead of getting a token-cheap
    * soft cooldown that lets it be force-retried again almost immediately.
+   *
+   * ALSO the single push site of the session_errors ring buffer (owner
+   * decision 2026-09-27): every main-session stream failure lands here, so
+   * the status-line counter and /router errors are fed by the exact same
+   * events. Probe/scan/classifier paths never call this function — the
+   * free-model 429 noise wave cannot flood the buffer.
    */
   function recordStreamFailure(
     ref: string,
@@ -1423,9 +1472,33 @@ let previousTokenCount = 0;
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
     if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason, errorText)) {
       const rlResult = recordLimit(ref, resetAtMs);
+      // Consequence label (incl. key-rotation) built in the testable seam
+      // src/session-errors.ts (review I3/I4).
+      recordSessionErrorFromFailure({
+        cache,
+        ref,
+        reason,
+        ...(errorText ? { errorText } : {}),
+        hardLimited: true,
+        rotated: rlResult.rotated,
+        limitSecs: limitSecs(ref),
+      });
+      updateErrorStatusLine();
+      scheduleSessionErrorSave();
       return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
     }
     recordSoftFailure(ref);
+    recordSessionErrorFromFailure({
+      cache,
+      ref,
+      reason,
+      ...(errorText ? { errorText } : {}),
+      hardLimited: false,
+      rotated: false,
+      limitSecs: 0,
+    });
+    updateErrorStatusLine();
+    scheduleSessionErrorSave();
     return { hardLimited: false, rotated: false, newKey: undefined };
   }
 
@@ -1659,7 +1732,10 @@ let previousTokenCount = 0;
     releaseLocalSlot: (ref: string) => {
       if (isLocalProvider(ref) && localStreamsInFlight > 0) localStreamsInFlight--;
     },
-    recordSoftFailure,
+    // recordSoftFailure is no longer wired directly: every orchestrator
+    // failure site goes through recordStreamFailure (review round 2,
+    // Finding 1), which calls it internally for the soft path — one path,
+    // one buffer, no bypass.
     recordOk,
     observeFailure,
     observeLocalTimeout: (ref: string) => {
@@ -1683,7 +1759,7 @@ let previousTokenCount = 0;
 
   const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
 
-  pi.on('session_start', async (_ev, ctx) => {
+  pi.on('session_start', async (ev, ctx) => {
     sessionCtx = ctx;
     router.setSessionCtx(ctx);
     setProjectLogDir(ctx.cwd);
@@ -1717,7 +1793,32 @@ let previousTokenCount = 0;
     load();
     metricsModule.loadModelMap(extDir);
     loadCache();
-    sessionStart = Date.now();
+    // Correlation anchor (review M2): reset ONLY on real user session switches
+    // (/new, /resume, /fork) and the FIRST session_start of the process (boot).
+    // In-process subagent sessions re-fire session_start with reason 'startup'
+    // (pi-subagents child-session.js:287) — resetting there would silently
+    // drop the main session's errors from the status count. 'reload' keeps the
+    // anchor: the session continues, its errors stay counted.
+    const startReason = (ev as any)?.reason;
+    if (!sessionAnchorInit || startReason === 'new' || startReason === 'resume' || startReason === 'fork') {
+      sessionStart = Date.now();
+      sessionAnchorInit = true;
+    }
+    // Capture pi's setStatus ONLY from a ctx that has it — the MAIN session's
+    // interactive TUI. A subagent's headless ctx has no setStatus; overwriting
+    // the captured updater there would stall the main session's immediate
+    // footer refresh. The count itself is rendered by our own footer part
+    // (see setFooter below — our footer REPLACES pi's built-in footer, which is
+    // the only renderer of extension statuses, review C1), so setStatus is
+    // only the immediate-re-render trigger, not the display path. index.ts is
+    // not duplicated by the esbuild double-bundle hazard; the BUFFER state
+    // stays in the cache object per project rule.
+    if (typeof (ctx.ui as any).setStatus === 'function') {
+      statusUpdater = (key: string, text: string) => {
+        (ctx.ui as any).setStatus(key, text);
+      };
+    }
+    updateErrorStatusLine();
     
     escalation.reset();
     
@@ -1784,6 +1885,12 @@ let previousTokenCount = 0;
           const brS = br ? theme.fg('accent', `⎇ ${br}`) : '';
           const rlN = [...rateLimitManager.getLimits().keys()].filter((r) => isLimited(r)).length;
           const rlS = rlN > 0 ? theme.fg('error', `⛔${rlN}`) : '';
+          // Session error counter (review C1): this footer REPLACES pi's
+          // built-in footer — the only renderer of ctx.ui.setStatus extension
+          // statuses — so the counter MUST be a part here. Same single source
+          // of truth as /router errors: entries with ts >= sessionStart.
+          const errN = countSessionErrorsSince(cache, sessionStart);
+          const errS = errN > 0 ? theme.fg('error', `⚠${errN} err`) : '';
 
           const sep = theme.fg('dim', ' | ');
           const parts = [rStr];
@@ -1791,6 +1898,7 @@ let previousTokenCount = 0;
           parts.push(tok, el, cwd);
           if (brS) parts.push(brS);
           if (rlS) parts.push(rlS);
+          if (errS) parts.push(errS);
           return [truncateToWidth(parts.join(sep), w)];
         },
       };
@@ -1832,6 +1940,18 @@ let previousTokenCount = 0;
     
     // ── Metrics & Usage Logging ─────────────────────────────────────────
     if (msg?.role === 'assistant') {
+      // Factual stream ref of THIS turn (review I1): curModel stays the
+      // virtual group ref ('standard/standard') in group sessions — keying
+      // usage_log by it made the /router cost windows structurally all-zero
+      // (getUsage filters by real model refs). getCurModel(turnStart) is the
+      // same factual-ref source the expensive-model read block uses; falls
+      // back to curModel for non-routed sessions where they coincide.
+      const factualRef = router.getCurModel(turnStart) || curModel;
+      const a = msg as AssistantMessage;
+      const realTok =
+        a.usage && typeof a.usage.input === 'number' && typeof a.usage.output === 'number'
+          ? a.usage.input + a.usage.output
+          : 0;
       const txt =
         typeof msg.content === 'string'
           ? msg.content
@@ -1839,16 +1959,28 @@ let previousTokenCount = 0;
               .filter((b: any) => b.type === 'text')
               .map((b: any) => b.text)
               .join('');
-      const tok = Math.ceil(txt.length / 4);
+      // usage_log basis (review I1): REAL tokens when the provider reported
+      // usage (input+output — the old text.length/4 was an output-only
+      // approximation that understated the blended-price estimate badly);
+      // text/4 remains a last-resort fallback for usage-less messages.
+      const tok = realTok > 0 ? realTok : Math.ceil(txt.length / 4);
       if (tok > 0) {
-        updateMetrics(curModel, ms, tok, ms);
-        recordOk(curModel);
+        updateMetrics(factualRef, ms, tok, ms);
+        recordOk(factualRef);
         // Log usage
         if (!cache.usage_log) cache.usage_log = [];
-        cache.usage_log.push({ ref: curModel, tokens: tok, ts: Date.now() });
+        cache.usage_log.push({ ref: factualRef, tokens: tok, ts: Date.now() });
         // Trim log to last 30 days
         const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
         cache.usage_log = cache.usage_log.filter((e) => e.ts > cutoff);
+        // Real-token cost tracking (review I2): the old selection-time calls
+        // passed hardcoded 1000/500 per request — fabricated data in an audit
+        // report. Track once per COMPLETED turn with measured in/out tokens;
+        // turns whose provider reported no usage are not tracked at all
+        // rather than fabricated.
+        if (realTok > 0) {
+          costTracker.trackRequest(factualRef, a.usage!.input, a.usage!.output);
+        }
       }
     }
   });
@@ -2918,10 +3050,10 @@ let previousTokenCount = 0;
       // fall through with res below
       const proxy = createAssistantMessageEventStream();
       const candidates = [...res.candidates];
-      
-      // Cost tracking for static routing
-      costTracker.trackRequest(res.selected, 1000, 500);
-      
+      // Cost tracking moved to turn_end (2026-09-27, review I2): the old
+      // selection-time call passed hardcoded 1000/500 tokens — fabricated
+      // audit data. Only completed turns with REAL provider-reported usage
+      // are tracked now.
       streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
@@ -3214,12 +3346,15 @@ async function registerGroupModels(ctx: any) {
   // ── Command: /router ───────────────────────────────────────────────────
 
   pi.registerCommand('router', {
-    description: 'Model router status. Usage: /router [group|scan|cost|blocklist [clear [ref]]]',
+    description:
+      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
         { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
-        { value: 'cost', label: 'cost', description: 'Show accumulated cost-tracker summary' },
+        { value: 'cost', label: 'cost', description: 'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate' },
+        { value: 'errors', label: 'errors', description: 'Main-session stream failures — headline count matches the status-line ⚠N err exactly' },
+        { value: 'errors 30', label: 'errors <n>', description: 'Show up to <n> entries (default 15, max 50)' },
         { value: 'blocklist', label: 'blocklist', description: 'Show models blocked after permanent provider failures' },
         { value: 'blocklist clear', label: 'blocklist clear', description: 'Unblock all models, or one: blocklist clear <provider/model>' },
         { value: 'cooldowns', label: 'cooldowns', description: 'Show active rate-limit cooldowns (ref, remaining, hits)' },
@@ -3268,9 +3403,51 @@ async function registerGroupModels(ctx: any) {
           // which bypasses ctx.ui.notify entirely and corrupts the TUI's input
           // prompt rendering. That automatic output is now opt-in only (via
           // DEBUG_COST_TRACKER=true); this command is the supported way to see
-          // costs on demand, and formatSummary() does NOT reset metrics, so
+          // costs on demand, and formatCostReport() does NOT reset metrics, so
           // repeated calls keep showing the same accumulating totals.
-          ctx.ui.notify(costTracker.formatSummary(), 'info');
+          //
+          // Audit depth (owner decision 2026-09-27 "volle Audittiefe"): ALL
+          // session models with Req/In/Out/Marginal/Tier (subscription marked
+          // sunk — virtual prices, not real spend) + persistent token windows
+          // 1d/7d/30d from usage_log with a blended-price estimate (≈ —
+          // usage_log has only total tokens per request; honest labeling).
+          ctx.ui.notify(
+            costTracker.formatCostReport({
+              billingTier: (ref) => metricsModule.billingTier(ref),
+              // One pass per window over usage_log (getUsageAll), keyed by the
+              // refs that actually have usage — the report shows windows even
+              // right after a restart when the session table is empty (I1).
+              windowsAll: () => {
+                const d1 = metricsModule.getUsageAll(1);
+                const d7 = metricsModule.getUsageAll(7);
+                const d30 = metricsModule.getUsageAll(30);
+                const out: Record<string, { d1: number; d7: number; d30: number }> = {};
+                for (const ref of new Set([...Object.keys(d1), ...Object.keys(d7), ...Object.keys(d30)])) {
+                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0 };
+                }
+                return out;
+              },
+              price: (ref) => {
+                const p = lookupPrice(ref);
+                return p && typeof p.input === 'number' && typeof p.output === 'number'
+                  ? { input: p.input, output: p.output }
+                  : undefined;
+              },
+            }),
+            'info'
+          );
+          return;
+        }
+
+        if (arg === 'errors' || arg?.startsWith('errors ')) {
+          // Counterpart of the status-line ⚠N err (single source of truth:
+          // the cache.session_errors ring buffer pushed by
+          // recordStreamFailure). Headline count == status-line count by
+          // construction; entries from earlier processes appear below the
+          // divider (diagnosis context without breaking correlation).
+          const m = arg?.match(/^errors\s+(\d+)$/);
+          const limit = m ? Math.max(1, Math.min(50, parseInt(m[1], 10))) : 15;
+          ctx.ui.notify(formatErrorsReport(cache, sessionStart, limit), 'info');
           return;
         }
 
