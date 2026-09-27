@@ -1,7 +1,14 @@
 # Plan: Agent-Capability Tier — keep non-agent models out of routing groups
 
 **Date:** 2026-09-27
-**Status:** approved by owner (brainstorming answers 2026-09-27, evening)
+**Status:** approved by owner (brainstorming answers 2026-09-27, evening);
+REVISED same evening per owner follow-up: the curated family list must be
+**configurable identically for all users** — moved from a code table to the
+config key `non_agent_model_prefixes` (Config, src/types.ts), shipped by the
+embedded router-config.json, overridable in every layer (user/project
+REPLACE semantics), absent/empty = explicitly off. The whitelist in load()
+resyncs it from the static layered config (same shadowing protection as
+`exclude`).
 **Scope:** Phase A of the A+B decision; Phase B (learned session-quality demotion)
 is a separate round.
 
@@ -35,21 +42,21 @@ models are good enough for classification (explicit owner requirement).
 
 ## Design
 
-### New module `src/agent-capability.ts`
+### Module `src/agent-capability.ts` + config key `non_agent_model_prefixes`
 
-- `NON_AGENT_MODEL_ID_PREFIXES`: curated family prefixes matched against the
-  MODEL ID (provider-agnostic, so `mistral/*`, `openrouter/mistral/*` and any
-  other provider's re-host of the same family are all covered):
+- The curated family prefixes live in the config key
+    MODEL ID (any path segment — provider re-hosts covered). Shipped default:
   - `mistral-small-` (349–478 GDPval; 2026-09-27 incidents, both sessions)
   - `magistral-small-` (GDPval 665 despite being a small reasoner)
   - `ministral-` (3b/8b/14b tiny models)
   - `voxtral-` (audio models serving text turns)
   - `codestral-` (code-completion family; 2508 also 422-broken via the
     direct transport)
-- `isAgentCapableRef(ref)` / `isAgentCapableId(id)` predicates.
-- Evidence-backed doc comments (incident dates) — this table is routing
+- `isAgentCapableRef(ref, prefixes)` / `segmentsMatchingPrefix(id, prefixes)`
+  predicates; absent/empty prefix list = tier explicitly OFF.
+- Evidence-backed doc comments (incident dates) — the list is routing
   DATA, not a blocklist of shame: additions/withdrawals go through normal
-  commits and review.
+  config edits and review.
 
 ### Wiring: `applyGroupFilters` (src/routing.ts)
 

@@ -1,4 +1,11 @@
 {
+  "non_agent_model_prefixes": [
+    "mistral-small-",
+    "magistral-small-",
+    "ministral-",
+    "voxtral-",
+    "codestral-"
+  ],
   "exclude": {
     "models": [
       "openrouter/thinkingmachines/inkling:free",

@@ -247,11 +247,14 @@ export function applyGroupFilters(
   // 3b. Agent-capability tier: curated non-agent families (small/code/audio
   // models that pass GDPval floors but cannot carry main-agent work — the
   // 2026-09-27 incidents; see src/agent-capability.ts for the evidence).
-  // Floor-INDEPENDENT and group-independent: without this, trivial/simple
-  // stay a zoo door and operational/tactical keep magistral-small (665).
-  // The prompt classifier chain does not pass through applyGroupFilters,
-  // so classification keeps these models (owner requirement 2026-09-27).
-  c = c.filter(isAgentCapableRef);
+  // CONFIG-DRIVEN via cfg.non_agent_model_prefixes (owner requirement: the
+  // same key for all users; shipped default in the embedded
+  // router-config.json; absent/empty = explicitly off). Floor-INDEPENDENT
+  // and group-independent: without this, trivial/simple stay a zoo door and
+  // operational/tactical keep magistral-small (665). The prompt classifier
+  // chain does not pass through applyGroupFilters, so classification keeps
+  // these models.
+  c = c.filter((ref) => isAgentCapableRef(ref, cfg.non_agent_model_prefixes));
   // 4. min_gdpval / min_gdpval_pct
   // min_gdpval <= 0 means "no quality gate" — pass everything through (matches
   // the historical filterByQualityMin guard against min <= 0). A null score

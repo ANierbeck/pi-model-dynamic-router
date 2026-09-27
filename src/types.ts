@@ -168,6 +168,19 @@ export interface Config {
    */
   exclude?: ExcludeRules;
   /**
+   * Agent-capability tier prefixes — curated model-id families that must
+   * never serve main-agent work (see src/agent-capability.ts for the
+   * 2026-09-27 incident evidence: GDPval floors cannot keep small-but-
+   * benchmark-capable models out). Matched against ANY path segment of the
+   * model id, so provider re-hosts (e.g. openrouter/mistral/mistral-small-3-2)
+   * are covered. The embedded router-config.json ships the default list;
+   * user/project layers REPLACE it (standard array semantics — set the full
+   * list you want). Absent/empty = tier explicitly OFF. Like `exclude`, this
+   * is user intent and is ALWAYS taken from the static layered config — the
+   * dynamic-config whitelist in load() resyncs it.
+   */
+  non_agent_model_prefixes?: string[];
+  /**
    * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
    * file-inspection tool results (`read`, `bash`) with a cheap summarizer
    * model (via a router group) BEFORE the main model sees them. Strictly

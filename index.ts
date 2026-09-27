@@ -336,6 +336,11 @@ let previousTokenCount = 0;
           // reasoning_empty_response_timeout_ms has no effect as long as a
           // router-config.dynamic.json exists on disk.
           dynamicCfg.exclude = staticCfg.exclude;
+          // Agent-capability tier (2026-09-27): the curated non-agent family
+          // prefixes are user intent in the static layers — same shadowing
+          // risk as exclude; without the resync, a user edit would be
+          // silently ignored while a dynamic config exists.
+          dynamicCfg.non_agent_model_prefixes = staticCfg.non_agent_model_prefixes;
           dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
           dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
           // stall_timeout_ms belongs to the same timeout-override family as
