@@ -553,86 +553,75 @@ export async function classifyPrompt(
   // burning primary+fallback timeouts on every prompt.
   let classificationResult: FullClassificationResult | null = null;
   const ollamaWedged = isProviderWedged(cache, 'ollama');
-  if (!ollamaWedged && (await isOllamaAvailable())) {
-    // Self-healing: a primary marked as rejecting structured output (a 501
-    // from e.g. the MLX backend — permanent for that backend, not transient)
-    // is skipped entirely. No guaranteed-501 hop on every prompt.
-    if (model !== fallbackModel && isMarkedNoSchema(cache, model)) {
-      routerLog(
-        `[classifier] Primary model "${model}" marked no-structured-output (501) — trying ${fallbackModel} directly`
-      );
-      try {
-        classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
-      } catch (fallbackError) {
-        routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
-      }
-    } else {
-      try {
-        classificationResult = await tryClassify(model, timeoutMs);
-      } catch (primaryError) {
-        const primaryMsg = String((primaryError as Error)?.message ?? '');
-        // Cold-start timeout or load error → retry immediately with the fallback model
-        if (model !== fallbackModel) {
-          if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
-            // Permanent backend property, not transient — mark and never
-            // burn this hop again while the mark is within its TTL.
-            markNoSchema(cache, model);
-            routerLog(
-              `[classifier] Primary model "${model}" rejects structured output (501) — marked in cache, retrying with ${fallbackModel}`,
-              primaryMsg
-            );
-          } else {
-            routerLog(
-              `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
-              primaryMsg
-            );
-          }
-          try {
-            classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
-          } catch (fallbackError) {
-            routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+
+  const tryOllama = async (): Promise<void> => {
+    if (!ollamaWedged && (await isOllamaAvailable())) {
+      // Self-healing: a primary marked as rejecting structured output (a 501
+      // from e.g. the MLX backend — permanent for that backend, not transient)
+      // is skipped entirely. No guaranteed-501 hop on every prompt.
+      if (model !== fallbackModel && isMarkedNoSchema(cache, model)) {
+        routerLog(
+          `[classifier] Primary model "${model}" marked no-structured-output (501) — trying ${fallbackModel} directly`
+        );
+        try {
+          classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
+        } catch (fallbackError) {
+          routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+        }
+      } else {
+        try {
+          classificationResult = await tryClassify(model, timeoutMs);
+        } catch (primaryError) {
+          const primaryMsg = String((primaryError as Error)?.message ?? '');
+          // Cold-start timeout or load error → retry immediately with the fallback model
+          if (model !== fallbackModel) {
+            if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
+              // Permanent backend property, not transient — mark and never
+              // burn this hop again while the mark is within its TTL.
+              markNoSchema(cache, model);
+              routerLog(
+                `[classifier] Primary model "${model}" rejects structured output (501) — marked in cache, retrying with ${fallbackModel}`,
+                primaryMsg
+              );
+            } else {
+              routerLog(
+                `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
+                primaryMsg
+              );
+            }
+            try {
+              classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
+            } catch (fallbackError) {
+              routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+            }
           }
         }
       }
+    } else if (ollamaWedged) {
+      routerLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
+    } else {
+      routerLog('[classifier] Ollama daemon unreachable — skipping both local models');
     }
-  } else if (ollamaWedged) {
-    routerLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
-  } else {
-    routerLog('[classifier] Ollama daemon unreachable — skipping both local models');
-  }
+  };
 
-  // Escalation logic: if we have a classification and lastModel, check if we need to escalate
-  if (classificationResult && context.lastModel && !context.isCompaction) {
-    const result = applyEscalationLogic(classificationResult, context.lastModel);
-    if (result) {
-      return result;
-    }
-  }
-
-  if (classificationResult) {
-    // Cache the LLM classification result for repeated identical prompts
-    // (only when there was no conversation context — see cache check above).
-    if (!contextBlock) classifyCacheSet(prompt, classificationResult);
-    return classificationResult;
-  }
-
-  // Cloud fallback: when Ollama is unavailable, classify using pi's own
-  // model registry (completeSimple) — pi already owns the model list, the
-  // auth (keys live in pi's auth store, not router-config.json), and the
-  // provider HTTP quirks. The router must NOT roll its own HTTP client + key
-  // resolution (the old CloudClient path threw "No API key for provider"
-  // whenever the key wasn't duplicated into router-config.json).
+  // Cloud fallback: classify using pi's own model registry (completeSimple)
+  // — pi already owns the model list, the auth (keys live in pi's auth
+  // store, not router-config.json), and the provider HTTP quirks. The
+  // router must NOT roll its own HTTP client + key resolution (the old
+  // CloudClient path threw "No API key for provider" whenever the key
+  // wasn't duplicated into router-config.json).
   //
   // Model selection: prefer the probe-verified cached list
   // (cache.classifier_fallback_models, populated at scan time by
   // probeAndCache — a quality probe with real classification cases, incl.
   // the HINT-narration trap, filters broken/misclassifying candidates). If
-  // the probe hasn't
-  // run yet this scan cycle, fall back to selectClassifierCandidates
-  // (price + gdpval tiered discovery) and the try-each loop acts as a lazy
-  // probe. Only activate when allowCloudFallback is true AND cfg/cache + the
-  // pi completeSimple/findModel hooks are available.
-  if (allowCloudFallback && cfg && cache && completeSimple && findModel) {
+  // the probe hasn't run yet this scan cycle, fall back to
+  // selectClassifierCandidates (price + gdpval tiered discovery) and the
+  // try-each loop acts as a lazy probe. Only activate when allowCloudFallback
+  // is true AND cfg/cache + the pi completeSimple/findModel hooks are
+  // available.
+  const tryCloud = async (): Promise<FullClassificationResult | null> => {
+    if (!(allowCloudFallback && cfg && cache && completeSimple && findModel)) return null;
     try {
       // Prefer the probe-verified cached list (fast path — no probing at
       // classification time, the probe ran at scan time).
@@ -742,6 +731,36 @@ export async function classifyPrompt(
     } catch (cloudFallbackError) {
       routerLog(`[classifier] Cloud fallback failed`, (cloudFallbackError as Error).message);
     }
+    return null;
+  };
+
+  // Cloud-first (2026-09-27): the local Ollama daemon is a last resort, not
+  // the default path — repeated MLX wedge incidents (2026-09-25/26) pinned
+  // the GPU at 100% when it was hit on every turn. When allowCloudFallback
+  // is enabled, try the cloud chain first; only fall through to Ollama if
+  // every cloud candidate failed. When allowCloudFallback is disabled, the
+  // behavior is unchanged (Ollama only, no cloud attempt).
+  if (allowCloudFallback) {
+    const cloudResult = await tryCloud();
+    if (cloudResult) return cloudResult;
+    await tryOllama();
+  } else {
+    await tryOllama();
+  }
+
+  // Escalation logic: if we have a classification and lastModel, check if we need to escalate
+  if (classificationResult && context.lastModel && !context.isCompaction) {
+    const result = applyEscalationLogic(classificationResult, context.lastModel);
+    if (result) {
+      return result;
+    }
+  }
+
+  if (classificationResult) {
+    // Cache the LLM classification result for repeated identical prompts
+    // (only when there was no conversation context — see cache check above).
+    if (!contextBlock) classifyCacheSet(prompt, classificationResult);
+    return classificationResult;
   }
 
   // Static fallback

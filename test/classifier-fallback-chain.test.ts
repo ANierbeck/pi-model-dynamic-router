@@ -158,10 +158,41 @@ describe('classifyPrompt fallback chain', () => {
         findModel,
       });
 
-      expect(callOllama).toHaveBeenCalledTimes(2);
+      // Cloud-first (2026-09-27): cloud succeeds, so Ollama must NEVER be
+      // touched. callOllama is still mocked to reject so a regression that
+      // restores the old Ollama-first order would surface as a failing
+      // assertion, not as a silently-passing test.
+      expect(callOllama).not.toHaveBeenCalled();
       expect(completeSimple).toHaveBeenCalledTimes(1);
       expect(findModel).toHaveBeenCalledWith('prov/cloud-a');
       expect(result).toEqual({ category: 'code_simple', reason: 'from cloud', confidence: 0.85 });
+    });
+
+    it('falls back to Ollama as a LAST RESORT when the entire cloud chain fails', async () => {
+      vi.mocked(callOllama)
+        .mockRejectedValueOnce(new Error('ECONNREFUSED')) // primary
+        .mockResolvedValueOnce( // fallback
+          ollamaReply({ category: 'simple', reason: 'local last resort', confidence: 0.8 })
+        );
+      const completeSimple = vi.fn().mockResolvedValue({ errorMessage: 'provider 500', stopReason: 'error' });
+      const findModel = vi.fn().mockReturnValue(mockModel);
+
+      const result = await classifyPrompt('Explain the difference between let and const briefly', {
+        model: 'gemma-primary',
+        fallbackModel: 'gemma-backup',
+        allowCloudFallback: true,
+        cfg: {} as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        completeSimple,
+        findModel,
+      });
+
+      // Cloud was tried first (and failed) before Ollama was touched at all.
+      expect(completeSimple).toHaveBeenCalledTimes(1);
+      expect(callOllama).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(callOllama).mock.calls[0]?.[0]).toBe('gemma-primary');
+      expect(vi.mocked(callOllama).mock.calls[1]?.[0]).toBe('gemma-backup');
+      expect(result).toEqual({ category: 'simple', reason: 'local last resort', confidence: 0.8 });
     });
 
     it('tries the next cached model when a cloud model fails', async () => {
