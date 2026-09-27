@@ -18,6 +18,15 @@ import { PROVIDER_MAP } from './providers.ts';
 export const WEDGE_MIN_MODELS = 2;
 export const WEDGE_WINDOW_MS = 10 * 60_000;
 export const WEDGE_COOLDOWN_MS = 5 * 60_000;
+/** The cooldown for log lines and narration ("5 min"). */
+export const WEDGE_COOLDOWN_TEXT = `${Math.round(WEDGE_COOLDOWN_MS / 60_000)} min`;
+
+/** How the user un-wedges a local provider; the router never restarts it itself. */
+export function wedgeFixHint(provider: string): string {
+  return provider === 'ollama'
+    ? 'restart the daemon (e.g. `pkill ollama`; a launch agent or service restarts it)'
+    : `restart ${provider}`;
+}
 
 type ProviderHealth = NonNullable<Cache['local_provider_health']>[string];
 

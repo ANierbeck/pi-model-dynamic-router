@@ -23,6 +23,16 @@ describe('CacheManager shares one cache object with its callers', () => {
     expect(cm.loadCache()).toBe(cm.getCache());
   });
 
+  it('a reload re-reads disk into the same object (holders keep one reference)', () => {
+    const { cm, file } = manager();
+    const held = cm.loadCache();
+    held.classifier_fallback_models = ['stale/in-memory'];
+    fs.writeFileSync(file, JSON.stringify({ available_models: [], model_blocklist: { 'x/y': {} } }));
+    expect(cm.loadCache()).toBe(held);
+    expect(held.model_blocklist).toHaveProperty('x/y');
+    expect(held.classifier_fallback_models).toBeUndefined();
+  });
+
   it('updateCache and setLastScanTimestamp mutate that object in place', () => {
     const { cm, file } = manager();
     const cache = cm.loadCache();

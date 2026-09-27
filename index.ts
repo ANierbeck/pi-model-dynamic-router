@@ -36,6 +36,7 @@ import {
   fmt,
   fmtTime,
   stripRouterNarration,
+  serialized,
 } from './src/utils.ts';
 import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
@@ -54,8 +55,20 @@ import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from '.
 import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
 import { isExcluded, type ExcludeContext } from './src/exclude.ts';
 import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
-import { recordBlocklistFailure, recordBlocklistSuccess, activeBlocks, clearBlocklist } from './src/model-blocklist.ts';
-import { recordLocalTimeout, recordLocalSuccess, isProviderWedged } from './src/provider-watchdog.ts';
+import {
+  recordBlocklistFailure,
+  recordBlocklistSuccess,
+  activeBlocks,
+  clearBlocklist,
+  BLOCKLIST_TTL_MS,
+} from './src/model-blocklist.ts';
+import {
+  recordLocalTimeout,
+  recordLocalSuccess,
+  isProviderWedged,
+  wedgeFixHint,
+  WEDGE_COOLDOWN_TEXT,
+} from './src/provider-watchdog.ts';
 import { detectDegenerateRepetition } from './src/repetition-guard.ts';
 import {
   buildStaticFreeModelsLookup,
@@ -151,10 +164,9 @@ const defaultExport = function (pi: ExtensionAPI) {
   const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
   let staticCfg: Config; // Statische Konfiguration (immer router-config.json)
-  let cache: Cache = {};
-  // True once loadCache() read the cache from disk; until then a rebuilt
-  // CacheManager must read disk itself instead of adopting the empty object.
-  let cacheLoadedFromDisk = false;
+  // The ONE cache object: never reassigned. loadCache() re-reads disk into it,
+  // so every holder (managers, router, metrics) sees the same state.
+  const cache: Cache = {};
   let rateLimitManager: RateLimitManager;
   let discoveryManager: DiscoveryManager;
   let cacheManager: CacheManager;
@@ -364,9 +376,9 @@ let previousTokenCount = 0;
       const currentScores = metricsModule.getGdpval();
       metricsModule.setGdpval({ ...currentScores, ...cfg.gdpval_builtin });
     }
-    // Hand over the in-memory cache: one shared object for index.ts and the
-    // manager (review 2026-09-27). Before the first disk load there is none.
-    cacheManager = new CacheManager(stateDir, cacheLoadedFromDisk ? cache : undefined);
+    // Hand over the shared cache object; loadCache() fills it from disk
+    // (review 2026-09-27).
+    cacheManager = new CacheManager(stateDir, cache);
     // load() does not only run at boot: tools call it directly
     // (resolve_model_group, update_model_metrics) and EVERY session_start
     // fires it — including subagent sessions, which share this module-level
@@ -398,8 +410,7 @@ let previousTokenCount = 0;
   }
 
   function loadCache() {
-    cache = cacheManager.loadCache();
-    cacheLoadedFromDisk = true;
+    cacheManager.loadCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
     router?.updateCache(cache);
@@ -412,8 +423,9 @@ let previousTokenCount = 0;
   // ── Key Discovery ───────────────────────────────────────────────────────
 
   async function discoverKeys() {
+    // DiscoveryManager mutates the shared cache object; never take its
+    // reference back — it may predate the last loadCache() (review 2026-09-27).
     await discoveryManager.discoverKeys();
-    cache = discoveryManager.getCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
     router?.updateCache(cache);
@@ -914,8 +926,14 @@ let previousTokenCount = 0;
    *     snapshot-write time the same way it is at live-resolve time.
    *   - A `model-map.yaml` entry mapping to `null` (explicit exclusion) is
    *     honoured: the model is dropped even if statically pinned.
+   *
+   * Runs are serialized: a generation awaits an LLM call (populateLlmMatches),
+   * and two overlapping runs (a scan and the settled re-check) would both
+   * write router-config.dynamic.json and the cache, the slower one last.
    */
-  async function generateDynamicConfig(force = false): Promise<void> {
+  const generateDynamicConfig = serialized((force: boolean = false) => generateDynamicConfigNow(force));
+
+  async function generateDynamicConfigNow(force: boolean): Promise<void> {
     try {
       // Models Pi has already registered (e.g. via providers without PROVIDER_MAP entry
       // like claude-bridge) — so they still qualify as routing candidates.
@@ -1131,7 +1149,10 @@ let previousTokenCount = 0;
           // the full result.
           if (!settled && !settleRetryScheduled) {
             settleRetryScheduled = true;
-            const timer = setTimeout(() => void generateDynamicConfig(false), settleMs - elapsed);
+            // A scan running by then decides on its own; skip the re-check.
+            const timer = setTimeout(() => {
+              if (!scanning) void generateDynamicConfig(false);
+            }, settleMs - elapsed);
             timer.unref?.();
           }
         }
@@ -1336,7 +1357,7 @@ let previousTokenCount = 0;
     const entry = recordBlocklistFailure(cache, ref, failureText);
     if (!entry) return;
     routerLog(
-      `[router] ${ref} blocked for 7 days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, ` +
+      `[router] ${ref} blocked for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, ` +
         `signature ${entry.signature}, seen ${entry.occurrences}×)`
     );
     cacheManager.saveCache(cache);
@@ -1621,7 +1642,7 @@ let previousTokenCount = 0;
     observeFailure,
     observeLocalTimeout: (ref: string) => {
       const newlyWedged = recordLocalTimeout(cache, ref);
-      if (newlyWedged) routerLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for 5 min`);
+      if (newlyWedged) routerLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${WEDGE_COOLDOWN_TEXT}`);
       return newlyWedged;
     },
     isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),
@@ -3345,7 +3366,7 @@ async function registerGroupModels(ctx: any) {
         if (!isProviderWedged(cache, provider)) continue;
         const secs = Math.ceil(((h.wedged_until ?? 0) - Date.now()) / 1000);
         lines.push('├─ Local provider watchdog '.padEnd(72, '─'));
-        lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s. Restart the daemon (e.g. \`pkill ${provider}\`).`);
+        lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s. Fix: ${wedgeFixHint(provider)}.`);
       }
 
       // Learned blocklist summary (details: /router blocklist)

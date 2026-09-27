@@ -1,7 +1,7 @@
 // src/content-classifier.ts
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
-import { recordLocalTimeout, recordLocalSuccess, isProviderWedged } from './provider-watchdog.ts';
+import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
@@ -495,7 +495,7 @@ export async function classifyPrompt(
       // Feed generation timeouts to the local-provider watchdog (ADR-0016).
       if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
         if (recordLocalTimeout(cache, `ollama/${m}`)) {
-          routerLog('[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for 5 min');
+          routerLog(`[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for ${WEDGE_COOLDOWN_TEXT}`);
         }
       }
       throw err;

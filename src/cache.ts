@@ -37,13 +37,16 @@ export class CacheManager {
   }
 
   /**
-   * Re-reads the cache from disk and returns the manager's object. Callers
-   * must keep using this one object: a separately parsed copy lets manager
-   * writes (setLastScanTimestamp, updateCache) and caller writes
-   * (saveCache(cache)) overwrite each other on disk (review 2026-09-27).
+   * Re-reads the cache from disk INTO the manager's object and returns it.
+   * The object's identity never changes: everyone holding it (index.ts,
+   * DiscoveryManager, RateLimitManager, router, metrics) sees the fresh state.
+   * A separately parsed copy let one holder's save overwrite the other's
+   * writes, and let a stale holder undo the re-read (review 2026-09-27).
    */
   loadCache(): Cache {
-    this.cache = this.readFromDisk();
+    const fresh = this.readFromDisk();
+    for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
+    Object.assign(this.cache, fresh);
     return this.cache;
   }
 

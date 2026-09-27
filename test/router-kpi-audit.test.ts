@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createKpis, ingestLine, formatReport, parseSince, logFiles } from '../scripts/router-kpi-audit.ts';
 
 const LINES = [
@@ -62,6 +63,30 @@ describe('router KPI audit', () => {
     expect(parseSince('24h', now)).toBe(now - 86_400_000);
     expect(parseSince('2026-09-20', now)).toBe(Date.parse('2026-09-20'));
     expect(() => parseSince('soon', now)).toThrow(/cannot parse/);
+  });
+});
+
+describe('blocklist lines', () => {
+  it('counts a block whatever TTL the log line states', () => {
+    const k = createKpis();
+    ingestLine(k, '2026-09-27T08:00:00.000Z  [router] a/b blocked for 14 days: decommissioned (HTTP 404, signature s, seen 1×)');
+    expect(k.blocklist).toMatchObject({ blocked: 1, byReason: { decommissioned: 1 } });
+  });
+});
+
+describe('command line entry', () => {
+  it('runs when invoked through a symlinked path with spaces', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kpi cli '));
+    const link = path.join(dir, 'audit link.ts');
+    fs.symlinkSync(path.resolve('scripts/router-kpi-audit.ts'), link);
+    const log = path.join(dir, 'router.log');
+    fs.writeFileSync(log, `${LINES[0]}\n`);
+    try {
+      const out = execFileSync(process.execPath, [link, '--log', log], { encoding: 'utf-8' });
+      expect(out).toContain('Router KPI audit — 1 log lines');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

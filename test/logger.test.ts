@@ -90,4 +90,16 @@ describe('rotation', () => {
     routerLog('[router] must not be lost');
     expect(read()).toContain('must not be lost');
   });
+
+  it('backs off after a failed rotation instead of retrying on every line', () => {
+    configureLogRotation({ maxBytes: 100, keep: 2 });
+    fs.mkdirSync(path.dirname(logPath()), { recursive: true });
+    fs.writeFileSync(logPath(), 'x'.repeat(200));
+    fs.mkdirSync(`${logPath()}.1`);
+    fs.writeFileSync(path.join(`${logPath()}.1`, 'blocker'), '');
+    for (let i = 0; i < 5; i++) routerLog(`[router] line ${i}`);
+    const failures = read().split('\n').filter((l) => l.includes('log rotation failed'));
+    expect(failures).toHaveLength(1);
+    expect(read()).toContain('line 4');
+  });
 });

@@ -12,6 +12,8 @@ import {
   recordLocalTimeout,
   recordLocalSuccess,
   isProviderWedged,
+  wedgeFixHint,
+  WEDGE_COOLDOWN_TEXT,
 } from '../src/provider-watchdog.ts';
 import type { Cache } from '../src/types.ts';
 
@@ -73,5 +75,16 @@ describe('provider watchdog', () => {
     expect(recordLocalTimeout(cache, 'mistral/x', 0)).toBe(false);
     expect(recordLocalTimeout(cache, 'mistral/y', 1)).toBe(false);
     expect(isProviderWedged(cache, 'mistral', 2)).toBe(false);
+  });
+});
+
+describe('wedge narration text', () => {
+  it('derives the cooldown from WEDGE_COOLDOWN_MS', () => {
+    expect(WEDGE_COOLDOWN_TEXT).toBe(`${WEDGE_COOLDOWN_MS / 60_000} min`);
+  });
+
+  it('suggests pkill ollama only for Ollama, not for other local providers', () => {
+    expect(wedgeFixHint('ollama')).toContain('pkill ollama');
+    expect(wedgeFixHint('lm-studio')).toBe('restart lm-studio');
   });
 });

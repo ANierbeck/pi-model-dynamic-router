@@ -131,7 +131,6 @@ export interface Config {
   model_groups: Record<string, Group>;
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
-  /** Override the default first-token empty-response timeout (ms). */
   /** Router log level: "debug" also writes [diag] lines. ROUTER_LOG_LEVEL overrides it. */
   log_level?: 'info' | 'debug';
   /**
@@ -140,6 +139,7 @@ export interface Config {
    * scan-sanity regression check. Default 60000.
    */
   scan_settle_ms?: number;
+  /** Override the default first-token empty-response timeout (ms). */
   empty_response_timeout_ms?: number;
   /** Override the first-token timeout for reasoning/thinking models (ms). */
   reasoning_empty_response_timeout_ms?: number;
@@ -288,6 +288,12 @@ export interface Cache {
    * Tier-2 failure streaks (ADR-0008): consecutive failures per ref with the
    * same unknown signature, reset by a success or a different signature.
    */
+  model_failure_streaks?: Record<string, {
+    signature: string;
+    count: number;
+    first_seen: number;
+    last_seen: number;
+  }>;
   /**
    * Local-provider watchdog (ADR-0016), keyed by provider id: recent
    * generation timeouts per local model ref, and the wedge expiry.
@@ -295,12 +301,6 @@ export interface Cache {
   local_provider_health?: Record<string, {
     timeouts: Record<string, number>;
     wedged_until?: number;
-  }>;
-  model_failure_streaks?: Record<string, {
-    signature: string;
-    count: number;
-    first_seen: number;
-    last_seen: number;
   }>;
   /**
    * Verified-working cloud models for the classifier's cloud fallback.

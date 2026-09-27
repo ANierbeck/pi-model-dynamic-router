@@ -37,6 +37,10 @@ let level: LogLevel = process.env.ROUTER_LOG_LEVEL === 'debug' ? 'debug' : 'info
 let rotation = { maxBytes: 20 * 1024 * 1024, keep: 5 };
 
 const ensuredDirs = new Set<string>();
+// After a failed rotation, retry only after this many ms: a permanently blocked
+// slot would otherwise cost an rm/rename attempt on every single line.
+const ROTATION_RETRY_MS = 60_000;
+const rotationRetryAt = new Map<string, number>();
 const lastOnce = new Map<string, string>();
 
 function ensureLogDirFor(logPath: string): void {
@@ -62,12 +66,18 @@ function rotate(logPath: string): void {
 function append(logPath: string, line: string): void {
   ensureLogDirFor(logPath);
   const size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
-  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes) {
+  const retryAt = rotationRetryAt.get(logPath) ?? 0;
+  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes && Date.now() >= retryAt) {
     try {
       rotate(logPath);
-    } catch {
+      rotationRetryAt.delete(logPath);
+    } catch (err) {
       // Another process rotated in between (ENOENT) or a slot is blocked:
-      // never lose the line over it — append to whatever is there now.
+      // never lose the line over it — append to whatever is there now, say
+      // why the file keeps growing, and back off.
+      rotationRetryAt.set(logPath, Date.now() + ROTATION_RETRY_MS);
+      const reason = err instanceof Error ? err.message : String(err);
+      fs.appendFileSync(logPath, `${new Date().toISOString()}  [router] log rotation failed, retrying in ${ROTATION_RETRY_MS / 1000}s: ${reason}\n`);
     }
   }
   fs.appendFileSync(logPath, line + '\n');
@@ -98,6 +108,7 @@ export function setLogLevel(configured: LogLevel | undefined): void {
 
 export function configureLogRotation(opts: { maxBytes: number; keep: number }): void {
   rotation = { maxBytes: opts.maxBytes, keep: Math.max(1, opts.keep) };
+  rotationRetryAt.clear();
 }
 
 /** Write a raw (already-formatted) line to both router logs. */

@@ -65,6 +65,7 @@ import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
+import { wedgeFixHint, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { appendRawLog, routerLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
@@ -654,7 +655,7 @@ export class StreamOrchestrator {
           pushRouterInfoLogged(
             proxy,
             `> [router] ${provider} looks wedged: generations time out on several local models while the daemon still answers. ` +
-              `Skipping ${provider} models for 5 min. Fix: restart the daemon (e.g. \`pkill ollama\`; a launch agent or service restarts it).\n\n`
+              `Skipping ${provider} models for ${WEDGE_COOLDOWN_TEXT}. Fix: ${wedgeFixHint(provider)}.\n\n`
           );
         }
         const reason = result.reason === 'empty_timeout'

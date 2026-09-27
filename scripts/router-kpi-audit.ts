@@ -6,10 +6,11 @@
 // Usage: node scripts/router-kpi-audit.ts [--log <path>] [--since <7d|24h|ISO>] [--json]
 // Reads the log and its rotations (<log>.N … <log>.1, oldest first), line by line.
 
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export interface Kpis {
   lines: number;
@@ -92,7 +93,7 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
     return;
   }
   if ((r = /^\[router\] All \d+ candidate\(s\) failed/.exec(body))) { k.allCandidatesFailed++; return; }
-  if ((r = /^\[router\] \S+ blocked for 7 days: ([\w-]+)/.exec(body))) {
+  if ((r = /^\[router\] \S+ blocked for \d+ days?: ([\w-]+)/.exec(body))) {
     k.blocklist.blocked++;
     bump(k.blocklist.byReason, r[1]!);
     return;
@@ -185,7 +186,9 @@ async function main(argv: string[]): Promise<void> {
   console.log(argv.includes('--json') ? JSON.stringify(k, null, 2) : formatReport(k));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// import.meta.url is the real path, URL-encoded: a plain `file://${argv[1]}`
+// misses paths with spaces or symlinks, and the script then exits silently.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main(process.argv.slice(2)).catch((err) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);

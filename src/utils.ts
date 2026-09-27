@@ -149,3 +149,17 @@ export function resolveShortModelName(
 }
 
 
+
+/**
+ * Wraps an async function so its runs never overlap: each call starts after
+ * the previous one settled (resolved or rejected). Every caller still gets
+ * its own run's result or error.
+ */
+export function serialized<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => Promise<void> {
+  let queue: Promise<void> = Promise.resolve();
+  return (...args: A) => {
+    const run = queue.then(() => fn(...args));
+    queue = run.catch(() => {});
+    return run;
+  };
+}
