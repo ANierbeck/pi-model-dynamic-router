@@ -148,6 +148,7 @@
   "model_metrics": {
     "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 },
     "claude-bridge/claude-opus-5": { "cost_per_m": 0.0000015 },
+    "claude-bridge/claude-opus-5-5": { "cost_per_m": 0.0000015 },
     "claude-bridge/claude-fable-5": { "cost_per_m": 0.0000015 },
     "claude-bridge/claude-3-sonnet": { "cost_per_m": 0.0000015 },
     "claude-bridge/claude-3-haiku": { "cost_per_m": 0.0000015 }
@@ -161,6 +162,7 @@
     "claude-sonnet-5": 1603,
     "claude-fable-5": 1747,
     "claude-opus-5": 1860,
+    "claude-opus-5-5": 1900,
     "devstral": 585,
     "codestral-latest": 520,
     "mistral-small-3-2": 478,
