@@ -89,3 +89,23 @@
   `getRegisteredProviderIds` first (the Ü1 invariant). This bit us in v1.5.0
   development (roborev job 302) and is now enforced in
   `registerFreeModelOnDemand`.
+
+## 7. Boyscout Rule — leave the code better than you found it
+
+- If we find code smells, bugs, or other defects while changing or reviewing
+  code, we **fix them too** — even when fixing them was not the original
+  review/coding task. Finding a defect and merely reporting it is not enough;
+  findings left in a report rot.
+- This deliberately goes beyond the §1 review gate ("no Critical or Important
+  findings may remain open"): Minor and cosmetic findings (smells, dead code,
+  misleading names or comments) are also fixed, not filed away.
+- Every fix meets the same bars as any change: §4 (tsc + suite green,
+  regression test for bug fixes) and §5 (commit conventions). Small, local
+  cleanups may ride along in the task's commit when they belong to it;
+  anything standalone gets its own `fix:`/`refactor:` commit whose body names
+  the defect and where it was found.
+- The only escape is an explicit blocker: the fix would require a
+  release/publish decision (§1) or an owner decision. Then the finding is
+  surfaced to the user with a concrete plan — it never silently disappears.
+  Size alone is never a blocker; a fix too large for the current commit gets
+  its own dedicated commit on the same branch.
