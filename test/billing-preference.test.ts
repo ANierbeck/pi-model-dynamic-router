@@ -182,3 +182,50 @@ describe('sortByBillingPreference — local_first override', () => {
     expect(sorted[1]).toBe('ollama/gemma4:12b-mlx');
   });
 });
+
+describe('sortByBillingPreference — cloud_first override (free → subscription → payg → local, local always last)', () => {
+  const router = new Router(testConfig, cache, new Map());
+
+  it('ranks local (Ollama) LAST — even behind payg', () => {
+    const sorted = router.sortByBillingPreference(
+      ['ollama/gemma4:12b-mlx', 'openai/gpt-4', 'mistral/mistral-medium-latest'],
+      'cloud_first'
+    );
+    expect(sorted[0]).toBe('mistral/mistral-medium-latest');
+    expect(sorted[1]).toBe('openai/gpt-4');
+    expect(sorted[2]).toBe('ollama/gemma4:12b-mlx');
+  });
+
+  it('ranks free ahead of subscription and payg with cloud_first', () => {
+    const sorted = router.sortByBillingPreference(
+      ['mistral/mistral-medium-latest', 'openrouter/ling-3.0-flash-fin:free', 'openai/gpt-4'],
+      'cloud_first'
+    );
+    expect(sorted[0]).toBe('openrouter/ling-3.0-flash-fin:free');
+    expect(sorted[1]).toBe('mistral/mistral-medium-latest');
+    expect(sorted[2]).toBe('openai/gpt-4');
+  });
+});
+
+describe('sortByBillingPreference — local_before_payg override (free → subscription → local → payg)', () => {
+  const router = new Router(testConfig, cache, new Map());
+
+  it('ranks local (Ollama) ahead of payg but behind subscription', () => {
+    const sorted = router.sortByBillingPreference(
+      ['openai/gpt-4', 'ollama/gemma4:12b-mlx', 'mistral/mistral-medium-latest'],
+      'local_before_payg'
+    );
+    expect(sorted[0]).toBe('mistral/mistral-medium-latest');
+    expect(sorted[1]).toBe('ollama/gemma4:12b-mlx');
+    expect(sorted[2]).toBe('openai/gpt-4');
+  });
+
+  it('still ranks free ahead of local with local_before_payg', () => {
+    const sorted = router.sortByBillingPreference(
+      ['ollama/gemma4:12b-mlx', 'openrouter/ling-3.0-flash-fin:free'],
+      'local_before_payg'
+    );
+    expect(sorted[0]).toBe('openrouter/ling-3.0-flash-fin:free');
+    expect(sorted[1]).toBe('ollama/gemma4:12b-mlx');
+  });
+});

@@ -85,7 +85,12 @@ export interface Group {
    * incident, 2026-09-26). Prefer the local daemon or a genuine `:free`
    * model over a subscription model for cheap work.
    */
-  billing_preference?: 'default' | 'local_first' | 'strict_local';
+  billing_preference?:
+    | 'default'
+    | 'local_first'
+    | 'strict_local'
+    | 'cloud_first'
+    | 'local_before_payg';
   /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
   classifier_model?: string;
   /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */

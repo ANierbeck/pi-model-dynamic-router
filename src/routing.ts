@@ -665,7 +665,12 @@ export class Router {
    */
   sortByBillingPreference(
     refs: string[],
-    billingPreference: 'default' | 'local_first' | 'strict_local' = 'default'
+    billingPreference:
+      | 'default'
+      | 'local_first'
+      | 'strict_local'
+      | 'cloud_first'
+      | 'local_before_payg' = 'default'
   ): string[] {
     // strict_local: local (tier 2) → free (tier 0) → subscription (tier 1)
     // → payg (tier 3). Unlike local_first (which keeps truly-free models
@@ -675,28 +680,34 @@ export class Router {
     // subscription models whose $0 nominal cost hides a hard time/token
     // limit (the pi-claude incident, 2026-09-26).
     const strictRank = (t: number) => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
+    // cloud_first: free (tier 0) → subscription (tier 1) → payg (tier 3) → local (tier 2) ALWAYS LAST.
+    // For scout/bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
+    // (2026-09-27, repeated GPU load / MLX-wedge incidents made the local daemon untrusted as a default hop).
+    const cloudFirstRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3);
+    // local_before_payg: free (tier 0) → subscription (tier 1) → local (tier 2) → payg (tier 3).
+    // For trivial/simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
+    // local ahead of free/subscription like the old strict_local did.
+    const localBeforePaygRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 2 ? 2 : 3);
+    const rank = (t: number): number => {
+      switch (billingPreference) {
+        case 'strict_local':
+          return strictRank(t);
+        case 'local_first':
+          // Rank local (2) level with free (0), ahead of subscription (1).
+          return t === 2 ? 0.5 : t;
+        case 'cloud_first':
+          return cloudFirstRank(t);
+        case 'local_before_payg':
+          return localBeforePaygRank(t);
+        default:
+          return t;
+      }
+    };
     return [...refs].sort((a, b) => {
       const ta = billingTier(a),
         tb = billingTier(b);
-      // "local_first" override: rank local models (tier 2) AHEAD of
-      // subscription models (tier 1), but keep truly-free models (tier 0)
-      // on top. payg (tier 3) stays last. Only affects this group's sort.
-      const ra =
-        billingPreference === 'strict_local'
-          ? strictRank(ta)
-          : billingPreference === 'local_first'
-            ? ta === 2
-              ? 0.5
-              : ta
-            : ta;
-      const rb =
-        billingPreference === 'strict_local'
-          ? strictRank(tb)
-          : billingPreference === 'local_first'
-            ? tb === 2
-              ? 0.5
-              : tb
-            : tb;
+      const ra = rank(ta);
+      const rb = rank(tb);
       if (ra !== rb) return ra - rb;
       // Within subscription tier, prefer lower rate-limit pressure first, then cost
       if (ta === 1) {
