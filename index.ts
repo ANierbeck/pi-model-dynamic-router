@@ -60,7 +60,7 @@ import {
   recordBlocklistSuccess,
   activeBlocks,
   clearBlocklist,
-  BLOCKLIST_TTL_MS,
+  formatBlockLogLine,
 } from './src/model-blocklist.ts';
 import {
   recordLocalTimeout,
@@ -1356,10 +1356,7 @@ let previousTokenCount = 0;
   function observeFailure(ref: string, failureText: string): void {
     const entry = recordBlocklistFailure(cache, ref, failureText);
     if (!entry) return;
-    routerLog(
-      `[router] ${ref} blocked for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, ` +
-        `signature ${entry.signature}, seen ${entry.occurrences}×)`
-    );
+    routerLog(formatBlockLogLine(ref, entry));
     cacheManager.saveCache(cache);
   }
 

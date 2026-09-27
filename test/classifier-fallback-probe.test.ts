@@ -280,6 +280,79 @@ describe('probeAndCache', () => {
     expect(logs.some((l) => l.includes('broken-model failed'))).toBe(true);
   });
 
+  it('narrates blocklist events from probe failures (block on permanent, never on transient, clear on revival)', async () => {
+    // Realistic Tier-1 fixture (same shape as the live OpenRouter 404 body,
+    // cf. test/model-blocklist.test.ts GUARDRAIL).
+    const GUARDRAIL_404 =
+      '404: {"message":"0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):\\nFree model training violation (guardrail): 1 endpoint excluded","code":404,"metadata":{"input_endpoint_count":1,"ineligibility_reasons":[{"reason":"free-model-training-violation-by-guardrail","endpoint_count":1}],"failed_routing_step":"Filter by Guardrails"}}';
+    const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60_000;
+    const cache: Cache = {
+      available_models: [
+        { id: 'guardrail-dead', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'rate-limit-transient', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'revived-model', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/guardrail-dead': { input: 0, output: 0 },
+        'openrouter/rate-limit-transient': { input: 0, output: 0 },
+        'openrouter/revived-model': { input: 0, output: 0 },
+      },
+      // TTL-expired (7d) block: the candidate is probed again and answers,
+      // so the block must be cleared — and the clear narrated.
+      model_blocklist: {
+        'openrouter/revived-model': {
+          reason: 'workspace-guardrail',
+          code: 404,
+          signature: '404:workspace-guardrail',
+          first_seen: eightDaysAgo,
+          last_seen: eightDaysAgo,
+          occurrences: 1,
+        },
+      },
+    };
+    seedMetrics(baseCfg, cache);
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple: vi.fn(async (model: any, prompt: any) => {
+        if (model.id === 'guardrail-dead') {
+          return { errorMessage: GUARDRAIL_404, stopReason: 'error', content: [] };
+        }
+        if (model.id === 'rate-limit-transient') {
+          return { errorMessage: '429 status code (no body)', stopReason: 'error', content: [] };
+        }
+        const content: string = prompt?.messages?.[0]?.content ?? '';
+        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('Fix the typo')) return okReply('code_simple');
+        if (content.includes('Explain what a closure is briefly')) return okReply('simple');
+        return okReply('standard');
+      }),
+    };
+    const logs: string[] = [];
+    const result = await probeAndCache(baseCfg, cache, pctx, (m) => logs.push(m));
+
+    // Permanent signature → Tier-1 block, and the block is narrated in the log.
+    expect(result).not.toContain('openrouter/guardrail-dead');
+    expect(cache.model_blocklist?.['openrouter/guardrail-dead']).toMatchObject({
+      reason: 'workspace-guardrail',
+      code: 404,
+    });
+    expect(
+      logs.some((l) => l.includes('openrouter/guardrail-dead blocked for 7 days: workspace-guardrail'))
+    ).toBe(true);
+
+    // Transient signature → never blocked, never narrated as blocked.
+    expect(result).not.toContain('openrouter/rate-limit-transient');
+    expect(cache.model_blocklist?.['openrouter/rate-limit-transient']).toBeUndefined();
+    expect(logs.some((l) => l.includes('rate-limit-transient blocked for'))).toBe(false);
+
+    // Expired block whose model answers again → cleared and narrated.
+    expect(result).toContain('openrouter/revived-model');
+    expect(cache.model_blocklist?.['openrouter/revived-model']).toBeUndefined();
+    expect(
+      logs.some((l) => l.includes('revived-model answered after its blocklist entry expired'))
+    ).toBe(true);
+  });
+
   it('skips candidates not in pi registry (findModel returns undefined)', async () => {
     const cache: Cache = {
       available_models: [

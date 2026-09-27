@@ -48,7 +48,7 @@
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
-import { isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
+import { formatBlockLogLine, isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
 import {
   VALID_CATEGORIES,
   buildClassificationPrompt,
@@ -373,12 +373,19 @@ export async function probeAndCache(
         recordModelFailure(cache, ref);
       }
       // An error stop without text is neither: it proves nothing either way.
-      if (providerError) recordBlocklistFailure(cache, ref, providerError);
-      else if (answered) recordBlocklistSuccess(cache, ref);
+      if (providerError) {
+        const entry = recordBlocklistFailure(cache, ref, providerError);
+        if (entry) log(formatBlockLogLine(ref, entry));
+      } else if (answered && recordBlocklistSuccess(cache, ref)) {
+        // A TTL-expired block answered again during the probe — narrate the
+        // clear, mirroring the stream path, so log forensics sees it.
+        log(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
+      }
     } catch (e) {
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
       recordModelFailure(cache, ref);
-      recordBlocklistFailure(cache, ref, (e as Error).message);
+      const entry = recordBlocklistFailure(cache, ref, (e as Error).message);
+      if (entry) log(formatBlockLogLine(ref, entry));
     }
   }
 

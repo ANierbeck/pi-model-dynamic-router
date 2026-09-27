@@ -87,6 +87,16 @@ export function recordBlocklistFailure(
   return null;
 }
 
+/**
+ * Uniform log line for a block event. Every feed path (stream failures via
+ * observeFailure, classifier-probe failures) logs through this helper so
+ * log forensics can grep "blocked for" uniformly, regardless of which
+ * path observed the failure.
+ */
+export function formatBlockLogLine(ref: string, entry: BlocklistEntry): string {
+  return `[router] ${ref} blocked for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, signature ${entry.signature}, seen ${entry.occurrences}×)`;
+}
+
 export function isBlocked(cache: Cache | undefined, ref: string, now: number = Date.now()): boolean {
   const entry = cache?.model_blocklist?.[ref];
   return entry !== undefined && now - entry.last_seen < BLOCKLIST_TTL_MS;
