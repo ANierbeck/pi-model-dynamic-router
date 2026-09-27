@@ -31,6 +31,44 @@ import type { CacheManager } from './cache.ts';
 const sleepMs = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Per-candidate cancellation. Each stream attempt gets its own AbortSignal,
+ * chained to the caller's (Ctrl-C still reaches the provider), so the router
+ * can cancel exactly the candidate it gives up on.
+ *
+ * Without it an abandoned candidate was never told to stop: claude-bridge
+ * only cancels its Claude Agent SDK query on options.signal abort, so every
+ * discarded attempt ran to completion in the background — burning
+ * subscription tokens for an answer nobody read and piling concurrent
+ * queries onto the bridge's shared session (2026-09-27 afternoon: Claude
+ * usage ~50% within one short debugging session).
+ *
+ * `abandon()` must only be called for a FAILED attempt. A successful
+ * toolUse turn keeps the bridge's SDK query alive for the tool results;
+ * aborting the winner would kill the tool loop.
+ */
+function openCandidateAttempt(options: SimpleStreamOptions | undefined): {
+  options: SimpleStreamOptions;
+  abandon: () => void;
+} {
+  const controller = new AbortController();
+  const outer = options?.signal;
+  const onOuterAbort = () => controller.abort(outer?.reason);
+  if (outer) {
+    if (outer.aborted) controller.abort(outer.reason);
+    else outer.addEventListener('abort', onOuterAbort, { once: true });
+  }
+  return {
+    options: { ...(options ?? {}), signal: controller.signal },
+    abandon: () => {
+      // Drop the chain listener so a long cascade doesn't accumulate one
+      // listener per failed candidate on the caller's signal.
+      outer?.removeEventListener('abort', onOuterAbort);
+      if (!controller.signal.aborted) controller.abort(new Error('router abandoned this candidate'));
+    },
+  };
+}
+
+/**
  * Extracts the actual context window and requested tokens from an OpenRouter
  * (or compatible) overflow error detail JSON.
  *
@@ -524,7 +562,8 @@ export class StreamOrchestrator {
         contextOverflowSkips++;
         continue;
       }
-      const target = await ctx.tryStream(ref, context, options).catch((err) => {
+      const attempt = openCandidateAttempt(options);
+      const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
         const errorMsg = String(err.message || err);
         const isExpectedError = isExpectedTransientError(errorMsg);
         if (!isExpectedError) routerLog(`[router] Skipping ${ref}: ${errorMsg}`);
@@ -534,6 +573,7 @@ export class StreamOrchestrator {
         return null;
       });
       if (!target) {
+        attempt.abandon();
         const why = ctx.skipReasons.get(ref);
         if (why) pushError(ref, why);
         ctx.recordSoftFailure(ref);
@@ -547,6 +587,7 @@ export class StreamOrchestrator {
       ctx.curModel = ref;
       ctx.lastDynamicModel = ref;
 
+      let attemptSucceeded = false;
       try {
         const result = await ctx.consumeWithDetection(
           target.stream, proxy,
@@ -556,6 +597,7 @@ export class StreamOrchestrator {
         );
 
         if (result.ok) {
+          attemptSucceeded = true;
           ctx.recordOk(ref);
           return;
         }
@@ -591,8 +633,11 @@ export class StreamOrchestrator {
               `> [router] ${ref} — rate limited${resetMsg} — waiting ${waitSecs}s, then retrying…\n\n`
             );
             await sleepMs(resetInMs + 2000);
-            const retryTarget = await ctx.tryStream(ref, context, options).catch(() => null);
+            const retryAttempt = openCandidateAttempt(options);
+            const retryTarget = await ctx.tryStream(ref, context, retryAttempt.options).catch(() => null);
+            if (!retryTarget) retryAttempt.abandon();
             if (retryTarget) {
+              let retrySucceeded = false;
               try {
                 const retryResult = await ctx.consumeWithDetection(
                   retryTarget.stream, proxy,
@@ -601,6 +646,7 @@ export class StreamOrchestrator {
                   String(ref)
                 );
                 if (retryResult.ok) {
+                  retrySucceeded = true;
                   ctx.recordOk(ref);
                   return;
                 }
@@ -614,6 +660,7 @@ export class StreamOrchestrator {
                   `> [router] ${ref} — still failing after waiting (${retryResult.reason}), trying next…\n\n`
                 );
               } finally {
+                if (!retrySucceeded) retryAttempt.abandon();
                 ctx.releaseLocalSlot(ref);
               }
             }
@@ -753,6 +800,10 @@ export class StreamOrchestrator {
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
       } finally {
+        // Cancel the provider-side work of every attempt that did not win
+        // (see openCandidateAttempt) — including timeouts, where the
+        // upstream is otherwise still running.
+        if (!attemptSucceeded) attempt.abandon();
         // Release the local concurrency slot acquired in tryStream. Must
         // run on every path: success (return), soft-failure (continue),
         // and hard-failure (catch). Cloud providers were never counted and
@@ -853,13 +904,16 @@ export class StreamOrchestrator {
         ctx.router.setActiveGroup(ctx.activeGroup);
         ctx.curModel = bestRef;
         ctx.lastDynamicModel = bestRef;
-        const target = await ctx.tryStream(bestRef, context, options).catch((err) => {
+        const collapseAttempt = openCandidateAttempt(options);
+        const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
           const errorMsg = err instanceof Error ? err.message : String(err);
           pushError(bestRef!, errorMsg);
           ctx.recordSoftFailure(bestRef!);
           return null;
         });
+        if (!target) collapseAttempt.abandon();
         if (target) {
+          let collapseSucceeded = false;
           try {
             const result = await ctx.consumeWithDetection(
               target.stream, proxy,
@@ -868,6 +922,7 @@ export class StreamOrchestrator {
               bestRef as string
             );
             if (result.ok) {
+              collapseSucceeded = true;
               ctx.recordOk(bestRef);
               return;
             }
@@ -914,6 +969,7 @@ export class StreamOrchestrator {
             ctx.observeFailure(bestRef, errorMsg);
             ctx.recordSoftFailure(bestRef);
           } finally {
+            if (!collapseSucceeded) collapseAttempt.abandon();
             // Release the local concurrency slot acquired in tryStream for
             // the force-retry candidate. Same guard as the main loop's finally.
             ctx.releaseLocalSlot(bestRef);

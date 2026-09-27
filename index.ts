@@ -84,6 +84,7 @@ import {
   isRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
+  OVERFLOW_TEXT_SCAN_MAX_CHARS,
   isAbortLikeText,
   parseResetAtMs,
   isPaidCloudRateLimitFailure,
@@ -2377,9 +2378,16 @@ let previousTokenCount = 0;
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
     let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
     let truncatedByLength = false; // stopReason 'length' detected (max output tokens hit)
+    // Set once the timeout wins the race below. The loop is not cancelled by
+    // losing the race — without this flag it kept forwarding the abandoned
+    // stream's late events (content, or an 'aborted' terminal once driveStream
+    // cancels the candidate) into the proxy, i.e. into the output of the
+    // candidate that had already taken over.
+    let abandoned = false;
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
+          if (abandoned) return 'done';
           // Re-arm the stall timer on every event — this both cancels the
           // first-token timeout once content starts AND restarts the
           // inactivity window for the rest of the stream. A stream that emits
@@ -2487,29 +2495,28 @@ let previousTokenCount = 0;
             // can try the next candidate without showing an error to the user.
             return 'done';
           }
-          // Check text_delta content for rate-limit text. claude-bridge
-          // sometimes pushes rate-limit/spend-limit messages as text content
-          // (via piUI.notify or as result text), not as error events.
-          // When detected, mark rateLimited and DON'T forward the text —
-          // driveStream will show a proper 'trying next model' message instead.
+          // NO rate-limit scan on text_delta. The model's own prose is never
+          // evidence of a rate limit: the pattern table matches everyday words
+          // ('out of', 'exceeded', 'quota', 'credits', 'rate limit'), so any
+          // answer that merely talked about limits was killed mid-sentence,
+          // discarded and restarted on the next candidate (2026-09-27
+          // afternoon: 25 mid-stream kills of paid/subscription models while
+          // debugging the router's own limit handling). The scan was also
+          // useless for its stated purpose: pi-claude-bridge reports a real
+          // Claude limit as an `error` EVENT (errorMessage "Claude rate limit
+          // ..."), handled above, and its yellow warning is a piUI.notify UI
+          // notification that never enters this stream.
           if (event.type === 'text_delta') {
             const delta = String((event as any).delta || (event as any).text || '');
             accumulatedText += delta;
-            if (isRateLimitText(delta) || isRateLimitText(accumulatedText)) {
-              rateLimited = true;
-              // Same reset-time extraction as the error-event branch. The
-              // text_delta path is the one claude-bridge actually uses for
-              // its `piUI.notify(...)` rate-limit warning, so this is the
-              // case that triggers most often in practice.
-              rateLimitResetAtMs = parseResetAtMs(accumulatedText) ?? rateLimitResetAtMs;
-              clearTimer();
-              // Stop consuming — don't forward rate-limit text to the user
-              return 'done';
-            }
             // Some providers return overflow rejections as text content rather
             // than as an error event. Detect it so driveStream can emit the
             // native overflow error and trigger Pi compaction instead of hanging.
-            if (isOverflowDeltaText(delta) || isOverflowDeltaText(accumulatedText)) {
+            // Only at the very start of the answer: such a rejection IS the
+            // whole (short) response, whereas a real answer discussing context
+            // windows or compaction — this router's own domain — can contain
+            // the same phrases much later and must not be killed for it.
+            if (accumulatedText.length <= OVERFLOW_TEXT_SCAN_MAX_CHARS && isOverflowDeltaText(accumulatedText)) {
               overflowDetected = true;
               overflowDetail = accumulatedText;
               clearTimer();
@@ -2574,6 +2581,7 @@ let previousTokenCount = 0;
     const winner = await Promise.race([iterPromise, timeoutPromise]);
 
     if (winner === 'timeout') {
+      abandoned = true;
       // Timeout fired. Two cases share one timer:
       //  - empty_timeout: no content ever arrived (first-token window expired)
       //  - stall_timeout: content started, then the stream went silent for

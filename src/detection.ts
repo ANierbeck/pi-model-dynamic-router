@@ -14,9 +14,15 @@
 
 /**
  * Patterns that indicate a rate-limit / spend-limit / subscription error.
- * These can arrive as error events OR as text_delta content (claude-bridge
- * pushes rate-limit warnings as text via piUI.notify, and some error results
- * with non-success subtype fall through without an error event).
+ *
+ * Safe for provider/transport ERROR TEXT ONLY (error events, thrown errors,
+ * failure details). NEVER apply them to the model's own text_delta output:
+ * they match everyday prose ('out of', 'exceeded', 'quota', 'credits', 'rate
+ * limit'), and scanning answers with them killed every response that merely
+ * talked about limits (2026-09-27 afternoon incident). A real Claude limit
+ * reaches the router as an error event — pi-claude-bridge prefixes its
+ * errorMessage with "Claude rate limit"; its yellow warning is a piUI.notify
+ * UI notification that never enters the stream.
  *
  * Union of the two previous pattern sets — no divergence between code paths.
  */
@@ -65,6 +71,14 @@ export const ERROR_OVERFLOW_PATTERNS: readonly string[] = [
  * provider actually uses to reject an oversized prompt, which ordinary
  * assistant prose won't reproduce.
  */
+/**
+ * text_delta overflow detection only looks at the first N characters of an
+ * answer. A provider that rejects an oversized prompt as text sends that
+ * rejection as the whole, short response; a real answer that discusses
+ * prompt size later on must never be killed for quoting the same phrase.
+ */
+export const OVERFLOW_TEXT_SCAN_MAX_CHARS = 400;
+
 export const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
   'too large for model with',
   'prompt is too long',
@@ -81,8 +95,8 @@ export const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
  *   - As a formatted string in `piUI.notify(...)` text:
  *     "… resets DD. Mon YYYY, HH:MM:SS TZ …"
  *
- * When the router sees the rate-limit text in the stream (from `piUI.notify`
- * via an error/text_delta event), the structured field is already gone — only
+ * When the router sees the rate-limit text in an error event's message, the
+ * structured field is already gone — only
  * the formatted string remains. This function parses it back to a Unix-ms
  * value using a German locale pattern (the format produced by `toLocaleString`
  * with `timeZoneName: "short"`).
