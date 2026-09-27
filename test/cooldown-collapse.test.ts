@@ -206,7 +206,11 @@ describe('driveStream: total cooldown collapse', () => {
           }
           yield {
             type: 'error',
-            error: { errorMessage: 'Provider finish_reason: error' },
+            // Rate-limit-shaped (HTTP 429): since the 2026-09-27 422 fix a
+            // bare provider_error stays soft and the collapse force-retry
+            // pushes no hard-cooldown line at all — the wording this test
+            // pins only fires for rate-limit-shaped failures.
+            error: { errorMessage: '429 too many requests' },
           };
         })();
       });
@@ -236,7 +240,7 @@ describe('driveStream: total cooldown collapse', () => {
       // event -> 'provider error'; both lines appear, but the provider-error
       // wording is the one that proves the error-event path was recognized
       // rather than falling through to the generic empty-response reason.
-      expect(text1).toContain('provider error: Provider finish_reason: error (likely rate limit)');
+      expect(text1).toContain('provider error: 429 too many requests (likely rate limit)');
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });

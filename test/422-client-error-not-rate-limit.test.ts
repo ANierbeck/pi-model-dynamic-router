@@ -1,28 +1,22 @@
 /**
- * Regression test for roborev job 339 (LOW finding), revised 2026-09-27.
+ * End-to-end regression for the 2026-09-27 Mistral incident.
  *
- * driveStream's provider_error branch (unrecognized finish_reason from a
- * mid-stream error event, see test/provider-error-detection.test.ts) applies
- * to any candidate. A PAID cloud model hitting provider_error originally
- * fell through to the soft-backoff branch meant for local/free models; the
- * roborev-339 fix routed it into the hard-cooldown path ("likely rate
- * limit" + key rotation) for EVERY provider_error.
+ * Every router-scanned mistral/mistral-zai model answered with a bare
+ * "422 status code (no body)" (request-shaped client error from the
+ * OpenAI-compatible transport — Le Platform rejects pi-ai's payload for
+ * these models). isPaidCloudRateLimitFailure blanket-escalated provider_error
+ * on paid cloud models into the hard-cooldown ladder, so each failing
+ * attempt put the model on a 24h cooldown with a "likely rate limit
+ * (resets ...)" narration. Within minutes the whole mistral block was
+ * locked out and the chain hopped to unrelated models — the "constant
+ * model hopping" symptom.
  *
- * The 2026-09-27 Mistral incident showed the flip side: every scanned
- * mistral/mistral-zai model answered with a bare "422 status code (no
- * body)" — a request-shaped client error, not a rate limit — and the
- * blanket escalation put each of them on a 24h hard cooldown, the direct
- * cause of the constant model hopping. isPaidCloudRateLimitFailure now
- * gates provider_error on the error TEXT (HTTP 429/402 or rate-limit
- * wording), so both halves of the original behavior stay pinned here:
- *
- *  - a bare/unrecognized provider error keeps the SOFT-backoff wording
- *    ("provider error: <detail>", no rate-limit framing, no reset time),
- *  - a provider error carrying HTTP 429 keeps the hard-cooldown treatment
- *    ("likely rate limit" + "(resets ...)" + key rotation) that the
- *    original test asserted.
- *
- * The wording is a direct, observable proxy for which escalation branch ran.
+ * The detection fix gates provider_error on the error TEXT: a bare 422
+ * (no HTTP 429/402, no rate-limit wording) now records only the SHORT
+ * soft backoff and narrates a plain provider error — no "likely rate
+ * limit", no reset time, no hard cooldown. Unit coverage of the gate
+ * lives in test/detection.test.ts; this file pins the full driveStream
+ * behavior with the exact production error text.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
@@ -50,13 +44,13 @@ async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-paid-provider-err-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-422-soft-'));
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-  const dynBak = `${dynamicConfigPath}.paid-provider-err-bak`;
-  const cacheBak = `${scanCachePath}.paid-provider-err-bak`;
+  const dynBak = `${dynamicConfigPath}.422-soft-bak`;
+  const cacheBak = `${scanCachePath}.422-soft-bak`;
   const hadDyn = fs.existsSync(dynamicConfigPath);
   const hadCache = fs.existsSync(scanCachePath);
   if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
@@ -77,13 +71,8 @@ async function withIsolatedRouter(
   }
 }
 
-describe('driveStream: provider_error on a paid cloud model', () => {
-  // Single PAID cloud candidate (no ':free' suffix, not ollama/lm-studio)
-  // failing mid-stream with a provider_error whose TEXT decides which
-  // escalation branch runs. Returns the joined router-info text so each
-  // test below can pin the observable wording of its branch.
-  async function runProviderErrorScenario(errorMessage: string): Promise<string> {
-    let routerInfoText = '';
+describe('driveStream: bare 422 on a paid cloud model is a soft failure, not a rate limit', () => {
+  it('production text "422 status code (no body)": soft 30s backoff, plain provider-error wording, collapse force-retry still works', async () => {
     await withIsolatedRouter(
       {
         free_models: [],
@@ -105,6 +94,8 @@ describe('driveStream: provider_error on a paid cloud model', () => {
         };
         defaultExport(pi);
 
+        // PAID cloud model (no ':free' suffix, not ollama/lm-studio) failing
+        // with the exact production error text from the 2026-09-27 incident.
         const paidModel = {
           provider: 'paid-cloud-provider',
           id: 'paid-model',
@@ -118,7 +109,7 @@ describe('driveStream: provider_error on a paid cloud model', () => {
           return (async function* () {
             yield {
               type: 'error',
-              error: { errorMessage },
+              error: { errorMessage: '422 status code (no body)' },
             };
           })();
         });
@@ -134,28 +125,24 @@ describe('driveStream: provider_error on a paid cloud model', () => {
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
+
         const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
-        routerInfoText = events
+        const routerInfoText = events
           .filter((e: any) => e.type === 'text_delta')
           .map((e: any) => e.delta ?? '')
           .join('');
+
+        // The failure is narrated as a plain provider error with its detail …
+        expect(routerInfoText).toContain('provider error: 422 status code (no body)');
+        // … NOT as a rate limit: no hard-cooldown framing, no reset time.
+        expect(routerInfoText).not.toContain('likely rate limit');
+        expect(routerInfoText).not.toMatch(/\(resets .+\)/);
+        // Only the SHORT soft backoff was recorded, so the single-pass
+        // cooldown-collapse force-retries within this call (original attempt
+        // + force-retry) instead of waiting out a hard ladder tier.
+        expect(streamSimple).toHaveBeenCalledTimes(2);
+        expect(routerInfoText).toMatch(/All models in cooldown[^\n]*\(shortest cooldown, 30s\)/);
       }
     );
-    return routerInfoText;
-  }
-
-  it('bare/unrecognized provider error → soft-backoff wording, no hard-cooldown framing', async () => {
-    const text = await runProviderErrorScenario('Provider finish_reason: error');
-    // Soft branch: the plain provider-error detail is shown ...
-    expect(text).toContain('provider error: Provider finish_reason: error');
-    // ... WITHOUT the hard-cooldown framing and without a reset time.
-    expect(text).not.toContain('likely rate limit');
-    expect(text).not.toMatch(/\(resets .+\)/);
-  });
-
-  it('provider error carrying HTTP 429 → hard-cooldown ("likely rate limit") treatment', async () => {
-    const text = await runProviderErrorScenario('429 too many requests');
-    expect(text).toContain('likely rate limit');
-    expect(text).toMatch(/\(resets .+\)/);
-  });
+  }, 30000);
 });

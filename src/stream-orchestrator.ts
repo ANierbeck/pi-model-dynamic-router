@@ -182,7 +182,8 @@ export interface StreamOrchestratorContext {
   recordStreamFailure: (
     ref: string,
     reason: string,
-    resetAtMs?: number
+    resetAtMs?: number,
+    errorText?: string
   ) => { hardLimited: boolean; rotated: boolean; newKey: string | undefined };
   formatResetMsg: (ref: string, resetAtMs: number | undefined, rotated: boolean | undefined) => string;
   // Classification helpers
@@ -605,7 +606,7 @@ export class StreamOrchestrator {
         if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(ref, result.detail);
 
         if (result.reason === 'rate_limit_exceeded') {
-          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs);
+          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
           pushError(ref, 'rate_limit_exceeded');
           const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
           const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
@@ -651,9 +652,13 @@ export class StreamOrchestrator {
                   return;
                 }
                 if (retryResult.reason === 'aborted') return;
+                // Feed the blocklist observer like the main loop does, so a
+                // provider_error seen during the post-wait retry (e.g. a bare
+                // 422) still counts toward the learned-blocklist streaks.
+                if (retryResult.reason === 'provider_error' && retryResult.detail) ctx.observeFailure(ref, retryResult.detail);
                 // Still failing after the reset window — record it, tell the
                 // user, and fall through to the normal cascade.
-                ctx.recordStreamFailure(ref, String(retryResult.reason), retryResult.resetAtMs);
+                ctx.recordStreamFailure(ref, String(retryResult.reason), retryResult.resetAtMs, retryResult.detail);
                 pushError(ref, `still failing after wait: ${retryResult.reason}`);
                 pushRouterInfoLogged(
                   proxy,
@@ -752,8 +757,13 @@ export class StreamOrchestrator {
           );
           continue;
         }
-        if (isPaidCloudRateLimitFailure(ref, String(result.reason))) {
-          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs);
+        // Pass the error detail: since provider_error became text-gated
+        // (2026-09-27), the guard without it could never see a 429/402 and
+        // would wrongly route genuine rate-limit provider errors into the
+        // soft branch while recordStreamFailure (which does get the detail)
+        // would have escalated them — the two sites must stay in sync.
+        if (isPaidCloudRateLimitFailure(ref, String(result.reason), result.detail)) {
+          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
           pushError(ref, `${result.reason} (treated as rate-limit)`);
           const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
@@ -948,7 +958,7 @@ export class StreamOrchestrator {
                 `> [router] ${bestRef} — ${result.reason === 'repetition_loop' ? 'stuck in a repetition loop' : 'output truncated at max tokens (task incomplete)'}\n\n`
               );
             } else {
-              const frResult = ctx.recordStreamFailure(bestRef, String(result.reason), result.resetAtMs);
+              const frResult = ctx.recordStreamFailure(bestRef, String(result.reason), result.resetAtMs, result.detail);
               if (frResult.hardLimited) {
                 const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
                 const reasonTxt = String(result.reason);

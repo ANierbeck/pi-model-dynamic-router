@@ -71,9 +71,15 @@ const OPENROUTER_SIGNATURES: readonly Signature[] = [
   },
 ];
 
-// Mistral answers an exhausted daily quota with a bare 422 or 403
-// ("status code (no body)"); it resets the next day, so a 7-day block would
-// be wrong (observed 2026-09-26).
+// Mistral historically answers account-level/request trouble with a bare
+// 422 or 403 "status code (no body)" — observed 2026-09-26/27 for every
+// router-scanned mistral/mistral-zai model streamed through the
+// OpenAI-compatible transport. Keep the known-transient verdict so the
+// learned blocklist treats these as a soft account-level condition instead
+// of 'unknown'. The hard-cooldown decision is NOT made here — detection.ts's
+// isPaidCloudRateLimitFailure gates that on the error text (HTTP 429/402 or
+// rate-limit wording), so these signatures can never trigger a 24h
+// cooldown on their own.
 const MISTRAL_SIGNATURES: readonly Signature[] = [
   { code: 422, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },
   { code: 403, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },

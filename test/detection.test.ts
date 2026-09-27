@@ -246,7 +246,22 @@ describe('isPaidCloudRateLimitFailure — single source of truth for the hard-co
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'empty_response')).toBe(true);
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'empty_timeout')).toBe(true);
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'stall_timeout')).toBe(true);
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error')).toBe(true);
+  });
+
+  it('gates provider_error on the error text: bare 422 stays soft, 429/402 and rate-limit wording do not (2026-09-27 Mistral incident)', () => {
+    // Production text: every scanned mistral/mistral-zai model answered with
+    // a bare "422 status code (no body)" — a request-shaped client error,
+    // NOT a rate limit. Blanket-escalating it put each model on a 24h hard
+    // cooldown and caused the constant model hopping.
+    expect(isPaidCloudRateLimitFailure('mistral/mistral-medium-3-5', 'provider_error', '422 status code (no body)')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('mistral/codestral-2508', 'provider_error', 'Provider finish_reason: error')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('mistral/magistral-small-latest', 'provider_error')).toBe(false);
+    // HTTP 429/402 (word-boundary — "14293" must NOT match) and rate-limit
+    // wording ARE rate-limit-shaped.
+    expect(isPaidCloudRateLimitFailure('mistral/small', 'provider_error', '429 too many requests')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', '402 payment required')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'rate limit reached')).toBe(true);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'context 14293 tokens billed')).toBe(false);
   });
 
   it('does NOT flag a free-suffixed model, even on a rate-limit-shaped reason', () => {

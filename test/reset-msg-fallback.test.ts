@@ -174,7 +174,12 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
           return (async function* () {
             yield {
               type: 'error',
-              error: { errorMessage: 'Provider finish_reason: error' },
+              // Rate-limit-shaped provider error (HTTP 429, no parseable
+              // reset time). Since the 2026-09-27 422 fix only such text
+              // takes the hard-cooldown path; a bare provider_error stays
+              // soft and would never reach the reset-message fallback this
+              // test pins.
+              error: { errorMessage: '429 too many requests' },
             };
           })();
         });

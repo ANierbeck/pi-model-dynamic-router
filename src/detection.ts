@@ -318,16 +318,16 @@ export function isOverflowDeltaText(text: string): boolean {
 
 /**
  * True if a failure `reason` looks rate-limit-shaped rather than a definitive
- * signal on its own (empty response, timeout, or an unrecognized provider
- * finish_reason) — the caller still must combine this with provider/pricing
- * tier (see isPaidCloudRateLimitFailure below) before treating it as a real
- * rate limit.
+ * signal on its own (empty response or timeout). provider_error is NOT
+ * rate-limit-shaped by reason alone — isPaidCloudRateLimitFailure gates it
+ * on the error text (HTTP 429/402 or rate-limit wording), because an
+ * unrecognized provider finish_reason is usually a request-shaped client
+ * error (e.g. Mistral's bare 422), not a masked rate-limit.
  */
 export function isRateLimitLikeReason(reason: string): boolean {
   return reason === 'empty_response'
     || reason === 'empty_timeout'
-    || reason === 'stall_timeout'
-    || reason === 'provider_error';
+    || reason === 'stall_timeout';
 }
 
 /**
@@ -344,8 +344,10 @@ export function isRateLimitLikeReason(reason: string): boolean {
  *
  * Without this check, such text falls through to the providerErrorDetected
  * branch and gets classified as `reason: 'provider_error'`, which
- * isPaidCloudRateLimitFailure treats as rate-limit-shaped for any paid cloud
- * model — applying a 2-hour hard cooldown to a model that was never actually
+ * isPaidCloudRateLimitFailure treated as rate-limit-shaped for any paid
+ * cloud model (provider_error is text-gated since 2026-09-27, but abort
+ * text must still never be counted as a provider failure at all) —
+ * applying a 2-hour hard cooldown to a model that was never actually
  * rate-limited, just caught in the blast radius of an unrelated crash. This
  * was the root cause of a live incident: a subagent fanout crashed Ollama,
  * the crash cascade aborted an in-flight pi-claude/claude-sonnet-5 call, and
@@ -385,8 +387,23 @@ export function isAbortLikeText(text: string): boolean {
  * one but not the other), which would have made the user-facing "treated as
  * rate-limit" message lie about which backoff tier was actually applied.
  */
-export function isPaidCloudRateLimitFailure(ref: string, reason: string): boolean {
+export function isPaidCloudRateLimitFailure(ref: string, reason: string, errorText?: string): boolean {
   const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
   const isFreeModel = ref.includes(':free');
-  return isCloudProvider && isRateLimitLikeReason(reason) && !isFreeModel;
+  if (!isCloudProvider || isFreeModel) return false;
+  // provider_error is only rate-limit-shaped when the underlying HTTP status
+  // is 429 or 402, or when the error text indicates a rate-limit. Client
+  // request errors (4xx except 429/402) are not rate-limit-shaped.
+  if (reason !== 'provider_error') {
+    return isRateLimitLikeReason(reason);
+  }
+  // For provider_error, we conservatively treat it as rate-limit-shaped only
+  // when the error text contains a rate-limit indicator. This prevents
+  // escalating 422/400/403 client errors as rate-limits.
+  // Word-boundary status match: "14293 tokens" must not read as 429, and a
+  // bare "402"/"429" carries no rate-limit wording for isRateLimitText.
+  if (/\b(?:429|402)\b/.test(errorText ?? '')) {
+    return true;
+  }
+  return isRateLimitText(errorText ?? '');
 }

@@ -1390,11 +1390,12 @@ let previousTokenCount = 0;
   /**
    * Escalates a stream failure to the right backoff tier, exactly like the
    * main driveStream loop does: a real rate-limit, or a failure from a PAID
-   * cloud model that looks rate-limit-shaped (empty response, timeout,
-   * unrecognized provider_error — all much more likely a masked 429/auth
-   * error than a fluke), gets a hard cooldown + key rotation via
-   * recordLimit(). A FREE-model or local-model failure gets only the short
-   * soft-backoff ladder, since those are commonly just transient overload.
+   * cloud model that looks rate-limit-shaped (empty response, timeout, or a
+   * provider_error whose text carries HTTP 429/402 or rate-limit wording —
+   * a bare 422/403 client error is NOT escalated; see the 2026-09-27
+   * incident), gets a hard cooldown + key rotation via recordLimit(). A
+   * FREE-model or local-model failure gets only the short soft-backoff
+   * ladder, since those are commonly just transient overload.
    *
    * The escalation predicate (isPaidCloudRateLimitFailure, src/detection.ts)
    * is the single source of truth shared with the caller's own branch in the
@@ -1412,9 +1413,10 @@ let previousTokenCount = 0;
   function recordStreamFailure(
     ref: string,
     reason: string,
-    resetAtMs?: number
+    resetAtMs?: number,
+    errorText?: string
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
-    if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason)) {
+    if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason, errorText)) {
       const rlResult = recordLimit(ref, resetAtMs);
       return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
     }
@@ -2440,7 +2442,10 @@ let previousTokenCount = 0;
             // field). Without this check the text falls through to the
             // providerErrorDetected branch below and gets classified as
             // reason:'provider_error', which isPaidCloudRateLimitFailure
-            // treats as rate-limit-shaped — applying a 2-hour hard cooldown to
+            // treated as rate-limit-shaped at the time (it is text-gated
+            // since 2026-09-27, but abort text must still never be counted
+            // as a provider failure at all) — back then this applied a
+            // 2-hour hard cooldown to
             // a model that was never actually rate-limited, just caught in
             // the blast radius of an unrelated crash (F10, 2026-09-02 review:
             // a subagent fanout crashed Ollama, the cascade aborted an

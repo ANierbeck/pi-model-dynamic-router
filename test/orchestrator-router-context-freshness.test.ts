@@ -128,7 +128,11 @@ describe('StreamOrchestrator context freshness: router/rateLimitManager/cacheMan
           return (async function* () {
             yield {
               type: 'error',
-              error: { errorMessage: 'Provider finish_reason: error' },
+              // Rate-limit-shaped (HTTP 429) so the model takes the
+              // hard-cooldown path — since the 2026-09-27 422 fix a bare
+              // provider_error only gets the 30s soft backoff, which could
+              // never satisfy the >30s limitSecs() assertion below.
+              error: { errorMessage: '429 too many requests' },
             };
           })();
         });
