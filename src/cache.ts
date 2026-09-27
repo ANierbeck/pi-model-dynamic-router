@@ -8,6 +8,33 @@ import type { Cache } from './types.ts';
 
 // ── Cache Management ───────────────────────────────────────────────────────
 
+// Per cache object: the file state (mtime + size) it was last synced with,
+// by a read or a write. Keyed by the object, not the manager, because index.ts
+// rebuilds the manager on every load() but keeps the one cache object.
+const lastSync = new WeakMap<Cache, string>();
+
+/**
+ * Adds what another process wrote without discarding in-memory state: keys
+ * the memory lacks are taken from disk, and for record-valued keys
+ * (model_blocklist, exhausted_keys, …) the missing entries. On a conflict
+ * the memory wins — it may hold changes not saved yet.
+ */
+function mergeExternal(memory: Cache, disk: Cache): void {
+  const mem = memory as Record<string, unknown>;
+  for (const [key, diskValue] of Object.entries(disk as Record<string, unknown>)) {
+    const memValue = mem[key];
+    if (memValue === undefined) {
+      mem[key] = diskValue;
+    } else if (isRecord(memValue) && isRecord(diskValue)) {
+      for (const [sub, v] of Object.entries(diskValue)) if (!(sub in memValue)) memValue[sub] = v;
+    }
+  }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 /**
  * Manages the cache for the pi-model-router
  */
@@ -21,7 +48,22 @@ export class CacheManager {
    */
   constructor(stateDir: string, existing?: Cache) {
     this.cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
-    this.cache = existing ?? this.readFromDisk();
+    if (existing) {
+      this.cache = existing;
+    } else {
+      this.cache = {};
+      this.loadCache();
+    }
+  }
+
+  /** mtime + size of the cache file, or '' when there is none. */
+  private fileState(): string {
+    try {
+      const st = fs.statSync(this.cachePath);
+      return `${st.mtimeMs}:${st.size}`;
+    } catch {
+      return '';
+    }
   }
 
   private readFromDisk(): Cache {
@@ -37,16 +79,28 @@ export class CacheManager {
   }
 
   /**
-   * Re-reads the cache from disk INTO the manager's object and returns it.
-   * The object's identity never changes: everyone holding it (index.ts,
-   * DiscoveryManager, RateLimitManager, router, metrics) sees the fresh state.
-   * A separately parsed copy let one holder's save overwrite the other's
-   * writes, and let a stale holder undo the re-read (review 2026-09-27).
+   * Syncs the manager's object with disk and returns it; the object's identity
+   * never changes, so every holder (index.ts, DiscoveryManager,
+   * RateLimitManager, router, metrics) keeps seeing the same state.
+   *
+   * - First load of an object: fills it from disk.
+   * - Later loads (every session_start, in-process subagents included): the
+   *   memory is authoritative — the router saves only every 10 turns, so
+   *   rate-limit cooldowns, model health, watchdog state and Tier-2 streaks
+   *   may not be on disk yet. Disk is read only if another process wrote the
+   *   file since the last sync, and its additions are merged in
+   *   (mergeExternal). Review 2026-09-27: replacing the object's contents
+   *   dropped that state; replacing the object let a stale holder undo the
+   *   re-read and overwrite the other process's writes.
    */
   loadCache(): Cache {
-    const fresh = this.readFromDisk();
-    for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
-    Object.assign(this.cache, fresh);
+    const known = lastSync.get(this.cache);
+    const state = this.fileState();
+    if (known !== undefined && known === state) return this.cache;
+    const disk = this.readFromDisk();
+    if (known === undefined && Object.keys(this.cache).length === 0) Object.assign(this.cache, disk);
+    else mergeExternal(this.cache, disk);
+    lastSync.set(this.cache, state);
     return this.cache;
   }
 
@@ -57,6 +111,7 @@ export class CacheManager {
     const dataToSave = cache ?? this.cache;
     fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
     fs.writeFileSync(this.cachePath, JSON.stringify(dataToSave, null, 2));
+    lastSync.set(dataToSave, this.fileState());
   }
 
   /**

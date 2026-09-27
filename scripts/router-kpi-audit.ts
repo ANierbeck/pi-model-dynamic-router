@@ -188,7 +188,16 @@ async function main(argv: string[]): Promise<void> {
 
 // import.meta.url is the real path, URL-encoded: a plain `file://${argv[1]}`
 // misses paths with spaces or symlinks, and the script then exits silently.
-if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
+// Importing the module (tests, other tools) must never throw here.
+function invokedDirectly(): boolean {
+  try {
+    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
   main(process.argv.slice(2)).catch((err) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
