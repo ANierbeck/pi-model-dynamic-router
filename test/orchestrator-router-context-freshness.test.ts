@@ -94,6 +94,7 @@ describe('StreamOrchestrator context freshness: router/rateLimitManager/cacheMan
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: { 'paid-model': 1000 },
       },

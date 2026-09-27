@@ -55,6 +55,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
       path.join(tmpDir, '.pi', 'router-config.json'),
       JSON.stringify({
         free_models: [],
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
@@ -166,6 +167,7 @@ describe('driveStream: context overflow triggers native compaction signal', () =
         // sunk-cost provider so applyGroupFilters keeps it (mirrors a real
         // subscription model the registry has temporarily lost).
         providers: { 'phantom-provider': { billing: 'subscription' } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );

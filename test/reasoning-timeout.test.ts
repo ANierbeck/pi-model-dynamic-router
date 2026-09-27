@@ -56,6 +56,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
         // Scale timeouts down so the test is fast. Short = 100ms, long = 5000ms.
         empty_response_timeout_ms: 100,
         reasoning_empty_response_timeout_ms: 5000,
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );
@@ -147,6 +148,7 @@ describe('driveStream: reasoning models get a longer first-token timeout', () =>
         providers: { openrouter: { free_models: [] } },
         empty_response_timeout_ms: 100,
         reasoning_empty_response_timeout_ms: 5000,
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );

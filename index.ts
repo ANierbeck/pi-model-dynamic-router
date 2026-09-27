@@ -102,13 +102,12 @@ function loadDefaults(extDir: string): Defaults {
 }
 
 const _defaults = loadDefaults(path.dirname(fileURLToPath(import.meta.url)));
-const BACKOFF = _defaults.backoff_minutes.map((m) => m * 60_000);
-const SOFT_BACKOFF = _defaults.soft_backoff_ms;
 const COST_MUX_AT_HIT = _defaults.cost_mux_at_hit;
 const MODELS_TTL = _defaults.models_ttl_ms;
 const EMPTY_RESPONSE_TIMEOUT_MS = _defaults.empty_response_timeout_ms;
 const REASONING_EMPTY_RESPONSE_TIMEOUT_MS = _defaults.reasoning_empty_response_timeout_ms;
 const STALL_TIMEOUT_MS = _defaults.stall_timeout_ms;
+const RATE_LIMIT_WAIT_MAX_MS = _defaults.rate_limit_wait_max_ms;
 const OLLAMA_MAX_CONCURRENT_STREAMS = _defaults.ollama_max_concurrent_streams;
 const GDPVAL_URL = _defaults.gdpval_url;
 
@@ -338,6 +337,17 @@ let previousTokenCount = 0;
           dynamicCfg.exclude = staticCfg.exclude;
           dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
           dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
+          // stall_timeout_ms belongs to the same timeout-override family as
+          // the two empty-response windows above but was missing from this
+          // whitelist — a user change to it was silently shadowed by the
+          // stale dynamic file (same bug class, found while adding the
+          // wait-for-reset keys below).
+          dynamicCfg.stall_timeout_ms = staticCfg.stall_timeout_ms;
+          // Rate-limit scheduling/behavior keys (ADR-0017 wait-for-reset +
+          // cfg-backed backoff schedules): user intent, same shadowing risk.
+          dynamicCfg.rate_limit_wait_max_ms = staticCfg.rate_limit_wait_max_ms;
+          dynamicCfg.backoff_minutes = staticCfg.backoff_minutes;
+          dynamicCfg.soft_backoff_ms = staticCfg.soft_backoff_ms;
           // Delegation settings are user intent (ADR-0007 revision) — always
           // from the static layered config, like exclude above.
           dynamicCfg.delegation = staticCfg.delegation;
@@ -358,8 +368,14 @@ let previousTokenCount = 0;
     // setConfig + setCache below populate it correctly, including self-healing
     // from cache.gdpval_scores when needed.
     
-    // Initialize managers
-    rateLimitManager = new RateLimitManager(BACKOFF, SOFT_BACKOFF, COST_MUX_AT_HIT, cache);
+    // Initialize managers. The backoff schedules are cfg-backed (falling
+    // back to the YAML defaults) so they can be tuned per environment — and
+    // shrunk in integration tests to exercise the cooldown paths quickly
+    // (the collapse-wait test needs sub-5s cooldowns, impossible with the
+    // 60s/30s production minimums).
+    const backoffSchedule = (cfg.backoff_minutes ?? _defaults.backoff_minutes).map((m) => m * 60_000);
+    const softBackoffSchedule = cfg.soft_backoff_ms ?? _defaults.soft_backoff_ms;
+    rateLimitManager = new RateLimitManager(backoffSchedule, softBackoffSchedule, COST_MUX_AT_HIT, cache);
     discoveryManager = new DiscoveryManager(cfg, cache);
     // Always use staticCfg for metrics to ensure provider costs are available
     metricsModule.setConfig(staticCfg);
@@ -1628,6 +1644,7 @@ let previousTokenCount = 0;
     updateModelContextWindow,
     getEmptyResponseTimeout,
     getStallTimeout,
+    getRateLimitWaitMaxMs,
     consumeWithDetection,
     isLocalProvider,
     localStreamLimit: () => localStreamLimit(),
@@ -2770,6 +2787,12 @@ let previousTokenCount = 0;
     return cfg.stall_timeout_ms ?? STALL_TIMEOUT_MS;
   }
 
+  /** Max ms to wait for a rate-limited model with a known, near reset time
+   * (see router-defaults.yaml). 0 disables the wait-and-retry path. */
+  function getRateLimitWaitMaxMs(): number {
+    return cfg.rate_limit_wait_max_ms ?? RATE_LIMIT_WAIT_MAX_MS;
+  }
+
   function isCompactionTurn(context: Context): boolean {
     const currentMessageCount = context.messages.length;
     const currentTokenCount = estimateContextTokens(context);
@@ -3181,6 +3204,8 @@ async function registerGroupModels(ctx: any) {
         { value: 'cost', label: 'cost', description: 'Show accumulated cost-tracker summary' },
         { value: 'blocklist', label: 'blocklist', description: 'Show models blocked after permanent provider failures' },
         { value: 'blocklist clear', label: 'blocklist clear', description: 'Unblock all models, or one: blocklist clear <provider/model>' },
+        { value: 'cooldowns', label: 'cooldowns', description: 'Show active rate-limit cooldowns (ref, remaining, hits)' },
+        { value: 'cooldowns clear', label: 'cooldowns clear', description: 'Clear all cooldowns + model-health streaks (incident relief, no restart needed)' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(cfg.model_groups ?? {}).map((g) => {
         const desc = cfg.model_groups?.[g]?.description;
@@ -3244,6 +3269,53 @@ async function registerGroupModels(ctx: any) {
             target
               ? removed ? `Unblocked ${target}.` : `${target} was not blocked.`
               : `Blocklist cleared (${removed} model(s)).`,
+            'info'
+          );
+          return;
+        }
+
+        if (arg === 'cooldowns') {
+          const active = rateLimitManager.listLimits();
+          const health = cache.model_health ?? {};
+          const healthEntries = Object.entries(health)
+            .filter(([, v]) => v && typeof v.fails === 'number' && v.fails > 0)
+            .sort((a, b) => b[1].fails - a[1].fails);
+          const lines: string[] = ['Active cooldowns (shortest first):'];
+          if (active.length === 0) {
+            lines.push('  (none — no model is in cooldown)');
+          } else {
+            for (const c of active) {
+              const reset = c.resetAtMs
+                ? ` (provider reset ${new Date(c.resetAtMs).toLocaleTimeString()})`
+                : '';
+              lines.push(`  • ${c.ref}: ${c.secs}s remaining, ${c.hits} hit(s)${reset}`);
+            }
+          }
+          lines.push('', 'Model-health failure streaks (demotion):');
+          if (healthEntries.length === 0) {
+            lines.push('  (none — all models healthy)');
+          } else {
+            for (const [ref, h] of healthEntries) {
+              lines.push(`  • ${ref}: ${h.fails} recent fail(s)`);
+            }
+          }
+          ctx.ui.notify(lines.join('\n'), 'info');
+          return;
+        }
+        if (arg?.startsWith('cooldowns clear')) {
+          const cleared = rateLimitManager.clearAllLimits();
+          const health = cache.model_health;
+          let healthCleared = 0;
+          if (health) {
+            healthCleared = Object.keys(health).length;
+            cache.model_health = {};
+            cacheManager.saveCache(cache);
+          }
+          routerLog(
+            `[router] cooldowns cleared manually: ${cleared} cooldown(s) + ${healthCleared} model-health streak(s)`
+          );
+          ctx.ui.notify(
+            `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s)). All models are immediately available for routing again.`,
             'info'
           );
           return;

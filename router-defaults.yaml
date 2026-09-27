@@ -48,6 +48,16 @@ reasoning_empty_response_timeout_ms: 90000
 # doesn't hang the session for 20 minutes.
 stall_timeout_ms: 180000
 
+# When a rate-limited model reports a KNOWN, NEAR reset time (e.g. Mistral
+# TPM "Try again in 60 seconds"), wait for it (up to this many ms) and retry
+# the same model once, instead of cascading through every other candidate —
+# which records rate-limit-shaped failures on ALL of them and escalates the
+# whole group into cooldown (the 2026-09-27 total-cooldown-collapse incident:
+# a 60s TPM window burned the entire chain; every cascade pass re-failed,
+# force-retries into unexpired cooldowns extended them, and the router stayed
+# dead for minutes after the provider had long recovered). 0 disables.
+rate_limit_wait_max_ms: 120000
+
 # Concurrency limit for LOCAL providers (ollama, lm-studio). Maximum number
 # of simultaneous streams the router will open to a local model server. Each
 # stream loads a full model into RAM (e.g. qwen3.8:27b-mlx ≈ 18GB), so

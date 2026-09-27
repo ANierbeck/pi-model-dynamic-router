@@ -27,6 +27,9 @@ import { Router } from './routing.ts';
 import type { SessionEscalation } from './escalation.ts';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { CacheManager } from './cache.ts';
+/** Bounded sleep helper — used by the wait-for-reset paths. */
+const sleepMs = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * Extracts the actual context window and requested tokens from an OpenRouter
  * (or compatible) overflow error detail JSON.
@@ -119,6 +122,8 @@ export interface StreamOrchestratorContext {
   updateModelContextWindow: (ref: string, cw: number) => void;
   getEmptyResponseTimeout: (ref: string) => number;
   getStallTimeout: (ref: string) => number;
+  /** Max ms to wait for a rate-limited model with a known, near reset (0 = off). */
+  getRateLimitWaitMaxMs: () => number;
   consumeWithDetection: (
     stream: AssistantMessageEventStream,
     proxy: AssistantMessageEventStream,
@@ -493,6 +498,11 @@ export class StreamOrchestrator {
     };
 
     let contextOverflowSkips = 0;
+    // Bounded wait-for-reset: at most ONE wait-and-retry per driveStream call,
+    // so a chain of short-reset rate limits can't turn the wait path into a
+    // livelock (each wait retries the SAME model once, then falls through to
+    // the normal cascade).
+    let rateLimitWaitUsed = false;
     let cooldownSkips = 0;
     const contextTokens = ctx.estimateContextTokens(context);
 
@@ -555,10 +565,63 @@ export class StreamOrchestrator {
         if (result.reason === 'rate_limit_exceeded') {
           const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs);
           pushError(ref, 'rate_limit_exceeded');
-          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
-          const suffix = nextRef ? `, trying ${nextRef} …` : '';
           const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
           const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
+
+          // Bounded wait-for-reset: when the provider TOLD us when the limit
+          // clears and that moment is near, waiting beats burning the whole
+          // chain. Without this, a short window (Mistral TPM "Try again in
+          // 60s", 2026-09-27 incident) makes the cascade record failures on
+          // every other candidate; the next request repeats the burn, and
+          // within minutes all candidates sit on escalated cooldowns while
+          // the originally limited model has long been available again.
+          const waitMaxMs = ctx.getRateLimitWaitMaxMs();
+          const resetInMs = result.resetAtMs && Number.isFinite(result.resetAtMs)
+            ? result.resetAtMs - Date.now()
+            : -1;
+          if (!rlResult.rotated && waitMaxMs > 0 && !rateLimitWaitUsed
+              && resetInMs > 0 && resetInMs <= waitMaxMs) {
+            rateLimitWaitUsed = true;
+            const waitSecs = Math.ceil(resetInMs / 1000);
+            routerLog(
+              `[router] ${ref} rate-limited with known near reset — waiting ${waitSecs}s, then retrying the same model (rate_limit_wait_max_ms=${waitMaxMs})`
+            );
+            pushRouterInfoLogged(
+              proxy,
+              `> [router] ${ref} — rate limited${resetMsg} — waiting ${waitSecs}s, then retrying…\n\n`
+            );
+            await sleepMs(resetInMs + 2000);
+            const retryTarget = await ctx.tryStream(ref, context, options).catch(() => null);
+            if (retryTarget) {
+              try {
+                const retryResult = await ctx.consumeWithDetection(
+                  retryTarget.stream, proxy,
+                  ctx.getEmptyResponseTimeout(ref),
+                  ctx.getStallTimeout(ref),
+                  String(ref)
+                );
+                if (retryResult.ok) {
+                  ctx.recordOk(ref);
+                  return;
+                }
+                if (retryResult.reason === 'aborted') return;
+                // Still failing after the reset window — record it, tell the
+                // user, and fall through to the normal cascade.
+                ctx.recordStreamFailure(ref, String(retryResult.reason), retryResult.resetAtMs);
+                pushError(ref, `still failing after wait: ${retryResult.reason}`);
+                pushRouterInfoLogged(
+                  proxy,
+                  `> [router] ${ref} — still failing after waiting (${retryResult.reason}), trying next…\n\n`
+                );
+              } finally {
+                ctx.releaseLocalSlot(ref);
+              }
+            }
+            continue;
+          }
+
+          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
           continue;
         }
@@ -757,10 +820,35 @@ export class StreamOrchestrator {
         if (secs < bestSecs) { bestSecs = secs; bestRef = ref; }
       }
       if (bestRef) {
-        routerLog(
-          `[router] Total cooldown collapse — all ${candidates.length} candidate(s) in cooldown. Force-retrying ${bestRef} (${bestSecs}s remaining).`
-        );
-        pushRouterInfo(proxy, `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`);
+        // Wait for the shortest cooldown instead of force-retrying into a
+        // KNOWN-unexpired cooldown. The old immediate force-retry was
+        // self-poisoning: it re-tried a model whose own cooldown said "wait
+        // Ns", the guaranteed failure recorded ANOTHER hit, and the
+        // escalating backoff pushed cooldowns far past the provider's real
+        // recovery — the 2026-09-27 incident where the router stayed dead for
+        // minutes while the API had long been fine (hard-selecting the model
+        // worked, proving the state machine had diverged from reality).
+        // Bounded by getRateLimitWaitMaxMs; long remaining times keep the old
+        // immediate force-retry semantics.
+        const waitMaxMs = ctx.getRateLimitWaitMaxMs();
+        if (waitMaxMs > 0 && bestSecs * 1000 <= waitMaxMs) {
+          routerLog(
+            `[router] Total cooldown collapse — all ${candidates.length} candidate(s) in cooldown. Waiting ${bestSecs}s for ${bestRef} (shortest cooldown), then retrying.`
+          );
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] All models in cooldown — waiting ${bestSecs}s for ${bestRef} (shortest cooldown), then retrying…\n\n`
+          );
+          await sleepMs(bestSecs * 1000 + 2000);
+        } else {
+          routerLog(
+            `[router] Total cooldown collapse — all ${candidates.length} candidate(s) in cooldown. Force-retrying ${bestRef} (${bestSecs}s remaining).`
+          );
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`
+          );
+        }
         ctx.router.setCurModel(bestRef);
         ctx.router.setActiveGroup(ctx.activeGroup);
         ctx.curModel = bestRef;

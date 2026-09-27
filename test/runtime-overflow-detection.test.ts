@@ -75,6 +75,7 @@ describe('estimateContextTokens: array message content', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
@@ -140,6 +141,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
@@ -202,6 +204,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
@@ -259,6 +262,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {

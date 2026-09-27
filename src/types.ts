@@ -17,6 +17,7 @@ export interface Defaults {
   empty_response_timeout_ms: number;
   reasoning_empty_response_timeout_ms: number;
   stall_timeout_ms: number;
+  rate_limit_wait_max_ms: number;
   ollama_max_concurrent_streams: number;
   strip_suffixes: string[];
 }
@@ -150,6 +151,14 @@ export interface Config {
   reasoning_empty_response_timeout_ms?: number;
   /** Override the mid-stream inactivity timeout (ms), after the first content token. */
   stall_timeout_ms?: number;
+  /** Max ms to WAIT for a rate-limited model whose reset time is known and
+   * near (instead of burning the whole candidate chain and recording
+   * failures on every other model). 0 disables waiting. Default 120s. */
+  rate_limit_wait_max_ms?: number;
+  /** Rate-limit backoff schedule in MINUTES (escalating per hit). Default [1,2,4,8,16,32,64,90]. */
+  backoff_minutes?: number[];
+  /** Soft-failure (empty response/stall) backoff schedule in ms. Default [30000,60000,120000,300000]. */
+  soft_backoff_ms?: number[];
   /** Max simultaneous streams to a LOCAL model server (ollama/lm-studio), to prevent OOM crashes. Default 1 (serial). */
   ollama_max_concurrent_streams?: number;
   /**

@@ -212,6 +212,36 @@ export class RateLimitManager {
   }
 
   /**
+   * Clears ALL cooldowns/backoffs (in-memory). Used by `/router cooldowns
+   * clear` as incident relief: after a cooldown-collapse spiral the state
+   * machine can stay dead long after the providers have recovered — a manual
+   * reset beats a full pi restart. Model-health streaks (cache.model_health)
+   * must be cleared separately — they persist in the cache file.
+   */
+  clearAllLimits(): number {
+    const n = this.limits.size;
+    this.limits.clear();
+    return n;
+  }
+
+  /** Human-readable listing of all active cooldowns (for /router cooldowns). */
+  listLimits(): { ref: string; secs: number; hits: number; resetAtMs?: number }[] {
+    const now = Date.now();
+    const out: { ref: string; secs: number; hits: number; resetAtMs?: number }[] = [];
+    for (const [ref, limit] of this.limits) {
+      if (limit.cooldown_until <= now) continue; // expired — skip
+      out.push({
+        ref,
+        secs: Math.ceil((limit.cooldown_until - now) / 1000),
+        hits: limit.hits,
+        ...(limit.resetAtMs && Number.isFinite(limit.resetAtMs) ? { resetAtMs: limit.resetAtMs } : {}),
+      });
+    }
+    out.sort((a, b) => a.secs - b.secs);
+    return out;
+  }
+
+  /**
    * Records a soft failure (empty response, timeout)
    */
   recordSoftFailure(ref: string): void {

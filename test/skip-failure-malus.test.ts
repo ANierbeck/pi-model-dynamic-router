@@ -69,6 +69,7 @@ describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
         // path this test exercises. billing:subscription marks it as sunk-cost
         // so applyGroupFilters keeps it.
         providers: { 'phantom-provider': { billing: 'subscription' } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       })
     );

@@ -45,3 +45,5 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0014 — HINT is the user's channel, MHINT is the router's; narration never feeds classification](0014-hint-channel-and-narration-hygiene.md)
 - [0015 — Test architecture: regression-first suite, per-file state and home isolation](0015-test-architecture.md)
 - [0016 — Local-provider watchdog for a wedged Ollama daemon](0016-local-provider-watchdog.md)
+- [0017 — Bounded wait-for-short-reset instead of burning the candidate chain](0017-wait-for-short-reset.md)
+- [0018 — HINT mechanism repair (pending root-cause analysis)](0018-hint-mechanism-repair.md)

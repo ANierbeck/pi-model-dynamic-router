@@ -70,6 +70,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: { 'rate-limited-model': 1000 },
       },
@@ -142,6 +143,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
       {
         free_models: [],
         providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: { 'paid-model': 1000 },
       },
