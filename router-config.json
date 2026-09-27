@@ -33,17 +33,17 @@
   },
   "model_groups": {
     "trivial": {
-      "description": "Trivial tasks - local daemon first, then free models",
+      "description": "Trivial tasks - free/subscription first, local Ollama as a fallback before PAYG",
       "method": "tiered",
-      "billing_preference": "strict_local",
+      "billing_preference": "local_before_payg",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": ["simple", "operational", "fallback"]
     },
     "simple": {
-      "description": "Simple tasks - local daemon first, then free or very cheap models",
+      "description": "Simple tasks - free/subscription first, local Ollama as a fallback before PAYG",
       "method": "tiered",
-      "billing_preference": "strict_local",
+      "billing_preference": "local_before_payg",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": ["operational", "fallback"]
@@ -98,9 +98,9 @@
       ]
     },
     "scout": {
-      "description": "Any available model, cheapest first — local $0-Modelle bevorzugt",
+      "description": "Any available model, cheapest first — cloud models preferred, local Ollama as last resort",
       "method": "tiered",
-      "billing_preference": "local_first",
+      "billing_preference": "cloud_first",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": [
@@ -131,7 +131,7 @@
     "bulk_reader": {
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
       "method": "tiered",
-      "billing_preference": "local_first",
+      "billing_preference": "cloud_first",
       "max_cost": 2.0,
       "min_context_length": 64000,
       "fallback_groups": ["operational", "scout", "fallback"]
@@ -139,7 +139,7 @@
     "code_writer": {
       "description": "Cheap-and-fast models with enough context for a spec+one reference file (boilerplate generation). Addressable as code_writer/code_writer from subagent workflows.",
       "method": "tiered",
-      "billing_preference": "local_first",
+      "billing_preference": "cloud_first",
       "max_cost": 2.0,
       "min_context_length": 32000,
       "fallback_groups": ["operational", "scout", "fallback"]
