@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 
 import type { Config, Cache, ProviderConfig, ProviderKey } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { piAgentDir } from './config-loader.ts';
 
 // NOTE (2026-09-02): the hardcoded CURATED_FREE_MODELS list that used to live
 // here has been REMOVED. It only worked for one user's provider setup (a user
@@ -26,7 +27,8 @@ import { PROVIDER_MAP } from './providers.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-const AUTH_PATH = path.join(homedir(), '.pi', 'agent', 'auth.json');
+// Pi's auth file in the active agent dir (PI_CODING_AGENT_DIR-aware).
+const authPath = () => path.join(piAgentDir(), 'auth.json');
 // ── Key-reference resolution (single source of truth) ────────────────────
 //
 // A provider key entry's `.key` field may be either a raw secret (legacy /
@@ -57,13 +59,13 @@ export interface AuthEntry {
 export type AuthData = Record<string, AuthEntry> | null;
 
 /**
- * Reads ~/.pi/agent/auth.json (the single auth source used by the
+ * Reads <agent dir>/auth.json (the single auth source used by the
  * __auth_json__ / __oauth__ markers). Returns {} on any read/parse error so
  * callers can treat a missing/unreadable auth file as "no auth entries".
  */
 export function loadAuthFile(): AuthData {
   try {
-    return JSON.parse(fs.readFileSync(AUTH_PATH, 'utf-8'));
+    return JSON.parse(fs.readFileSync(authPath(), 'utf-8'));
   } catch {
     return {};
   }
@@ -162,7 +164,7 @@ export class DiscoveryManager {
    * Saves PI's auth file
    */
   saveAuth(auth: any): void {
-    fs.writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2));
+    fs.writeFileSync(authPath(), JSON.stringify(auth, null, 2));
   }
 
   /**

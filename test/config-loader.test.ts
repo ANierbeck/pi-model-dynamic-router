@@ -177,6 +177,30 @@ describe('loadLayeredConfig', () => {
     expect(sources[1]).toBe(path.join(globalDir, 'router-config.user.json'));
   });
 
+  it('reads the global override from PI_CODING_AGENT_DIR when set (e.g. a separate work profile)', () => {
+    // ~/.pi/agent holds a file that must be IGNORED once Pi runs with a
+    // different agent dir — otherwise a second profile silently inherits
+    // (or, when ~/.pi is not mounted, silently loses) its user config.
+    fs.writeFileSync(
+      path.join(globalDir, 'router-config.user.json'),
+      JSON.stringify({ exclude: { models: ['from-default-dir'] } })
+    );
+    const workAgentDir = path.join(tmpDir, 'home', '.pi-work', 'agent');
+    fs.mkdirSync(workAgentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workAgentDir, 'router-config.user.json'),
+      JSON.stringify({ exclude: { models: ['*opus-5*'] } })
+    );
+    vi.stubEnv('PI_CODING_AGENT_DIR', workAgentDir);
+    try {
+      const { config, sources } = loadLayeredConfig(extDir, cwdDir);
+      expect(config.exclude?.models).toEqual(['*opus-5*']);
+      expect(sources[1]).toBe(path.join(workAgentDir, 'router-config.user.json'));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('merges a project-local override (.pi/router-config.json)', () => {
     fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
     fs.writeFileSync(

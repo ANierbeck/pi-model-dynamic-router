@@ -3,7 +3,8 @@
 //
 // Config sources, applied in order (later wins):
 //   1. Embedded defaults  — extDir/router-config.json (ships with the extension)
-//   2. Global user config — ~/.pi/agent/router-config.user.json (user overrides)
+//   2. Global user config — ~/.pi/agent/router-config.user.json (user overrides;
+//      $PI_CODING_AGENT_DIR/router-config.user.json when that is set)
 //   3. Project config     — <cwd>/.pi/router-config.json (per-project overrides)
 //
 // Each override file is a PARTIAL config (a "patch"): it only needs to contain
@@ -60,6 +61,15 @@ export interface ConfigLoadResult {
 }
 
 /**
+ * Pi's agent directory: follows Pi's own PI_CODING_AGENT_DIR (e.g. a separate
+ * work profile in ~/.pi-work/agent) and defaults to ~/.pi/agent. Resolved per
+ * call so a profile switch or a test stub is always observed.
+ */
+export function piAgentDir(): string {
+  return process.env.PI_CODING_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+}
+
+/**
  * Load the effective config by deep-merging embedded defaults with optional
  * global and project-local override files.
  *
@@ -79,8 +89,8 @@ export function loadLayeredConfig(
   let config: Config = JSON.parse(fs.readFileSync(defaultPath, 'utf-8'));
   sources.push(defaultPath);
 
-  // 2. Global user override (~/.pi/agent/router-config.user.json).
-  const globalOverridePath = path.join(homedir(), '.pi', 'agent', 'router-config.user.json');
+  // 2. Global user override (<agent dir>/router-config.user.json).
+  const globalOverridePath = path.join(piAgentDir(), 'router-config.user.json');
   const globalOverride = tryReadPartial(globalOverridePath, log);
   if (globalOverride) {
     config = deepMergeConfig(config, globalOverride);
