@@ -36,7 +36,7 @@ const authPath = () => path.join(piAgentDir(), 'auth.json');
 // discoverKeys():
 //   !pass show <path>            -> pass store lookup
 //   __cli_oauth__:<file>:<field> -> read a field from a CLI OAuth json file
-//   __auth_json__:<authKey>      -> read from ~/.pi/agent/auth.json (this is
+//   __auth_json__:<authKey>      -> read from <agent dir>/auth.json (this is
 //                                 how auth.json-sourced keys are stored so
 //                                 the raw secret is never serialized into
 //                                 the tracked router-config.json)

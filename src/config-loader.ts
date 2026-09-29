@@ -62,11 +62,18 @@ export interface ConfigLoadResult {
 
 /**
  * Pi's agent directory: follows Pi's own PI_CODING_AGENT_DIR (e.g. a separate
- * work profile in ~/.pi-work/agent) and defaults to ~/.pi/agent. Resolved per
- * call so a profile switch or a test stub is always observed.
+ * work profile in ~/.pi-work/agent) and defaults to ~/.pi/agent. A leading ~
+ * is expanded like Pi's getAgentDir() does, because node:fs never expands it
+ * and a value set without a shell (.env file, programmatic setter) would
+ * otherwise silently hide auth.json and the user config. Resolved per call so
+ * a profile switch or a test stub is always observed.
  */
 export function piAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR || path.join(homedir(), '.pi', 'agent');
+  const dir = process.env.PI_CODING_AGENT_DIR;
+  if (!dir) return path.join(homedir(), '.pi', 'agent');
+  if (dir === '~') return homedir();
+  if (dir.startsWith('~/')) return path.join(homedir(), dir.slice(2));
+  return dir;
 }
 
 /**

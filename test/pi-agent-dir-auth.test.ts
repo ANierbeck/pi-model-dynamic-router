@@ -24,6 +24,27 @@ describe('PI_CODING_AGENT_DIR-aware agent dir', () => {
     expect(piAgentDir()).toBe(path.join(os.homedir(), '.pi', 'agent'));
   });
 
+  // Pi's own getAgentDir() expands a leading ~ in PI_CODING_AGENT_DIR. A value
+  // set without shell expansion (.env file, programmatic setter) would
+  // otherwise yield a literal "~/..." path that node:fs cannot open, silently
+  // dropping auth.json and router-config.user.json.
+  it('piAgentDir expands a leading ~ like Pi does', () => {
+    vi.stubEnv('PI_CODING_AGENT_DIR', '~');
+    expect(piAgentDir()).toBe(os.homedir());
+    vi.stubEnv('PI_CODING_AGENT_DIR', '~/work/agent');
+    expect(piAgentDir()).toBe(path.join(os.homedir(), 'work', 'agent'));
+  });
+
+  it('loadAuthFile reads auth.json from a ~-relative PI_CODING_AGENT_DIR', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.homedir(), '.pi-agent-dir-test-'));
+    fs.writeFileSync(
+      path.join(tmpDir, 'auth.json'),
+      JSON.stringify({ requesty: { type: 'api_key', key: 'tilde-marker' } })
+    );
+    vi.stubEnv('PI_CODING_AGENT_DIR', `~/${path.basename(tmpDir)}`);
+    expect(loadAuthFile()).toEqual({ requesty: { type: 'api_key', key: 'tilde-marker' } });
+  });
+
   it('loadAuthFile reads auth.json from PI_CODING_AGENT_DIR', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-agent-dir-'));
     fs.writeFileSync(

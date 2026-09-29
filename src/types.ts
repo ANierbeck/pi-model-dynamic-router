@@ -363,7 +363,7 @@ export interface Cache {
 
 export interface ProviderDef {
   envVar?: string; // e.g. "ANTHROPIC_API_KEY"
-  authKey?: string; // key in ~/.pi/agent/auth.json
+  authKey?: string; // key in <agent dir>/auth.json (PI_CODING_AGENT_DIR-aware, see piAgentDir)
   passPatterns?: string[]; // glob-ish prefixes to match in `pass ls`
   cliAuthFiles?: { path: string; tokenField: string }[]; // CLI tool auth files
   local?: boolean; // ollama/lm-studio — no key needed
