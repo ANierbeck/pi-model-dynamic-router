@@ -2294,8 +2294,9 @@ let previousTokenCount = 0;
     // ALL — checking only free_models is not enough (MEDIUM finding, roborev
     // job 305): a provider registered by another path with a models list
     // that doesn't yet include a free model would pass a free-only guard and
-    // still get wiped. Use getRegisteredProviderIds (already used at
-    // index.ts:1247) for the authoritative 'is the provider known' check.
+    // still get wiped. Use getRegisteredProviderIds (already used by the
+    // session_start diagnostics) for the authoritative 'is the provider known'
+    // check.
     const registeredProviderIds: string[] =
       (sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() ?? [];
     if (registeredProviderIds.includes(provider)) return false;
