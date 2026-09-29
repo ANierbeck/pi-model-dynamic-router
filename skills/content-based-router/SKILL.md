@@ -10,7 +10,13 @@ appropriate model based on the request's **complexity/category**.
 > **mistral-nemo:latest** (primary) with **gemma2:2b** as the local
 > fallback and a cloud-first candidate chain (see the README section
 > "Dynamic Group" for the shipped behavior). No user confirmation is
-> involved at runtime; categories map straight to model groups.
+> involved at runtime, and there is **no cost-based rerouting**: categories
+> map straight to model groups via the shipped `CATEGORY_TO_GROUP` table
+> (`src/content-classifier.ts`). Anything in this document that reads like
+> a runtime prompt to the user ("Should I use a cheaper model?" — section 3
+> fallback logic, the pseudocode at the end) is a **sketch idea that was
+> never shipped**. Sections marked "shipped" describe real behavior;
+> sections marked "sketch" describe the original proposal.
 
 ---
 
@@ -34,8 +40,14 @@ A light local model (shipped: `ollama/mistral-nemo:latest`, local fallback
 `ollama/gemma2:2b`) analyzes the user's request and classifies it into one
 of the following categories:
 
+The categories **shipped** in `src/content-classifier.ts` (the authoritative
+list — the original sketch had only six):
+
 | Category           | Description                                                                   | Example                                                                   |
 |--------------------|------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `trivial`          | Greetings, one-liners, questions about the router itself.                    | `"Hi"`                                                                    |
+| `simple`          | Simple conversational requests.                                              | `"Thanks, that worked"`                                                   |
+| `standard`        | Everyday tasks with no special shape.                                       | `"Summarize this file"`                                                   |
 | `code_simple`      | Simple code changes (1–10 lines, syntax fixes, typos).                       | `"Replace 'foo' with 'bar' in line 42"`                                  |
 | `code_complex`     | Complex code changes (refactoring, debugging, >50 lines).                    | `"Optimize this 200-line function for performance"`                      |
 | `design`           | Architecture, system design, API design.                                     | `"Design an event-sourcing architecture for an e-commerce system"`       |
@@ -43,30 +55,43 @@ of the following categories:
 | `exploration`      | Research, unclear requirements, brainstorming.                                | `"Which database would be suitable for 10M IoT devices?"`                |
 | `fallback`         | Unclear, or several categories apply.                                         | `"Help"` or `"Make everything better"`                                   |
 
-### 2. Routing decision
-Based on the category, a **model group** is selected:
+### 2. Routing decision (shipped)
+Based on the category, a **model group** is selected via the shipped
+`CATEGORY_TO_GROUP` table (`src/content-classifier.ts:883`). Example models
+are illustrative only — the router picks the concrete model per group from
+GDPval/cost/availability at runtime:
 
-| Category           | Target group        | Example models                                                              |
+| Category           | Target group        | Rationale (shipped comment)                                                  |
 |--------------------|---------------------|-----------------------------------------------------------------------------|
-| `code_simple`      | `operational`       | `ollama/phi3:mini`, `mistral-tiny` (local, fast, cheap)                     |
-| `code_complex`     | `tactical`          | `mistral-medium`, `deepseek-coder` (remote, cheap, good code quality)      |
-| `design`           | `strategic`         | `claude-opus`, `gpt-4o` (best available option)                             |
-| `planning`         | `tactical`          | `mistral-medium`, `claude-sonnet` (good quality/cost balance)              |
-| `exploration`      | `scout`             | `ollama/gemma2:2b`, `mistral-tiny` (cheap, fast)                           |
-| `fallback`         | user confirmation   | Ask the user which model to use.                                            |
+| `trivial`          | `scout`             | any free model                                                              |
+| `simple`           | `operational`       | GDPval ≥ 300                                                                 |
+| `standard`        | `operational`       | GDPval ≥ 300                                                                |
+| `code_simple`      | `simple`            | GDPval ≥ 300, max_cost=0 (free models only)                                 |
+| `code_complex`     | `tactical`          | GDPval ≥ 600                                                                 |
+| `design`           | `tactical`          | GDPval ≥ 600                                                                 |
+| `planning`         | `tactical`          | GDPval ≥ 600                                                                 |
+| `exploration`      | `scout`             | any model, cheap                                                             |
+| `fallback`         | `tactical`          | uncertain → use a decent model, not a free one                              |
+
+Note: nothing maps to `strategic`, and there is no "user confirmation"
+branch — the original sketch's `design → strategic` and
+`fallback → ask the user` rows were never shipped.
 
 ### 3. Integration into the existing router
-- **Hook**: use Pi's real-time analysis **before** routing.
-- **Workflow**:
-  1. User sends a prompt.
-  2. **Classification**: the prompt is analyzed (shipped: cloud-first
-     chain when enabled, then the local models above).
-  3. **Routing**: a group is selected based on the category (e.g.
-     `code_simple` → `operational`).
+- **Integration point (shipped)**: there is no `before_user_prompt` hook —
+  the `dynamic` group's `groupStream` runs the classifier inline when a
+  prompt is routed to it (see `src/stream-orchestrator.ts` and
+  `src/content-classifier.ts`).
+- **Workflow (shipped)**:
+  1. User sends a prompt while the active model is the `dynamic` group.
+  2. **Classification**: the prompt is analyzed (cloud-first chain when
+     `classifier_cloud_fallback` is enabled, then the local models above).
+  3. **Routing**: a group is selected via `CATEGORY_TO_GROUP` (e.g.
+     `code_simple` → `simple`).
   4. **Model selection**: the existing router picks the best model from
      the group (based on GDPval, cost, availability).
-  5. **Fallback**: on high cost or uncertainty → the `fallback` group
-     (shipped behavior; the sketch below proposed asking the user).
+  5. **Uncertain classification**: the `fallback` category routes to
+     `tactical` — no user prompt, no cost gate.
 
 ---
 
@@ -101,8 +126,12 @@ Classify the following request into **exactly one** of the categories:
 | "Which database is suitable for real-time analytics over 10M records?"       | `exploration`      | Open question without clear requirements.                                  |
 | "Make this better."                                                            | `fallback`         | Unclear what is meant.                                                      |
 
-### 3. Fallback logic
-- **Cost check**: if the estimated tokens are >5000 or the cost is >$0.50:
+### 3. Fallback logic (sketch — NOT shipped)
+The original proposal asked the user on cost or uncertainty. **None of this
+shipped**: the shipped classifier routes `fallback` → `tactical`
+automatically and never consults the user. Kept for design history:
+
+- **Cost check (sketch)**: if the estimated tokens are >5000 or the cost is >$0.50:
   ```text
   This request would use ~${costs} in ${model}. Should I use a cheaper model (e.g. Ollama) instead?
   ```
@@ -117,12 +146,13 @@ Classify the following request into **exactly one** of the categories:
 
 ---
 
-## Dependencies
+## Dependencies (shipped)
 - **Local model**: `ollama/mistral-nemo:latest` (shipped primary) with
   `ollama/gemma2:2b` as the local fallback (or `ollama/phi3:mini` for
   better accuracy on small hardware).
-- **Token estimation**: `tiktoken` or `gpt-tokenizer` for cost estimation.
-- **Pi hooks**: real-time analysis before prompt routing.
+- **No token-estimation or user-confirmation dependency**: the sketch's
+  `tiktoken`/`gpt-tokenizer` cost gate was never implemented — the
+  classifier returns `{ category, reason }` and routing is automatic.
 
 ---
 
@@ -132,7 +162,8 @@ Classify the following request into **exactly one** of the categories:
    - *Test*: manual evaluation with 20–30 example prompts.
 2. **Performance**: how long does classification take (target: <500ms)?
 3. **Fallback strategy**: should `fallback` always ask, or select a
-   default group (e.g. `tactical`)? — *Shipped answer: a `fallback` group.*
+   default group (e.g. `tactical`)? — *Shipped answer: route `fallback` →
+   the `tactical` group automatically (`CATEGORY_TO_GROUP`); no asking.*
 4. **User control**: should the user be able to override the
    classification (e.g. via a `/model-hint complex` prefix)? — *Shipped
    answer: yes, the HINT prefix mechanism.*
@@ -153,7 +184,11 @@ Classify the following request into **exactly one** of the categories:
 
 ---
 
-## Example code (pseudocode)
+## Example code (pseudocode — NOT shipped, design sketch only)
+
+Nothing below runs in the router: the real integration is the `dynamic`
+group's `groupStream` (no `pi.hooks` API, no `askUser`, no cost
+confirmation):
 ```javascript
 // Classification function
 async function classifyPrompt(prompt) {
@@ -172,7 +207,7 @@ async function classifyPrompt(prompt) {
 // Routing
 pi.hooks.before_user_prompt(async ({ prompt, context }) => {
   const { category, reason } = await classifyPrompt(prompt);
-  const group = categoryToGroup[category] || "tactical"; // fallback
+  const group = categoryToGroup[category]; // shipped: CATEGORY_TO_GROUP covers every category
   const model = await router.resolveModelGroup(group);
 
   if (estimatedCost(prompt, model) > 0.50) {

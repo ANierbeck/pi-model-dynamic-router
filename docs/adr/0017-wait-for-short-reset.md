@@ -7,7 +7,7 @@ Accepted (2026-09-27) — replaces the first draft ("Explicit reset time in the 
 
 Observed chain (fully reconstructed from router.log):
 
-1. **12:36:11** — `zai-glm-5-3` hits a real Mistral TPM limit with a known, short reset: "resets 27.9.2026, 14:37:11" — **60 seconds**. All Mistral models share the account-wide TPM; the subsequent candidates report the same +60s pattern (14:37:14, :17, :21).
+1. **12:36:11 UTC** — `zai-glm-5-3` hits a real Mistral TPM limit with a known, short reset: "resets 27.9.2026, 14:37:11" — **60 seconds**. (14:37:11 is the provider's local-time reset rendering — Europe/Berlin CEST in this case, i.e. 12:37:11 UTC — the two timestamps are the same instant, not 2 hours apart.) All Mistral models share the account-wide TPM; the subsequent candidates report the same +60s pattern (14:37:14, :17, :21).
 2. The router cascades **immediately** through all candidates instead of waiting 60s. Each candidate gets a failure record (422 → "likely rate limit", rate limits, empty responses).
 3. The running agent turn fires many tool-call requests in a row → **every request burns the whole chain again** → 2 failures / 15 min per model → escalating backoffs.
 4. **12:37:11** — zai is really available again (TPM window elapsed). The router doesn't notice: the cascade keeps running.
@@ -53,7 +53,9 @@ In the total-cooldown collapse: if the shortest remaining time `bestSecs ≤ rat
 
 ## Related documents
 - ADR-0008 (Learned Blocklist) — permanent provider defects
-- ADR-0011 (HINT repair) — independent
+- ADR-0018 (HINT mechanism repair) — independent
+- ADR-0014 (HINT channel and narration hygiene) — the channel that surfaced
+  the reset-time narration quoted above
 - `src/rate-limit.ts` — recordLimit (resetAtMs-aware), recordSoftFailure
 
 ---

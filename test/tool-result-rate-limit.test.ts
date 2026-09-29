@@ -7,8 +7,10 @@
 // (footer ⚠N err and /router errors missed them).
 //
 // This integration test drives the REAL extension through both halves of
-// the fix: unified detection (isRateLimitText) and routing through
-// recordStreamFailure (ring-buffer entry + consequence).
+// the fix: detection on the tool path (the narrow isToolResultRateLimitText
+// subset of the unified table — broad enough for real throttling wording,
+// narrow enough to ignore ordinary tool errors like "out of memory") and
+// routing through recordStreamFailure (ring-buffer entry + consequence).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -129,6 +131,7 @@ describe('tool_result rate-limit detection', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeNoOpScanCache(scanCachePath);
     }
   });
 
@@ -241,6 +244,123 @@ describe('tool_result rate-limit detection', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeNoOpScanCache(scanCachePath);
+    }
+  });
+
+  it('does NOT treat ordinary tool errors like "out of memory" / "quota exceeded" as rate limits', async () => {
+    // Roborev review of c8a087e (MEDIUM): the full isRateLimitText table
+    // ('out of', 'exceeded', 'quota', 'credits', 'overloaded', …) matches
+    // everyday tool errors — bash stderr, sub-process crashes — and a match
+    // means a hard cooldown + key rotation on the CURRENT model. The
+    // tool_result path must use the narrow isToolResultRateLimitText set.
+    const tmpDir = fs.mkdtempSync('/tmp/toolresult-oom-');
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.pi', 'router-config.json'),
+      JSON.stringify({
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        rate_limit_wait_max_ms: 0,
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        gdpval_builtin: { 'paid-model': 1000 },
+      })
+    );
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+    writeNoOpScanCache(scanCachePath);
+
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const defaultExport = mod.default as any;
+
+      const onHandlers: Record<string, Array<(ev: any, ctx: any) => any>> = {};
+      const pi: any = {
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn((event: string, handler: any) => {
+          (onHandlers[event] ??= []).push(handler);
+        }),
+      };
+      defaultExport(pi);
+
+      const paidModel = {
+        provider: 'paid-cloud-provider',
+        id: 'paid-model',
+        api: 'openai-completions',
+        contextWindow: 1_000_000,
+        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+      };
+      const streamSimple = vi.fn(() =>
+        (async function* () {
+          yield { type: 'text_delta', delta: 'working on it' };
+          yield { type: 'done' };
+        })()
+      );
+      const modelRegistry = {
+        getAvailable: () => [paidModel],
+        find: (_p: string, modelId: string) => (modelId === 'paid-model' ? paidModel : null),
+        getApiKeyForProvider: async () => null,
+        runtime: { streamSimple },
+      };
+      const notify = vi.fn();
+      const ctx: any = {
+        modelRegistry,
+        cwd: tmpDir,
+        ui: { setFooter: vi.fn(), notify },
+      };
+      for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
+      await flushBackgroundScan();
+      for (const h of onHandlers['turn_start'] ?? []) {
+        await h({}, { ...ctx, model: paidModel });
+      }
+      await drainStream(
+        defaultExport.groupStream(
+          { provider: 'standard', id: 'standard' },
+          { messages: [{ role: 'user', content: 'do the thing' }] } as any,
+          {}
+        )
+      );
+
+      // Ordinary tool failures whose wording collides with the broad table:
+      // 'out of', 'exceeded', 'quota', 'overloaded', 'credits'… none of
+      // these is provider throttling.
+      const ordinaryToolErrors = [
+        'Error: out of memory',
+        'cp: cannot create file: disk quota exceeded',
+        'ValueError: index 5 is out of range for axis 0 with size 3',
+        'server overloaded: retry later (local shard, exit 1)',
+      ];
+      for (const txt of ordinaryToolErrors) {
+        for (const h of onHandlers['tool_result'] ?? []) {
+          await h({ isError: true, content: [{ type: 'text', text: txt }] }, ctx);
+        }
+      }
+
+      // Non-vacuous pin: the model must still stream cleanly (no
+      // cooldown-collapse narration) and leave no ring-buffer entry.
+      const events = await drainStream(
+        defaultExport.groupStream(
+          { provider: 'standard', id: 'standard' },
+          { messages: [{ role: 'user', content: 'do the thing again' }] } as any,
+          {}
+        )
+      );
+      const allText = JSON.stringify(events);
+      expect(allText).not.toContain('cooldown');
+
+      for (const h of onHandlers['session_shutdown'] ?? []) await h({ reason: 'quit' });
+      const persisted = JSON.parse(fs.readFileSync(scanCachePath, 'utf-8'));
+      const entry = (persisted.session_errors ?? []).find(
+        (e: any) => e.ref === 'paid-cloud-provider/paid-model' && e.reason === 'rate_limit_exceeded'
+      );
+      expect(entry).toBeUndefined();
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeNoOpScanCache(scanCachePath);
     }
   });
 });

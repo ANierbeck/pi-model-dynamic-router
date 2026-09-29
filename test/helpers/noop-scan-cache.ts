@@ -67,9 +67,9 @@ export function writeNoOpScanCache(scanCachePath: string): void {
  * ALWAYS ends with an unconditional `saveCache()` (outside any of its
  * early-return gates), which persists to the same state-dir-relative
  * scan-cache.json (PI_ROUTER_STATE_DIR/.cache/scan-cache.json — a fresh
- * empty dir per test file via isolate-home.ts) this helper
- * backs up/restores. With fetch
- * stubbed to reject (writeNoOpScanCache), scan() settles in a handful of
+ * empty dir per test file via isolate-home.ts) that this helper
+ * backs up/restores. With fetch stubbed to reject (writeNoOpScanCache),
+ * scan() settles in a handful of
  * microtask ticks — but "a handful of ticks" is still nondeterministic
  * relative to a test's own cleanup. Call this right after firing
  * session_start so scan()'s harmless (stub-derived) saveCache() write lands

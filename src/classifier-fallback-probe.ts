@@ -77,8 +77,13 @@ const MAX_PROBE_CANDIDATES = 20;
 /** Max working models to keep in the cached list. */
 const MAX_WORKING_MODELS = 8;
 
-/** Per-case probe timeout (ms). */
-const PROBE_TIMEOUT_MS = 15_000;
+/**
+ * Per-case probe timeout (ms). Exported because the runtime cloud fallback
+ * chain (src/content-classifier.ts) defaults its per-candidate cap to this
+ * value — probe/runtime parity must be structural, not two coincidentally
+ * equal literals (roborev review of 8a19c5c, LOW).
+ */
+export const PROBE_TIMEOUT_MS = 15_000;
 
 // --- Quality probe cases -----------------------------------------------
 // The probe validates the CLASSIFICATION task itself, not just reachability:

@@ -6,7 +6,7 @@ import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
 import { routerLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
-import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback } from './classifier-fallback-probe.ts';
+import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
 import {
   buildContextBlock,
   buildClassificationPrompt,
@@ -261,8 +261,11 @@ const FALLBACK_TIMEOUT = 10_000;
 // Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
 // v1.6.0 review): probe parity — the scan-time probe caps each candidate at
 // PROBE_TIMEOUT_MS, but the runtime loop previously had no cap at all, so a
-// single hung cloud request stalled the whole turn forever.
-const CLASSIFIER_CLOUD_TIMEOUT_MS = 15_000;
+// single hung cloud request stalled the whole turn forever. Defaulting to
+// the probe's exported constant makes the parity guarantee structural —
+// bumping PROBE_TIMEOUT_MS updates both sides together (roborev review of
+// 8a19c5c, LOW); the per-call cloudTimeoutMs override stays available.
+const CLASSIFIER_CLOUD_TIMEOUT_MS = PROBE_TIMEOUT_MS;
 const MIN_CONFIDENCE = 0.5;
 const CONTINUATION_MAX_WORDS = 4;
 

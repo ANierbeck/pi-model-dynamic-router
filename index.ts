@@ -84,6 +84,7 @@ import {
 import { pushStreamError, pushRouterInfo, pushRouterInfoLogged, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
 import {
   isRateLimitText,
+  isToolResultRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
   OVERFLOW_TEXT_SCAN_MAX_CHARS,
@@ -1308,13 +1309,9 @@ let previousTokenCount = 0;
 
       // Update in-memory cfg immediately so the new fallback_groups and model lists
       // are available for the current session without requiring a restart.
-      // Delegation settings are user intent (ADR-0007 revision) — always
-      // from the static layered config, never from the dynamic config.
-      if (staticCfg.delegation) {
-        (dynamicConfig as Config).delegation = staticCfg.delegation;
-      } else {
-        delete (dynamicConfig as Config).delegation;
-      }
+      // Delegation (and every other DYNAMIC_CONFIG_RESYNC_KEYS entry, among
+      // them delegation — user intent per the ADR-0007 revision) was already
+      // re-synced from staticCfg by the loop above; no special case remains.
       cfg = dynamicConfig as Config;
       // A mid-turn scan (a tool calling load()) replaces the Router, which
       // would drop both curModel and the turn's pinned driving ref — leaving
@@ -2084,14 +2081,18 @@ let previousTokenCount = 0;
       // txt.includes('429') || txt.toLowerCase().includes('rate limit') —
       // matched ANY 429 substring ("1429 lines", a curl'd 429 from an
       // unrelated host, test output) and attributed a hard cooldown + key
-      // rotation to the current model on that evidence alone. Unified
-      // detection: isRateLimitText's 15-wording pattern table (shared with
-      // every other rate-limit site) requires actual rate-limit wording.
+      // rotation to the current model on that evidence alone.
+      // Tool results are command output, not provider-transport text, so
+      // the full isRateLimitText table is TOO BROAD here ('out of',
+      // 'exceeded', 'quota', 'credits', 'overloaded' match "Error: out of
+      // memory" or "disk quota exceeded"); the narrow isToolResultRateLimitText
+      // keeps only unambiguous throttling wording (roborev review of
+      // c8a087e, MEDIUM).
       // Routing through recordStreamFailure instead of a bare recordLimit:
       // the event now also lands in the session_errors ring buffer (footer
       // ⚠N err + /router errors) instead of silently bypassing it, and the
       // same seam decides hard vs soft + rotation for every failure shape.
-      if (isRateLimitText(txt)) {
+      if (isToolResultRateLimitText(txt)) {
         const result = recordStreamFailure(curModel, 'rate_limit_exceeded', undefined, txt);
         if (result.rotated && result.newKey) {
           ctx.ui.notify(
@@ -2253,20 +2254,37 @@ let previousTokenCount = 0;
       // here clobbers the embedded defaults with one machine's state: user
       // overrides and computed model_groups leak into the shipped file and
       // from there into every other layer source (final v1.6.0 review I1).
-      let embeddedCfg: Record<string, any> = {};
+      let embeddedCfg: Record<string, any> | undefined;
       try {
         const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
         if (raw && typeof raw === 'object' && !Array.isArray(raw)) embeddedCfg = raw;
-      } catch {
-        // Unreadable/missing embedded file — fall back to a minimal
-        // delta-only write rather than losing the metrics update.
+      } catch (err) {
+        // Unreadable/missing/corrupted embedded file — REFUSE to write.
+        // Persisting a delta-only stub ({ model_metrics: { … } } and nothing
+        // else) would replace the shipped defaults (providers, model_groups,
+        // exclude, …) with an empty base layer and break every future load()
+        // on this install (roborev review of e0d8159, MEDIUM). Losing one
+        // ephemeral metrics update is strictly the lesser harm.
+        routerLog(
+          `[router] update_model_metrics: embedded config unreadable, refusing to write to avoid clobbering: ${err}`
+        );
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Updated metrics for ${p.model_ref} in memory, but the embedded router-config.json is unreadable — the update was NOT persisted to avoid clobbering the shipped defaults.`,
+            },
+          ],
+          details: { model_ref: p.model_ref, metrics: e },
+        };
       }
-      const existingEntry = embeddedCfg.model_metrics?.[p.model_ref] ?? {};
-      embeddedCfg.model_metrics = {
-        ...(embeddedCfg.model_metrics ?? {}),
+      const base = embeddedCfg!;
+      const existingEntry = base.model_metrics?.[p.model_ref] ?? {};
+      base.model_metrics = {
+        ...(base.model_metrics ?? {}),
         [p.model_ref]: { ...existingEntry, ...e },
       };
-      fs.writeFileSync(cfgPath, JSON.stringify(embeddedCfg, null, 2));
+      fs.writeFileSync(cfgPath, JSON.stringify(base, null, 2));
       // Update metrics cache with new values from config
       const existingMetrics = metricsModule.getM(p.model_ref);
       if (existingMetrics) {
@@ -3194,6 +3212,12 @@ async function registerGroupModels(ctx: any) {
     // defaults (vision: false, reasoning: false) when the provider didn't
     // report them — so a model is never falsely advertised as vision-capable.
 
+    // Pre-loop snapshot (hoisted out of the loop, roborev review of 8a19c5c,
+    // LOW): safe only because every current pricingAlias target is a
+    // pi-builtin already registered before this loop. If a future alias
+    // target were a non-builtin registered earlier in iteration order, the
+    // snapshot would miss it and the alias-shadow rule would break —
+    // recompute inside the loop instead.
     const piKnownProviders = piKnownProviderSet(ctx);
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
       if (!def.baseUrl || !def.api) continue;
@@ -3280,11 +3304,14 @@ async function registerGroupModels(ctx: any) {
       // fields instead.
       //
       // Pi 0.99.1 (ADR-0019): the registry composes providers as builtin
-      // catalog + models.json + extension overlay, getAll() returns models of
-      // ALL types, and an extension registration with `models` replaces the
-      // composed list wholesale. The builtin catalogs ship non-chat inventory
-      // under ids we re-register (openrouter alone: 53 image + 8 classifier
-      // models, jev family included). A chat-only round-trip would corrupt the
+      // catalog + models.json + extension overlay, and an extension
+      // registration with `models` replaces the composed list wholesale.
+      // getAll() returns CHAT models only — non-chat inventory (image,
+      // classifier) is reachable solely via getModelsOfType(type, provider),
+      // which the union below includes (feature-detected). The builtin
+      // catalogs ship non-chat inventory under ids we re-register (openrouter
+      // alone: 398 chat + 57 image + 7 classifier models, jev family included).
+      // A chat-only round-trip would corrupt the
       // registry twice over: wipe the model entries AND re-register any
       // survivor as a chat model (`type` lost). The conditional spreads below
       // preserve `type`/`output`/`inputLimits`/`promptCache` when present —
@@ -3313,9 +3340,27 @@ async function registerGroupModels(ctx: any) {
         // the provider entirely on a throw.
         let piKnownModels: any[] = [];
         try {
-          piKnownModels = ((ctx.modelRegistry as any).getAll?.() ?? []).filter(
+          const reg = ctx.modelRegistry as any;
+          // Pi 0.99.1 (ADR-0019): getAll() is CHAT-ONLY — it resolves to
+          // runtime.getModels(), whose per-provider getModels() filters
+          // isModelType(m, "chat") (pi-ai dist/models.js:572). Non-chat
+          // inventory (image/classifier) is reachable only via
+          // getModelsOfType(type, provider), which reads through
+          // getAllModels() without the chat filter. Union all three sources
+          // or the registerProvider replace below wipes the provider's
+          // non-chat models (openrouter alone: 57 image + 7 classifier).
+          // Feature-detected: hosts without the method (0.87.1 rollback
+          // target, 0.83 devDeps) skip it and keep the chat-only union.
+          const chatModels = (reg.getAll?.() ?? []).filter(
             (m: any) => m.provider === provId
           );
+          const nonChatOfType = (type: string): any[] =>
+            typeof reg.getModelsOfType === 'function'
+              ? ((reg.getModelsOfType(type, provId) ?? []) as any[]).filter(
+                  (m: any) => m.provider === provId
+                )
+              : [];
+          piKnownModels = [...chatModels, ...nonChatOfType('image'), ...nonChatOfType('classifier')];
         } catch {
           piKnownModels = [];
         }
@@ -3360,6 +3405,12 @@ async function registerGroupModels(ctx: any) {
             ...(m.output !== undefined ? { output: m.output } : {}),
             ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
             ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
+            // ADR-0019 maintenance duty: samplingParams is a real 0.99.1
+            // Model field (Model.samplingParams?, pi-ai types.d.ts:930) —
+            // unset by every builtin catalog model but carryable by user
+            // models.json entries; stripping it silently changed sampling
+            // behavior on round-trip (roborev review round, MEDIUM).
+            ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
           }));
           // Note: EVERY field above is a conditional spread — the round-trip
           // emits exactly the fields the pi-known model carries, nothing else.

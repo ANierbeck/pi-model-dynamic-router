@@ -40,3 +40,9 @@ Full reconstruction in ADR-0017. Short version: a 60s TPM window was ignored →
 ## Open (separate)
 - ADR-0018 HINT repair (its own round; MHINT behavior during the incident window stood out — noted as input for the analysis)
 - mistral-small-latest demotion (C step) — decision after the first new stopReason evidence
+
+---
+**Created:** 2026-09-27 · **Last change:** 2026-09-27 (translated to English
+2026-09-30 per AGENTS.md §3) · **State:** Implemented 2026-09-27 (commit
+`c59e0c7` "wait for near rate-limit resets instead of burning the candidate
+chain"; ADR-0017 documents the incident and the decision)

@@ -3,21 +3,27 @@
  * docs/plans/2026-09-30-router-0.99.1-hardening.md).
  *
  * Pi 0.99.1 composes each provider as builtin catalog + models.json +
- * extension overlay, and `modelRegistry.getAll()` returns models of ALL
- * types (chat, image, classifier) for a provider. The builtin openrouter
- * catalog alone ships 53 image models and 8 classifier models (jev family).
+ * extension overlay, and `registerProvider(prov, { models })` replaces the
+ * composed list wholesale — ADR-0005/0019. CRITICAL API FACT (verified
+ * against the @earendil-works/pi-ai 0.99.1 tarball, dist/models.js:572):
+ * `modelRegistry.getAll()` returns CHAT models only — it resolves to
+ * runtime.getModels(), whose per-provider getModels() filters
+ * isModelType(m, "chat"). Non-chat inventory (image, classifier) is
+ * reachable ONLY via getModelsOfType(type, provider). The builtin openrouter
+ * catalog alone ships 398 chat, 57 image, and 7 classifier models (jev
+ * family included).
  *
- * The scan-union re-registration round-trips pi-known models before calling
- * registerProvider (whose `models` field replaces the composed list
- * wholesale — ADR-0005/0019). Its field allow-list was chat-only: no `type`,
- * no `output`, no `inputLimits`. Under 0.99.1 that does not merely risk a
- * wipe — a non-chat model that survives the union is re-registered AS A
- * CHAT MODEL (type lost), corrupting the chat list (e.g. an image model
- * becoming chat-selectable).
+ * The scan-union re-registration must therefore round-trip pi-known models
+ * from getAll() ∪ getModelsOfType("image") ∪ getModelsOfType("classifier")
+ * before calling registerProvider — a chat-only union wipes the provider's
+ * non-chat models, and the original field allow-list was chat-only besides:
+ * no `type`, no `output`, no `inputLimits` (a non-chat model that survived
+ * the union was re-registered AS A CHAT MODEL, corrupting the chat list).
  *
- * The union must therefore preserve `type` and the non-chat fields through
- * the round-trip. On 0.87.1 hosts the spreads are conditional (fields
- * absent on their chat-only models), so behavior there is unchanged.
+ * The mock below mirrors the REAL 0.99.1 ModelRegistry contract exactly
+ * (chat-only getAll; getModelsOfType/findOfType for non-chat) — an earlier
+ * version returned all types from getAll(), validating a fiction while
+ * reporting green (roborev review round, HIGH).
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -54,6 +60,11 @@ async function withIsolatedRouter(
       // Numeric epoch ms (an ISO string is not a valid timestamp and made the
       // background scan regenerate and write into the next test).
       lastScanTimestamp: Date.now(),
+      // Hermetic fixtures (roborev review round): without gdpval_scraped
+      // the background scan scrapes GDPval from the network; without
+      // models_cached it re-fetches model inventories.
+      gdpval_scraped: true,
+      models_cached: new Date().toISOString(),
       dynamic_config_expected: false,
     })
   );
@@ -84,6 +95,10 @@ const knownChat = {
   contextWindow: 128_000,
   maxTokens: 8_000,
   compat: { supportsStore: false },
+  // Real 0.99.1 Model field (pi-ai dist/types.d.ts:930): unset by every
+  // builtin catalog model, but user models.json entries can carry it. The
+  // round-trip allow-list must preserve it (roborev review round, MEDIUM).
+  samplingParams: { top_p: 0.9, repetition_penalty: 1.1 },
 };
 
 /** pi-known image model (0.99.1 builtin-catalog shape) — never in the scan. */
@@ -146,10 +161,23 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
         };
         defaultExport(pi);
 
-        // Under 0.99.1 getAll() returns models of ALL types for the
-        // provider — chat, image, and classifier alike.
+        // REAL 0.99.1 ModelRegistry contract (pi-ai dist/models.js:572):
+        // getAll() is CHAT-ONLY; non-chat inventory comes from
+        // getModelsOfType(type, provider) / findOfType(type, provider, id).
+        // A previous version of this mock returned all types from getAll(),
+        // so the test validated a contract 0.99.1 never provides.
+        const nonChat = [knownImage, knownClassifier];
         const modelRegistry = {
-          getAll: () => [knownChat, knownImage, knownClassifier],
+          getAll: () => [knownChat],
+          getModelsOfType: (type: string, provider?: string) =>
+            nonChat.filter(
+              (m: any) =>
+                m.type === type && (!provider || m.provider === provider)
+            ),
+          findOfType: (type: string, provider: string, modelId: string) =>
+            nonChat.find(
+              (m: any) => m.type === type && m.provider === provider && m.id === modelId
+            ) ?? null,
           getAvailable: () => [knownChat],
           find: (provider: string, modelId: string) =>
             provider === 'mistral-zai' && modelId === 'zai-glm-5-2' ? knownChat : null,
@@ -182,6 +210,7 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           contextWindow: 128_000,
           maxTokens: 8_000,
+          samplingParams: { top_p: 0.9, repetition_penalty: 1.1 },
           compat: { supportsStore: false },
         });
 
@@ -194,6 +223,7 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
         expect(roundTrippedImage.type).toBe('image');
         expect(roundTrippedImage.output).toEqual(['image']);
         expect(roundTrippedImage.inputLimits).toEqual({ images: { max: 4 } });
+        expect(roundTrippedImage.promptCache).toEqual({ type: 'openrouter' });
         expect(roundTrippedImage.api).toBe('mistral-images');
         // Byte-for-byte: the round-trip emits EXACTLY the allow-listed fields
         // the model carries — no added explicit-undefined keys (the pre-fix
@@ -250,8 +280,21 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
         };
         defaultExport(pi);
 
+        // Chat-only getAll + getModelsOfType — the real 0.99.1 contract
+        // (see header). The skip-check must consider non-chat inventory
+        // too, so it comes from the same three-source union.
+        const nonChat = [knownImage, knownClassifier];
         const modelRegistry = {
-          getAll: () => [knownChat, knownImage, knownClassifier],
+          getAll: () => [knownChat],
+          getModelsOfType: (type: string, provider?: string) =>
+            nonChat.filter(
+              (m: any) =>
+                m.type === type && (!provider || m.provider === provider)
+            ),
+          findOfType: (type: string, provider: string, modelId: string) =>
+            nonChat.find(
+              (m: any) => m.type === type && m.provider === provider && m.id === modelId
+            ) ?? null,
           getAvailable: () => [knownChat],
           find: (provider: string, modelId: string) =>
             provider === 'mistral-zai' && modelId === 'zai-glm-5-2' ? knownChat : null,

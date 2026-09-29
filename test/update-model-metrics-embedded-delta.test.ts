@@ -29,8 +29,9 @@ const embeddedCfgPath = path.join(repoRoot, 'router-config.json');
 // applies to the whole module graph, so it intercepts index.ts. The mock
 // forwards everything to the real fs EXCEPT writes to the embedded config,
 // which are recorded only — the repo file is never touched, red or green.
-const { embeddedWrites } = vi.hoisted(() => ({
+const { embeddedWrites, failEmbeddedRead } = vi.hoisted(() => ({
   embeddedWrites: [] as Array<{ path: string; payload: string }>,
+  failEmbeddedRead: { value: false, skip: 0 },
 }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -41,10 +42,33 @@ vi.mock('node:fs', async (importOriginal) => {
     }
     return (actual as any).writeFileSync(p, data, ...rest);
   };
+  // Roborev review (MEDIUM): the refusal path — when the embedded file
+  // cannot be read the tool must NOT write a stub — needs the read to
+  // throw for exactly this path, while every other read stays real.
+  const guardedRead: typeof fs.readFileSync = (p: any, ...rest: any[]) => {
+    if (String(p) === embeddedCfgPath && failEmbeddedRead.value) {
+      // The first read(s) after the flag flips still succeed — exactly the
+      // transient window the refusal path models (load() reads fine, the
+      // tool's own read a moment later does not). `skip: 1` lets
+      // execute's own load() (one embedded read) succeed so the failure
+      // hits the tool's dedicated read inside its try/catch.
+      if (failEmbeddedRead.skip > 0) {
+        failEmbeddedRead.skip--;
+        return (actual as any).readFileSync(p, ...rest);
+      }
+      throw new Error('EACCES: permission denied (simulated)');
+    }
+    return (actual as any).readFileSync(p, ...rest);
+  };
   return {
     ...(actual as any),
     writeFileSync: guardedWrite,
-    default: { ...(actual as any).default, writeFileSync: guardedWrite },
+    readFileSync: guardedRead,
+    default: {
+      ...(actual as any).default,
+      writeFileSync: guardedWrite,
+      readFileSync: guardedRead,
+    },
   };
 });
 
@@ -115,6 +139,61 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
         expect(written.model_metrics[ref]).toEqual(m);
       }
     } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to write when the embedded config is unreadable (no stub clobber)', async () => {
+    // Roborev review (MEDIUM): the original fix fell through to a
+    // delta-only stub write when the embedded read failed — persisting
+    // `{ model_metrics: { … } }` and nothing else, replacing the shipped
+    // defaults (providers, model_groups, …) and breaking every future
+    // load(). Refusing the persist strictly dominates: one ephemeral
+    // metrics update is lost, the shipped config survives.
+    const writesBefore = embeddedWrites.length;
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-i1-refuse-'));
+    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const tools: Record<string, any> = {};
+      const pi: any = {
+        registerTool: vi.fn((t: any) => {
+          tools[t.name] = t;
+        }),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn(),
+      };
+      mod.default(pi);
+
+      // Flip AFTER module init (its load() must succeed) — the next
+      // embedded read is execute's own load() (allowed via skip: 1), the
+      // one after is the tool's dedicated read, which must throw.
+      failEmbeddedRead.value = true;
+      failEmbeddedRead.skip = 1;
+
+      const res = await tools['update_model_metrics'].execute(
+        'call-1',
+        { model_ref: 'test-provider/test-model', gdpval: 900 },
+        undefined,
+        undefined,
+        { cwd: tmpDir } as any
+      );
+
+      // NO write to the embedded path — a stub write would clobber the
+      // shipped defaults with an empty base layer.
+      expect(embeddedWrites.length).toBe(writesBefore);
+      // The refusal is surfaced to the caller, not swallowed.
+      expect(res.content[0].text).toContain('NOT persisted');
+    } finally {
+      failEmbeddedRead.value = false;
+      failEmbeddedRead.skip = 0;
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -22,14 +22,14 @@
     "alwaysStrict": true,
     
     /* Additional Checks - Pragmatisch angepasst */
-    "noUnusedLocals": false,  /* Deaktiviert wegen vielen Debug/Erweiterungs-Variablen */
-    "noUnusedParameters": false, /* Deaktiviert wegen API-Konsistenz */
+    "noUnusedLocals": false,  /* Off: many debug/extension variables */
+    "noUnusedParameters": false, /* Off: API consistency */
     "exactOptionalPropertyTypes": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": false, /* Deaktiviert wegen Performance-Impact */
+    "noUncheckedIndexedAccess": false, /* Off: performance impact */
     "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": false, /* Deaktiviert wegen Performance-Impact */
+    "noPropertyAccessFromIndexSignature": false, /* Off: performance impact */
     "allowUnusedLabels": false,
     "allowUnreachableCode": false,
     

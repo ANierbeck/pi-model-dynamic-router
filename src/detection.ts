@@ -300,6 +300,36 @@ function parseInformalZonedReset(text: string): number | undefined {
 }
 
 /** True if text matches any rate-limit / spend-limit pattern. */
+/**
+ * Narrow rate-limit detector for TOOL-RESULT error text.
+ *
+ * Tool results are NOT provider/transport text: they are command output,
+ * file contents, and sub-process errors ("Error: out of memory", "disk
+ * quota exceeded", "value out of range", "server overloaded"). The full
+ * RATE_LIMIT_PATTERNS table matches all of those ('out of', 'exceeded',
+ * 'quota', 'credits', 'overloaded'), and the consequence on this path is
+ * severe: a hard cooldown + key rotation on the CURRENT model. Keep only
+ * phrasings that unambiguously name request/usage throttling (roborev
+ * review of c8a087e, MEDIUM). Genuine provider limits that surface as
+ * stream errors are still caught by isRateLimitText on the error-event
+ * path, where the broad table is safe.
+ */
+const TOOL_RESULT_RATE_LIMIT_PATTERNS: readonly RegExp[] = [
+  /rate[\s_-]*limit/i, // 'rate limit', 'rate_limit', 'rate-limit', 'rate_limit_exceeded'
+  /\b429\b/, // word-boundary: '1429 lines' does NOT match
+  /too many requests/i,
+  /spend limit/i,
+  /monthly spend/i,
+  /usage credits/i,
+  /five[\s_-]*hour/i, // Claude five_hour window
+  /limit hit/i,
+  /claude code returned an error/i,
+];
+
+export function isToolResultRateLimitText(text: string): boolean {
+  return TOOL_RESULT_RATE_LIMIT_PATTERNS.some((p) => p.test(text));
+}
+
 export function isRateLimitText(text: string): boolean {
   const lower = text.toLowerCase();
   return RATE_LIMIT_PATTERNS.some((p) => lower.includes(p));

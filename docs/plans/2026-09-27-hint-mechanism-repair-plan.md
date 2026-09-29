@@ -1,5 +1,18 @@
 # Plan: Repairing the HINT Mechanism (HINT/MHINT/MODEL-HINT prefix)
 
+> **STATUS NOTE (2026-10-14):** this is a historical DRAFT, kept for the
+> record — the shipped repair followed ADR-0018 and differs from several
+> details below. In particular (verified against `src/content-classifier.ts`):
+> `detectHintDirectly(prompt): HintClassificationResult | null` (not
+> `boolean`); the shipped regex is
+> `/^\s*(HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i`
+> (colon optional with a group-verb lookahead — not this plan's Option B);
+> and per **ADR-0014** the router never emits a plain `HINT:` reply to the
+> user — `HINT:` is the USER's reserved channel; the router's own narration
+> is `MHINT: …` (acceptance criterion 3 and task 4 below were
+> superseded by that channel split). Task checkboxes were never ticked
+> because the plan was executed through ADR-0018 instead.
+
 ## Goal
 The HINT mechanism (HINT/MHINT/MODEL-HINT prefix in the prompt) shall work
 again: on HINT detection, classification is suppressed and a HINT reply is
@@ -8,7 +21,10 @@ sent to the user.
 ## Acceptance Criteria
 1. HINT prefixes (`HINT:`, `MHINT:`, `MODEL-HINT:`) are recognized in the user prompt.
 2. On HINT detection, classification is suppressed and a HINT reply is generated.
-3. The HINT reply is sent to the user as `HINT: ...` (narration or message).
+3. ~~The HINT reply is sent to the user as `HINT: ...` (narration or message).~~
+   *(Superseded by ADR-0014: the router narrates as `MHINT: …`; a bare
+   `HINT:` line from the router would collide with the user's reserved
+   channel.)*
 4. A regression test covers the case.
 5. Commit: `fix: repair HINT-mechanism (detect hint prefix and suppress classification)`
 
@@ -28,6 +44,9 @@ sent to the user.
 ### 2. Analyze the root cause
 - [ ] Code review of `src/content-classifier.ts`:
   - `detectHintDirectly(text: string): boolean` — check the regex: `/HINT[:\s]/i`
+    *(WRONG even at plan time — the shipped function is
+    `detectHintDirectly(prompt): HintClassificationResult | null`, see
+    `src/content-classifier.ts:291`; see the status note above.)*
   - `containsHintMarker(text: string): boolean` — check the logic.
   - `classifyPrompt()` — candidate order, HINT detection, suppression.
 - [ ] Check `extractLastUserPrompt`: are router messages stripped? (narration-leak fix 26e99f0)
@@ -103,4 +122,6 @@ sent to the user.
 ---
 **Created:** 2026-09-27
 **Last change:** 2026-09-27 (translated to English 2026-09-30 per AGENTS.md §3)
-**State:** Draft
+**State:** Draft — superseded by ADR-0018 (the shipped repair); annotated
+2026-10-14 to reconcile it with ADR-0014 and the real `detectHintDirectly`
+contract.

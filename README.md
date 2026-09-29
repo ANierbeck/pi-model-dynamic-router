@@ -64,12 +64,15 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses Ollama (**mistral-nemo:latest** primary, **gemma2:2b** fallback) for real-time classification and routes to one of the predefined groups: `strategic`, `tactical`, `operational`, `scout`, or `fallback`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, Ollama **mistral-nemo:latest** primary / **gemma2:2b** fallback as the local last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, and `code_complex`/`design`/`planning`/`fallback` → `tactical`.
 
 #### Categories for Classification
 
-The system classifies prompts into the following categories:
+The system classifies prompts into the following categories (see `CATEGORY_TO_GROUP` in `src/content-classifier.ts` for the authoritative mapping):
 
+- `trivial`: Greetings, one-liners, questions about the router itself
+- `simple`: Simple conversational requests
+- `standard`: Everyday tasks with no special shape
 - `code_simple`: Simple code changes (1-10 lines, syntax fixes, typos)
 - `code_complex`: Complex code changes (refactoring, debugging, >50 lines)
 - `design`: Architecture, system design, API design
@@ -79,20 +82,23 @@ The system classifies prompts into the following categories:
 
 #### Mapping of Categories to Model Groups
 
-Each category maps to a specific model group:
+Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts:883`):
 
 | Category | Model Group | Use Case |
 |----------|-------------|----------|
-| `code_simple` | operational | Simple coding tasks |
-| `code_complex` | tactical | Complex coding tasks |
-| `design` | strategic | High-level design decisions |
-| `planning` | tactical | Project planning and coordination |
-| `exploration` | scout | Research and exploration |
-| `fallback` | fallback | Fallback for unclear requests |
+| `trivial` | scout | Greetings, one-liners — any free model |
+| `simple` | operational | Simple conversational requests |
+| `standard` | operational | Everyday tasks (GDPval ≥ 300) |
+| `code_simple` | simple | Simple coding tasks (GDPval ≥ 300, free models only) |
+| `code_complex` | tactical | Complex coding tasks (GDPval ≥ 600) |
+| `design` | tactical | High-level design decisions (GDPval ≥ 600) |
+| `planning` | tactical | Project planning and coordination (GDPval ≥ 600) |
+| `exploration` | scout | Research and exploration — any model, cheap |
+| `fallback` | tactical | Uncertain classification — a decent model, not a free one |
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
@@ -628,7 +634,7 @@ enabled) — otherwise the category `fallback` is returned.
 | `/router <group>` | Detailed view of a group with ranked candidates |
 | `/router scan` | Re-scan models and GDPval scores |
 | `/router cost` | Audit-depth cost report: per-model, per-window usage from the router's own token accounting |
-| `/router errors [n]` | Last n session errors (default 10) with status-line correlation |
+| `/router errors [n]` | Last n session errors (default 15, max 50) with status-line correlation |
 | `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
