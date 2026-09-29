@@ -43,6 +43,8 @@
   },
   "files": [
     "dist/",
+    "!dist/.cache",
+    "!dist/router-config.dynamic.json",
     "skills/",
     "PI.md",
     "README.md"
