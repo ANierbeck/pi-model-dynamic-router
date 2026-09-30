@@ -1,104 +1,106 @@
-# Plan: Reparatur des HINT-Mechanismus (HINT/MHINT/MODEL-HINT-Präfix)
+# Plan: Repairing the HINT Mechanism (HINT/MHINT/MODEL-HINT prefix)
 
-## Ziel
-Der HINT-Mechanismus (HINT/MHINT/MODEL-HINT-Präfix im Prompt) soll wieder funktionieren: Bei HINT-Erkennung wird die Klassifizierung unterdrückt und eine HINT-Antwort an den Benutzer ausgegeben.
+## Goal
+The HINT mechanism (HINT/MHINT/MODEL-HINT prefix in the prompt) shall work
+again: on HINT detection, classification is suppressed and a HINT reply is
+sent to the user.
 
-## Akzeptanzkriterien
-1. HINT-Präfixe (`HINT:`, `MHINT:`, `MODEL-HINT:`) werden im User-Prompt erkannt.
-2. Bei HINT-Erkennung wird die Klassifizierung unterdrückt und eine HINT-Antwort generiert.
-3. Die HINT-Antwort wird als `HINT: ...` an den Benutzer gesendet (Narration oder Message).
-4. Regressionstest deckt den Fall ab.
+## Acceptance Criteria
+1. HINT prefixes (`HINT:`, `MHINT:`, `MODEL-HINT:`) are recognized in the user prompt.
+2. On HINT detection, classification is suppressed and a HINT reply is generated.
+3. The HINT reply is sent to the user as `HINT: ...` (narration or message).
+4. A regression test covers the case.
 5. Commit: `fix: repair HINT-mechanism (detect hint prefix and suppress classification)`
 
 ---
 
 ## Bite-size Tasks (2–5 min)
 
-### 1. Reproduktion testen
-- [ ] Neue Test-Datei `test/classifier-hint-regression.test.ts` anlegen.
-- [ ] Testfall 1: Prompt mit `HINT: Bitte beachte die folgende Anleitung` → Assert: Klassifizierung unterdrückt, HINT-Antwort generiert.
-- [ ] Testfall 2: Prompt ohne HINT → Assert: normale Klassifizierung.
-- [ ] Testfall 3: `MHINT:` und `MODEL-HINT:` Präfixe testen.
+### 1. Test the reproduction
+- [ ] Create new test file `test/classifier-hint-regression.test.ts`.
+- [ ] Test case 1: prompt with `HINT: Bitte beachte die folgende Anleitung` (HINT: please follow this guidance) → assert: classification suppressed, HINT reply generated.
+- [ ] Test case 2: prompt without HINT → assert: normal classification.
+- [ ] Test case 3: test the `MHINT:` and `MODEL-HINT:` prefixes.
 
-**Owner:** pi  
-**Zeit:** 15 min
+**Owner:** pi
+**Time:** 15 min
 
-### 2. Root Cause analysieren
-- [ ] Code-Review von `src/content-classifier.ts`:
-  - `detectHintDirectly(text: string): boolean` — Regex prüfen: `/HINT[:\s]/i`
-  - `containsHintMarker(text: string): boolean` — Logik prüfen.
-  - `classifyPrompt()` — Reihenfolge der Kandidaten, HINT-Erkennung, Unterdrückung.
-- [ ] `extractLastUserPrompt` prüfen: Stripped Router-Nachrichten? (Narration-Leak Fix 26e99f0)
-- [ ] Log-Analyse: `~/.pi/logs/router.log` nach HINT-Zeilen durchsuchen.
+### 2. Analyze the root cause
+- [ ] Code review of `src/content-classifier.ts`:
+  - `detectHintDirectly(text: string): boolean` — check the regex: `/HINT[:\s]/i`
+  - `containsHintMarker(text: string): boolean` — check the logic.
+  - `classifyPrompt()` — candidate order, HINT detection, suppression.
+- [ ] Check `extractLastUserPrompt`: are router messages stripped? (narration-leak fix 26e99f0)
+- [ ] Log analysis: search `~/.pi/logs/router.log` for HINT lines.
 
-**Owner:** pi  
-**Zeit:** 20 min
+**Owner:** pi
+**Time:** 20 min
 
-### 3. Fix umsetzen (Code-Änderung)
-**Option A: Narration-Leak (wahrscheinlichste Ursache)**
-- [ ] `extractLastUserPrompt` prüfen: Falls Router-Nachrichten eingeschleust werden, strippen wie in 26e99f0.
-- [ ] `classifyPrompt` prüfen: HINT-Erkennung VOR der Kandidaten-Auswahl durchführen.
+### 3. Implement the fix (code change)
+**Option A: narration leak (most likely cause)**
+- [ ] Check `extractLastUserPrompt`: if router messages leak in, strip them as in 26e99f0.
+- [ ] Check `classifyPrompt`: perform HINT detection BEFORE candidate selection.
 
-**Option B: Regex-Anpassung**
-- [ ] `detectHintDirectly` Regex erweitern: `/HINT[:\s]|MHINT[:\s]|MODEL-HINT[:\s]/i`
+**Option B: regex adjustment**
+- [ ] Extend the `detectHintDirectly` regex: `/HINT[:\s]|MHINT[:\s]|MODEL-HINT[:\s]/i`
 
-**Option C: Unterdrückungslogik**
-- [ ] `classifyPrompt` so anpassen, dass bei HINT-Erkennung die Klassifizierung übersprungen und eine HINT-Antwort zurückgegeben wird.
+**Option C: suppression logic**
+- [ ] Adjust `classifyPrompt` so that on HINT detection the classification is skipped and a HINT reply is returned.
 
-**Owner:** pi  
-**Zeit:** 25 min
+**Owner:** pi
+**Time:** 25 min
 
-### 4. HINT-Antwort generieren
-- [ ] Bei HINT-Erkennung: `return { ok: true, isHint: true, hintText: '...' }` oder ähnliches Schema.
-- [ ] `stream-orchestrator.ts` anpassen: Falls `isHint: true`, Narration `> [router] HINT: ...` ausgeben und die Antwort als HINT an den Benutzer senden.
+### 4. Generate the HINT reply
+- [ ] On HINT detection: `return { ok: true, isHint: true, hintText: '...' }` or a similar schema.
+- [ ] Adjust `stream-orchestrator.ts`: if `isHint: true`, emit the narration `> [router] HINT: ...` and send the reply to the user as a HINT.
 
-**Owner:** pi  
-**Zeit:** 15 min
+**Owner:** pi
+**Time:** 15 min
 
-### 5. Tests finalisieren
-- [ ] `test/classifier-hint-regression.test.ts` muss grün werden.
-- [ ] Bestehende Tests prüfen: `test/classifier-mapping-hints.test.ts`, `test/hint-classification.test.ts` — dürfen nicht brechen.
-- [ ] Falls nötig: Tests anpassen oder neue Assertions hinzufügen.
+### 5. Finalize the tests
+- [ ] `test/classifier-hint-regression.test.ts` must go green.
+- [ ] Check the existing tests: `test/classifier-mapping-hints.test.ts`, `test/hint-classification.test.ts` — must not break.
+- [ ] If necessary: adjust tests or add new assertions.
 
-**Owner:** pi  
-**Zeit:** 10 min
+**Owner:** pi
+**Time:** 10 min
 
-### 6. Verifikation
+### 6. Verification
 - [ ] `npx tsc --noEmit` (clean)
-- [ ] `npx vitest run` (bestehende Tests grün)
+- [ ] `npx vitest run` (existing tests green)
 - [ ] `npm run build` → `dist/index.js`
-- [ ] Live-Test: Prompt mit `HINT: ...` → Router gibt HINT-Antwort aus.
+- [ ] Live test: prompt with `HINT: ...` → router emits a HINT reply.
 
-**Owner:** pi  
-**Zeit:** 15 min
+**Owner:** pi
+**Time:** 15 min
 
-### 7. Commit & Dokumentation
+### 7. Commit & documentation
 - [ ] Commit: `fix: repair HINT-mechanism (detect hint prefix and suppress classification)`
-- [ ] Commit-Message Body erklärt WHY (HINT-Mechanismus war defekt, Reparatur nötig für Workflows).
-- [ ] CHANGELOG.md Eintrag (optional)
-- [ ] ADR-0018 finalisieren (falls Architektur-Änderungen nötig waren).
+- [ ] Commit message body explains WHY (the HINT mechanism was broken; the repair is needed for workflows).
+- [ ] CHANGELOG.md entry (optional)
+- [ ] Finalize ADR-0018 (if architectural changes turned out to be necessary).
 
-**Owner:** pi  
-**Zeit:** 5 min
+**Owner:** pi
+**Time:** 5 min
 
 ---
 
-## Zeitaufwand gesamt
-~105 min (kumulativ, inkl. Tests + Verifikation)
+## Total effort
+~105 min (cumulative, including tests + verification)
 
-## Abhängigkeiten
-- Keine — nutzt bestehende Klassifizierungs-Logik.
+## Dependencies
+- None — uses the existing classification logic.
 
-## Risiken & Mitigations
-- **Falsche HINT-Erkennung:** Regex testen mit verschiedenen Präfixen.
-- **Narration-Leak:** `extractLastUserPrompt` strippen wie in 26e99f0.
-- **CI-Tests brechen:** Bestehende Tests anpassen oder neue Regressionstests hinzufügen.
+## Risks & mitigations
+- **False HINT detection:** test the regex with different prefixes.
+- **Narration leak:** strip `extractLastUserPrompt` as in 26e99f0.
+- **CI tests break:** adjust existing tests or add new regression tests.
 
 ## Review
-- Code-Review via `requesting-code-review` Skill
-- Roborev-Review vor Release (AGENTS.md §1)
+- Code review via the `requesting-code-review` skill
+- Roborev review before release (AGENTS.md §1)
 
 ---
-**Erstellt:** 2026-09-27  
-**Letzte Änderung:** 2026-09-27  
-**Zustand:** Entwurf
+**Created:** 2026-09-27
+**Last change:** 2026-09-27 (translated to English 2026-09-30 per AGENTS.md §3)
+**State:** Draft

@@ -1,42 +1,42 @@
 # Plan: Bounded Wait-for-Short-Reset (ADR-0017)
 
-## Ziel
-Der Router soll bei Rate-Limits mit **bekanntem, nahem Reset** warten und das Modell neu versuchen, statt die komplette Kandidatenkette durchzubrennen. Der Total-Cooldown-Collapse darf nicht mehr in bekannte, nicht abgelaufene Cooldowns force-retryen (Selbstvergiftung). Sofort-Entlastung für künftige Vorfälle: `/router cooldowns [clear]`.
+## Goal
+When a rate limit has a **known, near reset**, the router should wait and retry the same model instead of burning the entire candidate chain. The total-cooldown collapse must no longer force-retry into known, unexpired cooldowns (self-poisoning). Immediate incident relief for the future: `/router cooldowns [clear]`.
 
-## Hintergrund (Vorfall 2026-09-27, 12:36–12:44 UTC)
-Vollständige Rekonstruktion in ADR-0017. Kurz: 60s-TPM-Fenster wurde ignoriert → Kette brannte durch → jede Folgerequest wiederholte das → Collapse-Zweig force-retried in eigene, laufende Cooldowns → Cooldowns eskalierten über die reale Provider-Erholung hinaus → Router minutenlang tot, während die API längst ging (Beweis: Hard-Set auf zai-glm-5-3 funktionierte sofort).
+## Background (incident 2026-09-27, 12:36–12:44 UTC)
+Full reconstruction in ADR-0017. Short version: a 60s TPM window was ignored → the chain burned through → every subsequent request repeated it → the collapse branch force-retried into its own running cooldowns → cooldowns escalated beyond the provider's real recovery → the router stayed dead for minutes while the API had long been working again (proof: hard-pinning zai-glm-5-3 worked immediately).
 
-## Umgesetzt (Stand 2026-09-27)
+## Implemented (as of 2026-09-27)
 
-### 1. Config-Plumbing
-- [x] `rate_limit_wait_max_ms` (Default 120s, 0 = aus): router-defaults.yaml, types.ts (Defaults + Config), index.ts (`getRateLimitWaitMaxMs()`), stream-orchestrator ctx
-- [x] `backoff_minutes` / `soft_backoff_ms` sind jetzt **cfg-backed** (fielen vorher nur aus den YAML-Defaults) — ops-tunbar ohne Rebuild, und in Integrationstests verkleinerbar
-- [x] **Dynamic-Config-Whitelist erweitert**: `stall_timeout_ms`, `rate_limit_wait_max_ms`, `backoff_minutes`, `soft_backoff_ms` werden jetzt wie `exclude`/empty-timeouts aus staticCfg re-synced — ohne das hätten stale dynamic-Dateien (existiert nach jedem Scan!) die User-Overrides still überschattet. `stall_timeout_ms` fehlte bereits in der Whitelist (gleicher Bug-Fund, Boyscout)
+### 1. Config plumbing
+- [x] `rate_limit_wait_max_ms` (default 120s, 0 = off): router-defaults.yaml, types.ts (defaults + Config), index.ts (`getRateLimitWaitMaxMs()`), stream-orchestrator ctx
+- [x] `backoff_minutes` / `soft_backoff_ms` are now **cfg-backed** (previously they fell back to the YAML defaults only) — ops-tunable without a rebuild, and shrinkable in integration tests
+- [x] **Dynamic-config whitelist extended**: `stall_timeout_ms`, `rate_limit_wait_max_ms`, `backoff_minutes`, `soft_backoff_ms` are now re-synced from staticCfg like `exclude`/the empty timeouts — without this, stale dynamic files (they exist after every scan!) would silently have shadowed user overrides. `stall_timeout_ms` was already missing from the whitelist (same bug find, boyscout)
 
-### 2. Wait-for-Short-Reset (driveStream, rate_limit-Branch)
-- [x] Bei `rate_limit_exceeded` mit `resetAtMs` in (0, `rate_limit_wait_max_ms`]: Narration "waiting Ns, then retrying…", Schlaf bis Reset+2s, **gleiche Modell 1× neu versuchen**; Erfolg → fertig; erneuter Fail → record + "still failing" → normale Kaskade
-- [x] Maximal **ein** Wait pro driveStream-Aufruf (`rateLimitWaitUsed`) — keine Livelocks
-- [x] Key-Rotation (`rotated`) überspringt den Wait (kein Cooldown auf dem Ref)
+### 2. Wait-for-short-reset (driveStream, rate_limit branch)
+- [x] On `rate_limit_exceeded` with `resetAtMs` in (0, `rate_limit_wait_max_ms`]: narrate "waiting Ns, then retrying…", sleep until reset+2s, **retry the same model once**; success → done; another failure → record + "still failing" → normal cascade
+- [x] At most **one** wait per driveStream invocation (`rateLimitWaitUsed`) — no livelocks
+- [x] Key rotation (`rotated`) skips the wait (no cooldown on the ref)
 
-### 3. Collapse-Zweig-Reparatur
-- [x] `bestSecs * 1000 ≤ rate_limit_wait_max_ms` → **warten** (bestSecs+2s), dann erst retryen — kein Force-Retry mehr in bekannte, laufende Cooldowns
-- [x] Lange Restzeiten: alte Immediate-Retry-Semantik unverändert
-- [x] Collapse-Narration von `pushRouterInfo` (unsichtbar im router.log!) auf `pushRouterInfoLogged` umgestellt
+### 3. Collapse-branch repair
+- [x] `bestSecs * 1000 ≤ rate_limit_wait_max_ms` → **wait** (bestSecs+2s), then retry — no more force-retries into known, running cooldowns
+- [x] Long remaining times: old immediate-retry semantics unchanged
+- [x] Collapse narration moved from `pushRouterInfo` (invisible in router.log!) to `pushRouterInfoLogged`
 
 ### 4. `/router cooldowns [clear]`
-- [x] `RateLimitManager.listLimits()` — aktive Cooldowns (kürzeste zuerst, Hits, Provider-Reset) 
-- [x] `RateLimitManager.clearAllLimits()` — alle In-Memory-Cooldowns
-- [x] Handler: `cooldowns` zeigt Cooldowns + model_health-Streaks; `cooldowns clear` löscht Cooldowns + `cache.model_health` (persistiert!) + saveCache — **ohne pi-Neustart**
+- [x] `RateLimitManager.listLimits()` — active cooldowns (shortest first, hits, provider reset)
+- [x] `RateLimitManager.clearAllLimits()` — all in-memory cooldowns
+- [x] Handler: `cooldowns` shows cooldowns + model_health streaks; `cooldowns clear` clears cooldowns + `cache.model_health` (persisted!) + saveCache — **without restarting pi**
 
 ### 5. Tests
-- [x] `test/rate-limit-wait.test.ts` (4 Tests): Wait-Retry ohne Ketten-Burn (Healthy wird NIE angerührt), Far-Reset → keine Wait → normale Kaskade, Collapse-Wait (kürzester Cooldown wird abgewartet, dann Erfolg), listLimits/clearAllLimits
-- [x] 13 betroffene Legacy-Tests: explizites `rate_limit_wait_max_ms: 0` (sie testen bewusst die Non-Wait-Pfade)
-- [x] `npx tsc --noEmit` clean · Suite **1026 passed** (+4)
+- [x] `test/rate-limit-wait.test.ts` (4 tests): wait-retry without burning the chain (Healthy is NEVER touched), far reset → no wait → normal cascade, collapse wait (shortest cooldown awaited, then success), listLimits/clearAllLimits
+- [x] 13 affected legacy tests: explicit `rate_limit_wait_max_ms: 0` (they deliberately test the non-wait paths)
+- [x] `npx tsc --noEmit` clean · suite **1026 passed** (+4)
 
-### 6. Build & Rollout
+### 6. Build & rollout
 - [x] `npm run build`
-- [ ] pi-Neustart (lädt neuen Bundle); danach ist Hard-Set auf zai-glm-5-3 nicht mehr nötig — Routing wieder nutzbar; notfalls `/router cooldowns clear`
+- [ ] pi restart (loads the new bundle); afterwards hard-pinning zai-glm-5-3 is no longer needed — routing usable again; if necessary `/router cooldowns clear`
 
-## Offen (separat)
-- ADR-0018 HINT-Reparatur (eigene Runde; MHINT-Verhalten im Vorfallfenster fiel auf — als Input für die Analyse notiert)
-- mistral-small-latest-Demotion (C-Schritt) — Decision nach erster neuer StopReason-Evidenz
+## Open (separate)
+- ADR-0018 HINT repair (its own round; MHINT behavior during the incident window stood out — noted as input for the analysis)
+- mistral-small-latest demotion (C step) — decision after the first new stopReason evidence

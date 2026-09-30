@@ -1,23 +1,23 @@
-# Design: Interceptierung von stopReason 'length' (max_tokens-Truncation)
+# Design: Intercepting stopReason 'length' (max_tokens truncation)
 
-## Problem (Root Cause)
-Der Router klassifiziert jeden Stream so:
-- Content gestreamt + Stream endet sauber → **immer** `ok: true` (Blind Spot)
-- Der Grund (`stopReason`) des `done`-Events (`{ type: "done", reason: "stop" | "length" | "toolUse", message }`) wird **nie** geprüft.
+## Problem (root cause)
+The router classifies every stream like this:
+- Content streamed + stream ends cleanly → **always** `ok: true` (blind spot)
+- The `done` event's reason (`{ type: "done", reason: "stop" | "length" | "toolUse", message }`) is **never** checked.
 
-Folge: Bei `reason: 'length'` (max_tokens erreicht → Antwort abgeschnitten, Aufgabe unvollständig) registriert der Router einen Erfolg → keine Cooldown, keine Blockliste, keine Wiederholung → das Modell wird beim nächsten Turn **wieder** gewählt. Das ist exakt das Symptom: "es hört einfach auf, sagt nix mehr" und "wir landen immer wieder im mistral-small-latest".
+Consequence: with `reason: 'length'` (max_tokens reached → answer truncated, task incomplete) the router records a success → no cooldown, no blocklist, no retry → the model gets picked **again** next turn. That is exactly the symptom: "es hört einfach auf, sagt nix mehr" (it just stops, says nothing more) and "wir landen immer wieder im mistral-small-latest" (we keep ending up on mistral-small-latest).
 
-Heute im Log: 77 Stall/Empty-Ereignisse, **null** für mistral/* — weil der Stream sauber endet und der Router nichts zu beanstanden hat.
+In today's log: 77 stall/empty events, **zero** for mistral/* — because the stream ends cleanly and the router has nothing to complain about.
 
-## Ziel
-Blind Spot schließen: `stopReason: 'length'` als neue Soft-Failure-Klasse `truncated_length` erkennen, behandeln und loggen. Das behebt den Fehler für ALLE Modelle, nicht nur mistral-small-latest.
+## Goal
+Close the blind spot: recognize `stopReason: 'length'` as a new soft-failure class `truncated_length`, handle it and log it. This fixes the defect for ALL models, not just mistral-small-latest.
 
-## Design-Entscheidungen
+## Design decisions
 
-### A) Watcher-Interception (index.ts)
-- **Funktion**: `consumeWithDetection` erhält neuen Parameter `ref: string` für Logging.
-- **Neue Variable**: `let truncatedByLength = false;`
-- **Event-Interception**: Im `for await`-Loop vor `proxy.push(event)`:
+### A) Watcher interception (index.ts)
+- **Function**: `consumeWithDetection` gets a new parameter `ref: string` for logging.
+- **New variable**: `let truncatedByLength = false;`
+- **Event interception**: in the `for await` loop before `proxy.push(event)`:
   ```ts
   if ((event as any).type === 'done') {
     const reason = String((event as any).reason ?? '');
@@ -25,21 +25,21 @@ Blind Spot schließen: `stopReason: 'length'` als neue Soft-Failure-Klasse `trun
     if (reason === 'length') truncatedByLength = true;
   }
   ```
-- **Terminal-Klassifikation**: Vor `!hadContent` prüfen:
+- **Terminal classification**: check before `!hadContent`:
   ```ts
   if (truncatedByLength) {
     return { ok: false, reason: 'truncated_length' };
   }
   ```
 
-### B) StopReason-Logging (Evidence für den Restfall)
-- Jedes Stream-Ende loggt `stopReason` + Content-Länge.
-- Ermöglicht Unterscheidung zwischen:
-  - `length`: max_tokens-Truncation → A fängt es ab.
-  - `stop`: Modell gibt freiwillig auf (Modell-Qualitätsproblem) → dann manuelle Demotion/Blockliste.
+### B) stopReason logging (evidence for the residual case)
+- Every stream end logs `stopReason` + content length.
+- Allows distinguishing:
+  - `length`: max_tokens truncation → A catches it.
+  - `stop`: the model gives up voluntarily (model-quality problem) → then manual demotion/blocklist.
 
-### C) Orchestrator-Behandlung (stream-orchestrator.ts)
-- **driveStream-Loop**: Neue Branch vor `isPaidCloudRateLimitFailure`:
+### C) Orchestrator handling (stream-orchestrator.ts)
+- **driveStream loop**: new branch before `isPaidCloudRateLimitFailure`:
   ```ts
   if (result.reason === 'truncated_length') {
     pushError(ref, 'truncated_length (hit max output tokens — answer incomplete)');
@@ -53,7 +53,7 @@ Blind Spot schließen: `stopReason: 'length'` als neue Soft-Failure-Klasse `trun
     continue;
   }
   ```
-- **bestRef-Pfad** (~line 787): Branch erweitern:
+- **bestRef path** (~line 787): extend the branch:
   ```ts
   if (result.reason === 'repetition_loop' || result.reason === 'truncated_length') {
     ctx.recordSoftFailure(bestRef);
@@ -65,60 +65,65 @@ Blind Spot schließen: `stopReason: 'length'` als neue Soft-Failure-Klasse `trun
   ```
 
 ### D) Tests
-- **Watcher-Test**: Integrationstest erweitert `test/stall-timeout-detection.test.ts` um Testfall: Stream mit `done.reason === 'length'` → `ok: false`, `reason: 'truncated_length'`
-- **Orchestrator-Test**: `test/stream-driver-logged.test.ts` oder `test/model-health.test.ts` prüft Narration und Soft-Failure-Akkumulation.
+- **Watcher test**: extend the integration test `test/stall-timeout-detection.test.ts` with the case: stream with `done.reason === 'length'` → `ok: false`, `reason: 'truncated_length'`
+- **Orchestrator test**: `test/stream-driver-logged.test.ts` or `test/model-health.test.ts` checks narration and soft-failure accumulation.
 
-### E) Keine Änderungen an detection.ts
-- `isRateLimitLikeReason` bleibt unverändert; `truncated_length` ist keine rate-limit-ähnliche Ursache.
+### E) No changes to detection.ts
+- `isRateLimitLikeReason` stays unchanged; `truncated_length` is not a rate-limit-like cause.
 
-## Konfiguration / Migration
-- Keine Config-Änderung nötig.
-- `router-config.json` unverändert.
-- Bestehende Soft-Failure-Mechanik (`recordSoftFailure`, Cooldown, Blockliste) übernimmt die neue Ursache automatisch.
+## Configuration / migration
+- No config change needed.
+- `router-config.json` unchanged.
+- The existing soft-failure machinery (`recordSoftFailure`, cooldown, blocklist) picks up the new cause automatically.
 
-## Risiken & Trade-offs
-- **Falsch-positive Truncation**: Ein legitimer langer Output, der genau an max_tokens endet, wird neu versucht. Akzeptabel, da max_tokens hoch (64k) und Truncation selten.
-- **Performance**: Ein zusätzlicher `done`-Check pro Stream vernachlässigbar.
-- **Logging**: Ein zusätzlicher Log-Eintrag pro Stream vernachlässigbar.
+## Risks & trade-offs
+- **False-positive truncation**: a legitimate long output that ends exactly at max_tokens gets retried. Acceptable — max_tokens is high (64k) and truncation is rare.
+- **Performance**: one extra `done` check per stream is negligible.
+- **Logging**: one extra log line per stream is negligible.
 
-## Akzeptanzkriterien
-1. Watcher erkennt `done.reason === 'length'` und liefert `{ ok: false, reason: 'truncated_length' }`.
-2. Orchestrator startet nächsten Kandidaten mit korrekter Narration.
-3. `ctx.recordSoftFailure(ref)` wird aufgerufen.
-4. StopReason wird im Log ausgegeben (`[stream] ${ref} finished (stopReason: ${reason}, ...)`).
-5. Bestehende Tests bleiben grün; neue Tests decken den Fall ab.
-6. `npx tsc --noEmit` und `npx vitest run` grün.
+## Acceptance criteria
+1. The watcher recognizes `done.reason === 'length'` and returns `{ ok: false, reason: 'truncated_length' }`.
+2. The orchestrator starts the next candidate with correct narration.
+3. `ctx.recordSoftFailure(ref)` is called.
+4. The stopReason is logged (`[stream] ${ref} finished (stopReason: ${reason}, ...)`).
+5. Existing tests stay green; new tests cover the case.
+6. `npx tsc --noEmit` and `npx vitest run` green.
 
-## Offene Punkte (nach Evidence)
-- Falls StopReason = `'stop'` (faules Aufgeben) → manuelle Demotion/Blockliste von mistral-small-latest (ADR-0008-Mechanismus).
+## Open points (pending evidence)
+- If stopReason = `'stop'` (lazy giving-up) → manual demotion/blocklist of mistral-small-latest (ADR-0008 mechanism).
 
 ---
 
-## Implementierungsplan (bite-size Tasks)
+## Implementation plan (bite-size tasks)
 
-### 1. Design & Planung
-- [x] Design-Dokument erstellt (dieses File)
+### 1. Design & planning
+- [x] Design document created (this file)
 
-### 2. Code-Änderungen
-- [ ] `consumeWithDetection` Signatur erweitern: Parameter `ref: string` hinzufügen
-- [ ] Aufrufstellen in `tryStream` anpassen (2 Stellen: `consumeWithDetection` Aufrufe)
-- [ ] Neue Variable `truncatedByLength` im Watcher deklarieren
-- [ ] `done`-Event-Interception + Logging + Flag setzen im Loop
-- [ ] Terminal-Klassifikation für `truncated_length` hinzufügen
-- [ ] `stream-orchestrator.ts`: Branch für `truncated_length` in driveStream-Loop
-- [ ] `stream-orchestrator.ts`: Branch in bestRef-Pfad erweitern
+### 2. Code changes
+- [ ] Extend the `consumeWithDetection` signature: add parameter `ref: string`
+- [ ] Adjust the call sites in `tryStream` (2 sites: the `consumeWithDetection` calls)
+- [ ] Declare the new variable `truncatedByLength` in the watcher
+- [ ] `done` event interception + logging + set the flag in the loop
+- [ ] Add the terminal classification for `truncated_length`
+- [ ] `stream-orchestrator.ts`: branch for `truncated_length` in the driveStream loop
+- [ ] `stream-orchestrator.ts`: extend the branch in the bestRef path
 
 ### 3. Tests
-- [ ] `test/stall-timeout-detection.test.ts`: neuen Testfall für `truncated_length` hinzufügen
-- [ ] `test/stream-driver-logged.test.ts` oder `test/model-health.test.ts`: Narration und Soft-Failure prüfen
+- [ ] `test/stall-timeout-detection.test.ts`: add the new `truncated_length` case
+- [ ] `test/stream-driver-logged.test.ts` or `test/model-health.test.ts`: check narration and soft failure
 
-### 4. Verifikation
+### 4. Verification
 - [ ] `npx tsc --noEmit` (clean)
-- [ ] `npx vitest run` (bestehende Tests grün)
+- [ ] `npx vitest run` (existing tests green)
 - [ ] `npm run build` → `dist/index.js`
-- [ ] Live-Test nach Router-Neustart: mistral-small-latest wird NICHT mehr gewählt bei Truncation; Log zeigt `[stream] ... finished (stopReason: length, ...)`
+- [ ] Live test after a router restart: mistral-small-latest is NOT picked again on truncation; the log shows `[stream] ... finished (stopReason: length, ...)`
 
-### 5. Dokumentation / Commit
+### 5. Documentation / commit
 - [ ] Commit: `fix: intercept stopReason 'length' as truncated_length soft failure`
-- [ ] Commit-Message Body erklärt WHY (Blind Spot + Symptom)
-- [ ] CHANGELOG.md Eintrag (optional)
+- [ ] Commit message body explains WHY (blind spot + symptom)
+- [ ] CHANGELOG.md entry (optional)
+
+---
+**Created:** 2026-09-27
+**Last change:** 2026-09-27 (translated to English 2026-09-30 per AGENTS.md §3)
+**State:** Implemented via `31626d4`

@@ -1,62 +1,80 @@
 # Content-Based Model Router
 
-**Zweck**: Erweitert den `pi-model-router` um eine **inhaltssensitive Routing-Logik**, die den Prompt des Users analysiert und basierend auf der **Komplexität/Kategorie** der Anfrage dynamisch das passende Modell auswählt.
+**Purpose**: Extends the `pi-model-router` with **content-sensitive
+routing logic**: it analyzes the user's prompt and dynamically selects the
+appropriate model based on the request's **complexity/category**.
+
+> **Current state (v1.6.0)**: this document originated as the design sketch
+> for the shipped `dynamic` group. The implementation differs in the
+> details documented below — the classification model is
+> **mistral-nemo:latest** (primary) with **gemma2:2b** as the local
+> fallback and a cloud-first candidate chain (see the README section
+> "Dynamic Group" for the shipped behavior). No user confirmation is
+> involved at runtime; categories map straight to model groups.
 
 ---
 
-## Hintergrund
-Der bestehende `pi-model-router` routet basierend auf:
-- **Modellqualität** (GDPval-Scores),
-- **Kosten** (Billing-Präferenzen),
-- **Verfügbarkeit** (Rate-Limits, Latenz).
+## Background
+The existing `pi-model-router` routes based on:
+- **model quality** (GDPval scores),
+- **cost** (billing preferences),
+- **availability** (rate limits, latency).
 
-**Lücke**: Es fehlt eine **Echtzeit-Analyse des Inhalts** der Anfrage. Beispiel:
-- Eine einfache Code-Editierung (`"Ersetze Zeile 42") könnte lokal mit Ollama bearbeitet werden.
-- Eine komplexe Architektur-Frage (`"Entwirf eine Mikroservice-Architektur") sollte an Claude Opus gehen.
+**Gap**: a **real-time analysis of the request's content** was missing.
+Examples:
+- A simple code edit ("Replace line 42") could be handled locally by Ollama.
+- A complex architecture question ("Design a microservice architecture")
+  should go to Claude Opus.
 
 ---
 
-## Funktionsweise
-### 1. Prompt-Klassifizierung
-Ein leichtes lokales Modell (z. B. `ollama/gemma2:2b`) analysiert die User-Anfrage und klassifiziert sie in eine der folgenden Kategorien:
+## How it works
+### 1. Prompt classification
+A light local model (shipped: `ollama/mistral-nemo:latest`, local fallback
+`ollama/gemma2:2b`) analyzes the user's request and classifies it into one
+of the following categories:
 
-| Kategorie          | Beschreibung                                                                 | Beispiel                                                                 |
+| Category           | Description                                                                   | Example                                                                   |
 |--------------------|------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `code_simple`      | Einfache Code-Änderungen (1–10 Zeilen, Syntax-Fixes, Typos).              | `"Ersetze 'foo' mit 'bar' in Zeile 42"`                                |
-| `code_complex`     | Komplexe Code-Änderungen (Refactoring, Debugging, >50 Zeilen).           | `"Optimiere diese 200-Zeilen-Funktion für Performance"`                |
-| `design`           | Architektur, Systemdesign, API-Entwurf.                                    | `"Entwirf eine Event-Sourcing-Architektur für ein E-Commerce-System"`   |
-| `planning`         | Projektplanung, Roadmaps, Aufgabenaufschlüsselung.                        | `"Erstelle einen 3-Monats-Plan für die Migration zu Kubernetes"`        |
-| `exploration`      | Forschung, unklare Anforderungen, Brainstorming.                          | `"Welche Datenbank wäre für 10M IoT-Geräte geeignet?"`                  |
-| `fallback`          | Unklar oder mehrere Kategorien zutreffend.                                  | `"Hilfe"` oder `"Mach alles besser"`                                   |
+| `code_simple`      | Simple code changes (1–10 lines, syntax fixes, typos).                       | `"Replace 'foo' with 'bar' in line 42"`                                  |
+| `code_complex`     | Complex code changes (refactoring, debugging, >50 lines).                    | `"Optimize this 200-line function for performance"`                      |
+| `design`           | Architecture, system design, API design.                                     | `"Design an event-sourcing architecture for an e-commerce system"`       |
+| `planning`         | Project planning, roadmaps, task breakdown.                                  | `"Create a 3-month plan for the Kubernetes migration"`                   |
+| `exploration`      | Research, unclear requirements, brainstorming.                                | `"Which database would be suitable for 10M IoT devices?"`                |
+| `fallback`         | Unclear, or several categories apply.                                         | `"Help"` or `"Make everything better"`                                   |
 
-### 2. Routing-Entscheidung
-Basierend auf der Kategorie wird eine **Modellgruppe** ausgewählt:
+### 2. Routing decision
+Based on the category, a **model group** is selected:
 
-| Kategorie          | Zielgruppe          | Modellbeispiele                                                                 |
-|--------------------|---------------------|-------------------------------------------------------------------------------|
-| `code_simple`      | `operational`       | `ollama/phi3:mini`, `mistral-tiny` (lokal, schnell, günstig)               |
-| `code_complex`     | `tactical`          | `mistral-medium`, `deepseek-coder` (remote, günstig, gute Code-Qualität)  |
-| `design`           | `strategic`         | `claude-opus`, `gpt-4o` (beste verfügbare Option)                          |
-| `planning`         | `tactical`          | `mistral-medium`, `claude-sonnet` (gute Balance aus Qualität und Kosten)  |
-| `exploration`      | `scout`             | `ollama/gemma2:2b`, `mistral-tiny` (günstig, schnell)                      |
-| `fallback`          | User-Bestätigung    | Frage den User, welches Modell genutzt werden soll.                        |
+| Category           | Target group        | Example models                                                              |
+|--------------------|---------------------|-----------------------------------------------------------------------------|
+| `code_simple`      | `operational`       | `ollama/phi3:mini`, `mistral-tiny` (local, fast, cheap)                     |
+| `code_complex`     | `tactical`          | `mistral-medium`, `deepseek-coder` (remote, cheap, good code quality)      |
+| `design`           | `strategic`         | `claude-opus`, `gpt-4o` (best available option)                             |
+| `planning`         | `tactical`          | `mistral-medium`, `claude-sonnet` (good quality/cost balance)              |
+| `exploration`      | `scout`             | `ollama/gemma2:2b`, `mistral-tiny` (cheap, fast)                           |
+| `fallback`         | user confirmation   | Ask the user which model to use.                                            |
 
-### 3. Integration in den bestehenden Router
-- **Hook**: Nutze den `before_user_prompt`-Hook von PI, um die Analyse **vor** dem Routing durchzuführen.
+### 3. Integration into the existing router
+- **Hook**: use Pi's real-time analysis **before** routing.
 - **Workflow**:
-  1. User sendet Prompt.
-  2. **Klassifizierung**: Prompt wird an `ollama/gemma2:2b` gesendet.
-  3. **Routing**: Basierend auf der Kategorie wird eine Gruppe ausgewählt (z. B. `code_simple` → `operational`).
-  4. **Modellauswahl**: Der bestehende Router wählt das beste Modell aus der Gruppe (basierend auf GDPval, Kosten, Verfügbarkeit).
-  5. **Fallback**: Bei hohen Kosten (>5000 Tokens) oder Unsicherheit → User-Bestätigung einholen.
+  1. User sends a prompt.
+  2. **Classification**: the prompt is analyzed (shipped: cloud-first
+     chain when enabled, then the local models above).
+  3. **Routing**: a group is selected based on the category (e.g.
+     `code_simple` → `operational`).
+  4. **Model selection**: the existing router picks the best model from
+     the group (based on GDPval, cost, availability).
+  5. **Fallback**: on high cost or uncertainty → the `fallback` group
+     (shipped behavior; the sketch below proposed asking the user).
 
 ---
 
-## Technische Umsetzung
-### 1. Klassifizierungs-Prompt
-Das lokale Modell erhält folgenden Prompt zur Analyse:
+## Technical implementation
+### 1. Classification prompt
+The classification model receives a prompt like:
 ```text
-Klassifiziere die folgende Anfrage in **genau eine** der Kategorien:
+Classify the following request into **exactly one** of the categories:
 - code_simple
 - code_complex
 - design
@@ -64,95 +82,102 @@ Klassifiziere die folgende Anfrage in **genau eine** der Kategorien:
 - exploration
 - fallback
 
-**Anfrage**: "{{user_prompt}}"
+**Request**: "{{user_prompt}}"
 
-**Antwortformat**:
+**Response format**:
 {
-  "category": "<Kategorie>",
-  "reason": "<Begründung in 1–2 Sätzen>"
+  "category": "<category>",
+  "reason": "<justification in 1–2 sentences>"
 }
 ```
 
-### 2. Beispiel-Klassifizierungen
-| User-Prompt                                                                 | Kategorie          | Begründung                                                                 |
-|---------------------------------------------------------------------------|--------------------|-----------------------------------------------------------------------------|
-| "Ersetze alle Vorkommen von 'oldVar' mit 'newVar' in dieser Datei."      | `code_simple`      | Einfache Textersetzung, keine logische Komplexität.                        |
-| "Debugge diese rekursive Funktion — sie stürzt bei großen Eingaben ab." | `code_complex`     | Erfordert Analyse von Logik und Performance.                               |
-| "Entwirf eine REST-API für ein Benutzerverwaltungssystem."              | `design`           | Architektur-Entscheidungen, keine Implementierungsdetails.                |
-| "Erstelle einen Projektplan für die Umstellung auf TypeScript."       | `planning`         | Aufgabenaufschlüsselung und Zeitplanung.                                  |
-| "Welche Datenbank eignet sich für Echtzeit-Analysen von 10M Datensätzen?" | `exploration`    | Offene Frage ohne klare Anforderungen.                                    |
-| "Mach das besser."                                                           | `fallback`         | Unklar, was gemeint ist.                                                   |
+### 2. Example classifications
+| User prompt                                                                    | Category           | Justification                                                              |
+|--------------------------------------------------------------------------------|--------------------|-----------------------------------------------------------------------------|
+| "Replace all occurrences of 'oldVar' with 'newVar' in this file."             | `code_simple`      | Simple text replacement, no logical complexity.                             |
+| "Debug this recursive function — it crashes on large inputs."                 | `code_complex`     | Requires analysis of logic and performance.                                 |
+| "Design a REST API for a user-management system."                             | `design`           | Architecture decisions, no implementation details.                         |
+| "Create a project plan for the TypeScript migration."                         | `planning`         | Task breakdown and scheduling.                                             |
+| "Which database is suitable for real-time analytics over 10M records?"       | `exploration`      | Open question without clear requirements.                                  |
+| "Make this better."                                                            | `fallback`         | Unclear what is meant.                                                      |
 
-### 3. Fallback-Logik
-- **Kostencheck**: Wenn die geschätzten Tokens >5000 oder die Kosten >$0.50 sind:
+### 3. Fallback logic
+- **Cost check**: if the estimated tokens are >5000 or the cost is >$0.50:
   ```text
-  Diese Anfrage würde ~${costs} in ${model} verbrauchen. Soll ich stattdessen ein günstigeres Modell (z. B. Ollama) verwenden?
+  This request would use ~${costs} in ${model}. Should I use a cheaper model (e.g. Ollama) instead?
   ```
-- **Unsicherheit**: Wenn die Klassifizierung `fallback` ergibt oder das lokale Modell unsicher ist (`"reason": "unclear"`):
+- **Uncertainty**: if the classification yields `fallback` or the local
+  model is uncertain (`"reason": "unclear"`):
   ```text
-  Ich bin unsicher, welches Modell für diese Anfrage am besten geeignet ist. Möchtest du:
-  1. Ein schnelles, lokales Modell (Ollama) verwenden,
-  2. Ein hochwertiges Remote-Modell (z. B. Claude Opus) wählen, oder
-  3. Selbst entscheiden?
+  I'm not sure which model is best suited for this request. Would you like:
+  1. A fast, local model (Ollama),
+  2. A high-quality remote model (e.g. Claude Opus), or
+  3. To decide yourself?
   ```
 
 ---
 
-## Abhängigkeiten
-- **Lokales Modell**: `ollama/gemma2:2b` (schnell, leicht) oder `ollama/phi3:mini` (bessere Genauigkeit).
-- **Token-Schätzung**: `tiktoken` oder `gpt-tokenizer` zur Kostenabschätzung.
-- **PI-Hooks**: `before_user_prompt` für die Echtzeit-Analyse.
+## Dependencies
+- **Local model**: `ollama/mistral-nemo:latest` (shipped primary) with
+  `ollama/gemma2:2b` as the local fallback (or `ollama/phi3:mini` for
+  better accuracy on small hardware).
+- **Token estimation**: `tiktoken` or `gpt-tokenizer` for cost estimation.
+- **Pi hooks**: real-time analysis before prompt routing.
 
 ---
 
-## Offene Fragen
-1. **Genauigkeit der Klassifizierung**: Wie gut kann `gemma2:2b` die Kategorien unterscheiden?
-   - *Test*: Manuelle Evaluation mit 20–30 Beispiel-Prompts.
-2. **Performance**: Wie lange dauert die Klassifizierung (Ziel: <500ms)?
-3. **Fallback-Strategie**: Soll bei `fallback` immer nachgefragt werden, oder eine Default-Gruppe (z. B. `tactical`) wählen?
-4. **User-Control**: Soll der User die Klassifizierung überschreiben können (z. B. per `/model-hint complex`)?
+## Open questions
+1. **Classification accuracy**: how well can a small model distinguish
+   the categories?
+   - *Test*: manual evaluation with 20–30 example prompts.
+2. **Performance**: how long does classification take (target: <500ms)?
+3. **Fallback strategy**: should `fallback` always ask, or select a
+   default group (e.g. `tactical`)? — *Shipped answer: a `fallback` group.*
+4. **User control**: should the user be able to override the
+   classification (e.g. via a `/model-hint complex` prefix)? — *Shipped
+   answer: yes, the HINT prefix mechanism.*
 
 ---
 
-## Nächste Schritte
-1. **Prototyp implementieren**:
-   - Klassifizierungsfunktion mit `ollama/gemma2:2b`.
-   - Integration in den `before_user_prompt`-Hook.
-   - Routing-Logik für die Gruppenauswahl.
-2. **Testen**:
-   - Manuelle Tests mit Beispiel-Prompts.
-   - Performance-Messung (Latenz der Klassifizierung).
-3. **Iteration**:
-   - Kategorien und Routing-Regeln anpassen.
-   - Fallback-Logik verfeinern.
+## Next steps
+1. **Implement the prototype**:
+   - classification function with the local model.
+   - integration before routing.
+   - routing logic for group selection.
+2. **Test**:
+   - manual tests with example prompts.
+   - performance measurement (classification latency).
+3. **Iterate**:
+   - adjust categories and routing rules.
+   - refine the fallback logic.
 
 ---
 
-## Beispiel-Code (Pseudocode)
+## Example code (pseudocode)
 ```javascript
-// Klassifizierungsfunktion
+// Classification function
 async function classifyPrompt(prompt) {
   const classificationPrompt = `
-    Klassifiziere die folgende Anfrage in eine der Kategorien:
+    Classify the following request into one of the categories:
     code_simple, code_complex, design, planning, exploration, fallback.
 
-    Anfrage: "${prompt}"
-    Antwortformat: { "category": "...", "reason": "..." }
+    Request: "${prompt}"
+    Response format: { "category": "...", "reason": "..." }
   `;
 
-  const response = await callOllama("gemma2:2b", classificationPrompt);
+  const response = await callOllama("mistral-nemo:latest", classificationPrompt);
   return JSON.parse(response);
 }
 
-// PI-Hook
+// Routing
 pi.hooks.before_user_prompt(async ({ prompt, context }) => {
   const { category, reason } = await classifyPrompt(prompt);
-  const group = categoryToGroup[category] || "tactical"; // Fallback
+  const group = categoryToGroup[category] || "tactical"; // fallback
   const model = await router.resolveModelGroup(group);
 
   if (estimatedCost(prompt, model) > 0.50) {
     const confirmed = await askUser(
-      `Diese Anfrage würde ~$${estimatedCost(prompt, model)} in ${model} kosten. Fortfahren?`
+      `This request would cost ~$${estimatedCost(prompt, model)} in ${model}. Continue?`
     );
     if (!confirmed) return { model: "ollama/phi3:mini" };
   }
@@ -160,3 +185,6 @@ pi.hooks.before_user_prompt(async ({ prompt, context }) => {
   return { model };
 });
 ```
+
+---
+**Created:** 2026-09-27 · **Translated to English:** 2026-09-30 (AGENTS.md §3)

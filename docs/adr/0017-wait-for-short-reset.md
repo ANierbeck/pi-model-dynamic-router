@@ -1,60 +1,60 @@
-# ADR-0017: Bounded Wait-for-Short-Reset statt Kaskaden-Ausbrennen
+# ADR-0017: Bounded Wait-for-Short-Reset instead of Burning the Candidate Chain
 
 ## Status
-Angenommen (2026-09-27) — ersetzt den ersten Entwurf ("Explizite Reset-Zeit in der Narration"), der das Problem verkannte: die absolute Reset-Zeit wurde bereits angezeigt (`formatResetMsg` rendert "(resets 27.9.2026, 14:37:11)"). Achims Anfrage ("das WARTEN darauf konfigurieren") meinte das tatsächliche Warten, nicht die Anzeige.
+Accepted (2026-09-27) — replaces the first draft ("Explicit reset time in the narration"), which misread the problem: the absolute reset time was already being displayed (`formatResetMsg` renders "(resets 27.9.2026, 14:37:11)"). Achim's request ("das WARTEN darauf konfigurieren") meant actually WAITING, not the display.
 
-## Kontext / Vorfall (2026-09-27, 12:36–12:44 UTC)
+## Context / Incident (2026-09-27, 12:36–12:44 UTC)
 
-Beobachtete Kette (vollständig aus router.log rekonstruiert):
+Observed chain (fully reconstructed from router.log):
 
-1. **12:36:11** — `zai-glm-5-3` trifft ein echtes Mistral-TPM-Limit mit bekanntem, kurzen Reset: "resets 27.9.2026, 14:37:11" — **60 Sekunden**. Alle Mistral-Modelle teilen sich das konto-weite TPM; die nachfolgenden Kandidaten melden dasselbe +60s-Muster (14:37:14, :17, :21).
-2. Der Router cascade-t **sofort** durch alle Kandidaten, statt 60s zu warten. Jeder Kandidat erhält einen Failure-Record (422 → "likely rate limit", rate limits, empty responses).
-3. Der laufende Agent-Turn feuert viele Tool-Call-Requests hintereinander → **jede Request brennt die Kette erneut durch** → 2 Failures/15 Min pro Modell → eskalierende Backoffs.
-4. **12:37:11** — zai ist real wieder verfügbar (TPM-Fenster abgelaufen). Der Router merkt es nicht: die Kaskade läuft weiter.
-5. **Total-Cooldown-Collapse-Zweig**: "Force-retrying X (**28s remaining**)" — Retry **in einen bekannten, nicht abgelaufenen Cooldown hinein** → garantiertes Fail → **neuer Failure-Record** → Backoff verdoppelt → Cooldown verlängert sich über die reale Erholung hinaus (**Selbstvergiftung**).
-6. **12:43:58** — Totaler Kollaps: alle 17–18 Kandidaten aller 10 Gruppen gesperrt. Der Router bleibt minutenlang tot, obwohl die API längst wieder geht.
-7. **Beweis der Divergenz**: Achim setzt das Modell **hart auf zai-glm-5-3** (umgeht den Router-State) → **funktioniert sofort**. Der Router-State hatte sich von der Wirklichkeit entkoppelt.
+1. **12:36:11** — `zai-glm-5-3` hits a real Mistral TPM limit with a known, short reset: "resets 27.9.2026, 14:37:11" — **60 seconds**. All Mistral models share the account-wide TPM; the subsequent candidates report the same +60s pattern (14:37:14, :17, :21).
+2. The router cascades **immediately** through all candidates instead of waiting 60s. Each candidate gets a failure record (422 → "likely rate limit", rate limits, empty responses).
+3. The running agent turn fires many tool-call requests in a row → **every request burns the whole chain again** → 2 failures / 15 min per model → escalating backoffs.
+4. **12:37:11** — zai is really available again (TPM window elapsed). The router doesn't notice: the cascade keeps running.
+5. **Total-cooldown-collapse branch**: "Force-retrying X (**28s remaining**)" — retrying **into a known, unexpired cooldown** → guaranteed failure → **a new failure record** → backoff doubles → the cooldown extends beyond the real recovery (**self-poisoning**).
+6. **12:43:58** — Total collapse: all 17–18 candidates across all 10 groups locked. The router stays dead for minutes although the API has long been working again.
+7. **Proof of divergence**: Achim hard-pins the model to zai-glm-5-3 (bypassing router state) → **works immediately**. Router state had decoupled from reality.
 
-## Entscheidung
+## Decision
 
-**1. Bounded Wait-for-Short-Reset (driveStream, rate_limit-Branch):**
-Wenn ein Kandidat mit `rate_limit_exceeded` failt, `resetAtMs` bekannt ist und `resetAtMs − now ≤ rate_limit_wait_max_ms` (Default 120s, 0 = aus):
-- Kaskade anhalten, narraten "rate limited (resets …) — waiting Ns, then retrying…"
-- Schlafen bis `resetAtMs + 2s`, das **gleiche Modell 1× neu versuchen**
-- Erfolg → fertig; erneuter Fail → normal in der Kaskade weiterlaufen
-- **Maximal ein Wait pro driveStream-Aufruf** (`rateLimitWaitUsed`) — keine Livelock-Gefahr
+**1. Bounded wait-for-short-reset (driveStream, rate_limit branch):**
+When a candidate fails with `rate_limit_exceeded`, `resetAtMs` is known, and `resetAtMs − now ≤ rate_limit_wait_max_ms` (default 120s, 0 = off):
+- Stop the cascade, narrate "rate limited (resets …) — waiting Ns, then retrying…"
+- Sleep until `resetAtMs + 2s`, retry the **same model once**
+- Success → done; another failure → continue the cascade normally
+- **At most one wait per driveStream invocation** (`rateLimitWaitUsed`) — no livelock risk
 
-**2. Collapse-Zweig-Reparatur (Selbstvergiftung beenden):**
-Im Total-Cooldown-Collapse: wenn die kürzeste Restzeit `bestSecs ≤ rate_limit_wait_max_ms` → **warten** (`bestSecs + 2s`), dann erst retryen. Kein Force-Retry mehr in bekannte, nicht abgelaufene Cooldowns (jeder solche Retry erzeugte einen garantierten Fail und verlängerte den Cooldown — die Eskalationsspirale). Lange Restzeiten behalten die alte Immediate-Retry-Semantik. Die Narration wechselte außerdem von `pushRouterInfo` (unsichtbar im Log!) zu `pushRouterInfoLogged`.
+**2. Collapse-branch repair (ending the self-poisoning):**
+In the total-cooldown collapse: if the shortest remaining time `bestSecs ≤ rate_limit_wait_max_ms` → **wait** (`bestSecs + 2s`), then retry. No more force-retries into known, unexpired cooldowns (every such retry produced a guaranteed failure and extended the cooldown — the escalation spiral). Long remaining times keep the old immediate-retry semantics. The narration also moved from `pushRouterInfo` (invisible in the log!) to `pushRouterInfoLogged`.
 
-**3. `/router cooldowns [clear]` (Sofort-Entlastung):**
-- `/router cooldowns` — listet aktive Cooldowns (Ref, Restsekunden, Hits, Provider-Reset) + model_health-Streaks
-- `/router cooldowns clear` — löscht ALLE In-Memory-Cooldowns + `cache.model_health`-Streaks (persistiert), ohne pi-Neustart. Für künftige Vorfälle: ein Befehl statt Neustart.
+**3. `/router cooldowns [clear]` (immediate incident relief):**
+- `/router cooldowns` — lists active cooldowns (ref, remaining seconds, hits, provider reset) + model_health streaks
+- `/router cooldowns clear` — clears ALL in-memory cooldowns + `cache.model_health` streaks (persisted), without restarting pi. For future incidents: one command instead of a restart.
 
-## Konsequenzen
-- **Positiv:** Kurzfristige TPM-Fenster (60s) kosten eine Wartepause statt eines Total-Kollapses; die Failure-Flut auf 17 unbeteiligte Modelle entfällt; der Router-State kann sich nicht mehr selbst vergiften; manuelle Erholung ohne Neustart.
-- **Negativ:** Im Wait-Fenster (≤120s) steht der Stream still (narrated). Ein Abbruch während des Waits ist erst nach Ablauf wirksam (kein Abort-Plumbing in driveStream — akzeptiert, bounded).
-- **Neutral:** Cooldown-Backoffs und Eskalation bleiben für limitenlose/ungeklärte Failures unverändert.
+## Consequences
+- **Positive:** Short TPM windows (60s) cost a narrated pause instead of a total collapse; the flood of failures onto 17 uninvolved models disappears; router state can no longer poison itself; manual recovery without a restart.
+- **Negative:** During the wait window (≤120s) the stream stalls (narrated). An abort during the wait only takes effect after it elapses (no abort plumbing in driveStream — accepted, bounded).
+- **Neutral:** Cooldown backoffs and escalation stay unchanged for unlimited/unclear failures.
 
-## Konfiguration
-- `rate_limit_wait_max_ms` (router-defaults.yaml: 120000; überlagerbar in router-config.json / User-Layer; `0` deaktiviert beide Wait-Pfade)
+## Configuration
+- `rate_limit_wait_max_ms` (router-defaults.yaml: 120000; overridable in router-config.json / user layer; `0` disables both wait paths)
 
-## Implementierung
-- `src/stream-orchestrator.ts`: rate_limit-Branch (Wait+Retry), Collapse-Zweig (Wait statt Immediate-Force-Retry), `sleepMs`-Helper
+## Implementation
+- `src/stream-orchestrator.ts`: rate_limit branch (wait+retry), collapse branch (wait instead of immediate force-retry), `sleepMs` helper
 - `src/rate-limit.ts`: `clearAllLimits()`, `listLimits()`
-- `index.ts`: `getRateLimitWaitMaxMs()`-Getter, ctx-Wiring, `/router cooldowns [clear]`
+- `index.ts`: `getRateLimitWaitMaxMs()` getter, ctx wiring, `/router cooldowns [clear]`
 - `src/types.ts`, `router-defaults.yaml`: `rate_limit_wait_max_ms`
 - Tests: `test/rate-limit-wait.test.ts`
 
-## Alternativen verworfen
-- **Nur Narration erweitern** (erster Entwurf) — Reset-Zeit wurde schon angezeigt; löst nichts.
-- **Warten am ersten Rate-Limit ohne Schwelle** — würde bei five_hour-Fenstern (2h+) den Turn ewig blocken; deshalb bounded.
-- **Cooldown-Eskalation absenken** — bekämpft das Symptom, nicht die Ursache; die Kette darf gar nicht erst durchgebrennt werden.
+## Alternatives rejected
+- **Only extend the narration** (first draft) — the reset time was already displayed; solves nothing.
+- **Wait at the first rate limit without a threshold** — would block the turn forever on five-hour windows (2h+); hence bounded.
+- **Lower the cooldown escalation** — fights the symptom, not the cause; the chain must not burn through in the first place.
 
-## Verwandte Dokumente
-- ADR-0008 (Learned Blocklist) — permanente Provider-Defekte
-- ADR-0011 (HINT-Reparatur) — unabhängig
-- `src/rate-limit.ts` — recordLimit (resetAtMs-berücksichtigend), recordSoftFailure
+## Related documents
+- ADR-0008 (Learned Blocklist) — permanent provider defects
+- ADR-0011 (HINT repair) — independent
+- `src/rate-limit.ts` — recordLimit (resetAtMs-aware), recordSoftFailure
 
 ---
-**Erstellt:** 2026-09-27 · **Letzte Änderung:** 2026-09-27 (Rewrite nach Live-Vorfall) · **Zustand:** Angenommen
+**Created:** 2026-09-27 · **Last change:** 2026-09-27 (rewrite after a live incident; translated to English 2026-09-30 per AGENTS.md §3) · **State:** Accepted
