@@ -23,14 +23,8 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
@@ -104,6 +98,7 @@ const knownImage = {
   output: ['image'],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   inputLimits: { images: { max: 4 } },
+  promptCache: { type: 'openrouter' },
 };
 
 /** pi-known classifier model (0.99.1 builtin-catalog shape) — never in the scan. */
@@ -173,8 +168,22 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
 
         // The scan-new chat model registers (the union's purpose, unchanged).
         expect(ids).toContain('glm-5-2');
-        // The scanned known chat model survives (425/426 + 649 regressions).
+        // The scanned known chat model survives byte-for-byte (425/426 + 649
+        // regressions; compat and every allow-listed field round-trip intact).
         expect(ids).toContain('zai-glm-5-2');
+        const roundTrippedChat = registeredModels.find((m) => m.id === 'zai-glm-5-2');
+        expect(roundTrippedChat).toEqual({
+          id: 'zai-glm-5-2',
+          name: 'mistral-zai/zai-glm-5-2',
+          api: 'openai-completions',
+          baseUrl: 'https://api.mistral.ai/v1',
+          reasoning: true,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128_000,
+          maxTokens: 8_000,
+          compat: { supportsStore: false },
+        });
 
         // The image model survives WITH its type — the pre-hardening allow-list
         // stripped `type`, re-registering it as a chat model.
@@ -186,6 +195,23 @@ describe('registerGroupModels union: non-chat model preservation under 0.99.1', 
         expect(roundTrippedImage.output).toEqual(['image']);
         expect(roundTrippedImage.inputLimits).toEqual({ images: { max: 4 } });
         expect(roundTrippedImage.api).toBe('mistral-images');
+        // Byte-for-byte: the round-trip emits EXACTLY the allow-listed fields
+        // the model carries — no added explicit-undefined keys (the pre-fix
+        // allow-list added reasoning: undefined to every non-chat model).
+        expect(Object.keys(roundTrippedImage).sort()).toEqual(
+          [
+            'api',
+            'baseUrl',
+            'cost',
+            'id',
+            'input',
+            'inputLimits',
+            'name',
+            'output',
+            'promptCache',
+            'type',
+          ].sort()
+        );
 
         // The classifier model survives WITH its type.
         expect(ids).toContain('typesafe/jev-1.13');

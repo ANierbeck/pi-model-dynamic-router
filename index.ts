@@ -1643,6 +1643,8 @@ let previousTokenCount = 0;
       const resolvedMetrics = res ? getM(resolvedRef) : null;
       const label = isDynamicGroup ? `${groupName} → auto-classify` : `${groupName} → ${resolvedRef}`;
 
+      // Safe by construction (ADR-0019): group providers use router-owned
+      // ids/apis that never collide with pi's builtin catalog or models.json.
       (pi as any).registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
         apiKey: 'router-virtual', // not used — streamSimple overrides
@@ -2304,6 +2306,10 @@ let previousTokenCount = 0;
     const registeredProviderIds: string[] =
       (sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() ?? [];
     if (registeredProviderIds.includes(provider)) return false;
+    // 0.99.1 note (ADR-0019): getRegisteredProviderIds() includes every
+    // builtin-catalog provider there, so this guard degrades to 'never
+    // overwrite a provider pi knows' — conservative and correct. The
+    // scan-union site (see ADR-0019) is the only place that must round-trip.
     // Resolve an API key (free models still need a key for the OpenRouter
     // endpoint, just at no cost). Without one we can't register.
     const keys = cfg.providers?.[provider]?.keys;
@@ -3267,12 +3273,12 @@ async function registerGroupModels(ctx: any) {
             name: m.name,
             ...(m.api !== undefined ? { api: m.api } : {}),
             ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
-            reasoning: m.reasoning,
+            ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
             ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
-            input: m.input,
-            cost: m.cost,
-            contextWindow: m.contextWindow,
-            maxTokens: m.maxTokens,
+            ...(m.input !== undefined ? { input: m.input } : {}),
+            ...(m.cost !== undefined ? { cost: m.cost } : {}),
+            ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+            ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
             ...(m.headers !== undefined ? { headers: m.headers } : {}),
             ...(m.compat !== undefined ? { compat: m.compat } : {}),
             // ADR-0019: preserve non-chat model identity (0.99.1) — see the
@@ -3284,6 +3290,11 @@ async function registerGroupModels(ctx: any) {
             ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
             ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
           }));
+          // Note: EVERY field above is a conditional spread — the round-trip
+          // emits exactly the fields the pi-known model carries, nothing else.
+          // That keeps non-chat models (0.99.1 image/classifier, which lack
+          // reasoning/contextWindow/maxTokens) byte-for-byte and does not add
+          // explicit-undefined keys to any model.
 
         (pi as any).registerProvider(provId, {
           baseUrl: def.baseUrl,
@@ -3316,8 +3327,12 @@ async function registerGroupModels(ctx: any) {
             }),
           ],
         });
-      } catch {
-        /* provider already registered or config error */
+      } catch (err) {
+        // Never fatal (scan-discovered models are an optimization), but a
+        // silently-swallowed throw here means scan discovery silently stops
+        // working — log it so the Task-4 post-restart /router scan check can
+        // see it in router.log (ADR-0019).
+        routerLog(`[scan-union] registerProvider(${provId}) failed: ${String(err)}`);
       }
     }
 
@@ -3351,6 +3366,9 @@ async function registerGroupModels(ctx: any) {
           // Pass the full models (with capabilities) so num_ctx comes from
           // the real /api/show values, not a hardcoded table.
           const providerModels = buildOllamaProviderModels(ollamaModels);
+          // Safe by construction (ADR-0019): the Guardrail-3/Ü1 check above
+          // guarantees pi does not know ollama at all at this point, and the
+          // builtin catalogs ship no ollama entry to collide with.
           (pi as any).registerProvider('ollama', {
             name: 'Ollama (local)',
             baseUrl: 'http://localhost:11434/v1',
