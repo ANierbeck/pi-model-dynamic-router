@@ -2042,9 +2042,20 @@ let previousTokenCount = 0;
 
     if (ev.isError && curModel) {
       const txt = ev.content?.map((c: any) => c.text ?? '').join('') ?? '';
-      if (txt.includes('429') || txt.toLowerCase().includes('rate limit')) {
-        const result = recordLimit(curModel);
-        if (result.rotated) {
+      // I2 (final v1.6.0 review): the old naive scan —
+      // txt.includes('429') || txt.toLowerCase().includes('rate limit') —
+      // matched ANY 429 substring ("1429 lines", a curl'd 429 from an
+      // unrelated host, test output) and attributed a hard cooldown + key
+      // rotation to the current model on that evidence alone. Unified
+      // detection: isRateLimitText's 15-wording pattern table (shared with
+      // every other rate-limit site) requires actual rate-limit wording.
+      // Routing through recordStreamFailure instead of a bare recordLimit:
+      // the event now also lands in the session_errors ring buffer (footer
+      // ⚠N err + /router errors) instead of silently bypassing it, and the
+      // same seam decides hard vs soft + rotation for every failure shape.
+      if (isRateLimitText(txt)) {
+        const result = recordStreamFailure(curModel, 'rate_limit_exceeded', undefined, txt);
+        if (result.rotated && result.newKey) {
           ctx.ui.notify(
             `🔑 Rate limited — rotated ${splitRef(curModel).provider} to key "${result.newKey}"`,
             'warning'
