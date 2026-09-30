@@ -3196,9 +3196,23 @@ async function registerGroupModels(ctx: any) {
       // wipe on 0.87.1 (roborev job 649 HIGH).
       // Pick only the documented ProviderModelConfig fields (id, name, api,
       // baseUrl, reasoning, thinkingLevelMap, input, cost, contextWindow,
-      // maxTokens, headers, compat) — pi's Model interface also carries a
-      // `provider` field that ProviderModelConfig doesn't declare, so spread
-      // the whole object less and pick the known-safe fields instead.
+      // maxTokens, headers, compat, plus the 0.99.1 non-chat fields type,
+      // output, inputLimits, promptCache — see ADR-0019) — pi's Model interface
+      // also carries a `provider` field that ProviderModelConfig doesn't
+      // declare, so spread the whole object less and pick the known-safe
+      // fields instead.
+      //
+      // Pi 0.99.1 (ADR-0019): the registry composes providers as builtin
+      // catalog + models.json + extension overlay, getAll() returns models of
+      // ALL types, and an extension registration with `models` replaces the
+      // composed list wholesale. The builtin catalogs ship non-chat inventory
+      // under ids we re-register (openrouter alone: 53 image + 8 classifier
+      // models, jev family included). A chat-only round-trip would corrupt the
+      // registry twice over: wipe the model entries AND re-register any
+      // survivor as a chat model (`type` lost). The conditional spreads below
+      // preserve `type`/`output`/`inputLimits`/`promptCache` when present —
+      // 0.87.1 hosts never carry those fields on chat models, so they are
+      // unaffected.
       //
       // Use the scan-reported cost_per_m instead of unconditionally hardcoding
       // 0. This is a real improvement for providers whose scan path fetches
@@ -3261,6 +3275,14 @@ async function registerGroupModels(ctx: any) {
             maxTokens: m.maxTokens,
             ...(m.headers !== undefined ? { headers: m.headers } : {}),
             ...(m.compat !== undefined ? { compat: m.compat } : {}),
+            // ADR-0019: preserve non-chat model identity (0.99.1) — see the
+            // block comment above. All four are conditional so 0.87.1 hosts
+            // (whose chat models lack these fields) round-trip byte-for-byte
+            // as before.
+            ...(m.type !== undefined ? { type: m.type } : {}),
+            ...(m.output !== undefined ? { output: m.output } : {}),
+            ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
+            ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
           }));
 
         (pi as any).registerProvider(provId, {
