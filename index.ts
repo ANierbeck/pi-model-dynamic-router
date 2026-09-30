@@ -3182,10 +3182,14 @@ async function registerGroupModels(ctx: any) {
       // registration for the models it already knew — including their compat
       // flags — which is exactly the destructive overwrite Ü1 exists to
       // prevent (roborev job 425/426 HIGH finding on an earlier version of
-      // this fix). Round-trip pi's own Model objects for the already-known
-      // models (preserving them byte-for-byte, compat flags included) and
-      // pass the UNION of those plus the new models, so the call is a true
-      // add, not a replace.
+      // this fix). Round-trip pi's own Model objects — ALL of them that pi
+      // has registered for the provider, not only the ones the scan reports
+      // (preserving them byte-for-byte, compat flags included) — and pass
+      // the UNION of those plus the new models, so the call is a true add,
+      // not a replace. Starting the round-trip from the scan's subset
+      // instead silently deleted pi-registered models the scan does not
+      // report (excluded from routing, pruned, or not scanned) — a live
+      // wipe on 0.87.1 (roborev job 649 HIGH).
       // Pick only the documented ProviderModelConfig fields (id, name, api,
       // baseUrl, reasoning, thinkingLevelMap, input, cost, contextWindow,
       // maxTokens, headers, compat) — pi's Model interface also carries a
@@ -3204,17 +3208,31 @@ async function registerGroupModels(ctx: any) {
       // So this does not, by itself, fix billing-tier accuracy for mistral-zai
       // — only for providers whose scan already carries real pricing.
       try {
-        // Cache the find() results in a Map keyed by model id (roborev job 429
-        // LOW): the size check AND existingModels below both need the resolved
-        // Model object, and calling find() twice per known model is redundant
-        // work. The Map is built once and reused for both the set-membership
-        // check and the round-trip lookup.
-        const piKnownByModel = new Map<string, any>();
-        for (const m of provModels) {
-          const found = ctx.modelRegistry.find(provId, m.id);
-          if (found) piKnownByModel.set(m.id, found);
+        // Build the map from pi's FULL registered list for this provider via
+        // getAll() — part of pi's ModelRegistry facade since ^0.83
+        // (dist/core/model-registry.d.ts) — so the round-trip below covers
+        // scan-absent models too. The map is keyed by model id (roborev job
+        // 429 LOW) and reused for both the skip check and the round-trip;
+        // the find() fallback (over the scanned ids) keeps older hosts
+        // without getAll() on the pre-649 behavior instead of skipping
+        // the provider entirely on a throw.
+        let piKnownModels: any[] = [];
+        try {
+          piKnownModels = ((ctx.modelRegistry as any).getAll?.() ?? []).filter(
+            (m: any) => m.provider === provId
+          );
+        } catch {
+          piKnownModels = [];
         }
-        if (piKnownByModel.size === provModels.length) continue; // pi knows ALL — skip entirely
+        const piKnownByModel = new Map<string, any>();
+        for (const m of piKnownModels) piKnownByModel.set(m.id, m);
+        if (!piKnownModels.length) {
+          for (const m of provModels) {
+            const found = ctx.modelRegistry.find(provId, m.id);
+            if (found) piKnownByModel.set(m.id, found);
+          }
+        }
+        if (provModels.every((m) => piKnownByModel.has(m.id))) continue; // pi knows ALL the scanned models — skip entirely
 
         // Register only the models pi does NOT know yet.
         const newModels = provModels.filter((m) => !piKnownByModel.has(m.id));
@@ -3226,11 +3244,7 @@ async function registerGroupModels(ctx: any) {
           return 0;
         };
 
-        const existingModels = provModels
-          .filter((m) => piKnownByModel.has(m.id))
-          .map((m) => piKnownByModel.get(m.id))
-          .filter((m): m is NonNullable<typeof m> => Boolean(m))
-          .map((m: any) => ({
+        const existingModels = [...piKnownByModel.values()].map((m: any) => ({
             id: m.id,
             name: m.name,
             ...(m.api !== undefined ? { api: m.api } : {}),

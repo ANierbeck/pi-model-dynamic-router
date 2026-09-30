@@ -154,4 +154,106 @@ describe('registerGroupModels: mixed known/unknown models for one provider', () 
       }
     );
   }, 30000);
+
+  it('preserves pi-registered models the scan cache does not report (roborev 649 HIGH)', async () => {
+    /**
+     * registerProvider replaces the provider's whole model list. The union
+     * path used to round-trip only the models the SCAN reports (provModels ∩
+     * pi-known), so any pi-registered chat model the scan does not report —
+     * excluded from routing, pruned, or simply not scanned — was silently
+     * DELETED from pi on the next scan-triggered re-registration, even on
+     * 0.87.1. The union must start from pi's own full per-provider list
+     * (modelRegistry.getAll() filtered by provider), which the ModelRegistry
+     * facade has exposed since ^0.83.
+     */
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: {
+          'mistral-zai': { keys: [{ key: 'test-key' }] },
+        },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+      },
+      async (defaultExport, tmpDir) => {
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const registerProviderCalls: any[] = [];
+        const pi: any = {
+          registerTool: vi.fn(),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn((name: string, opts: any) => {
+            registerProviderCalls.push({ name, opts });
+          }),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => {
+            onHandlers[event] = handler;
+          }),
+        };
+        defaultExport(pi);
+
+        // pi knows TWO mistral-zai models: the scanned zai-glm-5-2 and a
+        // legacy chat model the scan cache does NOT report (the realistic
+        // case: excluded from routing or pruned from the scan).
+        const scannedKnown = {
+          id: 'zai-glm-5-2',
+          name: 'mistral-zai/zai-glm-5-2',
+          provider: 'mistral-zai',
+          api: 'openai-completions',
+          baseUrl: 'https://api.mistral.ai/v1',
+          reasoning: true,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 128_000,
+          maxTokens: 8_000,
+          compat: { supportsStore: false },
+        };
+        const scanAbsent = {
+          id: 'legacy-chat',
+          name: 'mistral-zai/legacy-chat',
+          provider: 'mistral-zai',
+          api: 'openai-completions',
+          baseUrl: 'https://api.mistral.ai/v1',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 32_000,
+          maxTokens: 4_000,
+          compat: { supportsStore: false },
+        };
+        const modelRegistry = {
+          // The full per-provider list — the union must start from THIS, not
+          // from find() over the scan-reported ids.
+          getAll: () => [scannedKnown, scanAbsent],
+          getAvailable: () => [scannedKnown, scanAbsent],
+          find: (provider: string, modelId: string) => {
+            if (provider !== 'mistral-zai') return null;
+            if (modelId === 'zai-glm-5-2') return scannedKnown;
+            if (modelId === 'legacy-chat') return scanAbsent;
+            return null;
+          },
+          getApiKeyForProvider: async () => null,
+          runtime: { streamSimple: vi.fn() },
+        };
+        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const mistralZaiCalls = registerProviderCalls.filter((c) => c.name === 'mistral-zai');
+        expect(mistralZaiCalls.length).toBeGreaterThan(0);
+
+        const ids = (mistralZaiCalls[0].opts.models as any[]).map((m) => m.id);
+        // The new scan model still registers (the F4 goal, unchanged).
+        expect(ids).toContain('glm-5-2');
+        // The scanned known model survives (the original 425/426 fix).
+        expect(ids).toContain('zai-glm-5-2');
+        // The scan-absent pi-registered model survives too — this is the
+        // roborev-649 regression: it used to be wiped by the replace.
+        expect(ids).toContain('legacy-chat');
+        // And its compat flags survived the round-trip.
+        const roundTripped = mistralZaiCalls[0].opts.models.find(
+          (m: any) => m.id === 'legacy-chat'
+        );
+        expect(roundTripped.compat).toEqual({ supportsStore: false });
+      }
+    );
+  }, 30000);
 });
