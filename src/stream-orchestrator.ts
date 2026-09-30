@@ -572,6 +572,14 @@ export class StreamOrchestrator {
         continue;
       }
       const attempt = openCandidateAttempt(options);
+      // S1 (final v1.6.0 review): set by the catch below when the failure has
+      // ALREADY been recorded. The `!target` block used to record a second,
+      // identical provider_error for the same thrown open — two ring-buffer
+      // entries + two soft-failure hits per real failure, breaking the
+      // "⚠N err == N events" footer contract and doubling the backoff
+      // cadence. `!target` must only record the SILENT-skip path (tryStream
+      // returned null with a skipReason and never threw).
+      let openFailureText: string | undefined;
       const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
         const errorMsg = String(err.message || err);
         const isExpectedError = isExpectedTransientError(errorMsg);
@@ -582,15 +590,21 @@ export class StreamOrchestrator {
         // not just the rate-limit sites. The seam evaluates
         // isPaidCloudRateLimitFailure on the error text — a 429-shaped open
         // failure now correctly takes the hard path instead of a soft hop.
+        openFailureText = errorMsg;
         ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
         pushRouterInfoLogged(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
         return null;
       });
       if (!target) {
         attempt.abandon();
-        const why = ctx.skipReasons.get(ref);
-        if (why) pushError(ref, why);
-        ctx.recordStreamFailure(ref, 'provider_error', undefined, why ? String(why) : undefined);
+        if (openFailureText === undefined) {
+          // Silent-skip path: tryStream returned null without throwing
+          // (no API key, local concurrency limit, ...) — skipReason carries
+          // the cause; record THIS failure exactly once.
+          const why = ctx.skipReasons.get(ref);
+          if (why) pushError(ref, why);
+          ctx.recordStreamFailure(ref, 'provider_error', undefined, why ? String(why) : undefined);
+        }
         continue;
       }
 
