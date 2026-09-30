@@ -1,98 +1,116 @@
-# ADR-0018: Reparatur des HINT-Mechanismus (HINT/MHINT/MODEL-HINT-Präfix)
+# ADR-0018: HINT Mechanism Repair (HINT/MHINT/MODEL-HINT prefix)
 
 ## Status
-Entwurf (2026-09-27)
 
-## Kontext / Problem
-Achim meldet am 27.09.2026: Der HINT-Mechanismus funktioniert nicht mehr wie erwartet. Der Mechanismus basiert auf:
-- **HINT/MHINT/MODEL-HINT-Präfix** im Prompt (z.B. `HINT: ...` oder `MHINT: ...`)
-- **Detektion** in `src/content-classifier.ts` via `detectHintDirectly` / `containsHintMarker`
-- **Aktion:** Bei HINT-Erkennung wird die Klassifizierung unterdrückt und die Antwort als `HINT: ...` an den Benutzer ausgegeben, statt als reguläre Antwort.
+Draft (2026-09-27)
 
-**Symptom:**
-- HINT-Präfixe werden nicht erkannt.
-- Klassifizierung läuft durch, obwohl ein HINT vorliegt.
-- Der Benutzer sieht die HINT-Antwort nicht als solche, sondern als normale Antwort.
+## Context / Problem
 
-**Hintergrund:**
-Der Mechanismus wurde während der Cloud-first-Ollama-Planung auffällig, ist aber ein **separates, unabhängiges Problem** von der Router-Architektur. Er funktionierte in der Vergangenheit (roborev job 345 HIGH, 2026-09-02), ist aber aktuell defekt.
+Achim reported on 2026-09-27: the HINT mechanism no longer works as expected. The mechanism is based on:
 
-## Entscheidung
-Wir reparieren den HINT-Mechanismus durch:
-1. **Reproduzieren** des Fehlers (Testfall mit HINT-Präfix im Prompt).
-2. **Root Cause analysieren** (Code-Review von `detectHintDirectly` / `containsHintMarker` und der Klassifizierungs-Kette).
-3. **Fix umsetzen** (Code-Änderung + Regressionstest).
-4. **ADR finalisieren** (falls Änderungen an Design/Architektur nötig sind).
+- **HINT/MHINT/MODEL-HINT prefix** in the prompt (e.g. `HINT: ...` or `MHINT: ...`)
+- **Detection** in `src/content-classifier.ts` via `detectHintDirectly` / `containsHintMarker`
+- **Action:** on HINT detection, classification is suppressed and the response is emitted to the user as `HINT: ...` instead of a regular response.
 
-## Konsequenzen
-- **Positiv:** HINT-Mechanismus funktioniert wieder — bessere UX für HINT-basierte Workflows.
-- **Negativ:** Kleine Code-Änderung in `src/content-classifier.ts`; Regressionstest nötig.
-- **Risiko:** Kein Risiko — Mechanismus ist optional; wenn er defekt ist, ist das Verhalten "normale Klassifizierung" (kein Abbruch).
+**Symptoms:**
+
+- HINT prefixes are not recognized.
+- Classification runs through even though a HINT is present.
+- The user does not see the HINT response as such, but as a regular response.
+
+**Background:**
+
+The mechanism surfaced during cloud-first/Ollama planning but is a **separate, independent problem** from the router architecture. It worked in the past (roborev job 345 HIGH, 2026-09-02) but is currently broken.
+
+## Decision
+
+We repair the HINT mechanism by:
+
+1. **Reproducing** the failure (test case with a HINT prefix in the prompt).
+2. **Analyzing the root cause** (code review of `detectHintDirectly` / `containsHintMarker` and the classification chain).
+3. **Implementing the fix** (code change + regression test).
+4. **Finalizing this ADR** (if design/architecture changes become necessary).
+
+## Consequences
+
+- **Positive:** the HINT mechanism works again — better UX for HINT-based workflows.
+- **Negative:** small code change in `src/content-classifier.ts`; regression test required.
+- **Risk:** none — the mechanism is optional; when broken, the behavior degrades to "normal classification" (no abort).
 
 ## Details
 
-### Aktuelle Implementierung (Auszug)
+### Current implementation (excerpt)
+
 - `src/content-classifier.ts`:
   - `detectHintDirectly(text: string): boolean`
   - `containsHintMarker(text: string): boolean`
-  - `classifyPrompt()` nutzt diese Funktionen, um HINT zu erkennen und die Klassifizierung zu unterdrücken.
-- `src/classification-prompt.ts` / `src/classifier-fallback-probe.ts` enthalten Logik zur HINT-Erkennung.
+  - `classifyPrompt()` uses these functions to detect HINT and suppress classification.
+- `src/classification-prompt.ts` / `src/classifier-fallback-probe.ts` contain HINT-detection logic.
 
-### Mögliche Root Causes (Verdachtsliste)
-1. **Narration-Leak:** Router-Nachrichten (z.B. `> [router] HINT: ...`) werden in den Prompt eingeschleust und verfälschen die HINT-Erkennung (2026-09-18 lock-in loop — behoben in 26e99f0, aber Regression möglich).
-2. **Classifier-Kette-Änderung:** Die Cloud-first-Änderung (Sept 2026) hat die Reihenfolge der Kandidaten geändert — HINT-Erkennung könnte an falscher Stelle stattfinden.
-3. **Prompt-Extraktion:** `extractLastUserPrompt` oder `extractLastAssistantSnippet` könnte HINT-Präfixe entfernen oder maskieren.
-4. **HINT-Präfixe nicht im User-Prompt:** HINT könnte in einem anderen Feld (z.B. System-Prompt) stehen und nicht im User-Prompt.
-5. **Falsche Match-Logik:** `detectHintDirectly` sucht nach `/HINT[:\s]/i` — könnte durch neue Prompt-Formatierung nicht mehr greifen.
+### Candidate root causes (suspect list)
 
-### Geplante Schritte
+1. **Narration leak:** router messages (e.g. `> [router] HINT: ...`) leak into the prompt and distort HINT detection (2026-09-18 lock-in loop — fixed in 26e99f0, but a regression is possible).
+2. **Classifier chain change:** the cloud-first change (Sept 2026) reordered the candidate chain — HINT detection might run at the wrong point.
+3. **Prompt extraction:** `extractLastUserPrompt` or `extractLastAssistantSnippet` might strip or mask HINT prefixes.
+4. **HINT prefix not in the user prompt:** HINT might live in another field (e.g. the system prompt) and never reach the user-prompt detection.
+5. **Faulty match logic:** `detectHintDirectly` matches `/HINT[:\s]/i` — new prompt formatting might defeat the pattern.
 
-#### 1. Reproduktion (Testfall)
+### Planned steps
+
+#### 1. Reproduction (test case)
+
 - **Test:** `test/classifier-hint-regression.test.ts`
-  - Prompt mit `HINT: ...` oder `MHINT: ...` an den Klassifizierer senden.
-  - Assert: `classifyPrompt()` liefert ein Ergebnis mit `isHint: true` oder unterdrückt die Klassifizierung und gibt eine HINT-Antwort zurück.
-  - Assert: Die HINT-Antwort wird als `HINT: ...` an den Benutzer gesendet (Narration oder Message).
+  - Send a prompt with `HINT: ...` or `MHINT: ...` through the classifier.
+  - Assert: `classifyPrompt()` returns a result with `isHint: true` or suppresses classification and returns a HINT response.
+  - Assert: the HINT response is sent to the user as `HINT: ...` (narration or message).
 
-#### 2. Root Cause Analyse
-- **Code-Review:**
-  - `detectHintDirectly` / `containsHintMarker` — Match-Logik prüfen.
-  - `classifyPrompt()` — Reihenfolge der Kandidaten, HINT-Erkennung, Unterdrückung.
-  - `extractLastUserPrompt` — HINT-Präfixe im User-Prompt erhalten?
-  - `pushRouterInfo` / Narration-Leak — werden HINT-Zeilen in den Prompt eingeschleust?
-- **Log-Analyse:**
-  - Router-Log (`~/.pi/logs/router.log`) nach HINT-Zeilen durchsuchen.
-  - Klassifizierungs-Logs (`classification.log`?) nach HINT-Erkennung durchsuchen.
+#### 2. Root-cause analysis
 
-#### 3. Fix umsetzen
-- **Code-Änderung:**
-  - Falls Narration-Leak: `extractLastUserPrompt` muss Router-Nachrichten strippen (wie in 26e99f0).
-  - Falls Match-Logik: Regex anpassen (z.B. `/HINT[:\s]|MHINT[:\s]|MODEL-HINT[:\s]/i`).
-  - Falls Reihenfolge: HINT-Erkennung vor der Kandidaten-Auswahl durchführen.
-- **Regressionstest:**
-  - Testfall aus Schritt 1 muss grün werden.
-  - Bestehende Tests dürfen nicht brechen.
+- **Code review:**
+  - `detectHintDirectly` / `containsHintMarker` — check match logic.
+  - `classifyPrompt()` — candidate order, HINT detection, suppression.
+  - `extractLastUserPrompt` — are HINT prefixes preserved in the user prompt?
+  - `pushRouterInfo` / narration leak — are HINT lines leaking into the prompt?
+- **Log analysis:**
+  - Search the router log (`~/.pi/logs/router.log`) for HINT lines.
+  - Search classification logs for HINT detections.
 
-#### 4. ADR finalisieren
-- Falls Architektur-Änderungen nötig sind (z.B. HINT-Erkennung aus der Kandidaten-Auswahl herausziehen), ADR anpassen.
+#### 3. Implement the fix
 
-## Alternativen verworfen
-- **HINT-Mechanismus komplett entfernen** — nicht sinnvoll, da er für Workflows genutzt wird.
-- **Workaround via Blockliste** — keine saubere Lösung.
+- **Code change:**
+  - Narration leak: `extractLastUserPrompt` must strip router messages (as in 26e99f0).
+  - Match logic: adjust the regex (e.g. `/HINT[:\s]|MHINT[:\s]|MODEL-HINT[:\s]/i`).
+  - Ordering: run HINT detection before candidate selection.
+- **Regression test:**
+  - The step-1 test case must turn green.
+  - Existing tests must not break.
 
-## Verwandte Dokumente
-- `src/content-classifier.ts` — HINT-Detektion
-- `src/classification-prompt.ts` — Prompt-Aufbereitung
-- `src/utils.ts` — `stripRouterNarration` (Narration-Leak Fix 26e99f0)
-- ADR-0002: Narration-Leak Fix (2026-09-18)
+#### 4. Finalize the ADR
 
-## Verantwortlichkeit
+- If architectural changes become necessary (e.g. pulling HINT detection out of candidate selection), update this ADR.
+
+## Alternatives Rejected
+
+- **Removing the HINT mechanism entirely** — not sensible; it is used in workflows.
+- **Workaround via blocklist** — not a clean solution.
+
+## Related Documents
+
+- `src/content-classifier.ts` — HINT detection
+- `src/classification-prompt.ts` — prompt preparation
+- `src/utils.ts` — `stripRouterNarration` (narration-leak fix 26e99f0)
+- ADR-0002: narration-leak fix (2026-09-18)
+
+## Ownership
+
 Achim / pi-team
 
-## Reviewer
-- [ ] Code-Review via `requesting-code-review` mit Code-Reviewer-Template
-- [ ] Roborev-Review vor Release (AGENTS.md §1)
+## Review
+
+- [ ] Code review via `requesting-code-review` with the code-reviewer template
+- [ ] Roborev review before release (AGENTS.md §1)
 
 ---
-**Erstellt:** 2026-09-27  
-**Letzte Änderung:** 2026-09-27  
-**Zustand:** Entwurf
+**Created:** 2026-09-27
+**Last change:** 2026-09-30 (translated to English per AGENTS.md §3; content unchanged)
+**State:** Draft
