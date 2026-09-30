@@ -332,6 +332,14 @@ describe('tool_result rate-limit detection', () => {
         'cp: cannot create file: disk quota exceeded',
         'ValueError: index 5 is out of range for axis 0 with size 3',
         'server overloaded: retry later (local shard, exit 1)',
+        // Roborev review of f4a2a3b (MEDIUM): the first narrow set still
+        // matched a bare \b429\b / "too many requests" / "limit hit" /
+        // the generic "claude code returned an error" wording.
+        'curl: (22) The requested URL returned error: 429',
+        'SyntaxError at line 429 of build.js',
+        'HTTP/1.1 429 Too Many Requests (GitHub API, unrelated host)',
+        'cgroup: memory limit hit, process killed',
+        'Claude Code returned an error: ENOENT no such file',
       ];
       for (const txt of ordinaryToolErrors) {
         for (const h of onHandlers['tool_result'] ?? []) {

@@ -31,7 +31,7 @@ const embeddedCfgPath = path.join(repoRoot, 'router-config.json');
 // which are recorded only — the repo file is never touched, red or green.
 const { embeddedWrites, failEmbeddedRead } = vi.hoisted(() => ({
   embeddedWrites: [] as Array<{ path: string; payload: string }>,
-  failEmbeddedRead: { value: false, skip: 0 },
+  failEmbeddedRead: { value: false, skip: 0, returnRaw: undefined as string | undefined },
 }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -56,6 +56,9 @@ vi.mock('node:fs', async (importOriginal) => {
         failEmbeddedRead.skip--;
         return (actual as any).readFileSync(p, ...rest);
       }
+      // A readable file whose JSON is not an object ('[]', 'null') must hit
+      // the same refusal path as an unreadable one.
+      if (failEmbeddedRead.returnRaw !== undefined) return failEmbeddedRead.returnRaw as any;
       throw new Error('EACCES: permission denied (simulated)');
     }
     return (actual as any).readFileSync(p, ...rest);
@@ -198,4 +201,55 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it.each(['[]', 'null', '42'])(
+    'refuses to write when the embedded config parses to a non-object (%s)',
+    async (raw) => {
+      // Roborev review of f4a2a3b (LOW): a valid-JSON non-object left
+      // embeddedCfg undefined, skipped the catch and crashed with a
+      // TypeError instead of taking the refusal path.
+      const writesBefore = embeddedWrites.length;
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-i1-nonobj-'));
+      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+      try {
+        vi.resetModules();
+        const mod = await import('../index.ts');
+        const tools: Record<string, any> = {};
+        const pi: any = {
+          registerTool: vi.fn((t: any) => {
+            tools[t.name] = t;
+          }),
+          registerCommand: vi.fn(),
+          registerProvider: vi.fn(),
+          setModel: vi.fn(async () => true),
+          on: vi.fn(),
+        };
+        mod.default(pi);
+
+        failEmbeddedRead.value = true;
+        failEmbeddedRead.skip = 1;
+        failEmbeddedRead.returnRaw = raw;
+
+        const res = await tools['update_model_metrics'].execute(
+          'call-1',
+          { model_ref: 'test-provider/test-model', gdpval: 900 },
+          undefined,
+          undefined,
+          { cwd: tmpDir } as any
+        );
+
+        expect(embeddedWrites.length).toBe(writesBefore);
+        expect(res.content[0].text).toContain('NOT persisted');
+      } finally {
+        failEmbeddedRead.value = false;
+        failEmbeddedRead.skip = 0;
+        failEmbeddedRead.returnRaw = undefined;
+        cwdSpy.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    }
+  );
 });

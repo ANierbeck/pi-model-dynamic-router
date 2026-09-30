@@ -2254,31 +2254,33 @@ let previousTokenCount = 0;
       // here clobbers the embedded defaults with one machine's state: user
       // overrides and computed model_groups leak into the shipped file and
       // from there into every other layer source (final v1.6.0 review I1).
-      let embeddedCfg: Record<string, any> | undefined;
+      let base: Record<string, any>;
       try {
         const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
-        if (raw && typeof raw === 'object' && !Array.isArray(raw)) embeddedCfg = raw;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          throw new Error('embedded config is not a JSON object');
+        }
+        base = raw;
       } catch (err) {
-        // Unreadable/missing/corrupted embedded file — REFUSE to write.
-        // Persisting a delta-only stub ({ model_metrics: { … } } and nothing
-        // else) would replace the shipped defaults (providers, model_groups,
-        // exclude, …) with an empty base layer and break every future load()
-        // on this install (roborev review of e0d8159, MEDIUM). Losing one
-        // ephemeral metrics update is strictly the lesser harm.
+        // Unreadable/missing/corrupted/non-object embedded file — REFUSE to
+        // write. Persisting a delta-only stub ({ model_metrics: { … } } and
+        // nothing else) would replace the shipped defaults (providers,
+        // model_groups, exclude, …) with an empty base layer and break every
+        // future load() on this install (roborev reviews of e0d8159 and
+        // f4a2a3b). Losing one metrics update is strictly the lesser harm.
         routerLog(
-          `[router] update_model_metrics: embedded config unreadable, refusing to write to avoid clobbering: ${err}`
+          `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err}`
         );
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Updated metrics for ${p.model_ref} in memory, but the embedded router-config.json is unreadable — the update was NOT persisted to avoid clobbering the shipped defaults.`,
+              text: `Metrics for ${p.model_ref} were NOT persisted: the embedded router-config.json is unreadable or not a JSON object, and writing would clobber the shipped defaults.`,
             },
           ],
           details: { model_ref: p.model_ref, metrics: e },
         };
       }
-      const base = embeddedCfg!;
       const existingEntry = base.model_metrics?.[p.model_ref] ?? {};
       base.model_metrics = {
         ...(base.model_metrics ?? {}),

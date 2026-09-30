@@ -1,6 +1,6 @@
 # Plan: Repairing the HINT Mechanism (HINT/MHINT/MODEL-HINT prefix)
 
-> **STATUS NOTE (2026-10-14):** this is a historical DRAFT, kept for the
+> **STATUS NOTE (2026-09-30):** this is a historical DRAFT, kept for the
 > record — the shipped repair followed ADR-0018 and differs from several
 > details below. In particular (verified against `src/content-classifier.ts`):
 > `detectHintDirectly(prompt): HintClassificationResult | null` (not
@@ -46,7 +46,7 @@ sent to the user.
   - `detectHintDirectly(text: string): boolean` — check the regex: `/HINT[:\s]/i`
     *(WRONG even at plan time — the shipped function is
     `detectHintDirectly(prompt): HintClassificationResult | null`, see
-    `src/content-classifier.ts:291`; see the status note above.)*
+    `src/content-classifier.ts`; see the status note above.)*
   - `containsHintMarker(text: string): boolean` — check the logic.
   - `classifyPrompt()` — candidate order, HINT detection, suppression.
 - [ ] Check `extractLastUserPrompt`: are router messages stripped? (narration-leak fix 26e99f0)
@@ -123,5 +123,5 @@ sent to the user.
 **Created:** 2026-09-27
 **Last change:** 2026-09-27 (translated to English 2026-09-30 per AGENTS.md §3)
 **State:** Draft — superseded by ADR-0018 (the shipped repair); annotated
-2026-10-14 to reconcile it with ADR-0014 and the real `detectHintDirectly`
+2026-09-30 to reconcile it with ADR-0014 and the real `detectHintDirectly`
 contract.

@@ -96,7 +96,7 @@ Close the blind spot: recognize `stopReason: 'length'` as a new soft-failure cla
 
 ## Implementation plan (bite-size tasks)
 
-> **NOTE (2026-10-14):** the checkboxes below were never ticked, but the
+> **NOTE (2026-09-30):** the checkboxes below were never ticked, but the
 > work **was implemented** — see commit `31626d4` (footer). They are left
 > as-is as the historical draft record.
 

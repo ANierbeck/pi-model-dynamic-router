@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
 import {
   isRateLimitText,
+  isToolResultRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
   parseResetAtMs,
@@ -54,6 +55,32 @@ describe('isRateLimitText — unified rate-limit detection', () => {
     expect(RATE_LIMIT_PATTERNS).toContain('five_hour'); // was only in isRateLimitText
     expect(RATE_LIMIT_PATTERNS).toContain('claude code returned an error'); // isRateLimitText only
     expect(RATE_LIMIT_PATTERNS).toContain('overloaded'); // both
+  });
+});
+
+describe('isToolResultRateLimitText — narrow detector for tool-result text', () => {
+  it.each([
+    'HTTP 429 Too Many Requests (rate limit exceeded)',
+    'Claude five_hour rate limit hit',
+    'You have hit your spend limit',
+    'monthly spend cap reached',
+    'out of usage credits',
+    'rate_limit_exceeded',
+  ])('matches unambiguous throttling wording: %s', (txt) => {
+    expect(isToolResultRateLimitText(txt)).toBe(true);
+  });
+
+  it.each([
+    'curl: (22) The requested URL returned error: 429',
+    'SyntaxError at line 429 of build.js',
+    'HTTP/1.1 429 Too Many Requests',
+    'grep finished: 1429 lines matched',
+    'cgroup: memory limit hit, process killed',
+    'Claude Code returned an error: ENOENT',
+    'Error: out of memory',
+    'disk quota exceeded',
+  ])('does NOT match ordinary tool output: %s', (txt) => {
+    expect(isToolResultRateLimitText(txt)).toBe(false);
   });
 });
 

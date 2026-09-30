@@ -57,7 +57,7 @@ list — the original sketch had only six):
 
 ### 2. Routing decision (shipped)
 Based on the category, a **model group** is selected via the shipped
-`CATEGORY_TO_GROUP` table (`src/content-classifier.ts:883`). Example models
+`CATEGORY_TO_GROUP` table (`src/content-classifier.ts`). Example models
 are illustrative only — the router picks the concrete model per group from
 GDPval/cost/availability at runtime:
 

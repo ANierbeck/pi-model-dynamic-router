@@ -82,7 +82,7 @@ The system classifies prompts into the following categories (see `CATEGORY_TO_GR
 
 #### Mapping of Categories to Model Groups
 
-Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts:883`):
+Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts`):
 
 | Category | Model Group | Use Case |
 |----------|-------------|----------|
