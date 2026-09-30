@@ -2233,7 +2233,28 @@ let previousTokenCount = 0;
       if (p.throughput_tps !== undefined) e.throughput_tps = p.throughput_tps;
       if (p.avg_latency_ms !== undefined) e.avg_latency_ms = p.avg_latency_ms;
       cfg.model_metrics[p.model_ref] = e;
-      fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+      // Persist ONLY the fresh delta into the EMBEDDED config file — never
+      // JSON.stringify(cfg). `cfg` here is the layered RUNTIME config
+      // (user override → project override →, when present, the regenerated
+      // dynamic config with computed groups and the _dynamic marker), while
+      // cfgPath is the shipped router-config.json. Writing the runtime cfg
+      // here clobbers the embedded defaults with one machine's state: user
+      // overrides and computed model_groups leak into the shipped file and
+      // from there into every other layer source (final v1.6.0 review I1).
+      let embeddedCfg: Record<string, any> = {};
+      try {
+        const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+        if (raw && typeof raw === 'object' && !Array.isArray(raw)) embeddedCfg = raw;
+      } catch {
+        // Unreadable/missing embedded file — fall back to a minimal
+        // delta-only write rather than losing the metrics update.
+      }
+      const existingEntry = embeddedCfg.model_metrics?.[p.model_ref] ?? {};
+      embeddedCfg.model_metrics = {
+        ...(embeddedCfg.model_metrics ?? {}),
+        [p.model_ref]: { ...existingEntry, ...e },
+      };
+      fs.writeFileSync(cfgPath, JSON.stringify(embeddedCfg, null, 2));
       // Update metrics cache with new values from config
       const existingMetrics = metricsModule.getM(p.model_ref);
       if (existingMetrics) {
