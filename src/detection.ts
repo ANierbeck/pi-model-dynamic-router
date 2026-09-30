@@ -299,7 +299,6 @@ function parseInformalZonedReset(text: string): number | undefined {
   }
 }
 
-
 /** True if text matches any rate-limit / spend-limit pattern. */
 export function isRateLimitText(text: string): boolean {
   const lower = text.toLowerCase();

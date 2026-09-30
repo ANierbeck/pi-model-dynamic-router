@@ -1,9 +1,10 @@
 // The tool_result rate-limit branch existed since the initial release as a
 // naive heuristic (`txt.includes('429')` → recordLimit(curModel)). No
 // documented production case ever surfaced a provider limit of the CURRENT
-// model as tool output: genuine provider 429s arrive on the error-event
-// path (isRateLimitText), claude-bridge warnings arrive as text_delta
-// (b68e8ee), and tool results are command output — a curl'd 429 from an
+// model as tool output: genuine provider limits arrive as error EVENTS
+// ONLY (isRateLimitText in consumeWithDetection — including
+// pi-claude-bridge's "Claude rate limit" error events), text_delta is
+// deliberately not scanned (87ad663), and tool results are command output — a curl'd 429 from an
 // unrelated host, a vitest run printing "rate_limit_exceeded", a subagent
 // child hitting ITS five_hour limit. Attributing a hard cooldown + key
 // rotation to the current model on that evidence is wrong no matter how
@@ -216,6 +217,7 @@ describe('tool_result output NEVER rate-limits the current model (day-1 heuristi
         harness,
         'FAIL test/tool-result-rate-limit.test.ts > records a rate_limit_exceeded entry'
       );
+      await assertStreamStaysClean(harness);
       const persisted = await shutDownAndRead(harness);
       expect(findRateLimitEntry(persisted)).toBeUndefined();
     } finally {
@@ -227,6 +229,7 @@ describe('tool_result output NEVER rate-limits the current model (day-1 heuristi
     const harness = await bootToolResultHarness();
     try {
       await fireToolResult(harness, 'grep finished: 1429 lines matched');
+      await assertStreamStaysClean(harness);
       const persisted = await shutDownAndRead(harness);
       expect(findRateLimitEntry(persisted)).toBeUndefined();
     } finally {
@@ -247,9 +250,7 @@ describe('tool_result output NEVER rate-limits the current model (day-1 heuristi
         'cgroup: memory limit hit, process killed',
       ];
       for (const txt of ordinaryToolErrors) {
-        for (const h of harness.onHandlers['tool_result'] ?? []) {
-          await h({ isError: true, content: [{ type: 'text', text: txt }] }, harness.ctx);
-        }
+        await fireToolResult(harness, txt);
       }
 
       // Non-vacuous pin: the model must still stream cleanly (no

@@ -161,8 +161,9 @@
   dropped after `c8a087e` narrowed it): tool output — a curl'd 429, a
   failing vitest run, a subagent child hitting ITS limit — is never
   evidence that the current model is rate-limited, so it can no longer
-  trigger hard cooldowns or key rotation; genuine limits keep arriving on
-  the error-event (`isRateLimitText`) and text_delta paths; per-candidate
+  trigger hard cooldowns or key rotation; genuine limits keep arriving as
+  error events only (`isRateLimitText` in `consumeWithDetection`;
+  text_delta is deliberately not scanned — `87ad663`); per-candidate
   timeout in the runtime cloud classifier chain
   (`8a19c5c`); a thrown tryStream failure is recorded exactly once in
   session_errors (`8f93113`); SessionEscalation history is bounded (ring,
