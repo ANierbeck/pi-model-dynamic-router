@@ -299,37 +299,6 @@ function parseInformalZonedReset(text: string): number | undefined {
   }
 }
 
-/**
- * Narrow rate-limit detector for TOOL-RESULT error text.
- *
- * Tool results are NOT provider/transport text: they are command output,
- * file contents, and sub-process errors ("Error: out of memory", "disk
- * quota exceeded", "value out of range", "server overloaded"). The full
- * RATE_LIMIT_PATTERNS table matches all of those ('out of', 'exceeded',
- * 'quota', 'credits', 'overloaded'), and the consequence on this path is
- * severe: a hard cooldown + key rotation on the CURRENT model. Keep only
- * phrasings that unambiguously name request/usage throttling (roborev
- * review of c8a087e, MEDIUM). Genuine provider limits that surface as
- * stream errors are still caught by isRateLimitText on the error-event
- * path, where the broad table is safe.
- */
-const TOOL_RESULT_RATE_LIMIT_PATTERNS: readonly RegExp[] = [
-  /rate[\s_-]*limit/i, // 'rate limit', 'rate_limit', 'rate-limit', 'rate_limit_exceeded'
-  /spend limit/i,
-  /monthly spend/i,
-  /usage credits/i,
-  /five[\s_-]*hour/i, // Claude five_hour window
-];
-
-// Deliberately absent (roborev review of f4a2a3b, MEDIUM): a bare \b429\b and
-// "too many requests" match a curl'd 429 from an unrelated host or "line 429"
-// in a stack trace; "limit hit" matches "memory limit hit"; "claude code
-// returned an error" is generic wording. A real provider 429 arrives on the
-// error-event path (isRateLimitText), not as tool_result text.
-
-export function isToolResultRateLimitText(text: string): boolean {
-  return TOOL_RESULT_RATE_LIMIT_PATTERNS.some((p) => p.test(text));
-}
 
 /** True if text matches any rate-limit / spend-limit pattern. */
 export function isRateLimitText(text: string): boolean {

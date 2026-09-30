@@ -157,9 +157,13 @@
   (`87ad663`).
 - **Bare 422/403 client errors no longer escalate into hard rate-limit
   cooldowns** (`853e39e`).
-- **tool_result rate-limit detection unified** (`c8a087e`): tool outputs
-  feed the same `isRateLimitText` + `recordStreamFailure` path as stream
-  text; per-candidate timeout in the runtime cloud classifier chain
+- **tool_result rate-limit detection removed** (day-1 heuristic, finally
+  dropped after `c8a087e` narrowed it): tool output — a curl'd 429, a
+  failing vitest run, a subagent child hitting ITS limit — is never
+  evidence that the current model is rate-limited, so it can no longer
+  trigger hard cooldowns or key rotation; genuine limits keep arriving on
+  the error-event (`isRateLimitText`) and text_delta paths; per-candidate
+  timeout in the runtime cloud classifier chain
   (`8a19c5c`); a thrown tryStream failure is recorded exactly once in
   session_errors (`8f93113`); SessionEscalation history is bounded (ring,
   MAX_HISTORY=10, monotonic turn counter) (`932aff5`); `recordSoftFailure`

@@ -84,7 +84,6 @@ import {
 import { pushStreamError, pushRouterInfo, pushRouterInfoLogged, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
 import {
   isRateLimitText,
-  isToolResultRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
   OVERFLOW_TEXT_SCAN_MAX_CHARS,
@@ -2077,30 +2076,18 @@ let previousTokenCount = 0;
 
     if (ev.isError && curModel) {
       const txt = ev.content?.map((c: any) => c.text ?? '').join('') ?? '';
-      // I2 (final v1.6.0 review): the old naive scan —
-      // txt.includes('429') || txt.toLowerCase().includes('rate limit') —
-      // matched ANY 429 substring ("1429 lines", a curl'd 429 from an
-      // unrelated host, test output) and attributed a hard cooldown + key
-      // rotation to the current model on that evidence alone.
-      // Tool results are command output, not provider-transport text, so
-      // the full isRateLimitText table is TOO BROAD here ('out of',
-      // 'exceeded', 'quota', 'credits', 'overloaded' match "Error: out of
-      // memory" or "disk quota exceeded"); the narrow isToolResultRateLimitText
-      // keeps only unambiguous throttling wording (roborev review of
-      // c8a087e, MEDIUM).
-      // Routing through recordStreamFailure instead of a bare recordLimit:
-      // the event now also lands in the session_errors ring buffer (footer
-      // ⚠N err + /router errors) instead of silently bypassing it, and the
-      // same seam decides hard vs soft + rotation for every failure shape.
-      if (isToolResultRateLimitText(txt)) {
-        const result = recordStreamFailure(curModel, 'rate_limit_exceeded', undefined, txt);
-        if (result.rotated && result.newKey) {
-          ctx.ui.notify(
-            `🔑 Rate limited — rotated ${splitRef(curModel).provider} to key "${result.newKey}"`,
-            'warning'
-          );
-        }
-      }
+      // The rate-limit branch that lived here since the initial release
+      // (`txt.includes('429')` → recordLimit(curModel), later narrowed to
+      // isToolResultRateLimitText) was REMOVED (roborev job 703, finding 1,
+      // option a). Tool results are command output — a curl'd 429 from an
+      // unrelated host, a failing vitest run printing "rate_limit_exceeded",
+      // a subagent child hitting ITS five_hour limit — and none of it is
+      // evidence that the CURRENT model is rate-limited, so attributing a
+      // hard cooldown + key rotation to it was wrong no matter how narrow
+      // the pattern table got. Genuine provider 429s arrive on the
+      // error-event path (isRateLimitText) and claude-bridge warnings as
+      // text_delta; both keep the full detection. Pinned by
+      // test/tool-result-rate-limit.test.ts.
     }
     // All non-delegation paths intentionally fall through with no replacement.
     return undefined;
