@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
+import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
@@ -80,6 +80,10 @@ describe('registerGroupProviders(): dynamic-method group labeling', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
+      // Flush any (currently nonexistent, but structurally possible) late
+      // background-scan saveCache() BEFORE restoring the real cache — the
+      // exact race flushBackgroundScan exists for (final v1.6.0 review minor #7).
+      await flushBackgroundScan();
       removeNoOpScanCache(scanCachePath);
 
       if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);

@@ -14,7 +14,7 @@
 // Also covers collectUnknownCostRefs — the scan-time diagnostic that logs
 // WHICH refs are unpriced so the next /router scan surfaces them.
 
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { Router } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';
@@ -115,9 +115,7 @@ describe('sortByMinCostIfAllPriced — unknown-cost handling (2026-09-26 fix)', 
 });
 
 describe('collectUnknownCostRefs — scan-time diagnostic', () => {
-  beforeEach(() => {
-    // getM caches per ref; refs are unique per test so no reset needed.
-  });
+  // No reset needed: getM caches per ref, and refs are unique per test.
 
   it('returns only the refs whose effCost is unknown', () => {
     const unknown = metricsModule.collectUnknownCostRefs([

@@ -43,7 +43,6 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -58,7 +57,6 @@ vi.mock('../src/ollama-utils.ts', () => ({
   isOllamaAvailable: vi.fn(async () => true),
 }));
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 

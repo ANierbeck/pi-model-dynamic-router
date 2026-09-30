@@ -29,14 +29,12 @@ import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 

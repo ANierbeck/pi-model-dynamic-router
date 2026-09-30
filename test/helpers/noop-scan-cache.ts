@@ -65,8 +65,10 @@ export function writeNoOpScanCache(scanCachePath: string): void {
  * `await onHandlers['session_start']?.(...)` in a test does NOT wait for
  * scan() to finish — only for the synchronous rest of the handler. scan()
  * ALWAYS ends with an unconditional `saveCache()` (outside any of its
- * early-return gates), which persists to the same extension-directory-
- * relative scan-cache.json this helper backs up/restores. With fetch
+ * early-return gates), which persists to the same state-dir-relative
+ * scan-cache.json (PI_ROUTER_STATE_DIR/.cache/scan-cache.json — a fresh
+ * empty dir per test file via isolate-home.ts) this helper
+ * backs up/restores. With fetch
  * stubbed to reject (writeNoOpScanCache), scan() settles in a handful of
  * microtask ticks — but "a handful of ticks" is still nondeterministic
  * relative to a test's own cleanup. Call this right after firing

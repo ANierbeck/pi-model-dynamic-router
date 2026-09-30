@@ -15,7 +15,6 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 // Inline reimplementation of the helper from src/stream-orchestrator.ts.
 // Kept in sync so a regression in the parser is caught here.
@@ -94,9 +93,8 @@ import {
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 
-const repoRoot2 = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // Under vitest, import('../index.ts') runs the TS source, so import.meta.url
-// resolves to repoRoot/index.ts and extDir = repoRoot (NOT dist/). loadLayeredConfig
+// resolves to the repo root/index.ts and extDir = repo root (NOT dist/). loadLayeredConfig
 // layers: extDir/router-config.json (defaults) < ~/.pi/agent (global) <
 // <cwd>/.pi/router-config.json (project override, highest priority). So the
 // per-test override goes to tmpDir/.pi/router-config.json (with cwdSpy→tmpDir),

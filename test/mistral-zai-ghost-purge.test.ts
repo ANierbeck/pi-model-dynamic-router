@@ -28,14 +28,12 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>

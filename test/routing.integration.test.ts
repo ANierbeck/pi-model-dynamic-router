@@ -281,7 +281,7 @@ describe('Router Integration Tests', () => {
     });
 
     it('should consider exhausted keys', () => {
-      // Markiere einen Key als exhausted
+      // Mark one key as exhausted
       cache.exhausted_keys = {
         'openai:0': Date.now() + 10000, // Key 0 exhausted for 10 seconds
       };
