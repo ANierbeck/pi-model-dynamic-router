@@ -143,6 +143,14 @@ interface ClassificationOptions {
   cache?: Cache;
   allowCloudFallback?: boolean;
   /**
+   * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
+   * cloud fallback chain — probe parity (PROBE_TIMEOUT_MS). A candidate
+   * that neither answers nor errors within this window is abandoned and
+   * the chain advances to the next candidate. Defaults to
+   * CLASSIFIER_CLOUD_TIMEOUT_MS (15s).
+   */
+  cloudTimeoutMs?: number;
+  /**
    * Pinned cloud classifier model ref ("provider/id") from the dynamic
    * group's classifier_cloud_model config. When set and resolvable, it is
    * tried FIRST in the cloud fallback chain — before the probe-verified
@@ -250,6 +258,11 @@ function classifyCacheSet(prompt: string, result: FullClassificationResult): voi
 }
 const FALLBACK_MODEL = 'gemma2:2b';
 const FALLBACK_TIMEOUT = 10_000;
+// Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
+// v1.6.0 review): probe parity — the scan-time probe caps each candidate at
+// PROBE_TIMEOUT_MS, but the runtime loop previously had no cap at all, so a
+// single hung cloud request stalled the whole turn forever.
+const CLASSIFIER_CLOUD_TIMEOUT_MS = 15_000;
 const MIN_CONFIDENCE = 0.5;
 const CONTINUATION_MAX_WORDS = 4;
 
@@ -412,6 +425,7 @@ export async function classifyPrompt(
     context = {},
     allowStaticFallback = false,
     allowCloudFallback = false,
+    cloudTimeoutMs = CLASSIFIER_CLOUD_TIMEOUT_MS,
     cfg,
     cache,
     completeSimple,
@@ -664,13 +678,32 @@ export async function classifyPrompt(
       };
 
       for (const modelRef of modelsToTry) {
+        // S3 timeout timer, hoisted so the finally can clear it on every
+        // exit path (success, parse-throw, timeout-throw).
+        let candidateTimer: ReturnType<typeof setTimeout> | null = null;
         try {
           const model = findModel(modelRef);
           if (!model) {
             routerLog(`[classifier] Cloud model ${modelRef} not in pi registry — skipping`);
             continue;
           }
-          const result = await completeSimple(model, classifyCtx, undefined);
+          // S3 (final v1.6.0 review): per-candidate timeout, probe parity.
+          // AbortController cancels the request (completeSimple honors
+          // options.signal — same seam the probe uses); Promise.race is the
+          // hard cap for runtimes that ignore the signal. On timeout the
+          // catch below logs and the chain advances to the next candidate.
+          const ac = new AbortController();
+          let rejectTimeout: ((e: Error) => void) | undefined;
+          candidateTimer = setTimeout(() => {
+            ac.abort();
+            rejectTimeout?.(new Error(`timed out after ${cloudTimeoutMs}ms`));
+          }, cloudTimeoutMs);
+          const result = await Promise.race([
+            completeSimple(model, classifyCtx, { signal: ac.signal }),
+            new Promise<never>((_, reject) => {
+              rejectTimeout = reject;
+            }),
+          ]);
           if (result.errorMessage || result.stopReason === 'error') {
             routerLog(`[classifier] Cloud model ${modelRef} failed`, result.errorMessage ?? 'error');
             continue;
@@ -726,6 +759,8 @@ export async function classifyPrompt(
           }
         } catch (cloudError) {
           routerLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
+        } finally {
+          if (candidateTimer) clearTimeout(candidateTimer);
         }
       }
     } catch (cloudFallbackError) {
