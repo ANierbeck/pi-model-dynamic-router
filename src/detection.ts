@@ -163,8 +163,9 @@ export function parseResetAtMs(text: string): number | undefined {
   // DD. Mon YYYY, HH:MM:SS TZ (German locale, produced by toLocaleString
   // with the standard date/time options in claude-bridge's formatResetTimestamp)
   // claude-bridge formats dates as "DD. Mon YYYY, HH:MM:SS TZ" (e.g. "30. Aug. 2026, 17:00:00 MESZ").
-  // Note: there are TWO literal dots in the pattern ("DD." and "Mon.") — both must be escaped
-  // as \\d (dot) not . (wildcard)!
+  // Note: there are literal dots in the pattern ("DD." and e.g. "Aug.") —
+  // each must be escaped as \\. (literal dot) in the regex, not left as a
+  // bare . (wildcard)!
   //
   // The month token is NOT always followed by a dot, and is not always ASCII:
   // de-DE's Intl short-month format only abbreviates SOME months ("Jan.",

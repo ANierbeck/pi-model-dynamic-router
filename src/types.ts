@@ -303,11 +303,6 @@ export interface Cache {
    */
   classifier_no_schema?: Record<string, number>;
   /**
-   * Learned blocklist (ADR-0008): models whose failures matched a
-   * known-permanent signature, keyed by "provider/id" ref. Entries expire
-   * after BLOCKLIST_TTL_MS (7 days) from last_seen; see src/model-blocklist.ts.
-   */
-  /**
    * false marks a scan cache that never had a router-config.dynamic.json
    * (test fixtures). Absent means a valid cache implies the file should exist
    * and is regenerated when missing.
@@ -319,6 +314,11 @@ export interface Cache {
    * accepted as a real shrink.
    */
   scan_sanity_refusal?: { survivors: number; previous: number; at: number };
+  /**
+   * Learned blocklist (ADR-0008): models whose failures matched a
+   * known-permanent signature, keyed by "provider/id" ref. Entries expire
+   * after BLOCKLIST_TTL_MS (7 days) from last_seen; see src/model-blocklist.ts.
+   */
   model_blocklist?: Record<string, {
     reason: string;
     code: number;

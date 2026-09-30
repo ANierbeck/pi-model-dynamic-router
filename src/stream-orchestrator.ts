@@ -127,7 +127,6 @@ import {
 
 export interface StreamOrchestratorContext {
   // Mutable session state
-  curModel: string;
   activeGroup: string | null;
   lastDynamicModel: string;
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
@@ -617,7 +616,6 @@ export class StreamOrchestrator {
       pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
       ctx.router.setCurModel(ref);
       ctx.router.setActiveGroup(ctx.activeGroup);
-      ctx.curModel = ref;
       ctx.lastDynamicModel = ref;
 
       let attemptSucceeded = false;
@@ -951,7 +949,6 @@ export class StreamOrchestrator {
         }
         ctx.router.setCurModel(bestRef);
         ctx.router.setActiveGroup(ctx.activeGroup);
-        ctx.curModel = bestRef;
         ctx.lastDynamicModel = bestRef;
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {

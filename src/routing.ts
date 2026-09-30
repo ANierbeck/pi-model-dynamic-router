@@ -849,11 +849,10 @@ export class Router {
    * mistral-medium-3-5 are all the same model. Keep only the best one
    * (highest priority by current sort order = first occurrence).
    *
-   * Also deduplicates cross-provider: if mistral-zai/glm-5-2 and
-   * mistral/glm-5-2 both match slug glm-5-2, keep both (they're different
-   * providers offering the same model — useful for failover).
-   * Wait — actually for dedup we want to keep different PROVIDERS but
-   * remove different VERSIONS of the same model from the same provider.
+   * Dedup granularity: same slug from DIFFERENT providers is NOT a duplicate
+   * (mistral-zai/glm-5-2 and mistral/glm-5-2 both stay — different providers
+   * offering the same model, useful for failover). Only same provider +
+   * same slug collapses to the best ref.
    */
   private dedupByModelIdentity(refs: string[]): string[] {
     const seen = new Map<string, string>(); // provider:slug → best ref

@@ -116,6 +116,16 @@ export class RateLimitManager {
   /**
    * Returns the label of the currently active key for a provider
    */
+  /**
+   * Current key index for a provider (rotation state; 0 before any
+   * rotation). index.ts registration sites read this instead of keeping a
+   * duplicate, never-updated index map — handing pi an already-exhausted
+   * key after a rotation (final v1.6.0 review minor #7).
+   */
+  activeKeyIndex(prov: string): number {
+    return this.activeKeyIdx[prov] ?? 0;
+  }
+
   activeKeyLabel(prov: string, keys: { key: string; label?: string }[]): string | null {
     if (!keys || keys.length <= 1) return null;
     const idx = this.activeKeyIdx[prov] ?? 0;

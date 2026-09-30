@@ -169,7 +169,7 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
-  let staticCfg: Config; // Statische Konfiguration (immer router-config.json)
+  let staticCfg: Config; // Static configuration (always from the embedded router-config.json + its layers)
   // The ONE cache object: never reassigned. loadCache() re-reads disk into it,
   // so every holder (managers, router, metrics) sees the same state.
   const cache: Cache = {};
@@ -1236,7 +1236,7 @@ let previousTokenCount = 0;
       // (2026-09-20 — see collapseSameSlugClusters).
       const clusterRepModels = collapseSameSlugClusters(modelsWithMetadata);
 
-      // 5. Dynamische Gruppen-Konfiguration generieren
+      // 5. Generate the dynamic group configuration
       const dynamicGroups: Record<string, any> = {};
       
       for (const [groupName, groupConfig] of Object.entries(staticCfg.model_groups)) {
@@ -1259,7 +1259,7 @@ let previousTokenCount = 0;
         const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, cfg);
         const originalModels = groupConfig.models ?? [];
         
-        // Debug-Logging
+        // Debug logging
         if (groupName === 'trivial' || groupName === 'simple') {
           routerLog(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
           routerLog(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
@@ -1357,8 +1357,10 @@ let previousTokenCount = 0;
   }
 
   // ── Rate Limit + costMux ───────────────────────────────────────────────
-
-  let activeKeyIdx: Record<string, number> = {}; // provider → current key index
+  // NOTE: no duplicate activeKeyIdx map here — the rotation state lives in
+  // the RateLimitManager (rateLimitManager.activeKeyIndex). A second,
+  // never-updated map here made registrations hand pi an already-exhausted
+  // key after a rotation (final v1.6.0 review minor #7).
 
   function resolveKeyValue(key: string): string {
     return discoveryManager.resolveKeyValue(key) ?? key;
@@ -1711,7 +1713,12 @@ let previousTokenCount = 0;
   // Fields that change mid-session (cfg, cache) are passed as mutable object
   // references so the orchestrator always reads the current value.
   const buildOrchestratorContext = (): StreamOrchestratorContext => ({
-    curModel,
+    // NOTE: curModel is deliberately NOT passed here. It changes every turn;
+    // a by-value field would snapshot a stale ref while looking like live
+    // state. The orchestrator writes the current ref through
+    // ctx.router.setCurModel (which hits the live Router instance) — the
+    // former ctx.curModel field was write-only dead wiring (final v1.6.0
+    // review minor #8).
     get activeGroup() { return activeGroup; },
     set activeGroup(v) { activeGroup = v; },
     get lastDynamicModel() { return lastDynamicModel; },
@@ -1857,7 +1864,12 @@ let previousTokenCount = 0;
     await discoverKeys();
 
     await registerGroupModels(ctx);
-    scan().catch(() => {});
+    // scan() swallows per-provider failures by design, but a top-level
+    // throw (e.g. from checkScanSanity or saveCache) must not disappear
+    // silently (final v1.6.0 review minor #6).
+    scan().catch((err) =>
+      routerLog(`[scan] background scan failed: ${err instanceof Error ? err.message : String(err)}`)
+    );
 
     // Footer
     ctx.ui.setFooter((tui, theme, fd) => {
@@ -2373,7 +2385,7 @@ let previousTokenCount = 0;
     const keys = cfg.providers?.[provider]?.keys;
     let apiKey: string | undefined;
     if (keys?.length) {
-      apiKey = resolveKeyValue(keys[activeKeyIdx[provider] ?? 0]?.key);
+      apiKey = resolveKeyValue(keys[rateLimitManager.activeKeyIndex(provider)]?.key);
     } else if (def.authKey) {
       // auth.json key resolution is async in the real path, but we're in a
       // sync helper. If the provider needs auth.json and has no cfg key, we
@@ -3182,6 +3194,7 @@ async function registerGroupModels(ctx: any) {
     // defaults (vision: false, reasoning: false) when the provider didn't
     // report them — so a model is never falsely advertised as vision-capable.
 
+    const piKnownProviders = piKnownProviderSet(ctx);
     for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
       if (!def.baseUrl || !def.api) continue;
       if (SKIP_REGISTRATION.has(provId)) continue;
@@ -3195,7 +3208,7 @@ async function registerGroupModels(ctx: any) {
       // shadowed alias providers must never be (re-)registered.
       if (
         typeof def.pricingAlias === 'string' &&
-        piKnownProviderSet(ctx).has(def.pricingAlias)
+        piKnownProviders.has(def.pricingAlias)
       ) {
         continue;
       }
@@ -3204,7 +3217,7 @@ async function registerGroupModels(ctx: any) {
       let rawKey: string | undefined;
       let apiKey: string | undefined;
       if (keys?.length) {
-        rawKey = keys[activeKeyIdx[provId] ?? 0].key;
+        rawKey = keys[rateLimitManager.activeKeyIndex(provId)].key;
         apiKey = resolveKeyValue(rawKey);
         if (!apiKey || (apiKey === rawKey && rawKey.startsWith('__local__'))) continue;
       } else if (def.authKey) {
@@ -3805,8 +3818,25 @@ async function registerGroupModels(ctx: any) {
 
   // Cleanup CostTracker on process exit
   process.on('exit', () => costTracker.destroy());
-  process.on('SIGTERM', () => process.exit(0));
-  process.on('SIGINT', () => process.exit(0));
+  // Signal handlers (final v1.6.0 review minor #10): previously a bare
+  // process.exit(0) skipped pi's graceful shutdown, so the session_shutdown
+  // saveCache() never ran on Ctrl-C. Persist synchronously before exiting
+  // (best-effort), and dedupe the registration per process — the file's own
+  // comments note the esbuild double-bundle hazard, which would otherwise
+  // stack one handler per extension load.
+  if (!(globalThis as any).__ROUTER_SIGNAL_CLEANUP__) {
+    (globalThis as any).__ROUTER_SIGNAL_CLEANUP__ = true;
+    const persistAndExit = (): never => {
+      try {
+        saveCache();
+      } catch {
+        // Best-effort: a failing save must not block exit.
+      }
+      process.exit(0);
+    };
+    process.on('SIGTERM', persistAndExit);
+    process.on('SIGINT', persistAndExit);
+  }
 
   // Export groupStream for testing
   (defaultExport as any).groupStream = streamOrchestrator.groupStream.bind(streamOrchestrator);
