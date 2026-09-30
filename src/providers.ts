@@ -313,7 +313,7 @@ export const SKIP_REGISTRATION = new Set([
 ]);
 
 /**
- * Suffixes, die bei der Modell-ID-Normalisierung entfernt werden
+ * Suffixes stripped during model-id normalization
  */
 export const STRIP_SUFFIXES = [
   '-tee',
@@ -328,7 +328,7 @@ export const STRIP_SUFFIXES = [
 ];
 
 /**
- * GDPval Parameter-Suffixes (werden bei der Basis-Modell-Extraktion entfernt)
+ * GDPval parameter suffixes (stripped during base-model extraction)
  */
 export const PARAM_SUFFIXES = [
   '-non-reasoning-low-effort',
