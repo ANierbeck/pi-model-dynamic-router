@@ -301,3 +301,50 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
     dynamicGroups[name].fallback_groups = [...above, ...below];
   }
 }
+
+/**
+ * Config keys that are ALWAYS taken from the static layered config
+ * (embedded defaults → user override → project override) instead of the
+ * persisted dynamic config. Used by BOTH consumers:
+ *
+ * 1. index.ts load(), when a stale router-config.dynamic.json is read: the
+ *    file is a generated CACHE of computed group/model lists, but it also
+ *    round-trips user-overridable scalar keys. Without the re-sync, editing
+ *    such a key in router-config.json / router-config.user.json has NO
+ *    effect for as long as the dynamic file exists (the common steady
+ *    state) — the stale file silently shadows the user's intent.
+ * 2. index.ts generateDynamicConfigNow(), when the dynamic config is
+ *    (re)written: forcing these keys from staticCfg means the regenerated
+ *    file never persists a stale user value for another 30-day cycle.
+ *
+ * Every key here is user intent (behavior settings, safety properties) —
+ * NEVER a scan-derived value (those legitimately live in the dynamic
+ * file). Final v1.6.0 review findings I4 + I5: this list replaced two
+ * hand-maintained, drifted assignment blocks (ollama_max_concurrent_streams
+ * had already been forgotten in both).
+ */
+export const DYNAMIC_CONFIG_RESYNC_KEYS = [
+  // Safety property: exclude rules from the static layers are enforced even
+  // when a stale dynamic file exists (ADR-0009 union semantics apply within
+  // the static layers).
+  'exclude',
+  // Agent-capability tier (2026-09-27): curated non-agent family prefixes.
+  'non_agent_model_prefixes',
+  // Empty-response watchdog windows.
+  'empty_response_timeout_ms',
+  'reasoning_empty_response_timeout_ms',
+  // Same timeout-override family as the two windows above (was missing from
+  // the load() whitelist — same bug class as ollama_max_concurrent_streams).
+  'stall_timeout_ms',
+  // Rate-limit scheduling/behavior (ADR-0017 wait-for-reset + cfg-backed
+  // backoff schedules).
+  'rate_limit_wait_max_ms',
+  'backoff_minutes',
+  'soft_backoff_ms',
+  // Enforced-delegation settings (ADR-0007 revision) — user intent.
+  'delegation',
+  // Local-stream concurrency limiter (process-wide semaphore for
+  // ollama/lm-studio) — user intent; was missing from BOTH whitelists
+  // (final v1.6.0 review I4).
+  'ollama_max_concurrent_streams',
+] as const satisfies readonly (keyof Config)[];

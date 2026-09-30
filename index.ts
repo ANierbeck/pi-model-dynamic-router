@@ -79,6 +79,7 @@ import {
   sortModelsForGroup,
   collectGroupModels,
   computeFallbackGroups,
+  DYNAMIC_CONFIG_RESYNC_KEYS,
 } from './src/dynamic-config.ts';
 import { pushStreamError, pushRouterInfo, pushRouterInfoLogged, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
 import {
@@ -374,36 +375,23 @@ let previousTokenCount = 0;
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
-          // IMPORTANT: Exclude rules AND the timeout overrides from staticCfg
-          // (layered config) must be enforced. The dynamic config can contain
+          // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
+          // rate-limit scheduling, delegation, the local-stream limiter, …)
+          // must ALWAYS come from staticCfg — the dynamic config can contain
           // stale values if the user changed router-config.json or
-          // router-config.user.json in the meantime. These fields ALWAYS
-          // come from staticCfg (the single source of truth for user
-          // overrides) — otherwise changing e.g.
-          // reasoning_empty_response_timeout_ms has no effect as long as a
-          // router-config.dynamic.json exists on disk.
-          dynamicCfg.exclude = staticCfg.exclude;
-          // Agent-capability tier (2026-09-27): the curated non-agent family
-          // prefixes are user intent in the static layers — same shadowing
-          // risk as exclude; without the resync, a user edit would be
-          // silently ignored while a dynamic config exists.
-          dynamicCfg.non_agent_model_prefixes = staticCfg.non_agent_model_prefixes;
-          dynamicCfg.empty_response_timeout_ms = staticCfg.empty_response_timeout_ms;
-          dynamicCfg.reasoning_empty_response_timeout_ms = staticCfg.reasoning_empty_response_timeout_ms;
-          // stall_timeout_ms belongs to the same timeout-override family as
-          // the two empty-response windows above but was missing from this
-          // whitelist — a user change to it was silently shadowed by the
-          // stale dynamic file (same bug class, found while adding the
-          // wait-for-reset keys below).
-          dynamicCfg.stall_timeout_ms = staticCfg.stall_timeout_ms;
-          // Rate-limit scheduling/behavior keys (ADR-0017 wait-for-reset +
-          // cfg-backed backoff schedules): user intent, same shadowing risk.
-          dynamicCfg.rate_limit_wait_max_ms = staticCfg.rate_limit_wait_max_ms;
-          dynamicCfg.backoff_minutes = staticCfg.backoff_minutes;
-          dynamicCfg.soft_backoff_ms = staticCfg.soft_backoff_ms;
-          // Delegation settings are user intent (ADR-0007 revision) — always
-          // from the static layered config, like exclude above.
-          dynamicCfg.delegation = staticCfg.delegation;
+          // router-config.user.json in the meantime. Without this re-sync,
+          // editing any of these keys has no effect as long as a
+          // router-config.dynamic.json exists on disk (the common steady
+          // state). The whitelist is a single exported list,
+          // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
+          // the write site in generateDynamicConfigNow — per-key rationale
+          // lives there. Final v1.6.0 review I4: ollama_max_concurrent_streams
+          // had been forgotten in both hand-maintained assignment blocks;
+          // I5: the shared list + the data-driven staleness test keep the
+          // next key from being forgotten the same way.
+          for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) {
+            (dynamicCfg as any)[key] = staticCfg[key];
+          }
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
@@ -1292,20 +1280,14 @@ let previousTokenCount = 0;
 
       // 10. Persist the dynamic configuration.
       // IMPORTANT: the object literal still spreads from `cfg` (which may be a
-      // stale dynamic config), NOT from staticCfg — only the individual
-      // user-override fields below (exclude and the two timeout values) are
-      // forced explicitly from staticCfg. staticCfg is the layered config
-      // (defaults + user override) and therefore the single source of truth
-      // for these fields; cfg may have lost them if the user edited
-      // router-config.json / router-config.user.json since the last persisted
-      // dynamic configuration was written.
+      // stale dynamic config), NOT from staticCfg — only the user-intent keys
+      // (DYNAMIC_CONFIG_RESYNC_KEYS, shared with load()'s read-site re-sync)
+      // are forced explicitly from staticCfg, so the regenerated file never
+      // persists a stale user value for another 30-day cycle. staticCfg is
+      // the layered config (defaults + user override) and therefore the
+      // single source of truth for those fields.
       const dynamicConfig = {
         ...cfg,
-        // Preserve critical global config from staticCfg (layered config).
-        // cfg may be a stale dynamic config missing user-overridden values.
-        exclude: staticCfg.exclude,
-        empty_response_timeout_ms: staticCfg.empty_response_timeout_ms,
-        reasoning_empty_response_timeout_ms: staticCfg.reasoning_empty_response_timeout_ms,
         model_groups: dynamicGroups,
         _dynamic: {
           generated_at: new Date().toISOString(),
@@ -1317,7 +1299,10 @@ let previousTokenCount = 0;
           config_fingerprint: configFingerprint,
         }
       };
-      
+      for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) {
+        (dynamicConfig as any)[key] = staticCfg[key];
+      }
+
       const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
 
