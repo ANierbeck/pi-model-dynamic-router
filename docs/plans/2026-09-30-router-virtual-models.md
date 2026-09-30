@@ -1,117 +1,106 @@
-# Router Virtual Models Migration Plan (Pi 0.99.x)
+# Router Virtual Models Migration Plan (Pi 0.99.x) — Hybrid with Dispatcher Shim
 
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
 
-**Goal:** Replace the router's fake group providers (`registerProvider` + `streamSimple` override per group) with one `pi.registerVirtualModel()` per routing group, keeping classification, sticky/MHINT, momentum, and failover behavior — full replacement per owner decision 2026-09-30, with the old provider path kept behind a config flag for exactly one version.
+**Goal:** Expose the router's groups as Pi virtual models (`pi.registerVirtualModel()`) instead of fake group providers. Keep today's in-stream orchestration (candidate failover, stall/empty timeouts, repetition/truncation detection, wait-for-reset, text-scan) intact through a router-owned dispatcher shim, so robustness does not regress.
 
-**Architecture:** Under Pi 0.99.x a virtual model is a selectable model whose `route(request, ctx)` picks the physical model (and thinking level) per request. Pi records selection and dispatch separately, shows the routed model in the footer natively, lists per-physical-model cost in `/session`, checks compaction against the routed model's real limits, and keeps routing state (JSON-serializable, branch-scoped, compaction-surviving) for the router. The router keeps everything it does today *around* model choice — content classification (Ollama → cloud → static chain), sticky/MHINT escalation, momentum, learned blocklists, cost tracking, `/router` — and moves the *choice* into `route()`.
+**Architecture:** Each group becomes a virtual model `<group>/<group>` (plus `<group>/<group>:use-static` for dynamic groups). Model refs, `settings.json` defaults, and existing sessions stay valid. `route()` classifies nothing. It returns the group's **shim model**: a physical model of the router-owned provider `router-dispatch` whose `streamSimple` is today's `groupStream`. Classification, escalation, blocklists, cooldowns, and failover stay inside the orchestrator and run per request exactly as now. Pi owns selection (`model_change`), thinking-level clamping, and its own auto-retry on top.
 
-**Tech Stack:** `pi.registerVirtualModel()` (Pi ≥ 0.99.0), existing `src/content-classifier.ts`, `src/routing.ts`, `src/model-blocklist.ts`, `src/cost-tracker.ts`, `index.ts` wiring.
+**Tech Stack:** `pi.registerVirtualModel()` / `pi.unregisterVirtualModel()` (Pi ≥ 0.99.0), `pi.registerProvider()` for the shim, existing `src/stream-orchestrator.ts`, `index.ts` wiring.
 
 **Owner decisions (2026-09-30):**
-- **D1 — Full replacement.** `use_virtual_models` config flag gates the new path; the old `registerProvider` path stays for one version as fallback, then is removed.
-- **D2 — Claude-Bridge is out of scope.** It is a third-party project; its models stay ordinary physical candidates in our groups. The owner's observation that virtual models will also affect that project is noted, nothing more.
+- **D1 — Full replacement of the fake group providers.** The `use_virtual_models` flag gates the new path; the old path stays one version as fallback, then is removed.
+- **D2 — Claude-Bridge is out of scope** (third-party project). Its models stay ordinary physical candidates.
+- **D3 — Hybrid with dispatcher shim** (decided after the plan review below). Pure native routing (`route()` → physical model) was rejected because Pi's auto-retry covers only part of our failover.
+- **D4 — The `/router` classifier-display fix is split out** into its own plan and commit. It is independent of virtual models and can be done on Pi 0.87.1.
 
 ---
 
-## Design gates — resolve BEFORE implementing (Phase 0)
+## Review record (2026-09-30)
 
-The go/no-go question for the whole plan:
+Checked against the real 0.99.1 sources (`docs/virtual-models.md`, `dist/core/virtual-models.d.ts`, `dist/core/extensions/types.d.ts`, `dist/core/agent-session.js`, `pi-ai/dist/utils/retry.js`) and the router code. Findings on the first draft (commit e4741c8) and their resolution:
 
-**G1 — Does Pi re-invoke `route()` on request failure?**
-`request.reason` includes `'retry'` with `request.failed` (physical model + assistant message of the failed attempt), and the docs say "Returning `failed` for retry can switch models". We must verify in the installed 0.99.1 source *when* reason `retry` is produced: automatic on stream/request error within one user turn, or only on user/system-driven retries.
-- **If automatic:** map our candidate chain 1:1 — hard failure → Pi re-asks `route()` → we consult blocklists/cooldowns and return the next candidate. Preferred end state.
-- **If NOT automatic:** full per-request routing would silently *lose automatic failover*, which is unacceptable. Fallback design: `route()` returns one physical "dispatcher" model of a router-owned provider whose `streamSimple` keeps today's in-stream orchestration (candidate chain, stall timeouts, abandoned candidates). Selection/UX still moves to virtual models; dispatch transparency (footer, per-physical `/session` cost) is then partially ours to render.
+| # | Finding | Resolution |
+|---|---|---|
+| C1 | Pi's auto-retry only triggers on `isRetryableAssistantError` (allow-list: overloaded, 5xx, rate-limit wording), with backoff (`retry.baseDelayMs` 2000, `maxRetries` 3). 422/403/404/guardrail errors and context overflow are not retried. `route()` runs before the request and cannot see the stream, so stall/empty timeouts, repetition/truncation, text-scan, and wait-for-reset cannot live there. | D3: the dispatcher shim keeps the orchestrator in the stream path. |
+| C2 | Cost/metrics/usage-log attribution uses `router.getCurModel(turnStart)` in `turn_end` (`index.ts` ~1949–1982), which the orchestrator sets. Direct physical dispatch would starve it, and `recordStreamFailure` too. | Resolved by D3 (orchestrator stays in path). Task 4 adds a guard test. |
+| C3 | `thinkingLevels` defaults to `["off"]`. Without the full list, the session's `defaultThinkingLevel: "high"` is silently lost. Pi clamps the level to the routed model, so no mapping table is needed. | Task 2 registers the full level list; the route passes the level through. |
+| I1 | `route()` must never throw or return a virtual model (the request ends with an error). Candidate lists may contain other extensions' virtual models (`api === 'pi-virtual'`) under 0.99.x, **regardless of our flag**. | Task 1 filters virtual models from discovery; also added to the update runbook. |
+| I2 | Mid-loop escalation (periodic `_checkAndEscalate`, `src/escalation.ts`) would be frozen by `continuation → previous`. | Resolved by D3: the orchestrator still reads `escalation.level` per request. |
+| I3 | `direct` (compaction summaries) must not be re-classified onto a small-context model. | Resolved by D3: `direct` goes through the shim exactly as today. |
+| I4 | The parity-corpus test "proven red against a stub" was vacuous (AGENTS.md §4). | Dropped: selection logic is unchanged by D3, so no parity corpus is needed. Tests target the new seams only. |
+| I5 | Session state would have had two sources of truth (route state vs. cache object); "sessionQuality inputs" belong to unstarted Phase B. | Dropped: no route state in this migration (YAGNI). |
+| I6 | devDependencies are still `^0.83.0`, so `tsc` can't check the new API. | Task 0 bumps them. |
+| M1 | G2 was already answered: a virtual model under an unused provider id "is always available", with no provider stub. | Folded into the design. |
+| M2 | The classifier-display fix is unrelated to virtual models. | D4. |
 
-**G2 — Does a virtual model need a provider registration?**
-`provider` is "the provider the model is listed under" and may be one with physical models. Verify whether a *pure virtual* provider id (our group names `dynamic`, `strategic`, `tactical`, `operational`, `scout`) works without an accompanying `registerProvider` call, or whether a minimal provider stub is still required. Check `examples/extensions/jev-router.ts` and the source behind `pi.registerVirtualModel`.
+## Research gates — Task 0, after the Pi update
 
-**G3 — Thinking-level mapping.** Virtual `thinkingLevels` are ours to define; the returned physical `thinkingLevel` is per physical model. Define the map (session default is `high` today; free models often need `off`/`low`) and how `:use-static` interacts.
+The remaining unknowns decide how much the hybrid gains. **R1 is a stop point:** if R1 is negative, report back to the owner before Phase 2, because the hybrid then mostly changes plumbing.
 
-**G4 — Footer interplay.** Our extension replaces Pi's built-in footer (`ui.setFooter`). Determine whether the native routed-model display (`auto • high → model • level`) is visible under a replaced footer or must become a part of our custom footer. Audit which of our footer parts (cost sum, `⚠N err`, escalation narration) stay.
+- **R1 — Physical attribution through the shim.** When the shim's `streamSimple` emits an `AssistantMessage` whose `provider`/`model` name the physical candidate that actually answered, does Pi keep those fields (native footer `dynamic • high → openrouter/… • medium`, per-physical cost in `/session`, real context limits), or does it overwrite them with the routed shim model? Read the dispatch code in `dist/core/agent-session.js` / the model runtime around `findLatestResponse` and `_modelForMessage`.
+- **R2 — Shim visibility.** Can the `router-dispatch` provider's models be kept out of `/model` selection? If not, they must at least be clearly labelled (`name: "<group> (dispatch — select <group>/<group> instead)"`).
+- **R3 — Retry interplay.** When the orchestrator has exhausted all candidates and the shim ends with `stopReason: "error"`, Pi may auto-retry (reason `retry`). Confirm this matches 0.87.1 behavior, and decide whether exhaustion errors should use non-retryable wording to avoid a second full chain run after backoff.
+- **R4 — Footer.** Is the native routed-model display rendered by the built-in footer only (which we replace via `ui.setFooter`)? If so, our footer renders `selection → dispatch` itself.
+- **R5 — `model_select`.** Does `pi.on('model_select')` (`index.ts` ~1909) fire for virtual selections, and does the `:use-static` detection via `ctx.model.id` (`index.ts` ~1847) still see the virtual id?
 
-**G5 — `model_select` interception.** `index.ts` registers `pi.on('model_select')`. Under virtual models selection is recorded natively (`model_change`/`thinking_level_change`). Verify whether the hook still fires for virtual selections and what still needs it (e.g. `:use-static` pinning).
+## Task 0: Dependencies and research — **agent, after the Pi update**
 
-## Task 0: Research — **agent, after the Pi update**
+**Step 1:** Bump `devDependencies` `@earendil-works/pi-ai`, `pi-coding-agent`, `pi-tui` from `^0.83.0` to `^0.99.1`; run `npm install`, `npx tsc --noEmit`, `npx vitest run` (expected: green, as in the 2026-09-30 compatibility check). Commit `chore: bump pi devDependencies to 0.99.1`.
+**Step 2:** Answer R1–R5 with file/line references from the installed 0.99.1 and append a "Research findings" section to this plan. Commit `docs: record virtual-models research findings`.
+**Step 3:** Rewrite Tasks 2–5 below into bite-sized steps with concrete code based on the findings (the writing-plans skill requires exact code; that is only possible after R1–R5). If R1 is negative, stop and ask the owner.
 
-**Step 1:** Read the full `docs/virtual-models.md` and `examples/extensions/jev-router.ts` from the installed 0.99.1 (`~/.npm-global/lib/node_modules/@earendil-works/pi-coding-agent/`).
-**Step 2:** Read the virtual-model dispatch source in `dist/` to answer G1–G5 exactly, with file/line references.
-**Step 3:** Append a "Research findings" section to this plan file with the answers and the resulting design choice for G1 (per-request routing vs dispatcher shim). Commit as `docs: record virtual-models research findings`.
+## Phase 1 — Compatibility (independent of the flag)
 
-## Phase 1 — Config gate
+### Task 1: Never route to virtual models
 
-### Task 1: `use_virtual_models` flag
+**Why:** under 0.99.x any extension can register virtual models. `api: 'pi-virtual'` requests fail unless routed, and a virtual model may not route to another virtual model.
 
-**Files:** Modify `src/types.ts`, `index.ts` (`load()` whitelist), `src/dynamic-config.ts` if needed; Test: `test/dynamic-config.test.ts`, `test/config-loader.test.ts`.
+**Files:** `src/discovery.ts` / candidate assembly (see `test/all-discovered-refs-excludes-virtual-groups.test.ts` for the existing seam); test: extend that test file.
+**Step 1:** Failing test: a registry model with `api: 'pi-virtual'` from a foreign provider must not appear in any group's candidates. Prove red.
+**Step 2:** Filter on `api === 'pi-virtual'` (string constant; `VIRTUAL_MODEL_API` is not importable on 0.87.1). Green, commit `fix: exclude pi virtual models from routing candidates`.
 
-**Step 1: Failing whitelist test** — assert `use_virtual_models` passes `load()` (new config keys MUST be whitelisted there; known repo rule).
-**Step 2:** Run it, prove red.
-**Step 3:** Add `use_virtual_models?: boolean` to `RouterConfig` + whitelist entry. Default: `false` in the introducing version.
-**Step 4:** Tests green, `npx tsc --noEmit` clean.
-**Step 5:** Commit `feat: add use_virtual_models config flag` — body explains it gates the virtual-models migration (D1).
+## Phase 2 — Config gate and registration
 
-## Phase 2 — Registration
+### Task 2: `use_virtual_models` flag, virtual models, shim provider
 
-### Task 2: Register one virtual model per group
+**Files:** `src/types.ts`, `index.ts` (`load()` whitelist, new `registerGroupVirtualModels()` next to `registerGroupProviders()` at ~1627); test: new `test/virtual-model-registration.test.ts` (pi mock with `registerVirtualModel`/`unregisterVirtualModel` recorders).
 
-**Files:** Modify `index.ts` (new `registerGroupVirtualModels()` next to `registerGroupProviders()`); Test: new `test/virtual-model-registration.test.ts` (extend the test pi mock with a `registerVirtualModel` recorder).
+Tests first (each proven red):
+- `use_virtual_models` survives `load()` (new keys must be whitelisted there).
+- Flag on + API present: one virtual model per group (`provider: <group>`, `id: <group>`, `:use-static` variant for dynamic groups), `thinkingLevels` = the full list `off, minimal, low, medium, high, xhigh` (C3); **no** `registerProvider` call for group ids; exactly one `registerProvider('router-dispatch', …)` whose models are `<group>` / `<group>:use-static` with `streamSimple` = `groupStream`.
+- Flag on + API missing (Pi < 0.99): old path unchanged, one router-log warning.
+- Flag off: old path unchanged, no virtual-model calls.
+- `session_shutdown` unregisters the virtual models when the flag was on.
 
-**Step 1: Failing tests** — when the flag is on and `pi.registerVirtualModel` exists:
-- one virtual model per `cfg.model_groups` entry: `provider: <groupName>, id: <groupName>`, name label `"<group> → auto-classify"`, `thinkingLevels` per G3, `input: ['text','image']`;
-- for `method: 'dynamic'` groups an additional `<group>:use-static` id (policy flag lives in the route closure);
-- when the flag is off or the API is missing: no `registerVirtualModel` calls, old path unchanged.
-**Step 2:** Prove red, implement, green.
-**Step 3:** Commit `feat: register router groups as virtual models behind use_virtual_models`.
+Commit `feat: register router groups as virtual models behind use_virtual_models`.
 
-Registration notes: registering the same provider+id replaces the virtual model (documented) — safe on `session_start` reload; `pi.unregisterVirtualModel()` on shutdown when the flag was on. No module-level state: everything the route closure needs comes from the cache object (esbuild double-bundle rule).
+### Task 3: `route()` → shim
 
-## Phase 3 — Route decisions
+**Files:** new `src/virtual-route.ts`; test `test/virtual-route.test.ts`.
+Tests first: for every reason (`user`, `continuation`, `retry`, `direct`) the route returns the group's shim model from `ctx.modelRegistry.find('router-dispatch', <id>)` and passes `request.thinkingLevel` through. The `:use-static` virtual id maps to the `:use-static` shim. If the shim is missing, the route returns a clear error via a thrown `Error` whose message names the group. No state is returned (I5).
+Adapt the orchestrator's `:use-static` detection (`stream-orchestrator.ts` ~218, `index.ts` ~3036) if R5 shows the shim id reaches it differently.
+Commit `feat: route virtual group models through the dispatcher shim`.
 
-### Task 3: `route()` for the four reasons
+## Phase 3 — Attribution and display
 
-**Files:** Modify `index.ts` (route implementation, likely a new `src/virtual-route.ts`); Tests: new `test/virtual-route.test.ts`.
+### Task 4: Attribution guard + footer
 
-**Step 1: Failing tests, one per reason** (mocked classifier + registry):
-- `reason: 'user'` → runs today's classification chain (`classifyPrompt` → sticky/MHINT → momentum → blocklist/cooldown filtering), returns `{ model: <physical ref>, thinkingLevel: <mapped> , state }`; state initialized with sticky candidate + momentum window.
-- `reason: 'continuation'` → returns `previous` unchanged (keeps prompt caches and thinking signatures valid) without invoking the classifier.
-- `reason: 'retry'` → given `failed`, returns the next candidate exactly in the old candidate-chain order, applying `model-blocklist`/cooldown exclusions; records the failure for the blocklist as `recordStreamFailure` does today.
-- `reason: 'direct'` → route as `'user'`, no state returned (Pi ignores it).
-**Step 2:** State contract test: the state object is JSON-serializable and carries exactly {stickyCandidate, momentumWindow, lastCategory, sessionQuality inputs}; round-trips through `route()` calls.
-**Step 3:** If G1 answered "dispatcher shim": implement the shim provider here instead of the retry mapping, and route() returns the shim model; note the divergence in this plan.
-**Step 4:** Commit `feat: route virtual group requests through the classifier chain`.
+**Files:** `index.ts` (`turn_end` ~1922–1982, footer parts); tests: extend the footer/cost tests.
+- Guard test (C2): with the flag on, a completed turn is tracked under the physical candidate ref (cost, usage log, metrics), never under a group or shim ref.
+- Per R1/R4: if Pi keeps physical attribution, rely on it and keep our footer parts (cost sum, `⚠N err`, escalation narration); otherwise render `selection • level → dispatched • level` in our footer.
+Commit `feat: attribute and display dispatched models under virtual groups`.
 
-## Phase 4 — Parity
+## Phase 4 — Flip and cleanup — **next version, owner GO required**
 
-### Task 4: Parity corpus test
-
-**Files:** Test: new `test/virtual-route-parity.test.ts`.
-
-**Step 1:** Build a corpus of ≥20 prompts spanning the nine categories (trivial … fallback, including the known text-scan trap words). With identical classifier mocks, the virtual `route()` decision per prompt must equal the old `resolve()`/groupStream selection.
-**Step 2:** Prove at least one case red against a stub, then implement fully, then green.
-**Step 3:** Commit `test: virtual-model routing parity with the provider path`.
-
-## Phase 5 — Footer and `/router` display
-
-### Task 5: Display updates
-
-**Files:** Modify `index.ts` (footer parts, `/router` overview around line 3572); Tests: extend footer/overview tests.
-
-**Step 1:** Per G4: keep cost sum, `⚠N err`, escalation narration in our custom footer; add the dispatched-model part (`dynamic • high → openrouter/… • medium`) if the native display is not visible under the replaced footer.
-**Step 2:** Fix the known hardcoded overview line ("Routes per prompt via Ollama (gemma2:2b)") — show the *actual* classifier chain from live state (configured/probed Ollama primary/fallback, cloud fallback, static) and derive the category list from `CATEGORY_TO_GROUP` (`src/content-classifier.ts:845`) instead of the hardcoded `cats` array. This closes the open UI issue from 2026-09-29.
-**Step 3:** Tests green, commit `feat: show real dispatch and classifier chain in footer and /router`.
-
-## Phase 6 — Flip and cleanup — **next version, owner GO required**
-
-### Task 6: Default flip and deprecation
-
-- Default `use_virtual_models: true`; startup logs a deprecation line when the old path is explicitly requested; one version later remove `registerGroupProviders()` and the fake-provider path entirely.
-- Version bump + release **only** with the owner's explicit, release-specific approval (AGENTS.md §1; roborev review required before any tag).
+- Default `use_virtual_models: true`. A startup log line flags explicit use of the old path as deprecated. One version later, remove the fake-provider path.
+- Version bump and release **only** with the owner's explicit, release-specific approval (AGENTS.md §1; review required before any tag).
 
 ## Constraints (repo rules that apply)
 
-- All comments/docs/commits in English (AGENTS.md §3); Conventional Commits with *why* in the body (§5).
-- `npx tsc --noEmit` + `npx vitest run` green before every commit; every bug fix gets a non-vacuous regression test proven red first (§4).
-- New config keys go into the dynamic-config whitelist in `index.ts` `load()`.
-- Router state lives in the cache object / `route()` state, never module variables (esbuild double-bundle hazard).
-- Registration must never wipe existing provider registrations (Ü1 invariant) — virtual-model registration is additive, but the Phase 2 tests must still assert no `registerProvider` calls happen for groups while the flag is on.
+- English comments/docs/commits (AGENTS.md §3); Conventional Commits with *why* in the body (§5).
+- `npx tsc --noEmit` + `npx vitest run` green before every commit; every test proven red first, never against a stub that cannot fail for the real reason (§4).
+- New config keys go into the whitelist in `index.ts` `load()`.
+- State lives in the cache object, never in module variables (esbuild double-bundle hazard).
+- Ü1 invariant: the shim provider `router-dispatch` is router-owned, so re-registering it with its full model list is safe. Never register group ids as providers while the flag is on.
 - No tag/release/publish without the owner's explicit approval (§1).
