@@ -2075,14 +2075,14 @@ let previousTokenCount = 0;
     if (replacement) return replacement;
 
     // The rate-limit branch that lived here since the initial release
-      // (`txt.includes('429')` → recordLimit(curModel), later narrowed to
-      // isToolResultRateLimitText) was REMOVED (roborev job 703, finding 1,
-      // option a). Tool results are command output — a curl'd 429 from an
-      // unrelated host, a failing vitest run printing "rate_limit_exceeded",
-      // a subagent child hitting ITS five_hour limit — and none of it is
-      // evidence that the CURRENT model is rate-limited, so attributing a
-      // hard cooldown + key rotation to it was wrong no matter how narrow
-      // the pattern table got. Genuine provider limits arrive as error
+    // (`txt.includes('429')` → recordLimit(curModel), later narrowed to
+    // isToolResultRateLimitText) was REMOVED (roborev job 703, finding 1,
+    // option a). Tool results are command output — a curl'd 429 from an
+    // unrelated host, a failing vitest run printing "rate_limit_exceeded",
+    // a subagent child hitting ITS five_hour limit — and none of it is
+    // evidence that the CURRENT model is rate-limited, so attributing a
+    // hard cooldown + key rotation to it was wrong no matter how narrow
+    // the pattern table got. Genuine provider limits arrive as error
     // EVENTS ONLY (isRateLimitText in consumeWithDetection — including
     // pi-claude-bridge's "Claude rate limit …" error events); text_delta is
     // deliberately NOT scanned (87ad663: model prose is never evidence of a
