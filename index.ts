@@ -153,6 +153,10 @@ const defaultExport = function (pi: ExtensionAPI) {
   // Generated state (router-config.dynamic.json, .cache/scan-cache.json)
   // lives next to the extension unless PI_ROUTER_STATE_DIR points elsewhere.
   // The test harness uses this to keep every test file off the checkout.
+  // SYNC RULE: every NEW file written under stateDir needs (a) a `!dist/<path>`
+  // negation in package.json `files` and (b) an entry in
+  // test/package-contents.test.ts STATE_FILES — otherwise the npm package
+  // ships runtime state (roborev jobs 634/644).
   const stateDir = process.env.PI_ROUTER_STATE_DIR || extDir;
   // Scan-sanity acceptance of a smaller result requires a "settled" scan:
   // one that runs at least scan_settle_ms after start, when the model registry

@@ -8,6 +8,16 @@
 // The test packs a synthetic tree (the real package.json plus fake build
 // outputs and fake state files) in a temp dir, so it checks the real `files`
 // rules without building and without touching the live state in ./dist.
+//
+// SYNC RULE (roborev job 644 LOW): STATE_FILES below must stay in sync with
+// EVERY file stateDir can write — today .cache/scan-cache.json (CacheManager,
+// src/cache.ts) and router-config.dynamic.json (index.ts dynamic-config save).
+// A new runtime file under dist/ needs BOTH a `!dist/<path>` negation in
+// package.json `files` AND an entry here: a missing negation ships the file
+// (this test goes red because the packed dist/ list no longer equals
+// BUILD_OUTPUTS), and a missing STATE_FILES entry leaves the new file
+// unseeded, so a dropped negation would go unnoticed. The exact-equality
+// assertion is the mechanism; STATE_FILES is the input set that feeds it.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -17,6 +27,8 @@ import * as path from 'node:path';
 
 const repoRoot = path.resolve(__dirname, '..');
 const BUILD_OUTPUTS = ['index.js', 'router-config.json', 'router-defaults.yaml', 'model-map.yaml'];
+// Keep in sync with every stateDir write — see SYNC RULE in the header.
+// Currently: src/cache.ts CacheManager and the dynamic-config save in index.ts.
 const STATE_FILES = ['.cache/scan-cache.json', 'router-config.dynamic.json'];
 
 describe('npm package contents', () => {
