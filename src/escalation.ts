@@ -137,8 +137,17 @@ export type TurnRecord = { prompt: string; response: string };
 const STREAK_THRESHOLD = 3;
 
 export class SessionEscalation {
+  // S2 (final v1.6.0 review, Important): _history used to grow unboundedly —
+  // one TurnRecord holding the FULL prompt+response text per recordTurn
+  // call (two per exchange), never trimmed, for the life of the session.
+  // A long-running session retained megabytes of stale transcripts even
+  // though the only consumers are slice(-2) and the turn-count cadence.
+  // The ring keeps the last 10; a separate monotonic _turnCount preserves
+  // the every-3rd-turn check cadence (a saturating length would freeze it).
+  private static readonly MAX_HISTORY = 10;
   private _level: EscalationLevel = 'operational';
   private _history: TurnRecord[] = [];
+  private _turnCount = 0;
   private _llmInFlight = false;
   private _sessionId = 0;
   private _classifierModel: string;
@@ -171,6 +180,7 @@ export class SessionEscalation {
   reset(): void {
     this._level = 'operational';
     this._history = [];
+    this._turnCount = 0;
     this._sessionId++;
     this._frustrationStreak = 0;
     this._streakEscalatedPending = false;
@@ -184,6 +194,8 @@ export class SessionEscalation {
    */
   recordTurn(prompt: string, response: string): void {
     this._history.push({ prompt, response });
+    if (this._history.length > SessionEscalation.MAX_HISTORY) this._history.shift();
+    this._turnCount++;
 
     // Streak-based check: runs on the USER's half of the exchange only (see
     // hasFrustrationSignal's docstring for why response text is never
@@ -218,7 +230,9 @@ export class SessionEscalation {
     }
 
     // Check every 3rd turn, starting when we have at least 2 entries.
-    if (this._history.length >= 2 && (this._history.length - 2) % 3 === 0) {
+    // Uses _turnCount (monotonic), NOT _history.length — the ring caps the
+    // length at MAX_HISTORY, which would otherwise freeze the cadence.
+    if (this._turnCount >= 2 && (this._turnCount - 2) % 3 === 0) {
       this._checkAndEscalate();
     }
   }

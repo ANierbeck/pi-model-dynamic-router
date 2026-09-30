@@ -175,3 +175,35 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(vi.mocked(callOllama).mock.calls.length).toBe(3);
   });
 });
+
+describe('SessionEscalation — bounded _history ring (S2)', () => {
+  it('caps _history at 10 entries while keeping the every-3rd-turn LLM cadence', () => {
+    // Final v1.6.0 review S2 (Important): _history grew unboundedly — one
+    // TurnRecord holding the FULL prompt+response text per recordTurn call
+    // (two per exchange), for the life of the session. A long-running
+    // session with large responses retained megabytes of stale transcripts.
+    // The only consumers are slice(-2) and the turn-count cadence, so a
+    // small ring plus a monotonic counter covers both.
+    const esc = new SessionEscalation();
+    const spy = vi.spyOn(esc as any, '_checkAndEscalate');
+    for (let i = 0; i < 40; i++) esc.recordTurn(`turn ${i}`, 'reply');
+    expect((esc as any)._history.length).toBeLessThanOrEqual(10);
+    // Cadence: checks fire on turns #2, #5, #8, … #38 → 13 checks in 40
+    // turns, unchanged by the cap (a saturating length would break this).
+    expect(spy.mock.calls.length).toBe(13);
+  });
+
+  it('reset() clears the history and the turn counter', () => {
+    const esc = new SessionEscalation();
+    for (let i = 0; i < 12; i++) esc.recordTurn(`turn ${i}`, 'reply');
+    esc.reset();
+    expect((esc as any)._history.length).toBe(0);
+    expect((esc as any)._turnCount).toBe(0);
+    // After reset the cadence starts over: the first check is on turn #2.
+    const spy = vi.spyOn(esc as any, '_checkAndEscalate');
+    esc.recordTurn('a', 'b');
+    expect(spy).not.toHaveBeenCalled();
+    esc.recordTurn('c', 'd');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
