@@ -156,12 +156,13 @@ describe('recordSoftFailure must not shorten a longer cooldown', () => {
 
     expect(rlm.limitSecs('test-provider/model-1')).toBeGreaterThan(9 * 60);
 
-    // Escalation is observable on the NEXT hard limit: the schedule uses
-    // hits (4th entry, 8 min), not the 1st (1 min). This pins that hits
-    // keep counting while the cooldown end is preserved.
+    // Escalation is observable on the NEXT hard limit: 1 hard + 3 soft
+    // hits = 4 recorded hits, so the next recordLimit is hit #5 → schedule
+    // entry BACKOFF_MS[4] = 16 min, NOT the 1-minute entry. This pins that
+    // hits keep counting while the cooldown end is preserved.
     rlm.recordLimit('test-provider/model-1', {});
     const secs = rlm.limitSecs('test-provider/model-1');
-    expect(secs).toBeGreaterThan(7 * 60); // 4th schedule entry = 8 min
-    expect(secs).toBeLessThanOrEqual(8 * 60);
+    expect(secs).toBeGreaterThan(15 * 60); // 5th schedule entry = 16 min
+    expect(secs).toBeLessThanOrEqual(16 * 60);
   });
 });
