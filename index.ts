@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
-import { PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
+import { PI_BUILTIN_PROVIDER_IDS, PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
 import {
   splitRef,
   stripDateSuffix,
@@ -1624,9 +1624,19 @@ let previousTokenCount = 0;
   }
 
   /**
+   * Group provider names the router itself registered. Own-set tracking so
+   * the session_start re-register can distinguish "id we own → re-register"
+   * from "id someone else owns → refuse" (Ü1): by session_start,
+   * getRegisteredProviderIds() contains every group WE registered at load
+   * time, and a naive registry guard would skip re-registering all of them.
+   */
+  const registeredGroupProviderNames = new Set<string>();
+
+  /**
    * Register virtual providers for each model group (strategic, tactical, etc).
    * Called synchronously during extension load so groups are available for
-   * --model resolution before session_start fires.
+   * --model resolution before session_start fires, and again at
+   * session_start (with a registry available) to refresh resolution labels.
    */
   function registerGroupProviders() {
     for (const [groupName, groupCfg] of Object.entries(cfg.model_groups)) {
@@ -1638,13 +1648,43 @@ let previousTokenCount = 0;
       // picker, so skip it and use a label that reflects what the group
       // actually does.
       const isDynamicGroup = groupCfg.method === 'dynamic';
+
+      // Ü1 guard (AGENTS.md §6; final v1.6.0 review finding I3). The old
+      // comment claimed "safe by construction (ADR-0019)" — that only held
+      // for the shipped group names. pi.registerProvider REPLACES the
+      // provider's `models` array wholesale, so a user-defined group named
+      // e.g. "openai" would wipe pi's entire openai catalog for the session.
+      // Two-layer guard:
+      // 1. Static denylist of pi's builtin provider ids — the only option
+      //    at extension load, where pi's extension API exposes no registry
+      //    query (a foreign extension registered before us is undetectable
+      //    here; documented limitation).
+      // 2. At the session_start re-register (when a modelRegistry is
+      //    available), refuse ids that are registered but NOT ours.
+      if (PI_BUILTIN_PROVIDER_IDS.has(groupName)) {
+        routerLog(
+          `[groups] Refusing to register model group "${groupName}" as a provider: it would ` +
+            `replace pi's builtin provider of the same name (Ü1). Rename the group in router-config.json.`
+        );
+        continue;
+      }
+      if (
+        (sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds &&
+        !registeredGroupProviderNames.has(groupName) &&
+        ((sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() as string[]).includes(groupName)
+      ) {
+        routerLog(
+          `[groups] Refusing to register model group "${groupName}" as a provider: ` +
+            `another extension already registered that provider id (Ü1). Rename the group.`
+        );
+        continue;
+      }
+
       const res = isDynamicGroup ? null : resolve(groupName);
       const resolvedRef = res?.selected ?? 'none';
       const resolvedMetrics = res ? getM(resolvedRef) : null;
       const label = isDynamicGroup ? `${groupName} → auto-classify` : `${groupName} → ${resolvedRef}`;
 
-      // Safe by construction (ADR-0019): group providers use router-owned
-      // ids/apis that never collide with pi's builtin catalog or models.json.
       (pi as any).registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
         apiKey: 'router-virtual', // not used — streamSimple overrides
@@ -1671,6 +1711,7 @@ let previousTokenCount = 0;
           }] : []),
         ],
       });
+      registeredGroupProviderNames.add(groupName);
     }
   }
 

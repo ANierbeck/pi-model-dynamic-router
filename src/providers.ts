@@ -233,6 +233,64 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
 };
 
 /**
+ * Pi's builtin provider ids (pi 0.99.1 catalog, sourced from
+ * core/model-resolver.js `defaultModelPerProvider` plus the provider catalog
+ * in models.json). registerGroupProviders must NEVER register a virtual
+ * group provider under one of these ids: pi.registerProvider REPLACES the
+ * provider's `models` array wholesale (AGENTS.md §6 / Ü1), so a user-defined
+ * model group named e.g. "openai" would wipe pi's entire openai catalog.
+ *
+ * This list is a conservative LOAD-TIME guard — pi's extension API exposes
+ * no registry query while extensions load. It may lag behind newer pi
+ * versions (a new builtin id would fall through); the session_start
+ * re-register additionally checks getRegisteredProviderIds() for ids the
+ * router itself did NOT register. Keep in sync when bumping the pi version.
+ */
+export const PI_BUILTIN_PROVIDER_IDS: ReadonlySet<string> = new Set([
+  'amazon-bedrock',
+  'ant-ling',
+  'anthropic',
+  'azure-openai-responses',
+  'baseten',
+  'cerebras',
+  'cloudflare-ai-gateway',
+  'cloudflare-workers-ai',
+  'deepseek',
+  'fireworks',
+  'github-copilot',
+  'google',
+  'google-vertex',
+  'groq',
+  'huggingface',
+  'kimi-coding',
+  'meta',
+  'minimax',
+  'minimax-cn',
+  'mistral',
+  'moonshotai',
+  'moonshotai-cn',
+  'nvidia',
+  'openai',
+  'openai-codex',
+  'opencode',
+  'opencode-go',
+  'openrouter',
+  'qwen-token-plan',
+  'qwen-token-plan-cn',
+  'qwen-token-plan-individual',
+  'radius',
+  'together',
+  'vercel-ai-gateway',
+  'xiaomi',
+  'xiaomi-token-plan-ams',
+  'xiaomi-token-plan-cn',
+  'xiaomi-token-plan-sgp',
+  'xai',
+  'zai',
+  'zai-coding-cn',
+]);
+
+/**
  * Providers that must NOT be auto-registered. This covers:
  * - built-in Pi providers (anthropic, openai, google)
  * - providers registered by extensions (ollama, lm-studio, claude-bridge, etc.)
