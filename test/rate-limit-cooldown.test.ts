@@ -121,3 +121,47 @@ describe('RateLimitManager cooldown calculation', () => {
     expect(secs).toBeLessThanOrEqual(90 * 60);
   });
 });
+describe('recordSoftFailure must not shorten a longer cooldown', () => {
+  it('keeps a hard 429 cooldown when a soft failure arrives while it is active', () => {
+    const cache: any = { exhausted_keys: {} };
+    const rlm = new RateLimitManager(BACKOFF_MS, SOFT_BACKOFF_MS, COST_MUX_AT_HIT, cache);
+
+    // A hard rate-limit with an explicit long reset (10 minutes) — the
+    // provider told us when the window actually resets.
+    rlm.recordLimit('test-provider/model-1', {}, Date.now() + 10 * 60_000);
+
+    // A generic (non-429) failure on the same ref — e.g. the
+    // total-cooldown-collapse force-retry failing, or another candidate
+    // path hitting recordSoftFailure. Pre-fix, this OVERWROTE the 10-minute
+    // hard cooldown with a 30s soft backoff, re-arming a model whose rate
+    // limit was still firmly in place (the 2026-09-27 incident class).
+    rlm.recordSoftFailure('test-provider/model-1');
+
+    const secs = rlm.limitSecs('test-provider/model-1');
+    expect(secs).toBeGreaterThan(9 * 60); // still ~10 minutes
+    expect(secs).toBeLessThanOrEqual(10 * 60);
+  });
+
+  it('still counts soft hits while preserving the longer cooldown', () => {
+    const cache: any = { exhausted_keys: {} };
+    const rlm = new RateLimitManager(BACKOFF_MS, SOFT_BACKOFF_MS, COST_MUX_AT_HIT, cache);
+
+    rlm.recordLimit('test-provider/model-1', {}, Date.now() + 10 * 60_000);
+    // Three soft failures while the hard cooldown is active: hits must
+    // still escalate (the cadence drives backoff escalation and cost-mux
+    // bumps) — only the cooldown end must not move EARLIER.
+    rlm.recordSoftFailure('test-provider/model-1');
+    rlm.recordSoftFailure('test-provider/model-1');
+    rlm.recordSoftFailure('test-provider/model-1');
+
+    expect(rlm.limitSecs('test-provider/model-1')).toBeGreaterThan(9 * 60);
+
+    // Escalation is observable on the NEXT hard limit: the schedule uses
+    // hits (4th entry, 8 min), not the 1st (1 min). This pins that hits
+    // keep counting while the cooldown end is preserved.
+    rlm.recordLimit('test-provider/model-1', {});
+    const secs = rlm.limitSecs('test-provider/model-1');
+    expect(secs).toBeGreaterThan(7 * 60); // 4th schedule entry = 8 min
+    expect(secs).toBeLessThanOrEqual(8 * 60);
+  });
+});

@@ -249,7 +249,19 @@ export class RateLimitManager {
     const hits = (prev?.hits ?? 0) + 1;
     const backoffIndex = Math.min(hits - 1, this.softBackoffMs.length - 1);
     const ms = this.softBackoffMs[backoffIndex];
-    this.limits.set(ref, { cooldown_until: Date.now() + ms, backoff_ms: ms, hits });
+    const until = Date.now() + ms;
+    // Final v1.6.0 review (Minor): a soft failure arriving while a LONGER
+    // cooldown is active (e.g. a hard 429 cooldown from seconds ago, hit by
+    // the total-cooldown-collapse force-retry or a cross-candidate path)
+    // used to OVERWRITE the entry and re-arm a model whose rate limit was
+    // still firmly in place. Keep the longer cooldown end; the hit still
+    // counts, so the escalation schedule keeps advancing (see
+    // rate-limit-cooldown.test.ts, "must not shorten a longer cooldown").
+    if (prev && prev.cooldown_until > until) {
+      this.limits.set(ref, { cooldown_until: prev.cooldown_until, backoff_ms: prev.backoff_ms, hits });
+      return;
+    }
+    this.limits.set(ref, { cooldown_until: until, backoff_ms: ms, hits });
   }
 
   /**
