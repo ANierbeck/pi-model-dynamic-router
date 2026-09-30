@@ -92,7 +92,7 @@ Each category maps to a specific model group:
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that uses Ollama (**mistral-nemo:latest** primary, **gemma2:2b** fallback) to classify each prompt in real-time and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group (`scout`, `operational`, `tactical`, or `strategic`). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
@@ -102,7 +102,14 @@ To use the **`dynamic`** group, you need:
 - **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
+Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
+shipped `dynamic` group) the classifier tries a chain of free cloud models
+FIRST — pinned `classifier_cloud_model` → scan-time probe-verified list →
+tiered discovery → configured free models — and treats Ollama as the last
+resort (see [Data handling & privacy](#data-handling--privacy)). If every
+cloud candidate fails and Ollama is unavailable, the classifier falls back
+to static keyword-based classification (only if `allowStaticFallback` is
+enabled) — otherwise the category `fallback` is returned.
 
 ---
 
@@ -442,27 +449,49 @@ See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-deco
 
 By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local models conceptually belong on top.
 
-`billing_preference` re-ranks a group by billing tier after its `method` has ordered the candidates. It does not change which models passed the filters — only their order. Three values:
+`billing_preference` re-ranks a group by billing tier after its `method` has ordered the candidates. It does not change which models passed the filters — only their order. Five values:
 
 | Value | Ordering | Use for |
 |-------|----------|---------|
 | `"default"` (or omitted) | free → subscription → local → payg | Groups where an already-paid subscription model is the cheaper choice in time/quota terms. |
-| `"local_first"` | free → local → subscription → payg | scout / operational groups where local models should rank ahead of subscription, but genuinely-free remote models still win. |
-| `"strict_local"` | local → free → subscription → payg | Cheap groups (trivial / simple) where the local daemon should answer **first**, ahead of even the $0 remote models — best latency and no quota burn. |
+| `"cloud_first"` | cloud (free → subscription) ahead of local | Groups that should prefer cloud models — the local daemon is a fallback, not the default (scout / bulk_reader / code_writer). |
+| `"local_first"` | free → local → subscription → payg | Groups where local models should rank ahead of subscription, but genuinely-free remote models still win. |
+| `"local_before_payg"` | free → subscription → local → payg | Cheap groups (trivial / simple): free and subscription first, local ahead of pay-as-you-go only. |
+| `"strict_local"` | local → free → subscription → payg | Groups where the local daemon should answer **first**, ahead of even the $0 remote models. Not used by the shipped config (a guard test forbids it there). |
 
-`payg` is always last. This is opt-in per group — other groups keep the default ordering.
+`payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `trivial`/`simple` → `local_before_payg`, `scout`/`bulk_reader`/`code_writer` → `cloud_first`.
 
 > **A subscription model's $0 cost is not free.** Flat-rate plans like pi-claude hide a hard time/token limit, so a trivial prompt routed there is the single most expensive thing the router can do. Prefer a local model or a genuine `:free` model for cheap work.
+
+#### Agent-capability filter (`non_agent_model_prefixes`)
+
+Models whose ref starts with one of these prefixes are excluded from all
+routing groups (they remain selectable as plain chat models). GDPval scores
+capability, not agent-reliability — raw chat/completion/audio families
+(e.g. `voxtral-`, `ministral-`) must never win a routing slot over an
+agent-capable model, whatever their benchmark score. The shipped default:
+
+```json
+"non_agent_model_prefixes": [
+  "mistral-small-",
+  "magistral-small-",
+  "ministral-",
+  "voxtral-",
+  "codestral-"
+]
+```
+
+Replace the array in any config layer to change the filter.
 
 ```json
 "scout": {
   "method": "tiered",
-  "billing_preference": "local_first",
+  "billing_preference": "cloud_first",
   "min_gdpval": 0
 },
 "trivial": {
   "method": "tiered",
-  "billing_preference": "strict_local",
+  "billing_preference": "local_before_payg",
   "min_gdpval": 0
 }
 ```
@@ -534,7 +563,9 @@ Or manually:
 
 ### Supported Providers
 
-**Total: 26 providers**
+**26 known providers** (the router's `PROVIDER_MAP`, below) — plus any
+extension-registered provider (e.g. claude-bridge), which the router
+discovers automatically.
 
 | Provider | Type | Registration | Notes |
 |----------|------|--------------|-------|
@@ -549,7 +580,22 @@ Or manually:
 | **qwen-cli** | Extension | Extension | Qwen CLI |
 | **gemini-cli** | Extension | Extension | Google Gemini CLI |
 | **antigravity** | Extension | Extension | - |
-| ... | ... | ... | 20+ more |
+| **chutes** | Router | Router | Free tier models available |
+| **mistral-zai** | Router | Router | Mistral via Z.AI |
+| **groq** | Router | Router | Fast inference, free tier |
+| **cerebras** | Router | Router | Fast inference |
+| **xai** | Router | Router | xAI (Grok) |
+| **zai** | Router | Router | Z.AI |
+| **huggingface** | Router | Router | - |
+| **kimi-coding** | Router | Router | - |
+| **minimax** | Router | Router | - |
+| **minimax-cn** | Router | Router | - |
+| **opencode** | Router | Router | - |
+| **opencode-go** | Router | Router | - |
+| **vercel-ai-gateway** | Router | Router | - |
+| **azure-openai** | Router | Router | - |
+| **deepseek** | Router | Router | - |
+| **github-copilot** | Router | Router | Subscription |
 
 **Claude-bridge Support:**
 - **Important:** Claude-bridge is a **separate Pi extension** that must be installed to use Claude models with a subscription.
@@ -565,7 +611,14 @@ To use the **`dynamic`** group, you need:
 - **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-If both Ollama models are unavailable, the classifier falls back to a free cloud model only when `classifier_cloud_fallback: true` is explicitly set on the `dynamic` group (opt-in, off by default — see [Data handling & privacy](#data-handling--privacy)), and finally to static keyword-based classification (only if `allowStaticFallback` is enabled) — otherwise the category `fallback` is returned.
+Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
+shipped `dynamic` group) the classifier tries a chain of free cloud models
+FIRST — pinned `classifier_cloud_model` → scan-time probe-verified list →
+tiered discovery → configured free models — and treats Ollama as the last
+resort (see [Data handling & privacy](#data-handling--privacy)). If every
+cloud candidate fails and Ollama is unavailable, the classifier falls back
+to static keyword-based classification (only if `allowStaticFallback` is
+enabled) — otherwise the category `fallback` is returned.
 
 ## Commands
 
@@ -574,6 +627,9 @@ If both Ollama models are unavailable, the classifier falls back to a free cloud
 | `/router` | Overview: providers, groups, selections, rate limits |
 | `/router <group>` | Detailed view of a group with ranked candidates |
 | `/router scan` | Re-scan models and GDPval scores |
+| `/router cost` | Audit-depth cost report: per-model, per-window usage from the router's own token accounting |
+| `/router errors [n]` | Last n session errors (default 10) with status-line correlation |
+| `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 | `/router reload` | Hot-reload config and cache |
@@ -611,8 +667,11 @@ The **`dynamic`** group uses the following internal tools:
 ## Footer
 
 ```
-strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14m | ⌂ proj | ⎇ main | ⛔2
+strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14m | ⌂ proj | ⎇ main | ⛔2 | ⚠1 err
 ```
+
+The `⚠N err` part counts the session's recorded stream failures — the same
+entries `/router errors` lists in full.
 
 ## License
 
