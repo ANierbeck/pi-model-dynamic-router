@@ -455,10 +455,15 @@ export class StreamOrchestrator {
               await this.driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
               return;
             } else {
-              routerLog(`[dynamic] HINT model "${shortName}" not found; using as-is`);
-              candidates = [shortName];
-              this.ctx.lastDynamicModel = shortName;
-              dynamicLabel = `MHINT: ${classification.hintTarget}`;
+              // Final v1.6.0 review (Minor): this branch used to log "using
+              // as-is" and assign candidates/lastDynamicModel/dynamicLabel
+              // for a direct use of the unknown name — but every one of those
+              // assignments was dead: the normal-classification block below
+              // unconditionally overwrites candidates/lastDynamicModel/
+              // dynamicLabel. The ACTUAL behavior (verified in the 2026-09-20
+              // "zai-glm-5.3" incident) is fall-through to normal
+              // classification, so the log now says what really happens.
+              routerLog(`[dynamic] HINT model "${shortName}" not found in any group, registry or provider; falling back to normal classification`);
             }
           }
         }
