@@ -114,7 +114,7 @@ The **`dynamic`** group automatically classifies user prompts using **Ollama (ge
 - `src/content-classifier.ts`: Content-based prompt classification with group escalation
 - `src/ollama-utils.ts`: Ollama helper functions
 - `src/types.ts`: Type definitions (Group, Provider, Config, etc.)
-- `src/providers.ts`: Provider definitions with SKIP_REGISTRATION for built-in/extension providers
+- `src/providers.ts`: Provider definitions (PROVIDER_MAP — baseUrl, auth keys, model filter)
 - `src/utils.ts`: Utility functions
 - `src/rate-limit.ts`: Rate limit management
 - `src/discovery.ts`: Discovery management

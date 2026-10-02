@@ -177,28 +177,25 @@ Note: The actual configuration may contain additional fields and values. See `ro
 
 #### Provider Configuration
 
-**Important:** The router **only registers providers that Pi doesn't already know**. This prevents conflicts with built-in providers and extensions.
+**Important (ADR-0021, 2026-10-02):** The router **never registers models
+Pi does not already know**. Pi's registry (builtin catalog + `models.json` +
+extensions) is the single source of truth for the cloud model inventory; the
+router only enriches and uses what Pi already resolves (GDPval, pricing,
+capabilities). New provider models become routable when Pi ships them (or via
+`models.json`), not before; provider keys must live where Pi resolves them
+(`auth.json` / `models.json`) — router-config keys alone no longer make a
+provider routable.
 
-| Provider Type | Registration | Notes |
-|---------------|--------------|-------|
-| **Built-in Pi** (anthropic, openai, google, mistral) | Skipped | Handled by Pi itself |
-| **Extensions** (ollama, lm-studio, claude-bridge, qwen-cli, gemini-cli) | Skipped | Handled by respective extensions |
-| **Router-only** (openrouter) | Registered by router | For free tier models |
+What the router still registers (ADR-0021 out-of-scope decisions):
 
-**`SKIP_REGISTRATION` in `src/providers.ts`:**
-```typescript
-export const SKIP_REGISTRATION = new Set([
-  'anthropic',    // Built-in Pi provider
-  'openai',        // Built-in Pi provider
-  'google',        // Built-in Pi provider
-  'qwen-cli',      // Extension
-  'gemini-cli',    // Extension
-  'ollama',        // Extension
-  'lm-studio',     // Extension
-  'antigravity',   // Extension
-  'claude-bridge', // Extension (user must install)
-]);
-```
+| Registration | Notes |
+|--------------|-------|
+| **Local Ollama** | The only local registration — Pi has no live local-discovery mechanism; `num_ctx` comes from real capabilities the scan captured from `/api/show` |
+| **Configured free models** | On demand (`free_models` in the provider config) — explicit user intent, not scan discovery; never overwrites a provider Pi knows |
+| **Virtual group providers** | The router's own product surface (`strategic`, `tactical`, …) |
+
+A `SKIP_REGISTRATION` set used to guard the (removed) scan-union registration;
+it was deleted together with it in commit `10fdbf8`.
 
 #### Fallback Groups
 

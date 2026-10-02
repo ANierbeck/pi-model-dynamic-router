@@ -13,10 +13,10 @@
 // real money via a registered alias provider) at stream time.
 //
 // The rule: a ref may only enter the generated config if it can actually be
-// streamed. The live paths already intersect candidates with registry refs
-// (allDiscoveredRefs), and registerGroupModels registers scan-discovered
-// models at session start, so "resolvable in Pi's registry" is the
-// authoritative streamability signal. Local runtimes (ollama) and refs the
+// streamed. Both the live paths (allDiscoveredRefs) and this persist-path
+// filter key on Pi's registry directly — since ADR-0021 the router registers
+// no scan-discovered models, so "resolvable in Pi's registry" is the sole
+// authoritative streamability gate. Local runtimes (ollama) and refs the
 // user explicitly listed as free models are exempt.
 
 export interface StreamableRefContext {

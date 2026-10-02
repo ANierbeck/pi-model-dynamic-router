@@ -632,9 +632,10 @@ let previousTokenCount = 0;
    *   setup-independent (no hardcoded table, no dependency on any specific
    *   Ollama extension). Results land in cache.available_models[].capabilities
    *   (see AvailableModel/ModelCapabilities types) and flow through to the
-   *   LOCAL registration in registerGroupModels (Ollama/LM Studio only,
-   *   kept per ADR-0021: Pi has no live local-discovery mechanism), which
-   *   registers with the real values instead of the old hardcoded blanket.
+   *   LOCAL registration in registerGroupModels (Ollama only, kept per
+   *   ADR-0021: Pi has no live local-discovery mechanism; LM Studio was
+   *   never registered), which registers with the real values instead of
+   *   the old hardcoded blanket.
    *
    * PER-PROVIDER MODEL FILTER (resolved architecture problem B2): PROVIDER_MAP
    *   entries may set `modelFilter: "<regex>"` to constrain which scanned model

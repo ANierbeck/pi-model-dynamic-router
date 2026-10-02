@@ -50,14 +50,20 @@ Every one of these guarded a call that should not exist.
 1. **The router never registers a model or provider into Pi's registry that
    Pi does not already know.** Pi's registry (builtin catalog + models.json +
    extensions) is the single source of truth for the cloud model inventory.
-   The scan-union registration is removed.
+   The scan-union registration is removed. Exceptions (see Out of scope): the
+   LOCAL Ollama registration, explicitly-configured `free_models` on demand,
+   and the router's own virtual group providers — each is either local
+   reality Pi cannot discover or explicit user/router intent, never scan
+   discovery.
 2. **The scan stays, with a narrowed role**: local inventory (Ollama / LM
    Studio), GDPval scraping, OpenRouter pricing, and capability data in the
    cache. Scan entries for models Pi does not know are inert:
    - the snapshot builder's streamability filter (2026-09-20 ghost-model
      incident) drops refs unresolvable in Pi's registry,
    - the classifier-fallback probe skips refs `find()` cannot resolve,
-   - live candidate resolution is registry-first (`allDiscoveredRefs`).
+   - live candidate resolution is registry-first (`allDiscoveredRefs`,
+     which falls back to `cache.available_models` only when no
+     `modelRegistry` is in scope — the same filter chain still applies).
    No separate "Pi-known" filter is needed — the existing defenses already
    key on Pi's registry; the union registration was the only thing that made
    scan-only refs resolvable.
@@ -76,7 +82,10 @@ Every one of these guarded a call that should not exist.
   mistral / mistral-zai / openrouter keys.)
 - The Mistral 422 "store" symptom disappears with its cause. No
   `compat.supportsStore` special case is needed — there is nothing left to
-  register with the wrong API.
+  register with the wrong API. No manual cleanup of the 29 invented Mistral
+  registrations is needed either: a Pi restart rebuilds the registry from
+  catalog + models.json + extensions, and the extension registrations the
+  scan-union wrote vanish with the old session.
 - Removed with the union: the Ü1 round-trip, the ADR-0019 field allow-list,
   the `[scan-union]` log line, `SKIP_REGISTRATION`, and
   `piKnownProviderSet()`. ADR-0019's remaining value is its documentation of
@@ -85,9 +94,12 @@ Every one of these guarded a call that should not exist.
 
 ## Out of scope (unchanged; separate owner decisions pending)
 
-- **Ollama / LM Studio registration** stays: Pi has no live local-discovery
-  mechanism, and the local scan is the only source of real `num_ctx` /
-  capability data. Known issue found during this investigation: the guard
+- **Ollama registration** stays (LM Studio was never registered — it sat in
+  the removed `SKIP_REGISTRATION` set; its refs are scan/cache-only and
+  streamable via the `isLocalProvider` exemption): Pi has no live
+  local-discovery mechanism, and the local scan is the only source of real
+  `num_ctx` / capability data. Known issue found during this investigation:
+  the guard
   compares untagged models.json ids against tag-suffixed scan ids
   (`gemma4` vs `gemma4:latest`), so a Pi registration the router should
   respect is silently replaced each session (83× in the live logs). Owner

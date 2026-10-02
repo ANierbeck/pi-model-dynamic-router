@@ -56,11 +56,14 @@ investigation and was not something introduced while evaluating this ADR
   API billing, which is a different product with different APIs).
 - **claude-bridge (the actual credential path for the user's Claude
   subscription) is deliberately outside the router's credential
-  management.** `claude-bridge` is listed in `SKIP_REGISTRATION`
-  (`src/providers.ts`) specifically because it's an externally-installed
-  Pi extension that manages its own OAuth session; the router never
-  discovers or holds a key for it. There is no key belonging to
-  claude-bridge for the router to reuse in the first place — reuse is not
+  management.** The router never registers it — since ADR-0021 (2026-10-02)
+  it registers no model Pi doesn't know anyway; at the time of this ADR it
+  was additionally listed in `SKIP_REGISTRATION` (`src/providers.ts`, set
+  removed with the scan-union in `10fdbf8`) because it's an
+  externally-installed Pi extension that manages its own OAuth session;
+  the router never discovers or holds a key for it. There is no key
+  belonging to claude-bridge for the router to reuse in the first place —
+  reuse is not
   merely inadvisable here, there is nothing present to reuse.
 - **`anthropic` in `PROVIDER_MAP` is a separate, legacy pay-as-you-go
   provider**, not the Pro/Max subscription the user is on. Even if a key

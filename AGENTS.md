@@ -95,9 +95,9 @@
   enriches and uses what Pi already resolves. Registering scan-discovered
   models was the root cause of the Mistral 422 "store" errors (29 invented
   Mistral registrations, OCR/audio models registered as chat models). The
-  only registrations left: local Ollama/LM Studio (no Pi discovery
-  mechanism), explicitly-configured `free_models` on demand, and the
-  router's own virtual group providers.
+  only registrations left: local Ollama (no Pi discovery mechanism; LM
+  Studio was never registered), explicitly-configured `free_models` on
+  demand, and the router's own virtual group providers.
 
 ## 7. Boyscout Rule — leave the code better than you found it
 

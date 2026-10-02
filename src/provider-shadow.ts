@@ -10,11 +10,13 @@
 // (`pricingAlias: 'mistral'`). Once Pi's own catalog serves the `mistral`
 // provider (it does — with REAL per-token prices), the alias provider is
 // pure duplication: scanning it re-discovers mistral's whole catalog under
-// a different provider key, and registering it bakes the scan's
-// `cost_per_m: 0` PLACEHOLDER into Pi's registry as a real price
-// (registerGroupModels does `cost: { input: costPerM, output: costPerM }`).
-// The fake $0.0 then made the alias duplicates (best GDPval in the pool)
-// win every cost-sorted group while real money was billed upstream.
+// a different provider key. Before ADR-0021 (2026-10-02) the scan-union
+// registration additionally baked the scan's `cost_per_m: 0` PLACEHOLDER
+// into Pi's registry as a real price (`cost: { input: costPerM, output:
+// costPerM }`); the fake $0.0 then made the alias duplicates (best GDPval in
+// the pool) win every cost-sorted group while real money was billed
+// upstream. The registration is gone, but the stale cache entries it fed on
+// are still pure pollution — hence this purge.
 //
 // The rule is generic (no hardcoded provider names): a provider is
 // redundant when its `pricingAlias` target is known to Pi. If Pi does NOT

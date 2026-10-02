@@ -19,7 +19,15 @@
  * This test exercises the live registration path end-to-end:
  *   1. pi knows `mistral` → mistral-zai must NOT be registered, even though
  *      an API key IS available for it (the key's existence is exactly what
- *      resurrected the ghosts before the fix).
+ *      resurrected the ghosts before the fix). NOTE: since ADR-0021 the
+ *      registration half of this assertion is trivially implied by
+ *      test/adr-0021-no-unknown-model-registration.test.ts (the router
+ *      registers no cloud provider, shadowed or not); this case keeps the
+ *      end-to-end no-registration check for the incident's exact setup. The
+ *      SCAN-side half of the ghost purge — shadowed alias entries never
+ *      scanned, stale cache entries pruned — is covered by
+ *      test/provider-shadow.test.ts (redundantAliasProviders /
+ *      pruneRedundantCacheEntries) and the scan-skip in index.ts.
  *   2. pi does NOT know `mistral` either → mistral-zai must STILL not be
  *      registered. Before ADR-0021 the union registered it here as an
  *      "own-key fallback" — but under ADR-0021 (2026-10-02) the router

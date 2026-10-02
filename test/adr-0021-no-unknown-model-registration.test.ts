@@ -27,6 +27,14 @@
  * and test/register-group-models-merge-not-replace.test.ts, which pinned the
  * union round-trip (Ü1 / roborev 425/426/649 / ADR-0019) — machinery that
  * existed only to make the now-removed re-registration safe.
+ *
+ * Note on red/green: invariant 1 was RED before the fix (the union
+ * registered mistral-zai) and is the load-bearing regression pin. Invariant
+ * 2 (snapshot purity) passed before the fix too — by design: it pins the
+ * 2026-09-20 streamability filter, which only ever worked because the TEST
+ * registry refuses the unknown ref. In the live system the union's
+ * registerProvider made `find()` succeed for scan-only refs, which is
+ * exactly what invariant 1 now forbids.
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';

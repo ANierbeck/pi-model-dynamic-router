@@ -10,9 +10,9 @@
  * cost-sorted group.
  *
  * The filter: a ref may only enter the generated config if it can actually
- * be streamed — i.e. resolvable in Pi's registry (the live paths already
- * intersect with registry refs, and registerGroupModels registers
- * scan-discovered models at session start, so "in the registry" is the
+ * be streamed — i.e. resolvable in Pi's registry. Both the live paths and
+ * this filter key on Pi's registry directly (since ADR-0021 the router
+ * registers no scan-discovered models, so "in the registry" is the sole
  * authoritative streamability signal), or served by a local runtime
  * (ollama), or explicitly listed as a free model in the user's config
  * (explicit on-demand registration intent).
