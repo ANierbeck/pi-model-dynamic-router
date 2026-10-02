@@ -12,8 +12,12 @@
 
 ## Preconditions (hard)
 
-- **Execute only AFTER the Release 1.6.0 tag** — do not destabilize the
-  pending release chain (7 unpushed commits at plan-writing time).
+- **Timing (owner decision 2026-10-02, supersedes the original
+  "after the 1.6.0 tag" precondition):** the refactoring lands BEFORE
+  Release 1.6.0 — refactor first, then several live test rounds on the
+  refactored build, then the release. The work happens on the
+  `refactor/index-ts` branch in `.worktrees/refactor-index-ts` so the
+  owner's live pi (loaded from the main checkout) stays stable.
 - Fresh worktree per the using-git-worktrees skill; `main` must be green
   (`npx tsc --noEmit`, `npx vitest run` = 1114 passed / 3 skipped,
   `npm run build`).
