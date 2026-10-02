@@ -76,6 +76,14 @@
   known-good model list.
 
 ### Changed
+- **Removed the dead `fallback_groups` from the dynamic group's config**
+  (owner finding 2026-10-02): the "(→ strategic → tactical → operational →
+  scout → fallback)" suffix in /router status implied a fallback cascade
+  that does not exist — `resolve('dynamic')` short-circuits to null, and the
+  orchestrator always consults the TARGET group's (auto-generated)
+  fallback_groups. The field's only effect was the misleading display; the
+  dynamic group's description also no longer claims "via Ollama"
+  (cloud-first since 2026-09-27). Pinned by config-dynamic-no-fallback-groups.test.ts.
 - **Honest classifier status in `/router status`** (owner finding
   2026-10-02): the dynamic-group block no longer hardcodes "Routes per
   prompt via Ollama (gemma2:2b)". It now shows which backend actually

@@ -122,18 +122,11 @@
       "fallback_groups": []
     },
     "dynamic": {
-      "description": "Classifies each prompt via Ollama and routes to the appropriate group",
+      "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
       "method": "dynamic",
       "classifier_model": "ollama/mistral-nemo:latest",
       "classifier_fallback": "ollama/gemma2:2b",
-      "classifier_cloud_fallback": true,
-      "fallback_groups": [
-        "strategic",
-        "tactical",
-        "operational",
-        "scout",
-        "fallback"
-      ]
+      "classifier_cloud_fallback": true
     },
     "bulk_reader": {
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
