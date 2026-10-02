@@ -3248,8 +3248,18 @@ let previousTokenCount = 0;
           piKnownModels = [];
         }
         if (!piKnownModels.length) {
+          // Fallback for hosts without getAll(): try both tagged and
+          // untagged variants (the guard-bug fix is normalization-aware,
+          // so the fallback must be too — otherwise it regresses to the
+          // pre-fix wipe behavior when getAll() is absent).
           for (const m of ollamaModels) {
-            const found = ctx.modelRegistry.find('ollama', m.id);
+            const tagged = m.id;
+            const untagged = tagged.endsWith(':latest')
+              ? tagged.slice(0, -':latest'.length)
+              : tagged;
+            const found =
+              ctx.modelRegistry.find('ollama', tagged) ??
+              ctx.modelRegistry.find('ollama', untagged);
             if (found) piKnownModels.push(found);
           }
         }

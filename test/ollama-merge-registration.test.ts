@@ -23,7 +23,8 @@
  * Tests 1–3 are RED before the fix (the pre-fix guard registered
  * scan-only models and wiped the registry entries); test 4 pins the
  * enrichment (num_ctx from scan capabilities for registry models that
- * lack providerOptions).
+ * lack providerOptions); test 5 pins that user-set providerOptions WIN
+ * over scan twin enrichment (never clobbered).
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -220,6 +221,29 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         // fixed even for user-registered models.
         const gemma4 = models.find((m) => m.id === 'gemma4');
         expect(gemma4.providerOptions).toEqual({ num_ctx: 131_072 });
+      }
+    );
+  });
+
+  it('preserves user-set providerOptions (never overwrites with scan twin enrichment)', async () => {
+    const userSetModel = {
+      ...gemma4Registry,
+      providerOptions: { num_ctx: 9999 }, // User explicitly set
+    };
+    await withIsolatedRouter(
+      [userSetModel],
+      [
+        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+      ],
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls).toHaveLength(1); // Merge: gemma4 known, nemo new
+        const models: any[] = ollamaCalls[0].opts.models;
+        const gemma4 = models.find((m) => m.id === 'gemma4');
+        // User value WINS, NOT 131_072 from scan capabilities — the
+        // enrichment branch only fires when providerOptions is undefined.
+        expect(gemma4.providerOptions.num_ctx).toBe(9999);
       }
     );
   });
