@@ -1,0 +1,226 @@
+/**
+ * Ollama merge registration (bug fix, 2026-10-02 — owner decision on the
+ * guard defect found during the ADR-0021 investigation).
+ *
+ * The pre-fix guard compared TAGGED scan ids (`gemma4:latest`) against
+ * UNTAGGED models.json ids (`gemma4`) with exact `find()`, so it never
+ * matched and the router re-registered Ollama on EVERY session_start
+ * (83× in the live log) — wiping the user's models.json registration
+ * (applyExtension drops models.json entries whenever the extension
+ * overlay defines `models`, ADR-0019).
+ *
+ * The fix: merge instead of replace.
+ *   - Pi-known Ollama models (models.json / prior registration) are
+ *     round-tripped with their typed fields and WIN the normalized-id
+ *     dedup (`gemma4` ≡ `gemma4:latest`; tagged variants like
+ *     `gemma4:12b-mlx` stay distinct and are added).
+ *   - Scan-only models are ADDED with real providerOptions.num_ctx from
+ *     /api/show capabilities (this is the only source of the user's
+ *     classifier models, e.g. `mistral-nemo:latest`).
+ *   - If the registry already knows every scanned model, NO registration
+ *     happens at all (idempotent — models.json stays the sole overlay).
+ *
+ * Tests 1–3 are RED before the fix (the pre-fix guard registered
+ * scan-only models and wiped the registry entries); test 4 pins the
+ * enrichment (num_ctx from scan capabilities for registry models that
+ * lack providerOptions).
+ */
+import { describe, it, expect, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+
+const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+
+async function withIsolatedRouter(
+  registryModels: any[],
+  scanModels: Array<Record<string, unknown>>,
+  fn: (defaultExport: any, tmpDir: string, registerProviderCalls: any[]) => Promise<void>
+) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ollama-merge-'));
+  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
+  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+
+  const dynBak = `${dynamicConfigPath}.ollama-merge-bak`;
+  const cacheBak = `${scanCachePath}.ollama-merge-bak`;
+  const hadDyn = fs.existsSync(dynamicConfigPath);
+  const hadCache = fs.existsSync(scanCachePath);
+  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+
+  fs.writeFileSync(
+    scanCachePath,
+    JSON.stringify({
+      available_models: scanModels,
+      model_score_cache: {},
+      gdpval_scores: {},
+      openrouter_pricing: {},
+      lastScanTimestamp: Date.now(),
+      gdpval_scraped: true,
+      models_cached: new Date().toISOString(),
+      // dynamic_config_expected: false keeps the background scan from
+      // regenerating the snapshot — these tests only pin the registration.
+      dynamic_config_expected: false,
+    })
+  );
+
+  try {
+    vi.resetModules();
+    const mod = await import('../index.ts');
+    const registerProviderCalls: any[] = [];
+    const pi: any = {
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerProvider: vi.fn((name: string, opts: any) => {
+        registerProviderCalls.push({ name, opts });
+      }),
+      setModel: vi.fn(async () => true),
+      on: vi.fn((event: string, handler: any) => {
+        (pi as any)._handlers[event] = handler;
+      }),
+      _handlers: {} as Record<string, (ev: any, ctx: any) => any>,
+    };
+    mod.default(pi);
+
+    const registry = {
+      getAll: () => registryModels,
+      getModelsOfType: () => [],
+      findOfType: () => null,
+      getAvailable: () => registryModels,
+      find: (provider: string, modelId: string) =>
+        registryModels.find((m: any) => m.provider === provider && m.id === modelId) ?? null,
+      getApiKeyForProvider: async () => 'test-key',
+      runtime: { streamSimple: vi.fn() },
+    };
+    const ctx: any = { modelRegistry: registry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+    await pi._handlers['session_start']?.({}, ctx);
+    await flushBackgroundScan();
+    await fn(mod.default as any, tmpDir, registerProviderCalls);
+  } finally {
+    cwdSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    removeNoOpScanCache(scanCachePath);
+    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+  }
+}
+
+/** models.json-shaped registry entries (UNTAGGED ids, typed fields). */
+const gemma4Registry = {
+  id: 'gemma4',
+  name: 'ollama/gemma4',
+  provider: 'ollama',
+  reasoning: true,
+  input: ['text', 'image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 131_072,
+  maxTokens: 8_192,
+};
+const qwen35Registry = {
+  id: 'qwen3.5',
+  name: 'ollama/qwen3.5',
+  provider: 'ollama',
+  reasoning: true,
+  input: ['text', 'image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 262_144,
+  maxTokens: 8_192,
+};
+
+/** The live incident shape: tagged scan ids vs untagged models.json ids. */
+const incidentScanModels = [
+  { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072, vision: true } },
+  { id: 'qwen3.5:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 262_144 } },
+  // Scan-only models — NOT in models.json. This is the only source of the
+  // user's classifier models, so they must be ADDED, not lost.
+  { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+  { id: 'gemma2:2b', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 8_192 } },
+];
+
+describe('Ollama merge registration (guard fix: tagged scan ids vs untagged models.json ids)', () => {
+  it('merges: keeps registry (models.json) models, adds scan-only models — never wipes', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry, qwen35Registry],
+      incidentScanModels,
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls.length).toBe(1);
+        const models: any[] = ollamaCalls[0].opts.models;
+
+        // Registry models survive with their typed fields (pre-fix: wiped).
+        const gemma4 = models.find((m) => m.id === 'gemma4');
+        expect(gemma4).toBeDefined();
+        expect(gemma4.input).toEqual(['text', 'image']);
+        expect(gemma4.contextWindow).toBe(131_072);
+        const qwen35 = models.find((m) => m.id === 'qwen3.5');
+        expect(qwen35).toBeDefined();
+        expect(qwen35.contextWindow).toBe(262_144);
+
+        // Scan-only models are added (pre-fix they replaced everything).
+        const nemo = models.find((m) => m.id === 'mistral-nemo:latest');
+        expect(nemo).toBeDefined();
+        expect(nemo.providerOptions.num_ctx).toBe(131_072);
+
+        // Normalized dedup: the scan's gemma4:latest must NOT add a second
+        // gemma4 (pre-fix the tagged twin was the ONLY gemma4).
+        expect(models.filter((m) => m.id.startsWith('gemma4'))).toHaveLength(1);
+      }
+    );
+  });
+
+  it('registers nothing when the registry already knows every scanned model (normalized)', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry, qwen35Registry],
+      [
+        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        { id: 'qwen3.5:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 262_144 } },
+      ],
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        // Pre-fix the guard never matched (tagged vs untagged) and
+        // re-registered on every session. Post-fix: nothing new → no call.
+        expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(0);
+      }
+    );
+  });
+
+  it('keeps tagged variants distinct: gemma4:12b-mlx is added alongside registry gemma4', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry],
+      [
+        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        { id: 'gemma4:12b-mlx', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+      ],
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls).toHaveLength(1);
+        const models: any[] = ollamaCalls[0].opts.models;
+        expect(models.find((m) => m.id === 'gemma4')).toBeDefined();
+        expect(models.find((m) => m.id === 'gemma4:12b-mlx')).toBeDefined();
+        // Only ONE untagged/`:latest` gemma4 twin — dedup collapsed them.
+        expect(
+          models.filter((m) => m.id === 'gemma4' || m.id === 'gemma4:latest')
+        ).toHaveLength(1);
+      }
+    );
+  });
+
+  it('enriches registry models without providerOptions with num_ctx from scan capabilities', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry, qwen35Registry],
+      incidentScanModels,
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls).toHaveLength(1);
+        const models: any[] = ollamaCalls[0].opts.models;
+        // gemma4 (models.json, no providerOptions) gets the REAL num_ctx
+        // from /api/show via its scan twin — the >32K truncation bug stays
+        // fixed even for user-registered models.
+        const gemma4 = models.find((m) => m.id === 'gemma4');
+        expect(gemma4.providerOptions).toEqual({ num_ctx: 131_072 });
+      }
+    );
+  });
+});

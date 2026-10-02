@@ -3196,34 +3196,79 @@ let previousTokenCount = 0;
     // gemma4→131K), so prompts >32K truncate unless num_ctx is sent.
     //
     // Per Guardrail 3 + Ü1, this must NOT overwrite an existing Ollama
-    // registration. If Pi already knows Ollama — from ANY source (another
-    // extension, or models.json) — we assume that registration is
-    // authoritative. We only register when Pi does NOT know Ollama at all
-    // (e.g. a setup where no other extension provides Ollama, or Ollama wasn't
-    // running at their session_start). num_ctx comes from the REAL
-    // capabilities the scan captured live from Ollama's /api/show (see
-    // src/ollama-context.ts + src/capabilities.ts) — no hardcoded table, no
-    // dependency on any specific Ollama extension.
+    // registration: pi-known Ollama models are authoritative and WIN the
+    // merge below (their typed fields are round-tripped untouched). num_ctx
+    // comes from the REAL capabilities the scan captured live from Ollama's
+    // /api/show (see src/ollama-context.ts + src/capabilities.ts) — no
+    // hardcoded table, no dependency on any specific Ollama extension.
     //
     // KNOWN EFFECT: if some OTHER extension registered Ollama WITHOUT
-    // num_ctx, the truncation bug returns for that setup. The proper fix is
-    // then in that extension (or the user's models.json), not in the router
-    // overwriting Pi's registry. The router refuses to paper over another
-    // extension's bug by clobbering Pi's registration.
+    // num_ctx, its models get the real num_ctx from their scan twin in the
+    // merge (enrichment, not overwrite). The proper place for Ollama models
+    // the user wants Pi to know statically is models.json — the merge keeps
+    // those entries alive and authoritative.
+    //
+    // GUARD FIX (2026-10-02, owner decision on the defect found during the
+    // ADR-0021 investigation): the old guard compared TAGGED scan ids
+    // (`gemma4:latest`) against UNTAGGED models.json ids (`gemma4`) with
+    // exact find() — it never matched, so the router re-registered Ollama
+    // on EVERY session_start (83× in the live log), and because
+    // applyExtension drops models.json entries whenever the extension
+    // overlay defines `models` (ADR-0019), that re-registration WIPED the
+    // user's models.json registration every session.
+    //
+    // The fix is a MERGE, not a skip and not a replace:
+    //   - pi-known Ollama models are round-tripped with their typed fields
+    //     and WIN the normalized-id dedup (`gemma4` ≡ `gemma4:latest`;
+    //     tagged variants like `gemma4:12b-mlx` stay distinct and are added),
+    //   - scan-only models are ADDED with real providerOptions.num_ctx —
+    //     this registration is the ONLY source of the user's classifier
+    //     models (e.g. `ollama/mistral-nemo:latest`), which live in neither
+    //     Pi's catalog nor models.json,
+    //   - registry models without providerOptions are ENRICHED with num_ctx
+    //     from their scan twin's /api/show capabilities (the >32K truncation
+    //     bug stays fixed even for user-registered models),
+    //   - if the registry already knows every scanned model, NOTHING is
+    //     registered (idempotent — models.json stays the sole overlay).
     try {
       const ollamaModels = (cache.available_models ?? [])
         .filter((m) => m.provider === 'ollama');
       if (ollamaModels.length > 0) {
-        const piKnowsOllama = ollamaModels.some((m) =>
-          Boolean(ctx.modelRegistry.find('ollama', m.id))
-        );
-        if (!piKnowsOllama) {
-          // Pass the full models (with capabilities) so num_ctx comes from
-          // the real /api/show values, not a hardcoded table.
+        // Pi's current Ollama models: models.json and/or a prior
+        // registration. getAll() is chat-only (ADR-0019) — fine here:
+        // local Ollama models are chat models and Pi ships no builtin
+        // ollama catalog with non-chat inventory. find() fallback (over
+        // the scanned ids) keeps hosts without getAll() working.
+        let piKnownModels: any[] = [];
+        try {
+          piKnownModels = ((ctx.modelRegistry as any).getAll?.() ?? []).filter(
+            (m: any) => m.provider === 'ollama'
+          );
+        } catch {
+          piKnownModels = [];
+        }
+        if (!piKnownModels.length) {
+          for (const m of ollamaModels) {
+            const found = ctx.modelRegistry.find('ollama', m.id);
+            if (found) piKnownModels.push(found);
+          }
+        }
+        // Normalized-id dedup: Ollama resolves an untagged name to
+        // `:latest`, so `gemma4` (models.json) and `gemma4:latest` (scan)
+        // name the SAME model — the registry version wins (its typed fields
+        // are the user's intent). Other tags are genuinely different models.
+        const normId = (id: string): string =>
+          id.endsWith(':latest') ? id.slice(0, -':latest'.length) : id;
+        const scanByNorm = new Map<string, { capabilities?: { contextWindow?: number; maxTokens?: number } }>();
+        for (const m of ollamaModels) scanByNorm.set(normId(m.id), m);
+        const knownByNorm = new Map<string, any>();
+        for (const m of piKnownModels) knownByNorm.set(normId(m.id), m);
+        const newScanModels = ollamaModels.filter((m) => !knownByNorm.has(normId(m.id)));
+
+        if (!piKnownModels.length) {
+          // Pi does not know Ollama at all: register the scan inventory
+          // with real num_ctx (the original pre-guard-fix behavior).
           const providerModels = buildOllamaProviderModels(ollamaModels);
-          // Safe by construction (ADR-0019): the Guardrail-3/Ü1 check above
-          // guarantees pi does not know ollama at all at this point, and the
-          // builtin catalogs ship no ollama entry to collide with.
           (pi as any).registerProvider('ollama', {
             name: 'Ollama (local)',
             baseUrl: 'http://localhost:11434/v1',
@@ -3232,7 +3277,50 @@ let previousTokenCount = 0;
             models: providerModels,
           });
           routerLog(`[router] Registered Ollama with providerOptions.num_ctx for ${providerModels.length} model(s) (Pi did not know Ollama)`);
+        } else if (newScanModels.length > 0) {
+          // MERGE: round-trip pi-known models (ADR-0019 field allow-list —
+          // applyExtension would otherwise drop the models.json entries),
+          // enriching the ones without providerOptions with the real
+          // num_ctx from their scan twin, then add the scan-only models.
+          const existingModels = piKnownModels.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            ...(m.api !== undefined ? { api: m.api } : {}),
+            ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
+            ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
+            ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+            ...(m.input !== undefined ? { input: m.input } : {}),
+            ...(m.cost !== undefined ? { cost: m.cost } : {}),
+            ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+            ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
+            ...(m.headers !== undefined ? { headers: m.headers } : {}),
+            ...(m.compat !== undefined ? { compat: m.compat } : {}),
+            ...(m.type !== undefined ? { type: m.type } : {}),
+            ...(m.output !== undefined ? { output: m.output } : {}),
+            ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
+            ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
+            ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
+            ...(m.providerOptions !== undefined
+              ? { providerOptions: m.providerOptions }
+              : scanByNorm.get(normId(m.id))?.capabilities?.contextWindow !== undefined
+                ? { providerOptions: { num_ctx: scanByNorm.get(normId(m.id))!.capabilities!.contextWindow } }
+                : {}),
+          }));
+          const providerModels = [
+            ...existingModels,
+            ...buildOllamaProviderModels(newScanModels),
+          ];
+          (pi as any).registerProvider('ollama', {
+            name: 'Ollama (local)',
+            baseUrl: 'http://localhost:11434/v1',
+            apiKey: 'ollama',
+            api: 'openai-completions',
+            models: providerModels,
+          });
+          routerLog(`[router] Merged Ollama registration: kept ${existingModels.length} pi-known model(s), added ${newScanModels.length} scan-only model(s) with providerOptions.num_ctx`);
         }
+        // else: the registry already knows every scanned model — register
+        // NOTHING (pre-fix this re-registered and wiped models.json).
       }
     } catch (e) {
       routerLog('[router] Ollama registration failed:', e);

@@ -104,13 +104,18 @@ Every one of these guarded a call that should not exist.
   the removed `SKIP_REGISTRATION` set; its refs are scan/cache-only and
   streamable via the `isLocalProvider` exemption): Pi has no live
   local-discovery mechanism, and the local scan is the only source of real
-  `num_ctx` / capability data. Known issue found during this investigation:
-  the guard
-  compares untagged models.json ids against tag-suffixed scan ids
-  (`gemma4` vs `gemma4:latest`), so a Pi registration the router should
-  respect is silently replaced each session (83× in the live logs). Owner
-  decision required: fix the guard, or move local registration to models.json
-  entirely.
+  `num_ctx` / capability data. Defect found during this investigation and
+  FIXED (owner decision 2026-10-02): the guard compared untagged models.json
+  ids against tag-suffixed scan ids (`gemma4` vs `gemma4:latest`), so a Pi
+  registration the router should have respected was silently replaced every
+  session (83× in the live logs). The Ollama registration is now a MERGE:
+  pi-known models (models.json) are round-tripped with their typed fields
+  and win the normalized-id dedup (`gemma4` ≡ `gemma4:latest`, tagged
+  variants stay distinct), scan-only models are added with real num_ctx
+  (the only source of the classifier models), pi-known models without
+  providerOptions are enriched with num_ctx from their scan twin, and if
+  the registry already knows every scanned model nothing is registered at
+  all. Pinned by test/ollama-merge-registration.test.ts.
 - **`registerFreeModelOnDemand`** stays: it acts only on explicitly configured
   `free_models` (user intent, not scan discovery), and on 0.99.1 it never
   fires for builtin-catalog providers (`getRegisteredProviderIds` includes
