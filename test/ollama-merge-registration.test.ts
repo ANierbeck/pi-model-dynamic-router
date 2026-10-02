@@ -29,7 +29,9 @@
  * was dropped after roborev 719 found model-level providerOptions inert
  * in pi-ai 1.0.0); test 5 pins that user-set providerOptions WIN over
  * scan twin enrichment (never clobbered); tests 6–7 pin the empty-registry
- * branch and the two-session idempotency (the 83× invariant end-to-end).
+ * branch and the two-session idempotency (the 83× invariant end-to-end);
+ * test 8 pins the getAll()-less find() fallback (superpowers reviewer
+ * finding: the d304304 hardening had zero coverage).
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -43,6 +45,7 @@ const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'sca
 async function withIsolatedRouter(
   registryModels: any[],
   scanModels: Array<Record<string, unknown>>,
+  opts: { omitGetAll?: boolean },
   fn: (
     defaultExport: any,
     tmpDir: string,
@@ -97,7 +100,9 @@ async function withIsolatedRouter(
     mod.default(pi);
 
     const makeRegistry = (models: any[]) => ({
-      getAll: () => models,
+      // omitGetAll: exercise the find() fallback path (hosts without
+      // getAll()) that d304304 hardened — see the last test.
+      ...(opts.omitGetAll ? {} : { getAll: () => models }),
       getModelsOfType: () => [],
       findOfType: () => null,
       getAvailable: () => models,
@@ -164,6 +169,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry, qwen35Registry],
       incidentScanModels,
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls.length).toBe(1);
@@ -198,6 +204,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
         { id: 'qwen3.5:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 262_144 } },
       ],
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         // Pre-fix the guard never matched (tagged vs untagged) and
         // re-registered on every session. Post-fix: nothing new → no call.
@@ -213,6 +220,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
         { id: 'gemma4:12b-mlx', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
       ],
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls).toHaveLength(1);
@@ -231,6 +239,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry, qwen35Registry],
       incidentScanModels,
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls).toHaveLength(1);
@@ -257,6 +266,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
         { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
       ],
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls).toHaveLength(1); // Merge: gemma4 known, nemo new
@@ -273,6 +283,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [], // Pi does not know Ollama at all (no models.json entry)
       incidentScanModels,
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls).toHaveLength(1);
@@ -297,6 +308,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
         { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
       ],
+      {},
       async (_defaultExport, _tmpDir, registerProviderCalls, fireSessionStart) => {
         // First session_start merged (gemma4 known, nemo new): 1 call.
         expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
@@ -312,6 +324,29 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
 
         // The 83× invariant: still exactly ONE registration in total.
         expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
+      }
+    );
+  });
+
+  it('getAll()-less registry: the find() fallback dedups via tagged+untagged probes', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry],
+      [
+        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+      ],
+      { omitGetAll: true }, // hosts without getAll(): fallback path
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls).toHaveLength(1); // gemma4 found via untagged probe, nemo new
+        const models: any[] = ollamaCalls[0].opts.models;
+        // The REGISTRY version wins the dedup (typed fields), not the
+        // scan's flat tagged twin — no wipe, no duplicate.
+        const gemma4 = models.find((m) => m.id === 'gemma4');
+        expect(gemma4).toBeDefined();
+        expect(gemma4.input).toEqual(['text', 'image']);
+        expect(models.find((m) => m.id === 'mistral-nemo:latest')).toBeDefined();
+        expect(models.filter((m) => m.id.startsWith('gemma4'))).toHaveLength(1);
       }
     );
   });

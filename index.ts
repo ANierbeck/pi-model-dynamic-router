@@ -3227,6 +3227,11 @@ let previousTokenCount = 0;
     //   - after a merge the extension overlay owns the ollama model list,
     //     so hand-edits to models.json ollama models are masked until the
     //     next pi restart (the overlay wins over the re-read models.json).
+    //   - ordering (pre-existing, not introduced here): registerGroupModels
+    //     runs at session_start BEFORE the background scan fills the cache,
+    //     so on a brand-new machine (no scan cache yet) the FIRST session
+    //     registers nothing and Ollama models appear from the second
+    //     session onward.
     //
     // GUARD FIX (2026-10-02, owner decision on the defect found during the
     // ADR-0021 investigation): the old guard compared TAGGED scan ids
