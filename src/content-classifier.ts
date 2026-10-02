@@ -234,6 +234,33 @@ interface ClassifyCacheEntry {
 }
 const classifyCache = new Map<string, ClassifyCacheEntry>();
 
+/** Which backend produced a classification (for /router status honesty). */
+export interface ClassificationSourceInfo {
+  /** 'hint' | 'compaction' | 'momentum' | 'cache' | 'static' | 'fallback'
+   *  (deterministic paths) or 'ollama:<id>' | 'cloud:<provider/id>' (LLM). */
+  source: string;
+  at: number;
+}
+
+let lastClassificationSource: ClassificationSourceInfo | null = null;
+
+/**
+ * The backend that produced the LAST classification this session: either a
+ * deterministic path ('hint', 'compaction', 'momentum', 'cache', 'static')
+ * or the model that actually answered ('ollama:<id>', 'cloud:<provider/id>').
+ * Null before the first classification. /router status reads this so it can
+ * never claim a classifier that isn't the one in use (the old status
+ * hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain was
+ * doing all the work — 2026-10-02 owner finding).
+ */
+export function getLastClassificationSource(): ClassificationSourceInfo | null {
+  return lastClassificationSource;
+}
+
+function noteSource(source: string): void {
+  lastClassificationSource = { source, at: Date.now() };
+}
+
 function classifyCacheGet(prompt: string): FullClassificationResult | null {
   const entry = classifyCache.get(prompt);
   if (!entry) return null;
@@ -437,7 +464,10 @@ export async function classifyPrompt(
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.
   const directHint = detectHintDirectly(prompt);
-  if (directHint) return directHint;
+  if (directHint) {
+    noteSource('hint');
+    return directHint;
+  }
 
   // Model momentum: during compaction we need a model with enough context
   // window. If the last model was a large cloud model, reuse it. If it was a
@@ -451,6 +481,7 @@ export async function classifyPrompt(
       const isSmallLocal = /ollama\/|lm-studio\//i.test(context.lastModel) ||
                           /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
       if (!isSmallLocal) {
+        noteSource('compaction');
         return {
           reason: 'Model continuity during compaction (large model)',
           confidence: 1.0,
@@ -462,6 +493,7 @@ export async function classifyPrompt(
     }
     // Last model was small, unknown, or currently in cooldown (just failed) —
     // route to strategic for compaction instead of hammering the same model.
+    noteSource('compaction');
     return {
       category: 'code_complex',
       reason: context.lastModelLimited
@@ -475,6 +507,7 @@ export async function classifyPrompt(
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
   const wordCount = prompt.trim().split(/\s+/).length;
   if (context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
+    noteSource('momentum');
     return {
       category: context.lastCategory,
       reason: 'Short prompt — inheriting previous task context',
@@ -497,7 +530,10 @@ export async function classifyPrompt(
   // prompt re-appears in a different conversation context.
   if (!contextBlock) {
     const cached = classifyCacheGet(prompt);
-    if (cached) return cached;
+    if (cached) {
+      noteSource('cache');
+      return cached;
+    }
   }
 
   const ollamaPrompt = buildClassificationPrompt(prompt, contextBlock);
@@ -523,6 +559,9 @@ export async function classifyPrompt(
     if (!extracted) {
       throw new Error(`Invalid format: ${response}`);
     }
+    // The model answered — record it so /router status shows the classifier
+    // that actually produced this classification.
+    noteSource(`ollama:${m}`);
     const parsed = extracted as ClassificationResult;
     if (!isValidFullClassification(parsed)) {
       // If category is invalid but structure is valid, map to fallback
@@ -746,9 +785,11 @@ export async function classifyPrompt(
                 throw new Error(`Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`);
               }
               routerLog(`[classifier] Cloud model ${modelRef} succeeded (HINT conversion via pi completeSimple)`);
+              noteSource(`cloud:${modelRef}`);
               return hint;
             }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
+            noteSource(`cloud:${modelRef}`);
             // Apply escalation logic to cloud result
             if (context.lastModel && !context.isCompaction) {
               const escalated = applyEscalationLogic(parsed, context.lastModel);
@@ -810,6 +851,7 @@ export async function classifyPrompt(
     // a fallback result and run it through the same escalation path as a
     // successful classification, so the last model's tier still triggers a
     // bump when the task complexity warrants it.
+    noteSource('fallback');
     const fallbackResult: FullClassificationResult = {
       category: 'fallback',
       reason: 'Ollama unavailable, static classifier disabled',
@@ -823,6 +865,7 @@ export async function classifyPrompt(
   }
 
   routerLog('[classifier] Ollama and cloud models failed, falling back to static classification');
+  noteSource('static');
 
   const staticResult = classifyStatically(prompt);
   // Apply escalation logic to static result

@@ -1,7 +1,11 @@
 /**
  * The /router slash command, extracted from index.ts (refactor plan
- * 2026-10-02, task 11). Output strings are byte-identical (plan invariant,
- * guarded by cost-report/version/package-contents tests). Deviation from
+ * 2026-10-02, task 11). Output strings were byte-identical at extraction
+ * time (plan invariant, guarded by cost-report/version/package-contents
+ * tests). One deliberate post-extraction change (owner request 2026-10-02):
+ * the dynamic group's classifier block no longer hardcodes "via Ollama
+ * (gemma2:2b)" — it shows the backend that last classified plus the live
+ * chain state (formatClassifierStatus). Deviation from
  * the plan, deliberately: the handler's subcommand if-chain moves as ONE
  * unit (pure code motion) instead of one-function-per-subcommand — the
  * split would be a behavior-risk restructuring for no functional gain and
@@ -9,6 +13,9 @@
  */
 
 import { costTracker } from './cost-tracker.ts';
+import { getLastClassificationSource, type ClassificationSourceInfo } from './content-classifier.ts';
+import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
+import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
@@ -16,7 +23,7 @@ import { isProviderWedged, wedgeFixHint } from './provider-watchdog.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import type { Cache, Config, Metrics } from './types.ts';
+import type { Cache, Config, Group, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
@@ -52,6 +59,42 @@ interface CommandDeps {
   readonly scan: (force?: boolean) => Promise<void>;
   sessionCtx: any;
   readonly sessionStart: number;
+}
+
+/** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
+export interface ClassifierStatusInput {
+  group: Group;
+  last: ClassificationSourceInfo | null;
+  probedCount: number;
+  ollamaUp: boolean;
+}
+
+/**
+ * Honest classifier status lines for the dynamic group's /router block:
+ * which backend produced the last classification, and the chain as it is
+ * actually executed (cloud-first per the 2026-09-27 design, local Ollama as
+ * a last resort, static as the final fallback). Pure — all inputs are
+ * gathered by the caller so this stays trivially testable.
+ */
+export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
+  const { group: g, last, probedCount, ollamaUp } = input;
+  const lines: string[] = [];
+  lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
+  const legs: string[] = [];
+  if (g.classifier_cloud_fallback) {
+    legs.push(
+      g.classifier_cloud_model
+        ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
+        : `cloud (${probedCount} probed)`
+    );
+  }
+  const local = (ref: string | undefined, dflt: string) => (ref ?? dflt).replace(/^ollama\//, '');
+  legs.push(
+    `Ollama (${ollamaUp ? 'up' : 'down'}: ${local(g.classifier_model, 'ollama/mistral-nemo:latest')} → ${local(g.classifier_fallback, 'ollama/gemma2:2b')})`
+  );
+  legs.push('static');
+  lines.push(`│ Chain: ${legs.join(' → ')}`);
+  return lines;
 }
 
 export function createCommands(rt: CommandDeps) {
@@ -281,8 +324,20 @@ export function createCommands(rt: CommandDeps) {
             'planning→tactical',
             'exploration→scout',
           ];
-          lines.push('│ Routes per prompt via Ollama (gemma2:2b):');
+          lines.push('│ Routes per prompt via content classification:');
           cats.forEach((c) => lines.push(`│   ${c}`));
+          // Honest classifier state (2026-10-02 owner finding): the old block
+          // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
+          // was doing the actual work whenever Ollama is down. Show the backend
+          // that last classified plus the live chain state instead.
+          lines.push(
+            ...formatClassifierStatus({
+              group: g,
+              last: getLastClassificationSource(),
+              probedCount: getCachedFallbackModels(rt.cache).length,
+              ollamaUp: await isOllamaAvailable(),
+            })
+          );
         } else if (topModels.length === 0) {
           lines.push('│ (no models configured)');
         } else {

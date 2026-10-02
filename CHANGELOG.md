@@ -76,6 +76,15 @@
   known-good model list.
 
 ### Changed
+- **Honest classifier status in `/router status`** (owner finding
+  2026-10-02): the dynamic-group block no longer hardcodes "Routes per
+  prompt via Ollama (gemma2:2b)". It now shows which backend actually
+  produced the last classification (`Classifier: cloud:mistral/ministral-3b-latest
+  (last used)` — deterministic paths show as `hint`/`momentum`/`cache`/`compaction`/`static`)
+  and the chain as executed (`Chain: cloud (N probed) → Ollama (up|down:
+  primary → fallback) → static`), with live Ollama availability and the
+  probe-verified cloud list. New `getLastClassificationSource()` in
+  `content-classifier.ts` records the origin of every classification.
 - **index.ts refactored from ~3750 to ~640 lines** (plan
   `docs/plans/2026-10-02-index-ts-refactor.md`, 12 tasks, pure code motion):
   all behavior moved into `createX(deps)` factory modules
