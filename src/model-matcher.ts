@@ -31,7 +31,7 @@ export interface GdpvalEntry {
  */
 export type LlmCaller = (prompt: string) => Promise<string>;
 
-export interface MatchResult {
+interface MatchResult {
   /** modelId → gdpval slug, only for confident + valid matches. */
   matches: Record<string, string>;
   /** modelIds the LLM could not (or would not) match. */
@@ -229,7 +229,7 @@ function extractJsonObject(raw: string): string | null {
 
 // ── LLM orchestration ────────────────────────────────────────────────────
 
-export interface MatchWithLlmInput {
+interface MatchWithLlmInput {
   modelIds: string[];
   gdpvalEntries: GdpvalEntry[];
   callLlm: LlmCaller;

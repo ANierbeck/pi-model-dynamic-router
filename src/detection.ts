@@ -52,7 +52,7 @@ export const RATE_LIMIT_PATTERNS: readonly string[] = [
  * infrastructure, never from the model's own generated prose, so a generic
  * phrase like "context window" can't false-positive there.
  */
-export const ERROR_OVERFLOW_PATTERNS: readonly string[] = [
+const ERROR_OVERFLOW_PATTERNS: readonly string[] = [
   'prompt is too long',
   'maximum context length',
   'context length is',
@@ -79,7 +79,7 @@ export const ERROR_OVERFLOW_PATTERNS: readonly string[] = [
  */
 export const OVERFLOW_TEXT_SCAN_MAX_CHARS = 400;
 
-export const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
+const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
   'too large for model with',
   'prompt is too long',
   'exceeds the maximum context length',
@@ -325,7 +325,7 @@ export function isOverflowDeltaText(text: string): boolean {
  * unrecognized provider finish_reason is usually a request-shaped client
  * error (e.g. Mistral's bare 422), not a masked rate-limit.
  */
-export function isRateLimitLikeReason(reason: string): boolean {
+function isRateLimitLikeReason(reason: string): boolean {
   return reason === 'empty_response'
     || reason === 'empty_timeout'
     || reason === 'stall_timeout';
@@ -336,7 +336,7 @@ export function isRateLimitLikeReason(reason: string): boolean {
  * cascade-induced abort (e.g. a parent subagent fanout crashing, an outer
  * AbortSignal firing) rather than by the provider itself. pi-ai's own
  * structured signal for this is an `error` event with `.reason === 'aborted'`
- * (handled separately, see index.ts's consumeWithDetection userAborted
+ * (handled separately, see stream-proxy.ts's consumeWithDetection userAborted
  * check — roborev job 345 HIGH). This table catches the SAME situation when
  * it instead surfaces as free-text inside a generic `error` event whose
  * `.reason` is NOT `'aborted'` — observed in practice from claude-bridge,
@@ -362,7 +362,7 @@ export function isRateLimitLikeReason(reason: string): boolean {
  * instead of a 2-hour hard cooldown (a far cheaper false negative than the
  * reverse).
  */
-export const ABORT_LIKE_PATTERNS: readonly string[] = [
+const ABORT_LIKE_PATTERNS: readonly string[] = [
   'operation was aborted',
   'the operation was aborted',
   'aborterror',
@@ -382,7 +382,7 @@ export function isAbortLikeText(text: string): boolean {
  * only the soft backoff, since those failures are commonly just transient
  * overload rather than a masked 429/auth error.
  *
- * Was previously duplicated verbatim in index.ts's driveStream main loop and
+ * Was previously duplicated verbatim in the driveStream main loop (index.ts at
  * in its recordStreamFailure() escalation helper — the two copies had
  * already drifted out of sync once this session (provider_error was added to
  * one but not the other), which would have made the user-facing "treated as

@@ -21,7 +21,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface GroupRegistrationDeps {
+interface GroupRegistrationDeps {
   readonly cache: Cache;
   readonly cfg: Config;
   readonly getM: (ref: string) => Metrics;

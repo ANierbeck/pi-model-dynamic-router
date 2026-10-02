@@ -26,7 +26,7 @@
 import { PROVIDER_MAP } from './providers.ts';
 import type { Config, Cache } from './types.ts';
 
-export interface BudgetContext {
+interface BudgetContext {
   providers: Config['providers'];
   budget_cache: Cache['budget_cache'];
 }

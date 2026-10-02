@@ -55,7 +55,7 @@ export function deepMergeConfig(
   return result as unknown as Config;
 }
 
-export interface ConfigLoadResult {
+interface ConfigLoadResult {
   config: Config;
   sources: string[]; // paths that contributed (for logging)
 }

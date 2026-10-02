@@ -4,7 +4,7 @@
 // WHY: some models (observed with devstral variants) occasionally get stuck
 // repeating the same sentence or phrase verbatim, over and over, until they
 // either exhaust max_tokens or fill the context window and the provider
-// rejects further generation. consumeWithDetection() in index.ts already
+// rejects further generation. consumeWithDetection() (src/stream-proxy.ts) already
 // catches rate-limit and context-overflow text, but a self-inflicted
 // repetition loop is neither — the provider is happy to keep streaming, the
 // model is just stuck. Left unchecked, this burns the full context window
@@ -21,16 +21,16 @@
 /** Don't bother checking until this much text has accumulated — short replies can't loop yet. */
 export const REPETITION_MIN_TOTAL_LEN = 400;
 /** Only inspect the tail of the accumulated text — loops are a live, ongoing pattern, not history. */
-export const REPETITION_WINDOW = 3000;
+const REPETITION_WINDOW = 3000;
 /** Repeating units shorter than this are usually formatting (bullets, table rules), not a real loop. */
-export const REPETITION_MIN_UNIT_LEN = 20;
-export const REPETITION_MAX_UNIT_LEN = 400;
+const REPETITION_MIN_UNIT_LEN = 20;
+const REPETITION_MAX_UNIT_LEN = 400;
 /** Consecutive identical repeats required before it counts as a loop, not coincidental phrasing. */
 export const REPETITION_MIN_REPEATS = 6;
 /** A repeating unit must contain at least this many letters — filters out dashes/pipes/whitespace runs. */
-export const REPETITION_MIN_UNIT_LETTERS = 8;
+const REPETITION_MIN_UNIT_LETTERS = 8;
 
-export interface RepetitionResult {
+interface RepetitionResult {
   detected: boolean;
   unit?: string;
   repeats?: number;

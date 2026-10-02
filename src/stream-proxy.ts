@@ -23,7 +23,7 @@ import type { StreamOrchestrator } from './stream-orchestrator.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface StreamProxyDeps {
+interface StreamProxyDeps {
   readonly cfg: Config;
   localStreamsInFlight: number;
   readonly OLLAMA_MAX_CONCURRENT_STREAMS: number;

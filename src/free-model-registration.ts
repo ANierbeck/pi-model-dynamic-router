@@ -20,7 +20,7 @@ import type { RateLimitManager } from './rate-limit.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface FreeModelRegistrationDeps {
+interface FreeModelRegistrationDeps {
   readonly cfg: Config;
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;

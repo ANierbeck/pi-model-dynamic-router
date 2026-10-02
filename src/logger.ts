@@ -27,7 +27,7 @@ import { homedir } from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-export type LogLevel = 'info' | 'debug';
+type LogLevel = 'info' | 'debug';
 
 // Resolved lazily: the home directory can change between module load and first
 // write (tests isolate it per file).

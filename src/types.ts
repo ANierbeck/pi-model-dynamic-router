@@ -2,7 +2,6 @@
 // TypeScript type definitions for the pi-model-router
 
 import type { Model } from '@earendil-works/pi-ai';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
@@ -40,7 +39,7 @@ export interface RateLimit {
   resetAtMs?: number;
 }
 
-export interface PipeStep {
+interface PipeStep {
   method: string;
   top_k?: number;
 }
@@ -357,8 +356,6 @@ export interface Cache {
   classifier_fallback_models?: string[];
 }
 
-
-
 // ── Provider Discovery Types ────────────────────────────────────────────
 
 export interface ProviderDef {
@@ -395,40 +392,6 @@ export interface ProviderDef {
    * cost_per_m:0 placeholder (ADR-0006 "F3"), never the real price.
    */
   pricingAlias?: string;
-}
-
-// ── Classification Types ───────────────────────────────────────────────
-
-export type ClassificationCategory =
-  | 'trivial'
-  | 'simple'
-  | 'standard'
-  | 'code_simple'
-  | 'code_complex'
-  | 'design'
-  | 'planning'
-  | 'exploration'
-  | 'fallback';
-
-// ── Extension Types ──────────────────────────────────────────────────────
-
-export interface RouterExtensionContext {
-  pi: ExtensionAPI;
-  extDir: string;
-  cfg: Config;
-  cache: Cache;
-  metrics: Record<string, Metrics>;
-  limits: Map<string, RateLimit>;
-  rrCounters: Record<string, number>;
-  gdpval: Record<string, number>;
-  scanning: boolean;
-  activeGroup: string | null;
-  sessionStart: number;
-  turnStart: number;
-  curModel: string;
-  lastDynamicModel: string;
-  lastDynamicCategory: ClassificationCategory | undefined;
-  sessionCtx: any;
 }
 
 // ── Utility Types ────────────────────────────────────────────────────────
@@ -480,11 +443,6 @@ export interface ModelWithLimits {
 export interface GroupResolution {
   selected: string;
   candidates: string[];
-}
-
-export interface PriceInfo {
-  input: number | 'unknown';
-  output: number | 'unknown';
 }
 
 // ── Cost Tracking Types ────────────────────────────────────────────────

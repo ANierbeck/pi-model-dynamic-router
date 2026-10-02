@@ -19,7 +19,7 @@
 // authoritative streamability gate. Local runtimes (ollama) and refs the
 // user explicitly listed as free models are exempt.
 
-export interface StreamableRefContext {
+interface StreamableRefContext {
   /** Registry resolution, e.g. metrics' findRegistryModel wrapper. */
   hasRegistryModel(provider: string, modelId: string): boolean;
   /** True for local runtimes (ollama) whose models may not be registered. */

@@ -23,7 +23,7 @@ import type { Router } from './routing.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface ToolDeps {
+interface ToolDeps {
   activeGroup: string | null;
   readonly cfg: Config;
   readonly cfgPath: string;

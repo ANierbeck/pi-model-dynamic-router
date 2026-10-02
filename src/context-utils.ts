@@ -14,7 +14,7 @@ import type { Config } from './types.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface ContextUtilsDeps {
+interface ContextUtilsDeps {
   readonly cfg: Config;
   readonly EMPTY_RESPONSE_TIMEOUT_MS: number;
   previousMessageCount: number;

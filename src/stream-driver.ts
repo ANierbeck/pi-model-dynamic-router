@@ -1,5 +1,5 @@
 // src/stream-driver.ts
-// Shared error-message plumbing for driveStream()/groupStream() (index.ts).
+// Shared error-message plumbing for driveStream()/groupStream() (stream-proxy.ts).
 //
 // C1: extracted the zero-cost AssistantMessage error-envelope boilerplate
 // that was duplicated 6x verbatim across driveStream/groupStream (context

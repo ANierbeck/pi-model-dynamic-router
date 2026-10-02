@@ -5,7 +5,7 @@
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 
-export type EscalationLevel = 'operational' | 'tactical' | 'strategic';
+type EscalationLevel = 'operational' | 'tactical' | 'strategic';
 
 const ESCALATION_GROUPS: EscalationLevel[] = ['operational', 'tactical', 'strategic'];
 
@@ -32,7 +32,7 @@ function extractUserCorrections(text: string): string[] {
  * "again"/"still"/"nochmal" ONCE per incident, not twice in a row.
  *
  * USER PROMPT ONLY (roborev job 373 MEDIUM): the assistant's own response
- * text is deliberately never scanned. index.ts's only caller invokes
+ * text is deliberately never scanned. Its only caller (src/event-handlers.ts) invokes
  * recordTurn() TWICE per logical exchange — once with the user's prompt
  * (assistant text empty), once with the assistant's response (prompt empty)
  * — so a signal keyed off `response` would double-count within one exchange.

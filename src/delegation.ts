@@ -224,7 +224,7 @@ function isTargetedBash(input: unknown): boolean {
 
 // ── The handler ──────────────────────────────────────────────────────────
 
-export interface DelegationOutcome {
+interface DelegationOutcome {
   content: Array<{ type: 'text'; text: string }>;
   /** Nested usage for accounting; attached when the sub-model reported one. */
   usage?: Usage;

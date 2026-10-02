@@ -52,7 +52,7 @@ export function countLines(text: string): number {
 
 // ── prompt building (shunt bulk-reader mode instructions) ─────────────────
 
-export interface BulkReadFile {
+interface BulkReadFile {
   path: string;
   content: string;
 }
@@ -77,7 +77,7 @@ export function buildBulkReadPrompt(question: string, files: BulkReadFile[]): st
 
 // ── Layer 1: pre-call read block (shunt check-file-size) ──────────────────
 
-export interface ReadBlockResult {
+interface ReadBlockResult {
   block: true;
   reason: string;
   /** True when the block fired because of the expensive-model escalation
@@ -139,7 +139,7 @@ export function isExpensiveModelRef(
  * Fail-open: a missing resolver, a resolver that throws, or junk return
  * values never block (OR-combined with the cfg check, never replacing it).
  */
-export function isExpensiveViaLiveRefs(
+function isExpensiveViaLiveRefs(
   ref: string,
   settings: DelegationSettings,
   liveGroupRefs?: (group: string) => string[]
@@ -181,7 +181,7 @@ export function resolveReadBlockStreamRef(
 }
 
 /**
- * Pre-call block for full-file reads (tool_call handler in index.ts).
+ * Pre-call block for full-file reads (tool_call handler in src/event-handlers.ts).
  * Returns { block, reason } when the read should be shunted to bulk_read /
  * a targeted read; undefined when it passes.
  *
@@ -256,12 +256,12 @@ export function checkReadBlock(
 
 // ── Layer 2: bulk_read tool execution (shunt bulk-read script) ─────────────
 
-export interface BulkReadParams {
+interface BulkReadParams {
   question: string;
   paths: string[];
 }
 
-export interface BulkReadOutcome {
+interface BulkReadOutcome {
   content: Array<{ type: 'text'; text: string }>;
   /** Nested sub-model usage for accounting (Pi persists it on the result). */
   usage?: any;

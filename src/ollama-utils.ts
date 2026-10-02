@@ -104,16 +104,3 @@ export async function isOllamaAvailable(
 
 // ── Fallback Handling ───────────────────────────────────────────────────
 
-/**
- * Fallback strategy when Ollama is not available.
- * @returns A default result for the fallback case.
- */
-export function getFallbackClassification(): {
-  category: 'fallback';
-  reason: string;
-} {
-  return {
-    category: 'fallback',
-    reason: 'Ollama unavailable — using default routing.',
-  };
-}

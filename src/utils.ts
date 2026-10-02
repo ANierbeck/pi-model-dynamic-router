@@ -9,7 +9,7 @@ import type { ModelRef } from './types.ts';
 /**
  * Normalizes a string for comparison
  */
-export function stripDateSuffix(s: string): string {
+function stripDateSuffix(s: string): string {
   // Strip trailing date/version tags: -YYYYMMDD, -YYMMDD, -YYMM (e.g., -20250514, -2507, -0324)
   return s.replace(/-\d{4,8}$/, '');
 }

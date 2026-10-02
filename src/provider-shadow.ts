@@ -24,7 +24,7 @@
 // key remains the only route to those models and is NOT redundant.
 
 /** Minimal shape of PROVIDER_MAP entries this module needs. */
-export interface ProviderDefLike {
+interface ProviderDefLike {
   pricingAlias?: string;
 }
 
@@ -48,7 +48,7 @@ export function redundantAliasProviders(
 }
 
 /** Minimal shape of a scan-cache available_models entry. */
-export interface AvailableModelLike {
+interface AvailableModelLike {
   id: string;
   provider: string;
 }

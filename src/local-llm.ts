@@ -30,7 +30,7 @@ export interface LocalLlmDeps {
   timeoutMs?: number;
 }
 
-export interface ResolvedLocalProvider {
+interface ResolvedLocalProvider {
   providerId: string;
   /** Model id to pass in the `model` field of the chat request. */
   modelId: string;

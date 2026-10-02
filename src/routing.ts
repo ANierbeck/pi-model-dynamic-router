@@ -120,7 +120,7 @@ function inFreeModelsList(cfg: Config, ref: string): boolean {
   return list.includes(ref) || list.includes(bare);
 }
 
-export function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
+function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
   return {
     gdp: lookupGdp,
     cost: effCost,
@@ -155,7 +155,7 @@ export function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
  * Fail-open is deliberately NOT applied: an unknown provider is neither
  * local nor token-based, so it stays out of the $0 groups.
  */
-export function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean {
+function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean {
   const prov = ref.split('/')[0];
   if (PROVIDER_MAP[prov]?.local) return true;
   return isFree && isTokenBased(cfg, prov);

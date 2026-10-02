@@ -95,7 +95,7 @@ export const PROBE_TIMEOUT_MS = 15_000;
 // rejected.
 
 /** A single quality-probe test case a candidate must pass. */
-export interface ProbeCase {
+interface ProbeCase {
   /** Stable identifier (used in probe logs). */
   name: string;
   /** The user request the candidate must classify. */

@@ -13,7 +13,7 @@ import type { Group } from './types.ts';
  * The subset of Pi's ModelRegistry that usability checks depend on. Kept
  * minimal and duck-typed (rather than importing pi-ai's real type) because
  * the fields used here (`runtime`, `getProvider`) are not part of pi-ai's
- * public API — see hostStreamSimple() in index.ts for why.
+ * public API — see hostStreamSimple() in src/stream-proxy.ts for why.
  */
 export interface ModelRegistryLike {
   find(provider: string, modelId: string): unknown;
@@ -26,7 +26,7 @@ export interface ModelRegistryLike {
  * Whether a ref can actually be streamed right now: the model exists, the host
  * has a stream handler for it, and credentials are satisfied.
  *
- * Mirrors the gates in index.ts's tryStream() exactly, so a ref that passes
+ * Mirrors the gates in stream-proxy.ts's tryStream() exactly, so a ref that passes
  * here will not be rejected later for a reason we could have seen up front.
  * Used to pick between providers that offer the same model name (e.g.
  * "claude-sonnet-5" via both `anthropic` and `claude-bridge`) — a provider

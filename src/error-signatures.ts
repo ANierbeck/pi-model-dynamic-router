@@ -16,9 +16,9 @@
 
 import { isRateLimitText, isOverflowErrorText, isAbortLikeText } from './detection.ts';
 
-export type FailureVerdict = 'permanent' | 'request' | 'transient' | 'unknown';
+type FailureVerdict = 'permanent' | 'request' | 'transient' | 'unknown';
 
-export interface FailureClassification {
+interface FailureClassification {
   verdict: FailureVerdict;
   /** Stable reason key for permanent/request verdicts. */
   reason?: string;

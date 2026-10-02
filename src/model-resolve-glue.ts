@@ -15,7 +15,7 @@ import type { Router } from './routing.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
-export interface ModelResolveGlueDeps {
+interface ModelResolveGlueDeps {
   readonly cache: Cache;
   readonly costMux: (prov: string) => number;
   readonly discoveryManager: DiscoveryManager;

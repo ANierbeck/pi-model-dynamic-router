@@ -285,7 +285,7 @@ export class StreamOrchestrator {
           completeSimple: (model: any, ctx: any, options: any) => {
             // completeSimple is on the private ModelRuntime (registry.runtime),
             // not the public ModelRegistry facade — same reach-through pattern
-            // hostStreamSimple uses for streamSimple (index.ts:1635). The
+            // hostStreamSimple (src/stream-proxy.ts) uses for streamSimple. The
             // pinned harness (pi-coding-agent@0.83.0) exposes neither method
             // on the facade itself.
             const registry = this.ctx.sessionCtx?.modelRegistry as any;

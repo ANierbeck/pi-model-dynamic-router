@@ -22,10 +22,10 @@ import { classifyFailure } from './error-signatures.ts';
 import { PROVIDER_MAP } from './providers.ts';
 
 export const BLOCKLIST_TTL_MS = 7 * 24 * 60 * 60_000;
-export const TIER2_MIN_FAILURES = 5;
-export const TIER2_MIN_SPAN_MS = 60 * 60_000;
+const TIER2_MIN_FAILURES = 5;
+const TIER2_MIN_SPAN_MS = 60 * 60_000;
 
-export interface BlocklistEntry {
+interface BlocklistEntry {
   reason: string;
   code: number;
   signature: string;

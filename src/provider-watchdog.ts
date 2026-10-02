@@ -15,7 +15,7 @@
 import type { Cache } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
 
-export const WEDGE_MIN_MODELS = 2;
+const WEDGE_MIN_MODELS = 2;
 export const WEDGE_WINDOW_MS = 10 * 60_000;
 export const WEDGE_COOLDOWN_MS = 5 * 60_000;
 /** The cooldown for log lines and narration ("5 min"). */

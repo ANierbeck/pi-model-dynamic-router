@@ -19,7 +19,7 @@
 // positives just cost one extra scan retry; false negatives leave a broken
 // config live for up to 30 days. Erring toward "reject" is the right trade.
 
-export interface ScanSanityParams {
+interface ScanSanityParams {
   /** All refs considered for scoring, after exclude rules (effectiveModelRefs). */
   scannedRefs: string[];
   /** Refs that ended up with a usable GDPval score (modelsWithMetadata). */
@@ -68,7 +68,7 @@ export interface ScanSanityParams {
   minRetainedRatio?: number;
 }
 
-export interface ScanSanityResult {
+interface ScanSanityResult {
   ok: boolean;
   reason?: string;
   /** Which check refused the scan. */

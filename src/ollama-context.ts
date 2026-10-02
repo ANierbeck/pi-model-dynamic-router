@@ -40,7 +40,7 @@
 const DEFAULT_CONTEXT_WINDOW = 32768;
 const DEFAULT_MAX_TOKENS = 8192;
 
-export interface OllamaContextOptions {
+interface OllamaContextOptions {
   contextWindow: number;
   num_ctx: number;
   maxTokens: number;

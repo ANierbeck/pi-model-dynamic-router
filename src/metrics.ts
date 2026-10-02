@@ -216,7 +216,7 @@ function buildGdpvalIndex(): void {
 // confidently matched. lookupGdp consults this AFTER the token-set fallback.
 let llmModelMatches: Record<string, string> = {};
 
-/** Set the LLM-derived model→slug matches (called from index.ts populateLlmMatches). */
+/** Set the LLM-derived model→slug matches (called from scan-runner.ts populateLlmMatches). */
 export function setLlmMatches(matches: Record<string, string>): void {
   llmModelMatches = { ...matches };
 }
@@ -456,7 +456,7 @@ export function lookupContextWindow(ref: string): number | null {
 let piRegisteredProviders: Set<string> = new Set();
 
 /**
- * Pi's own modelRegistry, set from index.ts `session_start` via the public
+ * Pi's own modelRegistry, set from the session_start handler (src/event-handlers.ts)
  * `ExtensionContext.modelRegistry` API. The registry is the authoritative
  * source for a model's real cost — `Model.cost` is a required field
  * populated from the provider itself (e.g. requesty's /v1/models reports

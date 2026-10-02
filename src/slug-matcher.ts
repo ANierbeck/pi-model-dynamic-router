@@ -101,7 +101,7 @@ export function normalizeModelId(ref: string): string {
  * newest-version tie-break and made bare-major refs (`glm-5`, numbers [5])
  * incompatible with their own family slugs ([52]).
  */
-export function normalizeSpacedId(ref: string): string {
+function normalizeSpacedId(ref: string): string {
   let s = stripProviderPrefix(ref).toLowerCase();
 
   s = s.replace(/[-:](?:mlx|q[0-9](?:_[0-9]+)?|f?16|f?32|iq[0-9]_[a-z]+|fp[0-9]+)$/g, '');

@@ -19,7 +19,7 @@
 
 import type { Cache } from './types.ts';
 
-export interface HealthRecord {
+interface HealthRecord {
   /** Consecutive failures since the last success. */
   fails: number;
   /** Timestamp (ms) of the most recent failure. */

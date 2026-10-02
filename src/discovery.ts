@@ -52,11 +52,11 @@ const authPath = () => path.join(piAgentDir(), 'auth.json');
 // silently disabling its free-model cloud fallback for auth.json-only
 // providers. Consolidating into one pure function removes that drift.
 
-export interface AuthEntry {
+interface AuthEntry {
   key?: string;
   access?: string;
 }
-export type AuthData = Record<string, AuthEntry> | null;
+type AuthData = Record<string, AuthEntry> | null;
 
 /**
  * Reads <agent dir>/auth.json (the single auth source used by the
