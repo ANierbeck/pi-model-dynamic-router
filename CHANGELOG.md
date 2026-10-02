@@ -76,6 +76,17 @@
   known-good model list.
 
 ### Changed
+- **index.ts refactored from ~3750 to ~640 lines** (plan
+  `docs/plans/2026-10-02-index-ts-refactor.md`, 12 tasks, pure code motion):
+  all behavior moved into `createX(deps)` factory modules
+  (context-utils, limit-glue, model-resolve-glue, scan-runner,
+  dynamic-config-runner, free-model-registration, stream-proxy,
+  group-registration, event-handlers, tools, commands). The factories
+  receive live getters/setters instead of closure captures, eliminating
+  the stale-`cfg`/stale-`router` bug class. index.ts keeps the shared
+  state, `load()`/`loadCache()` and `buildOrchestratorContext()`; the
+  final session_shutdown stays last. No behavior change — tsc clean and
+  the full suite (1114 tests) stayed green after every task.
 - **The router no longer registers scan-discovered models (ADR-0021)**:
   the scan-union (the 2026-09-02 F4 fix) registered every scan-discovered
   model into Pi's registry under PROVIDER_MAP's API. For mistral alone that

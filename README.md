@@ -27,6 +27,31 @@ The router uses a **modular architecture** with the following components:
 | **exclude.ts** | Personalized exclude rules | Provider/pattern/paid-model filtering for all groups |
 | **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
 
+**index.ts wiring (2026-10 refactor):** index.ts is now a thin extension entry point
+(~640 lines, down from ~3750): it owns the shared mutable state (the one `cache`
+object, `cfg`, managers), `load()`/`loadCache()`, and
+`buildOrchestratorContext()`. All behavior lives in `createX(deps)` factory
+modules that receive **live getters** (plus setters for write access) so
+reload-time swaps are always seen — never stale closure captures:
+
+| Factory module | Owns |
+|----------------|------|
+| **context-utils.ts** | context estimation, timeouts, compaction detection |
+| **limit-glue.ts** | metrics/rate-limit/cost glue functions |
+| **model-resolve-glue.ts** | `resolve`, `detectGroup`, `fmtModel`, `getTopModels` |
+| **scan-runner.ts** | `scan()` incl. GDPval scrape + LLM matching |
+| **dynamic-config-runner.ts** | `generateDynamicConfigNow` |
+| **free-model-registration.ts** | `registerFreeModelOnDemand` |
+| **stream-proxy.ts** | `groupStream`, `tryStream`, `consumeWithDetection`, local-stream limiter |
+| **group-registration.ts** | `registerGroupProviders` (Ü1 guard), `registerGroupModels` (merge-not-replace) |
+| **event-handlers.ts** | the core `pi.on(...)` handlers |
+| **tools.ts** | the four `pi.registerTool` registrations |
+| **commands.ts** | the `/router` command |
+
+The final `session_shutdown` handler and process-exit/signal cleanup stay at the
+bottom of index.ts (handler order is load-bearing). The router never calls
+`pi.setModel()` except in the `set_model_from_group` tool.
+
 This modular design enables better maintainability, testing, and extensibility.
 
 ### GDPval model matching pipeline

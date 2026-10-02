@@ -8,6 +8,22 @@ scores (GDPval), cost, availability, and user preferences.
 
 ## Key modules
 
+### `index.ts` — Thin extension entry point (2026-10 refactor)
+
+index.ts shrank from ~3750 to ~640 lines via behavior-preserving code motion
+(plan: `docs/plans/2026-10-02-index-ts-refactor.md`). It keeps only what must
+live at the wiring level: shared mutable state (the ONE `cache` object,
+`cfg`, the managers), `load()`/`loadCache()`, and
+`buildOrchestratorContext()`. Everything else moved into `createX(deps)`
+factory modules (context-utils, limit-glue, model-resolve-glue, scan-runner,
+dynamic-config-runner, free-model-registration, stream-proxy,
+group-registration, event-handlers, tools, commands). The factories receive
+**live getters/setters** instead of captured values, so reload-time swaps
+(`cfg`, `router`, `rateLimitManager`, `discoveryManager`, `cacheManager`)
+are always seen — the old closure-staleness bug class cannot recur. The
+final `session_shutdown` handler stays at the bottom of index.ts because
+handler registration order is load-bearing.
+
 ### `src/metrics.ts` — Single source of truth for GDPval lookup
 
 The **only** implementation of `lookupGdp`, `mapLookup`, `loadModelMap`,

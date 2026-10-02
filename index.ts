@@ -8,96 +8,48 @@
  *   - Exponential backoff on 429 + permanent costMux per provider
  *   - Passive throughput/latency tracking from observed turns
  */
-import type {
-  AssistantMessage,
-  AssistantMessageEvent,
-  Model,
-  Context,
-  SimpleStreamOptions,
-  AssistantMessageEventStream,
-} from '@earendil-works/pi-ai';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import { Type } from '@sinclair/typebox';
-import { truncateToWidth } from '@earendil-works/pi-tui';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import * as fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
-import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
-import { PI_BUILTIN_PROVIDER_IDS, PROVIDER_MAP } from './src/providers.ts';
-import {
-  splitRef,
-  stripDateSuffix,
-  resolveShortModelName,
-  fmt,
-  fmtTime,
-  stripRouterNarration,
-  serialized,
-} from './src/utils.ts';
-import { isRefUsable, rankHintCandidates } from './src/hint-resolution.ts';
+import type { Config, Cache, Defaults } from './src/types.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
-import { countSessionErrorsSince, formatErrorsReport, recordSessionErrorFromFailure } from './src/session-errors.ts';
-import { lookupGdp, setPiRegisteredProviders, setModelRegistry } from './src/metrics.ts';
-import { estimateOllamaModelsGdpvalAsSlugs } from './src/ollama-gdpval.ts';
-import { buildOllamaProviderModels } from './src/ollama-context.ts';
-import { checkScanSanity } from './src/scan-sanity.ts';
-import { extractCapabilities } from './src/capabilities.ts';
+import { lookupGdp } from './src/metrics.ts';
+import { countSessionErrorsSince } from './src/session-errors.ts';
 import { CacheManager } from './src/cache.ts';
-import { redundantAliasProviders, pruneRedundantCacheEntries } from './src/provider-shadow.ts';
-import { isStreamableRef } from './src/streamable-refs.ts';
 import { readRouterVersion } from './src/version.ts';
-import { matchModelsWithLLMBatched, isPlausibleMatch, type GdpvalEntry } from './src/model-matcher.ts';
-import { callLocalLlm, type LocalLlmDeps } from './src/local-llm.ts';
-import { isExcluded, type ExcludeContext } from './src/exclude.ts';
-import { recordModelFailure, recordModelSuccess, failureStreak } from './src/model-health.ts';
-import {
-  recordBlocklistFailure,
-  recordBlocklistSuccess,
-  activeBlocks,
-  clearBlocklist,
-  formatBlockLogLine,
-} from './src/model-blocklist.ts';
 import {
   recordLocalTimeout,
-  recordLocalSuccess,
   isProviderWedged,
-  wedgeFixHint,
   WEDGE_COOLDOWN_TEXT,
 } from './src/provider-watchdog.ts';
-import { detectDegenerateRepetition } from './src/repetition-guard.ts';
-import {
-  buildStaticFreeModelsLookup,
-  buildModelsWithMetadata,
-  collapseSameSlugClusters,
-  filterModelsForGroup,
-  sortModelsForGroup,
-  collectGroupModels,
-  computeFallbackGroups,
-  DYNAMIC_CONFIG_RESYNC_KEYS,
-} from './src/dynamic-config.ts';
-import { pushStreamError, pushRouterInfo, pushRouterInfoLogged, isExpectedTransientError, type SourceModelInfo } from './src/stream-driver.ts';
-import {
-  isRateLimitText,
-  isOverflowErrorText,
-  isOverflowDeltaText,
-  OVERFLOW_TEXT_SCAN_MAX_CHARS,
-  isAbortLikeText,
-  parseResetAtMs,
-  isPaidCloudRateLimitFailure,
-} from './src/detection.ts';
-import { hasBudget } from './src/budget.ts';
+import { DYNAMIC_CONFIG_RESYNC_KEYS } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
-import { Router, getFallbackGroup, isVirtualGroupRef } from './src/routing.ts';
+import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
-import { probeAndCache, getCachedFallbackModels, selectClassifierCandidates } from './src/classifier-fallback-probe.ts';
 import { costTracker } from './src/cost-tracker.ts';
+// Shared router logger (D2): the log functions live in src/logger.ts so every
+// src/ module can log without reaching for console.* (which bypasses Pi's TUI
+// and can land in the user's input field). Re-imported here for index.ts's own use.
+import { routerLog, setLogLevel } from './src/logger.ts';
+import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
+import { createContextUtils } from './src/context-utils.ts';
+import { createLimitGlue } from './src/limit-glue.ts';
+import { createModelResolveGlue } from './src/model-resolve-glue.ts';
+import { createScanRunner } from './src/scan-runner.ts';
+import { createDynamicConfigRunner } from './src/dynamic-config-runner.ts';
+import { createFreeModelRegistration } from './src/free-model-registration.ts';
+import { createStreamProxy } from './src/stream-proxy.ts';
+import { createGroupRegistration } from './src/group-registration.ts';
+import { createEventHandlers } from './src/event-handlers.ts';
+import { createTools } from './src/tools.ts';
+import { createCommands } from './src/commands.ts';
 
 function loadDefaults(extDir: string): Defaults {
   const yamlPath = path.join(extDir, 'router-defaults.yaml');
@@ -123,27 +75,7 @@ const GDPVAL_URL = _defaults.gdpval_url;
 // export scope (where `cfg` is in scope) below; only the counter is here.
 let localStreamsInFlight = 0;
 
-// ── Extension ──────────────────────────────────────────────────────────────
-
-// Shared router logger (D2): writeLogLine / routerLog / appendRawLog /
-// setProjectLogDir live in src/logger.ts so every src/ module can log without
-// reaching for console.* (which bypasses Pi's TUI and can land in the user's
-// input field). Re-imported here for index.ts's own use.
-import { routerLog, debugLog, debugLogOnce, forgetDebugOnce, setLogLevel, writeLogLine, appendRawLog, setProjectLogDir } from './src/logger.ts';
-import { handleReadDelegation, delegationSettings } from './src/delegation.ts';
-import { checkReadBlock, executeBulkRead, resolveReadBlockStreamRef } from './src/bulk-read.ts';
-import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
-import { createContextUtils } from './src/context-utils.ts';
-import { createLimitGlue } from './src/limit-glue.ts';
-import { createModelResolveGlue } from './src/model-resolve-glue.ts';
-import { createScanRunner } from './src/scan-runner.ts';
-import { createDynamicConfigRunner } from './src/dynamic-config-runner.ts';
-import { createFreeModelRegistration } from './src/free-model-registration.ts';
-import { createStreamProxy } from './src/stream-proxy.ts';
-import { createGroupRegistration } from './src/group-registration.ts';
-import { createEventHandlers } from './src/event-handlers.ts';
-import { createTools } from './src/tools.ts';
-import { createCommands } from './src/commands.ts';
+// ── Extension ─────────────────────────────────────────────────────────────
 
 /**
  * Fingerprint of the config inputs that legitimately change how many models a
@@ -178,7 +110,6 @@ const defaultExport = function (pi: ExtensionAPI) {
   let settleRetryScheduled = false;
   const SCAN_REFUSAL_MAX_AGE_MS = 24 * 60 * 60_000;
 
-  const STRIP_SUFFIXES = _defaults.strip_suffixes;
   let cfg: Config;
   let staticCfg: Config; // Static configuration (always from the embedded router-config.json + its layers)
   // The ONE cache object: never reassigned. loadCache() re-reads disk into it,
@@ -360,7 +291,7 @@ let previousTokenCount = 0;
     get sessionCtx() { return sessionCtx; },
   });
 
-  const {  } = createEventHandlers({
+  createEventHandlers({
     get activeGroup() { return activeGroup; },
     set activeGroup(v) { activeGroup = v; },
     get cache() { return cache; },
@@ -397,7 +328,7 @@ let previousTokenCount = 0;
     get updateMetrics() { return updateMetrics; },
   });
 
-  const {  } = createTools({
+  createTools({
     get activeGroup() { return activeGroup; },
     set activeGroup(v) { activeGroup = v; },
     get cfg() { return cfg; },
@@ -410,7 +341,7 @@ let previousTokenCount = 0;
     get router() { return router; },
   });
 
-  const {  } = createCommands({
+  createCommands({
     get allDiscoveredRefs() { return allDiscoveredRefs; },
     get cache() { return cache; },
     get cacheManager() { return cacheManager; },
