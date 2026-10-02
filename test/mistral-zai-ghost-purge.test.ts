@@ -20,9 +20,12 @@
  *   1. pi knows `mistral` → mistral-zai must NOT be registered, even though
  *      an API key IS available for it (the key's existence is exactly what
  *      resurrected the ghosts before the fix).
- *   2. pi does NOT know `mistral` → mistral-zai (own key) is the only route
- *      to those models and MUST still be registered (non-regression for
- *      the alias-without-target case).
+ *   2. pi does NOT know `mistral` either → mistral-zai must STILL not be
+ *      registered. Before ADR-0021 the union registered it here as an
+ *      "own-key fallback" — but under ADR-0021 (2026-10-02) the router
+ *      never registers models Pi does not know, no matter what keys exist.
+ *      If the user wants a provider pi does not ship, they register it in
+ *      models.json; the router enriches but never invents.
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -166,7 +169,7 @@ describe('registerGroupModels: alias-shadow rule (mistral-zai → mistral)', () 
     );
   });
 
-  it('STILL registers the alias provider when pi does not serve its target (own-key fallback preserved)', async () => {
+  it('does NOT register the alias provider even when pi serves neither alias target nor source (ADR-0021)', async () => {
     await withIsolatedRouter(
       {
         free_models: [],
@@ -178,14 +181,17 @@ describe('registerGroupModels: alias-shadow rule (mistral-zai → mistral)', () 
           defaultExport,
           tmpDir
         );
-        // pi knows NOTHING about mistral — the alias provider with its own
-        // key is the only route to those models and must be registered.
+        // pi knows NOTHING about mistral. Before ADR-0021 the union
+        // registered mistral-zai here as an "own-key fallback" (scan-discovered
+        // models under an invented registration). ADR-0021: the router never
+        // registers models Pi does not know — no fallback branch, no matter
+        // what keys resolve.
         const ctx = buildCtx([]);
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
         const registeredProviders = registerProviderCalls.map((c) => c.name);
-        expect(registeredProviders).toContain('mistral-zai');
+        expect(registeredProviders).not.toContain('mistral-zai');
       }
     );
   });

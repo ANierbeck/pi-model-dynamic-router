@@ -49,3 +49,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0018 — HINT mechanism repair (pending root-cause analysis)](0018-hint-mechanism-repair.md)
 - [0019 — Router 0.99.1 hardening: typed-model-preserving re-registration](0019-router-0.99.1-typed-model-preservation.md)
 - [0020 — Migration to Pi built-in MCP (retiring pi-mcp-adapter)](0020-built-in-mcp-migration.md)
+- [0021 — The router never registers models Pi does not know (removes the scan-union registration)](0021-no-scan-discovered-model-registration.md)

@@ -76,6 +76,20 @@
   known-good model list.
 
 ### Changed
+- **The router no longer registers scan-discovered models (ADR-0021)**:
+  the scan-union (the 2026-09-02 F4 fix) registered every scan-discovered
+  model into Pi's registry under PROVIDER_MAP's API. For mistral alone that
+  added 29 models Pi's builtin catalog does not ship — including OCR
+  (mistral-ocr-*) and audio (voxtral-mini-*) models registered as chat
+  models — and was the root cause of the Mistral 422 "store" rejections
+  (ministral-*-2512 classifier-probe failures). Pi's registry (builtin
+  catalog + models.json) is now the single source of truth for the cloud
+  inventory; the scan only enriches refs Pi already resolves (GDPval,
+  pricing, capabilities) and keeps the local Ollama/LM Studio inventory.
+  Consequence: new provider models become routable when Pi ships them, not
+  before; provider keys must live in auth.json/models.json. Removed with the
+  union: the Ü1 round-trip, the ADR-0019 field allow-list, `[scan-union]`
+  logging, `SKIP_REGISTRATION`, and `piKnownProviderSet()`.
 - **claude-bridge/claude-opus-5-5 re-enabled for routing** (`aefbdc8`).
 - **One group-filter rule set for persist, live and display (ADR-0010)**
   (`d104b59`): the dynamic-config persist path, live routing and

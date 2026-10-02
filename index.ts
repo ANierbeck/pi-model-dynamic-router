@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
 import type { Config, Cache, Metrics, Defaults, ModelCapabilities } from './src/types.ts';
-import { PI_BUILTIN_PROVIDER_IDS, PROVIDER_MAP, SKIP_REGISTRATION } from './src/providers.ts';
+import { PI_BUILTIN_PROVIDER_IDS, PROVIDER_MAP } from './src/providers.ts';
 import {
   splitRef,
   stripDateSuffix,
@@ -618,8 +618,10 @@ let previousTokenCount = 0;
    * `cache.gdpval_scores` (scraped from Artificial Analysis + builtin
    * overrides + Ollama GDPval heuristics). Runs on session_start and on
    * `/router scan`. Result feeds generateDynamicConfig (which writes the
-   * dynamic group config) and registerGroupModels (which registers models
-   * with Pi).
+   * dynamic group config). ADR-0021: the router no longer registers
+   * scan-discovered models with Pi — Pi's registry is the single source of
+   * truth for the cloud inventory; scan data only enriches refs Pi already
+   * resolves (plus the local Ollama/LM Studio inventory).
    *
    * PER-MODEL CAPABILITIES (resolved architecture problem B1): each provider's
    *   /v1/models response is parsed for real capabilities via
@@ -629,9 +631,10 @@ let previousTokenCount = 0;
    *   bounded) to get `model_info.*.context_length` + the capabilities array —
    *   setup-independent (no hardcoded table, no dependency on any specific
    *   Ollama extension). Results land in cache.available_models[].capabilities
-   *   (see AvailableModel/ModelCapabilities types) and flow through to
-   *   registerGroupModels, which registers with the real values (conservative
-   *   defaults for unreported fields) instead of the old hardcoded blanket.
+   *   (see AvailableModel/ModelCapabilities types) and flow through to the
+   *   LOCAL registration in registerGroupModels (Ollama/LM Studio only,
+   *   kept per ADR-0021: Pi has no live local-discovery mechanism), which
+   *   registers with the real values instead of the old hardcoded blanket.
    *
    * PER-PROVIDER MODEL FILTER (resolved architecture problem B2): PROVIDER_MAP
    *   entries may set `modelFilter: "<regex>"` to constrain which scanned model
@@ -811,8 +814,10 @@ let previousTokenCount = 0;
         // If Pi knows a provider from models.json, an extension, or natively,
         // the router doesn't need to scan it — that would only create
         // duplicates in cache.available_models (e.g. mistral-zai with 46
-        // identical models like mistral). The router wouldn't register it
-        // anyway (Ü1 in registerGroupModels). So: don't scan.
+        // identical models like mistral). Since ADR-0021 the router registers
+        // no scan-discovered cloud models anyway (Pi's catalog is the source
+        // of truth), so scanning a Pi-served provider produces only inert
+        // cache entries. So: don't scan.
         const piKnownProviders = new Set<string>();
         if (sessionCtx?.modelRegistry) {
           try {
@@ -824,10 +829,11 @@ let previousTokenCount = 0;
         // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
         // Leitplanke 1): a provider whose `pricingAlias` target pi already
         // serves duplicates pi's catalog under a router-internal key — and
-        // its scan entries carry `cost_per_m: 0` PLACEHOLDERS that later get
-        // baked into Pi's registry as real prices by registerGroupModels.
-        // The ghost duplicates (best GDPval, $0.0 "cost") then won every
-        // cost-sorted group. Never scan shadowed alias providers.
+        // its scan entries carry `cost_per_m: 0` PLACEHOLDERS that pollute
+        // the cache and its diagnostics (before ADR-0021 they even got baked
+        // into Pi's registry as real prices by the scan-union registration).
+        // Keep the ghost entries out of the cache entirely. Never scan
+        // shadowed alias providers.
         const redundantProviders = redundantAliasProviders(PROVIDER_MAP, piKnownProviders);
         const providerScans = Object.entries(PROVIDER_MAP)
           .filter(([, def]) => def.modelsUrl && def.authHeader)
@@ -2350,14 +2356,16 @@ let previousTokenCount = 0;
    * On-demand registration of a configured free model into Pi's model
    * registry. Statically-configured free models (cfg.providers[provider]
    * .free_models) never go through the scan/cache.available_models path,
-   * so registerGroupModels never sees them and tryStream would skip every
-   * free model forever. This registers the PROVIDER (if Pi doesn't know it)
-   * with just the one model needed, then re-lookup. Returns true if the
-   * model is now findable.
+   * and since ADR-0021 the router registers no scan-discovered models at
+   * session start, so without this on-demand path tryStream would skip
+   * every free model forever. This registers the PROVIDER (if Pi doesn't
+   * know it) with just the one model needed, then re-lookup. Returns true if
+   * the model is now findable.
    *
    * Conservative: only fires for providers in PROVIDER_MAP with a baseUrl,
-   * and only for model IDs explicitly listed in free_models. Never
-   * overwrites an existing provider registration (Ü1 invariant).
+   * and only for model IDs explicitly listed in free_models — explicit user
+   * config, not scan discovery, so it stays under ADR-0021. Never overwrites
+   * an existing provider registration (Ü1 invariant).
    */
   function registerFreeModelOnDemand(provider: string, modelId: string): boolean {
     const def = (PROVIDER_MAP as any)[provider];
@@ -2383,8 +2391,9 @@ let previousTokenCount = 0;
     if (registeredProviderIds.includes(provider)) return false;
     // 0.99.1 note (ADR-0019): getRegisteredProviderIds() includes every
     // builtin-catalog provider there, so this guard degrades to 'never
-    // overwrite a provider pi knows' — conservative and correct. The
-    // scan-union site (see ADR-0019) is the only place that must round-trip.
+    // overwrite a provider pi knows' — conservative and correct. ADR-0021
+    // removed the scan-union registration; this explicitly-configured
+    // on-demand path is the only cloud registration left.
     // Resolve an API key (free models still need a key for the OpenRouter
     // endpoint, just at no cost). Without one we can't register.
     const keys = cfg.providers?.[provider]?.keys;
@@ -2394,9 +2403,8 @@ let previousTokenCount = 0;
     } else if (def.authKey) {
       // auth.json key resolution is async in the real path, but we're in a
       // sync helper. If the provider needs auth.json and has no cfg key, we
-      // can't resolve synchronously here — bail and let registerGroupModels
-      // (which awaits the key) handle it at session start. This on-demand path
-      // only fires for providers with a resolvable cfg key.
+      // can't resolve synchronously here — bail. This on-demand path only
+      // fires for providers with a resolvable cfg key.
       return false;
     }
     if (!apiKey) return false;
@@ -2448,10 +2456,11 @@ let previousTokenCount = 0;
       // The ref isn't in Pi's model registry. If it's a configured free
       // model (cfg.providers[provider].free_models), register it on demand —
       // statically-configured free models never go through the scan/
-      // cache.available_models path, so registerGroupModels never sees them,
-      // and without this on-demand registration tryStream would skip every
-      // free model forever (the observed 'claude-sonnet-5 dominates, GLM
-      // unused' symptom: free models silently dropped from the cascade).
+      // cache.available_models path, and since ADR-0021 nothing registers
+      // scan-discovered models at session start, so without this on-demand
+      // registration tryStream would skip every free model forever (the
+      // observed 'claude-sonnet-5 dominates, GLM unused' symptom: free models
+      // silently dropped from the cascade).
       if (registerFreeModelOnDemand(provider, modelId)) {
         realModel = sessionCtx.modelRegistry.find(provider, modelId);
       }
@@ -3167,283 +3176,19 @@ let previousTokenCount = 0;
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
 
-  /**
- * The set of provider ids pi's model registry currently serves. Used by the
- * scan loop and registerGroupModels for the alias-shadow rule (providers
- * whose pricingAlias target is pi-served duplicate pi's catalog under a
- * router-internal key — see src/provider-shadow.ts).
- */
-function piKnownProviderSet(ctx: any): Set<string> {
-  const known = new Set<string>();
-  try {
-    for (const model of ctx?.modelRegistry?.getAvailable?.() ?? []) {
-      if (typeof model?.provider === 'string') known.add(model.provider);
-    }
-  } catch {}
-  return known;
-}
-
-async function registerGroupModels(ctx: any) {
-    // B1/Ü1 fix: previously this registered every discovered provider with
-    // hardcoded, same-for-all-models capabilities (reasoning: true,
-    // input: ['text','image'], contextWindow: 200_000, maxTokens: 64_000) and
-    // SILENTLY OVERWROTE any registration Pi already had (from models.json or
-    // another extension) — destroying user-curated compat flags like the
-    // mistral-zai/glm-5-2 entry that had supportsStore:false / maxTokensField.
-    // That overwrite caused the 422 compaction failures.
-    //
-    // Now: (Ü1) only register a provider when Pi does NOT know it yet —
-    // never overwrite an existing registration (per Leitplanke 3: don't touch
-    // Pi's models.json). (B1) use the REAL per-model capabilities the scan
-    // captured into cache.available_models.capabilities, with conservative
-    // defaults (vision: false, reasoning: false) when the provider didn't
-    // report them — so a model is never falsely advertised as vision-capable.
-
-    // Pre-loop snapshot (hoisted out of the loop, roborev review of 8a19c5c,
-    // LOW): safe only because every current pricingAlias target is a
-    // pi-builtin already registered before this loop. If a future alias
-    // target were a non-builtin registered earlier in iteration order, the
-    // snapshot would miss it and the alias-shadow rule would break —
-    // recompute inside the loop instead.
-    const piKnownProviders = piKnownProviderSet(ctx);
-    for (const [provId, def] of Object.entries(PROVIDER_MAP)) {
-      if (!def.baseUrl || !def.api) continue;
-      if (SKIP_REGISTRATION.has(provId)) continue;
-      // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
-      // Leitplanke 1): if this provider's `pricingAlias` target is served
-      // by pi's own registry (e.g. mistral-zai → mistral), registering the
-      // alias duplicates pi's catalog under a router-internal key with
-      // scan-placeholder costs ($0.0) baked in as REAL prices — the ghost
-      // (best GDPval, $0.0) then won every cost-sorted group while real
-      // money was billed upstream. Pi's catalog is the source of truth;
-      // shadowed alias providers must never be (re-)registered.
-      if (
-        typeof def.pricingAlias === 'string' &&
-        piKnownProviders.has(def.pricingAlias)
-      ) {
-        continue;
-      }
-      // Keys can come from router-config.json OR from auth.json (via authKey).
-      const keys = cfg.providers?.[provId]?.keys;
-      let rawKey: string | undefined;
-      let apiKey: string | undefined;
-      if (keys?.length) {
-        rawKey = keys[rateLimitManager.activeKeyIndex(provId)].key;
-        apiKey = resolveKeyValue(rawKey);
-        if (!apiKey || (apiKey === rawKey && rawKey.startsWith('__local__'))) continue;
-      } else if (def.authKey) {
-        apiKey = await sessionCtx?.modelRegistry?.getApiKeyForProvider?.(def.authKey)
-          .catch(() => null) ?? undefined;
-        if (!apiKey) continue;
-      } else {
-        continue;
-      }
-
-      // Collect this provider's models (with capabilities) from the scan cache.
-      const provModels = (cache.available_models ?? [])
-        .filter((m) => m.provider === provId);
-      if (!provModels.length) continue;
-
-      // Ü1: if Pi already knows a model, do NOT re-register it — this
-      // protects models.json entries (with compat flags) and extension-provided
-      // providers from being overwritten. The previous "alreadyRegistered +
-      // existingKey" check only protected providers with a resolvable key; it
-      // missed models.json entries using env-var placeholder keys.
-      //
-      // However: when pi knows the provider, unscored variants that are NOT yet
-      // in pi's registry should still be registered (F4 fix). The Ü1 guard
-      // should skip individual models pi already knows, but register the rest.
-      // This prevents overwriting a pi-managed entry (e.g. mistral-zai/zai-glm-5-2
-      // with its compat flags) while still making scan-discovered variants
-      // (e.g. mistral-zai/glm-5-2 with its gdpval 1497) visible to routing.
-      //
-      // The entire per-provider body (the find() loop, the existingModels
-      // construction, and the registerProvider call) is wrapped in ONE
-      // try/catch below so a throw for any single provider — including a
-      // throwing modelRegistry.find() (roborev job 432 MEDIUM on an earlier
-      // version that left the find() loop outside the try) — only `continue`s
-      // to the next provider, not aborts the whole PROVIDER_MAP iteration.
-      //
-      // pi.registerProvider's `models` field REPLACES the provider's entire
-      // model list — it is NOT a merge (confirmed against
-      // node_modules/@earendil-works/pi-coding-agent/docs/custom-provider.md:
-      // "When models is provided, it replaces all existing models for that
-      // provider" — also documented in this repo's own CLAUDE.md rule #6).
-      // In the mixed case (pi knows SOME but not all of this provider's
-      // models), passing only `newModels` would silently DELETE pi's existing
-      // registration for the models it already knew — including their compat
-      // flags — which is exactly the destructive overwrite Ü1 exists to
-      // prevent (roborev job 425/426 HIGH finding on an earlier version of
-      // this fix). Round-trip pi's own Model objects — ALL of them that pi
-      // has registered for the provider, not only the ones the scan reports
-      // (preserving them byte-for-byte, compat flags included) — and pass
-      // the UNION of those plus the new models, so the call is a true add,
-      // not a replace. Starting the round-trip from the scan's subset
-      // instead silently deleted pi-registered models the scan does not
-      // report (excluded from routing, pruned, or not scanned) — a live
-      // wipe on 0.87.1 (roborev job 649 HIGH).
-      // Pick only the documented ProviderModelConfig fields (id, name, api,
-      // baseUrl, reasoning, thinkingLevelMap, input, cost, contextWindow,
-      // maxTokens, headers, compat, plus the 0.99.1 non-chat fields type,
-      // output, inputLimits, promptCache — see ADR-0019) — pi's Model interface
-      // also carries a `provider` field that ProviderModelConfig doesn't
-      // declare, so spread the whole object less and pick the known-safe
-      // fields instead.
-      //
-      // Pi 0.99.1 (ADR-0019): the registry composes providers as builtin
-      // catalog + models.json + extension overlay, and an extension
-      // registration with `models` replaces the composed list wholesale.
-      // getAll() returns CHAT models only — non-chat inventory (image,
-      // classifier) is reachable solely via getModelsOfType(type, provider),
-      // which the union below includes (feature-detected). The builtin
-      // catalogs ship non-chat inventory under ids we re-register (openrouter
-      // alone: 398 chat + 57 image + 7 classifier models, jev family included).
-      // A chat-only round-trip would corrupt the
-      // registry twice over: wipe the model entries AND re-register any
-      // survivor as a chat model (`type` lost). The conditional spreads below
-      // preserve `type`/`output`/`inputLimits`/`promptCache` when present —
-      // 0.87.1 hosts never carry those fields on chat models, so they are
-      // unaffected.
-      //
-      // Use the scan-reported cost_per_m instead of unconditionally hardcoding
-      // 0. This is a real improvement for providers whose scan path fetches
-      // verified pricing (e.g. chutes' cost_per_m comes from the provider's own
-      // pricing API) — for "generic direct API provider" scans (mistral,
-      // mistral-zai, etc.) cost_per_m is still 0 either way: that scan path
-      // never fetches real per-token pricing, so cost_per_m===0 is a
-      // PLACEHOLDER, not a verified "this is free" signal (this is the F3
-      // rationale, originally documented in the now-deleted
-      // getCheapestCloudModels; see docs/adr/0006-probe-based-classifier-fallback-discovery.md).
-      // So this does not, by itself, fix billing-tier accuracy for mistral-zai
-      // — only for providers whose scan already carries real pricing.
-      try {
-        // Build the map from pi's FULL registered list for this provider via
-        // getAll() — part of pi's ModelRegistry facade since ^0.83
-        // (dist/core/model-registry.d.ts) — so the round-trip below covers
-        // scan-absent models too. The map is keyed by model id (roborev job
-        // 429 LOW) and reused for both the skip check and the round-trip;
-        // the find() fallback (over the scanned ids) keeps older hosts
-        // without getAll() on the pre-649 behavior instead of skipping
-        // the provider entirely on a throw.
-        let piKnownModels: any[] = [];
-        try {
-          const reg = ctx.modelRegistry as any;
-          // Pi 0.99.1 (ADR-0019): getAll() is CHAT-ONLY — it resolves to
-          // runtime.getModels(), whose per-provider getModels() filters
-          // isModelType(m, "chat") (pi-ai dist/models.js:572). Non-chat
-          // inventory (image/classifier) is reachable only via
-          // getModelsOfType(type, provider), which reads through
-          // getAllModels() without the chat filter. Union all three sources
-          // or the registerProvider replace below wipes the provider's
-          // non-chat models (openrouter alone: 57 image + 7 classifier).
-          // Feature-detected: hosts without the method (0.87.1 rollback
-          // target, 0.83 devDeps) skip it and keep the chat-only union.
-          const chatModels = (reg.getAll?.() ?? []).filter(
-            (m: any) => m.provider === provId
-          );
-          const nonChatOfType = (type: string): any[] =>
-            typeof reg.getModelsOfType === 'function'
-              ? ((reg.getModelsOfType(type, provId) ?? []) as any[]).filter(
-                  (m: any) => m.provider === provId
-                )
-              : [];
-          piKnownModels = [...chatModels, ...nonChatOfType('image'), ...nonChatOfType('classifier')];
-        } catch {
-          piKnownModels = [];
-        }
-        const piKnownByModel = new Map<string, any>();
-        for (const m of piKnownModels) piKnownByModel.set(m.id, m);
-        if (!piKnownModels.length) {
-          for (const m of provModels) {
-            const found = ctx.modelRegistry.find(provId, m.id);
-            if (found) piKnownByModel.set(m.id, found);
-          }
-        }
-        if (provModels.every((m) => piKnownByModel.has(m.id))) continue; // pi knows ALL the scanned models — skip entirely
-
-        // Register only the models pi does NOT know yet.
-        const newModels = provModels.filter((m) => !piKnownByModel.has(m.id));
-        if (!newModels.length) continue;
-
-        const getCostPerM = (m: { cost_per_m?: number }): number => {
-          if (typeof m.cost_per_m === 'number') return m.cost_per_m;
-          if (cfg.providers?.[provId]?.cost_per_m !== undefined) return cfg.providers[provId].cost_per_m!;
-          return 0;
-        };
-
-        const existingModels = [...piKnownByModel.values()].map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            ...(m.api !== undefined ? { api: m.api } : {}),
-            ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
-            ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
-            ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
-            ...(m.input !== undefined ? { input: m.input } : {}),
-            ...(m.cost !== undefined ? { cost: m.cost } : {}),
-            ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
-            ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
-            ...(m.headers !== undefined ? { headers: m.headers } : {}),
-            ...(m.compat !== undefined ? { compat: m.compat } : {}),
-            // ADR-0019: preserve non-chat model identity (0.99.1) — see the
-            // block comment above. All four are conditional so 0.87.1 hosts
-            // (whose chat models lack these fields) round-trip byte-for-byte
-            // as before.
-            ...(m.type !== undefined ? { type: m.type } : {}),
-            ...(m.output !== undefined ? { output: m.output } : {}),
-            ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
-            ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
-            // ADR-0019 maintenance duty: samplingParams is a real 0.99.1
-            // Model field (Model.samplingParams?, pi-ai types.d.ts:930) —
-            // unset by every builtin catalog model but carryable by user
-            // models.json entries; stripping it silently changed sampling
-            // behavior on round-trip (roborev review round, MEDIUM).
-            ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
-          }));
-          // Note: EVERY field above is a conditional spread — the round-trip
-          // emits exactly the fields the pi-known model carries, nothing else.
-          // That keeps non-chat models (0.99.1 image/classifier, which lack
-          // reasoning/contextWindow/maxTokens) byte-for-byte and does not add
-          // explicit-undefined keys to any model.
-
-        (pi as any).registerProvider(provId, {
-          baseUrl: def.baseUrl,
-          apiKey,
-          api: def.api,
-          models: [
-            ...existingModels,
-            // B1: use REAL per-model capabilities from the scan, with conservative
-            // defaults when the provider didn't report a field. Previously every
-            // model got reasoning:true + input:['text','image'] + 200k ctx — which
-            // falsely advertised vision on glm-5-2 (causing 422) and a wrong ctx
-            // window on every model. Now: vision only when the provider confirms
-            // it (default false — never claim what we don't know), reasoning only
-            // when confirmed, contextWindow/maxTokens only when reported (Pi's
-            // own defaults apply otherwise, which are saner than our old 200k/64k).
-            ...newModels.map((m) => {
-              const caps = m.capabilities ?? {};
-              const input: string[] = caps.vision === true ? ['text', 'image'] : ['text'];
-              const costPerM = getCostPerM(m);
-              const entry: Record<string, unknown> = {
-                id: m.id,
-                name: `${provId}/${m.id}`,
-                reasoning: caps.reasoning === true,
-                input,
-                cost: { input: costPerM, output: costPerM, cacheRead: 0, cacheWrite: 0 },
-              };
-              if (typeof caps.contextWindow === 'number') entry.contextWindow = caps.contextWindow;
-              if (typeof caps.maxTokens === 'number') entry.maxTokens = caps.maxTokens;
-              return entry;
-            }),
-          ],
-        });
-      } catch (err) {
-        // Never fatal (scan-discovered models are an optimization), but a
-        // silently-swallowed throw here means scan discovery silently stops
-        // working — log it so the Task-4 post-restart /router scan check can
-        // see it in router.log (ADR-0019).
-        routerLog(`[scan-union] registerProvider(${provId}) failed: ${String(err)}`);
-      }
-    }
+  async function registerGroupModels(ctx: any) {
+    // ADR-0021 (2026-10-02): the router NEVER registers models — or
+    // providers — Pi does not already know. This block used to be the
+    // scan-union: it resolved keys, round-tripped Pi's own registered models
+    // (Ü1 / ADR-0019 field allow-list), and registered the scan-discovered
+    // rest under PROVIDER_MAP's api (openai-completions for mistral). That
+    // added 29 Mistral models Pi's catalog does not ship — including OCR and
+    // audio models registered as chat models — and was the root cause of the
+    // Mistral 422 "store" rejections. Pi's registry is the single source of
+    // truth for the cloud inventory; the scan now only enriches data
+    // (gdpval, pricing, local capabilities) for refs Pi can resolve.
+    // Everything that made re-registration "safe" (Ü1 round-trip, roborev
+    // 425/426/649 wipes, ADR-0019 non-chat preservation) retired with it.
 
     // Ollama registration. Ollama defaults to num_ctx=32768 when the request
     // omits options.num_ctx; many models support far more (qwen3.5→262K,
@@ -3493,15 +3238,15 @@ async function registerGroupModels(ctx: any) {
     }
 
     // F11 (2026-09-02): refresh the metrics module's view of pi's registered
-    // providers after registration. registerGroupModels may have added new
-    // providers via pi.registerProvider (e.g. mistral-zai, chutes) that
-    // weren't in getRegisteredProviderIds() at session_start — stripProvider
-    // needs to recognize them too.
+    // providers after registration. registerGroupModels may have registered
+    // the LOCAL Ollama provider, and registerGroupProviders the router's
+    // virtual group providers — stripProvider needs to recognize them too.
+    // (ADR-0021: no cloud provider is registered here anymore.)
     try {
       const ids = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
       setPiRegisteredProviders(ids);
-      // Refresh the registry handle too — registerGroupModels above may have
-      // registered new providers whose `Model.cost` we now want to read.
+      // Refresh the registry handle too — the registrations above may have
+      // added providers whose `Model.cost` we now want to read.
       setModelRegistry((ctx as any).modelRegistry);
     } catch {
       /* registry may not expose getRegisteredProviderIds — leave the existing set */

@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted (2026-09-30)
+Accepted (2026-09-30). **Superseded in part by ADR-0021 (2026-10-02)**: the
+scan-union registration this ADR's round-trip machinery protected has been
+removed — the router no longer registers scan-discovered models, so the
+typed-model preservation round-trip is retired. This ADR's documentation of
+Pi 0.99.1's layered registry composition remains valid and authoritative.
 
 ## Context
 

@@ -291,28 +291,6 @@ export const PI_BUILTIN_PROVIDER_IDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Providers that must NOT be auto-registered. This covers:
- * - built-in Pi providers (anthropic, openai, google)
- * - providers registered by extensions (ollama, lm-studio, claude-bridge, etc.)
- *
- * The router only registers providers Pi does not already know
- * (e.g. OpenRouter for free models).
- */
-export const SKIP_REGISTRATION = new Set([
-  // Built-in Pi providers
-  'anthropic',
-  'openai',
-  'google',
-  // Extension-based providers (user must install extensions separately)
-  'qwen-cli',
-  'gemini-cli',
-  'ollama',
-  'lm-studio',
-  'antigravity',
-  'claude-bridge',
-]);
-
-/**
  * Suffixes stripped during model-id normalization
  */
 export const STRIP_SUFFIXES = [
