@@ -135,6 +135,7 @@ import { checkReadBlock, executeBulkRead, resolveReadBlockStreamRef } from './sr
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 import { createContextUtils } from './src/context-utils.ts';
 import { createLimitGlue } from './src/limit-glue.ts';
+import { createModelResolveGlue } from './src/model-resolve-glue.ts';
 
 /**
  * Fingerprint of the config inputs that legitimately change how many models a
@@ -270,6 +271,17 @@ let previousTokenCount = 0;
     get rateLimitManager() { return rateLimitManager; },
     get scheduleSessionErrorSave() { return scheduleSessionErrorSave; },
     get updateErrorStatusLine() { return updateErrorStatusLine; },
+  });
+
+  const { resolve, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
+    get cache() { return cache; },
+    get costMux() { return costMux; },
+    get discoveryManager() { return discoveryManager; },
+    get effCost() { return effCost; },
+    get getM() { return getM; },
+    get isLimited() { return isLimited; },
+    get limitSecs() { return limitSecs; },
+    get router() { return router; },
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────
@@ -1372,82 +1384,6 @@ let previousTokenCount = 0;
     } catch (error) {
       routerLog('[router] Error generating dynamic configuration:', error);
     }
-  }
-
-  // ── Resolution ─────────────────────────────────────────────────────────
-
-  // ── Auto-discovery ────────────────────────────────────────────────────
-
-  /** All known model refs: auto-discovered + any pinned models in group config */
-  function allDiscoveredRefs(): string[] {
-    return router.allDiscoveredRefs();
-  }
-
-  /** Get billing tier for a model ref: 0=free, 1=subscription, 2=local, 3=payg */
-
-  /** Check provider key health: "valid" if key exists and not exhausted, "exhausted" if all keys spent, "unchecked" if no keys configured */
-  function providerKeyHealth(prov: string): 'valid' | 'exhausted' | 'unchecked' {
-    return discoveryManager.providerKeyHealth(prov, cache.exhausted_keys);
-  }
-
-  /** Filter to available models (not rate-limited, healthy provider keys) */
-  /** Filter by minimum gdpval percentile (0-100). Keeps models at or above the percentile threshold. */
-  /** Filter by absolute minimum gdpval score. Falls back to all refs if none qualify. */
-  /**
-   * Sort by billing preference: free → subscription (by rate-limit pressure & cost) → local → PAYG (by cost)
-   * Within each tier, sort by effective cost. Subscription also considers rate-limit pressure.
-   */
-
-  function resolve(name: string): { selected: string; candidates: string[] } | null {
-    return router.resolve(name);
-  }
-
-
-
-  // ── Format ─────────────────────────────────────────────────────────────
-
-  function fmtModel(ref: string, i: number, sel: boolean) {
-    const m = getM(ref),
-      prov = ref.split('/')[0],
-      mux = costMux(prov);
-    // Billing label now derives from billingTier() (single source of truth).
-    // Previously this inlined `cfg.providers?.[prov]?.billing === 'subscription'`,
-    // which IGNORED PROVIDER_MAP built-in defaults — a built-in subscription
-    // provider without a user config entry would display as 'ppt' instead of
-    // 'sub'. Also, 'free' only checked cost_per_m===0, missing the :free tag
-    // and the free_models config list. billingTier() unifies all three.
-    const tier = metricsModule.billingTier(ref);
-    const billing = tier === 1 ? 'sub' : tier === 0 ? 'free' : 'ppt';
-    const muxS = mux > 1 ? ` ×${mux}` : '';
-    const rl = isLimited(ref) ? ` ⛔${limitSecs(ref)}s` : '';
-    const cost = effCost(ref);
-    const costStr = cost === 'unknown' ? 'unknown' : cost.toFixed(3);
-    
-    // Add budget info for subscription providers
-    const budgetInfo = cache.budget_cache?.[prov];
-    let budgetStr = '';
-    if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
-      const now = Date.now();
-      if (now < budgetInfo.window_reset) {
-        const remaining = budgetInfo.remaining_tokens;
-        const windowType = budgetInfo.window_type ?? 'monthly';
-        budgetStr = ` bud:${Math.round(remaining)}${windowType.substring(0, 1)}`;
-      }
-    }
-    
-    return `${i + 1}. ${ref}  gdp:${m.gdpval}  tps:${Math.round(m.throughput_tps)}  eff:$${costStr}/M  [${billing}${muxS}]${rl}${budgetStr}${sel ? ' ←' : ''}`;
-  }
-
-  // Get top N models for a group, including rate-limited ones (for display)
-  function getTopModels(
-    groupName: string,
-    n: number
-  ): { models: { ref: string; limited: boolean; rank: number }[]; total: number } {
-    return router.getTopModels(groupName, n);
-  }
-
-  function detectGroup(ref: string): string | null {
-    return router.detectGroup(ref);
   }
 
   /**

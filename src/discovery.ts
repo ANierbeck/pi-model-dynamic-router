@@ -338,31 +338,6 @@ export class DiscoveryManager {
     }
   }
 
-  // ── Provider Health ─────────────────────────────────────────────────────
-
-  /**
-   * Checks the health status of provider keys
-   */
-  providerKeyHealth(
-    prov: string,
-    exhaustedKeys: Record<string, number> = {}
-  ): 'valid' | 'exhausted' | 'unchecked' {
-    const keys = this.cfg.providers?.[prov]?.keys;
-    if (!keys || keys.length === 0) return 'unchecked';
-
-    const idx = 0; // Default to first key
-    if (exhaustedKeys[`${prov}:${idx}`] && Date.now() < exhaustedKeys[`${prov}:${idx}`]) {
-      // Check if any key is available
-      for (let i = 0; i < keys.length; i++) {
-        if (!exhaustedKeys[`${prov}:${i}`] || Date.now() >= exhaustedKeys[`${prov}:${i}`]) {
-          return 'valid';
-        }
-      }
-      return 'exhausted';
-    }
-    return 'valid';
-  }
-
   // ── Free Models Discovery ────────────────────────────────────────────
 
   /**
