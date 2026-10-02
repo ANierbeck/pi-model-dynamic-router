@@ -11,20 +11,25 @@
  *
  * The fix: merge instead of replace.
  *   - Pi-known Ollama models (models.json / prior registration) are
- *     round-tripped with their typed fields and WIN the normalized-id
- *     dedup (`gemma4` ≡ `gemma4:latest`; tagged variants like
- *     `gemma4:12b-mlx` stay distinct and are added).
- *   - Scan-only models are ADDED with real providerOptions.num_ctx from
- *     /api/show capabilities (this is the only source of the user's
- *     classifier models, e.g. `mistral-nemo:latest`).
+ *     round-tripped AS-IS with their typed fields and WIN the
+ *     normalized-id dedup (`gemma4` ≡ `gemma4:latest`; tagged variants
+ *     like `gemma4:12b-mlx` stay distinct and are added).
+ *   - Scan-only models are ADDED with real contextWindow and
+ *     providerOptions.num_ctx metadata from /api/show capabilities (this
+ *     is the only source of the user's classifier models, e.g.
+ *     `mistral-nemo:latest`). Note (roborev 719): pi-ai 1.0.0 never reads
+ *     a model-level providerOptions at request time — num_ctx is
+ *     forward-compat metadata; contextWindow is the load-bearing field.
  *   - If the registry already knows every scanned model, NO registration
  *     happens at all (idempotent — models.json stays the sole overlay).
  *
  * Tests 1–3 are RED before the fix (the pre-fix guard registered
  * scan-only models and wiped the registry entries); test 4 pins the
- * enrichment (num_ctx from scan capabilities for registry models that
- * lack providerOptions); test 5 pins that user-set providerOptions WIN
- * over scan twin enrichment (never clobbered).
+ * AS-IS round-trip (the enrichment branch from the first fix iteration
+ * was dropped after roborev 719 found model-level providerOptions inert
+ * in pi-ai 1.0.0); test 5 pins that user-set providerOptions WIN over
+ * scan twin enrichment (never clobbered); tests 6–7 pin the empty-registry
+ * branch and the two-session idempotency (the 83× invariant end-to-end).
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -38,7 +43,12 @@ const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'sca
 async function withIsolatedRouter(
   registryModels: any[],
   scanModels: Array<Record<string, unknown>>,
-  fn: (defaultExport: any, tmpDir: string, registerProviderCalls: any[]) => Promise<void>
+  fn: (
+    defaultExport: any,
+    tmpDir: string,
+    registerProviderCalls: any[],
+    fireSessionStart: (registryModels: any[]) => Promise<void>
+  ) => Promise<void>
 ) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ollama-merge-'));
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
@@ -86,20 +96,28 @@ async function withIsolatedRouter(
     };
     mod.default(pi);
 
-    const registry = {
-      getAll: () => registryModels,
+    const makeRegistry = (models: any[]) => ({
+      getAll: () => models,
       getModelsOfType: () => [],
       findOfType: () => null,
-      getAvailable: () => registryModels,
+      getAvailable: () => models,
       find: (provider: string, modelId: string) =>
-        registryModels.find((m: any) => m.provider === provider && m.id === modelId) ?? null,
+        models.find((m: any) => m.provider === provider && m.id === modelId) ?? null,
       getApiKeyForProvider: async () => 'test-key',
       runtime: { streamSimple: vi.fn() },
+    });
+    const ctx: any = {
+      modelRegistry: makeRegistry(registryModels),
+      cwd: tmpDir,
+      ui: { setFooter: vi.fn() },
     };
-    const ctx: any = { modelRegistry: registry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-    await pi._handlers['session_start']?.({}, ctx);
+    const fireSessionStart = async (nextRegistryModels: any[]) => {
+      ctx.modelRegistry = makeRegistry(nextRegistryModels);
+      await pi._handlers['session_start']?.({}, ctx);
+    };
+    await fireSessionStart(registryModels);
     await flushBackgroundScan();
-    await fn(mod.default as any, tmpDir, registerProviderCalls);
+    await fn(mod.default as any, tmpDir, registerProviderCalls, fireSessionStart);
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -163,6 +181,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         // Scan-only models are added (pre-fix they replaced everything).
         const nemo = models.find((m) => m.id === 'mistral-nemo:latest');
         expect(nemo).toBeDefined();
+        expect(nemo.contextWindow).toBe(131_072);
         expect(nemo.providerOptions.num_ctx).toBe(131_072);
 
         // Normalized dedup: the scan's gemma4:latest must NOT add a second
@@ -208,7 +227,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     );
   });
 
-  it('enriches registry models without providerOptions with num_ctx from scan capabilities', async () => {
+  it('round-trips known models AS-IS: no providerOptions is fabricated for them', async () => {
     await withIsolatedRouter(
       [gemma4Registry, qwen35Registry],
       incidentScanModels,
@@ -216,11 +235,13 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
         expect(ollamaCalls).toHaveLength(1);
         const models: any[] = ollamaCalls[0].opts.models;
-        // gemma4 (models.json, no providerOptions) gets the REAL num_ctx
-        // from /api/show via its scan twin — the >32K truncation bug stays
-        // fixed even for user-registered models.
+        // The first fix iteration enriched gemma4 (no providerOptions)
+        // with num_ctx from its scan twin. Roborev 719 verified pi-ai
+        // 1.0.0 never reads a model-level providerOptions at request
+        // time — inert metadata — so the enrichment was dropped: known
+        // models are round-tripped exactly as the user defined them.
         const gemma4 = models.find((m) => m.id === 'gemma4');
-        expect(gemma4.providerOptions).toEqual({ num_ctx: 131_072 });
+        expect(gemma4.providerOptions).toBeUndefined();
       }
     );
   });
@@ -242,8 +263,55 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         const models: any[] = ollamaCalls[0].opts.models;
         const gemma4 = models.find((m) => m.id === 'gemma4');
         // User value WINS, NOT 131_072 from scan capabilities — the
-        // enrichment branch only fires when providerOptions is undefined.
+        // round-trip only copies providerOptions when present.
         expect(gemma4.providerOptions.num_ctx).toBe(9999);
+      }
+    );
+  });
+
+  it('empty registry branch: registers the whole scan inventory with real contextWindow + num_ctx metadata', async () => {
+    await withIsolatedRouter(
+      [], // Pi does not know Ollama at all (no models.json entry)
+      incidentScanModels,
+      async (_defaultExport, _tmpDir, registerProviderCalls) => {
+        const ollamaCalls = registerProviderCalls.filter((c) => c.name === 'ollama');
+        expect(ollamaCalls).toHaveLength(1);
+        const models: any[] = ollamaCalls[0].opts.models;
+        // Every scanned model is registered, each with its real
+        // contextWindow (load-bearing) and num_ctx metadata from caps.
+        expect(models).toHaveLength(incidentScanModels.length);
+        for (const scan of incidentScanModels) {
+          const m = models.find((x: any) => x.id === scan.id);
+          expect(m).toBeDefined();
+          expect(m.contextWindow).toBe((scan.capabilities as any).contextWindow);
+          expect(m.providerOptions.num_ctx).toBe((scan.capabilities as any).contextWindow);
+        }
+      }
+    );
+  });
+
+  it('is idempotent across two session_starts: the merged registration feeds back as the next registry', async () => {
+    await withIsolatedRouter(
+      [gemma4Registry],
+      [
+        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+      ],
+      async (_defaultExport, _tmpDir, registerProviderCalls, fireSessionStart) => {
+        // First session_start merged (gemma4 known, nemo new): 1 call.
+        expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
+        const firstModels: any[] = registerProviderCalls.find(
+          (c) => c.name === 'ollama'
+        ).opts.models;
+
+        // What a second session_start (or /reload) in the SAME process
+        // sees: getAll() now reports the merged list — registry feedback.
+        await fireSessionStart(
+          firstModels.map((m: any) => ({ ...m, provider: 'ollama' }))
+        );
+
+        // The 83× invariant: still exactly ONE registration in total.
+        expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
       }
     );
   });

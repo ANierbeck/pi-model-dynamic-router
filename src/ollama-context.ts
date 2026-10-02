@@ -13,6 +13,16 @@
 // sent. The router registers Ollama (only when Pi doesn't know it — see Ü1)
 // with providerOptions.num_ctx per model.
 //
+// METADATA ONLY (roborev 719, verified against pi-ai 1.0.0 dist): pi-ai
+// never reads a model-level `providerOptions` at request time — the field
+// sits on the registered model but is NOT forwarded to Ollama. The
+// load-bearing part of this registration is `contextWindow`: Pi uses it
+// for compaction, overflow avoidance and candidate filtering. The num_ctx
+// metadata is forward-compat: correct /api/show values for the day pi-ai
+// forwards model-level providerOptions. Ollama's server-side truncation is
+// governed by OLLAMA_CONTEXT_LENGTH / Modelfile PARAMETER num_ctx, outside
+// the router's reach.
+//
 // SOURCE: the REAL context length is queried live from Ollama's /api/show
 // endpoint (model_info.*.context_length) by the scan, and stored in
 // cache.available_models[].capabilities.contextWindow. This module reads

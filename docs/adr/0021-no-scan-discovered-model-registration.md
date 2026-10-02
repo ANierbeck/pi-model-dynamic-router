@@ -109,13 +109,16 @@ Every one of these guarded a call that should not exist.
   ids against tag-suffixed scan ids (`gemma4` vs `gemma4:latest`), so a Pi
   registration the router should have respected was silently replaced every
   session (83× in the live logs). The Ollama registration is now a MERGE:
-  pi-known models (models.json) are round-tripped with their typed fields
-  and win the normalized-id dedup (`gemma4` ≡ `gemma4:latest`, tagged
-  variants stay distinct), scan-only models are added with real num_ctx
-  (the only source of the classifier models), pi-known models without
-  providerOptions are enriched with num_ctx from their scan twin, and if
-  the registry already knows every scanned model nothing is registered at
-  all. Pinned by test/ollama-merge-registration.test.ts.
+  pi-known models (models.json) are round-tripped AS-IS with their typed
+  fields (a user-set providerOptions is preserved, never overwritten) and
+  win the normalized-id dedup (`gemma4` ≡ `gemma4:latest`, tagged variants
+  stay distinct), scan-only models are added with real `contextWindow`
+  (the load-bearing field for Pi-side compaction/overflow; providerOptions.
+  num_ctx is forward-compat metadata — pi-ai 1.0.0 never reads a
+  model-level providerOptions at request time, roborev 719) — the only
+  source of the classifier models — and if the registry already knows
+  every scanned model nothing is registered at all. Pinned by
+  test/ollama-merge-registration.test.ts.
 - **`registerFreeModelOnDemand`** stays: it acts only on explicitly configured
   `free_models` (user intent, not scan discovery), and on 0.99.1 it never
   fires for builtin-catalog providers (`getRegisteredProviderIds` includes

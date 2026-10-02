@@ -122,14 +122,17 @@
   the scan's flat versions. The registration is now a MERGE: pi-known
   models are round-tripped with their typed fields and win the
   normalized-id dedup (`gemma4` ≡ `gemma4:latest`; tagged variants like
-  `gemma4:12b-mlx` stay distinct), scan-only models are added with real
-  `providerOptions.num_ctx` from `/api/show` (the classifier models
-  `ollama/mistral-nemo:latest` / `ollama/gemma2:2b` live in neither Pi's
-  catalog nor models.json and would otherwise vanish), pi-known models
-  without providerOptions are enriched with num_ctx from their scan twin,
-  and when the registry already knows every scanned model nothing is
-  registered at all. Found during the ADR-0021 investigation;
-  pinned by `test/ollama-merge-registration.test.ts`.
+  `gemma4:12b-mlx` stay distinct), scan-only models are added with the real
+  `contextWindow` from `/api/show` (the load-bearing field for Pi-side
+  compaction/overflow; the classifier models `ollama/mistral-nemo:latest`
+  / `ollama/gemma2:2b` live in neither Pi's catalog nor models.json and
+  would otherwise vanish), user-set providerOptions are preserved as-is
+  (an enrichment branch was dropped after roborev 719 verified pi-ai 1.0.0
+  never reads a model-level providerOptions at request time — num_ctx on
+  registered models is forward-compat metadata), and when the registry
+  already knows every scanned model nothing is registered at all. Found
+  during the ADR-0021 investigation; pinned by
+  `test/ollama-merge-registration.test.ts`.
 - **The 1.5.4 router-narration lock-in fix was incomplete** (`80f60ab`):
   it only stripped `> [router] ...` inside `extractLastAssistantSnippet()`;
   `extractLastUserPrompt()` (index.ts) and

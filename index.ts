@@ -3202,11 +3202,31 @@ let previousTokenCount = 0;
     // /api/show (see src/ollama-context.ts + src/capabilities.ts) — no
     // hardcoded table, no dependency on any specific Ollama extension.
     //
-    // KNOWN EFFECT: if some OTHER extension registered Ollama WITHOUT
-    // num_ctx, its models get the real num_ctx from their scan twin in the
-    // merge (enrichment, not overwrite). The proper place for Ollama models
-    // the user wants Pi to know statically is models.json — the merge keeps
-    // those entries alive and authoritative.
+    // METADATA ONLY (roborev 719, verified against pi-ai 1.0.0 dist): pi-ai
+    // never reads a model-level `providerOptions` field at request time —
+    // only `samplingParams` reaches the request body. So providerOptions.
+    // num_ctx on registered models is FORWARD-COMPAT METADATA (correct
+    // values from /api/show for the day pi-ai forwards them), not a runtime
+    // knob. What IS load-bearing at runtime is the `contextWindow` field:
+    // Pi uses it for compaction, overflow avoidance ('context window
+    // 32768 < 35514 tokens needed') and candidate filtering. Ollama's own
+    // server-side truncation is governed by OLLAMA_CONTEXT_LENGTH /
+    // Modelfile PARAMETER num_ctx — outside the router's reach (owner
+    // decision if that ever needs raising).
+    //
+    // KNOWN LIMITATIONS (roborev 719):
+    //   - the registration pins apiKey 'ollama' + http://localhost:11434/v1;
+    //     a models.json ollama provider with a DIFFERENT baseUrl/apiKey
+    //     would be overridden on the merge path. Accepted: the scan only
+    //     ever inventories localhost:11434, so remote/proxy Ollama setups
+    //     were never routable through this block anyway.
+    //   - once registered, a scan-only model stays registered for the
+    //     process lifetime even if it is deleted from Ollama (the next
+    //     scan drops it from the cache, but getAll() keeps reporting the
+    //     old entry until pi restarts).
+    //   - after a merge the extension overlay owns the ollama model list,
+    //     so hand-edits to models.json ollama models are masked until the
+    //     next pi restart (the overlay wins over the re-read models.json).
     //
     // GUARD FIX (2026-10-02, owner decision on the defect found during the
     // ADR-0021 investigation): the old guard compared TAGGED scan ids
@@ -3221,13 +3241,15 @@ let previousTokenCount = 0;
     //   - pi-known Ollama models are round-tripped with their typed fields
     //     and WIN the normalized-id dedup (`gemma4` ≡ `gemma4:latest`;
     //     tagged variants like `gemma4:12b-mlx` stay distinct and are added),
-    //   - scan-only models are ADDED with real providerOptions.num_ctx —
-    //     this registration is the ONLY source of the user's classifier
-    //     models (e.g. `ollama/mistral-nemo:latest`), which live in neither
-    //     Pi's catalog nor models.json,
-    //   - registry models without providerOptions are ENRICHED with num_ctx
-    //     from their scan twin's /api/show capabilities (the >32K truncation
-    //     bug stays fixed even for user-registered models),
+    //   - scan-only models are ADDED with real contextWindow (Pi-side
+    //     compaction/overflow correctness) and providerOptions.num_ctx
+    //     metadata — this registration is the ONLY source of the user's
+    //     classifier models (e.g. `ollama/mistral-nemo:latest`), which live
+    //     in neither Pi's catalog nor models.json. Known models are
+    //     round-tripped AS-IS (a user-set providerOptions is never
+    //     overwritten — roborev 719 found model-level providerOptions
+    //     inert in pi-ai 1.0.0, so an enrichment branch would be dead
+    //     weight; dropped rather than kept inconsistent),
     //   - if the registry already knows every scanned model, NOTHING is
     //     registered (idempotent — models.json stays the sole overlay).
     try {
@@ -3269,8 +3291,6 @@ let previousTokenCount = 0;
         // are the user's intent). Other tags are genuinely different models.
         const normId = (id: string): string =>
           id.endsWith(':latest') ? id.slice(0, -':latest'.length) : id;
-        const scanByNorm = new Map<string, { capabilities?: { contextWindow?: number; maxTokens?: number } }>();
-        for (const m of ollamaModels) scanByNorm.set(normId(m.id), m);
         const knownByNorm = new Map<string, any>();
         for (const m of piKnownModels) knownByNorm.set(normId(m.id), m);
         const newScanModels = ollamaModels.filter((m) => !knownByNorm.has(normId(m.id)));
@@ -3286,12 +3306,12 @@ let previousTokenCount = 0;
             api: 'openai-completions',
             models: providerModels,
           });
-          routerLog(`[router] Registered Ollama with providerOptions.num_ctx for ${providerModels.length} model(s) (Pi did not know Ollama)`);
+          routerLog(`[router] Registered Ollama with real contextWindow (+ num_ctx metadata) for ${providerModels.length} model(s) (Pi did not know Ollama)`);
         } else if (newScanModels.length > 0) {
-          // MERGE: round-trip pi-known models (ADR-0019 field allow-list —
-          // applyExtension would otherwise drop the models.json entries),
-          // enriching the ones without providerOptions with the real
-          // num_ctx from their scan twin, then add the scan-only models.
+          // MERGE: round-trip pi-known models AS-IS (ADR-0019 field
+          // allow-list — applyExtension would otherwise drop the
+          // models.json entries; a user-set providerOptions is preserved,
+          // never enriched/overwritten), then add the scan-only models.
           const existingModels = piKnownModels.map((m: any) => ({
             id: m.id,
             name: m.name,
@@ -3310,11 +3330,7 @@ let previousTokenCount = 0;
             ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
             ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
             ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
-            ...(m.providerOptions !== undefined
-              ? { providerOptions: m.providerOptions }
-              : scanByNorm.get(normId(m.id))?.capabilities?.contextWindow !== undefined
-                ? { providerOptions: { num_ctx: scanByNorm.get(normId(m.id))!.capabilities!.contextWindow } }
-                : {}),
+            ...(m.providerOptions !== undefined ? { providerOptions: m.providerOptions } : {}),
           }));
           const providerModels = [
             ...existingModels,
@@ -3327,7 +3343,7 @@ let previousTokenCount = 0;
             api: 'openai-completions',
             models: providerModels,
           });
-          routerLog(`[router] Merged Ollama registration: kept ${existingModels.length} pi-known model(s), added ${newScanModels.length} scan-only model(s) with providerOptions.num_ctx`);
+          routerLog(`[router] Merged Ollama registration: kept ${existingModels.length} pi-known model(s), added ${newScanModels.length} scan-only model(s)`);
         }
         // else: the registry already knows every scanned model — register
         // NOTHING (pre-fix this re-registered and wiped models.json).
