@@ -36,8 +36,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import { routerLog } from './logger.ts';
-import type { Metrics, Config, Cache, Group, ModelRef } from './types.ts';
-import { norm, stripDateSuffix, baseTokens, splitRef } from './utils.ts';
+import type { Metrics, Config, Cache } from './types.ts';
+import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug } from './slug-matcher.ts';
 
@@ -740,9 +740,9 @@ export function isFreeModelRef(
  * 0=free, 1=subscription, 2=local, 3=payg
  *
  * SINGLE SOURCE OF TRUTH for "which billing tier does this model belong to".
- * fmtModel (display), hasModelBudget (budget check), sortByBillingPreference
- * (routing) MUST all go through here so
- * they can never disagree on whether a model is free/subscription/local/payg.
+ * fmtModel (display) and sortByBillingPreference (routing) MUST both go
+ * through here so they can never disagree on whether a model is
+ * free/subscription/local/payg.
  *
  * "Free" (tier 0) uses isFreeModelRef for the :free tag + free_models list +
  * discovered cost_per_m===0 checks (but NOT the local-provider case, since

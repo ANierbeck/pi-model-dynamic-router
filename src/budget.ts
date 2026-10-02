@@ -1,12 +1,20 @@
 // src/budget.ts
 // Single source of truth for "does this model still have subscription budget?"
 //
-// PREVIOUSLY this decision was implemented TWICE with identical logic:
-//   - hasModelBudget (index.ts)        — used by the /router display + driveStream
-//   - filterByBudget  (routing.ts)     — used by group resolution
-// Two implementations of the same rule is a maintenance hazard: a fix in one
-// path silently doesn't apply to the other. Both now delegate to hasBudget()
-// here, so the rule lives in exactly one place.
+// PREVIOUSLY this decision was implemented TWICE with identical logic
+// (hasModelBudget in index.ts and filterByBudget in routing.ts). The rule now
+// lives here only; routing.ts's filterByBudget delegates to hasBudget(). The
+// index.ts copy had no callers left and was deleted in the index.ts refactor
+// (2026-10-02).
+//
+// There is no live-refresh path: no subscription provider (Claude Pro/Max via
+// claude-bridge, or any other) exposes a documented API to query remaining
+// quota. See docs/adr/0003-reject-live-subscription-usage-api.md for why this
+// was investigated and rejected rather than built. hasBudget() reads whatever
+// is in cache.budget_cache (currently always empty, so subscription providers
+// are treated as available — the same as pay-per-token providers) and relies
+// on RateLimitManager's reactive cooldowns to react once a provider actually
+// reports a rate limit.
 //
 // Rule (authoritative): a model has budget iff
 //   - its provider is local (ollama, lm-studio) OR

@@ -1,5 +1,4 @@
 // src/content-classifier.ts
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
@@ -433,7 +432,6 @@ export async function classifyPrompt(
     cache,
     completeSimple,
     findModel,
-    availableModels,
     pinnedCloudModel,
   } = options;
 
@@ -1031,48 +1029,4 @@ export function classifyStatically(prompt: string): ClassificationResult {
     reason: 'Could not classify - fallback',
     confidence: 0.5,
   };
-}
-
-// ── PI Integration (legacy hook) ─────────────────────────────────────────
-
-interface ExtensionAPIWithHooks extends ExtensionAPI {
-  hooks: {
-    before_user_prompt: (
-      callback: (args: { prompt: string; context: any }) => Promise<void>
-    ) => void;
-  };
-}
-
-export function setupContentBasedRouting(pi: ExtensionAPI) {
-  const piWithHooks = pi as unknown as ExtensionAPIWithHooks;
-  const piWithTools = pi as unknown as {
-    tools: { resolve_model_group: { execute: (params: { group: string }) => Promise<any> } };
-  };
-  
-  // Helper function to apply model group resolution
-  async function applyModelGroup(group: string, context: any): Promise<void> {
-    const toolResult = await piWithTools.tools.resolve_model_group.execute({ group });
-    if (toolResult?.details?.selected) {
-      const { provider, modelId } = toolResult.details;
-      const model = context.modelRegistry.find(provider, modelId);
-      if (model) await pi.setModel(model);
-    }
-  }
-  
-  piWithHooks.hooks.before_user_prompt(
-    async ({ prompt, context }: { prompt: string; context: any }) => {
-      const classification = await classifyPrompt(prompt);
-      // Handle HINT classification
-      if ('hintType' in classification) {
-        // HINT overrides are not supported in this hook context
-        routerLog('[classifier] HINT override not supported in hook context, falling back to static classification');
-        const staticResult = classifyStatically(prompt);
-        const group = CATEGORY_TO_GROUP[staticResult.category];
-        await applyModelGroup(group, context);
-        return;
-      }
-      const group = CATEGORY_TO_GROUP[classification.category];
-      await applyModelGroup(group, context);
-    }
-  );
 }

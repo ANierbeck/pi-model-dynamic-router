@@ -7,25 +7,18 @@ import type {
   Config,
   Cache,
   RateLimit,
-  Metrics,
   ModelWithLimits,
   GroupResolution,
 } from './types.ts';
-import { splitRef, norm, baseTokens } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, costMux, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { demoteUnhealthy } from './model-health.ts';
-import { hasBudget } from './budget.ts';
+import { filterByBudget } from './budget.ts';
 import { isRefLimited, refLimitSecs } from './rate-limit.ts';
-import { getGroupForCategory } from './content-classifier.ts';
-
-// ── Constants ────────────────────────────────────────────────────────────
-
-const SUB_DISCOUNT = 0.5; // Subscription discount factor
 
 /**
  * Pick ONE representative ref per GDPval-slug cluster, in first-occurrence
@@ -541,7 +534,7 @@ export class Router {
     
     // Also include free models from configuration (e.g., openrouter free tier)
     // These might not be in the registry but are available via the provider
-    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
+    for (const provConfig of Object.values(this.cfg.providers ?? {})) {
       if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
         for (const freeModel of provConfig.free_models) {
           refs.add(freeModel);
@@ -598,12 +591,8 @@ export class Router {
    */
   filterByBudget(refs: string[]): string[] {
     // Delegate to the single source of truth in budget.ts.
-    // Previously this duplicated hasModelBudget (index.ts) with identical logic;
-    // both now go through hasBudget() so the rule lives in one place.
     if (!this.cache.budget_cache) return refs;
-    return refs.filter((ref) =>
-      hasBudget(ref, this.cfg.providers, this.cache.budget_cache)
-    );
+    return filterByBudget(refs, { providers: this.cfg.providers, budget_cache: this.cache.budget_cache });
   }
 
   /**

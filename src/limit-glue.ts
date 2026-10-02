@@ -54,8 +54,6 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return d.discoveryManager.resolveKeyValue(key) ?? key;
   }
 
-  /** Try rotating to next available key for provider. Returns true if switched. */
-
   function costMux(prov: string) {
     return d.rateLimitManager.costMux(prov);
   }

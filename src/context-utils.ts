@@ -234,30 +234,5 @@ export function createContextUtils(d: ContextUtilsDeps) {
     return undefined;
   }
 
-  /**
-   * The user message BEFORE the current prompt (i.e. the second-to-last user
-   * message), for the classifier's context block. Distinct from
-   * extractLastUserPrompt(), which returns the CURRENT prompt being classified.
-   */
-  function extractPreviousUserMessage(context: Context): string | undefined {
-    try {
-      const userMsgs = context.messages.filter((m) => m.role === 'user');
-      const prev = userMsgs[userMsgs.length - 2];
-      if (!prev) return undefined;
-      const c = prev.content;
-      if (typeof c === 'string') return c.slice(0, 150);
-      if (Array.isArray(c)) {
-        const textContent = c
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text as string)
-          .join('');
-        return textContent.slice(0, 150);
-      }
-    } catch {
-      /* context shape unknown */
-    }
-    return undefined;
-  }
-
   return { estimateContextTokens, getModelContextWindow, updateModelContextWindow, getEmptyResponseTimeout, getStallTimeout, getRateLimitWaitMaxMs, extractLastUserPrompt, extractLastAssistantSnippet, isCompactionTurn };
 }

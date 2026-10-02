@@ -392,6 +392,4 @@ export function createCommands(rt: CommandDeps) {
       }
     },
   });
-
-  return {  };
 }

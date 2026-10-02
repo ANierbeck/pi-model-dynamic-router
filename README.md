@@ -693,7 +693,6 @@ watchdog wedge events and classifier health.
 The **`dynamic`** group uses the following internal tools:
 - **`classifyPrompt`**: Classifies user prompts into categories (via Ollama).
 - **`getGroupForCategory`**: Maps categories to model groups.
-- **`setupContentBasedRouting`**: PI hook for real-time classification and model switching.
 
 ## Footer
 

@@ -87,6 +87,15 @@
   state, `load()`/`loadCache()` and `buildOrchestratorContext()`; the
   final session_shutdown stays last. No behavior change — tsc clean and
   the full suite (1114 tests) stayed green after every task.
+- **Removed the legacy `setupContentBasedRouting()` hook** from
+  `src/content-classifier.ts`: it attached to a `pi.hooks.before_user_prompt`
+  API that Pi does not provide, nothing imported it, and it was the only
+  `pi.setModel()` call outside the user-invoked `set_model_from_group` tool,
+  which contradicts the "router never switches the session model" invariant.
+  A new static guard (`test/no-router-setmodel-static.test.ts`) now fails
+  on any other `setModel()` call site in production code. Also removed
+  dead helpers left behind after the refactor (`hasModelBudget`,
+  a module-local `extractPreviousUserMessage` copy, stale comments).
 - **The router no longer registers scan-discovered models (ADR-0021)**:
   the scan-union (the 2026-09-02 F4 fix) registered every scan-discovered
   model into Pi's registry under PROVIDER_MAP's API. For mistral alone that

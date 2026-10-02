@@ -1,13 +1,12 @@
 /**
  * Model scan pipeline, extracted from index.ts (refactor plan
  * 2026-10-02, task 4): populateLlmMatches (LLM-based gdpval matching for
- * unscored refs), hasModelBudget, extractGdpvalScores (Artificial Analysis
+ * unscored refs), extractGdpvalScores (Artificial Analysis
  * HTML/JSON), fetchJson, and scan() itself. cfg/scanning are reached as
  * live accessors — the plan's 'cfg passed as a getter' rule. Pure code
  * motion; function bodies unchanged.
  */
 
-import { hasBudget } from './budget.ts';
 import { extractCapabilities } from './capabilities.ts';
 import { probeAndCache } from './classifier-fallback-probe.ts';
 import { type LocalLlmDeps, callLocalLlm } from './local-llm.ts';
@@ -138,27 +137,6 @@ export function createScanRunner(rt: ScanRunnerDeps) {
   }
 
   // fmt/fmtTime: delegate to utils.ts, the single implementation.
-
-  // ── Budget Tracking ─────────────────────────────────────────────────────
-  //
-  // There is no live-refresh path here: no subscription provider (Claude Pro/
-  // Max via claude-bridge, or any other) exposes a documented API to query
-  // remaining quota. See docs/adr/0003-reject-live-subscription-usage-api.md
-  // for why this was investigated and rejected rather than built. hasBudget()
-  // reads whatever is in cache.budget_cache (currently always empty, so
-  // subscription providers are treated as available — the same as
-  // pay-per-token providers) and relies on RateLimitManager's reactive
-  // cooldowns to react once a provider actually reports a rate limit.
-
-  /**
-   * Check if a model has available budget (synchronous, uses cache)
-   */
-  function hasModelBudget(ref: string): boolean {
-    // Delegate to the single source of truth in budget.ts.
-    // Previously this duplicated filterByBudget (routing.ts) with identical logic;
-    // both now go through hasBudget() so the rule lives in one place.
-    return hasBudget(ref, rt.cfg.providers, rt.cache.budget_cache);
-  }
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
 

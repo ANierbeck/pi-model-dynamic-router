@@ -367,6 +367,4 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     if (++turns % 10 === 0) rt.saveCache();
   });
   rt.pi.on('session_shutdown', async () => rt.saveCache());
-
-  return {  };
 }

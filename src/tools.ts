@@ -222,8 +222,4 @@ export function createTools(rt: ToolDeps) {
       };
     },
   });
-
-  // ── Virtual model groups: register as real pi models ──────────────────
-
-  return {  };
 }

@@ -277,6 +277,40 @@ Sensitive: `test/cost-report.test.ts`, `test/version.test.ts`, and any
 
 ---
 
+## Implementation notes — deviations as executed (2026-10-02)
+
+All 12 tasks landed (`5302153`..`96d415f`); index.ts went from 3749 to
+641 lines. Where the execution differs from the task text above:
+
+- **Factory naming (all tasks).** Every module exports `createX(deps)`
+  instead of `registerX(pi, runtime)`. Deps are wired as live getters (plus
+  setters for state the moved code writes), so no module captures a stale
+  value of a `let` binding in index.ts.
+- **Task 9: session-error helpers stay in index.ts.** The block inventory
+  above names `src/session-errors-glue.ts` as the target for
+  `updateErrorStatusLine` / `scheduleSessionErrorSave`. That module was
+  never created: both helpers close over `statusUpdater`,
+  `sessionErrorSaveTimer`, `sessionStart` and `saveCache`, and are consumed
+  by limit-glue and event-handlers, so they stay in index.ts as shared
+  wiring and reach both factories via getters. index.ts is well under the
+  size target with them.
+- **Task 9: the final `session_shutdown` is not inside the factory.** The
+  task text asks for `session_shutdown` to be the last registration inside
+  `registerEventHandlers`. The handler that resets the session anchor, and
+  the process-exit/signal cleanup, were registered at the very bottom of the
+  original index.ts, after the tools and the `/router` command. They stay
+  there so the relative handler order is unchanged. The cache-saving
+  `session_shutdown` handler moved into `src/event-handlers.ts` in its
+  original position.
+- **Task 11: the `/router` handler moved as one unit.** It was not split
+  into one function per subcommand. The subcommand if-chain moved as pure
+  code motion, which keeps the output byte-identical with no further
+  verification. The split remains possible as a separate follow-up
+  (documented in the `src/commands.ts` header).
+
+Task 7 follows the plan as written (one unit; the functions form a call
+cycle).
+
 ## Verification commands (every task)
 
 ```bash
