@@ -183,8 +183,10 @@ extensions) is the single source of truth for the cloud model inventory; the
 router only enriches and uses what Pi already resolves (GDPval, pricing,
 capabilities). New provider models become routable when Pi ships them (or via
 `models.json`), not before; provider keys must live where Pi resolves them
-(`auth.json` / `models.json`) — router-config keys alone no longer make a
-provider routable.
+(`auth.json` / `models.json`) — for scan-discovered models, router-config keys
+alone no longer make a provider routable (the configured-`free_models` row
+below is the explicit exception: on-demand registration resolves its key
+from the provider config).
 
 What the router still registers (ADR-0021 out-of-scope decisions):
 

@@ -63,7 +63,13 @@ Every one of these guarded a call that should not exist.
    - the classifier-fallback probe skips refs `find()` cannot resolve,
    - live candidate resolution is registry-first (`allDiscoveredRefs`,
      which falls back to `cache.available_models` only when no
-     `modelRegistry` is in scope — the same filter chain still applies).
+     `modelRegistry` is in scope — in that branch the streamability filter
+     cannot run (no registry to query), so only the exclude / virtual-group
+     / scopedModels guards apply; structurally the fallback refs must still
+     be members of a generated-config group, and group membership already
+     passed the persist-path registry filter. The path is practically
+     unreachable in a live session, where `modelRegistry` is always in
+     scope, and is unchanged by this ADR).
    No separate "Pi-known" filter is needed — the existing defenses already
    key on Pi's registry; the union registration was the only thing that made
    scan-only refs resolvable.
