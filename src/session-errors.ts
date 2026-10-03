@@ -116,13 +116,24 @@ function fmtModel(ref: string, width: number): string {
  * entries follow; older persisted entries appear below a divider (history
  * context without breaking correlation).
  */
-export function formatErrorsReport(cache: Cache, sessionStartTs: number, limit = 15): string {
+export function formatErrorsReport(
+  cache: Cache,
+  sessionStartTs: number,
+  limit = 15,
+  pid?: number
+): string {
   const all = sessionErrors(cache);
   if (all.length === 0) {
     return 'No errors recorded (main-session stream failures appear here; the status line counts them as ⚠N err).';
   }
-  const sessionEntries = all.filter((e) => e.ts >= sessionStartTs);
-  const older = all.filter((e) => e.ts < sessionStartTs);
+  // Same pid scoping as countSessionErrorsSince: a second pi instance in the
+  // SAME project shares the persisted buffer, and its post-sessionStart
+  // entries must not break the "⚠N err == headline == N events" correlation
+  // (review Minor 2026-10-04). Entries without a pid (pre-split history)
+  // keep the old behavior.
+  const own = (e: SessionError) => pid === undefined || e.pid === undefined || e.pid === pid;
+  const sessionEntries = all.filter((e) => e.ts >= sessionStartTs && own(e));
+  const older = all.filter((e) => e.ts < sessionStartTs || !own(e));
   const lines: string[] = [`Errors this session: ${sessionEntries.length}`];
   if (sessionEntries.length === 0) lines.push('  (none this session)');
   const showSession = sessionEntries.slice(-limit);

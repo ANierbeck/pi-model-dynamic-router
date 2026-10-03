@@ -5,8 +5,8 @@
  * Live finding: three concurrent pi instances (different projects) share
  * one dist/.cache/scan-cache.json. saveCache wrote the in-memory object
  * blindly, so the last writer erased the other processes' session_errors
- * and usage_log ("/router cost" windows went structurally zero; the
- * sourcelume session's 32 recorded errors were overwritten by another
+ * and usage_log ("/router cost" windows went structurally zero; another
+ * live session's 32 recorded errors were overwritten by a sibling
  * session's save). Writes were also non-atomic — a reader mid-write saw an
  * unparseable file and silently started from an empty cache.
  *
@@ -85,6 +85,40 @@ describe('CacheManager: per-project instance state', () => {
     expect(readJson(projectState()).session_errors).toHaveLength(1);
     expect(readJson(globalCache()).session_errors).toBeUndefined();
     expect(readJson(globalCache()).models_cached).toBe('x');
+  });
+
+  it('loadCache keeps entries pushed during the save-debounce window (review P1 2026-10-04)', () => {
+    const mgr = new CacheManager(stateDir, undefined, projectDir);
+    const cache = mgr.getCache();
+    pushSessionError(cache, { ts: 1, ref: 'a/b', reason: 'r', consequence: 'c' });
+    mgr.saveCache();
+    // Pushed but NOT saved: index.ts debounces the session-error save by 2s,
+    // and a subagent session_start can run loadCache() inside that window.
+    pushSessionError(cache, { ts: 2, ref: 'a/c', reason: 'r', consequence: 'c' });
+
+    // index.ts rebuilds the manager on load() but keeps the one cache object.
+    const mgr2 = new CacheManager(stateDir, mgr.getCache(), projectDir);
+    mgr2.loadCache();
+    expect((mgr2.getCache().session_errors ?? []).map((e) => e.ts)).toEqual([1, 2]);
+    mgr2.saveCache();
+    const proj = readJson(projectState());
+    expect((proj.session_errors ?? []).map((e: any) => e.ts)).toEqual([1, 2]);
+  });
+
+  it("loadCache unions another process's new entries without dropping our unsaved ones", () => {
+    const mgr = new CacheManager(stateDir, undefined, projectDir);
+    const cache = mgr.getCache();
+    pushSessionError(cache, { ts: 1, ref: 'a/b', reason: 'r', consequence: 'c' });
+    mgr.saveCache();
+    pushSessionError(cache, { ts: 2, ref: 'a/c', reason: 'r', consequence: 'c' }); // unsaved
+    // A concurrent same-project instance persists its own entry.
+    const disk = readJson(projectState());
+    disk.session_errors.push({ ts: 3, ref: 'p/q', reason: 'r', consequence: 'c', pid: 4242 });
+    fs.writeFileSync(projectState(), JSON.stringify(disk, null, 2));
+
+    const mgr2 = new CacheManager(stateDir, mgr.getCache(), projectDir);
+    mgr2.loadCache();
+    expect((mgr2.getCache().session_errors ?? []).map((e) => e.ts)).toEqual([1, 2, 3]);
   });
 
   it('merges another process\'s global writes instead of clobbering them (merge-on-save)', () => {

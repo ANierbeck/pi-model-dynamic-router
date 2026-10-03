@@ -202,7 +202,7 @@ export function createCommands(rt: CommandDeps) {
           // divider (diagnosis context without breaking correlation).
           const m = arg?.match(/^errors\s+(\d+)$/);
           const limit = m ? Math.max(1, Math.min(50, parseInt(m[1], 10))) : 15;
-          ctx.ui.notify(formatErrorsReport(rt.cache, rt.sessionStart, limit), 'info');
+          ctx.ui.notify(formatErrorsReport(rt.cache, rt.sessionStart, limit, process.pid), 'info');
           return;
         }
 

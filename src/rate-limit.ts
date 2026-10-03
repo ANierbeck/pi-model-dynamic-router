@@ -156,17 +156,17 @@ export class RateLimitManager {
     ref: string,
     providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>,
     resetAtMs?: number
-  ): { rotated: boolean; newKey?: string } {
+  ): { rotated: boolean; newKey: string | undefined } {
     const { provider } = splitRef(ref);
 
-    // Versuche zuerst Key-Rotation
+    // Try key rotation first.
     const keys = providerKeys[provider]?.keys;
     if (keys && this.rotateKey(provider, keys)) {
       const label = this.activeKeyLabel(provider, keys) ?? 'next';
       return { rotated: true, newKey: label };
     }
 
-    // Keine Keys zum Rotieren — fall back zu Model-Level Backoff
+    // No keys to rotate — fall back to model-level backoff.
     const prev = this.limits.get(ref);
     const hits = (prev?.hits ?? 0) + 1;
     const backoffIndex = Math.min(hits - 1, this.backoffMinutes.length - 1);
@@ -199,7 +199,26 @@ export class RateLimitManager {
       this.bumpMux(provider, splitRef(ref).modelId);
     }
 
-    return { rotated: false };
+    return { rotated: false, newKey: undefined };
+  }
+
+  /**
+   * Arms a hard cooldown until `untilMs` WITHOUT the key-rotation path —
+   * for ACCOUNT-WIDE limits (OpenRouter free-models-per-day, 2026-10-03)
+   * where rotating a key is meaningless: the cap covers the whole account.
+   * Through recordLimit, a multi-key provider would silently skip the
+   * cooldown for the first N-1 refs (rotateKey wins before any cooldown is
+   * set) and exhaust an unexhausted key for an hour as a side effect
+   * (review P1 2026-10-04).
+   */
+  setLimitUntil(ref: string, untilMs: number): void {
+    const prev = this.limits.get(ref);
+    this.limits.set(ref, {
+      cooldown_until: Math.max(untilMs, prev?.cooldown_until ?? 0),
+      backoff_ms: Math.max(0, untilMs - Date.now()),
+      hits: prev?.hits ?? 0,
+      resetAtMs: untilMs,
+    });
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   countSessionErrorsSince,
   formatErrorsReport,
 } from '../src/session-errors.ts';
+import type { SessionError } from '../src/types.ts';
 import { recordBlocklistFailure } from '../src/model-blocklist.ts';
 import { CacheManager } from '../src/cache.ts';
 import type { Cache } from '../src/types.ts';
@@ -153,6 +154,21 @@ describe('session-errors status correlation', () => {
 });
 
 describe('formatErrorsReport', () => {
+  it("headline ignores a same-project sibling process's post-start entries (pid scoping, review 2026-10-04)", () => {
+    const cache = freshCache();
+    const sessionStart = T0 + 100;
+    pushSessionError(cache, { ts: sessionStart + 1, ref: 'mistral/own', reason: 'provider_error', detail: 'mine', consequence: 'soft backoff' });
+    pushSessionError(cache, { ts: sessionStart + 2, ref: 'mistral/sibling', reason: 'provider_error', detail: 'theirs', consequence: 'soft backoff' });
+    (cache.session_errors as SessionError[])[1].pid = 424242; // other process, same project
+
+    // Footer contract: ⚠N == headline == N events — the sibling's entry is
+    // history context, not this session's error.
+    const report = formatErrorsReport(cache, sessionStart, 15, process.pid);
+    expect(report).toMatch(/Errors this session: 1/);
+    expect(report).toContain('mistral/own');
+    expect(report).toContain('mistral/sibling'); // still visible below the divider
+  });
+
   it('headline count matches the status-line count exactly; older entries below a divider', () => {
     const cache = freshCache();
     const sessionStart = T0 + 100;

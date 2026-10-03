@@ -389,6 +389,30 @@
   alone let another process's errors count into our status line. The
   counter now filters by pid; entries without one (pre-split history) keep
   the old behavior.
+- **Review round 2026-10-04 (a17a384..02ad18a) — three Important findings,
+  all fixed**:
+  - `loadInstanceState` replaced in-memory instance state with the project
+    file's arrays on EVERY loadCache, dropping entries pushed during the
+    2s save-debounce window (a subagent session_start in that window lost
+    a whole failure batch). Now guarded by the same file-state check as
+    the global path and, when the file changed, UNION-merged so unsaved
+    entries survive (review P1 1).
+  - The `[<project>/<pid>]` provenance tag blinded the KPI audit script:
+    every matcher is anchored to the start of the line body, so all KPI
+    families silently went to zero on tagged lines. The audit's timestamp
+    regex now skips an optional tag; the tag shape is anchored
+    ("[/digits]") so it cannot swallow a message's own bracket prefix
+    (review P1 2).
+  - The free-day-cap cooldown was silently skipped on multi-key providers:
+    `recordLimit` tries key rotation FIRST, so the first N-1 :free refs got
+    no cap cooldown and an unexhausted key was exhausted for an hour as a
+    side effect. The cap path now arms a rotation-free `setLimitUntil(ref,
+    nextUtcMidnight)` (review P1 3).
+  - Minors in the same round: `/router errors` headline now applies the
+    same pid scoping as the footer count (⚠N == headline == N events for
+    two instances in one project); the account-wide cap test now pins
+    exactly ONE session error for the account event; two German comments
+    in rate-limit.ts translated (§3).
 - **Global router.log lines carry provenance** (owner 2026-10-03): every
   line in `~/.pi/logs/router.log` is tagged `[<project>/<pid>]` after the
   timestamp — three concurrent pi instances interleaved there with no way

@@ -192,15 +192,40 @@ export class CacheManager {
 
   /**
    * Overlays the per-project instance state (session_errors, usage_log)
-   * from <cwd>/.pi/cache/router-state.json. When that file has no entry for
-   * a key, whatever the global scan cache carried (pre-split legacy data)
-   * stays in memory — it is adopted by the project file on the next save.
+   * from <projectDir>/.pi/cache/router-state.json.
+   *
+   * - File unchanged since our last overlay/save → SKIP: memory is
+   *   authoritative (it may hold entries pushed during the 2s save-debounce
+   *   window; a wholesale replace here silently dropped them — review P1
+   *   2026-10-04, the exact state-loss class this round set out to fix).
+   * - File changed (another process wrote) → UNION: disk entries plus our
+   *   not-yet-saved memory entries, deduped across the boundary only
+   *   (appendInstanceArray — within-side duplicates are real events).
+   * - File has no entry for a key → whatever memory holds stays (pre-split
+   *   legacy data from the global cache is adopted on the next save).
    */
   private loadInstanceState(): void {
     if (!this.projectPath) return;
+    const projState = fileStateOf(this.projectPath);
+    const known = lastProjectSync.get(this.cache);
+    if (known !== undefined && known === projState) return;
     const proj = readJsonIfExists(this.projectPath);
-    if (Array.isArray(proj.session_errors)) this.cache.session_errors = proj.session_errors as never;
-    if (Array.isArray(proj.usage_log)) this.cache.usage_log = proj.usage_log as never;
+    if (Array.isArray(proj.session_errors)) {
+      this.cache.session_errors = appendInstanceArray(
+        proj.session_errors as SessionError[],
+        this.cache.session_errors,
+        (e) => `${e.ts}|${e.ref}|${e.reason}|${e.detail ?? ''}|${e.consequence}|${e.pid ?? ''}`
+      ).slice(-SESSION_ERROR_CAP);
+    }
+    if (Array.isArray(proj.usage_log)) {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      this.cache.usage_log = appendInstanceArray(
+        proj.usage_log as UsageEntry[],
+        this.cache.usage_log,
+        (e) => `${e.ts}|${e.ref}|${e.tokens}`
+      ).filter((e) => e.ts > cutoff);
+    }
+    lastProjectSync.set(this.cache, projState);
   }
 
   /**

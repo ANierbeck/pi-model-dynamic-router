@@ -50,7 +50,14 @@ const bump = (m: Record<string, number>, k: string) => {
   m[k] = (m[k] ?? 0) + 1;
 };
 
-const TS = /^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s{2}(.*)$/;
+// Optional "[<project>/<pid>] " provenance tag after the timestamp (the
+// GLOBAL router.log carries it since 2026-10-03; project-local logs and
+// pre-tag history don't). The tag shape is anchored ("/" + digits before
+// the closing bracket) so the optional group cannot swallow a message's
+// own bracket prefix like "[delegation] ". Without this allowance every
+// KPI matcher — all anchored to the start of the body — silently matched
+// zero tagged lines (review P1 2026-10-04).
+const TS = /^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s{2}(?:\[[^\]]*\/\d+\] )?(.*)$/;
 
 function hopReason(text: string): string {
   if (/no response within timeout/.test(text)) return 'timeout';

@@ -131,7 +131,13 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         gdpval_builtin: { 'free-a:free': 900, 'free-b:free': 800, 'paid-model': 700 },
         providers: {
-          openrouter: { free_models: ['openrouter/free-a:free', 'openrouter/free-b:free'] },
+          // TWO keys: through recordLimit, the key-rotation path would win
+          // before any cooldown is set, silently skipping the account-wide
+          // cap cooldown for the first refs (review P1 2026-10-04).
+          openrouter: {
+            keys: [{ key: 'test-key-1' }, { key: 'test-key-2' }],
+            free_models: ['openrouter/free-a:free', 'openrouter/free-b:free'],
+          },
           mistral: { free_models: ['mistral/paid-model'] },
         },
       },
@@ -142,7 +148,13 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
           registerCommand: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
+          // COLLECT as arrays: index.ts registers several events (e.g.
+          // session_shutdown) more than once; a last-one-wins map silently
+          // dropped the save-flush handler (found while pinning the
+          // exactly-one-session-error contract).
+          on: vi.fn((event: string, handler: any) => {
+            (onHandlers[event] ??= []).push(handler);
+          }),
         };
         defaultExport(pi);
 
@@ -184,7 +196,7 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
           runtime: { streamSimple },
         };
         const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
+        for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
         await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
@@ -209,6 +221,21 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
         expect(calledIds).not.toContain('free-b:free');
         // The turn still succeeds via the paid candidate.
         expect(narration).toContain('served by the paid model');
+        // The cap is account-wide: no key rotation is narrated (rotation
+        // would skip the cooldown AND exhaust an unexhausted key).
+        expect(narration).not.toContain('key rotated');
+        // Exactly ONE session error — for the ref that actually failed.
+        // The cap branch must not record per-model errors for the siblings
+        // (owner decision: one account-level event).
+        for (const h of onHandlers['session_shutdown'] ?? []) await h({ reason: 'quit' });
+        const projectState = JSON.parse(
+          fs.readFileSync(path.join(tmpDir, '.pi', 'cache', 'router-state.json'), 'utf-8')
+        );
+        const capErrors = (projectState.session_errors ?? []).filter(
+          (e: any) => e.reason === 'rate_limit_exceeded'
+        );
+        expect(capErrors).toHaveLength(1);
+        expect(capErrors[0].ref).toBe('openrouter/free-a:free');
       }
     );
   }, 30000);
@@ -233,7 +260,13 @@ describe('driveStream: "trying X" narration lookahead', () => {
           registerCommand: vi.fn(),
           registerProvider: vi.fn(),
           setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
+          // COLLECT as arrays: index.ts registers several events (e.g.
+          // session_shutdown) more than once; a last-one-wins map silently
+          // dropped the save-flush handler (found while pinning the
+          // exactly-one-session-error contract).
+          on: vi.fn((event: string, handler: any) => {
+            (onHandlers[event] ??= []).push(handler);
+          }),
         };
         defaultExport(pi);
 
@@ -272,7 +305,7 @@ describe('driveStream: "trying X" narration lookahead', () => {
           runtime: { streamSimple },
         };
         const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
+        for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
         await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };

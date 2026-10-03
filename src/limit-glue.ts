@@ -5,7 +5,7 @@
  * Pure code motion; closure state is reached through `d`.
  */
 
-import { isPaidCloudRateLimitFailure } from './detection.ts';
+import { isPaidCloudRateLimitFailure, isFreeTierDailyCapText, nextUtcMidnightMs } from './detection.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { recordBlocklistSuccess, activeBlocks, recordBlocklistFailure, formatBlockLogLine } from './model-blocklist.ts';
@@ -62,7 +62,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return d.rateLimitManager.isLimited(ref);
   }
 
-  function recordLimit(ref: string, resetAtMs?: number): { rotated: boolean; newKey?: string } {
+  function recordLimit(ref: string, resetAtMs?: number): { rotated: boolean; newKey: string | undefined } {
     recordModelFailure(d.cache, ref);
     return d.rateLimitManager.recordLimit(ref, d.cfg.providers ?? {}, resetAtMs);
   }
@@ -148,7 +148,21 @@ export function createLimitGlue(d: LimitGlueDeps) {
     errorText?: string
   ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
     if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason, errorText)) {
-      const rlResult = recordLimit(ref, resetAtMs);
+      // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE: key rotation
+      // is meaningless (all keys share the account) and, on a multi-key
+      // provider, recordLimit's rotation path would silently skip the
+      // cooldown AND exhaust an unexhausted key for an hour as a side
+      // effect (review P1 2026-10-04). Arm a hard cooldown until the next
+      // UTC midnight instead — the orchestrator's cap branch then extends
+      // it to ALL :free refs via limitFreeDayCap.
+      let rlResult: { rotated: boolean; newKey: string | undefined };
+      if (isFreeTierDailyCapText(errorText ?? '')) {
+        recordModelFailure(d.cache, ref);
+        d.rateLimitManager.setLimitUntil(ref, nextUtcMidnightMs());
+        rlResult = { rotated: false, newKey: undefined };
+      } else {
+        rlResult = recordLimit(ref, resetAtMs);
+      }
       // Consequence label (incl. key-rotation) built in the testable seam
       // src/session-errors.ts (review I3/I4).
       recordSessionErrorFromFailure({
@@ -253,7 +267,10 @@ function formatLocalHm(ms: number): string {
         refs.add(`${m.provider}/${m.id}`);
       }
     }
-    for (const ref of refs) d.rateLimitManager.recordLimit(ref, d.cfg.providers ?? {}, untilMs);
+    // setLimitUntil, NOT recordLimit: recordLimit tries key rotation first
+    // and a multi-key provider would silently skip the account-wide cooldown
+    // (review P1 2026-10-04).
+    for (const ref of refs) d.rateLimitManager.setLimitUntil(ref, untilMs);
     return refs.size;
   }
 

@@ -66,6 +66,18 @@ describe('router KPI audit', () => {
   });
 });
 
+describe('provenance tag (global log, 2026-10-03)', () => {
+  it('counts KPIs on lines carrying a [<project>/<pid>] tag', () => {
+    const k = createKpis();
+    ingestLine(k, '2026-10-04T08:00:00.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader');
+    ingestLine(k, '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [router] mistral/mistral-small-latest — rate limit/spend limit reached (resets 23:00)');
+    expect(k.lines).toBe(2);
+    expect(k.delegation.replaced).toBe(1);
+    expect(k.hops.failures).toBe(1);
+    expect(k.hops.byReason).toEqual({ rate_limit: 1 });
+  });
+});
+
 describe('blocklist lines', () => {
   it('counts a block whatever TTL the log line states', () => {
     const k = createKpis();
