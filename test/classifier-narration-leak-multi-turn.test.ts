@@ -1,9 +1,9 @@
 // test/classifier-narration-leak-multi-turn.test.ts
 //
 // Multi-turn regression test for the router-narration lock-in bug
-// (2026-09-18, second root cause found after v1.5.4 / commit 662501a).
+// (2026-09-18, second root cause found after v1.5.4 / commit 1b69beb).
 //
-// The first fix (662501a) only stripped "> [router] ..." lines inside
+// The first fix (1b69beb) only stripped "> [router] ..." lines inside
 // extractLastAssistantSnippet() (index.ts) — i.e. the "Last assistant
 // response (excerpt)" context line fed to the LLM classifier. That closed
 // ONE of three leak paths. Two more remained unguarded:
@@ -36,7 +36,7 @@
 //
 // These tests assert the fix at the data level (the extracted text no longer
 // contains router narration) rather than only at the prompt-wording level
-// (the "NEVER extract a HINT from this block" caveat added in 662501a), which
+// (the "NEVER extract a HINT from this block" caveat added in 1b69beb), which
 // is the defense-in-depth guarantee the user asked for.
 
 import { describe, it, expect, vi } from 'vitest';

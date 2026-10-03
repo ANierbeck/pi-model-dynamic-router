@@ -44,5 +44,5 @@ Full reconstruction in ADR-0017. Short version: a 60s TPM window was ignored →
 ---
 **Created:** 2026-09-27 · **Last change:** 2026-09-27 (translated to English
 2026-09-30 per AGENTS.md §3) · **State:** Implemented 2026-09-27 (commit
-`acf80eb` "wait for near rate-limit resets instead of burning the candidate
+`c81d292` "wait for near rate-limit resets instead of burning the candidate
 chain"; ADR-0017 documents the incident and the decision)

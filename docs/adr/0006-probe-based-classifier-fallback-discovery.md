@@ -13,7 +13,7 @@ prior approaches both failed in production:
 1. **Hardcoded `free_models` in `router-config.json`** — only listed
    `openrouter/*:free` models. A user with a Mistral/Anthropic key but no
    OpenRouter key got an empty candidate list.
-2. **Hardcoded `CURATED_FREE_MODELS` (commit `4ed9a2c`)** — a hand-maintained
+2. **Hardcoded `CURATED_FREE_MODELS` (commit `20f4383`)** — a hand-maintained
    array of `['mistral-zai/mistral-small-latest', 'mistral/mistral-small-latest',
    ...]` prepended to `getCheapestCloudModels()`. This worked for exactly one
    user's provider setup (the user who wrote it); every other user got

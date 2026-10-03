@@ -1,8 +1,8 @@
 # ADR-0014: HINT is the user's channel, MHINT is the router's — and narration never feeds classification
 
 **Status**: Accepted (documented retroactively 2026-09-26). Decisions made
-in commits `662501a` (1.5.4, lock-in loop fix, 2026-09-18), `8de6ae2`
-(strip narration on all classifier-input paths) and `b6f0e8a` (MHINT
+in commits `1b69beb` (1.5.4, lock-in loop fix, 2026-09-18), `c62af57`
+(strip narration on all classifier-input paths) and `c9247d5` (MHINT
 reserved for router narration, 2026-09-20). Sources:
 `src/content-classifier.ts` (`detectHintDirectly`),
 `src/classification-prompt.ts`, `src/utils.ts` (`stripRouterNarration`), `src/stream-orchestrator.ts`.
@@ -32,7 +32,7 @@ two free OpenRouter models for many turns.
 ## Options Considered
 
 - **Only strip narration from the assistant snippet** (the first fix,
-  `662501a`). Insufficient: subagent tasks replay prior turns verbatim
+  `1b69beb`). Insufficient: subagent tasks replay prior turns verbatim
   inside user messages, so narration arrived through other paths.
 - **Stop narrating HINT lines.** Loses the user-visible explanation of
   routing decisions.

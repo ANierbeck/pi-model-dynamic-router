@@ -1,7 +1,7 @@
 # ADR-0009: Union-merge for `exclude.*` arrays, and the bundled classifier model as source of truth
 
 **Status**: Accepted (2026-09-26). Decided by the owner after a code review
-of the 2026-09-26 fixes (`c22b457`, `6197e09`) found that neither fix had
+of the 2026-09-26 fixes (`b04cd87`, `913d53e`) found that neither fix had
 any effect on the owner's machine.
 
 ## Context
@@ -11,7 +11,7 @@ live setup. A test suite that was green locally masked both.
 
 ### 1. The static blocklist was overwritten by the user config
 
-`6197e09` added 14 permanently blocked OpenRouter free models to
+`913d53e` added 14 permanently blocked OpenRouter free models to
 `exclude.models` in the bundled `router-config.json`. Config loading is
 layered (`src/config-loader.ts`): bundled defaults, then
 `~/.pi/agent/router-config.user.json`, then `<project>/.pi/router-config.json`.
@@ -26,12 +26,12 @@ continued unchanged.
 The same effect hid a red CI. Tests load the real user config from `$HOME`,
 so locally the user's list replaced the bundled one and a test using
 `z-ai/glm-5.2:free` as a fixture kept passing. CI has no user config and
-failed on every push from `6197e09` on. The failure went unnoticed because
+failed on every push from `913d53e` on. The failure went unnoticed because
 the push was reported as done without checking the CI result.
 
 ### 2. The classifier default was overridden by the bundled config
 
-`c22b457` changed `DEFAULT_MODEL` in `src/content-classifier.ts` from
+`b04cd87` changed `DEFAULT_MODEL` in `src/content-classifier.ts` from
 `gemma4:12b-mlx` (Ollama MLX backend, HTTP 501 on every JSON-schema call) to
 `mistral-nemo:latest`. But `stream-orchestrator.ts` passes
 `model_groups.dynamic.classifier_model` from the config into the classifier,

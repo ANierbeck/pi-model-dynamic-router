@@ -2,13 +2,23 @@
 
 ## [Unreleased]
 
+### Internal (docs & tests)
+- **Repository history rewritten again (2026-10-03, after the 1.6.0
+  release)** to purge a credential that an early generated config file had
+  carried into a June commit (the credential is revoked). Commit SHAs from
+  that point on changed once more and every release tag, including
+  `v1.6.0`, was re-pointed to the rewritten commits; SHA references in this
+  changelog and the docs were remapped. Existing clones must re-sync:
+  `git fetch origin && git reset --hard origin/main` (or re-clone). The
+  published npm packages contain no credential and are unaffected.
+
 ## [1.6.0] — 2026-10-03 — Use-case groups, enforced delegation, cloud-first routing, Pi 0.99.1 compatibility
 
 > Everything since v1.5.4. Full breakdown: `docs/v1.6.0-release-plan.md`.
 
 ### Added
-- **Billing-preference modes for tiered groups** (`836dfe1`, refined by
-  `7033f1d`): `cloud_first` ranks cloud models ahead of the local daemon;
+- **Billing-preference modes for tiered groups** (`4b0e1b2`, refined by
+  `e75e611`): `cloud_first` ranks cloud models ahead of the local daemon;
   `local_before_payg` keeps free/subscription models first and puts the
   local daemon ahead of pay-as-you-go only. The earlier `strict_local`
   option remains available but NO shipped group uses it. Shipped config:
@@ -18,19 +28,19 @@
   `scout`/`bulk_reader`/`code_writer` → `cloud_first`. A guard test
   (`config-cloud-first-groups.test.ts`) pins this and forbids a silent
   revert to `strict_local`/`local_first`.
-- **Cloud-first routing** (`7033f1d`): five groups re-ranked so cloud
+- **Cloud-first routing** (`e75e611`): five groups re-ranked so cloud
   models run ahead of local Ollama — the local daemon is a fallback, not
   the default, for anything latency-sensitive.
 - **Use-case groups `bulk_reader` and `code_writer`** with a
   `min_context_length` group filter and registry-first
   `lookupContextWindow(ref)` reading the scanned contextWindow
-  (`09899b8`, `86581f2`, `bd46f7e`, `77179a8`, `9b718de`, `d11b9bd`).
+  (`06e4fd3`, `9e41476`, `090fa7b`, `7a8fcf4`, `2df3b77`, `3a95965`).
 - **Enforced delegation (ADR-0007 revision)**: in-router read-result
   shrinking for delegation groups, bash tool results covered alongside
   read results, oversized full reads pre-blocked and answered via the
   delegation group; threshold aligned with the shunt pattern
-  (`16aabcd`, `9e787b7`, `3eb775e`, `c8e81e9`).
-- **Expensive-model Layer-1 escalation (ADR-0007)** (`b1bfbca`): models
+  (`200eace`, `131b64c`, `23ae512`, `6e6235d`).
+- **Expensive-model Layer-1 escalation (ADR-0007)** (`2082544`): models
   in `delegation.expensive_groups` (default `strategic` + `tactical`) or
   behind `delegation.expensive_providers` prefixes get every full-file
   read (no offset/limit) blocked and redirected to `bulk_read`/targeted
@@ -40,40 +50,40 @@
   turn's factual ref through dynamic/HINT routing; fixed sessions fall
   back to the session ref; fail-open preserved (unknown model, missing
   lists, nonexistent files, stat errors pass).
-- **Robust cloud classifier fallback for offline Ollama** (`33e9afb`):
+- **Robust cloud classifier fallback for offline Ollama** (`6cb5b93`):
   `isOllamaAvailable()` (GET /api/tags, 1.5s cap, 15s negative cache)
   guards local attempts; the chain tries, in order, the pinned model
   (`classifier_cloud_model`), the scan-time probe-verified list, tiered
   discovery, configured free models — and finally static classification
   (never throws). Opt-in via `classifier_cloud_fallback`. The runtime
-  chain tries cloud candidates BEFORE touching Ollama (`eb86360`).
+  chain tries cloud candidates BEFORE touching Ollama (`4b25faa`).
   42 new regression tests.
-- **Scan-time quality probe for cloud classifier candidates** (`847a257`):
+- **Scan-time quality probe for cloud classifier candidates** (`f6daf20`):
   a reachability probe cannot catch models that answer garbage on real
   prompts (voxtral-small incident, 2026-09-26: passed reachability, then
   echoed the `HINT:` narration instead of classifying). The probe sends
   three real classification cases through the SAME shared prompt surface,
   including a hint-narration trap that rejects any `hint:*` reply;
   verified refs are cached in `cache.classifier_fallback_models`.
-- **Learned model blocklist (ADR-0008), tiers 1 + 2** (`ad26d43`,
-  `8e0028c`): auto-block from observed permanent-failure signatures;
+- **Learned model blocklist (ADR-0008), tiers 1 + 2** (`e6deeb8`,
+  `9dc5a6f`): auto-block from observed permanent-failure signatures;
   repeated unknown failures promote to the blocklist after a streak; plus
   a **static blocklist for permanently guardrail-blocked free models**
-  (`6197e09`).
+  (`913d53e`).
 - **Local-provider watchdog for a wedged Ollama daemon (ADR-0016)**
-  (`99266d7`).
+  (`981beeb`).
 - **Router logging**: log levels, change-only diag lines, size-based log
-  rotation (`711c236`); KPI audit script over `router.log` (`fa43b1e`).
-- **`/router cost` and `/router errors` commands** (`3f0e356`):
+  rotation (`43e88a1`); KPI audit script over `router.log` (`b08e13b`).
+- **`/router cost` and `/router errors` commands** (`301eef9`):
   audit-depth cost report (per-model, per-window usage from the router's
   own token accounting) and the recent session-error log with status-line
   correlation; the status line carries a `⚠N err` footer part.
-- **Agent-capability tier** (`4ae4ac1`, `6f6f995`): curated non-agent
+- **Agent-capability tier** (`d32a640`, `c0c46c6`): curated non-agent
   model families are kept out of routing groups; the prefixes are
   configurable via `non_agent_model_prefixes`.
 - **`-latest` aliases and dated snapshots resolve to the newest version**
-  (`a96fd32`).
-- **Scan sanity guard** (`aaaf11d`): a scan whose result collapses far
+  (`0567852`).
+- **Scan sanity guard** (`3e14b78`): a scan whose result collapses far
   below the persisted snapshot is refused instead of silently wiping the
   known-good model list.
 
@@ -140,22 +150,22 @@
   before; provider keys must live in auth.json/models.json. Removed with the
   union: the Ü1 round-trip, the ADR-0019 field allow-list, `[scan-union]`
   logging, `SKIP_REGISTRATION`, and `piKnownProviderSet()`.
-- **claude-bridge/claude-opus-5-5 re-enabled for routing** (`5d22a50`).
+- **claude-bridge/claude-opus-5-5 re-enabled for routing** (`3b9fd4a`).
 - **One group-filter rule set for persist, live and display (ADR-0010)**
-  (`882a052`): the dynamic-config persist path, live routing and
+  (`04e312d`): the dynamic-config persist path, live routing and
   `/router` display now apply the same `filterModelsForGroup` rules.
-- **Registry-first cost resolution** (`dd61108`): `resolveCostPerM(ref)`
+- **Registry-first cost resolution** (`276004f`): `resolveCostPerM(ref)`
   resolves Registry → local → subscription → cache → `:free` → `unknown`,
   with the registry lookup BEFORE subscription-zeroing, so Mistral
   subscriptions at $1.4 are priced (×0.5 `SUB_DISCOUNT` → 0.7) instead of
   landing in `max_cost: 0` groups; `/router status` footer now shows the
   TOTAL candidate count next to the top-5 models per group.
 - **Same-model dedup split by GDPval duplicate-spelling slugs; slug
-  clusters collapsed before the per-group cost filter** (`5959417`,
-  `2fee319`).
+  clusters collapsed before the per-group cost filter** (`a286bda`,
+  `271174f`).
 - **exclude.* arrays union-merge across config layers** (layered arrays
   other than excludes are still replaced); bundled classifier model is
-  mistral-nemo (ADR-0009) (`2a1a9c0`).
+  mistral-nemo (ADR-0009) (`5834fd9`).
 - **AGENTS.md**: explicit release-approval rule (§1 — releases require
   the owner's named, release-specific approval; a clean review is a
   prerequisite, not approval) and the Boyscout Rule (§7 — findings get
@@ -163,20 +173,20 @@
 
 ### Fixed
 - **Classifier chain honors exclude rules — "never use" means never**
-  (`0946c1d`): the scan-time probed classifier-fallback cache could still
+  (`9280686`): the scan-time probed classifier-fallback cache could still
   carry a ref the user excluded afterwards
   (`exclude_providers`/`exclude_models`), and the runtime chain would pick
   it. Excludes now filter every layer: scan-time discovery, the probed
   cache, the pinned `classifier_model`, and the HINT fallback pool.
   Pinned by `test/classifier-fallback-chain.test.ts`.
 - **driveStream skips `ollama/*` candidates when the daemon is down**
-  (`3d4e53f`): with Ollama intentionally shut down (or crashed), every
+  (`6d737aa`): with Ollama intentionally shut down (or crashed), every
   fallback cascade burned a full doomed stream attempt per local
   candidate. A local availability probe (TTL-cached `isOllamaAvailable()`)
   now skips all local candidates up front. Pinned by
   `test/ollama-fallback-skip-when-down.test.ts`.
 - **Honest narration for empty responses — no invented cause, no fabricated
-  reset** (`7d50e72`, `4cf60e8`): claude-bridge can end a turn with
+  reset** (`a48805d`, `a9ed27a`): claude-bridge can end a turn with
   stopReason `stop`, zero content, no error and no reset time. The router
   narrated "empty response (likely rate limit) (resets …)" — two
   inventions: the cause was a guess (an earlier "likely subscription spend
@@ -188,14 +198,14 @@
   when the provider actually sent one. Pinned by
   `test/claude-bridge-empty-response-narration.test.ts`.
 - **OpenRouter tool-grammar 400s are request-dependent, never transient**
-  (`c6a8709`): OpenRouter wraps the upstream error in `metadata.raw`; the
+  (`4e51ef5`): OpenRouter wraps the upstream error in `metadata.raw`; the
   transient "Provider returned error" pattern could swallow the real,
   deterministic cause (a model rejecting the request's tool schema) and
   keep a permanently broken candidate on retry rotation. The raw message is
   now unwrapped and parsed first, and tool-grammar 400s feed the learned
   blocklist deterministically. Pinned by `test/model-blocklist.test.ts`.
 - **Escalation-synthesis layer removed — hints only from the user**
-  (`ea4719b`, `f623e35`): the removed `applyEscalationLogic` compared a
+  (`54042a9`, `1dd4750`): the removed `applyEscalationLogic` compared a
   task-complexity tier against the LAST MODEL's GDPval tier and hinted
   whenever they differed — a second routing table that conflicted with
   `CATEGORY_TO_GROUP` and locked a live session into
@@ -245,7 +255,7 @@
   already knows every scanned model nothing is registered at all. Found
   during the ADR-0021 investigation; pinned by
   `test/ollama-merge-registration.test.ts`.
-- **The 1.5.4 router-narration lock-in fix was incomplete** (`8de6ae2`):
+- **The 1.5.4 router-narration lock-in fix was incomplete** (`c62af57`):
   it only stripped `> [router] ...` inside `extractLastAssistantSnippet()`;
   `extractLastUserPrompt()` (index.ts) and
   `StreamOrchestrator.extractPreviousUserMessage()` still fed raw
@@ -255,77 +265,77 @@
   or `detectHintDirectly()` — data-level defense in depth on top of the
   1.5.4 prompt caveat. Non-vacuous multi-turn regression tests.
 - **Dead trivial branch: 0x08 control byte in the trivialKeywords regex**
-  (`33e9afb`): a literal backspace had slipped in where a `\b` word
+  (`6cb5b93`): a literal backspace had slipped in where a `\b` word
   boundary was intended, so the regex could never match and "what's in
   this file?"-style prompts fell through to 'simple'.
-- **Spurious hint echoes from cloud classifier models** (`d08327f`): the
+- **Spurious hint echoes from cloud classifier models** (`60dda37`): the
   cloud fallback loop returned raw `{category: 'hint:*'}` objects as the
   routed classification, polluting `lastClassifiedCategory`; hint replies
   now share the Ollama path's conversion and are only accepted when the
   current request itself carries a HINT marker; a pinned ref already in
   the probe-verified list moves to position 0 instead of being ignored.
 - **Shadowed alias-provider ghosts purged, HINT targets normalized,
-  MHINT reserved for router narration** (`b6f0e8a`); blocklist events
-  narrated from the classifier-probe feed path (`c7ba9d6`).
+  MHINT reserved for router narration** (`c9247d5`); blocklist events
+  narrated from the classifier-probe feed path (`c312460`).
 - **Schema-capable classifier primary + 501 no-structured-output
-  self-healing** (`c22b457`).
+  self-healing** (`b04cd87`).
 - **Local daemon models admitted to `max_cost: 0` groups; the turn's
-  driving model pinned** (`a6ee796`), and the pinned driving ref is
-  carried across load()-triggered Router rebuilds (`3664dca`).
+  driving model pinned** (`72f0b6d`), and the pinned driving ref is
+  carried across load()-triggered Router rebuilds (`9faf3f6`).
 - **One unknown-cost candidate no longer flips whole cheap groups to
-  "strongest model first"** (`2b516f2`): `sortByMinCostIfAllPriced`
+  "strongest model first"** (`86c1410`): `sortByMinCostIfAllPriced`
   previously sorted the entire list by gdpval as soon as ONE model had
   unknown effCost (pi-claude/claude-sonnet-5 on rank 1 of the trivial
   group, live /router scan finding); unknown-cost models now sort to the
   end and the scan logs which refs are unpriced.
 - **Live "is free" check must not trust the scan-cache $0 over the
-  registry price** (`afdb426`); `lookupContextWindow` is registry-first
-  (`c7e2629`).
+  registry price** (`3cc72dc`); `lookupContextWindow` is registry-first
+  (`efbef5e`).
 - **session_start reload must not drop unsaved in-memory cache state**
-  (`d2a2c54`), plus the scan-sanity/log-rotation review rounds
-  (`dc18fce`, `aa2a026`, `230b09b`).
+  (`de48c21`), plus the scan-sanity/log-rotation review rounds
+  (`747a089`, `6bb6f1b`, `9826df5`).
 - **Dynamic config regenerates when the file is missing but the scan
-  cache is valid** (`3953dab`); a single shared whitelist
+  cache is valid** (`8d4165a`); a single shared whitelist
   (`DYNAMIC_CONFIG_RESYNC_KEYS`) now drives BOTH staleness re-sync sites
   (config-load read and scan-time write) including the previously missed
-  `ollama_max_concurrent_streams` (`4b211b6`), pinned by a data-driven
+  `ollama_max_concurrent_streams` (`2e23313`), pinned by a data-driven
   test over every key.
 - **`update_model_metrics` persists only the fresh metrics delta into
-  the embedded `router-config.json`** (`19e2721`): it previously merged
+  the embedded `router-config.json`** (`7b58045`): it previously merged
   the full layered runtime config (including user-layer overrides) into
   the embedded file.
 - **mistral-small "just stops"**: `stopReason: 'length'` is intercepted as
   a `truncated_length` soft failure instead of ending the turn
-  (`5cad2ba`).
+  (`615a6b0`).
 - **Near rate-limit resets are waited for instead of burning the
-  candidate chain** (ADR-0017, `acf80eb`).
+  candidate chain** (ADR-0017, `c81d292`).
 - **Text-scan false positives**: answers merely MENTIONING limits are no
   longer killed mid-stream; abandoned candidates are cancelled
-  (`d0a6186`).
+  (`d391a73`).
 - **Bare 422/403 client errors no longer escalate into hard rate-limit
-  cooldowns** (`bbf23cd`).
+  cooldowns** (`d51bab9`).
 - **tool_result rate-limit detection removed** (day-1 heuristic, finally
-  dropped after `4fac114` narrowed it): tool output — a curl'd 429, a
+  dropped after `544456c` narrowed it): tool output — a curl'd 429, a
   failing vitest run, a subagent child hitting ITS limit — is never
   evidence that the current model is rate-limited, so it can no longer
   trigger hard cooldowns or key rotation; genuine limits keep arriving as
   error events only (`isRateLimitText` in `consumeWithDetection`;
-  text_delta is deliberately not scanned — `d0a6186`); per-candidate
+  text_delta is deliberately not scanned — `d391a73`); per-candidate
   timeout in the runtime cloud classifier chain
-  (`5555fd5`); a thrown tryStream failure is recorded exactly once in
-  session_errors (`1947b45`); SessionEscalation history is bounded (ring,
-  MAX_HISTORY=10, monotonic turn counter) (`52f06a4`); `recordSoftFailure`
-  no longer shortens a longer active cooldown (`738782a`); dead
-  assignments removed from the HINT not-found branch (`1cb5597`).
+  (`6efa6d2`); a thrown tryStream failure is recorded exactly once in
+  session_errors (`db12647`); SessionEscalation history is bounded (ring,
+  MAX_HISTORY=10, monotonic turn counter) (`845624c`); `recordSoftFailure`
+  no longer shortens a longer active cooldown (`c603582`); dead
+  assignments removed from the HINT not-found branch (`a27a603`).
 - **Pi 0.99.1 compatibility (ADR-0019/0020)**: Pi's agent dir resolved
   via `PI_CODING_AGENT_DIR` including `~` expansion for user config and
-  auth (`c858438`, `65d4dc3`); the scan union preserves pi-registered chat
-  models the scan does not report (`13f8c9a`) and non-chat model types
-  through the round-trip (`53fbc93`); `registerGroupProviders` is guarded
-  against provider-name collisions (Ü1) (`6454dad`); the npm package no
+  auth (`4661f50`, `6651ed0`); the scan union preserves pi-registered chat
+  models the scan does not report (`b75b14f`) and non-chat model types
+  through the round-trip (`1971e12`); `registerGroupProviders` is guarded
+  against provider-name collisions (Ü1) (`10d7df9`); the npm package no
   longer ships runtime state files, pinned by a package-contents guard
-  (`3780d77`, `7a8e667`, `eee99b2`).
-- **Final-review code minors** (`71f4826`): the session_start background
+  (`51189bb`, `d25b75c`, `a8ec0e0`).
+- **Final-review code minors** (`8bb2427`): the session_start background
   scan failure is no longer silently swallowed; the dead duplicate
   provider→key-index map is replaced by `RateLimitManager.activeKeyIndex()`
   (both key-picking sites now see post-rotation state); the write-only,
@@ -334,7 +344,7 @@
   persist state best-effort before exit and no longer re-register per
   extension load.
 - **OpenRouter free-tier daily cap treated as account-wide cooldown**
-  (`d81c007`): the 429 body `"Rate limit exceeded: free-models-per-day"`
+  (`94d5cc0`): the 429 body `"Rate limit exceeded: free-models-per-day"`
   covers ALL openrouter/*:free models at once and resets at 00:00 UTC. The
   router previously treated it as a per-model 429 with the escalating 60s
   backoff, so every later turn re-burned a doomed attempt per :free candidate
@@ -343,14 +353,14 @@
   next UTC midnight, narrating it as the account-wide cap it is. Pinned by
   `test/free-tier-daily-cap.test.ts`.
 - **"trying X …" narration skips candidates pre-flight guards will skip**
-  (`d81c007`): the cascade loop's pre-flight guards (cooldown, wedged
+  (`94d5cc0`): the cascade loop's pre-flight guards (cooldown, wedged
   provider, ollama daemon down, context-window guard) silently skip candidates
   after the suffix is already emitted — e.g. "trying ollama/mistral-nemo:latest"
   while the cascade actually streamed mistral/zai-glm-5-3. The suffix now
   applies the same predicates (sync, no await) so it only names refs the loop
   will REALLY attempt next. Pinned by `test/free-tier-daily-cap.test.ts`.
 - **claude-bridge time-only reset times are parsed** (follow-up to
-  `d81c007`): the bridge narrates a REAL rate-limit rejection as
+  `94d5cc0`): the bridge narrates a REAL rate-limit rejection as
   `Claude rate limit (five_hour) — resets 9:52:44 PM: <failure>` — a bare
   time from `toLocaleTimeString()`, no date, no zone. `parseResetAtMs` could
   not read that in ANY locale, so on a genuine five_hour rejection the
@@ -391,7 +401,7 @@
   alone let another process's errors count into our status line. The
   counter now filters by pid; entries without one (pre-split history) keep
   the old behavior.
-- **Review round 2026-10-04 (4cf60e8..b4533d4) — three Important findings,
+- **Review round 2026-10-04 (a9ed27a..a49f674) — three Important findings,
   all fixed**:
   - `loadInstanceState` replaced in-memory instance state with the project
     file's arrays on EVERY loadCache, dropping entries pushed during the
@@ -452,9 +462,9 @@
   this changelog and the docs were remapped. Existing clones must re-sync:
   `git fetch origin && git reset --hard origin/main` (or re-clone). The
   published npm packages are unaffected.
-- Test isolation: fresh home directory per test file (`413e08a`), 28
-  duplicated tests removed (`5c1ed17`), suite consolidation
-  (`69ff1f5`), harness-minors cleanup (`b19fde7`).
+- Test isolation: fresh home directory per test file (`70a19f8`), 28
+  duplicated tests removed (`e8b1b48`), suite consolidation
+  (`4ce34d1`), harness-minors cleanup (`e5a1ab1`).
 - CHANGES.md folded into this changelog and deleted (decision 2026-09-30:
   one source of truth for release notes).
 - Suite at close of the release window: 1175 tests passing | 3 skipped
@@ -894,7 +904,7 @@
   verified passing under both `forks` and `threads` (including
   `maxThreads=1`).
 - **Coverage-threshold CI flake investigated and the floor widened with
-  justification.** A push (commit `21d7fe7`) failed CI on the global
+  justification.** A push (commit `4ab7508`) failed CI on the global
   coverage-threshold check (65.2% vs. the 68% floor) even though all 496
   tests passed; the very next commit (no source changes) passed at 69.71%.
   Root-caused rather than just loosening the number: confirmed identical

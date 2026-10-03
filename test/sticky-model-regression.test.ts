@@ -1,5 +1,5 @@
 /**
- * Regression test for the "sticky model" bug (introduced in commit fab9ba3,
+ * Regression test for the "sticky model" bug (introduced in commit 818621a,
  * shipped in v1.2.0): driveStream() used to call pi.setModel(realModel) after
  * picking a candidate. That swaps the *session's* active model away from the
  * virtual group model, which fires model_select and permanently clears

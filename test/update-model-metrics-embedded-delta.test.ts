@@ -205,7 +205,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
   it.each(['[]', 'null', '42'])(
     'refuses to write when the embedded config parses to a non-object (%s)',
     async (raw) => {
-      // Roborev review of 628af68 (LOW): a valid-JSON non-object left
+      // Roborev review of e99265a (LOW): a valid-JSON non-object left
       // embeddedCfg undefined, skipped the catch and crashed with a
       // TypeError instead of taking the refusal path.
       const writesBefore = embeddedWrites.length;
