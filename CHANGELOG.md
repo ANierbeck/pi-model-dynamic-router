@@ -160,6 +160,49 @@
   fixed, not filed away).
 
 ### Fixed
+- **Classifier chain honors exclude rules — "never use" means never**
+  (`9a83e85`): the scan-time probed classifier-fallback cache could still
+  carry a ref the user excluded afterwards
+  (`exclude_providers`/`exclude_models`), and the runtime chain would pick
+  it. Excludes now filter every layer: scan-time discovery, the probed
+  cache, the pinned `classifier_model`, and the HINT fallback pool.
+  Pinned by `test/classifier-fallback-chain.test.ts`.
+- **driveStream skips `ollama/*` candidates when the daemon is down**
+  (`8637e04`): with Ollama intentionally shut down (or crashed), every
+  fallback cascade burned a full doomed stream attempt per local
+  candidate. A local availability probe (TTL-cached `isOllamaAvailable()`)
+  now skips all local candidates up front. Pinned by
+  `test/ollama-fallback-skip-when-down.test.ts`.
+- **Honest narration for empty responses — no invented cause, no fabricated
+  reset** (`62f7ca6`, `a17a384`): claude-bridge can end a turn with
+  stopReason `stop`, zero content, no error and no reset time. The router
+  narrated "empty response (likely rate limit) (resets …)" — two
+  inventions: the cause was a guess (an earlier "likely subscription spend
+  limit" label was disproved the same day — the model streamed full answers
+  minutes before and after the empty turns), and the reset time was the
+  router's OWN backoff end presented as a provider announcement. Empty
+  responses now narrate only the observable ("empty response (no content,
+  no error reported)") for every provider, and a reset time is shown only
+  when the provider actually sent one. Pinned by
+  `test/claude-bridge-empty-response-narration.test.ts`.
+- **OpenRouter tool-grammar 400s are request-dependent, never transient**
+  (`9368468`): OpenRouter wraps the upstream error in `metadata.raw`; the
+  transient "Provider returned error" pattern could swallow the real,
+  deterministic cause (a model rejecting the request's tool schema) and
+  keep a permanently broken candidate on retry rotation. The raw message is
+  now unwrapped and parsed first, and tool-grammar 400s feed the learned
+  blocklist deterministically. Pinned by `test/model-blocklist.test.ts`.
+- **Escalation-synthesis layer removed — hints only from the user**
+  (`bc7dae4`, `c52cc44`): the removed `applyEscalationLogic` compared a
+  task-complexity tier against the LAST MODEL's GDPval tier and hinted
+  whenever they differed — a second routing table that conflicted with
+  `CATEGORY_TO_GROUP` and locked a live session into
+  `hint:group:tactical` → `claude-bridge/claude-opus-5-5` on 14/15 turns.
+  `classifyPrompt` NEVER synthesizes a hint itself; user HINT/MHINT is the
+  only hint source (compaction continuity aside), and `CATEGORY_TO_GROUP`
+  is the one routing table. Pinned by
+  `test/classifier-fallback-chain.test.ts`,
+  `test/classifier-mapping-hints.test.ts`.
 - **Virtual groups advertised a hardcoded contextWindow, thrashing
   Pi's auto-compaction** (owner decision 2026-10-03: cap at 250k for
   large-window groups): registration used
@@ -174,8 +217,10 @@
   plus re-orientation latency. Group windows are now derived from the real
   windows of the group's candidates (max — `driveStream`'s pre-flight
   guard already skips candidates too small for the current context),
-  capped at `VIRTUAL_GROUP_CONTEXT_CAP` 250k; dynamic groups use the union
-  of all static candidates; unknown windows fall back to Pi's 128k default.
+  floored at `VIRTUAL_GROUP_WINDOW_FLOOR` 32k (tiny-model groups would
+  otherwise trip Pi's compaction check on every turn) and capped at
+  `VIRTUAL_GROUP_CONTEXT_CAP` 250k; dynamic groups use the union of all
+  static candidates; unknown windows fall back to Pi's 128k default.
   Pinned by `test/group-context-window.test.ts`.
 - **The Ollama registration guard never matched, wiping the user's
   models.json registration every session** (83× in the live logs): the
