@@ -299,6 +299,36 @@ function parseInformalZonedReset(text: string): number | undefined {
   }
 }
 
+// ── OpenRouter free-tier daily cap ─────────────────────────────────────
+
+/**
+ * OpenRouter's account-wide daily cap on :free models (50/day without
+ * credits, 1000/day with 10): the 429 body reads
+ * "Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000
+ * free model requests per day".
+ *
+ * This limit is ACCOUNT-WIDE — one 429 covers every openrouter/*:free
+ * model at once — and resets at 00:00 UTC. Live finding 2026-10-03: the
+ * router treated it as an ordinary per-model 429 with the escalating 60s
+ * backoff, so every later turn re-burned a doomed attempt per :free
+ * candidate for the rest of the day (1475 router.log lines in one day,
+ * 14 of that session's 23 recorded errors).
+ */
+export function isFreeTierDailyCapText(text: string): boolean {
+  return text.includes('free-models-per-day');
+}
+
+/**
+ * The next 00:00 UTC strictly after `now` — the documented reset of the
+ * free-models-per-day cap. At exactly midnight the cap just cleared, so
+ * the NEXT midnight (+24h) is returned.
+ */
+export function nextUtcMidnightMs(now: number = Date.now()): number {
+  const d = new Date(now);
+  const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0, 0);
+  return next > now ? next : next + 86_400_000;
+}
+
 /** True if text matches any rate-limit / spend-limit pattern. */
 export function isRateLimitText(text: string): boolean {
   const lower = text.toLowerCase();

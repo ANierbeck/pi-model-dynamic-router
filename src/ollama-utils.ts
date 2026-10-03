@@ -102,5 +102,21 @@ export async function isOllamaAvailable(
   }
 }
 
+/**
+ * Synchronous peek at the cached availability state — NO probe. True only
+ * while a recent real probe said the daemon is down (same TTL as above).
+ *
+ * Used by narration-only lookaheads that must not await: the ", trying X …"
+ * suffix in driveStream must not name an ollama/* candidate the pre-flight
+ * guard is about to skip for a down daemon (live finding 2026-10-03:
+ * "trying ollama/mistral-nemo:latest" while the cascade actually streamed
+ * mistral/zai-glm-5-3). False before the first probe simply means "no
+ * cached knowledge" — the loop's own async guard still makes the real
+ * decision.
+ */
+export function isOllamaProbablyDown(): boolean {
+  return Date.now() - lastProbeDownAt < AVAILABILITY_NEGATIVE_TTL_MS;
+}
+
 // ── Fallback Handling ───────────────────────────────────────────────────
 

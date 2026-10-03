@@ -7,7 +7,7 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText } from './detection.ts';
+import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, isFreeTierDailyCapText } from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
@@ -261,6 +261,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // Race: iterate the stream vs timeout
     let rateLimited = false;
     let rateLimitResetAtMs: number | undefined; // Parsed reset time from the error text (if any)
+    let rateLimitDetail: string | undefined; // Raw error text for the account-wide free-tier daily cap (see below)
     let overflowDetected = false; // Provider rejected oversized prompt (overflow text)
     let overflowDetail = ''; // Raw provider text that triggered overflow detection
     let repetitionLoop = false; // Model is stuck regenerating the same phrase
@@ -366,6 +367,13 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // guessing with the escalating backoff schedule and risk
               // re-picking the model before the window actually resets.
               rateLimitResetAtMs = parseResetAtMs(errorMsg);
+              // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE (one
+              // 429 covers every openrouter/*:free model) and resets at
+              // 00:00 UTC. driveStream needs the text to cool down ALL
+              // :free candidates at once — without this, only the failing
+              // ref got the ordinary 60s backoff (live finding 2026-10-03:
+              // 14 of a session's 23 errors were re-burned cap attempts).
+              if (isFreeTierDailyCapText(errorMsg)) rateLimitDetail = errorMsg;
             }
             // Check if this is a context-overflow rejection (Mistral/OpenAI/etc.)
             if (isOverflowErrorText(errorMsg)) {
@@ -530,6 +538,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
         ok: false,
         reason: 'rate_limit_exceeded',
         ...(rateLimitResetAtMs ? { resetAtMs: rateLimitResetAtMs } : {}),
+        ...(rateLimitDetail ? { detail: rateLimitDetail } : {}),
       };
     }
     if (repetitionLoop) {

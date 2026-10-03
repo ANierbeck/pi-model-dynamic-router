@@ -202,7 +202,7 @@ let previousTokenCount = 0;
     get STALL_TIMEOUT_MS() { return STALL_TIMEOUT_MS; },
   });
 
-  const { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, updateMetrics, lookupPrice, formatBlocklist, getUsage } = createLimitGlue({
+  const { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage } = createLimitGlue({
     get cache() { return cache; },
     get cacheManager() { return cacheManager; },
     get cfg() { return cfg; },
@@ -593,6 +593,7 @@ let previousTokenCount = 0;
     isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),
     recordStreamFailure,
     formatResetMsg,
+    limitFreeDayCap,
     classifyPrompt,
     detectHintDirectly,
     getGroupForCategory,

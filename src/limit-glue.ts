@@ -208,6 +208,30 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return ` (backing off until ${new Date(Date.now() + secs * 1000).toLocaleString()})`;
   }
 
+  /**
+   * OpenRouter's free-models-per-day cap is ACCOUNT-WIDE: one 429 covers
+   * every openrouter/*:free model, and it resets at 00:00 UTC (live finding
+   * 2026-10-03 — per-model 60s backoffs re-burned a doomed attempt per
+   * candidate on every turn for the rest of the day). Sets a hard cooldown
+   * until `untilMs` on every known :free ref — the current cascade's
+   * candidates plus the discovery cache, so future turns skip them too —
+   * WITHOUT recording session errors or failure streaks: the siblings are
+   * consequences of one account-level event, not separate model failures.
+   */
+  function limitFreeDayCap(candidates: string[], untilMs: number): number {
+    const refs = new Set<string>();
+    for (const c of candidates) {
+      if (c.startsWith('openrouter/') && c.endsWith(':free')) refs.add(c);
+    }
+    for (const m of d.cache.available_models ?? []) {
+      if (m && m.provider === 'openrouter' && String(m.id).endsWith(':free')) {
+        refs.add(`${m.provider}/${m.id}`);
+      }
+    }
+    for (const ref of refs) d.rateLimitManager.recordLimit(ref, d.cfg.providers ?? {}, untilMs);
+    return refs.size;
+  }
+
   // ── Usage Stats ────────────────────────────────────────────────────────
 
   function getUsage(ref: string, days: number): number {
@@ -226,5 +250,5 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return metricsModule.effCost(ref);
   }
 
-  return { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, updateMetrics, lookupPrice, formatBlocklist, getUsage };
+  return { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage };
 }

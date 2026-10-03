@@ -122,7 +122,10 @@ import {
   isOverflowDeltaText,
   parseResetAtMs,
   isPaidCloudRateLimitFailure,
+  isFreeTierDailyCapText,
+  nextUtcMidnightMs,
 } from './detection.ts';
+import { isOllamaProbablyDown } from './ollama-utils.ts';
 
 /**
  * Narration label for an empty response on a PAID cloud model: stopReason
@@ -203,6 +206,15 @@ export interface StreamOrchestratorContext {
     errorText?: string
   ) => { hardLimited: boolean; rotated: boolean; newKey: string | undefined };
   formatResetMsg: (ref: string, resetAtMs: number | undefined, rotated: boolean | undefined) => string;
+  /**
+   * OpenRouter free-models-per-day cap (account-wide, live finding
+   * 2026-10-03): sets a hard cooldown until `untilMs` on every
+   * openrouter/*:free ref — both in the current candidate list and the
+   * discovery cache — WITHOUT recording session errors (the siblings are
+   * consequences of one account-level event, not separate failures).
+   * Returns how many refs were limited, for the router log line.
+   */
+  limitFreeDayCap?: (candidates: string[], untilMs: number) => number;
   // Classification helpers
   classifyPrompt: (prompt: string, opts: any) => Promise<any>;
   detectHintDirectly: (prompt: string) => any;
@@ -573,6 +585,30 @@ export class StreamOrchestrator {
     let cooldownSkips = 0;
     const contextTokens = ctx.estimateContextTokens(context);
 
+    // Narration lookahead (live finding 2026-10-03): the ", trying X …"
+    // suffix previously picked the first candidate not in a cooldown — but
+    // the loop's pre-flight guards also skip wedged providers, ollama when
+    // the daemon is down, and candidates whose context window is too small
+    // for the current turn. The suffix named refs the cascade then silently
+    // skipped ("trying ollama/mistral-nemo:latest" while it actually
+    // streamed mistral/zai-glm-5-3). Apply the same predicates here so the
+    // narration names a ref the loop will REALLY attempt next.
+    // Known limitation: tryStream-level skips (e.g. "no API key") are only
+    // discoverable by attempting the stream — the suffix can still name such
+    // a ref; the skip then lands in the cascade's error aggregation.
+    const nextAttemptableRef = (from: number): string | undefined => {
+      for (let j = from; j < candidates.length; j++) {
+        const r = candidates[j];
+        if (ctx.isLimited(r)) continue;
+        if (ctx.isProviderWedged(r)) continue;
+        if (r.startsWith('ollama/') && isOllamaProbablyDown()) continue;
+        const w = ctx.getModelContextWindow(r);
+        if (w && contextTokens > w) continue;
+        return r;
+      }
+      return undefined;
+    };
+
     for (let i = 0; i < candidates.length; i++) {
       const ref = candidates[i];
       if (ctx.isLimited(ref)) {
@@ -662,9 +698,38 @@ export class StreamOrchestrator {
         if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(ref, result.detail);
 
         if (result.reason === 'rate_limit_exceeded') {
-          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
+          const freeDayCap = isFreeTierDailyCapText(String(result.detail ?? ''));
+          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), freeDayCap ? undefined : result.resetAtMs, result.detail);
           pushError(ref, 'rate_limit_exceeded');
           const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
+
+          // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE and resets
+          // at 00:00 UTC (live finding 2026-10-03). Per-model escalating
+          // backoffs (60s → 2m → …) re-burned a doomed attempt per :free
+          // candidate on EVERY later turn — 14 of one session's 23 recorded
+          // errors, 1475 router.log lines in a single day. Cool down ALL
+          // :free refs until the next UTC midnight instead, and narrate the
+          // cap as what it is. The reset time shown is the router's OWN
+          // cooldown end ("backing off until"), not a provider-announced
+          // reset — the 429 body names no time; midnight UTC is our
+          // inference from OpenRouter's documented daily-cap policy.
+          if (freeDayCap) {
+            const untilMs = nextUtcMidnightMs();
+            const limitedCount = ctx.limitFreeDayCap?.(candidates, untilMs) ?? 0;
+            routerLog(
+              `[router] ${ref} — OpenRouter free-tier daily cap (account-wide): ` +
+                `${limitedCount} :free model(s) limited until ${new Date(untilMs).toISOString()}`
+            );
+            const capResetMsg = ctx.formatResetMsg(ref, undefined, rlResult.rotated);
+            const capNextRef = nextAttemptableRef(i + 1);
+            const capSuffix = capNextRef ? `, trying ${capNextRef} …` : '';
+            pushRouterInfoLogged(
+              proxy,
+              `> [router] ${ref} — free-tier daily request cap reached (all :free models)${capResetMsg}${keyMsg}${capSuffix}\n\n`
+            );
+            continue;
+          }
+
           const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
 
           // Bounded wait-for-reset: when the provider TOLD us when the limit
@@ -728,7 +793,7 @@ export class StreamOrchestrator {
             continue;
           }
 
-          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
           continue;
@@ -795,7 +860,7 @@ export class StreamOrchestrator {
         if (result.reason === 'repetition_loop') {
           pushError(ref, `repetition_loop (${result.detail ?? 'stuck repeating output'})`);
           ctx.recordStreamFailure(ref, 'repetition_loop', undefined, result.detail);
-          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(
             proxy,
@@ -806,7 +871,7 @@ export class StreamOrchestrator {
         if (result.reason === 'truncated_length') {
           pushError(ref, 'truncated_length (hit max output tokens — answer incomplete)');
           ctx.recordStreamFailure(ref, 'truncated_length');
-          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           pushRouterInfoLogged(
             proxy,
@@ -822,7 +887,7 @@ export class StreamOrchestrator {
         if (isPaidCloudRateLimitFailure(ref, String(result.reason), result.detail)) {
           const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
           pushError(ref, `${result.reason} (treated as rate-limit)`);
-          const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+          const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
           const paidLabel = result.reason === 'stall_timeout'
@@ -858,7 +923,7 @@ export class StreamOrchestrator {
             : result.reason === 'provider_error'
               ? `provider error${result.detail ? `: ${result.detail}` : ''}`
               : 'empty response from model';
-        const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+        const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
       } catch (streamError) {
@@ -869,7 +934,7 @@ export class StreamOrchestrator {
         // the session_errors buffer as well — this catch is where the
         // 2026-09-27 422/timeout waves would have been invisible.
         ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
-        const nextRef = candidates.slice(i + 1).find(r => !ctx.isLimited(r));
+        const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
       } finally {

@@ -16,6 +16,7 @@ import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
   isOllamaAvailable: vi.fn(async () => true),
+  isOllamaProbablyDown: vi.fn(() => false),
 }));
 
 const callOllama = vi.mocked(ollamaUtils.callOllama);
