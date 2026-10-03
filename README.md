@@ -709,6 +709,21 @@ strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14
 The `⚠N err` part counts the session's recorded stream failures — the same
 entries `/router errors` lists in full.
 
+## Development
+
+```bash
+npm install          # also wires the pre-push secret scan (core.hooksPath)
+npm test             # vitest
+npx tsc --noEmit     # type check
+npm run secret-scan -- --range origin/main..HEAD   # manual range scan
+```
+
+`main` is protected: changes land through pull requests with the `test`
+and `secret-scan` checks green. The pre-push hook scans every pushed commit
+for credentials (gitleaks, `brew install gitleaks`) and for private
+references (`scripts/forbidden-patterns.ts`), because in a public
+repository a push is already a publication. See `AGENTS.md` §8.
+
 ## License
 
 MIT

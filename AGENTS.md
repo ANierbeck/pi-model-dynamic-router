@@ -14,7 +14,8 @@
   **explicit, release-specific** approval. The approval must name the concrete
   release (e.g. "release 1.5.1"). General agreement like "weiter so", "yes do
   it", "ok", "like last time", or a clean CI is **NOT** approval.
-- The normal flow **stops after** "commit + push + verify CI green". The next
+- The normal flow **stops after** "commit + PR + verify CI green + merge"
+  (see §8 — `main` takes no direct pushes). The next
   step (tag / release / publish) is **always a question to the user**, never an
   action. Ask with the concrete version number, not a generic "shall I tag?".
 - A published npm version **cannot be deleted**. Treating a silent
@@ -126,3 +127,35 @@
   surfaced to the user with a concrete plan — it never silently disappears.
   Size alone is never a blocker; a fix too large for the current commit gets
   its own dedicated commit on the same branch.
+
+## 8. Protected `main` & secret scanning
+
+- `main` is protected by the GitHub ruleset "Protect main" (owner decision
+  2026-10-03): no direct pushes, no force pushes, no deletion. Every change
+  lands through a pull request whose required checks `test` and
+  `secret-scan` are green. There is **no bypass, not even for admins** —
+  agents act with the owner's token, so an admin bypass would be a bypass
+  for every agent.
+- Flow: feature branch → `git push -u origin <branch>` → `gh pr create` →
+  required checks green → `gh pr merge`. Batch related commits into one PR
+  (§5) instead of opening one PR per commit.
+- **This repository is public: every push is a publication** — on any
+  branch, before any review or merge. The versioned pre-push hook
+  (`.githooks/pre-push`, wired by `npm install` via `core.hooksPath`) is
+  the only layer that runs *before* publication. It scans every commit
+  being pushed, not just the final tree, because both 2026-10-03 leaks (a
+  webhook URL and a live provider API key) had been removed from the tree
+  by later commits while staying in the published history.
+- **Never bypass the hook** (`--no-verify`), and never edit or disable the
+  hook, the CI job or the ruleset to get a push through. A finding means
+  the content of the offending local commit must be fixed (e.g.
+  `git rebase -i`) before pushing.
+- Forbidden references (home paths, tailnet hosts, webhook URLs, the
+  owner's other projects) are maintained in ONE list,
+  `scripts/forbidden-patterns.ts`, shared by the tree guard and the range
+  scan. Generic credentials are gitleaks' job; a gitleaks false positive
+  goes into `.gitleaksignore` with a comment, and only after confirming
+  that the match is not a credential.
+- History rewrites (`git filter-repo` + force push) require the owner's
+  explicit instruction. The ruleset is disabled for exactly that operation
+  and re-enabled immediately afterwards.
