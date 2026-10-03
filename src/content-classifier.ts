@@ -240,7 +240,7 @@ const FALLBACK_TIMEOUT = 10_000;
 // single hung cloud request stalled the whole turn forever. Defaulting to
 // the probe's exported constant makes the parity guarantee structural —
 // bumping PROBE_TIMEOUT_MS updates both sides together (roborev review of
-// 8a19c5c, LOW); the per-call cloudTimeoutMs override stays available.
+// 5555fd5, LOW); the per-call cloudTimeoutMs override stays available.
 const CLASSIFIER_CLOUD_TIMEOUT_MS = PROBE_TIMEOUT_MS;
 const MIN_CONFIDENCE = 0.5;
 const CONTINUATION_MAX_WORDS = 4;

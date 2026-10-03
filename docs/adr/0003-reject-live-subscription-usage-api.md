@@ -24,7 +24,7 @@ as an `Authorization`/`x-api-key` header directly to the provider's own
 domain, the same way every other request in this router already works.
 
 **What already existed before this ADR, unrelated to this investigation:**
-`src/budget-tracker.ts` (added in commit `2330c54`, "feat: separate
+`src/budget-tracker.ts` (added in commit `5389b66`, "feat: separate
 subscription and token-based routing") already attempted exactly this —
 `fetchClaudeBudget()` calling `https://api.anthropic.com/v1/user/usage`
 and `fetchMistralBudget()` calling `https://api.mistral.ai/v1/usage`. On
@@ -59,7 +59,7 @@ investigation and was not something introduced while evaluating this ADR
   management.** The router never registers it — since ADR-0021 (2026-10-02)
   it registers no model Pi doesn't know anyway; at the time of this ADR it
   was additionally listed in `SKIP_REGISTRATION` (`src/providers.ts`, set
-  removed with the scan-union in `10fdbf8`) because it's an
+  removed with the scan-union in `34ad088`) because it's an
   externally-installed Pi extension that manages its own OAuth session;
   the router never discovers or holds a key for it. There is no key
   belonging to claude-bridge for the router to reuse in the first place —

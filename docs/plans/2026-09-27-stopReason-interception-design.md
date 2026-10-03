@@ -97,7 +97,7 @@ Close the blind spot: recognize `stopReason: 'length'` as a new soft-failure cla
 ## Implementation plan (bite-size tasks)
 
 > **NOTE (2026-09-30):** the checkboxes below were never ticked, but the
-> work **was implemented** — see commit `31626d4` (footer). They are left
+> work **was implemented** — see commit `5cad2ba` (footer). They are left
 > as-is as the historical draft record.
 
 ### 1. Design & planning
@@ -130,4 +130,4 @@ Close the blind spot: recognize `stopReason: 'length'` as a new soft-failure cla
 ---
 **Created:** 2026-09-27
 **Last change:** 2026-09-27 (translated to English 2026-09-30 per AGENTS.md §3)
-**State:** Implemented via `31626d4`
+**State:** Implemented via `5cad2ba`

@@ -4,17 +4,17 @@
 // model as tool output: genuine provider limits arrive as error EVENTS
 // ONLY (isRateLimitText in consumeWithDetection — including
 // pi-claude-bridge's "Claude rate limit" error events), text_delta is
-// deliberately not scanned (87ad663), and tool results are command output — a curl'd 429 from an
+// deliberately not scanned (d0a6186), and tool results are command output — a curl'd 429 from an
 // unrelated host, a vitest run printing "rate_limit_exceeded", a subagent
 // child hitting ITS five_hour limit. Attributing a hard cooldown + key
 // rotation to the current model on that evidence is wrong no matter how
-// narrow the pattern table gets (roborev review of f4a2a3b/8ad2de0, job 703
+// narrow the pattern table gets (roborev review of 628af68/6611dbb, job 703
 // finding 1, option a). The branch was removed entirely; these tests pin
 // the removal: NO tool-result text — however rate-limit-shaped — may put
 // the current model into cooldown or rotate its provider key.
 //
-// History: I2 (c8a087e) narrowed the naive scan and routed it through
-// recordStreamFailure (ring buffer + /router errors); job 676 (f4a2a3b)
+// History: I2 (4fac114) narrowed the naive scan and routed it through
+// recordStreamFailure (ring buffer + /router errors); job 676 (628af68)
 // narrowed the pattern table further. Both kept the attribution flaw.
 
 import fs from 'node:fs';

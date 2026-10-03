@@ -82,7 +82,7 @@ const MAX_WORKING_MODELS = 8;
  * Per-case probe timeout (ms). Exported because the runtime cloud fallback
  * chain (src/content-classifier.ts) defaults its per-candidate cap to this
  * value — probe/runtime parity must be structural, not two coincidentally
- * equal literals (roborev review of 8a19c5c, LOW).
+ * equal literals (roborev review of 5555fd5, LOW).
  */
 export const PROBE_TIMEOUT_MS = 15_000;
 

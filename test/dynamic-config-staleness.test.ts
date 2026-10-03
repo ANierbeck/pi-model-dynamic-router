@@ -10,7 +10,7 @@
  * common steady state.
  *
  * `exclude` was the first field found to have this bug (fixed in
- * 25d7e93, but shipped without a regression test — this file closes that
+ * cdc00ca, but shipped without a regression test — this file closes that
  * gap). `empty_response_timeout_ms` / `reasoning_empty_response_timeout_ms`
  * were added later and needed the exact same fix (added alongside this
  * test).

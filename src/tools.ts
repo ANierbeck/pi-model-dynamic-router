@@ -190,8 +190,8 @@ export function createTools(rt: ToolDeps) {
         // write. Persisting a delta-only stub ({ model_metrics: { … } } and
         // nothing else) would replace the shipped defaults (providers,
         // model_groups, exclude, …) with an empty base layer and break every
-        // future load() on this install (roborev reviews of e0d8159 and
-        // f4a2a3b). Losing one metrics update is strictly the lesser harm.
+        // future load() on this install (roborev reviews of 19e2721 and
+        // 628af68). Losing one metrics update is strictly the lesser harm.
         routerLog(
           `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err}`
         );

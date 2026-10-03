@@ -121,7 +121,7 @@ original "Unknown error" symptom.
 ## ✅ **Recently Completed Tasks (v1.1.8 through v1.4.0)**
 
 ### Provider Registration & Architecture
-- [x] **Skip all known providers** - SKIP_REGISTRATION extended to all built-in and extension providers (set removed with the scan-union in `10fdbf8` / ADR-0021)
+- [x] **Skip all known providers** - SKIP_REGISTRATION extended to all built-in and extension providers (set removed with the scan-union in `34ad088` / ADR-0021)
   - Built-in: anthropic, openai, google, mistral
   - Extensions: qwen-cli, gemini-cli, ollama, lm-studio, antigravity, **claude-bridge**
   - Only OpenRouter is registered by router (for free tier models)
@@ -166,7 +166,7 @@ original "Unknown error" symptom.
 
 ### Documentation
 - [x] **README.md updated** - New sections for cascading fallback, group-based cost/quality routing, model momentum, status line, claude-bridge support, rate limit handling
-- [x] **PI.md updated** - SKIP_REGISTRATION (removed in `10fdbf8`), fallback_groups, model_metrics, gdpval_builtin, claude-bridge support
+- [x] **PI.md updated** - SKIP_REGISTRATION (removed in `34ad088`), fallback_groups, model_metrics, gdpval_builtin, claude-bridge support
 - [x] **SKILL.md updated** - New features listed
 - [x] **TODO.md updated** - This file
 
@@ -241,8 +241,8 @@ session state to extract safely in this pass.
 ### ✅ **"Context-size mismatch on model switch breaks compaction" — was already fixed, not a new fix (verified 2026-08-26)**
 
 This bug (previously listed under Open Issues, observed 2026-07-27) was already
-resolved by v1.3.1 (`0a99930`, 2026-08-14) and the driveStream reliability pass
-(`b3c8d93`, 2026-08-16) — the TODO entry just never got updated. `driveStream`'s
+resolved by v1.3.1 (`6af9e34`, 2026-08-14) and the driveStream reliability pass
+(`891b9fb`, 2026-08-16) — the TODO entry just never got updated. `driveStream`'s
 context-window guard (`index.ts`, near `getModelContextWindow`) pre-emptively
 skips any candidate whose `contextWindow` is smaller than the estimated
 conversation size, for every switch path (fallback cascade, HINT override,
@@ -475,7 +475,7 @@ judged sufficient.
 
 ### Improvements
 - ✅ **Provider Registration** - Only registers providers Pi doesn't know (OpenRouter)
-- ✅ **SKIP_REGISTRATION** - Extended to all built-in and extension providers (removed in `10fdbf8` / ADR-0021)
+- ✅ **SKIP_REGISTRATION** - Extended to all built-in and extension providers (removed in `34ad088` / ADR-0021)
 - ✅ **GDPval Overrides** - Correct scores for mistral-medium-3.5 (933) and new Claude models
 - ✅ **Cost Tracking** - Provider-based and model-specific cost estimates
 

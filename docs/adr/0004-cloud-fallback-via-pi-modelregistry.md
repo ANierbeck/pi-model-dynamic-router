@@ -9,7 +9,7 @@ Accepted (2026-09-02).
 The content-classifier's cloud fallback (the last resort before static
 keyword classification, when both Ollama models are down) needs to call a
 cloud model to classify the user's prompt. The original implementation
-(`src/cloud-client.ts`, commit `31e2419`) rolled its own HTTP client:
+(`src/cloud-client.ts`, commit `6d51824`) rolled its own HTTP client:
 
 - `CloudClient.callModel()` built a raw `fetch()` to the provider's
   `/chat/completions` endpoint.

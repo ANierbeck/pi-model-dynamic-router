@@ -4,7 +4,7 @@
 Tier 2 (points 1–7 below, see "Implementation").
 Thresholds confirmed by the owner: Tier-1 blocks on first occurrence,
 Tier-2 promotes at N=5 (zero successes, spanning ≥ 1h), blocklist TTL is
-7 days. The static `exclude.models` list from `fce3f2b` stays as the manual
+7 days. The static `exclude.models` list from `6197e09` stays as the manual
 override (point 7).
 
 ## Context
@@ -50,7 +50,7 @@ same way:
   `exclude.models` globs, `exclude.paid_models_from`), applied in
   `generateDynamicConfig` *before* per-group filtering. A clean, single
   filter point — but the `models` list is hand-maintained in
-  `router-config.json`. The stopgap (commit `fce3f2b`) filled it with the 14
+  `router-config.json`. The stopgap (commit `6197e09`) filled it with the 14
   refs observed in the live incident. The owner's response on seeing the
   stopgap: *"I didn't actually want the blocklist to be static. How can the
   system learn and build a blocklist on its own?"*
@@ -72,7 +72,7 @@ This ADR is that question's answer.
   guardrails get edited, models get re-listed, OpenRouter adds new harness
   integrations. A blocked model must come back for a re-probe eventually,
   without a human editing the config. (Same principle as the
-  `classifier_no_schema` 24h TTL in commit `d3a51e3`.)
+  `classifier_no_schema` 24h TTL in commit `c22b457`.)
 - **Visible, not silent.** A model silently disappearing from candidate
   lists is the worst possible failure mode for debugging ("why isn't X
   routing to inkling anymore?"). Blocked status and *reason* must be
@@ -90,7 +90,7 @@ This ADR is that question's answer.
 
 ### A — Keep the static `exclude.models` list (the stopgap)
 
-What we shipped in `fce3f2b`. Hand-curated refs in `router-config.json`.
+What we shipped in `6197e09`. Hand-curated refs in `router-config.json`.
 
 - **Pros**: zero new code; already works; fully auditable (the list is
   literally in the config file); no risk of a learning heuristic
@@ -281,7 +281,7 @@ Adopt **Option D** (hybrid). Concretely:
   known-permanent signature. The signatures are deterministic — the same
   structural response comes back every time — so one observation is
   reliable evidence. The `classifier_no_schema` precedent (commit
-  `d3a51e3`) blocks on first occurrence for the same reason; no 2×
+  `c22b457`) blocks on first occurrence for the same reason; no 2×
   confirmation round-trip is burned.
 - **Tier-2 promotion threshold**: **5** consecutive same-signature
   failures, **zero** successes, spanning **≥ 1 hour** (not a single
@@ -417,7 +417,7 @@ are the failures Tier 2 is meant to catch.
 - **ADR-0007 rev (2026-09-20)** established the "state lives in the
   cache object, not module variables" pattern (esbuild double-bundle
   hazard); the blocklist follows it.
-- **`classifier_no_schema` (commit `d3a51e3`)** is the direct
+- **`classifier_no_schema` (commit `c22b457`)** is the direct
   precedent for the "mark-in-cache + TTL + skip + self-heal" shape;
   this ADR generalises it from "one backend rejects structured output"
   to "one backend rejects the request entirely."

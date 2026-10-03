@@ -356,7 +356,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // the pattern table got. Genuine provider limits arrive as error
     // EVENTS ONLY (isRateLimitText in consumeWithDetection — including
     // pi-claude-bridge's "Claude rate limit …" error events); text_delta is
-    // deliberately NOT scanned (87ad663: model prose is never evidence of a
+    // deliberately NOT scanned (d0a6186: model prose is never evidence of a
     // rate limit). Pinned by test/tool-result-rate-limit.test.ts.
     // All non-delegation paths intentionally fall through with no replacement.
     return undefined;

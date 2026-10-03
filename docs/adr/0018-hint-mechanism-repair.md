@@ -49,7 +49,7 @@ We repair the HINT mechanism by:
 
 ### Candidate root causes (suspect list)
 
-1. **Narration leak:** router messages (e.g. `> [router] HINT: ...`) leak into the prompt and distort HINT detection (2026-09-18 lock-in loop — fixed in 26e99f0, but a regression is possible).
+1. **Narration leak:** router messages (e.g. `> [router] HINT: ...`) leak into the prompt and distort HINT detection (2026-09-18 lock-in loop — fixed in 662501a, but a regression is possible).
 2. **Classifier chain change:** the cloud-first change (Sept 2026) reordered the candidate chain — HINT detection might run at the wrong point.
 3. **Prompt extraction:** `extractLastUserPrompt` or `extractLastAssistantSnippet` might strip or mask HINT prefixes.
 4. **HINT prefix not in the user prompt:** HINT might live in another field (e.g. the system prompt) and never reach the user-prompt detection.
@@ -78,7 +78,7 @@ We repair the HINT mechanism by:
 #### 3. Implement the fix
 
 - **Code change:**
-  - Narration leak: `extractLastUserPrompt` must strip router messages (as in 26e99f0).
+  - Narration leak: `extractLastUserPrompt` must strip router messages (as in 662501a).
   - Match logic: adjust the regex (e.g. `/HINT[:\s]|MHINT[:\s]|MODEL-HINT[:\s]/i`).
   - Ordering: run HINT detection before candidate selection.
 - **Regression test:**
@@ -98,7 +98,7 @@ We repair the HINT mechanism by:
 
 - `src/content-classifier.ts` — HINT detection
 - `src/classification-prompt.ts` — prompt preparation
-- `src/utils.ts` — `stripRouterNarration` (narration-leak fix 26e99f0)
+- `src/utils.ts` — `stripRouterNarration` (narration-leak fix 662501a)
 - ADR-0002: narration-leak fix (2026-09-18)
 
 ## Ownership

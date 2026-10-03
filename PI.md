@@ -197,7 +197,7 @@ What the router still registers (ADR-0021 out-of-scope decisions):
 | **Virtual group providers** | The router's own product surface (`strategic`, `tactical`, …) |
 
 A `SKIP_REGISTRATION` set used to guard the (removed) scan-union registration;
-it was deleted together with it in commit `10fdbf8`.
+it was deleted together with it in commit `34ad088`.
 
 #### Fallback Groups
 

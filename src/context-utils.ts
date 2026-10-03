@@ -33,7 +33,7 @@ export function createContextUtils(d: ContextUtilsDeps) {
     // "> [router] HINT: ..." line anywhere in its body, not just at the
     // start — the classifier's "contains a HINT instruction" rule would
     // otherwise misread it as a fresh instruction (2026-09-18 lock-in loop,
-    // reproduced live even after the narration-leak fix in 26e99f0 because
+    // reproduced live even after the narration-leak fix in 662501a because
     // that fix only covered extractLastAssistantSnippet(), not this path).
     try {
       const userMsgs = context.messages.filter((m) => m.role === 'user');

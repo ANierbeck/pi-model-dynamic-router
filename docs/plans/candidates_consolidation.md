@@ -11,10 +11,10 @@
 
 | File | Tests | Wall time | Last commit | What it tests (src functions) | Mock depth | Redundancy | Recommendation (why) |
 |------|-------|-----------|-------------|-------------------------------|------------|------------|----------------------|
-| **test/model-matcher-batched.test.ts** | 12 | 4ms | 263b2a6 (2026-09-20) | `plausibleMatchCandidates`, `matchModelsWithLLMBatched` (src/slug-matcher.ts) — live HINT resolution pipeline | High (LLM caller mocked) but tests real logic | 0 other files test these functions | **KEEP** — tests live router feature (HINT resolution) introduced in 263b2a6; no redundancy |
-| **test/provider-shadow.test.ts** | 6 | 2ms | 5ff46e6 (2026-09-20) | `redundantAliasProviders`, `pruneRedundantCacheEntries` (src/provider-shadow.ts) — ghost purge / alias normalization | Mocks PROVIDER_MAP; tests shadowing logic | 0 other files test these functions | **KEEP** — tests live ghost-purge feature (5ff46e6); no redundancy |
-| **test/classification-cache.test.ts** | 3 | 2ms | c4bb172 (2026-08-28) | `classifyPrompt` (src/classifier.ts) — LLM classification cache (LRU + TTL) | Mocks LLM caller; tests cache logic | 0 other files test classifyPrompt | **KEEP** — tests live classifier cache feature; no redundancy |
-| **test/router-cache-refresh.test.ts** | 3 | 2ms | aed3855 (2026-08-15) | `Router.updateCache` — stale router cache refresh | Mocks Cache; tests Router.updateCache | 0 other files test Router.updateCache | **KEEP** — tests live cache refresh behavior; no redundancy |
+| **test/model-matcher-batched.test.ts** | 12 | 4ms | a96fd32 (2026-09-20) | `plausibleMatchCandidates`, `matchModelsWithLLMBatched` (src/slug-matcher.ts) — live HINT resolution pipeline | High (LLM caller mocked) but tests real logic | 0 other files test these functions | **KEEP** — tests live router feature (HINT resolution) introduced in a96fd32; no redundancy |
+| **test/provider-shadow.test.ts** | 6 | 2ms | b6f0e8a (2026-09-20) | `redundantAliasProviders`, `pruneRedundantCacheEntries` (src/provider-shadow.ts) — ghost purge / alias normalization | Mocks PROVIDER_MAP; tests shadowing logic | 0 other files test these functions | **KEEP** — tests live ghost-purge feature (b6f0e8a); no redundancy |
+| **test/classification-cache.test.ts** | 3 | 2ms | dd653af (2026-08-28) | `classifyPrompt` (src/classifier.ts) — LLM classification cache (LRU + TTL) | Mocks LLM caller; tests cache logic | 0 other files test classifyPrompt | **KEEP** — tests live classifier cache feature; no redundancy |
+| **test/router-cache-refresh.test.ts** | 3 | 2ms | b019917 (2026-08-15) | `Router.updateCache` — stale router cache refresh | Mocks Cache; tests Router.updateCache | 0 other files test Router.updateCache | **KEEP** — tests live cache refresh behavior; no redundancy |
 
 > **Mock depth key:**
 > - **High** = heavy mocking of external calls (LLM, Cache) but tests real internal logic

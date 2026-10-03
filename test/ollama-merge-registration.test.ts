@@ -31,7 +31,7 @@
  * scan twin enrichment (never clobbered); tests 6–7 pin the empty-registry
  * branch and the two-session idempotency (the 83× invariant end-to-end);
  * test 8 pins the getAll()-less find() fallback (superpowers reviewer
- * finding: the d304304 hardening had zero coverage).
+ * finding: the f130d79 hardening had zero coverage).
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
@@ -101,7 +101,7 @@ async function withIsolatedRouter(
 
     const makeRegistry = (models: any[]) => ({
       // omitGetAll: exercise the find() fallback path (hosts without
-      // getAll()) that d304304 hardened — see the last test.
+      // getAll()) that f130d79 hardened — see the last test.
       ...(opts.omitGetAll ? {} : { getAll: () => models }),
       getModelsOfType: () => [],
       findOfType: () => null,

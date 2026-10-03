@@ -1,7 +1,7 @@
 # Architecture Review — Cloud-Based Classification Fallback & Routing Escalation
 
 **Date:** 2026-09-02
-**Scope:** Commits `a4d618f`, `178b1ff`, `3468a43` (the "cloud fallback via pi's modelRegistry" refactor + overflow-error learning + roborev follow-ups)
+**Scope:** Commits `c455816`, `a6a76e9`, `12d51d8` (the "cloud fallback via pi's modelRegistry" refactor + overflow-error learning + roborev follow-ups)
 **Trigger:** The user observed that a task that should have escalated to a GLM-5.2 / Sonnet-class model was instead served by `openrouter/minimax/minimax-m2.7:free` (a free mini model). This review finds out why, documents the architecture as actually implemented, and flags every defect — **no implementation, documentation only** as requested.
 
 ---
@@ -76,7 +76,7 @@ driveStream(candidates, …)  ── stream-orchestrator.ts
 pi streams the selected model
 ```
 
-### 1.2 The cloud fallback (the new path, commits a4d618f + 178b1ff)
+### 1.2 The cloud fallback (the new path, commits c455816 + a6a76e9)
 
 When Ollama is unavailable, `classifyPrompt()` enters the cloud-fallback block (`content-classifier.ts:~520`) if **all four** of `allowCloudFallback && cfg && cache && completeSimple && findModel` are present (the data-minimization opt-in gate is preserved — `allowCloudFallback` alone is insufficient).
 
@@ -89,13 +89,13 @@ Flow:
 
 The `classifyCtx` passed to `completeSimple` is `{ messages: [{ role: 'user', content: ollamaPrompt }] }` — a minimal `Context`.
 
-### 1.3 The overflow-error learning (commit a4d618f + roborev follow-up 178b1ff)
+### 1.3 The overflow-error learning (commit c455816 + roborev follow-up a6a76e9)
 
 When `driveStream` gets a `context_overflow` result from a provider:
 1. `extractContextWindowFromError(result.detail)` parses the real context window + requested-token count from OpenRouter-style error text (`maximum context length is N tokens. However, you requested about M tokens`).
 2. If parseable: `ctx.updateModelContextWindow(ref, actualContextWindow)` writes the discovered window into pi's registry (sticky), so future pre-flight guard skips this model for oversized prompts.
 3. Filter remaining candidates to those with a context window > minNeeded, recurse into them ("try larger before compaction").
-4. **Roborev HIGH-2 fix (`178b1ff`)**: `ctx.recordSoftFailure(ref)` is called before recursing, and the overflowing model is dropped from the `tried` list. This guards against unbounded recursion when the error text is unparseable (`errInfo === null`): without `recordSoftFailure`, cooldown wouldn't exclude the model, and since the registry update was skipped, the pre-flight guard wouldn't either — the model would be retried, overflow the same way, and recurse until stack overflow.
+4. **Roborev HIGH-2 fix (`a6a76e9`)**: `ctx.recordSoftFailure(ref)` is called before recursing, and the overflowing model is dropped from the `tried` list. This guards against unbounded recursion when the error text is unparseable (`errInfo === null`): without `recordSoftFailure`, cooldown wouldn't exclude the model, and since the registry update was skipped, the pre-flight guard wouldn't either — the model would be retried, overflow the same way, and recurse until stack overflow.
 
 ### 1.4 Where models come from (the three sources)
 
@@ -121,7 +121,7 @@ For each provider in `PROVIDER_MAP` with a resolvable key (from `cfg.providers[]
 
 ### F1 — Template-literal-as-plain-string bugs (HIGH, "cheap model" smell)
 
-**Status: RESOLVED (2026-09-02, commit `0454d2b`).** 10 template-literal bugs in `src/content-classifier.ts` fixed (backticks added so `${...}` interpolates instead of being sent as literal text to the classifier LLM).
+**Status: RESOLVED (2026-09-02, commit `e83d065`).** 10 template-literal bugs in `src/content-classifier.ts` fixed (backticks added so `${...}` interpolates instead of being sent as literal text to the classifier LLM).
 
 **Location:** `src/content-classifier.ts` lines 411, 424, 436, 542, 547, 560, 571
 **Evidence:** 7 `routerLog` calls use single-quoted strings where backticks were intended:
@@ -134,7 +134,7 @@ routerLog('[classifier] Primary model "${model}" failed, ...');  // literal "${m
 
 ### F2 — The repo-root `.cache/scan-cache.json` is empty; only `dist/.cache/scan-cache.json` is populated
 
-**Status: RESOLVED (2026-09-02, commit `fd2e68e`).** Resolved by the F8 fix (isScanCacheValid rejects a fresh-but-empty cache, forcing a rescan) + deleting the stale empty `.cache/scan-cache.json`.
+**Status: RESOLVED (2026-09-02, commit `6838304`).** Resolved by the F8 fix (isScanCacheValid rejects a fresh-but-empty cache, forcing a rescan) + deleting the stale empty `.cache/scan-cache.json`.
 
 **Evidence:**
 - `.cache/scan-cache.json`: `available_models: 0`, `gdpval_scores: 0`, `openrouter_pricing: 0`, `lastScanTimestamp: 2026-09-01T15:10:41Z`.
@@ -177,7 +177,7 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F4 — The scored GLM-5.2 variant is invisible to group routing (HIGH)
 
-**Status: RESOLVED (2026-09-02, commit `0454d2b` + `bfb2e16`).** The Ü1 guard now checks models individually; in the mixed case it round-trips pi's known Model objects (preserving compat flags) and passes the UNION to `registerProvider` (ADR 0005). Scored scan-discovered variants (e.g. `mistral-zai/glm-5-2`, gdpval 1497) are now registered alongside the unscored `zai-glm-5-2`.
+**Status: RESOLVED (2026-09-02, commit `e83d065` + `6415a13`).** The Ü1 guard now checks models individually; in the mixed case it round-trips pi's known Model objects (preserving compat flags) and passes the UNION to `registerProvider` (ADR 0005). Scored scan-discovered variants (e.g. `mistral-zai/glm-5-2`, gdpval 1497) are now registered alongside the unscored `zai-glm-5-2`.
 
 **Location:** `index.ts:2390` `registerGroupModels` Ü1 guard; `~/.pi/agent/models.json`
 **Evidence:**
@@ -191,7 +191,7 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F5 — Escalation logic is skipped when the classifier fails entirely (MEDIUM)
 
-**Status: RESOLVED (2026-09-02, commit `fd2e68e`).** `applyEscalationLogic` now runs on the hard-coded `{ category: 'fallback' }` return path too (the `allowStaticFallback=false` branch), so the last model's tier still triggers a bump when the task complexity warrants it.
+**Status: RESOLVED (2026-09-02, commit `6838304`).** `applyEscalationLogic` now runs on the hard-coded `{ category: 'fallback' }` return path too (the `allowStaticFallback=false` branch), so the last model's tier still triggers a bump when the task complexity warrants it.
 
 **Location:** `src/content-classifier.ts:~498-505` and the final `return { category:'fallback' }` at ~580.
 **Root cause:** `applyEscalationLogic` runs only on a *successful* `classificationResult` (`if (classificationResult && context.lastModel …)`). When Ollama fails AND the cloud fallback fails, the code reaches the end and returns the hard-coded `{ category:'fallback', confidence:0 }` **without** applying escalation. So a user on a cheap model who asks a complex question while Ollama is down gets `fallback→tactical`, but tactical's *intent* (escalate to a capable model) is never enforced — and per F4, tactical can't find GLM-5.2 anyway.
@@ -200,7 +200,7 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F6 — `HINT` without a colon is not recognized (MEDIUM, usability)
 
-**Status: RESOLVED (2026-09-02, commit `fd2e68e`).** `detectHintDirectly`'s regex now accepts an optional colon. False-positive guard: require either a colon OR a group-verb (use/nutze/verwende/benutze) after HINT, so the word "hint" in natural prose does not match.
+**Status: RESOLVED (2026-09-02, commit `6838304`).** `detectHintDirectly`'s regex now accepts an optional colon. False-positive guard: require either a colon OR a group-verb (use/nutze/verwende/benutze) after HINT, so the word "hint" in natural prose does not match.
 
 **Location:** `src/content-classifier.ts` `detectHintDirectly`, regex `/^\s*HINT\s*:\s*(.+)/i`
 **Evidence:** At 06:27 the user sent `"HINT use mistral-zai/glm-5-2 Please proceed…"` (no colon). The regex requires `HINT:` → no match → `detectHintDirectly` returns null → the prompt went through the (failing) LLM classifier → routed to `minimax-m2.7:free`. The user's intent was ignored.
@@ -208,7 +208,7 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F7 — `getCheapestCloudModels` returns only $0 models, never cheap paid or subscription (MEDIUM, design)
 
-**Status: RESOLVED (moot, 2026-09-02, commit `fd2e68e`).** `getCheapestCloudModels` was dead code (no production callers) and is deleted. The classifier's cloud fallback now uses the probe-based discovery (ADR 0006), which tiers by price + gdpval and actually probes Tier C (placeholder-$0) providers — so the quality-floor problem is solved at the discovery layer, not by patching a dead function.
+**Status: RESOLVED (moot, 2026-09-02, commit `6838304`).** `getCheapestCloudModels` was dead code (no production callers) and is deleted. The classifier's cloud fallback now uses the probe-based discovery (ADR 0006), which tiers by price + gdpval and actually probes Tier C (placeholder-$0) providers — so the quality-floor problem is solved at the discovery layer, not by patching a dead function.
 
 **Location:** `src/discovery.ts:415-425`
 **Root cause:** Even if F3 were fixed (subscription models priced at $0), the sort-by-price-ascending + `maxResults=5` means the 5 cheapest are **always all $0 free-tier OpenRouter models**. A cheap paid model (e.g. `glm-5.3-flash` at $0.25/M output) or a subscription GLM-5.2 would never be reached because the $0 free tier fills the top-5 first.
@@ -217,7 +217,7 @@ On 2026-09-02 all 5 free OpenRouter models failed (429 daily rate-limit exhauste
 
 ### F8 — Stale/empty scan cache is considered "valid" and never rescanned (MEDIUM, hygiene)
 
-**Status: RESOLVED (2026-09-02, commit `fd2e68e`).** `isScanCacheValid()` now rejects a fresh-but-EMPTY cache (0 available_models) and forces a rescan. The test helper `writeNoOpScanCache` writes a single placeholder model so the no-op cache still passes the sanity check.
+**Status: RESOLVED (2026-09-02, commit `6838304`).** `isScanCacheValid()` now rejects a fresh-but-EMPTY cache (0 available_models) and forces a rescan. The test helper `writeNoOpScanCache` writes a single placeholder model so the no-op cache still passes the sanity check.
 
 **Location:** scan-cache freshness gate ("Scan cache is still valid (max 30 days old), skipping regeneration").
 **Evidence:** The dist cache is from 2026-08-16 (17 days old). The repo-root cache is from 2026-09-01 but is **completely empty** (0 models, 0 scores, 0 prices). Both pass the 30-day freshness check, so neither triggers a rescan. New models added since the last scan (e.g. glm-5.3) are absent; pricing changes are stale.
@@ -240,7 +240,7 @@ OK and cached while every OpenRouter `:free` model failed 429/404.
 
 ### F10 — pi-claude (Sonnet) gets a false-positive 2-hour rate-limit cooldown from cascade-induced aborts (HIGH — the live bug behind "still goes for minimax")
 
-**Status: RESOLVED (2026-09-02, commit `0454d2b`).** `provider_error` removed from `isRateLimitLikeReason`; added `isAbortLikeText()` so abort/timeout text is treated as an abort (no hard cooldown), not a paid-cloud rate limit. F11 (below) also unblocks pi-claude by making the router recognize pi-registered providers.
+**Status: RESOLVED (2026-09-02, commit `e83d065`).** `provider_error` removed from `isRateLimitLikeReason`; added `isAbortLikeText()` so abort/timeout text is treated as an abort (no hard cooldown), not a paid-cloud rate limit. F11 (below) also unblocks pi-claude by making the router recognize pi-registered providers.
 
 **Location:** `src/detection.ts:333` `isPaidCloudRateLimitFailure`; `src/stream-orchestrator.ts:601-612`.
 **Evidence (production log, 2026-09-02T09:50:23.932-933):**
@@ -261,7 +261,7 @@ This was a **parallel subagent fanout** that overwhelmed Ollama (crash) and then
 
 ### F11 — The router still requires provider/key knowledge it shouldn't need (architectural principle violation)
 
-**Status: RESOLVED (2026-09-02, commit `fd2e68e`).** `stripProvider()` now consults pi's registered provider IDs (`setPiRegisteredProviders` in `src/metrics.ts`) in addition to PROVIDER_MAP and cfg.providers. `index.ts` publishes `getRegisteredProviderIds()` to the metrics module at session_start and after `registerGroupModels`. pi-registered providers like `pi-claude`, `claude-bridge`, and extension providers are now recognized — GDPval/price inference resolves their model ids. (The deeper principle — using pi's registry as the capability/price source too — remains a future direction; this fix addresses the recognition gap that was blocking pi-claude.)
+**Status: RESOLVED (2026-09-02, commit `6838304`).** `stripProvider()` now consults pi's registered provider IDs (`setPiRegisteredProviders` in `src/metrics.ts`) in addition to PROVIDER_MAP and cfg.providers. `index.ts` publishes `getRegisteredProviderIds()` to the metrics module at session_start and after `registerGroupModels`. pi-registered providers like `pi-claude`, `claude-bridge`, and extension providers are now recognized — GDPval/price inference resolves their model ids. (The deeper principle — using pi's registry as the capability/price source too — remains a future direction; this fix addresses the recognition gap that was blocking pi-claude.)
 
 **The user's point:** "PI knows the models and will give the router the information about them. USE That! pi-claude seems to know how to connect and therefore Sonnet is available."
 **Where this principle is violated:**
@@ -276,9 +276,9 @@ This was a **parallel subagent fanout** that overwhelmed Ollama (crash) and then
 
 These were verified during the review and are correctly implemented:
 
-- **completeSimple reach-through** (`178b1ff`, roborev HIGH-1): `stream-orchestrator.ts:229-236` correctly calls `registry?.runtime?.completeSimple?.(model, ctx, options)`, matching the existing `hostStreamSimple` pattern for `streamSimple`. The public `ModelRegistry` facade does not expose `completeSimple` in the pinned harness; the private `runtime` field is the only path.
-- **Overflow recursion guard** (`178b1ff`, roborev HIGH-2): `stream-orchestrator.ts:~554` calls `ctx.recordSoftFailure(ref)` before recursing into larger-context candidates, and the `tried` list is now `[...largerCandidates]` (dropping the overflowing model) instead of re-including it. This prevents unbounded recursion on unparseable overflow errors.
-- **Test config injection** (`3468a43`, roborev HIGH-1 of job 417): the integration tests in `test/overflow-try-larger.test.ts` now write the test config to `<tmpDir>/.pi/router-config.json` (the cwd-layer override that `loadLayeredConfig` actually reads under vitest), not to `dist/router-config.json`. The hard assertion `calledIds.some(id => id !== 'small' && id !== 'big') === false` proves the tests exercise the mock candidates, not incidental production refs.
+- **completeSimple reach-through** (`a6a76e9`, roborev HIGH-1): `stream-orchestrator.ts:229-236` correctly calls `registry?.runtime?.completeSimple?.(model, ctx, options)`, matching the existing `hostStreamSimple` pattern for `streamSimple`. The public `ModelRegistry` facade does not expose `completeSimple` in the pinned harness; the private `runtime` field is the only path.
+- **Overflow recursion guard** (`a6a76e9`, roborev HIGH-2): `stream-orchestrator.ts:~554` calls `ctx.recordSoftFailure(ref)` before recursing into larger-context candidates, and the `tried` list is now `[...largerCandidates]` (dropping the overflowing model) instead of re-including it. This prevents unbounded recursion on unparseable overflow errors.
+- **Test config injection** (`12d51d8`, roborev HIGH-1 of job 417): the integration tests in `test/overflow-try-larger.test.ts` now write the test config to `<tmpDir>/.pi/router-config.json` (the cwd-layer override that `loadLayeredConfig` actually reads under vitest), not to `dist/router-config.json`. The hard assertion `calledIds.some(id => id !== 'small' && id !== 'big') === false` proves the tests exercise the mock candidates, not incidental production refs.
 - **Cloud fallback opt-in gate**: `if (allowCloudFallback && cfg && cache && completeSimple && findModel)` — all four must be present (data minimization preserved).
 - **Cloud fallback uses pi's auth**: the router no longer rolls its own HTTP client + key resolution (the old `CloudClient` that threw "No API key for provider" is deleted). `completeSimple` delegates to pi's `ModelRuntime`, which uses pi's auth store.
 

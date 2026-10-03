@@ -116,8 +116,8 @@ describe("classifyPrompt (Unit Tests)", () => {
     // Restored design intent (regression 2026-09-26): a literal backspace
     // control character (0x08) inside the trivialKeywords regex silently
     // killed the trivial branch, so "What is in this file?" fell through to
-    // 'simple'. Commit d944afa codified that symptom as expected behavior;
-    // the 0x08 is fixed, so the original trivial expectation (c67b7b4)
+    // 'simple'. Commit 4ebf6e4 codified that symptom as expected behavior;
+    // the 0x08 is fixed, so the original trivial expectation (3bcd99f)
     // applies again.
     it("classifies 'What is in this file?' as 'trivial'", () => {
       const result = classifyStatically("What is in this file?");

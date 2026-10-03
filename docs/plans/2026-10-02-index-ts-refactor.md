@@ -279,7 +279,7 @@ Sensitive: `test/cost-report.test.ts`, `test/version.test.ts`, and any
 
 ## Implementation notes — deviations as executed (2026-10-02)
 
-All 12 tasks landed (`5302153`..`96d415f`); index.ts went from 3749 to
+All 12 tasks landed (`300dbf5`..`2c35d47`); index.ts went from 3749 to
 641 lines. Where the execution differs from the task text above:
 
 - **Factory naming (all tasks).** Every module exports `createX(deps)`

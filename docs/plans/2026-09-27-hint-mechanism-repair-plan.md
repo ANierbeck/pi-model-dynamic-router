@@ -49,7 +49,7 @@ sent to the user.
     `src/content-classifier.ts`; see the status note above.)*
   - `containsHintMarker(text: string): boolean` — check the logic.
   - `classifyPrompt()` — candidate order, HINT detection, suppression.
-- [ ] Check `extractLastUserPrompt`: are router messages stripped? (narration-leak fix 26e99f0)
+- [ ] Check `extractLastUserPrompt`: are router messages stripped? (narration-leak fix 662501a)
 - [ ] Log analysis: search `~/.pi/logs/router.log` for HINT lines.
 
 **Owner:** pi
@@ -57,7 +57,7 @@ sent to the user.
 
 ### 3. Implement the fix (code change)
 **Option A: narration leak (most likely cause)**
-- [ ] Check `extractLastUserPrompt`: if router messages leak in, strip them as in 26e99f0.
+- [ ] Check `extractLastUserPrompt`: if router messages leak in, strip them as in 662501a.
 - [ ] Check `classifyPrompt`: perform HINT detection BEFORE candidate selection.
 
 **Option B: regex adjustment**
@@ -112,7 +112,7 @@ sent to the user.
 
 ## Risks & mitigations
 - **False HINT detection:** test the regex with different prefixes.
-- **Narration leak:** strip `extractLastUserPrompt` as in 26e99f0.
+- **Narration leak:** strip `extractLastUserPrompt` as in 662501a.
 - **CI tests break:** adjust existing tests or add new regression tests.
 
 ## Review
