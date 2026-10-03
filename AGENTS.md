@@ -25,6 +25,14 @@
 - If unsure whether something counts as a release action: **ask first, do not
   act.** Tagging, `gh release create`, `npm publish`, and triggering a publish
   workflow are all release actions.
+- **Release builds ship with a quiet log level: "warn" or "error"** (owner
+  rule 2026-10-02). Before a release is proposed, verify that the shipped
+  `router-config.json` sets `log_level` to `"warn"` or `"error"` — this is
+  the effective default for everyone installing the package. The gate is
+  automated: `test/config-release-log-level.test.ts` fails the suite on a
+  regression. Local dev verbosity is unaffected (the user-level
+  `router-config.user.json` overrides it, and `ROUTER_LOG_LEVEL` overrides
+  both).
 - **Code review must be clean before a release is even *proposed*** to the
   user. Use the `requesting-code-review` skill from the **pi-superpowers**
   extension — it is NOT in this repo's own `skills/` directory (that only has

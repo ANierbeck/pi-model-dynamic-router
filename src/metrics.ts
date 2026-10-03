@@ -35,7 +35,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
-import { routerLog } from './logger.ts';
+import { routerLog, errorLog } from './logger.ts';
 import type { Metrics, Config, Cache } from './types.ts';
 import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -81,7 +81,7 @@ export function loadModelMap(extDir: string): void {
     // so ALL model-map overrides silently stop working and every model falls
     // through to the lossy token-set + LLM fallback. Log loudly so this is
     // never silent again.
-    routerLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : String(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
+    errorLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : String(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
     modelMap = {};
     modelMapWildcards = [];
     modelMapVersion++;

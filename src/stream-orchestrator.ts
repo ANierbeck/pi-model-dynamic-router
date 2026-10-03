@@ -107,7 +107,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
-import { appendRawLog, routerLog } from './logger.ts';
+import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
   pushStreamError,
@@ -500,7 +500,7 @@ export class StreamOrchestrator {
         // Cost tracking moved to turn_end (review I2 — hardcoded
         // 1000/500 here were fabricated audit data).
       } catch (err) {
-        routerLog('[dynamic] classification failed, using fallback:', err);
+        warnLog('[dynamic] classification failed, using fallback:', err);
         resolvedGroup = 'fallback';
         let fb = this.ctx.resolve('fallback');
         if (!fb) {
@@ -587,7 +587,7 @@ export class StreamOrchestrator {
       const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
         const errorMsg = String(err.message || err);
         const isExpectedError = isExpectedTransientError(errorMsg);
-        if (!isExpectedError) routerLog(`[router] Skipping ${ref}: ${errorMsg}`);
+        if (!isExpectedError) warnLog(`[router] Skipping ${ref}: ${errorMsg}`);
         pushError(ref, errorMsg);
         // Routed through recordStreamFailure (review round 2, Finding 1):
         // every main-loop failure must reach the session_errors ring buffer,
@@ -1031,7 +1031,7 @@ export class StreamOrchestrator {
         ? '\n(Detected overflow in stream — Pi should compact and retry.)'
         : '';
       const errorMsg = `[router] All ${allErrors.length} candidate(s) failed:\n${failureLines}${overflowLine}`;
-      routerLog(`[router] All ${allErrors.length} candidate(s) failed for group ${groupName ?? label ?? '?'}`);
+      errorLog(`[router] All ${allErrors.length} candidate(s) failed for group ${groupName ?? label ?? '?'}`);
       pushStreamError(
         proxy,
         errorMsg,

@@ -3,7 +3,7 @@ import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
-import { routerLog } from './logger.ts';
+import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
 import {
@@ -546,7 +546,7 @@ export async function classifyPrompt(
       // Feed generation timeouts to the local-provider watchdog (ADR-0016).
       if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
         if (recordLocalTimeout(cache, `ollama/${m}`)) {
-          routerLog(`[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for ${WEDGE_COOLDOWN_TEXT}`);
+          warnLog(`[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for ${WEDGE_COOLDOWN_TEXT}`);
         }
       }
       throw err;
@@ -567,7 +567,7 @@ export async function classifyPrompt(
       // If category is invalid but structure is valid, map to fallback
       const rawParsed = parsed as any;
       if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
-        routerLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
+        warnLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
         return { category: 'fallback', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
       }
       throw new Error(`Invalid format: ${response}`);
@@ -620,7 +620,7 @@ export async function classifyPrompt(
         try {
           classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
         } catch (fallbackError) {
-          routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+          warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
         }
       } else {
         try {
@@ -646,13 +646,13 @@ export async function classifyPrompt(
             try {
               classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
             } catch (fallbackError) {
-              routerLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+              warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
             }
           }
         }
       }
     } else if (ollamaWedged) {
-      routerLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
+      warnLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
     } else {
       routerLog('[classifier] Ollama daemon unreachable — skipping both local models');
     }
@@ -710,7 +710,7 @@ export async function classifyPrompt(
       // run yet" so the empty-list case is diagnosable from logs (roborev
       // job 445 LOW).
       if (modelsToTry.length === 0 && source === 'discovered' && hasProbedFallback(cache)) {
-        routerLog('[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.');
+        warnLog('[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.');
       }
 
       const classifyCtx: any = {
@@ -745,7 +745,7 @@ export async function classifyPrompt(
             }),
           ]);
           if (result.errorMessage || result.stopReason === 'error') {
-            routerLog(`[classifier] Cloud model ${modelRef} failed`, result.errorMessage ?? 'error');
+            warnLog(`[classifier] Cloud model ${modelRef} failed`, result.errorMessage ?? 'error');
             continue;
           }
           // AssistantMessage.content is an array of TextContent | ThinkingContent
@@ -800,13 +800,13 @@ export async function classifyPrompt(
             return parsed;
           }
         } catch (cloudError) {
-          routerLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
+          warnLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
         } finally {
           if (candidateTimer) clearTimeout(candidateTimer);
         }
       }
     } catch (cloudFallbackError) {
-      routerLog(`[classifier] Cloud fallback failed`, (cloudFallbackError as Error).message);
+      warnLog(`[classifier] Cloud fallback failed`, (cloudFallbackError as Error).message);
     }
     return null;
   };
@@ -842,7 +842,7 @@ export async function classifyPrompt(
 
   // Static fallback
   if (!allowStaticFallback) {
-    routerLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+    errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
     // F5 (2026-09-02): apply escalation to the hard-coded fallback too.
     // Previously this returned `{ category:'fallback' }` directly, skipping
     // applyEscalationLogic — so a user on a cheap model who asked a complex
@@ -864,7 +864,7 @@ export async function classifyPrompt(
     return fallbackResult;
   }
 
-  routerLog('[classifier] Ollama and cloud models failed, falling back to static classification');
+  errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
   noteSource('static');
 
   const staticResult = classifyStatically(prompt);

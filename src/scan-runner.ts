@@ -10,7 +10,7 @@
 import { extractCapabilities } from './capabilities.ts';
 import { probeAndCache } from './classifier-fallback-probe.ts';
 import { type LocalLlmDeps, callLocalLlm } from './local-llm.ts';
-import { routerLog } from './logger.ts';
+import { routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { isPlausibleMatch, type GdpvalEntry, matchModelsWithLLMBatched } from './model-matcher.ts';
 import { estimateOllamaModelsGdpvalAsSlugs } from './ollama-gdpval.ts';
@@ -318,7 +318,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           }
         } catch (err) {
           /* scrape failed, use builtins */
-          routerLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : String(err)}); using builtins only`);
+          warnLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : String(err)}); using builtins only`);
         }
       }
       const age = rt.cache.models_cached
@@ -556,7 +556,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           rt.saveCache();
         }
       } catch (probeErr) {
-        routerLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+        warnLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
       
       // Generate the dynamic configuration after the scan

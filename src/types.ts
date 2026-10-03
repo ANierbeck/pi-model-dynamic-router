@@ -136,8 +136,9 @@ export interface Config {
   model_groups: Record<string, Group>;
   model_metrics: Record<string, Partial<Metrics>>;
   gdpval_builtin?: Record<string, number>;
-  /** Router log level: "debug" also writes [diag] lines. ROUTER_LOG_LEVEL overrides it. */
-  log_level?: 'info' | 'debug';
+  /** Router log level: error < warn < info < debug (ROUTER_LOG_LEVEL overrides
+   * it). Release builds ship at "warn" or "error" (AGENTS.md §1). */
+  log_level?: 'error' | 'warn' | 'info' | 'debug';
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the

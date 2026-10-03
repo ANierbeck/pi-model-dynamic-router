@@ -11,7 +11,7 @@
 import { DiscoveryManager } from './discovery.ts';
 import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, DYNAMIC_CONFIG_RESYNC_KEYS } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
-import { routerLog } from './logger.ts';
+import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { lookupGdp } from './metrics.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -459,7 +459,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
       
     } catch (error) {
-      routerLog('[router] Error generating dynamic configuration:', error);
+      errorLog('[router] Error generating dynamic configuration:', error);
     }
   }
 

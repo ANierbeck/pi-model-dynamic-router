@@ -7,7 +7,7 @@
  * deliberately stays in index.ts. Pure code motion.
  */
 
-import { routerLog } from './logger.ts';
+import { routerLog, warnLog } from './logger.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { buildOllamaProviderModels } from './ollama-context.ts';
 import { PI_BUILTIN_PROVIDER_IDS } from './providers.ts';
@@ -303,7 +303,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         // NOTHING (pre-fix this re-registered and wiped models.json).
       }
     } catch (e) {
-      routerLog('[router] Ollama registration failed:', e);
+      warnLog('[router] Ollama registration failed:', e);
     }
 
     // F11 (2026-09-02): refresh the metrics module's view of pi's registered

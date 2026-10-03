@@ -76,6 +76,17 @@
   known-good model list.
 
 ### Changed
+- **Quiet-by-default log levels `warn`/`error` for release builds** (owner
+  rule 2026-10-02, now AGENTS.md §1): the logger's level axis is
+  `error → warn → info → debug`. New `errorLog()` (hard failures: all
+  candidates failed, config load failed, model-map disabled, static-only
+  classification) and `warnLog()` (rate limits, failed models, fallbacks,
+  wedges, scan/probe failures) classify ~24 previously unclassified sites;
+  routine narration and `[diag]` lines are suppressed at the quiet levels.
+  The shipped `router-config.json` now sets `"log_level": "warn"` — the
+  effective default for package users — pinned by
+  `config-release-log-level.test.ts` (release gate). Local dev is unaffected
+  (user-level config or `ROUTER_LOG_LEVEL` overrides the shipped default).
 - **Removed the dead `fallback_groups` from the dynamic group's config**
   (owner finding 2026-10-02): the "(→ strategic → tactical → operational →
   scout → fallback)" suffix in /router status implied a fallback cascade

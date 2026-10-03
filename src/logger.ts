@@ -14,8 +14,12 @@
 // log files. It never writes to stdout/stderr. setProjectLogDir(cwd) sets
 // the project-local mirror path; call it on session_start (index.ts does).
 //
-// Levels: debugLog/debugLogOnce lines are written only at level "debug"
-// (ROUTER_LOG_LEVEL or the config's `log_level`). Each log file rotates at
+// Levels: error < warn < info < debug (ROUTER_LOG_LEVEL or the config's
+// `log_level`). errorLog/warnLog classify failures (release builds ship at
+// "warn" or "error" — owner rule 2026-10-02, gated by
+// config-release-log-level.test.ts); routerLog/appendRawLog are info-class
+// and suppressed below "info"; debugLog/debugLogOnce need "debug". Each log
+// file rotates at
 // maxBytes into <file>.1 … <file>.<keep-1>; the oldest is dropped. Without
 // this, router.log reached ~2M lines / 322 MB, 75% of it one repeated
 // [diag] line.
@@ -27,13 +31,20 @@ import { homedir } from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-type LogLevel = 'info' | 'debug';
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+// A line of class C is written iff rank(C) <= rank(level): "error" keeps only
+// hard failures, "warn" adds operational problems, "info" adds routine
+// narration, "debug" adds diagnostics. "debug" is the most verbose level.
+const LEVEL_RANK: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
 
 // Resolved lazily: the home directory can change between module load and first
 // write (tests isolate it per file).
 const homeLogPath = () => path.join(homedir(), '.pi', 'logs', 'router.log');
 let projectLogPath: string | null = null;
-let level: LogLevel = process.env.ROUTER_LOG_LEVEL === 'debug' ? 'debug' : 'info';
+let level: LogLevel = ['error', 'warn', 'debug'].includes(process.env.ROUTER_LOG_LEVEL ?? '')
+  ? (process.env.ROUTER_LOG_LEVEL as LogLevel)
+  : 'info';
 let rotation = { maxBytes: 20 * 1024 * 1024, keep: 5 };
 
 const ensuredDirs = new Set<string>();
@@ -103,7 +114,9 @@ export function setProjectLogDir(cwd: string | undefined): void {
 /** ROUTER_LOG_LEVEL wins over the configured level. */
 export function setLogLevel(configured: LogLevel | undefined): void {
   const env = process.env.ROUTER_LOG_LEVEL;
-  level = env === 'debug' || env === 'info' ? env : (configured ?? 'info');
+  const valid = (v: string | undefined): v is LogLevel =>
+    v === 'error' || v === 'warn' || v === 'info' || v === 'debug';
+  level = valid(env) ? env : valid(configured) ? configured : 'info';
 }
 
 export function configureLogRotation(opts: { maxBytes: number; keep: number }): void {
@@ -111,13 +124,31 @@ export function configureLogRotation(opts: { maxBytes: number; keep: number }): 
   rotationRetryAt.clear();
 }
 
-/** Write a raw (already-formatted) line to both router logs. */
+/** Write a raw (already-formatted) line to both router logs (info class). */
 export function appendRawLog(line: string): void {
+  if (LEVEL_RANK.info > LEVEL_RANK[level]) return;
   writeLogLine(line);
 }
 
-/** Structured router log. */
+/** Structured router log (info class: suppressed at "warn"/"error"). */
 export function routerLog(msg: string, extra?: unknown): void {
+  logAt('info', msg, extra);
+}
+
+/** Operational problem (rate limit, model failed, fallback engaged,
+ * wedge) — written at "warn" and every more verbose level. */
+export function warnLog(msg: string, extra?: unknown): void {
+  logAt('warn', msg, extra);
+}
+
+/** Hard failure (all candidates failed, config load failed, a feature is
+ * disabled) — written at EVERY level, including "error". */
+export function errorLog(msg: string, extra?: unknown): void {
+  logAt('error', msg, extra);
+}
+
+function logAt(cls: LogLevel, msg: string, extra?: unknown): void {
+  if (LEVEL_RANK[cls] > LEVEL_RANK[level]) return;
   const suffix = extra
     ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}`
     : '';

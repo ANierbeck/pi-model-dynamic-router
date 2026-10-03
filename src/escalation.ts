@@ -3,7 +3,7 @@
 // Owns all escalation state so index.ts stays clean.
 
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
-import { routerLog } from './logger.ts';
+import { routerLog, warnLog } from './logger.ts';
 
 type EscalationLevel = 'operational' | 'tactical' | 'strategic';
 
@@ -104,7 +104,7 @@ export async function detectLoopWithLLM(
       return { shouldEscalate: false, reason: 'No loop detected (non-JSON response)' };
     }
   } catch (err) {
-    routerLog('[escalation] LLM loop detection failed', err);
+    warnLog('[escalation] LLM loop detection failed', err);
     return { shouldEscalate: false, reason: 'LLM unavailable, using rule-based detection' };
   }
 }
@@ -280,7 +280,7 @@ export class SessionEscalation {
         })
         .catch(err => {
           this._llmInFlight = false;
-          routerLog('[escalation] LLM loop detection failed', err);
+          warnLog('[escalation] LLM loop detection failed', err);
         });
     }
   }

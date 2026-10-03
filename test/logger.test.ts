@@ -8,6 +8,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   routerLog,
+  warnLog,
+  errorLog,
   debugLog,
   debugLogOnce,
   setLogLevel,
@@ -33,6 +35,38 @@ describe('log levels', () => {
     setLogLevel('debug');
     debugLog('[diag] now shown');
     expect(read()).toContain('now shown');
+  });
+
+  it('gates by severity: errorLog always, warnLog from warn, info from info (release levels 2026-10-02)', () => {
+    setLogLevel('error');
+    errorLog('[router] hard failure');
+    warnLog('[router] soft problem');
+    routerLog('[router] routine info');
+    debugLog('[diag] noise');
+    expect(read()).toContain('hard failure');
+    expect(read()).not.toContain('soft problem');
+    expect(read()).not.toContain('routine info');
+    expect(read()).not.toContain('noise');
+
+    setLogLevel('warn');
+    errorLog('[router] hard2');
+    warnLog('[router] soft2');
+    routerLog('[router] routine2');
+    expect(read()).toContain('hard2');
+    expect(read()).toContain('soft2');
+    expect(read()).not.toContain('routine2');
+
+    setLogLevel('info');
+    routerLog('[router] routine3');
+    expect(read()).toContain('routine3');
+  });
+
+  it('keeps warn/error lines at debug level too (debug is the most verbose)', () => {
+    setLogLevel('debug');
+    errorLog('[router] e');
+    warnLog('[router] w');
+    expect(read()).toContain('e');
+    expect(read()).toContain('w');
   });
 
   it('debugLogOnce writes a key again only when its message changes', () => {

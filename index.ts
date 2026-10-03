@@ -37,7 +37,7 @@ import { costTracker } from './src/cost-tracker.ts';
 // Shared router logger (D2): the log functions live in src/logger.ts so every
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
 // and can land in the user's input field). Re-imported here for index.ts's own use.
-import { routerLog, setLogLevel } from './src/logger.ts';
+import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 import { createContextUtils } from './src/context-utils.ts';
 import { createLimitGlue } from './src/limit-glue.ts';
@@ -419,7 +419,7 @@ let previousTokenCount = 0;
         }
       }
     } catch (error) {
-      routerLog('[router] Error loading dynamic configuration, falling back to static config:', error);
+      errorLog('[router] Error loading dynamic configuration, falling back to static config:', error);
     }
     
     // If there is no dynamic configuration, use the static one
@@ -586,7 +586,7 @@ let previousTokenCount = 0;
     observeFailure,
     observeLocalTimeout: (ref: string) => {
       const newlyWedged = recordLocalTimeout(cache, ref);
-      if (newlyWedged) routerLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${WEDGE_COOLDOWN_TEXT}`);
+      if (newlyWedged) warnLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${WEDGE_COOLDOWN_TEXT}`);
       return newlyWedged;
     },
     isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),

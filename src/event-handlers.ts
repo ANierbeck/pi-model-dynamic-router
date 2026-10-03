@@ -13,7 +13,7 @@
 import { resolveReadBlockStreamRef, checkReadBlock } from './bulk-read.ts';
 import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
-import { setProjectLogDir, debugLog, routerLog } from './logger.ts';
+import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
@@ -135,7 +135,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // throw (e.g. from checkScanSanity or saveCache) must not disappear
     // silently (final v1.6.0 review minor #6).
     rt.scan().catch((err) =>
-      routerLog(`[scan] background scan failed: ${err instanceof Error ? err.message : String(err)}`)
+      warnLog(`[scan] background scan failed: ${err instanceof Error ? err.message : String(err)}`)
     );
 
     // Footer

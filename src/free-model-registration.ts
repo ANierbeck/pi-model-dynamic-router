@@ -8,7 +8,7 @@
  * Pure code motion.
  */
 
-import { routerLog } from './logger.ts';
+import { routerLog, warnLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import type { Config } from './types.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -108,7 +108,7 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
       routerLog(`[router] On-demand registered ${allFreeModelEntries.length} free model(s) for ${provider} (triggered by ${ref})`);
       return Boolean(rt.sessionCtx?.modelRegistry.find(provider, modelId));
     } catch (e) {
-      routerLog(`[router] On-demand registration failed for ${ref}:`, e);
+      warnLog(`[router] On-demand registration failed for ${ref}:`, e);
       return false;
     }
   }

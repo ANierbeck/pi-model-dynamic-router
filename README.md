@@ -669,9 +669,15 @@ enabled) — otherwise the category `fallback` is returned.
 
 The router logs to `~/.pi/logs/router.log` (mirrored to `<project>/.pi/logs/router.log`).
 Each file rotates at 20 MB into `router.log.1` … `router.log.4`; older data is dropped.
-`[diag]` lines are written only at log level `debug`: set `"log_level": "debug"` in
-`~/.pi/agent/router-config.user.json`, or `ROUTER_LOG_LEVEL=debug` (overrides the config).
-The recurring "tryStream skipped" line is written once per model until its reason changes.
+
+Log levels, from quiet to verbose: `"error"` (hard failures only) → `"warn"`
+(adds operational problems: rate limits, failed models, fallbacks, wedges) →
+`"info"` (adds routine narration and the per-prompt routing trace) → `"debug"`
+(adds `[diag]` lines). Set `"log_level"` in `~/.pi/agent/router-config.user.json`,
+or via `ROUTER_LOG_LEVEL` (overrides the config). The shipped default is `"warn"`
+(release builds must not be verbose); local dev typically sets `"info"` or
+`"debug"`. The recurring "tryStream skipped" line is written once per model
+until its reason changes.
 
 ### KPI audit
 
