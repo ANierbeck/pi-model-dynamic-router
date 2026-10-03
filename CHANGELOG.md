@@ -420,6 +420,16 @@
   started directly in the home directory (both paths identical) the line
   is written exactly once instead of twice. Pinned by
   `test/global-log-tag.test.ts`.
+- **KPI-audit resilience against unparseable tags, honest error divider**
+  (verification review 2026-10-04, round 2): the audit's provenance-tag
+  parser cannot handle a project basename containing `]` — such global-log
+  lines matched no KPI family and undercounted silently. They are now
+  counted as `tagAnomalies` and disclosed both on stderr and in the report
+  itself (so a redirected stderr loses nothing). The `--json` output
+  carries the count plus one example line. Also: the `/router errors`
+  divider reads "outside this session" instead of "earlier" — the bucket
+  also holds same-project sibling entries that can be NEWER than the
+  session start.
 
 ### Internal (docs & tests)
 - ADRs 0008–0020 (learned blocklist, one-filter rule set, union merge,

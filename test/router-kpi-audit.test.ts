@@ -92,6 +92,9 @@ describe('provenance tag (global log, 2026-10-03)', () => {
     // Undercount is now a *visible* warning, not silent data loss
     expect(k.allCandidatesFailed).toBe(0);
     expect(k.delegation.replaced).toBe(1);
+    // Self-containment: the report itself discloses the undercount even
+    // when stderr is redirected (review Minor 2026-10-04, round 2)
+    expect(formatReport(k)).toMatch(/1 line\(s\) carry a provenance tag the audit could not parse/);
   });
 
   it('does not misread message bracket prefixes as tag anomalies', () => {

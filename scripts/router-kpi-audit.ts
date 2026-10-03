@@ -71,6 +71,13 @@ const TS = /^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s{2}(?:\[[^\]]*\/\d+\] )?(.*)$/;
 // the report can warn about undercounting. Requires no whitespace inside
 // the tag, so message prefixes like "[delegation] " or "[escalation] 3/5] "
 // (space before the digits) do not trigger it.
+//
+// Residual blind spot (accepted): a basename containing BOTH "]" AND a
+// space — `[foo] bar/123] ` — escapes this shape too (the space) and the
+// strict group above (the "]"). Allowing whitespace here would immediately
+// false-positive on messages like "[escalation] tier jump 3/5] applied";
+// the false-positive protection wins. Such lines undercount silently —
+// they were never parseable to begin with.
 const TAG_ANOMALY = /^\[[^\s]*\/\d+\] /;
 
 function hopReason(text: string): string {
@@ -126,6 +133,9 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
   if (/^\[router\] \S+ answered after its blocklist entry expired/.test(body)) { k.blocklist.cleared++; return; }
   if (/^\[router\] watchdog: \S+ looks wedged/.test(body)) { k.watchdog.wedged++; return; }
   if (body.startsWith('[classifier] Ollama marked wedged')) { k.watchdog.classifierSkips++; return; }
+  // The only non-anchored matcher: an anomalous (unparseable-tag) line
+  // still counts here while every anchored family drops it — the undercount
+  // above is family-dependent, which is why the warning says "may".
   if (body.includes('rejects structured output (501)')) { k.classifier.noSchema501++; return; }
   if (body.startsWith('[classifier] Fallback model also failed')) { k.classifier.fallbackFailed++; return; }
   if ((r = /^\[router\] (\S+) — (.+?)(?:, trying \S+ …)?$/.exec(body))) {
@@ -173,6 +183,12 @@ export function formatReport(k: Kpis): string {
     `  categories: ${top(k.classifier.byCategory, 10).map(([c, n]) => `${c} ${n}`).join(', ') || '—'}`,
     `  primary 501 (no structured output): ${k.classifier.noSchema501}, fallback failed: ${k.classifier.fallbackFailed}`,
   ];
+  // Self-containment: the stderr warning is lost when stderr is redirected;
+  // the report itself must disclose a possible undercount (review Minor
+  // 2026-10-04).
+  if (k.tagAnomalies > 0) {
+    out.push('', `⚠ ${k.tagAnomalies} line(s) carry a provenance tag the audit could not parse — counts may undercount`);
+  }
   return out.join('\n');
 }
 
