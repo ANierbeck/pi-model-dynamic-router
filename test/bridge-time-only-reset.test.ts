@@ -52,14 +52,18 @@ describe('parseResetAtMs: claude-bridge time-only reset', () => {
     // The documented German format with a TZ abbreviation goes through the
     // mdy path; 2099 is > 7 days out → rejected by its plausibility guard.
     expect(parseResetAtMs('resets 30. Aug. 2099, 17:00:00 MESZ')).toBeUndefined();
-    const soon = new Date(Date.now() + 3 * 3600_000);
-    const de = soon.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'medium' });
-    const day = soon.getDate();
-    const mon = soon.toLocaleString('en-US', { month: 'short' });
-    const year = soon.getFullYear();
-    const hm = `${soon.getHours()}:${String(soon.getMinutes()).padStart(2, '0')}:00`;
-    const text2 = `resets ${day}. ${mon}. ${year}, ${hm} MESZ`;
+    // Zone-agnostic construction: the mdy parser interprets the wall-clock
+    // digits in the STATED zone (MESZ = UTC+2), so render the target instant
+    // in UTC+2 — via getUTC* on target+2h, never via local getters (CI runs
+    // on UTC; a local-getters version passed on a CEST machine and failed
+    // on the runner, 2026-10-03).
     const now = Date.now();
+    const meszWall = new Date(now + 3 * 3600_000 + 2 * 3600_000);
+    const day = meszWall.getUTCDate();
+    const mon = meszWall.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    const year = meszWall.getUTCFullYear();
+    const hm = `${meszWall.getUTCHours()}:${String(meszWall.getUTCMinutes()).padStart(2, '0')}:00`;
+    const text2 = `resets ${day}. ${mon}. ${year}, ${hm} MESZ`;
     expect(within(parseResetAtMs(text2), now, 2.9, 3.1)).toBe(true);
   });
 });
