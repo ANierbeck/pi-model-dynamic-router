@@ -47,16 +47,27 @@ export const VIRTUAL_GROUP_CONTEXT_CAP = 250_000;
 const PI_DEFAULT_CONTEXT_WINDOW = 128_000;
 
 /**
+ * Lower bound for the advertised group window. Pi reserves 16,384 tokens
+ * (reserveTokens) below the contextWindow before compacting; a group whose
+ * largest real window is below that reserve (e.g. a tiny-models-only local
+ * group) would otherwise trip the compaction check on EVERY turn. The
+ * floor keeps compaction sane while the driveStream pre-flight guard —
+ * which uses each candidate's OWN window — still protects real overflows.
+ */
+export const VIRTUAL_GROUP_WINDOW_FLOOR = 32_768;
+
+/**
  * contextWindow for a virtual group model: the LARGEST real window among its
- * candidates, capped at VIRTUAL_GROUP_CONTEXT_CAP. Max (not min) because the
- * driveStream pre-flight guard already skips candidates whose own window is
- * too small for the current context, so the group can carry whatever its
- * biggest member can. Pi's 128k default when no candidate window is known.
+ * candidates, floored at VIRTUAL_GROUP_WINDOW_FLOOR and capped at
+ * VIRTUAL_GROUP_CONTEXT_CAP. Max (not min) because the driveStream
+ * pre-flight guard already skips candidates whose own window is too small
+ * for the current context, so the group can carry whatever its biggest
+ * member can. Pi's 128k default when no candidate window is known.
  */
 export function virtualGroupContextWindow(refs: readonly string[], lookup: (ref: string) => number | null): number {
   const known = refs.map(lookup).filter((cw): cw is number => typeof cw === 'number' && cw > 0);
   if (known.length === 0) return PI_DEFAULT_CONTEXT_WINDOW;
-  return Math.min(VIRTUAL_GROUP_CONTEXT_CAP, Math.max(...known));
+  return Math.max(VIRTUAL_GROUP_WINDOW_FLOOR, Math.min(VIRTUAL_GROUP_CONTEXT_CAP, Math.max(...known)));
 }
 
 export function createGroupRegistration(rt: GroupRegistrationDeps) {
@@ -78,11 +89,15 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
   function registerGroupProviders() {
     // Dynamic groups route each prompt into one of the static groups, so
     // their window is derived from the union of all static candidates.
-    const staticCandidates = new Set<string>();
+    // resolve() is called once per static group here and reused below.
+    const resolvedByGroup = new Map<string, { selected: string; candidates: string[] }>();
     for (const [groupName, groupCfg] of Object.entries(rt.cfg.model_groups)) {
       if (groupCfg.method === 'dynamic') continue;
-      for (const ref of rt.resolve(groupName)?.candidates ?? []) staticCandidates.add(ref);
+      const res = rt.resolve(groupName);
+      if (res) resolvedByGroup.set(groupName, res);
     }
+    const staticCandidates = new Set<string>();
+    for (const res of resolvedByGroup.values()) for (const ref of res.candidates) staticCandidates.add(ref);
 
     for (const [groupName, groupCfg] of Object.entries(rt.cfg.model_groups)) {
       // `method: 'dynamic'` groups never resolve here — resolve() always
@@ -125,7 +140,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         continue;
       }
 
-      const res = isDynamicGroup ? null : rt.resolve(groupName);
+      const res = isDynamicGroup ? null : resolvedByGroup.get(groupName) ?? null;
       const resolvedRef = res?.selected ?? 'none';
       const contextWindow = virtualGroupContextWindow(
         isDynamicGroup ? [...staticCandidates] : (res?.candidates ?? []),

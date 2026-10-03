@@ -125,18 +125,18 @@ import {
 } from './detection.ts';
 
 /**
- * Narration label for an empty response on a PAID cloud model.
- * claude-bridge sometimes answers empty (stopReason 'stop', 0 chars) — no
- * error text, no 429, no reset time (live finding 2026-10-03). The bridge
- * reports no cause, so the label states only the observable fact: neither
- * "likely rate limit" nor "likely subscription spend limit" (the latter was
- * disproved the same day — the model streamed full answers minutes before
- * and after the empty turns) may be presented as the reason.
+ * Narration label for an empty response on a PAID cloud model: stopReason
+ * 'stop', zero content, no error event, no reset time (live finding
+ * 2026-10-03, claude-bridge). The provider reports no cause, so the label
+ * states only the observable fact — for EVERY provider ref. Two earlier
+ * guesses ("likely rate limit", then "likely subscription spend limit" for
+ * bridge refs) were both unproven claims; the spend-limit one was disproved
+ * the same day (the model streamed full answers minutes before and after
+ * the empty turns), and an empty response carries no more evidence of a
+ * rate limit on any other provider.
  */
-function emptyResponseLabel(ref: string): string {
-  return ref.startsWith('claude-bridge/')
-    ? 'empty response (no content, no error reported)'
-    : 'empty response (likely rate limit)';
+function emptyResponseLabel(_ref: string): string {
+  return 'empty response (no content, no error reported)';
 }
 
 // ── Context interface ───────────────────────────────────────────────────────

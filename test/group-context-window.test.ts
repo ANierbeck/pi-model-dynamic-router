@@ -43,6 +43,13 @@ describe('virtualGroupContextWindow()', () => {
     expect(virtualGroupContextWindow([], lookup)).toBe(128_000);
     expect(virtualGroupContextWindow(['unknown/model'], lookup)).toBe(128_000);
   });
+
+  it('floors tiny-window groups at 32k so compaction does not fire on every turn', () => {
+    // Pi reserves 16,384 tokens (reserveTokens) below the advertised window;
+    // a group whose largest real window is 8,192 would trip the compaction
+    // check (contextTokens > window - reserve) on EVERY turn.
+    expect(virtualGroupContextWindow(['ollama/gemma2:2b'], lookup)).toBe(32_768);
+  });
 });
 
 describe('registerGroupProviders(): contextWindow of the virtual models', () => {

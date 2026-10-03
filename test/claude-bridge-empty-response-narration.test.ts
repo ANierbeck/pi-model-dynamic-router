@@ -72,7 +72,7 @@ async function withIsolatedRouter(
 }
 
 describe('claude-bridge empty response narration (no invented cause)', () => {
-  it('narrates the empty response honestly: no claimed cause, no fabricated reset time', async () => {
+  it('narrates the empty response honestly: no claimed cause, no fabricated reset time — for ANY provider, not just the bridge', async () => {
     await withIsolatedRouter(
       {
         free_models: [],
@@ -148,6 +148,9 @@ describe('claude-bridge empty response narration (no invented cause)', () => {
         expect(text).toContain('claude-bridge/claude-opus-5-5 — empty response (no content, no error reported)');
         expect(text).not.toContain('(likely rate limit)');
         expect(text).not.toContain('spend limit');
+        // emptyResponseLabel() is branch-free since the honesty fix: the same
+        // observable-only wording applies to every provider ref, because an
+        // empty response carries no evidence of a rate limit on any of them.
         // … and no fabricated provider reset — only our own backoff, worded as such.
         expect(text).not.toMatch(/\(resets .+\)/);
         expect(text).toMatch(/\(backing off until .+\)/);
