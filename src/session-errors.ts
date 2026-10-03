@@ -133,6 +133,9 @@ export function formatErrorsReport(
   // keep the old behavior.
   const own = (e: SessionError) => pid === undefined || e.pid === undefined || e.pid === pid;
   const sessionEntries = all.filter((e) => e.ts >= sessionStartTs && own(e));
+  // "Outside this session", not "earlier": a same-project sibling process's
+  // entries land here too, and those can be NEWER than this session's start
+  // (review Minor 2026-10-04 — the old "earlier" label was factually off).
   const older = all.filter((e) => e.ts < sessionStartTs || !own(e));
   const lines: string[] = [`Errors this session: ${sessionEntries.length}`];
   if (sessionEntries.length === 0) lines.push('  (none this session)');
@@ -146,7 +149,7 @@ export function formatErrorsReport(
   if (omitted > 0) lines.push(`  … ${omitted} older session error(s) omitted (raise the limit: /router errors ${limit + omitted})`);
   if (older.length > 0) {
     lines.push('');
-    lines.push(`--- earlier (persisted history, ${older.length}) ---`);
+    lines.push(`--- outside this session (persisted history, ${older.length}) ---`);
     for (const e of older.slice(-limit)) {
       lines.push(
         `  ${fmtTime(e.ts)}  ${fmtModel(e.ref, 34)} ${e.reason.padEnd(20)} ${e.consequence.padEnd(14)} ${e.detail ?? ''}`.trimEnd()

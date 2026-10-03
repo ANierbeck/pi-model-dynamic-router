@@ -167,6 +167,11 @@ describe('formatErrorsReport', () => {
     expect(report).toMatch(/Errors this session: 1/);
     expect(report).toContain('mistral/own');
     expect(report).toContain('mistral/sibling'); // still visible below the divider
+    // The divider must not claim "earlier" — the sibling entry is NEWER than
+    // this session's start; the bucket is "outside this session" (review
+    // Minor 2026-10-04).
+    expect(report).toMatch(/--- outside this session \(persisted history, 1\) ---/);
+    expect(report).not.toMatch(/earlier/);
   });
 
   it('headline count matches the status-line count exactly; older entries below a divider', () => {

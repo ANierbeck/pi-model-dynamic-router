@@ -75,6 +75,30 @@ describe('provenance tag (global log, 2026-10-03)', () => {
     expect(k.delegation.replaced).toBe(1);
     expect(k.hops.failures).toBe(1);
     expect(k.hops.byReason).toEqual({ rate_limit: 1 });
+    expect(k.tagAnomalies).toBe(0); // well-formed tags are consumed, no warning
+  });
+
+  it('warns (instead of dropping silently) when a project basename with "]" defeats the tag parser', () => {
+    // Review Minor 2026-10-04: the strict tag group `\[[^\]]*/\d+\] ` cannot
+    // parse a basename containing "]"; such lines matched no KPI family and
+    // undercounted silently. The audit must at least flag them.
+    const k = createKpis();
+    const anomalous = '2026-10-04T08:00:00.000Z  [foo]bar/123] [router] All 47 candidate(s) failed for group standard';
+    ingestLine(k, anomalous);
+    ingestLine(k, '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader');
+    expect(k.lines).toBe(2);
+    expect(k.tagAnomalies).toBe(1);
+    expect(k.tagAnomalyExample).toBe(anomalous);
+    // Undercount is now a *visible* warning, not silent data loss
+    expect(k.allCandidatesFailed).toBe(0);
+    expect(k.delegation.replaced).toBe(1);
+  });
+
+  it('does not misread message bracket prefixes as tag anomalies', () => {
+    const k = createKpis();
+    ingestLine(k, '2026-10-04T08:00:00.000Z  [router] openrouter/thinkingmachines/inkling:free blocked for 7 days: agentic-harness-gate (HTTP 403, signature 403:agentic-harness-gate, seen 1×)');
+    ingestLine(k, '2026-10-04T08:00:01.000Z  [escalation] tier jump 3/5] applied');
+    expect(k.tagAnomalies).toBe(0);
   });
 });
 

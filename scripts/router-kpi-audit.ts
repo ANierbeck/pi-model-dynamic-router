@@ -16,6 +16,9 @@ export interface Kpis {
   lines: number;
   firstTs?: string;
   lastTs?: string;
+  /** Lines whose provenance tag defeated the strict parser (see TAG_ANOMALY). */
+  tagAnomalies: number;
+  tagAnomalyExample?: string;
   delegation: {
     replaced: number;
     byTool: Record<string, number>;
@@ -36,6 +39,7 @@ export interface Kpis {
 export function createKpis(): Kpis {
   return {
     lines: 0,
+    tagAnomalies: 0,
     delegation: { replaced: 0, byTool: {}, charsIn: 0, charsOut: 0, inflated: 0, failed: 0, noUsableSummary: 0 },
     readBlocks: { expensive: 0, size: 0 },
     hops: { failures: 0, byReason: {}, byModel: {} },
@@ -59,6 +63,16 @@ const bump = (m: Record<string, number>, k: string) => {
 // zero tagged lines (review P1 2026-10-04).
 const TS = /^(\d{4}-\d\d-\d\dT[\d:.]+Z)\s{2}(?:\[[^\]]*\/\d+\] )?(.*)$/;
 
+// Loose shape for a provenance tag the strict group above could NOT consume —
+// possible when the project basename contains "]" (exotic directory name),
+// which defeats `[^\]]*`. Such a line reaches ingestLine with the raw tag
+// still at the body start, matches no KPI, and previously did so SILENTLY
+// (review Minor 2026-10-04). We count the anomaly and keep one example so
+// the report can warn about undercounting. Requires no whitespace inside
+// the tag, so message prefixes like "[delegation] " or "[escalation] 3/5] "
+// (space before the digits) do not trigger it.
+const TAG_ANOMALY = /^\[[^\s]*\/\d+\] /;
+
 function hopReason(text: string): string {
   if (/no response within timeout/.test(text)) return 'timeout';
   if (/stream stalled/.test(text)) return 'stall';
@@ -77,6 +91,10 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
   if (!m) return;
   const [, ts, body] = m as unknown as [string, string, string];
   if (sinceMs !== undefined && Date.parse(ts) < sinceMs) return;
+  if (TAG_ANOMALY.test(body)) {
+    k.tagAnomalies++;
+    k.tagAnomalyExample ??= line;
+  }
   k.lines++;
   k.firstTs ??= ts;
   k.lastTs = ts;
@@ -189,6 +207,9 @@ async function main(argv: string[]): Promise<void> {
   for (const file of logFiles(logPath)) {
     const rl = createInterface({ input: createReadStream(file, 'utf-8'), crlfDelay: Infinity });
     for await (const line of rl) ingestLine(k, line, sinceMs);
+  }
+  if (k.tagAnomalies > 0) {
+    console.error(`warning: ${k.tagAnomalies} log line(s) carry a provenance tag the audit could not parse; KPIs may undercount (first: ${JSON.stringify(k.tagAnomalyExample)})`);
   }
   console.log(argv.includes('--json') ? JSON.stringify(k, null, 2) : formatReport(k));
 }
