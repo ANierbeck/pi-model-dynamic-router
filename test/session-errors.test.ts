@@ -92,7 +92,7 @@ describe('persistence round-trip (review I3)', () => {
     const cm2 = new CacheManager(dir);
     const reloaded = cm2.loadCache();
     expect(reloaded.session_errors).toHaveLength(1);
-    expect(reloaded.session_errors![0]).toEqual({ ts: T0, ref: 'mistral/zai-glm-5-3', reason: 'provider_error', detail: 'boom', consequence: 'soft backoff' });
+    expect(reloaded.session_errors![0]).toEqual({ ts: T0, ref: 'mistral/zai-glm-5-3', reason: 'provider_error', detail: 'boom', consequence: 'soft backoff', pid: process.pid });
   });
 });
 

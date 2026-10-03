@@ -710,7 +710,7 @@ export class StreamOrchestrator {
           // errors, 1475 router.log lines in a single day. Cool down ALL
           // :free refs until the next UTC midnight instead, and narrate the
           // cap as what it is. The reset time shown is the router's OWN
-          // cooldown end ("backing off until"), not a provider-announced
+          // cooldown end ("backing off …, until HH:MM"), not a provider-announced
           // reset — the 429 body names no time; midnight UTC is our
           // inference from OpenRouter's documented daily-cap policy.
           if (freeDayCap) {

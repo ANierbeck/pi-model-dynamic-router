@@ -258,6 +258,8 @@ export interface SessionError {
   reason: string;
   detail?: string;
   consequence: string;
+  /** Recording process (per-project split 2026-10-03); absent in pre-split history. */
+  pid?: number;
 }
 
 export interface Cache {

@@ -101,7 +101,12 @@ describe('session_errors wiring: one thrown tryStream failure records exactly ON
         expect(streamSimple).toHaveBeenCalled();
 
         for (const h of onHandlers['session_shutdown'] ?? []) await h({ reason: 'quit' });
-        const persisted = JSON.parse(fs.readFileSync(scanCachePath, 'utf-8'));
+        // Per-project instance state (2026-10-03): session_errors persist to
+        // <cwd>/.pi/cache/router-state.json when the router runs with a
+        // project scope.
+        const persisted = JSON.parse(
+          fs.readFileSync(path.join(tmpDir, '.pi', 'cache', 'router-state.json'), 'utf-8')
+        );
         expect(Array.isArray(persisted.session_errors)).toBe(true);
         // THE pin: exactly one provider_error entry per REAL failed attempt.
         // streamSimple is called once per attempt (initial open + the

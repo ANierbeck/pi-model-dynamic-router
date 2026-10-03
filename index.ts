@@ -137,7 +137,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   // 2026-09-27).
   let statusUpdater: ((key: string, text: string) => void) | null = null;
   function updateErrorStatusLine(): void {
-    const n = countSessionErrorsSince(cache, sessionStart);
+    const n = countSessionErrorsSince(cache, sessionStart, process.pid);
     try {
       statusUpdater?.('router', n > 0 ? `\u26A0${n} err` : '');
     } catch {
@@ -458,7 +458,7 @@ let previousTokenCount = 0;
     }
     // Hand over the shared cache object; loadCache() fills it from disk
     // (review 2026-09-27).
-    cacheManager = new CacheManager(stateDir, cache);
+    cacheManager = new CacheManager(stateDir, cache, process.cwd());
     // load() does not only run at boot: tools call it directly
     // (resolve_model_group, update_model_metrics) and EVERY session_start
     // fires it — including subagent sessions, which share this module-level

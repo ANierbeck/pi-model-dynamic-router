@@ -347,6 +347,55 @@
   while the cascade actually streamed mistral/zai-glm-5-3. The suffix now
   applies the same predicates (sync, no await) so it only names refs the loop
   will REALLY attempt next. Pinned by `test/free-tier-daily-cap.test.ts`.
+- **claude-bridge time-only reset times are parsed** (follow-up to
+  `8449026`): the bridge narrates a REAL rate-limit rejection as
+  `Claude rate limit (five_hour) — resets 9:52:44 PM: <failure>` — a bare
+  time from `toLocaleTimeString()`, no date, no zone. `parseResetAtMs` could
+  not read that in ANY locale, so on a genuine five_hour rejection the
+  router fell back to the 60s escalating backoff and re-burned a doomed
+  bridge attempt every minute for the rest of the window. The new
+  time-only format resolves to the next occurrence of that wall-clock time
+  in the local zone (the bridge formats on the same machine the router
+  runs on). Pinned by `test/bridge-time-only-reset.test.ts`.
+- **Deterministic, locale-free reset/backoff narration** (owner 2026-10-03,
+  "fix the locale topic for real"): the suffixes were rendered with
+  `toLocaleString()` — one machine showed `resets 3.10.2026, 20:51:31`
+  (de-DE), another `resets 10/3/2026, 7:16:53 PM` (en-US), and the bare
+  local time next to the UTC log timestamp read like a two-hour gap when it
+  was two minutes. New wording, stable on every host:
+  `(resets in 2h 05m, at 21:50)` / `(backing off 45s, until 21:50)`.
+  Wording-contract tests updated accordingly.
+- **Instance state persists to the project directory** (owner 2026-10-03):
+  `session_errors` and `usage_log` now live in
+  `<project>/.pi/cache/router-state.json` instead of the router package's
+  shared `scan-cache.json`. Root cause: three concurrent pi instances in
+  different projects share that one file; `saveCache` wrote the in-memory
+  object blindly (last-writer-wins), so each save erased the other
+  processes' error history and token usage. Global state (scan inventory,
+  gdpval, pricing, cooldowns, blocklist, health) deliberately stays shared —
+  no re-scans, shared provider learning preserved (owner decision
+  2026-10-03, "instance data only"). Pinned by
+  `test/cache-per-project-state.test.ts`.
+- **Atomic cache writes + merge-on-save** (same live finding): both cache
+  files are now written tmp-then-rename — a concurrent reader can no longer
+  observe a torn file, parse it as `{}` and silently wipe state. The global
+  save merges what other processes wrote since the last sync (same
+  memory-wins semantics as `loadCache`) instead of clobbering it; the
+  project save append-merges another same-project process's entries.
+  Within-side duplicates are REAL events and are never deduped (live pin:
+  two genuine failed attempts in the same millisecond).
+- **Session errors carry the recording process's pid** (same finding):
+  concurrent instances' time windows overlap, so `ts >= sessionStart`
+  alone let another process's errors count into our status line. The
+  counter now filters by pid; entries without one (pre-split history) keep
+  the old behavior.
+- **Global router.log lines carry provenance** (owner 2026-10-03): every
+  line in `~/.pi/logs/router.log` is tagged `[<project>/<pid>]` after the
+  timestamp — three concurrent pi instances interleaved there with no way
+  to tell them apart. The project-local mirror stays untagged. When pi is
+  started directly in the home directory (both paths identical) the line
+  is written exactly once instead of twice. Pinned by
+  `test/global-log-tag.test.ts`.
 
 ### Internal (docs & tests)
 - ADRs 0008–0020 (learned blocklist, one-filter rule set, union merge,

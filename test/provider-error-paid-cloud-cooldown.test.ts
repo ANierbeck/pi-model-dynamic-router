@@ -157,6 +157,6 @@ describe('driveStream: provider_error on a paid cloud model', () => {
     // No provider-announced reset time in the raw text — the router's own
     // cooldown end is shown, worded as OUR backoff (not a fabricated
     // provider "resets", 2026-10-03 honesty fix).
-    expect(text).toMatch(/\(backing off until .+\)/);
+    expect(text).toMatch(/\(backing off [0-9hms ]+, until \d{2}:\d{2}\)/);
   });
 });

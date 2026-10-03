@@ -4,7 +4,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { Cache } from './types.ts';
+import type { Cache, SessionError } from './types.ts';
+
+/** The usage_log entry shape (inline in types.ts's Cache interface). */
+type UsageEntry = { ref: string; tokens: number; ts: number };
+import { SESSION_ERROR_CAP } from './session-errors.ts';
 
 // ── Cache Management ───────────────────────────────────────────────────────
 
@@ -12,6 +16,73 @@ import type { Cache } from './types.ts';
 // by a read or a write. Keyed by the object, not the manager, because index.ts
 // rebuilds the manager on every load() but keeps the one cache object.
 const lastSync = new WeakMap<Cache, string>();
+// Same, for the per-project instance-state file.
+const lastProjectSync = new WeakMap<Cache, string>();
+
+/**
+ * Instance-scoped state — persisted to <process-cwd>/.pi/cache/, NOT to the
+ * shared scan cache (owner decision 2026-10-03). Live finding: three
+ * concurrent pi instances in different projects share the router package's
+ * scan-cache.json; blind last-writer-wins saves erased each other's
+ * session_errors and usage_log. One process = one project (pi is started in
+ * the project dir), so index.ts passes process.cwd() as the scope. Worktree subagents
+ * share the main process and thus the main project's file — documented
+ * limitation, mirrors the pre-split behavior where everything went to one
+ * global file anyway.
+ */
+const INSTANCE_KEYS = ['session_errors', 'usage_log'] as const;
+
+
+
+/** Atomic JSON write: temp file in the same directory, then rename. */
+function writeJsonAtomic(file: string, data: unknown): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+function fileStateOf(file: string): string {
+  try {
+    const st = fs.statSync(file);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return '';
+  }
+}
+
+function readJsonIfExists(file: string): Record<string, unknown> {
+  try {
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'));
+  } catch {
+    /* absent or torn */
+  }
+  return {};
+}
+
+/**
+ * Append-merge instance entries: memory entries not already on disk are
+ * added, disk entries are kept, the result is sorted by `ts` ascending.
+ *
+ * Deliberately NO within-side dedupe (live pin: two REAL failed attempts in
+ * the same millisecond — same ref, same reason, same detail — must both
+ * survive; a value-union collapsed them and broke the "one entry per real
+ * attempt" contract). Memory entries already present on disk (from an
+ * earlier save of this process) are dropped by the key so re-saves do not
+ * accumulate duplicates. Cross-process collisions of byte-identical entries
+ * within one millisecond are accepted and documented.
+ */
+function appendInstanceArray<T extends { ts: number }>(
+  disk: T[] | undefined,
+  memory: T[] | undefined,
+  entryKey: (e: T) => string
+): T[] {
+  const diskKeys = new Set((disk ?? []).map(entryKey));
+  const out: T[] = [...(disk ?? [])];
+  for (const e of memory ?? []) if (!diskKeys.has(entryKey(e))) out.push(e);
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
 
 /**
  * Adds what another process wrote without discarding in-memory state: keys
@@ -46,8 +117,19 @@ export class CacheManager {
    * `existing` is the caller's in-memory cache: a manager rebuilt on reload
    * must keep writing that one object instead of a fresh copy from disk.
    */
-  constructor(stateDir: string, existing?: Cache) {
+  private readonly projectPath: string | null;
+
+  /**
+   * `projectDir` scopes the instance state (session_errors, usage_log) to
+   * <projectDir>/.pi/cache/router-state.json — the owner's "instance data
+   * lives in the project directory" decision. Omit it and instance keys keep
+   * persisting to the global scan cache (the pre-split behavior — used by
+   * tests and any embedding that manages state itself). index.ts passes
+   * process.cwd(): one pi process = one project.
+   */
+  constructor(stateDir: string, existing?: Cache, projectDir?: string) {
     this.cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
+    this.projectPath = projectDir ? path.join(projectDir, '.pi', 'cache', 'router-state.json') : null;
     if (existing) {
       this.cache = existing;
     } else {
@@ -96,22 +178,92 @@ export class CacheManager {
   loadCache(): Cache {
     const known = lastSync.get(this.cache);
     const state = this.fileState();
-    if (known !== undefined && known === state) return this.cache;
+    if (known !== undefined && known === state) {
+      this.loadInstanceState();
+      return this.cache;
+    }
     const disk = this.readFromDisk();
     if (known === undefined && Object.keys(this.cache).length === 0) Object.assign(this.cache, disk);
     else mergeExternal(this.cache, disk);
     lastSync.set(this.cache, state);
+    this.loadInstanceState();
     return this.cache;
   }
 
   /**
-   * Saves the cache to the file
+   * Overlays the per-project instance state (session_errors, usage_log)
+   * from <cwd>/.pi/cache/router-state.json. When that file has no entry for
+   * a key, whatever the global scan cache carried (pre-split legacy data)
+   * stays in memory — it is adopted by the project file on the next save.
+   */
+  private loadInstanceState(): void {
+    if (!this.projectPath) return;
+    const proj = readJsonIfExists(this.projectPath);
+    if (Array.isArray(proj.session_errors)) this.cache.session_errors = proj.session_errors as never;
+    if (Array.isArray(proj.usage_log)) this.cache.usage_log = proj.usage_log as never;
+  }
+
+  /**
+   * Saves the cache. Two files, two strategies (live finding 2026-10-03:
+   * blind last-writer-wins writes erased other processes' state):
+   *
+   * - GLOBAL scan cache: merge-on-save — what other processes wrote since
+   *   our last sync is merged in (memory wins, disk fills gaps; same
+   *   semantics as loadCache). Instance keys are STRIPPED from the global
+   *   write; they moved to the project file (one-time migration: a legacy
+   *   global cache's entries are adopted by the project file on the first
+   *   save, then gone from the global one).
+   * - PROJECT instance file: union-merge with what other same-project
+   *   processes wrote (dedupe by entry identity), sorted by ts.
+   *
+   * Both writes are atomic (tmp + rename) — a concurrent reader can no
+   * longer observe a torn file, parse it as `{}` and silently wipe state.
+   *
+   * Known trade-off (same as loadCache's mergeExternal): a key deleted by
+   * one process can be resurrected from disk by another process's concurrent
+   * save. Cooldowns are time-based and self-expiring, so this is benign.
    */
   saveCache(cache?: Cache): void {
-    const dataToSave = cache ?? this.cache;
-    fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
-    fs.writeFileSync(this.cachePath, JSON.stringify(dataToSave, null, 2));
-    lastSync.set(dataToSave, this.fileState());
+    const data = cache ?? this.cache;
+
+    // ── global part ────────────────────────────────────────────────────
+    const knownGlobal = lastSync.get(data);
+    const globalState = this.fileState();
+    if (knownGlobal === undefined || knownGlobal !== globalState) {
+      mergeExternal(data, this.readFromDisk());
+    }
+    const globalPart: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+    if (this.projectPath) for (const k of INSTANCE_KEYS) delete globalPart[k];
+    writeJsonAtomic(this.cachePath, globalPart);
+    lastSync.set(data, this.fileState());
+
+    if (!this.projectPath) {
+      // No project scope: instance keys stay in the global file (the
+      // pre-split behavior — tests and self-managing embeddings).
+      return;
+    }
+
+    // ── per-project instance part ──────────────────────────────────────
+    const projState = fileStateOf(this.projectPath);
+    const knownProj = lastProjectSync.get(data);
+    // Disk is read only when it changed since our last sync: while we are
+    // the last writer, memory already contains everything we persisted —
+    // and memory-internal duplicates are REAL events, never deduped.
+    const diskProj =
+      knownProj === undefined || knownProj !== projState ? readJsonIfExists(this.projectPath) : {};
+    const errors = appendInstanceArray(
+      diskProj.session_errors as SessionError[] | undefined,
+      (data as Record<string, unknown>).session_errors as SessionError[] | undefined,
+      (e) => `${e.ts}|${e.ref}|${e.reason}|${e.detail ?? ''}|${e.consequence}|${e.pid ?? ''}`
+    ).slice(-SESSION_ERROR_CAP);
+    const usageCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const usage = appendInstanceArray(
+      diskProj.usage_log as UsageEntry[] | undefined,
+      (data as Record<string, unknown>).usage_log as UsageEntry[] | undefined,
+      (e) => `${e.ts}|${e.ref}|${e.tokens}`
+    ).filter((e) => e.ts > usageCutoff);
+    writeJsonAtomic(this.projectPath, { session_errors: errors, usage_log: usage });
+    lastProjectSync.set(data, fileStateOf(this.projectPath));
   }
 
   /**
@@ -172,6 +324,10 @@ export class CacheManager {
    */
   resetCache(): void {
     for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
+    // A reset is a WIPE: remove both files so the merge-on-save paths have
+    // nothing to resurrect, then persist the (now empty) state fresh.
+    try { fs.rmSync(this.cachePath, { force: true }); } catch {}
+    if (this.projectPath) try { fs.rmSync(this.projectPath, { force: true }); } catch {}
     this.saveCache();
   }
 

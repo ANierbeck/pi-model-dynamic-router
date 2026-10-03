@@ -183,8 +183,33 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return d.rateLimitManager.limitSecs(ref);
   }
 
-  /**
-   * Builds the " (resets HH:MM:SS)" suffix for a rate-limit router-info
+/**
+ * Locale-independent duration for narration: "45s", "4m", "2h 05m", "7d".
+ * Deterministic by construction (no Intl, no locale digits).
+ */
+function humanizeShortDuration(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 90) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 36) return `${h}h ${String(m % 60).padStart(2, '0')}m`;
+  return `${Math.round(h / 24)}d`;
+}
+
+/**
+ * Locale-independent local wall-clock "HH:MM" (live finding 2026-10-03:
+ * toLocaleString() rendered de-DE on one machine and en-US on another, and
+ * the bare local time next to the UTC log timestamp read like a two-hour
+ * gap when it was two minutes). Manual formatting is stable across hosts.
+ */
+function formatLocalHm(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+   * Builds the reset/backoff suffix for a rate-limit router-info
    * message. Prefers the parsed provider reset time (resetAtMs) when
    * available — the accurate case. Otherwise falls back to the router's own
    * computed cooldown_until (the escalating backoff, or whatever
@@ -201,11 +226,11 @@ export function createLimitGlue(d: LimitGlueDeps) {
     // provider reset fabricates a time the provider never sent (claude-bridge
     // empty responses, live finding 2026-10-03: "resets 10/3/2026, 12:23:53
     // PM" — the bridge said nothing of the sort).
-    if (resetAtMs) return ` (resets ${new Date(resetAtMs).toLocaleString()})`;
+    if (resetAtMs) return ` (resets in ${humanizeShortDuration(resetAtMs - Date.now())}, at ${formatLocalHm(resetAtMs)})`;
     if (rotated) return '';
     const secs = limitSecs(ref);
     if (secs <= 0) return '';
-    return ` (backing off until ${new Date(Date.now() + secs * 1000).toLocaleString()})`;
+    return ` (backing off ${humanizeShortDuration(secs * 1000)}, until ${formatLocalHm(Date.now() + secs * 1000)})`;
   }
 
   /**

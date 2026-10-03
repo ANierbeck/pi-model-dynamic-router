@@ -128,7 +128,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
         // the router's own computed cooldown must still be surfaced as a
         // wall-clock time — worded as OUR backoff, not as a provider reset
         // the provider never announced (2026-10-03 honesty fix).
-        expect(routerInfoText).toMatch(/\(backing off until .+\)/);
+        expect(routerInfoText).toMatch(/\(backing off [0-9hms ]+, until \d{2}:\d{2}\)/);
       }
     );
   }, 30000);
@@ -204,7 +204,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
           .join('');
 
         expect(routerInfoText).toContain('likely rate limit');
-        expect(routerInfoText).toMatch(/\(backing off until .+\)/);
+        expect(routerInfoText).toMatch(/\(backing off [0-9hms ]+, until \d{2}:\d{2}\)/);
       }
     );
   }, 30000);

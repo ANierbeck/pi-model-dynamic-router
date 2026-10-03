@@ -181,7 +181,7 @@ export function parseResetAtMs(text: string): number | undefined {
   const mdy = text.match(
     /\b(\d{1,2})\.\s+([A-Za-zÀ-ÖØ-öø-ÿ]+)\.?\s+(\d{4}),\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,6})\b/
   );
-  if (!mdy) return parseInformalZonedReset(text);
+  if (!mdy) return parseInformalZonedReset(text) ?? parseTimeOnlyReset(text);
   // Groups: [fullMatch, day, month, year, hour, minute, second, tz]
   const [, day, monRaw, year, hour, minute, second, tz] = mdy;
   // Both English abbreviations (in case an English-locale Pi install produces
@@ -297,6 +297,38 @@ function parseInformalZonedReset(text: string): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Third reset-time format: claude-bridge's describeRateLimitFailure emits
+ * "Claude rate limit (five_hour) — resets 9:52:44 PM: <failure>" — a bare
+ * time from toLocaleTimeString(), no date, no zone (live finding
+ * 2026-10-03: unparsed in every locale, so a genuine five_hour rejection
+ * fell back to the 60s escalating backoff and re-burned a doomed bridge
+ * attempt every minute for the rest of the window).
+ *
+ * The bridge formats on the SAME machine the router runs on, so the
+ * local timezone is the correct interpretation. Resolves to the NEXT
+ * occurrence of that wall-clock time (5h windows can cross midnight).
+ */
+function parseTimeOnlyReset(text: string): number | undefined {
+  const m = text.match(/\bresets\s+(?:at\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!m) return undefined;
+  // 12-hour clock: 12pm → 12, 9pm → 21, 12am → 0, 9am → 9; 24h passes through.
+  let hour = Number(m[1]);
+  const ampm = m[4]?.toLowerCase();
+  if (ampm === 'pm') hour = (hour % 12) + 12;
+  else if (ampm === 'am') hour = hour % 12;
+  const minute = Number(m[2]);
+  const second = m[3] ? Number(m[3]) : 0;
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+  const now = new Date();
+  const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, second, 0);
+  let ms = candidate.getTime();
+  if (ms <= now.getTime()) ms += 24 * 60 * 60 * 1000; // already passed → next occurrence
+  // Same plausibility guard as the other formats.
+  if (ms <= now.getTime() || ms > now.getTime() + 7 * 24 * 60 * 60 * 1000) return undefined;
+  return ms;
 }
 
 // ── OpenRouter free-tier daily cap ─────────────────────────────────────

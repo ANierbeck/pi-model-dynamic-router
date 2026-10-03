@@ -39,6 +39,11 @@ export function pushSessionError(cache: Cache, entry: SessionError): void {
     ref: entry.ref,
     reason: entry.reason,
     consequence: entry.consequence,
+    // Provenance for the per-project split (2026-10-03): concurrent pi
+    // instances' windows overlap, so ts >= sessionStart alone lets another
+    // process's errors count into OUR status line. Entries without a pid
+    // (pre-split history) keep the old counting behavior.
+    pid: entry.pid ?? process.pid,
     ...(entry.detail !== undefined
       ? // Collapse whitespace: provider errors are often multi-line and would
         // break the one-line table rows of formatErrorsReport (review M4).
@@ -91,8 +96,10 @@ export function sessionErrors(cache: Cache): SessionError[] {
  * This is the number shown in the footer (⚠N err) and the headline of
  * `/router errors` — the correlation anchor.
  */
-export function countSessionErrorsSince(cache: Cache, sessionStartTs: number): number {
-  return sessionErrors(cache).filter((e) => e.ts >= sessionStartTs).length;
+export function countSessionErrorsSince(cache: Cache, sessionStartTs: number, pid?: number): number {
+  return sessionErrors(cache).filter(
+    (e) => e.ts >= sessionStartTs && (pid === undefined || e.pid === undefined || e.pid === pid)
+  ).length;
 }
 
 function fmtTime(ts: number): string {

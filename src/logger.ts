@@ -42,6 +42,12 @@ const LEVEL_RANK: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug
 // write (tests isolate it per file).
 const homeLogPath = () => path.join(homedir(), '.pi', 'logs', 'router.log');
 let projectLogPath: string | null = null;
+// Provenance tag for the GLOBAL log (live finding 2026-10-03: concurrent pi
+// instances in different projects interleave there with no way to tell them
+// apart). '<project-basename>/<pid>'; 'pi' until session_start names the
+// project. The project-local mirror stays untagged — the file itself is the
+// provenance there.
+let projectTag = 'pi';
 let level: LogLevel = ['error', 'warn', 'debug'].includes(process.env.ROUTER_LOG_LEVEL ?? '')
   ? (process.env.ROUTER_LOG_LEVEL as LogLevel)
   : 'info';
@@ -94,10 +100,26 @@ function append(logPath: string, line: string): void {
   fs.appendFileSync(logPath, line + '\n');
 }
 
+/** Tag a fully formatted line: insert " [<tag>] " right after the ISO timestamp. */
+function withTag(line: string): string {
+  const tag = `[${projectTag}/${process.pid}]`;
+  const m = line.match(/^(\d{4}-\d{2}-\d{2}T[^\s]+)(\s+)(.*)$/);
+  return m ? `${m[1]}  ${tag} ${m[3]}` : `${tag} ${line}`;
+}
+
 /** Write a single line to both the global and project-local router logs. */
 export function writeLogLine(line: string): void {
+  const home = homeLogPath();
+  // pi started directly in the home directory: both targets are the SAME
+  // file — write it once (tagged), never twice.
+  if (projectLogPath && path.resolve(projectLogPath) === path.resolve(home)) {
+    try {
+      append(home, withTag(line));
+    } catch {}
+    return;
+  }
   try {
-    append(homeLogPath(), line);
+    append(home, withTag(line));
   } catch {}
   if (projectLogPath) {
     try {
@@ -109,6 +131,7 @@ export function writeLogLine(line: string): void {
 /** Set the project-local log mirror path. Call on session_start. */
 export function setProjectLogDir(cwd: string | undefined): void {
   projectLogPath = cwd ? path.join(cwd, '.pi', 'logs', 'router.log') : null;
+  projectTag = cwd && path.basename(cwd) ? path.basename(cwd) : 'pi';
 }
 
 /** ROUTER_LOG_LEVEL wins over the configured level. */

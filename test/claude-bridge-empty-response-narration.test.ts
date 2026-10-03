@@ -153,7 +153,7 @@ describe('claude-bridge empty response narration (no invented cause)', () => {
         // empty response carries no evidence of a rate limit on any of them.
         // … and no fabricated provider reset — only our own backoff, worded as such.
         expect(text).not.toMatch(/\(resets .+\)/);
-        expect(text).toMatch(/\(backing off until .+\)/);
+        expect(text).toMatch(/\(backing off [0-9hms ]+, until \d{2}:\d{2}\)/);
       }
     );
   }, 30000);

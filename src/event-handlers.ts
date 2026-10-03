@@ -200,7 +200,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
           // built-in footer — the only renderer of ctx.ui.setStatus extension
           // statuses — so the counter MUST be a part here. Same single source
           // of truth as /router errors: entries with ts >= sessionStart.
-          const errN = countSessionErrorsSince(rt.cache, rt.sessionStart);
+          const errN = countSessionErrorsSince(rt.cache, rt.sessionStart, process.pid);
           const errS = errN > 0 ? theme.fg('error', `⚠${errN} err`) : '';
 
           const sep = theme.fg('dim', ' | ');

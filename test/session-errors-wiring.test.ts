@@ -27,6 +27,9 @@ import {
 } from './helpers/noop-scan-cache.ts';
 
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+// Per-project instance state (2026-10-03): session_errors persist here when
+// the router runs with a project scope (process.cwd() during the test).
+const projectStatePathFor = (cwd: string) => path.join(cwd, '.pi', 'cache', 'router-state.json');
 
 async function drainStream(stream: AsyncIterable<any>) {
   const events: any[] = [];
@@ -121,7 +124,7 @@ describe('session_errors wiring: main-loop SOFT failures reach the buffer', () =
         // Flush the debounced save via the shutdown handler, then read the
         // persisted buffer from the scan cache (the single source of truth).
         for (const h of onHandlers['session_shutdown'] ?? []) await h({ reason: 'quit' });
-        const persisted = JSON.parse(fs.readFileSync(scanCachePath, 'utf-8'));
+        const persisted = JSON.parse(fs.readFileSync(projectStatePathFor(tmpDir), 'utf-8'));
         expect(Array.isArray(persisted.session_errors)).toBe(true);
         expect(persisted.session_errors.length).toBeGreaterThan(0);
         const entry = persisted.session_errors.find(
