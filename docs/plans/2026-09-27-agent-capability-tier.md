@@ -20,7 +20,7 @@ small-but-benchmark-capable models out of MAIN-agent work:
 1. **Afternoon (pi-model-router-fork session):** the burned candidate chain
    landed on `mistral/mistral-small-latest`, which then served 35+ garbage
    main-agent turns (0–220-char toolUse loops, one 11k-char repetition dump).
-2. **Evening (~/private-chat session, 14:36Z):** the RAI/wiki prompt was
+2. **Evening (a second live session, 14:36Z):** the RAI/wiki prompt was
    legitimately classified `standard → operational` (min_gdpval 300);
    `mistral/mistral-small-2603` (slug-resolved GDPval 349.39) passed the
    floor, streamed "successfully" and ended its final turn with 248 chars

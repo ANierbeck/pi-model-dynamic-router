@@ -8,7 +8,7 @@
  * garbage on MAIN-agent work — 35+ consecutive 0–220-char toolUse turns
  * (pi-model-router-fork session, afternoon) and a final turn that announced
  * "Jetzt liefere ich die Evaluation …" and simply stopped without delivering
- * it (~/private-chat session, 14:36Z). No failure detection can fire on
+ * it (a second live session, 14:36Z). No failure detection can fire on
  * these: the streams finish normally (non-empty, stopReason `stop`).
  *
  * The curated family list lives in the config key `non_agent_model_prefixes`

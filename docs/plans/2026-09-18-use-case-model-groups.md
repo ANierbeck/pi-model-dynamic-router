@@ -71,7 +71,7 @@ approaches".)
 
 ## Preconditions the implementer must honor (read `AGENTS.md` first)
 
-> **Instruction to the implementer:** read `/Users/anierbeck/git/pi-model-router-fork/AGENTS.md`
+> **Instruction to the implementer:** read the repo-root `AGENTS.md`
 > in full before starting. This is a **Pi extension**, not a Claude
 > extension — every interaction with Pi must go through the **Pi extension
 > API** (`ExtensionContext` / `pi.registerProvider` / `pi.modelRegistry` /

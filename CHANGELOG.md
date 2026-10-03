@@ -332,7 +332,7 @@
   persist state best-effort before exit and no longer re-register per
   extension load.
 - **OpenRouter free-tier daily cap treated as account-wide cooldown**
-  (`current`): the 429 body `"Rate limit exceeded: free-models-per-day"`
+  (`8449026`): the 429 body `"Rate limit exceeded: free-models-per-day"`
   covers ALL openrouter/*:free models at once and resets at 00:00 UTC. The
   router previously treated it as a per-model 429 with the escalating 60s
   backoff, so every later turn re-burned a doomed attempt per :free candidate
@@ -341,7 +341,7 @@
   next UTC midnight, narrating it as the account-wide cap it is. Pinned by
   `test/free-tier-daily-cap.test.ts`.
 - **"trying X …" narration skips candidates pre-flight guards will skip**
-  (`current`): the cascade loop's pre-flight guards (cooldown, wedged
+  (`8449026`): the cascade loop's pre-flight guards (cooldown, wedged
   provider, ollama daemon down, context-window guard) silently skip candidates
   after the suffix is already emitted — e.g. "trying ollama/mistral-nemo:latest"
   while the cascade actually streamed mistral/zai-glm-5-3. The suffix now
