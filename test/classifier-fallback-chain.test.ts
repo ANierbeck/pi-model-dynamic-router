@@ -168,6 +168,30 @@ describe('classifyPrompt fallback chain', () => {
       expect(result).toEqual({ category: 'code_simple', reason: 'from cloud', confidence: 0.85 });
     });
 
+    it('never sends a prompt to an excluded model, even from a stale probed list (owner decision 2026-10-03)', async () => {
+      // `exclude` means "never use this model, for anything" — including
+      // classification. The probed list is cached at scan time, so it may
+      // still carry a ref the user excluded afterwards (sourcelume
+      // 2026-10-03: openrouter/stealth/space-bunny-alpha classified prompts).
+      vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+      const completeSimple = vi.fn().mockResolvedValue(
+        cloudReply({ category: 'simple', reason: 'from allowed', confidence: 0.9 })
+      );
+      const findModel = vi.fn().mockReturnValue(mockModel);
+
+      await classifyPrompt('Rename this helper so the excluded stealth model never sees it', {
+        allowCloudFallback: true,
+        cfg: { exclude: { models: ['openrouter/stealth/*'] } } as any,
+        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'] } as any,
+        completeSimple,
+        findModel,
+      });
+
+      expect(findModel).not.toHaveBeenCalledWith('openrouter/stealth/space-bunny-alpha');
+      expect(findModel).toHaveBeenCalledWith('prov/cloud-a');
+      expect(completeSimple).toHaveBeenCalledTimes(1);
+    });
+
     it('falls back to Ollama as a LAST RESORT when the entire cloud chain fails', async () => {
       vi.mocked(callOllama)
         .mockRejectedValueOnce(new Error('ECONNREFUSED')) // primary

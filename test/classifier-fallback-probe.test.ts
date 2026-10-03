@@ -152,6 +152,24 @@ describe('selectClassifierCandidates', () => {
     expect(result).not.toContain('openrouter/gated-model');
   });
 
+  it('honours the global exclude rules — excluded models are never probed (owner decision 2026-10-03)', () => {
+    const cache: Cache = {
+      available_models: [
+        { id: 'healthy-model', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'stealth/space-bunny-alpha', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/healthy-model': { input: 0, output: 0 },
+        'openrouter/stealth/space-bunny-alpha': { input: 0, output: 0 },
+      },
+    };
+    const cfg: Config = { ...baseCfg, exclude: { models: ['openrouter/stealth/*'] } };
+    seedMetrics(cfg, cache);
+    const result = selectClassifierCandidates(cfg, cache);
+    expect(result).toContain('openrouter/healthy-model');
+    expect(result).not.toContain('openrouter/stealth/space-bunny-alpha');
+  });
+
   it('excludes models currently marked unhealthy (failed >=2x recently)', () => {
     const cache: Cache = {
       available_models: [

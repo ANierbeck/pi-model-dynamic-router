@@ -3,6 +3,7 @@ import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { lookupGdp } from './metrics.ts';
+import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
@@ -704,6 +705,14 @@ export async function classifyPrompt(
         // review 2026-09-26, Minor #3).
         modelsToTry = [pinnedCloudModel, ...modelsToTry.filter((m) => m !== pinnedCloudModel)];
         source = `pinned+${source}`;
+      }
+      // `exclude` means "never use, for anything" (owner decision
+      // 2026-10-03). Filtered here as well as in selectClassifierCandidates:
+      // the probed list is cached at scan time and may predate an exclude,
+      // and the static free list / a pin never passed the probe filter.
+      if (cfg.exclude) {
+        const exCtx = { rules: cfg.exclude, cfg, cache };
+        modelsToTry = modelsToTry.filter((ref) => !isExcluded(ref, exCtx));
       }
       routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
       // Distinguish "probe ran but all candidates failed" from "probe hasn't

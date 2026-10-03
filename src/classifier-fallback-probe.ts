@@ -47,6 +47,7 @@
 
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
+import { isExcluded } from './exclude.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
 import { formatBlockLogLine, isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
 import {
@@ -205,6 +206,10 @@ export function selectClassifierCandidates(
     if (isUnhealthy(cache, ref)) continue;
     // Skip models on the learned blocklist (ADR-0008) until their TTL expires.
     if (isBlocked(cache, ref)) continue;
+    // Skip user-excluded models: `exclude` means "never use, for anything",
+    // classification included (owner decision 2026-10-03 — a stealth model
+    // was classifying prompts despite the user excluding it from routing).
+    if (cfg.exclude && isExcluded(ref, { rules: cfg.exclude, cfg, cache })) continue;
 
     const price = lookupPrice(ref);
     // gdpval lookup: model_score_cache maps ref → slug; gdpval_scores maps slug → score.
