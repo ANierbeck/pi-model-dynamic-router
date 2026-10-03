@@ -39,7 +39,7 @@ interface Signature {
 // found" prefix with the decommissioned signature and must win.
 const OPENROUTER_SIGNATURES: readonly Signature[] = [
   // 400 "folding the request grammar": OpenRouter cannot translate THIS
-  // request's tool schema into the provider's request grammar (sourcelume
+  // request's tool schema into the provider's request grammar (live finding
   // 2026-10-03: qwen3.8-27b:free rejected every request carrying the
   // subagent tool schema with "parameter \"gate\": more than one JSON
   // reading of the same emitted value" while tool-less requests succeeded).
@@ -147,7 +147,7 @@ function parseBody(text: string): { message: string; routingStep?: string; ineli
       // metadata.raw — body.message is then just the generic "Provider
       // returned error" wrapper (which TRANSIENT_TEXT also matches, so the
       // real deterministic cause inside raw was never classified before;
-      // sourcelume 2026-10-03 qwen 400 incident). Prefer the unwrapped
+      // 2026-10-03 live qwen 400 incident). Prefer the unwrapped
       // upstream message when it parses.
       let message = String(body?.message ?? body?.error?.message ?? text);
       if (typeof meta.raw === 'string') {

@@ -463,7 +463,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               return 'done';
             }
             // Empty response (stopReason 'stop', zero content — the
-            // claude-bridge spend-limit signature, sourcelume 2026-10-03):
+            // claude-bridge empty-turn signature, live finding 2026-10-03):
             // do NOT forward the terminal done. Forwarding terminates the
             // proxy and silently drops every later cascade event — the
             // failure narration AND the next candidates' content — so the

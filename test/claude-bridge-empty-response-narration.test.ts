@@ -1,19 +1,22 @@
 // test/claude-bridge-empty-response-narration.test.ts
-// Regression test for the sourcelume 2026-10-03 finding: claude-bridge
-// answers with an EMPTY response (stopReason 'stop', 0 chars) when the
-// subscription spend limit is hit — there is no error text, no 429, and no
-// reset time. The router narrated:
+// Regression test for a 2026-10-03 live finding: claude-bridge sometimes
+// answers with an EMPTY response (stopReason 'stop', 0 chars) — no error
+// text, no 429, and no reset time. The router narrated:
 //
 //   "> [router] claude-bridge/claude-opus-5-5 — empty response (likely
 //    rate limit) (resets 10/3/2026, 12:23:53 PM), trying anthropic/…"
 //
-// Two lies in one line: it is a spend limit, not a rate limit, and the
+// Two guesses presented as facts: nothing points at a rate limit, and the
 // "resets" time is fabricated — the bridge never sent one, so the router
 // rendered its OWN backoff end as if the provider had announced a reset.
+// A first fix narrated "likely subscription spend limit" instead — also a
+// guess, disproved the same day: the same model streamed full answers
+// minutes before and after the empty turns, so no limit was exhausted.
+// The bridge reports no cause, so the router must not invent one.
 //
 // Honest behaviour (fixed):
-//   - bridge refs are narrated as "empty response (likely subscription
-//     spend limit)"
+//   - bridge refs are narrated as "empty response (no content, no error
+//     reported)" — no cause claimed
 //   - a reset time is only shown when the provider actually sent one;
 //     the router's own cooldown is narrated as "backing off until …".
 
@@ -68,8 +71,8 @@ async function withIsolatedRouter(
   }
 }
 
-describe('claude-bridge empty response narration (spend limit, not rate limit)', () => {
-  it('narrates the spend limit honestly: no rate-limit claim, no fabricated reset time', async () => {
+describe('claude-bridge empty response narration (no invented cause)', () => {
+  it('narrates the empty response honestly: no claimed cause, no fabricated reset time', async () => {
     await withIsolatedRouter(
       {
         free_models: [],
@@ -90,8 +93,8 @@ describe('claude-bridge empty response narration (spend limit, not rate limit)',
         };
         defaultExport(pi);
 
-        // The exact sourcelume signature: bridge answers 'stop' with ZERO
-        // content (the spend limit) — no error event, no reset time.
+        // The exact live signature: bridge answers 'stop' with ZERO
+        // content — no error event, no reset time.
         const bridgeModel = {
           provider: 'claude-bridge',
           id: 'claude-opus-5-5',
@@ -141,9 +144,10 @@ describe('claude-bridge empty response narration (spend limit, not rate limit)',
         // The cascade survived via the next model.
         expect(text).toContain('served by the next model');
 
-        // Honest narration: spend limit, not rate limit …
-        expect(text).toContain('claude-bridge/claude-opus-5-5 — empty response (likely subscription spend limit)');
+        // Honest narration: the observable fact, no claimed cause …
+        expect(text).toContain('claude-bridge/claude-opus-5-5 — empty response (no content, no error reported)');
         expect(text).not.toContain('(likely rate limit)');
+        expect(text).not.toContain('spend limit');
         // … and no fabricated provider reset — only our own backoff, worded as such.
         expect(text).not.toMatch(/\(resets .+\)/);
         expect(text).toMatch(/\(backing off until .+\)/);

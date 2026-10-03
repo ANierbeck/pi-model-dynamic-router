@@ -29,7 +29,7 @@ const FREE_RETIRED =
   '404: {"message":"This model is unavailable for free. The paid version is available now - use this slug instead: z-ai/glm-5.2","code":404}';
 const TOOL_USE =
   '404: {"message":"No endpoints found that support tool use. Try disabling \\"read\\".","code":404,"metadata":{"failed_routing_step":"Filter by Tool Compatibility"}}';
-// Verbatim router.log fixture (sourcelume 2026-10-03): OpenRouter wraps the
+// Verbatim router.log fixture (live finding 2026-10-03): OpenRouter wraps the
 // upstream error in metadata.raw — the real, deterministic cause (the
 // request's tool schema can't be folded into the provider's request grammar)
 // lives INSIDE the raw string, the outer message is just "Provider returned
@@ -79,7 +79,7 @@ describe('classifyFailure — Tier-1 signature catalogue', () => {
     expect(classifyFailure(OR, TOOL_USE).verdict).toBe('request');
   });
 
-  // Sourcelume 2026-10-03: qwen3.8-27b:free answered this 400 on EVERY
+  // Live finding 2026-10-03: qwen3.8-27b:free answered this 400 on EVERY
   // tool-carrying request (6×) while tool-less requests to the same model
   // succeeded. Root cause it was never learned: the generic wrapper text
   // "Provider returned error" sits in TRANSIENT_TEXT, so the inner

@@ -1,5 +1,5 @@
 // test/ollama-fallback-skip-when-down.test.ts
-// Regression test for the sourcelume 2026-10-03 finding: with the Ollama
+// Regression test for a 2026-10-03 live finding: with the Ollama
 // daemon intentionally shut down, every driveStream fallback cascade burned a
 // live "Connection error" attempt per ollama/* candidate (6 attempts across
 // the session) before reaching the next usable model — the availability

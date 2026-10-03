@@ -65,13 +65,13 @@ export interface HintClassificationResult {
 }
 
 // Escalation synthesis is deliberately GONE (owner decision 2026-10-03,
-// sourcelume over-hinting review + follow-up table merge): classifyPrompt
+// over-hinting review of a live session + follow-up table merge): classifyPrompt
 // never generates a hint itself. The removed applyEscalationLogic compared
 // a task-complexity tier against the LAST MODEL's GDPval tier and hinted
 // whenever they differed — a second routing table that conflicted with
 // CATEGORY_TO_GROUP (standard→tactical there vs standard→operational in the
 // category table) and converted nearly every ordinary prompt into a
-// hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (sourcelume
+// hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (live session
 // 2026-10-03: 14/15 turns, even for 'set the PR to ready'). It also blocked
 // de-escalation. Even the interim redesign (hints for genuine upgrade
 // categories, target from CATEGORY_TO_GROUP) routed EXACTLY like the plain

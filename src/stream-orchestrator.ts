@@ -126,14 +126,16 @@ import {
 
 /**
  * Narration label for an empty response on a PAID cloud model.
- * claude-bridge answers empty (stopReason 'stop', 0 chars) when the SUBSCRIPTION
- * SPEND LIMIT is hit — no error text, no 429, no reset time (sourcelume
- * 2026-10-03). Calling that "likely rate limit" is wrong twice: it is a spend
- * limit, and the router has no provider reset time to show for it.
+ * claude-bridge sometimes answers empty (stopReason 'stop', 0 chars) — no
+ * error text, no 429, no reset time (live finding 2026-10-03). The bridge
+ * reports no cause, so the label states only the observable fact: neither
+ * "likely rate limit" nor "likely subscription spend limit" (the latter was
+ * disproved the same day — the model streamed full answers minutes before
+ * and after the empty turns) may be presented as the reason.
  */
 function emptyResponseLabel(ref: string): string {
   return ref.startsWith('claude-bridge/')
-    ? 'empty response (likely subscription spend limit)'
+    ? 'empty response (no content, no error reported)'
     : 'empty response (likely rate limit)';
 }
 
@@ -583,7 +585,7 @@ export class StreamOrchestrator {
         cooldownSkips++;
         continue;
       }
-      // Local availability guard (sourcelume 2026-10-03): when the Ollama
+      // Local availability guard (live finding 2026-10-03): when the Ollama
       // daemon is down (shut down intentionally or crashed), don't burn a
       // doomed live "Connection error" attempt per ollama/* candidate in the
       // fallback chain — the availability probe already knows. Negative

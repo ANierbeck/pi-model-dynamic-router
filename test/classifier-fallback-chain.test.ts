@@ -171,7 +171,7 @@ describe('classifyPrompt fallback chain', () => {
     it('never sends a prompt to an excluded model, even from a stale probed list (owner decision 2026-10-03)', async () => {
       // `exclude` means "never use this model, for anything" — including
       // classification. The probed list is cached at scan time, so it may
-      // still carry a ref the user excluded afterwards (sourcelume
+      // still carry a ref the user excluded afterwards (live finding
       // 2026-10-03: openrouter/stealth/space-bunny-alpha classified prompts).
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi.fn().mockResolvedValue(
@@ -430,12 +430,12 @@ describe('classifyPrompt fallback chain', () => {
   });
 
   describe('escalation integration', () => {
-    // Owner decision 2026-10-03 (sourcelume over-hinting), follow-up merge:
+    // Owner decision 2026-10-03 (live over-hinting finding), follow-up merge:
     // classifyPrompt NEVER synthesizes a hint itself. The old
     // applyEscalationLogic was a second routing table that conflicted with
     // CATEGORY_TO_GROUP (its tier comparison converted nearly every
     // ordinary prompt into a hint:group:tactical → claude-bridge/claude-
-    // opus-5-5 lock-in — 14/15 sourcelume turns). Since the 2026-10-03
+    // opus-5-5 lock-in — 14/15 turns of a live session). Since the 2026-10-03
     // redesign the synthesized hint routed EXACTLY like the category path
     // (same group from CATEGORY_TO_GROUP, same fallback chains, same
     // stickiness) — pure narration — so the whole synthesis layer is gone.

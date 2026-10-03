@@ -199,7 +199,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     // "resets" is the provider's word. Without one, only show the router's
     // own cooldown end, worded as such: presenting our backoff as a
     // provider reset fabricates a time the provider never sent (claude-bridge
-    // spend-limit empties, sourcelume 2026-10-03: "resets 10/3/2026, 12:23:53
+    // empty responses, live finding 2026-10-03: "resets 10/3/2026, 12:23:53
     // PM" — the bridge said nothing of the sort).
     if (resetAtMs) return ` (resets ${new Date(resetAtMs).toLocaleString()})`;
     if (rotated) return '';
