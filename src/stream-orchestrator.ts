@@ -124,6 +124,19 @@ import {
   isPaidCloudRateLimitFailure,
 } from './detection.ts';
 
+/**
+ * Narration label for an empty response on a PAID cloud model.
+ * claude-bridge answers empty (stopReason 'stop', 0 chars) when the SUBSCRIPTION
+ * SPEND LIMIT is hit — no error text, no 429, no reset time (sourcelume
+ * 2026-10-03). Calling that "likely rate limit" is wrong twice: it is a spend
+ * limit, and the router has no provider reset time to show for it.
+ */
+function emptyResponseLabel(ref: string): string {
+  return ref.startsWith('claude-bridge/')
+    ? 'empty response (likely subscription spend limit)'
+    : 'empty response (likely rate limit)';
+}
+
 // ── Context interface ───────────────────────────────────────────────────────
 
 export interface StreamOrchestratorContext {
@@ -814,7 +827,7 @@ export class StreamOrchestrator {
             ? 'stream stalled (likely rate limit)'
             : result.reason === 'provider_error'
               ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
-              : 'empty response (likely rate limit)';
+              : emptyResponseLabel(ref);
           const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
           pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
           continue;
@@ -1015,7 +1028,7 @@ export class StreamOrchestrator {
                     ? 'stream stalled (likely rate limit)'
                     : reasonTxt === 'provider_error'
                       ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
-                      : 'empty response (likely rate limit)';
+                      : emptyResponseLabel(bestRef!);
                 const resetMsg = ctx.formatResetMsg(bestRef!, result.resetAtMs, frResult.rotated);
                 pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
               }

@@ -462,6 +462,19 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // Stop consuming — don't forward the terminal done event
               return 'done';
             }
+            // Empty response (stopReason 'stop', zero content — the
+            // claude-bridge spend-limit signature, sourcelume 2026-10-03):
+            // do NOT forward the terminal done. Forwarding terminates the
+            // proxy and silently drops every later cascade event — the
+            // failure narration AND the next candidates' content — so the
+            // user sees a bare empty message and recovery depends on pi's
+            // outer retry instead of the router's own cascade (same trap as
+            // the length case above; rate-limit/overflow/repetition already
+            // return early for the same reason).
+            if (!hadContent) {
+              clearTimer();
+              return 'done';
+            }
           }
           proxy.push(event);
         }

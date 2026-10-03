@@ -195,11 +195,17 @@ export function createLimitGlue(d: LimitGlueDeps) {
    * key will be tried next time), so there's no meaningful reset time to show.
    */
   function formatResetMsg(ref: string, resetAtMs: number | undefined, rotated?: boolean): string {
+    // A reset time the PROVIDER announced (parsed from the failure text) —
+    // "resets" is the provider's word. Without one, only show the router's
+    // own cooldown end, worded as such: presenting our backoff as a
+    // provider reset fabricates a time the provider never sent (claude-bridge
+    // spend-limit empties, sourcelume 2026-10-03: "resets 10/3/2026, 12:23:53
+    // PM" — the bridge said nothing of the sort).
     if (resetAtMs) return ` (resets ${new Date(resetAtMs).toLocaleString()})`;
     if (rotated) return '';
     const secs = limitSecs(ref);
     if (secs <= 0) return '';
-    return ` (resets ${new Date(Date.now() + secs * 1000).toLocaleString()})`;
+    return ` (backing off until ${new Date(Date.now() + secs * 1000).toLocaleString()})`;
   }
 
   // ── Usage Stats ────────────────────────────────────────────────────────

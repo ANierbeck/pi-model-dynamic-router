@@ -154,6 +154,9 @@ describe('driveStream: provider_error on a paid cloud model', () => {
   it('provider error carrying HTTP 429 → hard-cooldown ("likely rate limit") treatment', async () => {
     const text = await runProviderErrorScenario('429 too many requests');
     expect(text).toContain('likely rate limit');
-    expect(text).toMatch(/\(resets .+\)/);
+    // No provider-announced reset time in the raw text — the router's own
+    // cooldown end is shown, worded as OUR backoff (not a fabricated
+    // provider "resets", 2026-10-03 honesty fix).
+    expect(text).toMatch(/\(backing off until .+\)/);
   });
 });

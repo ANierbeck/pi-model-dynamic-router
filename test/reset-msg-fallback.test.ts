@@ -125,8 +125,10 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
 
         expect(routerInfoText).toContain('rate limit/spend limit reached');
         // The fallback: even with no parseable reset time in the raw text,
-        // the router's own computed cooldown must still be surfaced.
-        expect(routerInfoText).toMatch(/\(resets .+\)/);
+        // the router's own computed cooldown must still be surfaced as a
+        // wall-clock time — worded as OUR backoff, not as a provider reset
+        // the provider never announced (2026-10-03 honesty fix).
+        expect(routerInfoText).toMatch(/\(backing off until .+\)/);
       }
     );
   }, 30000);
@@ -136,7 +138,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
   // above only exercises one of them. This covers the isPaidCloudRateLimitFailure
   // soft-failure branch (a PAID cloud model hitting provider_error, escalated
   // to the hard-cooldown "likely rate limit" wording).
-  it('also shows a computed "(resets ...)" time on the paid-cloud provider_error branch', async () => {
+  it('also shows a computed "(backing off until ...)" time on the paid-cloud provider_error branch', async () => {
     await withIsolatedRouter(
       {
         free_models: [],
@@ -202,7 +204,7 @@ describe('driveStream: rate-limit reset-time messaging fallback', () => {
           .join('');
 
         expect(routerInfoText).toContain('likely rate limit');
-        expect(routerInfoText).toMatch(/\(resets .+\)/);
+        expect(routerInfoText).toMatch(/\(backing off until .+\)/);
       }
     );
   }, 30000);
