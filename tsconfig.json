@@ -21,7 +21,7 @@
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
     
-    /* Additional Checks - Pragmatisch angepasst */
+    /* Additional checks - pragmatically relaxed */
     "noUnusedLocals": false,  /* Off: many debug/extension variables */
     "noUnusedParameters": false, /* Off: API consistency */
     "exactOptionalPropertyTypes": true,

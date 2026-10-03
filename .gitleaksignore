@@ -1,0 +1,5 @@
+# gitleaks false positives (fingerprint: <commit>:<file>:<rule>:<line>).
+# Only add an entry after confirming the match is NOT a credential.
+#
+# Code comment "tokens: ..." in the slug matcher (token-set fuzzy match).
+c4bfedb012ae2fd133c4f536fe5e1698a6c50f6c:src/slug-matcher.ts:generic-api-key:153

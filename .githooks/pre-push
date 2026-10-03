@@ -1,0 +1,7 @@
+#!/bin/sh
+# Pre-push secret/reference scan — this repository is public, so a push is a
+# publication. Scans every commit being pushed (not just the final tree).
+# Wired by `npm prepare` (git config core.hooksPath .githooks).
+# Never bypass with --no-verify; see scripts/secret-scan.ts.
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$hook_dir/../scripts/secret-scan.ts" --pre-push

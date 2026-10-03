@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Internal (docs & tests)
+- **Secret and reference scanning over commit ranges** (owner decision
+  2026-10-03): `scripts/secret-scan.ts` checks every ADDED line of every
+  commit being published against the shared forbidden-reference list
+  (`scripts/forbidden-patterns.ts`, also used by the tree guard) and runs
+  gitleaks for generic credentials. It runs as a versioned pre-push hook
+  (`.githooks/pre-push`, wired by `npm prepare` via `core.hooksPath`) and
+  as the CI job `secret-scan` (gitleaks pinned and checksum-verified).
+  Closes the blind spot of the tree-only guard: both 2026-10-03 leaks had
+  been removed from the tree by later commits while staying in the
+  published history. False positives go into `.gitleaksignore`.
 - **Repository history rewritten again (2026-10-03, after the 1.6.0
   release)** to purge a credential that an early generated config file had
   carried into a June commit (the credential is revoked). Commit SHAs from

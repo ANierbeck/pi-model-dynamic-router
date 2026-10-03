@@ -8,27 +8,21 @@
  * project, and an absolute home-directory path. Live findings are cited as
  * "live session" / "live finding", never by project name or path.
  *
- * The patterns are assembled from fragments so this file does not match
- * itself.
+ * The patterns live in scripts/forbidden-patterns.ts (assembled from
+ * fragments so no file matches itself).
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FORBIDDEN, SKIP_PATHS } from '../scripts/forbidden-patterns.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-const FORBIDDEN: { name: string; re: RegExp }[] = [
-  { name: 'absolute home path', re: new RegExp(['/Users', '/[a-z]'].join('')) },
-  { name: 'tailnet hostname', re: new RegExp(['\\.ts', '\\.net\\b'].join('')) },
-  { name: 'webhook URL', re: new RegExp(['/api', '/webhook/'].join('')) },
-  { name: 'sibling private project', re: new RegExp(['private', '-chat'].join(''), 'i') },
-  { name: 'sibling project (test bed)', re: new RegExp(['source', 'lume'].join(''), 'i') },
-];
-
-// Generated/vendored files that legitimately carry third-party metadata.
-const SKIP = new Set(['package-lock.json']);
+// The pattern list is shared with the commit-range scan (scripts/secret-scan.ts),
+// which closes this guard's blind spot: it only sees the tree at HEAD.
+const SKIP = SKIP_PATHS;
 
 describe('no references to external projects or private infrastructure', () => {
   it('no tracked file matches a forbidden pattern', () => {

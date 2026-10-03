@@ -16,11 +16,13 @@
   "scripts": {
     "build": "tsc && esbuild index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@earendil-works/pi-ai --external:@earendil-works/pi-coding-agent --external:@earendil-works/pi-tui --external:@sinclair/typebox && cp router-defaults.yaml router-config.json model-map.yaml dist/",
     "prepack": "npm run build",
+    "prepare": "git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
     "audit:kpi": "node scripts/router-kpi-audit.ts",
+    "secret-scan": "node scripts/secret-scan.ts",
     "prepublishOnly": "if [ -z \"$(git tag --points-at HEAD 2>/dev/null)\" ]; then echo 'No git tag found at current commit, skipping publish'; exit 1; fi"
   },
   "keywords": [

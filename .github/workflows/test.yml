@@ -35,3 +35,49 @@ jobs:
 
     - name: Build bundle
       run: npm run build
+
+  # Required by the main ruleset (owner decision 2026-10-03). Scans every
+  # commit of the push/PR range, not just the tree: this repository is
+  # public, and two leaks found on 2026-10-03 had both been removed from
+  # the tree by later commits while staying in the published history.
+  secret-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version: '24'
+
+    - name: Install gitleaks (pinned, checksum-verified)
+      env:
+        GITLEAKS_VERSION: 8.30.1
+        GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+      run: |
+        curl -sSfL -o /tmp/gitleaks.tgz \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+        tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+
+    - name: Scan the commit range
+      env:
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PUSH_AFTER: ${{ github.event.after }}
+      run: |
+        if [ -n "$PR_BASE" ]; then
+          RANGE="$PR_BASE..$PR_HEAD"
+        elif [ -n "$PUSH_BEFORE" ] && ! echo "$PUSH_BEFORE" | grep -qE '^0+$' && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+          RANGE="$PUSH_BEFORE..$PUSH_AFTER"
+        else
+          # First push of a branch, or a before-commit that no longer exists
+          # (force push after a history rewrite): scan the tip commit only.
+          RANGE="$PUSH_AFTER^!"
+        fi
+        echo "Scanning $RANGE"
+        node scripts/secret-scan.ts --range "$RANGE" --require-gitleaks
