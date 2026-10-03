@@ -29,6 +29,37 @@ const FREE_RETIRED =
   '404: {"message":"This model is unavailable for free. The paid version is available now - use this slug instead: z-ai/glm-5.2","code":404}';
 const TOOL_USE =
   '404: {"message":"No endpoints found that support tool use. Try disabling \\"read\\".","code":404,"metadata":{"failed_routing_step":"Filter by Tool Compatibility"}}';
+// Verbatim router.log fixture (sourcelume 2026-10-03): OpenRouter wraps the
+// upstream error in metadata.raw — the real, deterministic cause (the
+// request's tool schema can't be folded into the provider's request grammar)
+// lives INSIDE the raw string, the outer message is just "Provider returned
+// error".
+// Built structurally (three escaping levels: inner error JSON → truncated,
+// embedded as a JSON string in metadata.raw, embedded in the outer body) —
+// hand-escaping this fixture produced subtly wrong bytes twice.
+const innerError = {
+  error: {
+    code: '400',
+    message:
+      'failed to translate request: folding the request grammar: tool "subagent" parameter schema: parameter "gate": more than one JSON reading of the same emitted value',
+    param: 'tools',
+    type: 'invalid_request_error',
+  },
+};
+// The observed upstream raw body is TRUNCATED: the inner error object's
+// closing brace is the last one, the raw object's own closing brace is
+// missing, a trailing newline follows.
+const truncatedRaw = JSON.stringify(innerError).slice(0, -1) + '\n';
+const TOOL_SCHEMA_400 = `400: ${JSON.stringify({
+  message: 'Provider returned error',
+  code: 400,
+  metadata: {
+    raw: truncatedRaw,
+    provider_name: 'ModelRun',
+    is_byok: false,
+    provider_error_code: '400',
+  },
+})}`;
 const RATE_LIMIT = '429 status code (no body)';
 
 const OR = 'openrouter/thinkingmachines/inkling:free';
@@ -46,6 +77,28 @@ describe('classifyFailure — Tier-1 signature catalogue', () => {
 
   it('treats "no endpoints that support tool use" as request-dependent, never permanent', () => {
     expect(classifyFailure(OR, TOOL_USE).verdict).toBe('request');
+  });
+
+  // Sourcelume 2026-10-03: qwen3.8-27b:free answered this 400 on EVERY
+  // tool-carrying request (6×) while tool-less requests to the same model
+  // succeeded. Root cause it was never learned: the generic wrapper text
+  // "Provider returned error" sits in TRANSIENT_TEXT, so the inner
+  // invalid_request_error (param tools, deterministic request-shape problem)
+  // was never looked at — classified transient, never counted. It must be
+  // request-dependent (like no-tool-support), never transient: the model
+  // itself works fine without the incompatible tool schema.
+  it('classifies a 400 tool-grammar fold error as request-dependent, not transient', () => {
+    expect(classifyFailure(OR, TOOL_SCHEMA_400)).toMatchObject({
+      verdict: 'request',
+      reason: 'tool-schema-incompatible',
+      code: 400,
+    });
+  });
+
+  it('never counts a request-dependent failure toward the blocklist', () => {
+    const cache = { model_failure_streaks: {} } as Cache;
+    expect(recordBlocklistFailure(cache, OR, TOOL_SCHEMA_400)).toBeNull();
+    expect(cache.model_failure_streaks![OR]).toBeUndefined();
   });
 
   it('treats rate limits, timeouts and unknown text as not permanent', () => {

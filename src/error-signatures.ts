@@ -38,6 +38,22 @@ interface Signature {
 // Order matters: the request-dependent tool-use 404 shares the "No endpoints
 // found" prefix with the decommissioned signature and must win.
 const OPENROUTER_SIGNATURES: readonly Signature[] = [
+  // 400 "folding the request grammar": OpenRouter cannot translate THIS
+  // request's tool schema into the provider's request grammar (sourcelume
+  // 2026-10-03: qwen3.8-27b:free rejected every request carrying the
+  // subagent tool schema with "parameter \"gate\": more than one JSON
+  // reading of the same emitted value" while tool-less requests succeeded).
+  // Deterministic per request shape, nothing the model can heal — but also
+  // no property of the MODEL, so verdict is 'request', never a block.
+  // Must be matched against the UNWRAPPED metadata.raw message (see
+  // parseBody): the outer body.message is the generic "Provider returned
+  // error" wrapper.
+  {
+    code: 400,
+    reason: 'tool-schema-incompatible',
+    verdict: 'request',
+    matches: (m) => /failed to translate request|folding the request grammar/i.test(m),
+  },
   {
     code: 404,
     reason: 'no-tool-support',
@@ -100,14 +116,47 @@ const ACCOUNT_TEXT = /invalid api key|incorrect api key|unauthori[sz]ed|authenti
 // Request-dependent wording from any provider: the model works without tools.
 const REQUEST_TEXT = /does not support tools|support tool use/i;
 
+/**
+ * Best-effort JSON object parse of the first `{...}` region in `s`. Upstream
+ * error bodies are frequently TRUNCATED (the observed OpenRouter raw body
+ * ends mid-object: `…"type":"invalid_request_error"}\n` with the outer
+ * brace never closed), so after a failed parse we re-close up to a few open
+ * braces and retry. Returns undefined when nothing JSON-shaped is found.
+ */
+function tryParseJsonObject(s: string): any | undefined {
+  const start = s.indexOf('{');
+  if (start < 0) return undefined;
+  let body = s.slice(start, s.lastIndexOf('}') + 1);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return JSON.parse(body);
+    } catch {
+      body += '}';
+    }
+  }
+  return undefined;
+}
+
 function parseBody(text: string): { message: string; routingStep?: string; ineligibility: string[] } {
   const start = text.indexOf('{');
   if (start >= 0) {
     try {
       const body = JSON.parse(text.slice(start, text.lastIndexOf('}') + 1));
       const meta = body?.metadata ?? body?.error?.metadata ?? {};
+      // OpenRouter wraps the upstream error as a JSON STRING in
+      // metadata.raw — body.message is then just the generic "Provider
+      // returned error" wrapper (which TRANSIENT_TEXT also matches, so the
+      // real deterministic cause inside raw was never classified before;
+      // sourcelume 2026-10-03 qwen 400 incident). Prefer the unwrapped
+      // upstream message when it parses.
+      let message = String(body?.message ?? body?.error?.message ?? text);
+      if (typeof meta.raw === 'string') {
+        const raw = tryParseJsonObject(meta.raw);
+        const rawMsg = raw?.error?.message ?? raw?.message;
+        if (typeof rawMsg === 'string' && rawMsg.trim()) message = rawMsg;
+      }
       return {
-        message: String(body?.message ?? body?.error?.message ?? text),
+        message,
         routingStep: typeof meta.failed_routing_step === 'string' ? meta.failed_routing_step : undefined,
         ineligibility: Array.isArray(meta.ineligibility_reasons)
           ? meta.ineligibility_reasons.map((r: { reason?: unknown }) => String(r?.reason ?? ''))
