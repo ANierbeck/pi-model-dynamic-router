@@ -107,6 +107,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
+import { isOllamaAvailable } from './ollama-utils.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
@@ -567,6 +568,16 @@ export class StreamOrchestrator {
       if (ctx.isProviderWedged(ref)) {
         pushError(ref, 'skipped, local provider looks wedged (watchdog)');
         cooldownSkips++;
+        continue;
+      }
+      // Local availability guard (sourcelume 2026-10-03): when the Ollama
+      // daemon is down (shut down intentionally or crashed), don't burn a
+      // doomed live "Connection error" attempt per ollama/* candidate in the
+      // fallback chain — the availability probe already knows. Negative
+      // probe results are TTL-cached in ollama-utils, so a down daemon costs
+      // at most one real probe per TTL window, not one per candidate.
+      if (ref.startsWith('ollama/') && !(await isOllamaAvailable())) {
+        pushError(ref, 'skipped, ollama daemon unavailable (availability probe)');
         continue;
       }
       const ctxWindow = ctx.getModelContextWindow(ref);

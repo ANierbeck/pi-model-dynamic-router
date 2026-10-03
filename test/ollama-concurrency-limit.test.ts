@@ -19,6 +19,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 
+// These tests exercise the CONCURRENCY machinery, not local availability.
+// The driveStream availability guard (2026-10-03) skips ollama/* candidates
+// when the daemon is down — with a real probe that would make both tests
+// host-dependent: on a machine without Ollama, no local stream would ever
+// open and the semaphore assertion would pass vacuously (§4 non-vacuous
+// test rule). Pin the daemon as UP so the local paths are really driven.
+vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
+  return { ...actual, isOllamaAvailable: vi.fn(async () => true) };
+});
+
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
