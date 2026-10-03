@@ -430,15 +430,20 @@ describe('classifyPrompt fallback chain', () => {
   });
 
   describe('escalation integration', () => {
-    // Owner decision 2026-10-03 (sourcelume over-hinting): escalation may
-    // fire ONLY for genuine upgrade categories (code_complex / design /
-    // planning). The target group comes from CATEGORY_TO_GROUP — the same
-    // table the plain category path uses — not from a second tier table.
-    // Every other category must return a plain classification: the old
-    // tier comparison converted nearly every ordinary prompt into a
-    // hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (14/15
-    // sourcelume turns, 74% of traffic on the free model otherwise).
-    it('escalates a code_complex task to the tactical group (category table, not tier table)', async () => {
+    // Owner decision 2026-10-03 (sourcelume over-hinting), follow-up merge:
+    // classifyPrompt NEVER synthesizes a hint itself. The old
+    // applyEscalationLogic was a second routing table that conflicted with
+    // CATEGORY_TO_GROUP (its tier comparison converted nearly every
+    // ordinary prompt into a hint:group:tactical → claude-bridge/claude-
+    // opus-5-5 lock-in — 14/15 sourcelume turns). Since the 2026-10-03
+    // redesign the synthesized hint routed EXACTLY like the category path
+    // (same group from CATEGORY_TO_GROUP, same fallback chains, same
+    // stickiness) — pure narration — so the whole synthesis layer is gone.
+    // Hints in a classification result can now only originate from an
+    // explicit user HINT/MHINT in the prompt. Upgrade categories route via
+    // their category alone (code_complex → tactical is pinned in
+    // classifier-mapping-hints.test.ts).
+    it('returns a plain code_complex classification even for a genuine upgrade category', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
         ollamaReply({ category: 'code_complex', reason: 'complex task', confidence: 0.9 })
       );
@@ -447,17 +452,11 @@ describe('classifyPrompt fallback chain', () => {
         context: { lastModel: 'unknown/cheap-model' },
       });
 
-      expect('hintType' in result).toBe(true);
-      if ('hintType' in result) {
-        expect(result.hintType).toBe('group');
-        // CATEGORY_TO_GROUP['code_complex'] === 'tactical' — the OLD tier
-        // table said 'strategic' and over-rode the category route.
-        expect(result.hintTarget).toBe('tactical');
-        expect(result.confidence).toBe(0.95);
-      }
+      expect('hintType' in result).toBe(false);
+      expect(result.category).toBe('code_complex');
     });
 
-    it('does NOT escalate an ordinary standard task — plain category decides the group', async () => {
+    it('returns a plain classification for an ordinary standard task', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
         ollamaReply({ category: 'standard', reason: 'ordinary task', confidence: 0.9 })
       );
@@ -470,7 +469,7 @@ describe('classifyPrompt fallback chain', () => {
       expect(result.category).toBe('standard');
     });
 
-    it('does not escalate a trivial task', async () => {
+    it('returns a plain classification for a trivial task', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
         ollamaReply({ category: 'trivial', reason: 'trivial task', confidence: 0.9 })
       );

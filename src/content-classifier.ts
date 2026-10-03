@@ -64,45 +64,22 @@ export interface HintClassificationResult {
   origin?: 'user' | 'auto';
 }
 
-// Escalation (owner decision 2026-10-03, sourcelume over-hinting review):
-// a router-generated group hint is legitimate ONLY for the categories the
-// classifier itself rates as a genuine complexity upgrade. The old logic
-// compared a task-complexity tier against the LAST MODEL's GDPval tier and
-// hinted whenever they differed — a second routing table that conflicted
-// with CATEGORY_TO_GROUP (standard→tactical there vs standard→operational
-// here) and converted nearly every ordinary prompt into a
+// Escalation synthesis is deliberately GONE (owner decision 2026-10-03,
+// sourcelume over-hinting review + follow-up table merge): classifyPrompt
+// never generates a hint itself. The removed applyEscalationLogic compared
+// a task-complexity tier against the LAST MODEL's GDPval tier and hinted
+// whenever they differed — a second routing table that conflicted with
+// CATEGORY_TO_GROUP (standard→tactical there vs standard→operational in the
+// category table) and converted nearly every ordinary prompt into a
 // hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (sourcelume
 // 2026-10-03: 14/15 turns, even for 'set the PR to ready'). It also blocked
-// de-escalation: an expensive last model plus a medium task re-hinted
-// tactical instead of letting the category route downgrade.
-const UPGRADE_CATEGORIES = new Set(['code_complex', 'design', 'planning']);
-
-/**
- * Escalation logic: only genuine upgrade categories may become a group
- * hint. The target group comes from CATEGORY_TO_GROUP — the SAME table the
- * plain category path uses — so escalation can never contradict category
- * routing again. Everything else returns null and the category alone decides
- * the group.
- */
-function applyEscalationLogic(
-  classification: FullClassificationResult
-): HintClassificationResult | null {
-  // Only apply to ClassificationResult (not already a hint)
-  if ('hintType' in classification) {
-    return null;
-  }
-
-  if (!UPGRADE_CATEGORIES.has(classification.category)) {
-    return null;
-  }
-
-  return {
-    reason: `Escalation: ${classification.category} task needs a strong model`,
-    confidence: 0.95,
-    hintType: 'group',
-    hintTarget: CATEGORY_TO_GROUP[classification.category as ClassificationResult['category']] ?? 'tactical',
-  };
-}
+// de-escalation. Even the interim redesign (hints for genuine upgrade
+// categories, target from CATEGORY_TO_GROUP) routed EXACTLY like the plain
+// category path — pure narration — so the whole synthesis layer is removed.
+// Hints in a classification result now only originate from an explicit
+// user HINT/MHINT in the prompt; upgrade categories route via their
+// category alone (code_complex/design/planning → tactical, pinned in
+// classifier-mapping-hints.test.ts).
 
 interface ClassificationOptions {
   model?: string;
@@ -771,16 +748,6 @@ export async function classifyPrompt(
             }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
             noteSource(`cloud:${modelRef}`);
-            // Apply escalation logic to cloud result. lastModel presence keeps
-            // the term's meaning (a switch AWAY from a previous model); the
-            // first turn of a session has nothing to escalate FROM and the
-            // category route already picks the right group.
-            if (context.lastModel && !context.isCompaction) {
-              const escalated = applyEscalationLogic(parsed);
-              if (escalated) {
-                return escalated;
-              }
-            }
             return parsed;
           }
         } catch (cloudError) {
@@ -809,15 +776,6 @@ export async function classifyPrompt(
     await tryOllama();
   }
 
-  // Escalation logic: genuine upgrade categories become a group hint
-  // (independent of the last model — the category table alone decides).
-  if (classificationResult && context.lastModel && !context.isCompaction) {
-    const result = applyEscalationLogic(classificationResult);
-    if (result) {
-      return result;
-    }
-  }
-
   if (classificationResult) {
     // Cache the LLM classification result for repeated identical prompts
     // (only when there was no conversation context — see cache check above).
@@ -828,37 +786,23 @@ export async function classifyPrompt(
   // Static fallback
   if (!allowStaticFallback) {
     errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    // F5 (2026-09-02): run the hard-coded fallback through the same escalation
-    // path as a successful classification. Since the 2026-10-03 redesign,
-    // 'fallback' is NOT an upgrade category, so this never produces a hint —
-    // the category route already maps fallback→tactical, which is exactly the
-    // capable model F5 wanted; the explicit check stays for symmetry and in
-    // case the fallback category set ever changes.
+    // The 'fallback' category routes via CATEGORY_TO_GROUP (fallback→tactical)
+    // — a capable model, exactly what the F5 fix (2026-09-02) wanted; no
+    // escalation synthesis is needed (see the module-level note above).
     noteSource('fallback');
-    const fallbackResult: FullClassificationResult = {
+    return {
       category: 'fallback',
       reason: 'Ollama unavailable, static classifier disabled',
       confidence: 0,
     };
-    if (context.lastModel && !context.isCompaction) {
-      const escalated = applyEscalationLogic(fallbackResult);
-      if (escalated) return escalated;
-    }
-    return fallbackResult;
   }
 
   errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
   noteSource('static');
 
-  const staticResult = classifyStatically(prompt);
-  // Apply escalation logic to static result
-  if (context.lastModel && !context.isCompaction) {
-    const result = applyEscalationLogic(staticResult);
-    if (result) {
-      return result;
-    }
-  }
-  return staticResult;
+  // Static result routes via its category — no escalation synthesis
+  // (see the module-level note above).
+  return classifyStatically(prompt);
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {
