@@ -2,7 +2,6 @@
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
-import { lookupGdp } from './metrics.ts';
 import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
@@ -65,71 +64,44 @@ export interface HintClassificationResult {
   origin?: 'user' | 'auto';
 }
 
-// Cost tiers for escalation logic. Derived from GDPval, not hardcoded model names —
-// the router config's model set differs per user/setup, so tiering must be dynamic.
-// Thresholds mirror the min_gdpval values of the scout/tactical/strategic groups
-// in router-config.json, keeping escalation consistent with actual group routing.
-const TIER_TO_GROUP: Record<string, string> = {
-  'cheap': 'scout',
-  'medium': 'tactical',
-  'expensive': 'strategic',
-};
-
-const TIER_GDPVAL_THRESHOLDS: { tier: string; min: number }[] = [
-  { tier: 'expensive', min: 700 },
-  { tier: 'medium', min: 300 },
-  { tier: 'cheap', min: 0 },
-];
-
-const TASK_COMPLEXITY_TIER: Record<string, string> = {
-  'trivial': 'cheap',
-  'simple': 'cheap',
-  'code_simple': 'medium',
-  'standard': 'medium',
-  'code_complex': 'expensive',
-  'design': 'expensive',
-  'planning': 'expensive',
-  'exploration': 'medium',
-};
-
-function getModelCostTier(modelRef: string): string {
-  const gdpval = lookupGdp(modelRef) ?? 0;
-  for (const { tier, min } of TIER_GDPVAL_THRESHOLDS) {
-    if (gdpval >= min) return tier;
-  }
-  return 'cheap';
-}
+// Escalation (owner decision 2026-10-03, sourcelume over-hinting review):
+// a router-generated group hint is legitimate ONLY for the categories the
+// classifier itself rates as a genuine complexity upgrade. The old logic
+// compared a task-complexity tier against the LAST MODEL's GDPval tier and
+// hinted whenever they differed — a second routing table that conflicted
+// with CATEGORY_TO_GROUP (standard→tactical there vs standard→operational
+// here) and converted nearly every ordinary prompt into a
+// hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (sourcelume
+// 2026-10-03: 14/15 turns, even for 'set the PR to ready'). It also blocked
+// de-escalation: an expensive last model plus a medium task re-hinted
+// tactical instead of letting the category route downgrade.
+const UPGRADE_CATEGORIES = new Set(['code_complex', 'design', 'planning']);
 
 /**
- * Apply escalation logic: if the task complexity suggests a different group
- * than the last model used, return a hint to switch groups.
+ * Escalation logic: only genuine upgrade categories may become a group
+ * hint. The target group comes from CATEGORY_TO_GROUP — the SAME table the
+ * plain category path uses — so escalation can never contradict category
+ * routing again. Everything else returns null and the category alone decides
+ * the group.
  */
 function applyEscalationLogic(
-  classification: FullClassificationResult,
-  lastModel: string
+  classification: FullClassificationResult
 ): HintClassificationResult | null {
   // Only apply to ClassificationResult (not already a hint)
   if ('hintType' in classification) {
     return null;
   }
 
-  const lastTier = getModelCostTier(lastModel);
-  const targetTier = TASK_COMPLEXITY_TIER[classification.category] || 'medium';
-
-  // If the target tier differs from the last model's tier, escalate/de-escalate
-  if (targetTier !== lastTier) {
-    const targetGroup = TIER_TO_GROUP[targetTier];
-    if (targetGroup) {
-      return {
-        reason: `Escalation: ${lastTier} → ${targetTier} for ${classification.category} task`,
-        confidence: 0.95,
-        hintType: 'group',
-        hintTarget: targetGroup,
-      };
-    }
+  if (!UPGRADE_CATEGORIES.has(classification.category)) {
+    return null;
   }
 
-  return null;
+  return {
+    reason: `Escalation: ${classification.category} task needs a strong model`,
+    confidence: 0.95,
+    hintType: 'group',
+    hintTarget: CATEGORY_TO_GROUP[classification.category as ClassificationResult['category']] ?? 'tactical',
+  };
 }
 
 interface ClassificationOptions {
@@ -799,9 +771,12 @@ export async function classifyPrompt(
             }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
             noteSource(`cloud:${modelRef}`);
-            // Apply escalation logic to cloud result
+            // Apply escalation logic to cloud result. lastModel presence keeps
+            // the term's meaning (a switch AWAY from a previous model); the
+            // first turn of a session has nothing to escalate FROM and the
+            // category route already picks the right group.
             if (context.lastModel && !context.isCompaction) {
-              const escalated = applyEscalationLogic(parsed, context.lastModel);
+              const escalated = applyEscalationLogic(parsed);
               if (escalated) {
                 return escalated;
               }
@@ -834,9 +809,10 @@ export async function classifyPrompt(
     await tryOllama();
   }
 
-  // Escalation logic: if we have a classification and lastModel, check if we need to escalate
+  // Escalation logic: genuine upgrade categories become a group hint
+  // (independent of the last model — the category table alone decides).
   if (classificationResult && context.lastModel && !context.isCompaction) {
-    const result = applyEscalationLogic(classificationResult, context.lastModel);
+    const result = applyEscalationLogic(classificationResult);
     if (result) {
       return result;
     }
@@ -852,14 +828,12 @@ export async function classifyPrompt(
   // Static fallback
   if (!allowStaticFallback) {
     errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    // F5 (2026-09-02): apply escalation to the hard-coded fallback too.
-    // Previously this returned `{ category:'fallback' }` directly, skipping
-    // applyEscalationLogic — so a user on a cheap model who asked a complex
-    // question while Ollama was down got `fallback→tactical`, but tactical's
-    // intent (escalate to a capable model) was never enforced. Now we build
-    // a fallback result and run it through the same escalation path as a
-    // successful classification, so the last model's tier still triggers a
-    // bump when the task complexity warrants it.
+    // F5 (2026-09-02): run the hard-coded fallback through the same escalation
+    // path as a successful classification. Since the 2026-10-03 redesign,
+    // 'fallback' is NOT an upgrade category, so this never produces a hint —
+    // the category route already maps fallback→tactical, which is exactly the
+    // capable model F5 wanted; the explicit check stays for symmetry and in
+    // case the fallback category set ever changes.
     noteSource('fallback');
     const fallbackResult: FullClassificationResult = {
       category: 'fallback',
@@ -867,7 +841,7 @@ export async function classifyPrompt(
       confidence: 0,
     };
     if (context.lastModel && !context.isCompaction) {
-      const escalated = applyEscalationLogic(fallbackResult, context.lastModel);
+      const escalated = applyEscalationLogic(fallbackResult);
       if (escalated) return escalated;
     }
     return fallbackResult;
@@ -879,7 +853,7 @@ export async function classifyPrompt(
   const staticResult = classifyStatically(prompt);
   // Apply escalation logic to static result
   if (context.lastModel && !context.isCompaction) {
-    const result = applyEscalationLogic(staticResult, context.lastModel);
+    const result = applyEscalationLogic(staticResult);
     if (result) {
       return result;
     }

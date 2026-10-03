@@ -430,7 +430,15 @@ describe('classifyPrompt fallback chain', () => {
   });
 
   describe('escalation integration', () => {
-    it('escalates to a strategic group hint for complex tasks on a cheap last model', async () => {
+    // Owner decision 2026-10-03 (sourcelume over-hinting): escalation may
+    // fire ONLY for genuine upgrade categories (code_complex / design /
+    // planning). The target group comes from CATEGORY_TO_GROUP — the same
+    // table the plain category path uses — not from a second tier table.
+    // Every other category must return a plain classification: the old
+    // tier comparison converted nearly every ordinary prompt into a
+    // hint:group:tactical → claude-bridge/claude-opus-5-5 lock-in (14/15
+    // sourcelume turns, 74% of traffic on the free model otherwise).
+    it('escalates a code_complex task to the tactical group (category table, not tier table)', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
         ollamaReply({ category: 'code_complex', reason: 'complex task', confidence: 0.9 })
       );
@@ -442,12 +450,27 @@ describe('classifyPrompt fallback chain', () => {
       expect('hintType' in result).toBe(true);
       if ('hintType' in result) {
         expect(result.hintType).toBe('group');
-        expect(result.hintTarget).toBe('strategic');
+        // CATEGORY_TO_GROUP['code_complex'] === 'tactical' — the OLD tier
+        // table said 'strategic' and over-rode the category route.
+        expect(result.hintTarget).toBe('tactical');
         expect(result.confidence).toBe(0.95);
       }
     });
 
-    it('does not escalate when the last model already matches the task tier', async () => {
+    it('does NOT escalate an ordinary standard task — plain category decides the group', async () => {
+      vi.mocked(callOllama).mockResolvedValueOnce(
+        ollamaReply({ category: 'standard', reason: 'ordinary task', confidence: 0.9 })
+      );
+
+      const result = await classifyPrompt('Set the PR to ready please', {
+        context: { lastModel: 'unknown/cheap-model' },
+      });
+
+      expect('hintType' in result).toBe(false);
+      expect(result.category).toBe('standard');
+    });
+
+    it('does not escalate a trivial task', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
         ollamaReply({ category: 'trivial', reason: 'trivial task', confidence: 0.9 })
       );
@@ -456,7 +479,6 @@ describe('classifyPrompt fallback chain', () => {
         context: { lastModel: 'unknown/cheap-model' },
       });
 
-      // trivial → cheap tier; unscored last model → cheap tier; no change.
       expect('hintType' in result).toBe(false);
       expect(result.category).toBe('trivial');
     });
