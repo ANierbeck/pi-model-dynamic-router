@@ -19,7 +19,7 @@ import type { Config, Cache, Defaults } from './src/types.ts';
 import { RateLimitManager } from './src/rate-limit.ts';
 import { DiscoveryManager } from './src/discovery.ts';
 import * as metricsModule from './src/metrics.ts';
-import { lookupGdp } from './src/metrics.ts';
+import { lookupGdp, lookupContextWindow } from './src/metrics.ts';
 import { countSessionErrorsSince } from './src/session-errors.ts';
 import { CacheManager } from './src/cache.ts';
 import { readRouterVersion } from './src/version.ts';
@@ -289,6 +289,7 @@ let previousTokenCount = 0;
     get pi() { return pi; },
     get resolve() { return resolve; },
     get sessionCtx() { return sessionCtx; },
+    get contextWindow() { return lookupContextWindow; },
   });
 
   createEventHandlers({

@@ -160,6 +160,23 @@
   fixed, not filed away).
 
 ### Fixed
+- **Virtual groups advertised a hardcoded contextWindow, thrashing
+  Pi's auto-compaction** (owner decision 2026-10-03: cap at 250k for
+  large-window groups): registration used
+  `contextWindow: resolvedMetrics ? 200_000 : 128_000`, and for
+  `method: 'dynamic'` groups `resolve()` is never called by design, so the
+  dynamic group ALWAYS advertised 128k. Pi compacts at
+  `contextWindow - 16,384` (reserveTokens) — ~112k — which in a live
+  session (2026-10-03) triggered three auto-compactions in 22
+  minutes (tokensBefore 114,056 / 115,180 / 111,899) while the model
+  actually serving (mistral/zai-glm-5-3, 1M window) would never have needed
+  one, costing ~$0.16 input per compaction against the Mistral token cap
+  plus re-orientation latency. Group windows are now derived from the real
+  windows of the group's candidates (max — `driveStream`'s pre-flight
+  guard already skips candidates too small for the current context),
+  capped at `VIRTUAL_GROUP_CONTEXT_CAP` 250k; dynamic groups use the union
+  of all static candidates; unknown windows fall back to Pi's 128k default.
+  Pinned by `test/group-context-window.test.ts`.
 - **The Ollama registration guard never matched, wiping the user's
   models.json registration every session** (83× in the live logs): the
   guard compared tagged scan ids (`gemma4:latest`) against untagged

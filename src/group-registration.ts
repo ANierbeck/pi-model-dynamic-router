@@ -29,6 +29,34 @@ interface GroupRegistrationDeps {
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
   readonly sessionCtx: any;
+  /** Real context window of a model ref (registry first, scan cache second), or null if unknown. */
+  readonly contextWindow: (ref: string) => number | null;
+}
+
+/**
+ * Upper bound for the contextWindow advertised by a virtual group model
+ * (owner decision 2026-10-03). Pi compacts the session when contextTokens >
+ * contextWindow - reserveTokens, so this is effectively the compaction
+ * threshold for every router-group session. 250k keeps big-window members
+ * (zai-glm-5-3: 1M) from compacting at ~112k, while still bounding the
+ * per-request input cost against the Mistral monthly token cap.
+ */
+export const VIRTUAL_GROUP_CONTEXT_CAP = 250_000;
+
+/** Pi's own contextWindow default for models that do not declare one. */
+const PI_DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/**
+ * contextWindow for a virtual group model: the LARGEST real window among its
+ * candidates, capped at VIRTUAL_GROUP_CONTEXT_CAP. Max (not min) because the
+ * driveStream pre-flight guard already skips candidates whose own window is
+ * too small for the current context, so the group can carry whatever its
+ * biggest member can. Pi's 128k default when no candidate window is known.
+ */
+export function virtualGroupContextWindow(refs: readonly string[], lookup: (ref: string) => number | null): number {
+  const known = refs.map(lookup).filter((cw): cw is number => typeof cw === 'number' && cw > 0);
+  if (known.length === 0) return PI_DEFAULT_CONTEXT_WINDOW;
+  return Math.min(VIRTUAL_GROUP_CONTEXT_CAP, Math.max(...known));
 }
 
 export function createGroupRegistration(rt: GroupRegistrationDeps) {
@@ -48,6 +76,14 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
    * session_start (with a registry available) to refresh resolution labels.
    */
   function registerGroupProviders() {
+    // Dynamic groups route each prompt into one of the static groups, so
+    // their window is derived from the union of all static candidates.
+    const staticCandidates = new Set<string>();
+    for (const [groupName, groupCfg] of Object.entries(rt.cfg.model_groups)) {
+      if (groupCfg.method === 'dynamic') continue;
+      for (const ref of rt.resolve(groupName)?.candidates ?? []) staticCandidates.add(ref);
+    }
+
     for (const [groupName, groupCfg] of Object.entries(rt.cfg.model_groups)) {
       // `method: 'dynamic'` groups never resolve here — resolve() always
       // returns null for them by design (see routing.ts Router.resolve):
@@ -91,7 +127,10 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
 
       const res = isDynamicGroup ? null : rt.resolve(groupName);
       const resolvedRef = res?.selected ?? 'none';
-      const resolvedMetrics = res ? rt.getM(resolvedRef) : null;
+      const contextWindow = virtualGroupContextWindow(
+        isDynamicGroup ? [...staticCandidates] : (res?.candidates ?? []),
+        rt.contextWindow,
+      );
       const label = isDynamicGroup ? `${groupName} → auto-classify` : `${groupName} → ${resolvedRef}`;
 
       (rt.pi as any).registerProvider(groupName, {
@@ -106,7 +145,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             reasoning: true,
             input: ['text', 'image'] as any,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: resolvedMetrics ? 200_000 : 128_000,
+            contextWindow,
             maxTokens: 64_000,
           },
           ...(isDynamicGroup ? [{
@@ -115,7 +154,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             reasoning: true,
             input: ['text', 'image'] as any,
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow: resolvedMetrics ? 200_000 : 128_000,
+            contextWindow,
             maxTokens: 64_000,
           }] : []),
         ],
