@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [1.6.0] — 2026-10-03 — Use-case groups, enforced delegation, cloud-first routing, Pi 0.99.1 compatibility
 
 > Everything since v1.5.4. Full breakdown: `docs/v1.6.0-release-plan.md`.
