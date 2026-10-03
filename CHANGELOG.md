@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — v1.6.0 content (pending release)
+## [1.6.0] — 2026-10-03 — Use-case groups, enforced delegation, cloud-first routing, Pi 0.99.1 compatibility
 
 > Everything since v1.5.4. Full breakdown: `docs/v1.6.0-release-plan.md`.
 
@@ -432,17 +432,31 @@
   session start.
 
 ### Internal (docs & tests)
-- ADRs 0008–0020 (learned blocklist, one-filter rule set, union merge,
+- ADRs 0008–0021 (learned blocklist, one-filter rule set, union merge,
   delegation pattern, wait-for-reset narration, hint repair, watchdog,
-  registry semantics for 0.99.1, built-in MCP migration), plus
-  implementation plans per feature round; ADR-0018 translated to English.
+  registry semantics for 0.99.1, built-in MCP migration, no scan-discovered
+  model registration), plus implementation plans per feature round;
+  ADR-0018 translated to English.
+- `index.ts` split into focused modules (`src/limit-glue.ts`,
+  `src/stream-proxy.ts`, `src/scan-runner.ts`, `src/commands.ts`, …)
+  without behavior change; plan in `docs/plans/2026-10-02-index-ts-refactor.md`.
+- References to external projects and private infrastructure removed from
+  docs and comments; `test/no-external-references.test.ts` scans every
+  tracked file and fails the suite on a regression.
+- **Repository history rewritten (2026-10-03)** to purge private
+  infrastructure details from an old documentation commit. Commit SHAs
+  changed across most of the history and every release tag (`v1.1.1`–
+  `v1.5.4`) was re-pointed to the rewritten commits; SHA references in
+  this changelog and the docs were remapped. Existing clones must re-sync:
+  `git fetch origin && git reset --hard origin/main` (or re-clone). The
+  published npm packages are unaffected.
 - Test isolation: fresh home directory per test file (`413e08a`), 28
   duplicated tests removed (`5c1ed17`), suite consolidation
   (`69ff1f5`), harness-minors cleanup (`b19fde7`).
 - CHANGES.md folded into this changelog and deleted (decision 2026-09-30:
   one source of truth for release notes).
-- Suite at close of the release window: 1101 tests passing | 3 skipped;
-  `npx tsc --noEmit` clean.
+- Suite at close of the release window: 1175 tests passing | 3 skipped
+  (145 files); `npx tsc --noEmit` clean.
 
 ## [1.5.4] — 2026-09-18 — Fix router-narration lock-in loop
 
