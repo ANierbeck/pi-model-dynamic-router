@@ -384,6 +384,27 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           const html = await res.text().then((h) => h.replace(/\\"/g, '"'));
           const scores = extractGdpvalScores(html);
 
+          // ADR-0023 round 2: the SAME payload carries the per-benchmark
+          // capability columns (briefcaseElo, scicode, terminalBench40 —
+          // ~180/~90 occurrences verified 2026-10-04). Extract them for
+          // task-type-aware group scoring (Group.score_by). Additive merge:
+          // a failed/partial extraction keeps whatever the cache already
+          // had; the profiles never gate anything on their own (missing
+          // column = gdpval fallback). No new fetch, no new TTL — the
+          // existing gdpval_scraped flag covers this fetch.
+          try {
+            const profiles = extractCapabilityProfiles(html);
+            if (Object.keys(profiles).length) {
+              rt.cache.capability_profiles = { ...rt.cache.capability_profiles, ...profiles };
+              metricsModule.setCache(rt.cache);
+            } else {
+              routerLog('[scan] No capability profiles extracted - AA payload shape may have drifted');
+            }
+          } catch {
+            // Fail-closed: profile extraction must never break the gdpval
+            // scrape — routing falls back to gdpval ordering.
+          }
+
           if (Object.keys(scores).length) {
             metricsModule.setGdpval(scores);
             rt.cache.gdpval_scores = metricsModule.getGdpval();

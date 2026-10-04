@@ -529,6 +529,13 @@ export function setConfig(config: Config): void {
  */
 export function setCache(newCache: Cache): void {
   cache = newCache;
+  // ADR-0023 round 2: capability profiles live in the cache and are read
+  // through lookupCapability (additive like gdpval_scores — new cache
+  // entries add to whatever earlier profiles exist; no separate in-memory
+  // index needed because lookups are per-ref at scan/routing time).
+  if (cache.capability_profiles) {
+    capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
+  }
   if (cache.gdpval_scores) {
     // Additive merge: add scraped scores to EXISTING gdpval (which may have
     // builtins from setConfig). Builtins take precedence (manual overrides
@@ -547,6 +554,33 @@ export function setCache(newCache: Cache): void {
  */
 export function setMetrics(newMetrics: Record<string, Metrics>): void {
   metrics = newMetrics;
+}
+
+// ── Capability Profiles (ADR-0023 round 2) ─────────────────────────────
+
+// In-memory mirror of cache.capability_profiles — setCache merges into it
+// (the same pattern as the `gdpval` map), so lookups work before the cache
+// is written to disk and survive partial cache writes.
+let capabilityProfiles: NonNullable<Cache['capability_profiles']> = {};
+
+/**
+ * Resolves a model ref to a capability column (AA-Briefcase Elo / coding
+ * blend) via the same slug pipeline as lookupGdp. Returns null when the
+ * model, the profile, or the COLUMN is absent — null IS the fallback
+ * signal (callers fall back to gdpval), never 0.
+ */
+export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): number | null {
+  const slug = resolveSlug(ref);
+  if (!slug) return null;
+  const profile = capabilityProfiles[slug];
+  if (!profile) return null;
+  const v = profile[column];
+  return typeof v === 'number' ? v : null;
+}
+
+/** Test/inspection accessor for the merged capability profiles. */
+export function getCapabilityProfiles(): NonNullable<Cache['capability_profiles']> {
+  return capabilityProfiles;
 }
 
 // ── Cost Resolution Helpers ────────────────────────────────────────────
