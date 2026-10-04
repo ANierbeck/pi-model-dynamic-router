@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # npm dependencies (pi runtime + dev tooling)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Group minor/patch bumps into one PR to keep review noise low;
+    # major version bumps stay individual.
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Host upgrades are deliberate, planned rounds here (see
+      # docs/plans/2026-09-30-router-0.99.1-hardening.md), never automated
+      # bumps. The first Dependabot run (2026-10-04) proposed pi 1.0.2;
+      # green CI proved nothing because the suite mocks most of pi.
+      - dependency-name: "@earendil-works/pi-coding-agent"
+      # vitest 3 -> 5 is a two-major jump whose coverage-v8 branch
+      # accounting currently fails the pinned coverage threshold
+      # (AGENTS.md §4 forbids lowering it to unblock the run). Muted
+      # until the dedicated vitest-5 migration round (see TODO.md).
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/*"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions workflows (test.yml, publish.yml)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
