@@ -1,8 +1,10 @@
 /**
  * Static guard for the "router never calls pi.setModel()" invariant.
  *
- * sticky-model-regression.test.ts proves the invariant at runtime, but only
- * for the paths it drives (groupStream/driveStream). Any OTHER module that
+ * The sticky-model regression pin (consolidated-routing-cache-pins.test.ts,
+ * describe 'sticky-model-regression' after the 2026-10-04 suite hygiene
+ * round) proves the invariant at runtime, but only for the paths it drives
+ * (groupStream/driveStream). Any OTHER module that
  * calls pi.setModel() slips past it — e.g. the legacy
  * setupContentBasedRouting() hook in content-classifier.ts, which switched
  * the session model on every prompt and was only caught by a code review
