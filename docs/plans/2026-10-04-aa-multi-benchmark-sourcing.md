@@ -1,6 +1,12 @@
 # AA Multi-Benchmark Capability Sourcing — Implementation Plan
 
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
+>
+> **STATUS: IMPLEMENTED 2026-10-04** (branch `aa-capability-sourcing`). All five
+> tasks landed as planned. Two sharpenings over the plan text: the parser
+> chunk-parses each leaderboard entry in isolation (a non-greedy regex over
+> the whole payload could pair fields across entries), and the coding blend
+> rounds to 2 decimals for determinism across the cache JSON boundary.
 
 **Goal:** Feed the already-fetched Artificial Analysis per-benchmark columns
 (briefcase Elo for planning, SciCode/Terminal-Bench for coding) into

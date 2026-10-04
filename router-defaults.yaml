@@ -88,3 +88,13 @@ strip_suffixes:
 # equally good; the cheapest is picked first (cost ties -> lower score).
 # 0 = off (pure score ordering). 0.05 = ship default.
 best_quality_window: 0.05
+
+# Per-group score_by column (ADR-0023 round 2): which capability ranking
+# orders a `best`-method group's pool. 'gdpval' (default, also when unset)
+# keeps the global GDPval; 'briefcase' ranks by AA-Briefcase Elo; 'coding'
+# by the SciCode/Terminal-Bench blend. Group floors/caps stay on GDPval —
+# a column only orders WITHIN the admitted pool. The columns come from the
+# same Artificial Analysis scrape as GDPval (no new fetch); a missing
+# column falls back to GDPval for that model.
+# Set per group in router-config.json, e.g.: planning -> briefcase,
+# tactical -> coding.

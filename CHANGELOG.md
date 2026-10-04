@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+- **Multi-benchmark capability sourcing from Artificial Analysis**
+  (ADR-0023 round 2, docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md).
+  The router's existing GDPval scrape already downloads every
+  benchmark column per model (briefcaseElo, scicode, terminalBench40 —
+  ~180/~90 occurrences verified 2026-10-04) and discarded all but one.
+  Now the SAME single fetch also yields a per-slug capability profile,
+  and a group's new `score_by` column ranks its pool task-type-aware:
+  `planning` → `briefcase` (AA-Briefcase Elo — agentic knowledge work),
+  `tactical` → `coding` (SciCode/Terminal-Bench blend, monotonic
+  3000×max). Zero new network requests. Fail-closed everywhere: missing
+  column, unscored model, or a drifted AA payload falls back to GDPval
+  ordering — exactly the pre-round behavior. Group floors/caps stay
+  GDPval-only (a column never changes which models are admitted), and
+  the `/router` display now mirrors the live ranking instead of showing
+  a diverging max-gdpval order.
+
 ### Changed
 - **Design/planning prompts route to a new top-tier-only `planning` group**
   (owner decision 2026-10-04, ADR-0023 follow-up). Previously the
@@ -13,10 +30,10 @@
   mistral-medium-3.5 are flat out — and future top-tier models (GPT-6,
   Gemini 4, …) auto-qualify via the floor, no config change needed.
   Escalation when the Claude window is exhausted: strategic → tactical →
-  the free tank as emergency. Registered for a later round: multi-benchmark
-  capability sourcing from Artificial Analysis (AA-Briefcase Elo for
-  planning, Terminal-Bench/SciCode for coding) — see
-  docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md.
+  the free tank as emergency. Multi-benchmark capability sourcing (the
+  originally registered follow-up round) is implemented in this same
+  release — the planning group now ranks by AA-Briefcase Elo, see the
+  Added entry above.
 - **ADR-0023: tier routing restored — per-group `max_gdpval` cap and a
   quality-equivalence window for `best` groups** (owner decision
   2026-10-04). GDPval compression at the top (opus-5-5 1900 / sonnet-5-5
