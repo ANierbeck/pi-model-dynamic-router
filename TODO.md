@@ -513,11 +513,21 @@ extractCapabilityProfiles, recordSoftFailure, sortBy-best scoreOf,
 isFreeModelRef) — **9/9 killed**, minimum 2 killers each (isFreeModelRef:
 88). Remaining risk: contract-change vacuance (a test's inputs never
 reaching a new path — the calculate-score incident) cannot be caught
-statically; AGENTS.md §4's non-vacuous regression-test requirement — driven
-red-first in this repo's practice (write the test, watch it fail, then
-implement) — is the only guard at the moment of change. A full StrykerJS
-campaign would quantify suite-wide; revisit after the next major feature
-round.
+statically; the red-first rule (AGENTS.md §4, hard requirement since
+2026-10-04) is the only guard at the moment of change.
+
+**Phased StrykerJS decision (2026-10-04):**
+- Phase 0 DONE: red-first in §4; `scripts/mutation-spot-campaign.sh`
+  (repeatable, dirty-worktree guard, self-reverting; baseline 9/9 killed).
+- Phase 1 (needs owner go): StrykerJS trial on the decision core ONLY
+  (`src/metrics.ts` + `src/routing.ts`). Measure before extending: mutant
+  count, wall time (est. thousands of mutants x coverage-selected test
+  runs), equivalent-mutant triage load, and REAL findings yield.
+- Phase 2 (go/no-go gate): extend suite-wide (or run nightly) only if
+  Phase 1 finds genuine vacuity; if the yield is low and the triage tax
+  high, stop at spot campaign + red-first. Rationale: the spot campaign
+  found the suite alive (min 2 killers per invariant); a full campaign's
+  value must beat its runtime + triage cost, not just exist.
 
 ---
 
