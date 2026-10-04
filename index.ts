@@ -362,6 +362,7 @@ let previousTokenCount = 0;
     get limitSecs() { return limitSecs; },
     get load() { return load; },
     get lookupPrice() { return lookupPrice; },
+    get lookupListPrice() { return metricsModule.lookupListPrice; },
     get pi() { return pi; },
     get rateLimitManager() { return rateLimitManager; },
     get resolve() { return resolve; },
