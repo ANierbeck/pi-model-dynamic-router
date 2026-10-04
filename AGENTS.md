@@ -137,8 +137,22 @@
   agents act with the owner's token, so an admin bypass would be a bypass
   for every agent.
 - Flow: feature branch → `git push -u origin <branch>` → `gh pr create` →
-  required checks green → `gh pr merge`. Batch related commits into one PR
-  (§5) instead of opening one PR per commit.
+  required checks green → **verify external reviews (below)** → `gh pr merge`.
+  Batch related commits into one PR (§5) instead of opening one PR per commit.
+- **Read and verify every review posted on the PR before merging** (owner
+  decision 2026-10-04). Required checks are not the whole gate: automated
+  external reviewers — Sourcery, and any other app review — must be read
+  and resolved BEFORE `gh pr merge`, even when their check is advisory
+  (non-required). Fetch them via `gh api --paginate` on ALL THREE endpoints:
+  `repos/<owner>/<repo>/pulls/<n>/reviews` (review summaries),
+  `repos/<owner>/<repo>/pulls/<n>/comments` (inline review comments), and
+  `repos/<owner>/<repo>/issues/<n>/comments` (general PR conversation
+  comments — bots and humans can post findings there too). Every finding is either
+  fixed in the PR (with §4 bars) or explicitly justified as not-a-defect
+  in the report to the owner — a PR is never merged while a review
+  comment sits unread. Incident 2026-10-04: PRs #3 and #4 were merged with
+  unread Sourcery findings; both happened to be already addressed, but
+  that was luck, not process.
 - **This repository is public: every push is a publication** — on any
   branch, before any review or merge. The versioned pre-push hook
   (`.githooks/pre-push`, wired by `npm install` via `core.hooksPath`) is
