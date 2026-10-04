@@ -50,3 +50,5 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0019 — Router 0.99.1 hardening: typed-model-preserving re-registration](0019-router-0.99.1-typed-model-preservation.md)
 - [0020 — Migration to Pi built-in MCP (retiring pi-mcp-adapter)](0020-built-in-mcp-migration.md)
 - [0021 — The router never registers models Pi does not know (removes the scan-union registration)](0021-no-scan-discovered-model-registration.md)
+- [0022 — The router never reads or writes Pi's auth.json (full credential separation)](0022-router-never-touches-auth-json.md)
+- [0023 — Tier routing restored: per-group GDPval cap and quality-equivalence window](0023-tier-routing-gdpval-cap-and-quality-window.md)

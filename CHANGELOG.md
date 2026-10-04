@@ -3,6 +3,21 @@
 ## [Unreleased]
 
 ### Changed
+- **ADR-0023: tier routing restored — per-group `max_gdpval` cap and a
+  quality-equivalence window for `best` groups** (owner decision
+  2026-10-04). GDPval compression at the top (opus-5-5 1900 / sonnet-5-5
+  1844 / glm-5-3 1644) made `method: best` converge on opus-5-5 for every
+  non-trivial prompt (live evidence: 65× tactical, 0× strategic in one
+  morning), burning the shared claude-bridge 5h window while the flat-fee
+  Mistral tank sat unused. Two mechanisms: (1) `max_gdpval` — a hard upper
+  tier boundary per group, symmetric to `min_gdpval` (strict null-fails);
+  the shipped config caps `tactical` at 1700 so glm-5-3 carries the daily
+  load, with Claude reachable via strategic escalation on Mistral-quota
+  days. (2) `best_quality_window` (default 0.05) — inside a `best` group,
+  candidates within 5% of the best score are equally good: cheapest first,
+  cost ties to the lower score (in strategic, sonnet-5-5 now beats opus-5-5
+  at equal subscription cost). Window 0 restores the previous pure-score
+  ordering.
 - **ADR-0022: the router never reads or writes Pi's auth.json** (owner
   decision 2026-10-04: the router has no business accessing Pi's credential
   store — that access is itself the mistake). Pi owns credential resolution

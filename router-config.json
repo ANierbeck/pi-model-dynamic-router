@@ -7,6 +7,7 @@
     "voxtral-",
     "codestral-"
   ],
+  "best_quality_window": 0.05,
   "exclude": {
     "models": [
       "openrouter/thinkingmachines/inkling:free",
@@ -46,7 +47,11 @@
       "billing_preference": "local_before_payg",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": ["simple", "operational", "fallback"]
+      "fallback_groups": [
+        "simple",
+        "operational",
+        "fallback"
+      ]
     },
     "simple": {
       "description": "Simple tasks - free/subscription first, local Ollama as a fallback before PAYG",
@@ -54,21 +59,35 @@
       "billing_preference": "local_before_payg",
       "max_cost": 0,
       "min_gdpval": 0,
-      "fallback_groups": ["operational", "fallback"]
+      "fallback_groups": [
+        "operational",
+        "fallback"
+      ]
     },
     "standard": {
       "description": "Standard tasks - cost-effective models (GDPval >=500, cost <=5.0)",
       "method": "tiered",
       "min_gdpval": 500,
       "max_cost": 5.0,
-      "fallback_groups": ["complex", "operational", "scout", "fallback"]
+      "fallback_groups": [
+        "complex",
+        "operational",
+        "scout",
+        "fallback"
+      ]
     },
     "complex": {
       "description": "Complex tasks - strong models (GDPval >=600, cost <=10.0)",
       "method": "tiered",
       "min_gdpval": 600,
       "max_cost": 10.0,
-      "fallback_groups": ["strategic", "tactical", "operational", "scout", "fallback"]
+      "fallback_groups": [
+        "strategic",
+        "tactical",
+        "operational",
+        "scout",
+        "fallback"
+      ]
     },
     "strategic": {
       "description": "Best available model by intelligence (max GDPval) - for heavy tasks",
@@ -92,7 +111,8 @@
         "operational",
         "scout",
         "fallback"
-      ]
+      ],
+      "max_gdpval": 1700
     },
     "operational": {
       "description": "Broad quality pool - cheap but capable (GDPval >=300, cost <=2.0)",
@@ -135,7 +155,11 @@
       "billing_preference": "cloud_first",
       "max_cost": 2.0,
       "min_context_length": 64000,
-      "fallback_groups": ["operational", "scout", "fallback"]
+      "fallback_groups": [
+        "operational",
+        "scout",
+        "fallback"
+      ]
     },
     "code_writer": {
       "description": "Cheap-and-fast models with enough context for a spec+one reference file (boilerplate generation). Addressable as code_writer/code_writer from subagent workflows.",
@@ -143,16 +167,32 @@
       "billing_preference": "cloud_first",
       "max_cost": 2.0,
       "min_context_length": 32000,
-      "fallback_groups": ["operational", "scout", "fallback"]
+      "fallback_groups": [
+        "operational",
+        "scout",
+        "fallback"
+      ]
     }
   },
   "model_metrics": {
-    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-opus-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-opus-5-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-fable-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-3-sonnet": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-3-haiku": { "cost_per_m": 0.0000015 }
+    "claude-bridge/claude-sonnet-5": {
+      "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-opus-5": {
+      "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-opus-5-5": {
+      "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-fable-5": {
+      "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-3-sonnet": {
+      "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-3-haiku": {
+      "cost_per_m": 1.5e-06
+    }
   },
   "gdpval_builtin": {
     "magistral-small": 665,
@@ -195,7 +235,10 @@
   },
   "delegation": {
     "enabled": true,
-    "expensive_groups": ["strategic", "tactical"],
+    "expensive_groups": [
+      "strategic",
+      "tactical"
+    ],
     "expensive_providers": []
   }
 }

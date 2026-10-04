@@ -267,6 +267,14 @@ export function applyGroupFilters(
       c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
     }
   }
+  // 4b. max_gdpval — the upper tier boundary (ADR-0023). Mirrors
+  // min_gdpval's strict null-fails semantics: a null (unscored) GDPval
+  // fails a positive cap. Absent/0/undefined = no upper bound. Keeps
+  // top-tier models out of groups they would dominate via the `best`
+  // method's score convergence (owner decision 2026-10-04).
+  if (g.max_gdpval != null && g.max_gdpval > 0) {
+    c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
+  }
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
   //    resolves to effCost 0 without a registry price and must NOT slip in.
@@ -644,11 +652,38 @@ export class Router {
       return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
     if (method === 'best') {
       // Multi-metric scoring for 'best' method
-      return s.sort((a, b) => {
-        const scoreB = calculateScore(b, taskType, this.cfg);
-        const scoreA = calculateScore(a, taskType, this.cfg);
-        return scoreB - scoreA;
+      const scoreOf = (r: string) => calculateScore(r, taskType, this.cfg);
+      const sorted = s.sort((a, b) => scoreOf(b) - scoreOf(a));
+      // Quality-equivalence window (ADR-0023): candidates within
+      // cfg.best_quality_window of the group's best score are EQUALLY
+      // GOOD — pick the cheapest first; cost ties break to the LOWER
+      // score (least overkill). Without the window, score compression at
+      // the top (opus-5-5 1900 vs sonnet-5-5 1844, −3%) made `best` always
+      // converge on the most expensive model, and the provider-level
+      // limit (all claude-bridge models share one 5h window) burned down
+      // while the flat-fee subscription tank sat unused.
+      const w = this.cfg.best_quality_window ?? 0;
+      if (!(w > 0) || sorted.length < 2) return sorted;
+      const floor = scoreOf(sorted[0]) * (1 - w);
+      const pool = sorted.filter(m => scoreOf(m) >= floor);
+      if (pool.length < 2) return sorted;
+      const inPool = new Set(pool);
+      const rest = sorted.filter(m => !inPool.has(m));
+      pool.sort((a, b) => {
+        const costA = effCost(a);
+        const costB = effCost(b);
+        // Unknown cost goes to the END of the pool (mirrors sortByMinCost).
+        if (costA === 'unknown' && costB === 'unknown') return getM(a).gdpval - getM(b).gdpval;
+        if (costA === 'unknown') return 1;
+        if (costB === 'unknown') return -1;
+        if (costA !== costB) return costA - costB;
+        // Deliberate difference from sortByMinCost's tiebreak (higher score
+        // first): within an equivalence window quality is EQUAL by
+        // definition, so prefer the least-overkill (cheaper-tier) model —
+        // sonnet-5-5 over opus-5-5 when the subscription price ties.
+        return getM(a).gdpval - getM(b).gdpval;
       });
+      return [...pool, ...rest];
     }
     if (method === 'billing_preference') return this.sortByBillingPreference(s);
     if (method === 'roundrobin') return s;

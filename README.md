@@ -107,7 +107,7 @@ The system classifies prompts into the following categories (see `CATEGORY_TO_GR
 
 #### Mapping of Categories to Model Groups
 
-Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts`):
+Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts`). Two tier-routing mechanisms (ADR-0023) keep the tiers meaningful despite GDPval compression at the top of the score range: a per-group **`max_gdpval`** cap (the shipped `tactical` is capped at 1700, so the flat-fee Mistral tank — glm-5-3 at 1644 — carries the daily `code_complex` load, while Claude's top models stay in `strategic`), and a **`best_quality_window`** (default 5%): inside a `best`-method group, candidates within the window of the best score are treated as equally good — cheapest first, cost ties to the lower score (in `strategic`, claude-sonnet-5-5 beats claude-opus-5-5 at equal subscription cost). On Mistral-quota days, `tactical` escalates through its `fallback_groups` into `strategic`, so Claude takes over automatically.
 
 | Category | Model Group | Use Case |
 |----------|-------------|----------|
