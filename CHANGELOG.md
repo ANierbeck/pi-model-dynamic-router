@@ -2,9 +2,36 @@
 
 ## [Unreleased]
 
+### Changed
+- **ADR-0022: the router never reads or writes Pi's auth.json** (owner
+  decision 2026-10-04: the router has no business accessing Pi's credential
+  store — that access is itself the mistake). Pi owns credential resolution
+  end-to-end; every router-internal path that
+  needs an API key asks `modelRegistry.getApiKeyForProvider(provider)`
+  (which resolves auth.json — including `!` secret-manager commands —
+  models.json, env and CLI OAuth per Pi's own priority). Removed with the
+  boundary violation: key discovery (`discoverKeys`, env/auth-store/pass/
+  CLI-OAuth discovery), the `__auth_json__`/`__oauth__`/`__cli_oauth__`
+  marker resolution, the CLI-OAuth → auth.json token sync (the router used
+  to WRITE Pi's credential file), direct-API cloud catalog scans (inert
+  since ADR-0021), the `!pass show`/`!command` executors from the 1.6.1-era
+  fix, and the multi-key rotation machinery (`activeKeyIndex`, the
+  'key rotated' narration, exhausted-key filtering). A provider whose key
+  Pi cannot resolve is skipped — same eligibility rule, Pi as the judge.
+  Migration: none for auth.json markers (they pointed at Pi's own store,
+  which Pi reads directly); keys that lived only in a `pass` store or CLI
+  auth file must now be referenced from Pi's auth.json (e.g.
+  `"key": "!pass show ..."`). A structural guard test pins the boundary.
+  Consequence: the free-cloud fallback and the LLM gdpval-matcher are now
+  eligible for any provider whose key Pi resolves — slightly wider than
+  the old "router config lists a key" rule, and it closes the latent
+  env-vs-auth.json priority divergence noted in PR #3.
+
 ### Fixed
 - **`!...` shell-command keys resolve like pi's secret manager** (owner
-  request 2026-10-04): pi's auth.json supports a `!`-prefixed key executed
+  request 2026-10-04; **superseded before release by ADR-0022 above** —
+  the router no longer resolves keys itself, so this entry describes only
+  the since-removed intermediate state): pi's auth.json supports a `!`-prefixed key executed
   at runtime (docs/providers.md), but the router's key resolver only
   handled `!pass show` — a `!security find-generic-password ...` value from
   auth.json was sent RAW as a bearer token (→ 401) on every router-internal

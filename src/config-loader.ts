@@ -65,8 +65,8 @@ interface ConfigLoadResult {
  * work profile in ~/.pi-work/agent) and defaults to ~/.pi/agent. A leading ~
  * is expanded like Pi's getAgentDir() does, because node:fs never expands it
  * and a value set without a shell (.env file, programmatic setter) would
- * otherwise silently hide auth.json and the user config. Resolved per call so
- * a profile switch or a test stub is always observed.
+ * otherwise silently hide Pi's auth file and the user config. Resolved per
+ * call so a profile switch or a test stub is always observed.
  */
 export function piAgentDir(): string {
   const dir = process.env.PI_CODING_AGENT_DIR;

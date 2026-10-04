@@ -59,9 +59,8 @@ export function pushSessionError(cache: Cache, entry: SessionError): void {
 /**
  * The push-site decision extracted from index.ts's recordStreamFailure so it
  * is testable (review I3): builds the consequence label from what actually
- * happened. Key rotation (recordLimit rotated to another API key, rate-limit.ts
- * sets NO cooldown on the ref in that case) must NOT read as 'cooldown 0s' —
- * that would poison incident analysis (review I4).
+ * happened. (The 'key rotated' consequence was removed with ADR-0022 —
+ * multi-key rotation no longer exists; a hard limit always means a cooldown.)
  */
 export function recordSessionErrorFromFailure(deps: {
   cache: Cache;
@@ -69,7 +68,6 @@ export function recordSessionErrorFromFailure(deps: {
   reason: string;
   errorText?: string;
   hardLimited: boolean;
-  rotated: boolean;
   limitSecs: number;
   now?: number;
 }): void {
@@ -78,11 +76,7 @@ export function recordSessionErrorFromFailure(deps: {
     ref: deps.ref,
     reason: deps.reason,
     ...(deps.errorText ? { detail: deps.errorText } : {}),
-    consequence: deps.hardLimited
-      ? deps.rotated
-        ? 'key rotated'
-        : `cooldown ${deps.limitSecs}s`
-      : 'soft backoff',
+    consequence: deps.hardLimited ? `cooldown ${deps.limitSecs}s` : 'soft backoff',
   });
 }
 

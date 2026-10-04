@@ -19,7 +19,6 @@
 // is fully unit-testable with a mocked fetch and no network.
 
 import type { ProviderDef, Config, Cache } from './types.ts';
-import { resolveKeyRef, loadAuthFile } from './discovery.ts';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -28,6 +27,13 @@ export interface LocalLlmDeps {
   cache: Cache;
   cfg: Config;
   timeoutMs?: number;
+  /**
+   * Pi-side API key resolution (ADR-0022): wired to
+   * modelRegistry.getApiKeyForProvider in index.ts. The router never
+   * resolves keys itself; a provider whose key Pi cannot resolve is
+   * skipped by the cloud fallback.
+   */
+  resolveApiKey: (provider: string) => Promise<string | null>;
 }
 
 interface ResolvedLocalProvider {
@@ -224,8 +230,8 @@ async function callCloudFallback(
   prompt: string,
   deps: LocalLlmDeps
 ): Promise<string | null> {
-  const { cfg, providers, timeoutMs = 30_000 } = deps;
-  const freeModels = collectFreeCloudModels(cfg, providers);
+  const { cfg, providers, resolveApiKey, timeoutMs = 30_000 } = deps;
+  const freeModels = await collectFreeCloudModels(cfg, providers, resolveApiKey);
   if (freeModels.length === 0) return null;
 
   for (const m of freeModels) {
@@ -253,24 +259,23 @@ interface FreeCloudModel {
 
 /**
  * Collect free cloud models from config. Mirrors DiscoveryManager.getFreeModels()
- * but also resolves the provider's baseUrl/apiKey/headers so we can call them.
+ * but also resolves the provider's baseUrl so we can call them, and asks Pi
+ * for each provider's API key (ADR-0022). A provider whose key Pi cannot
+ * resolve is skipped entirely — an unusable key would otherwise produce
+ * free-model entries that always fail auth and crowd out working fallbacks.
  */
-function collectFreeCloudModels(
+async function collectFreeCloudModels(
   cfg: Config,
-  providers: Record<string, ProviderDef>
-): FreeCloudModel[] {
+  providers: Record<string, ProviderDef>,
+  resolveApiKey: (provider: string) => Promise<string | null>
+): Promise<FreeCloudModel[]> {
   const result: FreeCloudModel[] = [];
   for (const [provId, provConfig] of Object.entries(cfg.providers ?? {})) {
     const freeModels = provConfig.free_models;
     if (!freeModels || freeModels.length === 0) continue;
     const def = providers[provId];
     if (!def || !def.baseUrl || def.api !== 'openai-completions') continue;
-    const keys = provConfig.keys ?? [];
-    if (keys.length === 0) continue;
-    // Skip the provider entirely when its key cannot be resolved — an
-    // unusable key would otherwise produce free-model entries that always
-    // fail auth and crowd out working fallbacks.
-    const apiKey = resolveKeyValue(keys[0].key);
+    const apiKey = await resolveApiKey(provId);
     if (!apiKey) continue;
 
     for (const freeRef of freeModels) {
@@ -286,26 +291,4 @@ function collectFreeCloudModels(
     }
   }
   return result;
-}
-
-/**
- * Resolve a key value that may be a pass-store / auth.json / CLI-OAuth / env
- * reference. Delegates to the shared pure `resolveKeyRef` in discovery.ts
- * (the single source of truth for marker resolution) — no local copy.
- *
- * Returns null when the key is a marker this function cannot resolve. The
- * previous version returned such markers verbatim, so a pass-managed key was
- * sent as `Authorization: Bearer !pass show ...` -- the request failed auth
- * and was silently swallowed per-model, quietly disabling the cloud fallback
- * for anyone using pass. Returning null lets the caller skip the provider
- * instead of issuing a request that cannot succeed.
- *
- * Delegates to the shared pure `resolveKeyRef` (from discovery.ts) so there
- * is exactly one copy of the marker-resolution logic across the codebase;
- * the old local copy had drifted and missed the __auth_json__ marker, which
- * silently disabled this free-model cloud fallback for auth.json-only
- * providers after auth.json keys stopped being stored raw.
- */
-function resolveKeyValue(key: string): string | null {
-  return resolveKeyRef(key, loadAuthFile());
 }

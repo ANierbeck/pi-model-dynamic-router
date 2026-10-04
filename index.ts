@@ -202,7 +202,7 @@ let previousTokenCount = 0;
     get STALL_TIMEOUT_MS() { return STALL_TIMEOUT_MS; },
   });
 
-  const { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage } = createLimitGlue({
+  const { getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage } = createLimitGlue({
     get cache() { return cache; },
     get cacheManager() { return cacheManager; },
     get cfg() { return cfg; },
@@ -230,7 +230,6 @@ let previousTokenCount = 0;
     get GDPVAL_URL() { return GDPVAL_URL; },
     get generateDynamicConfig() { return generateDynamicConfig; },
     get MODELS_TTL() { return MODELS_TTL; },
-    get resolveKeyValue() { return resolveKeyValue; },
     get saveCache() { return saveCache; },
     get scanning() { return scanning; },
     set scanning(v) { scanning = v; },
@@ -263,9 +262,14 @@ let previousTokenCount = 0;
   const { registerFreeModelOnDemand } = createFreeModelRegistration({
     get cfg() { return cfg; },
     get pi() { return pi; },
-    get rateLimitManager() { return rateLimitManager; },
-    get resolveKeyValue() { return resolveKeyValue; },
     get sessionCtx() { return sessionCtx; },
+    // ADR-0022: the router never resolves keys itself — pi does.
+    get resolveApiKey() {
+      return async (provider: string) =>
+        (await (sessionCtx?.modelRegistry as any)?.getApiKeyForProvider?.(provider).catch?.(
+          () => null
+        )) ?? null;
+    },
   });
 
   const { groupStream, tryStream, consumeWithDetection, isLocalProvider, localStreamLimit } = createStreamProxy({
@@ -300,7 +304,6 @@ let previousTokenCount = 0;
     get curModel() { return curModel; },
     set curModel(v) { curModel = v; },
     get detectGroup() { return detectGroup; },
-    get discoverKeys() { return discoverKeys; },
     get escalation() { return escalation; },
     get extDir() { return extDir; },
     get getM() { return getM; },
@@ -502,14 +505,9 @@ let previousTokenCount = 0;
 
   // ── Key Discovery ───────────────────────────────────────────────────────
 
-  async function discoverKeys() {
-    // DiscoveryManager mutates the shared cache object; never take its
-    // reference back — it may predate the last loadCache() (review 2026-09-27).
-    await discoveryManager.discoverKeys();
-    metricsModule.setCache(cache);
-    rateLimitManager.updateCache(cache);
-    router?.updateCache(cache);
-  }
+  // NOTE (ADR-0022): key discovery was removed — pi owns credential
+  // resolution (modelRegistry.getApiKeyForProvider); the router never
+  // reads or writes Pi's credential store.
 
 
   load();

@@ -99,10 +99,10 @@ section — directly relevant to scoping any Pi equivalent):
 
 ## The user's actual ask (2026-09-18, clarified)
 
-> "aktuell machen wir das auf 'Befehlsebene' ... In Zukunft wäre es sinnvoller,
-> den Befehl auf unterschiedliche 'Aufgaben' zu zerlegen und dann die
-> einfachen Dinge mit den einfachen Modellen machen zu lassen, um
-> anschließend das große Modell auf den Ergebnissen laufen zu lassen."
+Today this happens at the "command" level; in the future it would make
+more sense to split a command into separate tasks, let the simple things be
+done by the simple models, and only then run the large model over the
+results.
 
 Concretely: **decompose a single user command into subtasks, route the
 I/O-heavy/mechanical subtasks (e.g. "read and summarize these 5 files") to a

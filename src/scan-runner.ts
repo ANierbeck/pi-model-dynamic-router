@@ -32,7 +32,6 @@ interface ScanRunnerDeps {
   readonly GDPVAL_URL: string;
   readonly generateDynamicConfig: (force?: boolean | undefined) => Promise<void>;
   readonly MODELS_TTL: number;
-  readonly resolveKeyValue: (key: string) => string;
   readonly saveCache: () => void;
   scanning: boolean;
   readonly sessionCtx: any;
@@ -77,10 +76,15 @@ export function createScanRunner(rt: ScanRunnerDeps) {
     }));
 
     // LLM caller: provider-agnostic local, else free OpenRouter cloud.
+    // API keys come from Pi (ADR-0022): getApiKeyForProvider via sessionCtx.
     const deps: LocalLlmDeps = {
       providers: PROVIDER_MAP,
       cache: rt.cache,
       cfg: rt.cfg,
+      resolveApiKey: async (provider: string) =>
+        (await (rt.sessionCtx?.modelRegistry as any)?.getApiKeyForProvider?.(provider)?.catch?.(
+          () => null
+        )) ?? null,
       timeoutMs: 90_000, // large models need time; if the local model is too
       // slow it fails and the cloud fallback (free OpenRouter) fires.
     };
@@ -252,11 +256,10 @@ export function createScanRunner(rt: ScanRunnerDeps) {
    * truth for the cloud inventory; scan data only enriches refs Pi already
    * resolves (plus the local Ollama/LM Studio inventory).
    *
-   * PER-MODEL CAPABILITIES (resolved architecture problem B1): each provider's
-   *   /v1/models response is parsed for real capabilities via
-   *   src/capabilities.ts (Mistral `capabilities.vision/reasoning`/
-   *   `max_context_length`, OpenRouter `architecture.input_modalities`/
-   *   `context_length`). For Ollama, /api/show is fetched per model (parallel,
+   * (ADR-0022 removed the per-provider catalog scan and its model filter;
+   *   cloud model inventory comes from Pi's catalog.)
+   *
+   * LOCAL CAPABILITIES: for Ollama, /api/show is fetched per model (parallel,
    *   bounded) to get `model_info.*.context_length` + the capabilities array —
    *   setup-independent (no hardcoded table, no dependency on any specific
    *   Ollama extension). Results land in cache.available_models[].capabilities
@@ -265,12 +268,6 @@ export function createScanRunner(rt: ScanRunnerDeps) {
    *   ADR-0021: Pi has no live local-discovery mechanism; LM Studio was
    *   never registered), which registers with the real values instead of
    *   the old hardcoded blanket.
-   *
-   * PER-PROVIDER MODEL FILTER (resolved architecture problem B2): PROVIDER_MAP
-   *   entries may set `modelFilter: "<regex>"` to constrain which scanned model
-   *   ids are kept. Generic and user-configurable (not a hardcoded special
-   *   case, per Leitplanke 1). Applied here in the scan; absent = keep all
-   *   non-embed/tts/etc. models (legacy behaviour).
    *
    * INPUT CONTRACT: `force` bypasses the GDPval-scrape and model-TTL gates.
    * Without force, GDPval is scraped once (cache.gdpval_scraped flag) and
@@ -324,31 +321,12 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       const age = rt.cache.models_cached
         ? Date.now() - new Date(rt.cache.models_cached).getTime()
         : Infinity;
-      // Also rescan if any configured provider has keys but zero models cached
-      const missingProviders = Object.entries(rt.cfg.providers ?? {}).some(
-        ([p, pc]) =>
-          pc.keys?.length && !(rt.cache.available_models ?? []).some((m) => m.provider === p)
-      );
-      if (force || age > rt.MODELS_TTL || missingProviders) {
+      if (force || age > rt.MODELS_TTL) {
         const models: Cache['available_models'] = [];
-        if (rt.cfg.providers?.chutes?.keys?.length) {
-          try {
-            const d = await fetchJson('https://llm.chutes.ai/v1/models');
-            const pricing = rt.cache.openrouter_pricing ?? {};
-            for (const m of d.data ?? []) {
-              models.push({ id: m.id, provider: 'chutes', cost_per_m: m.pricing?.prompt ?? 0 });
-              const inp = m.pricing?.prompt ?? 0;
-              const out = m.pricing?.completion ?? 0;
-              if (inp >= 0 && out >= 0) {
-                const ref = `chutes/${m.id}`;
-                if (!pricing[ref] || inp < pricing[ref].input)
-                  pricing[ref] = { input: inp, output: out };
-              }
-            }
-            rt.cache.openrouter_pricing = pricing;
-          } catch {}
-        }
-        if (rt.cfg.providers?.openrouter?.keys?.length) {
+        // OpenRouter's public pricing catalog (no credentials involved,
+        // ADR-0022): free-tier model ids for the cache + per-model pricing
+        // for cost sorting.
+        {
           try {
             const d = await fetchJson('https://openrouter.ai/api/v1/models', { timeoutMs: 25_000 });
             const pricing: Record<string, { input: number; output: number }> =
@@ -439,15 +417,18 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             metricsModule.setCache(rt.cache);
           }
         } catch {}
-        // Scan direct API providers with modelsUrl (anthropic, openai, etc.)
-        // Generic (Ü1-consistent): skip providers Pi already knows.
-        // If Pi knows a provider from models.json, an extension, or natively,
-        // the router doesn't need to scan it — that would only create
-        // duplicates in cache.available_models (e.g. mistral-zai with 46
-        // identical models like mistral). Since ADR-0021 the router registers
-        // no scan-discovered cloud models anyway (Pi's catalog is the source
-        // of truth), so scanning a Pi-served provider produces only inert
-        // cache entries. So: don't scan.
+        // ADR-0022 removed the direct-API provider catalog scans: post-ADR-0021 their results were inert
+        // cache entries and they were the last reason the router needed
+        // raw API key values. Pi's catalog is the source of truth.
+        //
+        // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
+        // Leitplanke 1): a provider whose `pricingAlias` target pi already
+        // serves duplicates pi's catalog under a router-internal key — and
+        // its scan entries carried `cost_per_m: 0` PLACEHOLDERS that polluted
+        // the cache and its diagnostics. Prune stale entries of shadowed
+        // alias providers even when THIS scan pass found nothing (all
+        // fetches failing must not keep ghosts alive). Pure cache hygiene —
+        // runs on every completed scan pass.
         const piKnownProviders = new Set<string>();
         if (rt.sessionCtx?.modelRegistry) {
           try {
@@ -456,67 +437,8 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             }
           } catch {}
         }
-        // Alias-shadow rule (2026-09-20 ghost-model incident, generic per
-        // Leitplanke 1): a provider whose `pricingAlias` target pi already
-        // serves duplicates pi's catalog under a router-internal key — and
-        // its scan entries carry `cost_per_m: 0` PLACEHOLDERS that pollute
-        // the cache and its diagnostics (before ADR-0021 they even got baked
-        // into Pi's registry as real prices by the scan-union registration).
-        // Keep the ghost entries out of the cache entirely. Never scan
-        // shadowed alias providers.
         const redundantProviders = redundantAliasProviders(PROVIDER_MAP, piKnownProviders);
-        const providerScans = Object.entries(PROVIDER_MAP)
-          .filter(([, def]) => def.modelsUrl && def.authHeader)
-          .filter(([provId]) => !piKnownProviders.has(provId) && !redundantProviders.has(provId))
-          .map(async ([provId, def]) => {
-            const keys = rt.cfg.providers?.[provId]?.keys;
-            if (!keys?.length) return;
-            // Optional per-provider model filter (B2): a provider whose key sees
-            // a broad catalog can be constrained to a subset via a regex in
-            // PROVIDER_MAP. Generic, user-configurable — not a hardcoded
-            // special case (per Leitplanke 1). Empty/absent = keep all.
-            const filterRe = def.modelFilter ? new RegExp(def.modelFilter, 'i') : null;
-            // Try each key until one succeeds (first may be stale)
-            for (let ki = 0; ki < keys.length; ki++) {
-              try {
-                const key = rt.resolveKeyValue(keys[ki].key);
-                const headers = def.authHeader!(key);
-                const d = await fetchJson(def.modelsUrl!, { headers, timeoutMs: 15_000 });
-                const list = d.data ?? d.models ?? [];
-                if (!list.length) continue;
-                for (const m of list) {
-                  const id = m.id ?? m.name?.replace(/^models\//, '');
-                  if (!id) continue;
-                  if (
-                    /embed|tts|whisper|dall|moderation|babbage|davinci|search|audio|realtime|image|transcri/i.test(
-                      id
-                    )
-                  )
-                    continue;
-                  if (filterRe && !filterRe.test(id)) continue;
-                  const existing = models.find((x) => x.provider === provId && x.id === id);
-                  if (existing) {
-                    // Backfill capabilities if the earlier entry lacked them.
-                    const c = extractCapabilities(provId, m);
-                    if (!existing.capabilities && c) existing.capabilities = c;
-                    continue;
-                  }
-                  const entry: { id: string; provider: string; cost_per_m: number; capabilities?: ModelCapabilities } =
-                    { id, provider: provId, cost_per_m: 0 };
-                  const c = extractCapabilities(provId, m);
-                  if (c) entry.capabilities = c;
-                  models.push(entry);
-                }
-                break; // success, stop trying keys
-              } catch {
-                /* try next key */
-              }
-            }
-          });
-        await Promise.allSettled(providerScans);
-        // Prune stale entries of shadowed alias providers even when THIS scan
-        // pass found nothing (all fetches failing must not keep ghosts alive).
-        // Pure cache hygiene — runs on every completed scan pass.
+        //
         rt.cache.available_models = pruneRedundantCacheEntries(
           rt.cache.available_models ?? [],
           redundantProviders

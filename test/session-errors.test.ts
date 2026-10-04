@@ -32,19 +32,12 @@ function freshCache(): Cache {
 const T0 = 1_700_000_000_000;
 
 describe('recordSessionErrorFromFailure (push-site seam, review I3/I4)', () => {
-  it('hard limit WITHOUT key rotation → cooldown <secs>s', () => {
+  it('hard limit → cooldown <secs>s', () => {
     const cache = freshCache();
-    recordSessionErrorFromFailure({ cache, ref: 'mistral/zai-glm-5-3', reason: 'rate_limit_exceeded', hardLimited: true, rotated: false, limitSecs: 120, now: T0 });
+    // (ADR-0022 removed multi-key rotation and the 'key rotated'
+    // consequence — a hard limit always means a cooldown now.)
+    recordSessionErrorFromFailure({ cache, ref: 'mistral/zai-glm-5-3', reason: 'rate_limit_exceeded', hardLimited: true, limitSecs: 120, now: T0 });
     expect(sessionErrors(cache)[0].consequence).toBe('cooldown 120s');
-  });
-
-  it('hard limit WITH key rotation → key rotated (NOT cooldown 0s — review I4)', () => {
-    const cache = freshCache();
-    // recordLimit rotates first and sets NO cooldown on the ref; a naive
-    // `cooldown ${limitSecs}s` label would read 'cooldown 0s' and poison
-    // incident analysis.
-    recordSessionErrorFromFailure({ cache, ref: 'mistral/zai-glm-5-3', reason: 'rate_limit_exceeded', hardLimited: true, rotated: true, limitSecs: 0, now: T0 });
-    expect(sessionErrors(cache)[0].consequence).toBe('key rotated');
   });
 
   it('soft path → soft backoff, with detail threaded and sanitized', () => {
@@ -55,7 +48,6 @@ describe('recordSessionErrorFromFailure (push-site seam, review I3/I4)', () => {
       reason: 'provider_error',
       errorText: '422 status\ncode (no\tbody)',
       hardLimited: false,
-      rotated: false,
       limitSecs: 0,
       now: T0,
     });

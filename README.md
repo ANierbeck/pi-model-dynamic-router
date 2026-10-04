@@ -13,8 +13,8 @@ The router uses a **modular architecture** with the following components:
 | **providers.ts** | Provider definitions and mappings | 26 supported providers, authentication patterns |
 | **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
 | **utils.ts** | Utility functions | String manipulation, reference parsing |
-| **rate-limit.ts** | Rate limit management | Key rotation, backoff, cost multiplier |
-| **discovery.ts** | Discovery management | API key discovery, model scanning |
+| **rate-limit.ts** | Rate limit management | Backoff cooldowns, cost multiplier |
+| **discovery.ts** | Discovery management | Free-model inventory (ADR-0022: key discovery removed — Pi owns credential resolution) |
 | **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
 | **cache.ts** | Cache management | Persistent caching, versioning |
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
@@ -254,16 +254,16 @@ This provides **accurate feedback** about which model is currently generating re
 
 On startup, the router automatically:
 
-1. **Discovers API keys** from env vars, `~/.pi/agent/auth.json`, `pass` store, and CLI OAuth files (qwen, gemini) — for `auth.json`/`pass`/CLI-OAuth sources, only a *reference* (e.g. which auth.json entry, which pass path) is kept in memory/config, never the raw secret value; the actual key is looked up on demand only at the moment a request is made to that key's own provider (see [Data handling & privacy](#data-handling--privacy))
-2. **Scans models** from Chutes, OpenRouter, and direct provider APIs (Anthropic, OpenAI, Google, Mistral, DeepSeek)
+1. **Resolves nothing credential-related itself (ADR-0022).** The router never reads or writes Pi's credential store — Pi resolves API keys (auth.json incl. `!` secret-manager commands, models.json, env, CLI OAuth) via `modelRegistry.getApiKeyForProvider` whenever a router-internal path needs one (free-model registration, free-cloud fallback). If a key lives in a `pass` store or a shell command, reference it from Pi's own auth.json and Pi executes it.
+2. **Scans local models** (Ollama / LM Studio) and OpenRouter's public pricing catalog; cloud model inventory comes from Pi's catalog (ADR-0021 — the router registers no scan-discovered cloud models)
 3. **Scrapes GDPval scores** from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) with hardcoded fallbacks — a plain, unauthenticated GET of a public leaderboard page; no local data is sent
-4. **Caches pricing** per provider/model from APIs, with OpenRouter backfill for providers without pricing endpoints
+4. **Caches pricing** per provider/model from OpenRouter's public pricing endpoint
 
 All scanning is async and non-blocking.
 
 ### Data handling & privacy
 
-- **API keys are never written to `router-config.json`** (the tracked, in-repo static config). Discovery stores only resolvable reference markers there (env var name, `pass` path, auth-file pointer); the real secret is read from its source (env, `auth.json`, `pass`, CLI OAuth file) only at the point of use and is never persisted back to a tracked file.
+- **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
 - **Prompt content stays local by default.** The dynamic-group content classifier runs against a local Ollama model. If both local classifier models are unavailable, it falls back to static keyword matching (only if `allowStaticFallback` is enabled) rather than sending anything externally.
 - **Optional cloud classifier fallback (`classifier_cloud_fallback`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
 - **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
@@ -309,13 +309,12 @@ After 4 consecutive HTTP 429s from a provider, the router applies a permanent **
 
 ### Rate Limits & Failover
 
-On HTTP 429 the router works through three escalating responses:
+On HTTP 429 the router works through two escalating responses:
 
-1. **Key rotation** — immediately tries the next API key for the same provider; the exhausted key enters a 1-hour cooldown before rejoining the pool.
-2. **Model backoff** — if all keys for a provider are cooling down, the model enters exponential backoff (1 min → 2 → 4 → ... → 90 min cap) and the group falls over to its next-ranked candidate for the current request.
-3. **costMux penalty** — after 4 consecutive 429s, the provider receives a permanent cost multiplier for the session (see [costMux](#costmux) above), demoting all its models in future selections.
+1. **Model backoff** — the model enters exponential backoff (1 min → 2 → 4 → ... → 90 min cap) and the group falls over to its next-ranked candidate for the current request. (ADR-0022 removed multi-key rotation — with keys owned and resolved by Pi there is exactly one key per provider.)
+2. **costMux penalty** — after 4 consecutive 429s, the provider receives a permanent cost multiplier for the session (see [costMux](#costmux) above), demoting all its models in future selections.
 
-All three mechanisms are transparent to the user — the session continues with the next available model.
+Both mechanisms are transparent to the user — the session continues with the next available model.
 
 #### Rate Limit & Subscription Handling
 

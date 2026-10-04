@@ -126,6 +126,11 @@ export interface ProviderKey {
 export interface ProviderConfig {
   billing: string;
   monthly_cost_usd?: number;
+  /**
+   * Legacy (ADR-0022): key entries are no longer read, resolved, or written
+   * by the router — pi resolves credentials. The field stays so old
+   * router-config files with leftover `keys` arrays still parse.
+   */
   keys?: ProviderKey[];
   free_models?: string[];
   cost_per_m?: number;  // Cost per million tokens (for subscription providers)
@@ -362,27 +367,14 @@ export interface Cache {
 // ── Provider Discovery Types ────────────────────────────────────────────
 
 export interface ProviderDef {
-  envVar?: string; // e.g. "ANTHROPIC_API_KEY"
-  authKey?: string; // key in <agent dir>/auth.json (PI_CODING_AGENT_DIR-aware, see piAgentDir)
-  passPatterns?: string[]; // glob-ish prefixes to match in `pass ls`
-  cliAuthFiles?: { path: string; tokenField: string }[]; // CLI tool auth files
+  // NOTE (ADR-0022): the credential fields (env-var names, auth-store keys,
+  // pass-store patterns, CLI auth files, catalog endpoints, auth-header
+  // builders, the scan model filter) were removed — pi owns credential
+  // resolution and the router no longer scans provider catalogs.
   local?: boolean; // ollama/lm-studio — no key needed
   billing?: string; // default billing type
-  freeModels?: string[]; // list of free models for this provider
-  modelsUrl?: string; // API endpoint for model discovery
-  authHeader?: (key: string) => Record<string, string>; // how to authenticate
   baseUrl?: string; // API base URL for pi provider registration
   api?: string; // pi API type (e.g. "anthropic", "openai-responses", "qwen")
-  /**
-   * Optional regex a scanned model id must match to be kept for this provider.
-   * Generic per-provider filter (architecture problem B2): lets a provider
-   * whose key sees a broad catalog (e.g. mistral-zai now sees all 56 Mistral
-   * models) be constrained to the subset the provider is meant for — WITHOUT
-   * hardcoding a setup-specific special case. Empty/absent = keep all
-   * non-embed/tts/etc. models (current behaviour). Not a glob; a JS regex
-   * string, matched case-insensitive against the full id.
-   */
-  modelFilter?: string;
   /**
    * Another provider key whose Pi-registry pricing applies to this one too —
    * for a provider that is the SAME upstream API/account under a different
