@@ -170,15 +170,21 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
     }
   });
 
+  // CI-load budgets: waitFor polls every 25ms and exits as soon as the
+  // condition holds, so generous budgets cost nothing on a healthy run —
+  // but the 1s refusal budget was too tight on a loaded CI runner (PR #18,
+  // run 37205616141: the spawn + scan_settle_ms 300 + runner jitter exceeded
+  // it; locally 5/5 green, the audit-documented intermittent was this test).
+  // The per-test timeout is raised to match the worst-case wait budget.
   it('after a start-up refusal, one settled re-check in the same session accepts a real shrink', async () => {
     const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0 }, GOOD, { scan_settle_ms: 300 });
     try {
-      expect(await waitFor(() => !!readCache().scan_sanity_refusal, 1_000)).toBe(true);
-      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count < 37, 3_000)).toBe(true);
+      expect(await waitFor(() => !!readCache().scan_sanity_refusal, 10_000)).toBe(true);
+      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count < 37, 10_000)).toBe(true);
     } finally {
       cleanup();
     }
-  });
+  }, 25_000);
 
   it('ignores a refusal older than 24 h', async () => {
     const refusal = await firstRefusal();

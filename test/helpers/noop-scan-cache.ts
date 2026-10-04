@@ -80,8 +80,53 @@ export function writeNoOpScanCache(scanCachePath: string): void {
  * ran correctly — the restore simply lost the race to a late scan()).
  * 50ms is generous headroom over the handful of ticks actually needed.
  */
+/**
+ * Waits for the unawaited session_start scan() to settle, not for a fixed
+ * guess of its duration. scan() may call saveCache() SEVERAL times (GDPval
+ * block, discovery merge, and after the classifier-fallback probe) and may
+ * also early-return without writing at all (rt.scanning guard) — so a single
+ * mtime advance is not a completion signal, but QUIESCENCE is: poll the
+ * cache file's mtime until it has been unchanged for QUIET_MS, with a total
+ * budget. The old fixed 50 ms sleep lost the race under parallel-suite load
+ * (~1 in 6 runs locally, caught as "No available models for group
+ * 'standard'" — a late scan swapped the router state mid-test).
+ *
+ * Worst case per call is QUIET_MS + one poll interval (~225 ms), paid when
+ * the cache file exists; if the file is missing, the call falls back to the
+ * old short sleep. A scan still writing at budget end proceeds anyway
+ * (fail-open, like the old sleep always did).
+ */
 export async function flushBackgroundScan(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  const QUIET_MS = 200;
+  const BUDGET_MS = 2_000;
+  const POLL_MS = 25;
+  const cachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  let lastMtime: number;
+  try {
+    lastMtime = fs.statSync(cachePath).mtimeMs;
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return;
+  }
+  const t0 = Date.now();
+  let lastChange = t0;
+  while (Date.now() - t0 < BUDGET_MS) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    let m: number;
+    try {
+      m = fs.statSync(cachePath).mtimeMs;
+    } catch {
+      return; // scan-cache removed mid-test — nothing to wait for
+    }
+    if (m > lastMtime) {
+      lastMtime = m;
+      lastChange = Date.now();
+    } else if (Date.now() - lastChange >= QUIET_MS) {
+      return; // quiet — the scan settled
+    }
+  }
+  // Budget elapsed: a scan is still writing (or the FS clock is coarse).
+  // Proceed fail-open, as the old fixed sleep always did.
 }
 
 /**

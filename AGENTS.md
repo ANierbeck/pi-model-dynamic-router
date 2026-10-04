@@ -71,15 +71,24 @@
   — they're names, not prose. User-facing chat in German is fine (that's the
   user's language, not project documentation).
 
-## 4. Tests & verification before push
+## 4. Tests & verification before push (TDD — owner decision 2026-10-04)
 
+- **Red-first is mandatory.** Every regression test for a new feature or
+  bugfix must be observed **RED against the unfixed implementation** before
+  the implementation lands, and the report names the red evidence. A test
+  that has never failed is untested itself — green-at-birth is exactly how
+  the calculate-score contract pin went stale silently (suite hygiene round,
+  PR #16). Exceptions (docs-only, pure config) are stated explicitly in the
+  report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
-- `npx vitest run` must be green (existing count: 515+ passing). Don't lower
-  the `coverage.thresholds` in `vitest.config.ts` to unblock a red run — fix
-  the actual regression.
+- `npx vitest run` must be green (current count: 1236 passing / 3 skipped).
+  Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
+  red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix
   (non-vacuous — see the "Ü1 invariant test" incident where a test passed
-  vacuously and had to be rewritten, roborev job 308).
+  vacuously and had to be rewritten, roborev job 308). Red-first makes the
+  non-vacuous requirement verifiable: if you cannot drive the test red, it
+  does not exercise the fix.
 
 ## 5. Commit conventions
 
