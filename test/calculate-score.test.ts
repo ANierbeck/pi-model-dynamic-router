@@ -35,10 +35,25 @@ describe('calculateScore', () => {
     expect(calculateScore('mistral/codestral-latest')).toBeCloseTo(520);
   });
 
-  test('score is not affected by taskType argument', () => {
+  // ADR-0023 round 2 (2026-10-04): the second argument is now the group's
+  // score_by COLUMN and DOES affect the score when a capability profile
+  // exists. This test pins the two halves of that contract that live in
+  // this file's gdpval-only fixture:
+  //   1. legacy/unknown column strings ('code', 'standard', a group name
+  //      passed by pre-round callers) fall back to gdpval — byte-for-byte
+  //      the pre-round behavior;
+  //   2. a real column ('briefcase'/'coding') with NO profile in the cache
+  //      also falls back to gdpval (fail-closed — null is the fallback
+  //      signal, never 0).
+  // The positive case (column changes the score when a profile exists) is
+  // pinned in aa-capability-sourcing.test.ts, which imports this same
+  // production function with a profile-bearing fixture.
+  test('column argument falls back to gdpval without a profile (legacy strings and real columns alike)', () => {
     const base = calculateScore('mistral/codestral-latest');
     expect(calculateScore('mistral/codestral-latest', 'code')).toBe(base);
     expect(calculateScore('mistral/codestral-latest', 'standard')).toBe(base);
+    expect(calculateScore('mistral/codestral-latest', 'briefcase')).toBe(base);
+    expect(calculateScore('mistral/codestral-latest', 'coding')).toBe(base);
   });
 
   test('higher GDPval produces higher score', () => {
