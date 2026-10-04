@@ -30,8 +30,8 @@
   rule 2026-10-02). Before a release is proposed, verify that the shipped
   `router-config.json` sets `log_level` to `"warn"` or `"error"` — this is
   the effective default for everyone installing the package. The gate is
-  automated: `test/config-release-log-level.test.ts` fails the suite on a
-  regression. Local dev verbosity is unaffected (the user-level
+  automated: the `config-release-log-level` case in
+  `test/consolidated-config-pins.test.ts` fails the suite on a regression. Local dev verbosity is unaffected (the user-level
   `router-config.user.json` overrides it, and `ROUTER_LOG_LEVEL` overrides
   both).
 - **Code review must be clean before a release is even *proposed*** to the
@@ -81,7 +81,7 @@
   PR #16). Exceptions (docs-only, pure config) are stated explicitly in the
   report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
-- `npx vitest run` must be green (current count: 1260 passing / 3 skipped).
+- `npx vitest run` must be green (current count: 1261 passing / 3 skipped).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix

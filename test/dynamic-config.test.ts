@@ -218,13 +218,47 @@ describe('sortModelsForGroup', () => {
   const cfg = baseCfg;
   const score = (ref: string) => calculateScore(ref, 'standard', cfg);
 
+  it("a group's score_by column orders candidates, not the group NAME (release review 2026-10-04)", () => {
+    // The dynamic-config sort path passed the group NAME as calculateScore's
+    // column argument. For a group literally named 'briefcase'/'coding' the
+    // name accidentally IS a capability column; and for groups WITH score_by
+    // the configured column was ignored (gdpval was used). Thread score_by
+    // instead — mirrors routing.ts sortBy. Both tests were RED against the
+    // pre-fix code.
+    setGdpval({ a: 900, b: 800 });
+    setCache({
+      available_models: [],
+      capability_profiles: {
+        a: { briefcase: 1000 },
+        b: { briefcase: 2100 },
+      },
+    } as any);
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/a', gdpval: 900, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/b', gdpval: 800, cost: 1, price: null, isFreeModel: false },
+    ];
+
+    // score_by briefcase: b wins on the column (2100 > 1000) despite lower gdpval.
+    const byColumn = sortModelsForGroup(
+      models, { method: 'best', score_by: 'briefcase' }, cfg, calculateScore
+    );
+    expect(byColumn.map((m) => m.ref)).toEqual(['payg/b', 'payg/a']);
+
+    // NO score_by: gdpval order, even when the group NAME is a column name —
+    // the name must never leak into column selection.
+    const byNameTrap = sortModelsForGroup(
+      models, { method: 'best' }, cfg, calculateScore
+    );
+    expect(byNameTrap.map((m) => m.ref)).toEqual(['payg/a', 'payg/b']);
+  });
+
   it('method best/max_gdpval: sorts by calculateScore descending', () => {
     setGdpval({ low: 100, high: 900 });
     const models: ModelWithMetadata[] = [
       { ref: 'payg/low', gdpval: 100, cost: 1, price: null, isFreeModel: false },
       { ref: 'payg/high', gdpval: 900, cost: 1, price: null, isFreeModel: false },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'best' }, 'standard', cfg, calculateScore);
+    const sorted = sortModelsForGroup(models, { method: 'best' }, cfg, calculateScore);
     expect(sorted.map((m) => m.ref)).toEqual(['payg/high', 'payg/low']);
   });
 
@@ -234,7 +268,7 @@ describe('sortModelsForGroup', () => {
       { ref: 'payg/free', gdpval: 500, cost: 0, price: null, isFreeModel: true },
       { ref: 'payg/cheap', gdpval: 500, cost: 2, price: null, isFreeModel: false },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, 'standard', cfg, calculateScore);
+    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, cfg, calculateScore);
     expect(sorted.map((m) => m.ref)).toEqual(['payg/free', 'payg/cheap', 'payg/pricey']);
   });
 
@@ -243,7 +277,7 @@ describe('sortModelsForGroup', () => {
       { ref: 'payg/mystery', gdpval: 500, cost: 'unknown', price: null, isFreeModel: false },
       { ref: 'payg/known', gdpval: 500, cost: 5, price: null, isFreeModel: false },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, 'standard', cfg, calculateScore);
+    const sorted = sortModelsForGroup(models, { method: 'min_cost' }, cfg, calculateScore);
     expect(sorted.map((m) => m.ref)).toEqual(['payg/known', 'payg/mystery']);
   });
 
@@ -253,7 +287,7 @@ describe('sortModelsForGroup', () => {
       { ref: 'payg/high-gdp-paid', gdpval: 800, cost: 5, price: null, isFreeModel: false },
       { ref: 'payg/high-gdp-free', gdpval: 800, cost: 0, price: null, isFreeModel: true },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'tiered' }, 'standard', cfg, calculateScore);
+    const sorted = sortModelsForGroup(models, { method: 'tiered' }, cfg, calculateScore);
     // Both gdpval-800 entries must precede the gdpval-100 entry, and among
     // ties the free one wins.
     expect(sorted[0].ref).toBe('payg/high-gdp-free');
@@ -265,7 +299,7 @@ describe('sortModelsForGroup', () => {
       { ref: 'payg/a', gdpval: 100, cost: 1, price: null, isFreeModel: false },
       { ref: 'payg/b', gdpval: 900, cost: 1, price: null, isFreeModel: false },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'dynamic' }, 'standard', cfg, calculateScore);
+    const sorted = sortModelsForGroup(models, { method: 'dynamic' }, cfg, calculateScore);
     expect(sorted.map((m) => m.ref)).toEqual(['payg/a', 'payg/b']);
   });
 });

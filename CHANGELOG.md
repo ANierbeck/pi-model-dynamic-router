@@ -1,9 +1,36 @@
 # Changelog
 
-## [Unreleased]
+## [1.7.0] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
 
 ### Changed
 
+
+- **Cost column shows PAYG list prices for subscription models**: the
+  `/router` group table priced sonnet-5-5 at $2/$10 but opus-5-5 at
+  $0.0/$0.0 — the model_metrics sunk-cost sentinel (which routing needs so
+  subscription models sort near-free and stay admitted to max_cost groups)
+  shadowed the OpenRouter list-price backfill. `lookupListPrice` now feeds
+  the display while routing cost paths keep the sentinel.
+- **`score_by` threads through the dynamic-config sort path**: the
+  generated config sorted by GDPval even for groups with a configured
+  `score_by` column (and a group literally named `briefcase`/`coding`
+  accidentally scored by that column — the group NAME leaked into column
+  selection). The sort now mirrors routing's `g.score_by ?? 'gdpval'`.
+- **Red-first regression testing is a hard rule (AGENTS.md §4)** + a
+  repeatable nine-mutant spot-campaign script proving the suite kills core
+  invariants; two load-flaky tests fixed with evidence-based wait budgets
+  (CI run as red evidence; the background-scan flush helper now waits for
+  scan quiescence instead of a fixed 50 ms sleep).
+- **Nightly mutation testing (Stryker) over the decision core**
+  (`src/metrics.ts` + `src/routing.ts`), report-only on GitHub Actions —
+  never gates PRs; incremental state cached across nights. Plus: duplicate
+  import bindings left by the test consolidation fixed (strict-ESM
+  SyntaxError class) and guarded by a TypeScript-parser test.
+- **Dependabot activated with policy**: weekly grouped minor/patch
+  updates; the host (`@earendil-works/pi-coding-agent`) is never
+  auto-bumped (host upgrades are deliberate rounds), vitest majors muted
+  until a dedicated vitest-5 migration round; policy pinned by contract
+  test.
 - **Test suite hygiene round**: a stale contract pin in
   `calculate-score.test.ts` ("score is not affected by taskType") — false
   since the AA capability round — rewritten to pin the surviving contract;

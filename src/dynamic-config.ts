@@ -161,14 +161,21 @@ export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: G
 export function sortModelsForGroup(
   models: ModelWithMetadata[],
   groupConfig: Group,
-  groupName: string,
   cfg: Config,
   calculateScore: (ref: string, taskType: string, cfg: Config) => number
 ): ModelWithMetadata[] {
   const sorted = [...models];
+  // The score column comes from the group's score_by (gdpval default) —
+  // NEVER from the group NAME. The name was historically passed as the
+  // legacy taskType argument: harmless before the AA capability round, but
+  // since columns exist it would make a group literally named 'briefcase'/
+  // 'coding' accidentally score by that capability column while a group
+  // WITH a configured score_by silently sorted by gdpval (release review
+  // 2026-10-04). Mirrors routing.ts sortBy's `g.score_by ?? 'gdpval'`.
+  const column = groupConfig.score_by ?? 'gdpval';
 
   if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
-    sorted.sort((a, b) => calculateScore(b.ref, groupName, cfg) - calculateScore(a.ref, groupName, cfg));
+    sorted.sort((a, b) => calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg));
   } else if (groupConfig.method === 'min_cost') {
     sorted.sort((a, b) => {
       if (a.isFreeModel && !b.isFreeModel) return -1;
@@ -177,13 +184,13 @@ export function sortModelsForGroup(
       const costA = a.cost;
       const costB = b.cost;
       if (costA === 'unknown' && costB === 'unknown') {
-        return calculateScore(b.ref, groupName, cfg) - calculateScore(a.ref, groupName, cfg);
+        return calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg);
       }
       if (costA === 'unknown') return 1;
       if (costB === 'unknown') return -1;
       if (costA !== costB) return costA - costB;
 
-      return calculateScore(b.ref, groupName, cfg) - calculateScore(a.ref, groupName, cfg);
+      return calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg);
     });
   } else if (groupConfig.method === 'tiered') {
     sorted.sort((a, b) => {
@@ -192,8 +199,8 @@ export function sortModelsForGroup(
       if (a.isFreeModel && !b.isFreeModel) return -1;
       if (!a.isFreeModel && b.isFreeModel) return 1;
 
-      const scoreB = calculateScore(b.ref, groupName, cfg);
-      const scoreA = calculateScore(a.ref, groupName, cfg);
+      const scoreB = calculateScore(b.ref, column, cfg);
+      const scoreA = calculateScore(a.ref, column, cfg);
       if (scoreB !== scoreA) return scoreB - scoreA;
 
       const costA = a.cost;

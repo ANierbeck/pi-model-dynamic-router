@@ -374,7 +374,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, rt.cfg);
         
         // 7. Sort the models according to the group's method
-        let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, groupName, rt.cfg, metricsModule.calculateScore);
+        let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, rt.cfg, metricsModule.calculateScore);
         
         // 8. Collect models: static first (highest priority), then dynamic additions
         const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, rt.cfg);
