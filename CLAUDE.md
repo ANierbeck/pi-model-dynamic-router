@@ -15,11 +15,10 @@ The router works seamlessly with the **claude-bridge** Pi extension to provide a
 
 | Model | GDPval Score | Notes |
 |-------|-------------|-------|
+| claude-sonnet-5-5 | 1844 | Primary strategic/planning model (quality window picks it over opus at equal subscription cost) |
+| claude-opus-5-5 | 1900 | Escalation model |
 | claude-sonnet-5 | 1603 | Available in Pro tier |
-| claude-fable-5 | 1747 | Available in Max tier |
-| claude-opus-5 | 1860 | Available in Max tier |
 | claude-3-sonnet | 1450 | Legacy model |
-| claude-3-haiku | 1200 | Legacy model |
 
 ### Subscription Tiers
 
