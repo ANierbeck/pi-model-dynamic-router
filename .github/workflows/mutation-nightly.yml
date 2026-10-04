@@ -1,0 +1,69 @@
+# Nightly mutation testing (owner decision 2026-10-04).
+#
+# Report-only by design: this job NEVER runs on pull_request/push and its
+# result is not a required check — mutation findings must not gate PRs.
+# The Stryker score and the HTML report land in the run log, the run
+# summary, and an artifact for triage. Scope (Phase 1): the decision core
+# (src/metrics.ts, src/routing.ts) — see stryker.config.json, pinned by
+# test/mutation-nightly-config.test.ts.
+name: Nightly Mutation Testing
+
+on:
+  schedule:
+    # 03:17 UTC — off the hour to avoid GitHub's schedule-minute rush.
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Incremental mode reuses results for unchanged mutants: nights with
+      # no decision-core changes stay cheap, nights after real changes do
+      # the full work (a cold run is ~75 min). actions/cache keys are
+      # immutable, so each run saves under its own run_id and restores the
+      # newest previous state via the prefix — a fixed key would freeze the
+      # results at the first night forever. The path must equal
+      # incrementalFile in stryker.config.json (pinned by the contract test).
+      - name: Restore incremental state
+        uses: actions/cache@v4
+        with:
+          path: reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-
+
+      - name: Run Stryker mutation testing
+        run: npx stryker run
+
+      # Computed from mutant statuses (the report schema has no aggregate
+      # metrics field) — see scripts/mutation-summary.ts and its test.
+      - name: Summarize score
+        if: always()
+        run: node scripts/mutation-summary.ts reports/mutation/mutation.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: mutation-report
+          path: |
+            reports/mutation/
+            reports/stryker-incremental.json
+          if-no-files-found: warn
