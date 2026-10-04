@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### Changed
+- **Design/planning prompts route to a new top-tier-only `planning` group**
+  (owner decision 2026-10-04, ADR-0023 follow-up). Previously the
+  `design`/`planning` categories mapped to `tactical` — after ADR-0023 that
+  is the glm-5-3 free-tank tier, so planning and architecture work would
+  have landed on the daily-driver model. The `planning` group floors at
+  `min_gdpval: 1700`: today claude-sonnet-5-5 (primary via the quality
+  window) + claude-opus-5-5 (escalation); glm-5-3 (1644) and
+  mistral-medium-3.5 are flat out — and future top-tier models (GPT-6,
+  Gemini 4, …) auto-qualify via the floor, no config change needed.
+  Escalation when the Claude window is exhausted: strategic → tactical →
+  the free tank as emergency. Registered for a later round: multi-benchmark
+  capability sourcing from Artificial Analysis (AA-Briefcase Elo for
+  planning, Terminal-Bench/SciCode for coding) — see
+  docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md.
 - **ADR-0023: tier routing restored — per-group `max_gdpval` cap and a
   quality-equivalence window for `best` groups** (owner decision
   2026-10-04). GDPval compression at the top (opus-5-5 1900 / sonnet-5-5

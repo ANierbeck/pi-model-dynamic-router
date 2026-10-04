@@ -13,8 +13,8 @@ describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
       code_simple: 'simple',
       standard: 'operational',
       code_complex: 'tactical',
-      design: 'tactical',
-      planning: 'tactical',
+      design: 'planning',
+      planning: 'planning',
       exploration: 'scout',
       fallback: 'tactical',
     });
@@ -26,8 +26,8 @@ describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
     expect(getGroupForCategory('code_simple')).toBe('simple');
     expect(getGroupForCategory('standard')).toBe('operational');
     expect(getGroupForCategory('code_complex')).toBe('tactical');
-    expect(getGroupForCategory('design')).toBe('tactical');
-    expect(getGroupForCategory('planning')).toBe('tactical');
+    expect(getGroupForCategory('design')).toBe('planning');
+    expect(getGroupForCategory('planning')).toBe('planning');
     expect(getGroupForCategory('exploration')).toBe('scout');
     expect(getGroupForCategory('fallback')).toBe('tactical');
   });

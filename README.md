@@ -89,7 +89,7 @@ Then `/reload` in pi.
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, Ollama **mistral-nemo:latest** primary / **gemma2:2b** fallback as the local last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, and `code_complex`/`design`/`planning`/`fallback` → `tactical`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, Ollama **mistral-nemo:latest** primary / **gemma2:2b** fallback as the local last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
 
 #### Categories for Classification
 
@@ -115,15 +115,15 @@ Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-
 | `simple` | operational | Simple conversational requests |
 | `standard` | operational | Everyday tasks (GDPval ≥ 300) |
 | `code_simple` | simple | Simple coding tasks (GDPval ≥ 300, free models only) |
-| `code_complex` | tactical | Complex coding tasks (GDPval ≥ 600) |
-| `design` | tactical | High-level design decisions (GDPval ≥ 600) |
-| `planning` | tactical | Project planning and coordination (GDPval ≥ 600) |
+| `code_complex` | tactical | Complex coding tasks (GDPval ≥ 600, capped at 1700 — the free-tank tier) |
+| `design` | planning | High-stakes design decisions — top tier only (GDPval ≥ 1700) |
+| `planning` | planning | Project planning and architecture — top tier only (GDPval ≥ 1700) |
 | `exploration` | scout | Research and exploration — any model, cheap |
 | `fallback` | tactical | Uncertain classification — a decent model, not a free one |
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
