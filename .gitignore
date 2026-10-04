@@ -27,3 +27,7 @@ coverage/
 
 .pi/
 *.tgz
+
+# Stryker mutation testing (nightly, report-only)
+.stryker-tmp/
+reports/

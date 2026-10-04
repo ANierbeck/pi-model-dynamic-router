@@ -15,8 +15,6 @@ import {
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 import { fileURLToPath } from 'node:url';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { describe, it, expect } from 'vitest';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
 

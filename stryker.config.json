@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "mutate": [
+    "src/metrics.ts",
+    "src/routing.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "ignoreStatic": true,
+  "timeoutMS": 30000,
+  "concurrency": 4,
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json",
+  "tempDirName": ".stryker-tmp",
+  "reporters": ["html", "json", "clear-text", "progress"],
+  "thresholds": {
+    "break": 0
+  },
+  "_comment": [
+    "Nightly mutation testing (owner decision 2026-10-04) — Phase 1 scope:",
+    "the decision core only (metrics + routing). Report-only: the nightly run",
+    "never gates main; findings flow through triage. The contract is pinned",
+    "by test/mutation-nightly-config.test.ts (red-first).",
+    "coverageAnalysis perTest + ignoreStatic keep runtime bounded; timeoutMS",
+    "is generous because several legitimate tests take 5-10s (rate-limit",
+    "waits, cooldown collapse) and a timeout would mask survivors as killed."
+  ]
+}

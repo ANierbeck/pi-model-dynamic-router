@@ -12,27 +12,18 @@ import { DYNAMIC_CONFIG_RESYNC_KEYS } from '../src/dynamic-config.ts';
 import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import { fileURLToPath } from 'node:url';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
+import { beforeEach } from 'vitest';
 import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach } from 'vitest';
 import { applyGroupFilters } from '../src/routing.ts';
 import { buildModelsWithMetadata, buildStaticFreeModelsLookup, filterModelsForGroup } from '../src/dynamic-config.ts';
 import { setConfig, setCache, setGdpval, setModelMap, setMetrics, setModelRegistry, getModelRegistry } from '../src/metrics.ts';
-import type { Config, Group } from '../src/types.ts';
-import * as metricsModule from '../src/metrics.ts';
-import type { Config, Cache } from '../src/types.ts';
-import { describe, it, expect } from 'vitest';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { describe, test, expect, beforeAll, afterAll } from 'vitest';
-import { lookupGdp, setConfig } from '../src/metrics.js';
+import type { Group } from '../src/types.ts';
+import { test, beforeAll, afterAll } from 'vitest';
+import { lookupGdp } from '../src/metrics.js';
 
 describe('cache-session-reload', () => {
   // test/cache-session-reload.test.ts
