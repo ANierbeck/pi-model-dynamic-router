@@ -529,6 +529,13 @@ export function setConfig(config: Config): void {
  */
 export function setCache(newCache: Cache): void {
   cache = newCache;
+  // ADR-0023 round 2: capability profiles live in the cache and are read
+  // through lookupCapability (additive like gdpval_scores — new cache
+  // entries add to whatever earlier profiles exist; no separate in-memory
+  // index needed because lookups are per-ref at scan/routing time).
+  if (cache.capability_profiles) {
+    capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
+  }
   if (cache.gdpval_scores) {
     // Additive merge: add scraped scores to EXISTING gdpval (which may have
     // builtins from setConfig). Builtins take precedence (manual overrides
@@ -547,6 +554,33 @@ export function setCache(newCache: Cache): void {
  */
 export function setMetrics(newMetrics: Record<string, Metrics>): void {
   metrics = newMetrics;
+}
+
+// ── Capability Profiles (ADR-0023 round 2) ─────────────────────────────
+
+// In-memory mirror of cache.capability_profiles — setCache merges into it
+// (the same pattern as the `gdpval` map), so lookups work before the cache
+// is written to disk and survive partial cache writes.
+let capabilityProfiles: NonNullable<Cache['capability_profiles']> = {};
+
+/**
+ * Resolves a model ref to a capability column (AA-Briefcase Elo / coding
+ * blend) via the same slug pipeline as lookupGdp. Returns null when the
+ * model, the profile, or the COLUMN is absent — null IS the fallback
+ * signal (callers fall back to gdpval), never 0.
+ */
+export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): number | null {
+  const slug = resolveSlug(ref);
+  if (!slug) return null;
+  const profile = capabilityProfiles[slug];
+  if (!profile) return null;
+  const v = profile[column];
+  return typeof v === 'number' ? v : null;
+}
+
+/** Test/inspection accessor for the merged capability profiles. */
+export function getCapabilityProfiles(): NonNullable<Cache['capability_profiles']> {
+  return capabilityProfiles;
 }
 
 // ── Cost Resolution Helpers ────────────────────────────────────────────
@@ -686,7 +720,24 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * silent quality downgrade to a much weaker free model instead of falling
  * through to the next-best paid/subscription candidate.
  */
-export function calculateScore(ref: string, _taskType?: string, _config?: Config): number {
+/**
+ * The 'best' method's ranking score (ADR-0023 round 2). The second param
+ * is the group's score_by column — it FINALLY does something: 'briefcase'
+ * ranks by AA-Briefcase Elo (agentic knowledge work), 'coding' by the
+ * SciCode/Terminal-Bench blend. Everything else (absent, 'gdpval', legacy
+ * group-name strings from pre-round callers) ranks by the global GDPval —
+ * the exact pre-round behavior.
+ *
+ * Group floors/caps (min_gdpval/max_gdpval) stay on GDPval regardless:
+ * a column never changes which models are ADMITTED to a pool, only their
+ * order within it (test pin: aa-capability-sourcing.test.ts "floors remain
+ * GDPval-only").
+ */
+export function calculateScore(ref: string, column?: string, _config?: Config): number {
+  if (column === 'briefcase' || column === 'coding') {
+    const v = lookupCapability(ref, column);
+    if (v !== null) return v;
+  }
   return getM(ref).gdpval;
 }
 

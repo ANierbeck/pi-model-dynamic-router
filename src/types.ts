@@ -65,6 +65,16 @@ export interface Group {
    * (unscored) GDPval fails a positive cap. Absent/0 = no upper bound.
    */
   max_gdpval?: number;
+
+  /**
+   * Which capability column ranks WITHIN this group (ADR-0023 round 2):
+   * 'gdpval' (default) | 'briefcase' (AA-Briefcase Elo — agentic knowledge
+   * work, the natural planning score) | 'coding' (SciCode/Terminal-Bench
+   * blend). Floors and caps stay on the global GDPval — a column never
+   * changes which models are ADMITTED, only their order within the pool.
+   * Missing column for a model → gdpval fallback (pre-round behavior).
+   */
+  score_by?: 'gdpval' | 'briefcase' | 'coding';
   max_cost?: number;
   max_cost_per_m?: number;
 
@@ -296,6 +306,14 @@ export interface SessionError {
 export interface Cache {
   gdpval_scores?: Record<string, number>;
   gdpval_scraped?: boolean;
+
+  /**
+   * Per-slug capability profile from the Artificial Analysis scrape
+   * (ADR-0023 round 2, docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md).
+   * Same additive-merge lifecycle as gdpval_scores: setCache merges,
+   * absent column = null (gdpval fallback), never 0.
+   */
+  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number }>;
   models_cached?: string;
   available_models?: AvailableModel[];
   benchmarks?: Record<string, number>;

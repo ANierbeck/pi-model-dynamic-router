@@ -1053,9 +1053,11 @@ export class Router {
     const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, this.coalesceBySlug(refs));
 
     if (g.method === 'best') {
-      // Multi-metric scoring for 'best' method
-      // taskType is the group name - only 'code' triggers code-specific weighting
-      c = rank(this.sortBy(c, 'best', name));
+      // Multi-metric scoring for 'best' method. The third arg is the group's
+      // score_by column (ADR-0023 round 2): 'briefcase'/'coding' rank by the
+      // AA capability columns, anything else (absent, 'gdpval', legacy group
+      // names) by the global GDPval — the exact pre-round behavior.
+      c = rank(this.sortBy(c, 'best', g.score_by ?? 'gdpval'));
     } else if (g.method === 'tiered') {
       // Quality-gated + billing preference
       c = rank(this.sortByBillingPreference(c, g.billing_preference));
@@ -1194,7 +1196,10 @@ export class Router {
     c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r));
 
     if (g.method === 'best') {
-      c = this.sortBy(c, 'max_gdpval');
+      // Display mirrors the LIVE 'best' ranking, column included (ADR-0023
+      // round 2) — the old 'max_gdpval' showed opus-first while live routing
+      // (window + tiebreaks) actually picked sonnet, a confusing divergence.
+      c = this.sortBy(c, 'best', g.score_by ?? 'gdpval');
     } else if (g.method === 'tiered') {
       c = this.sortByBillingPreference(c, g.billing_preference);
     } else if (g.method === 'pipeline' && g.pipeline) {
