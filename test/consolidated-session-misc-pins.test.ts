@@ -5,28 +5,17 @@
 // tests themselves are UNCHANGED; hooks and fixtures moved verbatim.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   routerLog,
   setLogLevel,
   setProjectLogDir,
   configureLogRotation,
 } from '../src/logger.ts';
-import { describe, it, expect } from 'vitest';
 import { serialized } from '../src/utils.ts';
-import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
-import { describe, it, expect, beforeEach } from 'vitest';
 import { getUsage, getUsageAll, setCache } from '../src/metrics.ts';
 import type { Cache } from '../src/types.ts';
 import { fileURLToPath } from 'node:url';

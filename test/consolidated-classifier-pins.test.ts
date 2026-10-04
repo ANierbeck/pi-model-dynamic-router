@@ -6,7 +6,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { CATEGORY_TO_GROUP, getGroupForCategory } from '../src/content-classifier.ts';
-import { describe, it, expect } from "vitest";
 import { classifyPrompt } from "../src/content-classifier";
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
