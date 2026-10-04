@@ -54,6 +54,14 @@ async function withIsolatedRouter(
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  // Hermetic + fast (ADR-0022): with keys resolved by Pi, the LLM matcher's
+  // free-cloud fallback is eligible whenever the registry stub returns a
+  // key — so it attempts real HTTP calls. Stub fetch to reject so the
+  // matcher fails fast instead of hitting the network (and so the dynamic
+  // snapshot lands well before the assertions).
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.reject(new Error('network disabled during test (adr-0021)'))) as typeof fetch;
 
   const dynBak = `${dynamicConfigPath}.adr-0021-bak`;
   const cacheBak = `${scanCachePath}.adr-0021-bak`;
@@ -93,6 +101,7 @@ async function withIsolatedRouter(
     await fn(mod.default as any, tmpDir);
   } finally {
     cwdSpy.mockRestore();
+    globalThis.fetch = originalFetch;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
     removeNoOpScanCache(scanCachePath);

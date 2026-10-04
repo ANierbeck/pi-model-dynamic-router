@@ -27,7 +27,7 @@ interface StreamProxyDeps {
   readonly cfg: Config;
   localStreamsInFlight: number;
   readonly OLLAMA_MAX_CONCURRENT_STREAMS: number;
-  readonly registerFreeModelOnDemand: (provider: string, modelId: string) => boolean;
+  readonly registerFreeModelOnDemand: (provider: string, modelId: string) => Promise<boolean>;
   readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
   readonly sessionCtx: any;
   skipReasons: Map<string, string>;
@@ -120,7 +120,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       // registration tryStream would skip every free model forever (the
       // observed 'claude-sonnet-5 dominates, GLM unused' symptom: free models
       // silently dropped from the cascade).
-      if (rt.registerFreeModelOnDemand(provider, modelId)) {
+      if (await rt.registerFreeModelOnDemand(provider, modelId)) {
         realModel = rt.sessionCtx.modelRegistry.find(provider, modelId);
       }
       if (!realModel)

@@ -5,14 +5,17 @@
  * needed, then re-lookup. Conservative per ADR-0021: only providers in
  * PROVIDER_MAP with a baseUrl, only model IDs explicitly listed in
  * free_models, never overwrites an existing registration (Ü1 invariant).
- * Pure code motion.
+ *
+ * ADR-0022: the API key comes from Pi (the injected resolveApiKey, wired
+ * to modelRegistry.getApiKeyForProvider in index.ts) — never from the
+ * router config; the router never reads Pi's credential store. A provider
+ * whose key Pi cannot resolve is skipped.
  */
 
 import { routerLog, warnLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import type { Config } from './types.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import type { RateLimitManager } from './rate-limit.ts';
 
 /**
  * Dependencies createFreeModelRegistration reads from index.ts's extension closure. Exposed as
@@ -23,9 +26,9 @@ import type { RateLimitManager } from './rate-limit.ts';
 interface FreeModelRegistrationDeps {
   readonly cfg: Config;
   readonly pi: ExtensionAPI;
-  readonly rateLimitManager: RateLimitManager;
-  readonly resolveKeyValue: (key: string) => string;
   readonly sessionCtx: any;
+  /** Pi-side key resolution (ADR-0022): modelRegistry.getApiKeyForProvider. */
+  readonly resolveApiKey: (provider: string) => Promise<string | null>;
 }
 
 export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
@@ -36,15 +39,15 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
    * and since ADR-0021 the router registers no scan-discovered models at
    * session start, so without this on-demand path tryStream would skip
    * every free model forever. This registers the PROVIDER (if Pi doesn't
-   * know it) with just the one model needed, then re-lookup. Returns true if
-   * the model is now findable.
+   * know it) with just the one model needed, then re-lookup. Returns true
+   * if the model is now findable.
    *
    * Conservative: only fires for providers in PROVIDER_MAP with a baseUrl,
    * and only for model IDs explicitly listed in free_models — explicit user
    * config, not scan discovery, so it stays under ADR-0021. Never overwrites
    * an existing provider registration (Ü1 invariant).
    */
-  function registerFreeModelOnDemand(provider: string, modelId: string): boolean {
+  async function registerFreeModelOnDemand(provider: string, modelId: string): Promise<boolean> {
     const def = (PROVIDER_MAP as any)[provider];
     if (!def?.baseUrl || !def?.api) return false;
     const freeModels = rt.cfg.providers?.[provider]?.free_models;
@@ -71,19 +74,9 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
     // overwrite a provider pi knows' — conservative and correct. ADR-0021
     // removed the scan-union registration; this explicitly-configured
     // on-demand path is the only cloud registration left.
-    // Resolve an API key (free models still need a key for the OpenRouter
-    // endpoint, just at no cost). Without one we can't register.
-    const keys = rt.cfg.providers?.[provider]?.keys;
-    let apiKey: string | undefined;
-    if (keys?.length) {
-      apiKey = rt.resolveKeyValue(keys[rt.rateLimitManager.activeKeyIndex(provider)]?.key);
-    } else if (def.authKey) {
-      // auth.json key resolution is async in the real path, but we're in a
-      // sync helper. If the provider needs auth.json and has no cfg key, we
-      // can't resolve synchronously here — bail. This on-demand path only
-      // fires for providers with a resolvable cfg key.
-      return false;
-    }
+    // The API key comes from Pi (ADR-0022). Free models still need a key
+    // for the endpoint, just at no cost. Without one we can't register.
+    const apiKey = await rt.resolveApiKey(provider);
     if (!apiKey) return false;
     try {
       // Register the provider with ALL configured free models at once, not

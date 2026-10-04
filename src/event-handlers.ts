@@ -39,7 +39,6 @@ interface EventHandlerDeps {
   readonly cfg: Config;
   curModel: string;
   readonly detectGroup: (ref: string) => string | null;
-  readonly discoverKeys: () => Promise<void>;
   readonly escalation: SessionEscalation;
   readonly extDir: string;
   readonly getM: (ref: string) => Metrics;
@@ -128,8 +127,6 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     
     rt.escalation.reset();
     
-    await rt.discoverKeys();
-
     await rt.registerGroupModels(ctx);
     // scan() swallows per-provider failures by design, but a top-level
     // throw (e.g. from checkScanSanity or saveCache) must not disappear

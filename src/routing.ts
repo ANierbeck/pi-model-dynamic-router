@@ -491,7 +491,7 @@ export class Router {
    * Point the router at a new cache object.
    *
    * index.ts REPLACES its `cache` variable on every reload path (loadCache,
-   * discoverKeys, saveCache) and notifies metrics and the rate-limit manager.
+   * saveCache) and notifies metrics and the rate-limit manager.
    * The router was never notified, so it kept reading the object it was
    * constructed with — discovered models, exclude lookups, dedup and health
    * data all silently went stale for the rest of the session. Every place
@@ -596,21 +596,12 @@ export class Router {
   }
 
   /**
-   * Filters models by availability (not rate-limited)
+   * Filters models by availability (not rate-limited). (The per-key-index
+   * exhausted_keys check was removed with ADR-0022 — multi-key rotation no
+   * longer exists, so nothing writes that map anymore.)
    */
-  filterAvailable(refs: string[], activeKeyIdx: Record<string, number> = {}): string[] {
-    return refs.filter((r) => {
-      if (this.isLimited(r)) return false;
-      const prov = r.split('/')[0];
-      const idx = activeKeyIdx[prov] ?? 0;
-      if (
-        this.cache.exhausted_keys?.[`${prov}:${idx}`] &&
-        Date.now() < this.cache.exhausted_keys[`${prov}:${idx}`]
-      ) {
-        return false;
-      }
-      return true;
-    });
+  filterAvailable(refs: string[]): string[] {
+    return refs.filter((r) => !this.isLimited(r));
   }
 
   /**

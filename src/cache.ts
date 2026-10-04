@@ -402,13 +402,7 @@ export class CacheManager {
     this.saveCache();
   }
 
-  /**
-   * Updates the exhausted keys in the cache
-   */
-  updateExhaustedKeys(exhaustedKeys: Record<string, number>): void {
-    this.cache.exhausted_keys = exhaustedKeys;
-    this.saveCache();
-  }
+
 
   /**
    * Updates the cost mux values in the cache

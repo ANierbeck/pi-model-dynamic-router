@@ -6,7 +6,6 @@ import { splitRef } from './utils.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-const KEY_COOLDOWN = 3_600_000; // 1hr per exhausted key
 
 // ── Shared cooldown check (single source of truth) ─────────────────────────
 //
@@ -47,7 +46,6 @@ export class RateLimitManager {
   private softBackoffMs: number[];
   private costMuxAtHit: number;
   private cache: Cache;
-  private activeKeyIdx: Record<string, number> = {};
 
   constructor(
     backoffMinutes: number[],
@@ -70,65 +68,11 @@ export class RateLimitManager {
     return this.limits;
   }
 
-  // ── Key Management ─────────────────────────────────────────────────────
-
-  /**
-   * Returns true if the key at the given index is in its cooldown period
-   */
-  isKeyExhausted(prov: string, idx: number): boolean {
-    const until = this.cache.exhausted_keys?.[`${prov}:${idx}`];
-    if (!until) return false;
-    if (Date.now() >= until) {
-      if (this.cache.exhausted_keys) delete this.cache.exhausted_keys[`${prov}:${idx}`];
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Marks a key as exhausted for KEY_COOLDOWN ms
-   */
-  exhaustKey(prov: string, idx: number): void {
-    if (!this.cache.exhausted_keys) this.cache.exhausted_keys = {};
-    this.cache.exhausted_keys[`${prov}:${idx}`] = Date.now() + KEY_COOLDOWN;
-  }
-
-  /**
-   * Attempts to rotate to the next available key for a provider.
-   * Returns true if rotation succeeded.
-   */
-  rotateKey(prov: string, keys: { key: string; label?: string }[]): boolean {
-    if (!keys || keys.length <= 1) return false;
-
-    const curIdx = this.activeKeyIdx[prov] ?? 0;
-    this.exhaustKey(prov, curIdx);
-
-    for (let i = 1; i < keys.length; i++) {
-      const nextIdx = (curIdx + i) % keys.length;
-      if (!this.isKeyExhausted(prov, nextIdx)) {
-        this.activeKeyIdx[prov] = nextIdx;
-        return true;
-      }
-    }
-    return false; // all keys exhausted
-  }
-
-  /**
-   * Current key index for a provider (rotation state; 0 before any
-   * rotation). index.ts registration sites read this instead of keeping a
-   * duplicate, never-updated index map — handing pi an already-exhausted
-   * key after a rotation (final v1.6.0 review minor #7).
-   */
-  activeKeyIndex(prov: string): number {
-    return this.activeKeyIdx[prov] ?? 0;
-  }
-
-  /** Returns the label of the currently active key for a provider. */
-  activeKeyLabel(prov: string, keys: { key: string; label?: string }[]): string | null {
-    if (!keys || keys.length <= 1) return null;
-    const idx = this.activeKeyIdx[prov] ?? 0;
-    return keys[idx]?.label ?? `key-${idx}`;
-  }
+  // NOTE (ADR-0022): the multi-key rotation machinery (the per-provider
+  // key index map, rotation, the per-key exhaustion bookkeeping)
+  // was removed — with keys owned and resolved by Pi there is exactly one
+  // key per provider and nothing to rotate. A rate-limit now always means a
+  // model-level backoff cooldown.
 
   // ── Rate Limit Tracking ────────────────────────────────────────────────
 
@@ -140,8 +84,8 @@ export class RateLimitManager {
   }
 
   /**
-   * Records a rate-limit error and attempts key rotation.
-   * Returns whether rotation succeeded and the new key label if so.
+   * Records a rate-limit error and arms a model-level backoff cooldown.
+   * (ADR-0022 removed key rotation — one key per provider, from pi.)
    *
    * `resetAtMs` (optional) — when present, the cooldown is forced to be at
    * least as long as the gap from now until the provider's window actually
@@ -152,21 +96,9 @@ export class RateLimitManager {
    * escalates the backoff for repeated hits; resetAtMs only ensures we wait
    * at least until the window resets.
    */
-  recordLimit(
-    ref: string,
-    providerKeys: Record<string, { keys?: { key: string; label?: string }[] }>,
-    resetAtMs?: number
-  ): { rotated: boolean; newKey: string | undefined } {
+  recordLimit(ref: string, resetAtMs?: number): void {
     const { provider } = splitRef(ref);
 
-    // Try key rotation first.
-    const keys = providerKeys[provider]?.keys;
-    if (keys && this.rotateKey(provider, keys)) {
-      const label = this.activeKeyLabel(provider, keys) ?? 'next';
-      return { rotated: true, newKey: label };
-    }
-
-    // No keys to rotate — fall back to model-level backoff.
     const prev = this.limits.get(ref);
     const hits = (prev?.hits ?? 0) + 1;
     const backoffIndex = Math.min(hits - 1, this.backoffMinutes.length - 1);
@@ -198,18 +130,12 @@ export class RateLimitManager {
     if (hits === this.costMuxAtHit) {
       this.bumpMux(provider, splitRef(ref).modelId);
     }
-
-    return { rotated: false, newKey: undefined };
   }
 
   /**
-   * Arms a hard cooldown until `untilMs` WITHOUT the key-rotation path —
-   * for ACCOUNT-WIDE limits (OpenRouter free-models-per-day, 2026-10-03)
-   * where rotating a key is meaningless: the cap covers the whole account.
-   * Through recordLimit, a multi-key provider would silently skip the
-   * cooldown for the first N-1 refs (rotateKey wins before any cooldown is
-   * set) and exhaust an unexhausted key for an hour as a side effect
-   * (review P1 2026-10-04).
+   * Arms a hard cooldown until `untilMs` — for ACCOUNT-WIDE limits
+   * (OpenRouter free-models-per-day, 2026-10-03) where the cap covers the
+   * whole account.
    */
   setLimitUntil(ref: string, untilMs: number): void {
     const prev = this.limits.get(ref);
@@ -341,9 +267,4 @@ export class RateLimitManager {
     this.cache = newCache;
   }
 
-  // ── Getter ─────────────────────────────────────────────────────────────
-
-  getActiveKeyIdx(): Record<string, number> {
-    return this.activeKeyIdx;
-  }
 }

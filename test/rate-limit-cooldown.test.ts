@@ -18,7 +18,7 @@ describe('RateLimitManager cooldown calculation', () => {
     const rlm = new RateLimitManager(BACKOFF_MS, SOFT_BACKOFF_MS, COST_MUX_AT_HIT, cache);
 
     // Record a limit (no keys to rotate → falls back to model-level backoff)
-    rlm.recordLimit('test-provider/model-1', {});
+    rlm.recordLimit('test-provider/model-1');
 
     const secs = rlm.limitSecs('test-provider/model-1');
     // Should be ~60 seconds (1 minute), NOT 3.6 million seconds (41 days)
@@ -35,7 +35,7 @@ describe('RateLimitManager cooldown calculation', () => {
 
     const expectedMinutes = [1, 2, 4, 8, 16, 32, 64, 90];
     for (let i = 0; i < expectedMinutes.length; i++) {
-      rlm.recordLimit('test-provider/model-1', {});
+      rlm.recordLimit('test-provider/model-1');
       const secs = rlm.limitSecs('test-provider/model-1');
       const expectedSecs = expectedMinutes[i] * 60;
 
@@ -51,7 +51,7 @@ describe('RateLimitManager cooldown calculation', () => {
 
     // Record many hits — should cap at max backoff
     for (let i = 0; i < 20; i++) {
-      rlm.recordLimit('test-provider/model-1', {});
+      rlm.recordLimit('test-provider/model-1');
     }
     const secs = rlm.limitSecs('test-provider/model-1');
     expect(secs).toBeLessThanOrEqual(5400); // 90 minutes max
@@ -91,7 +91,7 @@ describe('RateLimitManager cooldown calculation', () => {
     // Reset in 3 hours (well beyond the 1-minute first-hit backoff)
     const threeHours = 3 * 60 * 60 * 1000;
     const resetAtMs = Date.now() + threeHours;
-    rlm.recordLimit('test-provider/model-1', {}, resetAtMs);
+    rlm.recordLimit('test-provider/model-1', resetAtMs);
 
     const secs = rlm.limitSecs('test-provider/model-1');
     // Must wait at least until the reset window
@@ -109,11 +109,11 @@ describe('RateLimitManager cooldown calculation', () => {
 
     // Simulate many consecutive hits to push the backoff high
     for (let i = 0; i < 7; i++) {
-      rlm.recordLimit('test-provider/model-1', {});
+      rlm.recordLimit('test-provider/model-1');
     }
     // Now try with a short reset time (only 1 minute away)
     const shortReset = Date.now() + 60_000;
-    rlm.recordLimit('test-provider/model-1', {}, shortReset);
+    rlm.recordLimit('test-provider/model-1', shortReset);
 
     const secs = rlm.limitSecs('test-provider/model-1');
     // Must still use the high backoff (90 minutes), not the short reset time
@@ -128,7 +128,7 @@ describe('recordSoftFailure must not shorten a longer cooldown', () => {
 
     // A hard rate-limit with an explicit long reset (10 minutes) — the
     // provider told us when the window actually resets.
-    rlm.recordLimit('test-provider/model-1', {}, Date.now() + 10 * 60_000);
+    rlm.recordLimit('test-provider/model-1', Date.now() + 10 * 60_000);
 
     // A generic (non-429) failure on the same ref — e.g. the
     // total-cooldown-collapse force-retry failing, or another candidate
@@ -146,7 +146,7 @@ describe('recordSoftFailure must not shorten a longer cooldown', () => {
     const cache: any = { exhausted_keys: {} };
     const rlm = new RateLimitManager(BACKOFF_MS, SOFT_BACKOFF_MS, COST_MUX_AT_HIT, cache);
 
-    rlm.recordLimit('test-provider/model-1', {}, Date.now() + 10 * 60_000);
+    rlm.recordLimit('test-provider/model-1', Date.now() + 10 * 60_000);
     // Three soft failures while the hard cooldown is active: hits must
     // still escalate (the cadence drives backoff escalation and cost-mux
     // bumps) — only the cooldown end must not move EARLIER.
@@ -160,7 +160,7 @@ describe('recordSoftFailure must not shorten a longer cooldown', () => {
     // hits = 4 recorded hits, so the next recordLimit is hit #5 → schedule
     // entry BACKOFF_MS[4] = 16 min, NOT the 1-minute entry. This pins that
     // hits keep counting while the cooldown end is preserved.
-    rlm.recordLimit('test-provider/model-1', {});
+    rlm.recordLimit('test-provider/model-1');
     const secs = rlm.limitSecs('test-provider/model-1');
     expect(secs).toBeGreaterThan(15 * 60); // 5th schedule entry = 16 min
     expect(secs).toBeLessThanOrEqual(16 * 60);

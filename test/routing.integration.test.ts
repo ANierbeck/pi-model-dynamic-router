@@ -280,17 +280,18 @@ describe('Router Integration Tests', () => {
       expect(filtered).toEqual([]);
     });
 
-    it('should consider exhausted keys', () => {
-      // Mark one key as exhausted
+    it('ignores legacy exhausted_keys entries (ADR-0022: rotation removed, nothing writes them)', () => {
+      // Stale entries from pre-ADR-0022 caches must not filter models —
+      // with the rotation machinery gone nothing writes or refreshes
+      // them, so honoring them would permanently hide models.
       cache.exhausted_keys = {
-        'openai:0': Date.now() + 10000, // Key 0 exhausted for 10 seconds
+        'openai:0': Date.now() + 10000,
       };
 
       const refs = ['openai/gpt-4'];
-      const filtered = router.filterAvailable(refs, { openai: 0 });
+      const filtered = router.filterAvailable(refs);
 
-      // Since key 0 is exhausted, the model should be filtered out
-      expect(filtered).not.toContain('openai/gpt-4');
+      expect(filtered).toContain('openai/gpt-4');
     });
   });
 

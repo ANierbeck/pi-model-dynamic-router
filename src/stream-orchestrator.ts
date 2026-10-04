@@ -204,8 +204,8 @@ export interface StreamOrchestratorContext {
     reason: string,
     resetAtMs?: number,
     errorText?: string
-  ) => { hardLimited: boolean; rotated: boolean; newKey: string | undefined };
-  formatResetMsg: (ref: string, resetAtMs: number | undefined, rotated: boolean | undefined) => string;
+  ) => { hardLimited: boolean };
+  formatResetMsg: (ref: string, resetAtMs: number | undefined) => string;
   /**
    * OpenRouter free-models-per-day cap (account-wide, live finding
    * 2026-10-03): sets a hard cooldown until `untilMs` on every
@@ -699,9 +699,8 @@ export class StreamOrchestrator {
 
         if (result.reason === 'rate_limit_exceeded') {
           const freeDayCap = isFreeTierDailyCapText(String(result.detail ?? ''));
-          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), freeDayCap ? undefined : result.resetAtMs, result.detail);
+          ctx.recordStreamFailure(ref, String(result.reason), freeDayCap ? undefined : result.resetAtMs, result.detail);
           pushError(ref, 'rate_limit_exceeded');
-          const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
 
           // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE and resets
           // at 00:00 UTC (live finding 2026-10-03). Per-model escalating
@@ -720,17 +719,17 @@ export class StreamOrchestrator {
               `[router] ${ref} — OpenRouter free-tier daily cap (account-wide): ` +
                 `${limitedCount} :free model(s) limited until ${new Date(untilMs).toISOString()}`
             );
-            const capResetMsg = ctx.formatResetMsg(ref, undefined, rlResult.rotated);
+            const capResetMsg = ctx.formatResetMsg(ref, undefined);
             const capNextRef = nextAttemptableRef(i + 1);
             const capSuffix = capNextRef ? `, trying ${capNextRef} …` : '';
             pushRouterInfoLogged(
               proxy,
-              `> [router] ${ref} — free-tier daily request cap reached (all :free models)${capResetMsg}${keyMsg}${capSuffix}\n\n`
+              `> [router] ${ref} — free-tier daily request cap reached (all :free models)${capResetMsg}${capSuffix}\n\n`
             );
             continue;
           }
 
-          const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
+          const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs);
 
           // Bounded wait-for-reset: when the provider TOLD us when the limit
           // clears and that moment is near, waiting beats burning the whole
@@ -743,7 +742,7 @@ export class StreamOrchestrator {
           const resetInMs = result.resetAtMs && Number.isFinite(result.resetAtMs)
             ? result.resetAtMs - Date.now()
             : -1;
-          if (!rlResult.rotated && waitMaxMs > 0 && !rateLimitWaitUsed
+          if (waitMaxMs > 0 && !rateLimitWaitUsed
               && resetInMs > 0 && resetInMs <= waitMaxMs) {
             rateLimitWaitUsed = true;
             const waitSecs = Math.ceil(resetInMs / 1000);
@@ -795,7 +794,7 @@ export class StreamOrchestrator {
 
           const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${keyMsg}${suffix}\n\n`);
+          pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${suffix}\n\n`);
           continue;
         }
         if (result.reason === 'context_overflow') {
@@ -885,18 +884,17 @@ export class StreamOrchestrator {
         // soft branch while recordStreamFailure (which does get the detail)
         // would have escalated them — the two sites must stay in sync.
         if (isPaidCloudRateLimitFailure(ref, String(result.reason), result.detail)) {
-          const rlResult = ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
+          ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
           pushError(ref, `${result.reason} (treated as rate-limit)`);
           const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          const keyMsg = rlResult.rotated ? ` (key rotated to ${rlResult.newKey})` : '';
           const paidLabel = result.reason === 'stall_timeout'
             ? 'stream stalled (likely rate limit)'
             : result.reason === 'provider_error'
               ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
               : emptyResponseLabel(ref);
-          const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs, rlResult.rotated);
-          pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${keyMsg}${suffix}\n\n`);
+          const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs);
+          pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${suffix}\n\n`);
           continue;
         }
         // Soft failure — through the seam so it reaches the ring buffer
@@ -1087,7 +1085,6 @@ export class StreamOrchestrator {
             } else {
               const frResult = ctx.recordStreamFailure(bestRef, String(result.reason), result.resetAtMs, result.detail);
               if (frResult.hardLimited) {
-                const keyMsg = frResult.rotated ? ` (key rotated to ${frResult.newKey})` : '';
                 const reasonTxt = String(result.reason);
                 const labelTxt = reasonTxt === 'rate_limit_exceeded'
                   ? 'rate limit/spend limit reached'
@@ -1096,8 +1093,8 @@ export class StreamOrchestrator {
                     : reasonTxt === 'provider_error'
                       ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
                       : emptyResponseLabel(bestRef!);
-                const resetMsg = ctx.formatResetMsg(bestRef!, result.resetAtMs, frResult.rotated);
-                pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}${keyMsg}\n\n`);
+                const resetMsg = ctx.formatResetMsg(bestRef!, result.resetAtMs);
+                pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}\n\n`);
               }
             }
           } catch (streamError) {

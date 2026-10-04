@@ -19,12 +19,9 @@ models. Pi's own Mistral models use `mistral-conversations`, which never sends
 pi-ai, `openai-completions.js`). The 422 was a symptom of the wrong API — and
 the wrong API was a symptom of the router inventing model registrations.
 
-The fork's design principle (owner decision, 2026-10-02):
-
-> "Unser Fork kümmert sich explizit um Modelle, welche schon im Pi registriert
-> sind, und nutzt diese. Alles andere ist ein Rückschritt!"
-> ("Our fork explicitly takes care of models that are already registered in
-> Pi and uses them. Everything else is a step backwards!")
+The fork's design principle (owner decision, 2026-10-02): the fork explicitly
+takes care of models that are already registered in Pi and uses them;
+everything else is a step backwards.
 
 The original pi-model-router shipped its own model lists; the fork moved away
 from that long ago. But the F4 scan-union quietly reintroduced exactly that:

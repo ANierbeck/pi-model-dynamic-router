@@ -12,18 +12,11 @@ import { callLocalLlm, resolveLocalProvider, type LocalLlmDeps } from '../src/lo
 import type { Config, Cache } from '../src/types.js';
 import { PROVIDER_MAP } from '../src/providers.js';
 
-// local-llm.ts now resolves key-reference markers via the shared pure
-// resolveKeyRef + loadAuthFile (imported from discovery.ts). Mock the
-// discovery module so auth.json-sourced keys can be exercised without a
-// real ~/.pi/agent/auth.json on disk.
-vi.mock('../src/discovery.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/discovery.js')>();
-  return {
-    ...actual,
-    loadAuthFile: vi.fn(() => ({})),
-  };
-});
-import { loadAuthFile } from '../src/discovery.js';
+// ADR-0022: the cloud fallback obtains API keys ONLY through the injected
+// async resolveApiKey (wired to pi's modelRegistry.getApiKeyForProvider in
+// index.ts). The router never reads auth.json or cfg keys itself. The default
+// here stands in for "pi resolved a key"; tests override it to pin the null
+// and cfg-keys-ignored cases.
 
 const originalFetch = globalThis.fetch;
 
@@ -41,6 +34,7 @@ function makeDeps(overrides: Partial<LocalLlmDeps> = {}): LocalLlmDeps {
     cache: { available_models: [] } as Cache,
     cfg: { model_groups: {}, model_metrics: {} } as Config,
     timeoutMs: 5000,
+    resolveApiKey: async () => 'or-test-key',
     ...overrides,
   };
 }
@@ -304,33 +298,29 @@ describe('callLocalLlm', () => {
   });
 });
 
-// ── auth.json-sourced keys (roborev job 268 regression) ─────────────────
-// discoverKeys() stores auth.json-sourced keys as __auth_json__:<authKey>
-// reference markers (never raw). local-llm.ts's cloud fallback must resolve
-// these markers via the shared resolver, not silently skip the provider —
-// which is what happened when the marker handling drifted between the
-// three duplicated resolveKeyValue copies.
-describe('callLocalLlm: auth.json-sourced key resolution', () => {
+// ── pi-resolved keys (ADR-0022) ───────────────────────────────────────
+// The cloud fallback gets its API key exclusively from the injected async
+// resolveApiKey (pi's getApiKeyForProvider in production). cfg keys are
+// never consulted; a provider whose key pi cannot resolve is skipped.
+describe('callLocalLlm: pi-resolved key handling (ADR-0022)', () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
-    vi.mocked(loadAuthFile).mockReturnValue({
-      'openrouter-prod': { key: 'resolved-auth-json-secret' },
-    });
   });
   afterEach(() => {
-    vi.restoreAllMocks();
     globalThis.fetch = originalFetch;
-    vi.mocked(loadAuthFile).mockReturnValue({});
   });
 
-  it('resolves an __auth_json__ marker and uses it as the bearer token for the cloud fallback', async () => {
+  it('uses the pi-resolved key as the bearer token for the cloud fallback', async () => {
     const deps = makeDeps({
+      resolveApiKey: async () => 'pi-resolved-key',
       cfg: {
         model_groups: {},
         model_metrics: {},
         providers: {
           openrouter: {
             billing: 'pay_per_token',
+            // cfg keys are DEAD under ADR-0022 — garbage here proves they
+            // are never consulted.
             keys: [{ key: '__auth_json__:openrouter-prod' }],
             free_models: ['openrouter/google/gemma-3-12b-it:free'],
           },
@@ -345,10 +335,30 @@ describe('callLocalLlm: auth.json-sourced key resolution', () => {
 
     const result = await callLocalLlm('test prompt', deps);
     expect(result).toBe('cloud-result');
-    // The cloud call MUST have happened (not silently skipped because the
-    // __auth_json__ marker was treated as unresolvable).
     expect(globalThis.fetch).toHaveBeenCalledOnce();
     const headers = (globalThis.fetch as any).mock.calls[0][1].headers;
-    expect(headers.Authorization).toBe('Bearer resolved-auth-json-secret');
+    expect(headers.Authorization).toBe('Bearer pi-resolved-key');
+  });
+
+  it('skips the free provider when pi cannot resolve a key', async () => {
+    const deps = makeDeps({
+      resolveApiKey: async () => null,
+      cfg: {
+        model_groups: {},
+        model_metrics: {},
+        providers: {
+          openrouter: {
+            billing: 'pay_per_token',
+            free_models: ['openrouter/google/gemma-3-12b-it:free'],
+          },
+        },
+      } as Config,
+      cache: { available_models: [] } as Cache,
+    });
+
+    // No usable local provider and no key-resolvable free cloud model →
+    // the clear error, and NO network call with a garbage bearer.
+    await expect(callLocalLlm('test', deps)).rejects.toThrow(/no LLM available/i);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

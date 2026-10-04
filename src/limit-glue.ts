@@ -45,14 +45,8 @@ export function createLimitGlue(d: LimitGlueDeps) {
   }
 
   // ── Rate Limit + costMux ───────────────────────────────────────────────
-  // NOTE: no duplicate activeKeyIdx map here — the rotation state lives in
-  // the RateLimitManager (rateLimitManager.activeKeyIndex). A second,
-  // never-updated map here made registrations hand pi an already-exhausted
-  // key after a rotation (final v1.6.0 review minor #7).
-
-  function resolveKeyValue(key: string): string {
-    return d.discoveryManager.resolveKeyValue(key) ?? key;
-  }
+  // (ADR-0022 removed the multi-key rotation note that used to live here —
+  // there is no rotation state left to duplicate.)
 
   function costMux(prov: string) {
     return d.rateLimitManager.costMux(prov);
@@ -62,9 +56,9 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return d.rateLimitManager.isLimited(ref);
   }
 
-  function recordLimit(ref: string, resetAtMs?: number): { rotated: boolean; newKey: string | undefined } {
+  function recordLimit(ref: string, resetAtMs?: number): void {
     recordModelFailure(d.cache, ref);
-    return d.rateLimitManager.recordLimit(ref, d.cfg.providers ?? {}, resetAtMs);
+    d.rateLimitManager.recordLimit(ref, resetAtMs);
   }
 
   function recordOk(ref: string) {
@@ -118,9 +112,9 @@ export function createLimitGlue(d: LimitGlueDeps) {
    * cloud model that looks rate-limit-shaped (empty response, timeout, or a
    * provider_error whose text carries HTTP 429/402 or rate-limit wording —
    * a bare 422/403 client error is NOT escalated; see the 2026-09-27
-   * incident), gets a hard cooldown + key rotation via recordLimit(). A
-   * FREE-model or local-model failure gets only the short soft-backoff
-   * ladder, since those are commonly just transient overload.
+   * incident), gets a hard cooldown via recordLimit(). A FREE-model or
+   * local-model failure gets only the short soft-backoff ladder, since
+   * those are commonly just transient overload.
    *
    * The escalation predicate (isPaidCloudRateLimitFailure, src/detection.ts)
    * is the single source of truth shared with the caller's own branch in the
@@ -146,37 +140,31 @@ export function createLimitGlue(d: LimitGlueDeps) {
     reason: string,
     resetAtMs?: number,
     errorText?: string
-  ): { hardLimited: boolean; rotated: boolean; newKey: string | undefined } {
+  ): { hardLimited: boolean } {
     if (reason === 'rate_limit_exceeded' || isPaidCloudRateLimitFailure(ref, reason, errorText)) {
-      // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE: key rotation
-      // is meaningless (all keys share the account) and, on a multi-key
-      // provider, recordLimit's rotation path would silently skip the
-      // cooldown AND exhaust an unexhausted key for an hour as a side
-      // effect (review P1 2026-10-04). Arm a hard cooldown until the next
-      // UTC midnight instead — the orchestrator's cap branch then extends
-      // it to ALL :free refs via limitFreeDayCap.
-      let rlResult: { rotated: boolean; newKey: string | undefined };
+      // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE (review P1
+      // 2026-10-04): arm a hard cooldown until the next UTC midnight —
+      // the orchestrator's cap branch then extends it to ALL :free refs
+      // via limitFreeDayCap.
       if (isFreeTierDailyCapText(errorText ?? '')) {
         recordModelFailure(d.cache, ref);
         d.rateLimitManager.setLimitUntil(ref, nextUtcMidnightMs());
-        rlResult = { rotated: false, newKey: undefined };
       } else {
-        rlResult = recordLimit(ref, resetAtMs);
+        recordLimit(ref, resetAtMs);
       }
-      // Consequence label (incl. key-rotation) built in the testable seam
-      // src/session-errors.ts (review I3/I4).
+      // Consequence label built in the testable seam src/session-errors.ts
+      // (review I3/I4).
       recordSessionErrorFromFailure({
         cache: d.cache,
         ref,
         reason,
         ...(errorText ? { errorText } : {}),
         hardLimited: true,
-        rotated: rlResult.rotated,
         limitSecs: limitSecs(ref),
       });
       d.updateErrorStatusLine();
       d.scheduleSessionErrorSave();
-      return { hardLimited: true, rotated: rlResult.rotated, newKey: rlResult.newKey };
+      return { hardLimited: true };
     }
     recordSoftFailure(ref);
     recordSessionErrorFromFailure({
@@ -185,12 +173,11 @@ export function createLimitGlue(d: LimitGlueDeps) {
       reason,
       ...(errorText ? { errorText } : {}),
       hardLimited: false,
-      rotated: false,
       limitSecs: 0,
     });
     d.updateErrorStatusLine();
     d.scheduleSessionErrorSave();
-    return { hardLimited: false, rotated: false, newKey: undefined };
+    return { hardLimited: false };
   }
 
   function limitSecs(ref: string) {
@@ -229,11 +216,9 @@ function formatLocalHm(ms: number): string {
    * computed cooldown_until (the escalating backoff, or whatever
    * recordStreamFailure actually set) so the user always sees a concrete
    * wall-clock time instead of a mystery cooldown when the failure text
-   * couldn't be parsed for a reset time. Omitted when the ref was
-   * key-rotated — no cooldown was applied to it in that case (a different
-   * key will be tried next time), so there's no meaningful reset time to show.
+   * couldn't be parsed for a reset time.
    */
-  function formatResetMsg(ref: string, resetAtMs: number | undefined, rotated?: boolean): string {
+  function formatResetMsg(ref: string, resetAtMs: number | undefined): string {
     // A reset time the PROVIDER announced (parsed from the failure text) —
     // "resets" is the provider's word. Without one, only show the router's
     // own cooldown end, worded as such: presenting our backoff as a
@@ -241,7 +226,6 @@ function formatLocalHm(ms: number): string {
     // empty responses, live finding 2026-10-03: "resets 10/3/2026, 12:23:53
     // PM" — the bridge said nothing of the sort).
     if (resetAtMs) return ` (resets in ${humanizeShortDuration(resetAtMs - Date.now())}, at ${formatLocalHm(resetAtMs)})`;
-    if (rotated) return '';
     const secs = limitSecs(ref);
     if (secs <= 0) return '';
     return ` (backing off ${humanizeShortDuration(secs * 1000)}, until ${formatLocalHm(Date.now() + secs * 1000)})`;
@@ -267,9 +251,9 @@ function formatLocalHm(ms: number): string {
         refs.add(`${m.provider}/${m.id}`);
       }
     }
-    // setLimitUntil, NOT recordLimit: recordLimit tries key rotation first
-    // and a multi-key provider would silently skip the account-wide cooldown
-    // (review P1 2026-10-04).
+    // setLimitUntil, NOT recordLimit: the cooldown is the account-wide cap
+    // (review P1 2026-10-04), so every :free ref gets the same explicit
+    // until-midnight limit rather than an escalating per-model backoff.
     for (const ref of refs) d.rateLimitManager.setLimitUntil(ref, untilMs);
     return refs.size;
   }
@@ -292,5 +276,5 @@ function formatLocalHm(ms: number): string {
     return metricsModule.effCost(ref);
   }
 
-  return { resolveKeyValue, getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage };
+  return { getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage };
 }
