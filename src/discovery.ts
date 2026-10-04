@@ -34,7 +34,15 @@ const authPath = () => path.join(piAgentDir(), 'auth.json');
 // A provider key entry's `.key` field may be either a raw secret (legacy /
 // env-only setups) or a resolvable reference marker produced by
 // discoverKeys():
-//   !pass show <path>            -> pass store lookup
+//   !pass show <path>            -> pass store lookup (legacy, uncached)
+//   !<shell command>             -> executed at resolution time, stdout is
+//                                 the secret (pi's secret-manager syntax,
+//                                 docs/providers.md "Load an API key from a
+//                                 command"). Cached per process; empty
+//                                 output / non-zero exit / timeout = null.
+//                                 Also applies to values INSIDE auth.json
+//                                 entries (auth.json may itself hold a
+//                                 "!..." command, e.g. macOS keychain).
 //   __cli_oauth__:<file>:<field> -> read a field from a CLI OAuth json file
 //   __auth_json__:<authKey>      -> read from <agent dir>/auth.json (this is
 //                                 how auth.json-sourced keys are stored so
@@ -69,6 +77,68 @@ export function loadAuthFile(): AuthData {
   } catch {
     return {};
   }
+}
+
+// ── "!..." shell-command keys (pi secret-manager syntax) ──────────────────
+
+// Safety timeout for executing a key command. pi itself allows 10 s, but the
+// router resolves keys on SYNCHRONOUS paths (model scan, free-model
+// registration), so a shorter cap keeps a locked keychain / hung prompt from
+// blocking the event loop for too long (owner requirement 2026-10-04).
+const KEY_CMD_TIMEOUT_MS = 5000;
+
+// Per-process cache: the same command resolves to the same value until the
+// process exits — matching pi ("runs the command when the key is first
+// needed and caches its standard output for the process lifetime"). A
+// FAILED lookup is cached too, so a locked keychain cannot block every
+// subsequent resolution for another KEY_CMD_TIMEOUT_MS round-trip.
+const keyCommandCache = new Map<string, string | null>();
+
+/** Test hook: drop all cached command results. */
+export function clearKeyCommandCache(): void {
+  keyCommandCache.clear();
+}
+
+/**
+ * Executes a shell command that yields a provider key. Semantics match pi's
+ * resolve-config-value: stdout is trimmed and becomes the secret; empty
+ * output (or a non-zero exit, a timeout, or a missing binary) means the key
+ * is unresolved (null). stderr is discarded and the output is NEVER logged
+ * — it is a secret.
+ */
+function executeKeyCommand(cmd: string): string | null {
+  try {
+    const out = execSync(cmd, {
+      encoding: 'utf-8',
+      timeout: KEY_CMD_TIMEOUT_MS,
+      // stdin closed (no prompt can hang on our stdin), stderr discarded.
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim() || null;
+  } catch {
+    // err.timedOut / err.status !== 0 / ENOENT — all mean "unresolved",
+    // not "crash the scan".
+    return null;
+  }
+}
+
+/** Cached lookup of a "!..." command result (see keyCommandCache). */
+function cachedKeyCommand(cmd: string): string | null {
+  if (!keyCommandCache.has(cmd)) {
+    keyCommandCache.set(cmd, executeKeyCommand(cmd));
+  }
+  return keyCommandCache.get(cmd) ?? null;
+}
+
+/**
+ * Resolves the VALUE of an auth.json entry (entry.key / entry.access). A
+ * "!..." value is executed like pi does (auth.json may itself point at a
+ * secret manager, e.g. macOS keychain via `security find-generic-password`).
+ * A non-command value is returned LITERALLY — pi does not $-interpolate
+ * auth.json values either, so no accidental env-var lookup may happen.
+ */
+function resolveAuthEntryValue(value: string): string | null {
+  return value.startsWith('!') ? cachedKeyCommand(value.slice(1)) : value;
 }
 
 /**
@@ -113,9 +183,16 @@ export function resolveKeyRef(key: string, auth: AuthData): string | null {
       ? key.slice('__auth_json__:'.length)
       : key.slice('__oauth__:'.length);
     const entry = auth?.[authKey];
-    if (entry?.key) return entry.key;
-    if (entry?.access) return entry.access;
+    if (entry?.key) return resolveAuthEntryValue(entry.key) || null;
+    if (entry?.access) return resolveAuthEntryValue(entry.access) || null;
     return null;
+  }
+
+  // Generic "!..." command (pi secret-manager syntax, docs/providers.md).
+  // Must come AFTER the legacy "!pass show " branch so its behavior is
+  // preserved byte-for-byte (uncached, no timeout).
+  if (key.startsWith('!')) {
+    return cachedKeyCommand(key.slice(1));
   }
 
   if (key === '__local__') {

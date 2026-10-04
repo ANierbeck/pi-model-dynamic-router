@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`!...` shell-command keys resolve like pi's secret manager** (owner
+  request 2026-10-04): pi's auth.json supports a `!`-prefixed key executed
+  at runtime (docs/providers.md), but the router's key resolver only
+  handled `!pass show` — a `!security find-generic-password ...` value from
+  auth.json was sent RAW as a bearer token (→ 401) on every router-internal
+  path (model scan, free-model registration, local-llm free fallback). Both
+  direct `!command` keys and command values inside auth.json entries
+  (`__auth_json__`/`__oauth__`) now execute with pi's semantics: trimmed
+  stdout, per-process cache (failures cached too, like pi), 5 s timeout so a
+  locked keychain cannot hang the synchronous paths, stderr discarded, and
+  the output never logged. The legacy `!pass show` branch is preserved
+  byte-for-byte (uncached, no timeout). Streaming/inference keys were never
+  affected — those go through pi's own `getApiKeyForProvider`.
+
 ### Internal (docs & tests)
 - **Secret and reference scanning over commit ranges** (owner decision
   2026-10-03): `scripts/secret-scan.ts` checks every ADDED line of every
