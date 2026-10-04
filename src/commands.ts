@@ -52,6 +52,9 @@ interface CommandDeps {
   readonly limitSecs: (ref: string) => number;
   readonly load: () => void;
   readonly lookupPrice: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
+  /** PAYG list price for DISPLAY — skips the model_metrics subscription
+   * sentinel (see metrics.lookupListPrice). Falls back to lookupPrice/effCost. */
+  readonly lookupListPrice?: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;
   readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
@@ -59,6 +62,29 @@ interface CommandDeps {
   readonly scan: (force?: boolean) => Promise<void>;
   sessionCtx: any;
   readonly sessionStart: number;
+}
+
+/**
+ * The "Cost I/O" column of the /router group table. Prefers the PAYG list
+ * price (would-cost, like the /router cost report's Marginal column) over the
+ * routing-effective price: subscription models carry a tiny sunk-cost
+ * sentinel in model_metrics that routing must keep using, but "$0.0/$0.0"
+ * in the table hid what the model would cost on pay-as-you-go (2026-10-04:
+ * opus-5-5 vs sonnet-5-5). No list price -> the old display chain
+ * (effective price, then 'unknown').
+ */
+export function costColumnFor(
+  ref: string,
+  tools: Pick<CommandDeps, 'lookupListPrice' | 'lookupPrice' | 'effCost'>
+): string {
+  const price = tools.lookupListPrice?.(ref) ?? tools.lookupPrice(ref);
+  if (price && price.input !== 'unknown' && price.output !== 'unknown') {
+    return `$${typeof price.input === 'number' ? price.input.toFixed(1) : '?'}/$${typeof price.output === 'number' ? price.output.toFixed(1) : '?'}`;
+  }
+  const cost = tools.effCost(ref);
+  return cost !== 'unknown' && typeof cost === 'number'
+    ? `$${cost.toFixed(1)}`
+    : 'unknown';
 }
 
 /** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
@@ -357,7 +383,7 @@ export function createCommands(rt: CommandDeps) {
             const prov = ref.split('/')[0];
             const mux = rt.costMux(prov);
             const cost = rt.effCost(ref);
-            const price = rt.lookupPrice(ref);
+            const price = rt.lookupListPrice?.(ref) ?? rt.lookupPrice(ref);
             const modelShort = ref.length > MW ? '…' + ref.slice(-(MW - 1)) : ref;
             const isActive = rt.curModel === ref;
             const statusParts: string[] = [];
@@ -366,11 +392,7 @@ export function createCommands(rt: CommandDeps) {
             if (isActive) statusParts.push('●');
             const status = statusParts.join(' ') || (limited ? '' : 'active');
 
-            const costDisplay = price && price.input !== 'unknown' && price.output !== 'unknown'
-              ? `$${typeof price.input === 'number' ? price.input.toFixed(1) : '?'}/$${typeof price.output === 'number' ? price.output.toFixed(1) : '?'}`
-              : cost !== 'unknown' && typeof cost === 'number'
-                ? `$${cost.toFixed(1)}`
-                : 'unknown';
+            const costDisplay = costColumnFor(ref, rt);
 
             // Add budget info for subscription providers
             const budgetInfo = rt.cache.budget_cache?.[prov];

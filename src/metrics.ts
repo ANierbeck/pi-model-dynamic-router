@@ -950,6 +950,15 @@ export function lookupPrice(ref: string): { input: number | 'unknown'; output: n
     return { input: cost, output: cost };
   }
 
+  return orFallbackPrice(ref);
+}
+
+/**
+ * The OpenRouter-backed fallback chain shared by lookupPrice and
+ * lookupListPrice: exact pricing-cache ref, same-model backfill from other
+ * providers, then the provider-level cost estimate.
+ */
+function orFallbackPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
   // 2. Check pricing cache by exact provider/model ref
   if (cache.openrouter_pricing?.[ref]) {
     const price = cache.openrouter_pricing[ref];
@@ -985,6 +994,24 @@ export function lookupPrice(ref: string): { input: number | 'unknown'; output: n
   }
 
   return null;
+}
+
+/**
+ * PAYG list price for DISPLAY ("what would this cost on pay-as-you-go") —
+ * the same philosophy as the /router cost report's Marginal column. Unlike
+ * lookupPrice this SKIPS the model_metrics sentinel: subscription providers
+ * (claude-bridge et al.) carry a tiny sunk-cost cost_per_m so routing sorts
+ * them as near-free and max_cost groups admit them, but that sentinel must
+ * not hide the real list price from the status table (2026-10-04: opus-5-5
+ * displayed "$0.0/$0.0" while sonnet-5-5, which has no sentinel, showed its
+ * real $2/$10 via the OR backfill). Routing cost is UNAFFECTED — effCost
+ * and the classifier-fallback probe keep using lookupPrice.
+ */
+export function lookupListPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+  const { provider, modelId } = splitRef(ref);
+  const regCost = registryCost(provider, modelId);
+  if (regCost) return regCost;
+  return orFallbackPrice(ref);
 }
 
 /**
