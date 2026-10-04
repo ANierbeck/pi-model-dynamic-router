@@ -2,7 +2,7 @@
 // The REAL timeout kill, without any mock: a key command that hangs (locked
 // keychain, pinentry prompt) must be terminated at the timeout and resolve
 // to null — never block the synchronous discovery/registration path (owner
-// requirement 2026-10-04: "gesperrter Schlüsselbund darf nicht hängen").
+// requirement 2026-10-04: "a locked keychain must not hang").
 // Separate file because the other secret-manager tests mock execSync.
 
 import { it, expect } from 'vitest';
