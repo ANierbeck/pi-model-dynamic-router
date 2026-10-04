@@ -48,7 +48,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Design an event-sourcing architecture");
     expect(result.category).toBe("design");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("planning");
   });
 
   it("classifies unclear requests as 'fallback'", async () => {

@@ -854,8 +854,15 @@ export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string>
   code_simple:  'simple',      // GDPval ≥ 300, max_cost=0 (free models only)
   standard:     'operational', // GDPval ≥ 300
   code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
-  design:       'tactical',   // GDPval ≥ 600
-  planning:     'tactical',   // GDPval ≥ 600
+  // design/planning → dedicated top-tier-only group (ADR-0023 follow-up,
+  // owner decision 2026-10-04): planning/architecture work goes to the best
+  // models available — never the daily-driver free tank. The `planning`
+  // group floors at min_gdpval 1700: today claude-sonnet-5-5 (1844, primary
+  // via the best-quality window) + claude-opus-5-5 (1900, escalation);
+  // future top-tier models (GPT-6, Gemini 4, …) auto-qualify. Escalation
+  // chain: strategic → tactical (glm free tank, emergency only).
+  design:       'planning',  // top tier only (min_gdpval 1700)
+  planning:     'planning',  // top tier only (min_gdpval 1700)
   exploration:  'scout',       // any model, cheap
   fallback:     'tactical',   // uncertain → use a decent model, not a free one
 };
