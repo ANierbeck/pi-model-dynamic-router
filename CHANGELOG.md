@@ -3,7 +3,18 @@
 ## [Unreleased]
 
 ### Changed
-- **Documentation overhauled (user-first)****: the README now opens with
+
+- **Test suite hygiene round**: a stale contract pin in
+  `calculate-score.test.ts` ("score is not affected by taskType") — false
+  since the AA capability round — rewritten to pin the surviving contract;
+  the mirrored AA GDPval parser copy replaced by an import of the real
+  production function (the mirror had already drifted: the legacy
+  `window.__MODELS_DATA__` stage existed only in production); and 45
+  one-file-per-incident micro tests consolidated into 6 topic files
+  (150 → 111 files, identical test count, zero coverage loss). vi.mock-
+  bearing incident files and policy/ADR guards stay standalone by design.
+
+- **Documentation overhauled (user-first)**: the README now opens with
   What You Get / Quick Start / Adding a Provider instead of the internal
   module tables (moved to an "Internals" section for contributors). The
   "Adding a Provider" section and the shipped `router-login` skill no
