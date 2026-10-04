@@ -18,8 +18,9 @@ This Pi extension dynamically routes model group names to concrete provider/mode
 
 | Group | Purpose | Typical Models |
 |-------|---------|----------------|
-| **strategic** | Best models by GDPval | Claude Opus, Mistral Medium |
-| **tactical** | Top quality, cost-optimized | Claude Sonnet, Mistral Medium |
+| **strategic** | Best models by GDPval | Claude Opus, Claude Sonnet |
+| **planning** | Top tier only (GDPval ≥ 1700), ranked by AA-Briefcase Elo | Claude Sonnet/Opus |
+| **tactical** | Daily coding tier (600–1700), ranked by SciCode/Terminal-Bench | GLM-5.3, Mistral Medium |
 | **operational** | Good quality, cheapest | Ollama, Mistral Small |
 | **scout** | Acceptable quality, cheapest | Free tier models |
 | **fallback** | Any available model | Last resort |
@@ -31,19 +32,19 @@ The `dynamic` group classifies prompts into these categories:
 
 | Category | Maps To | Example Use Cases |
 |----------|---------|-------------------|
-| `code_simple` | operational | Syntax fixes, typos, 1-10 line changes |
+| `code_simple` | simple | Syntax fixes, typos, 1-10 line changes |
 | `code_complex` | tactical | Refactoring, debugging, >50 line changes |
-| `design` | strategic | Architecture, system design, API design |
-| `planning` | tactical | Project planning, roadmaps, task breakdown |
+| `design` | planning | Architecture, system design, API design |
+| `planning` | planning | Project planning, roadmaps, task breakdown |
 | `exploration` | scout | Research, brainstorming, unclear requirements |
-| `fallback` | fallback | Unclear or multi-category requests |
+| `fallback` | tactical | Unclear or multi-category requests |
 
 ### 3. Requirements
 
-For **dynamic routing** to work:
-- Ollama must be installed and running (`ollama serve`)
-- Required models: `mistral-nemo:latest` (primary) and `gemma2:2b` (fallback)
-- Install models: `ollama pull mistral-nemo:latest` and `ollama pull gemma2:2b`
+The shipped classifier chain is **cloud-first** — classification runs on free
+cloud models, no local setup required. Ollama (`mistral-nemo:latest` primary,
+`gemma2:2b` fallback) is only the local last resort: `ollama serve` +
+`ollama pull mistral-nemo:latest` + `ollama pull gemma2:2b`.
 
 ### 4. Common Commands
 
@@ -61,6 +62,7 @@ For **dynamic routing** to work:
 | `set_model_from_group` | Switch to best model from a group |
 | `resolve_model_group` | Preview what a group resolves to |
 | `update_model_metrics` | Manual metric override |
+| `bulk_read` | Answer a question about files via a cheap reader model |
 
 ### 6. Configuration Files
 
@@ -105,8 +107,8 @@ For **dynamic routing** to work:
 
 ```
 User: "Help me design a new API architecture"
-Agent: Uses `/router dynamic` to classify as `design` → routes to `strategic` group
-Router: Selects best strategic model (e.g., Claude Opus)
+Agent: Uses `/router dynamic` to classify as `design` → routes to `planning` group
+Router: Selects best planning model (e.g., Claude Sonnet — ranked by AA-Briefcase Elo)
 Result: High-quality architectural design response
 ```
 

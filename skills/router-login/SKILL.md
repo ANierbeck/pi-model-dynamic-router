@@ -1,32 +1,38 @@
 ---
 name: router-login
-description: Guide through adding a new AI provider to pi-model-router. Discovers API keys, validates connectivity, and registers the provider for auto-discovery. Use when user runs /router login or wants to add a new provider.
+description: Guide through adding a new AI provider to pi-model-router. Keys live with Pi (ADR-0022) - this is about picking the right storage method, validating connectivity, and confirming group selection. Use when user runs /router login or wants to add a new provider.
 ---
 
 # Router Login — Add a New Provider
 
 ## Overview
 
-Walk the user through connecting a new AI provider to the model router. The router auto-discovers models and pricing, so this is purely about authentication.
+Walk the user through connecting a new AI provider to the model router. The
+router auto-discovers models and pricing — the only thing it needs is that
+**Pi can resolve an API key for the provider**.
+
+> **ADR-0022 (2026-10-04): the router has NO credential storage of its own.**
+> It never reads or writes Pi's auth store and never resolves keys itself —
+> Pi resolves the key (`modelRegistry.getApiKeyForProvider`) whenever a
+> request needs one. So "adding a provider to the router" is really "giving
+> the key to Pi". Do not instruct users to put keys, key references, or
+> `!command` entries into `router-config.json` — legacy `keys` arrays there
+> are ignored.
 
 ## Steps
 
 ### 1. Identify the provider
 
-Ask which provider to add. Show the known providers from `PROVIDER_MAP` in `index.ts` that don't yet have valid keys configured.
-
-```bash
-# Check which providers already have keys
-cat ~/.pi/agent/auth.json
-```
+Ask which provider to add. Show the known providers from `PROVIDER_MAP` in
+`src/providers.ts` that Pi does not yet have a key for.
 
 ### 2. Obtain the API key
 
 Guide based on provider type:
 
 | Provider | How to get a key |
-|----------|-----------------|
-| anthropic | https://console.anthropic.com/settings/keys — or use OAuth via `pi auth anthropic` |
+|----------|------------------|
+| anthropic | https://console.anthropic.com/settings/keys — or OAuth via `pi auth anthropic` |
 | openai | https://platform.openai.com/api-keys |
 | google | https://aistudio.google.com/apikey |
 | openrouter | https://openrouter.ai/keys |
@@ -48,85 +54,56 @@ For providers not listed, ask the user for:
 1. The API key
 2. The base URL (if non-standard)
 
-### 3. Store the key securely
+### 3. Store the key where Pi looks for it
 
-**Preferred: `pass` (password store)**
-```bash
-# Store in pass for secure retrieval
-pass insert api/<provider-name>
-# Then reference in router-config.json:
-# { "key": "!pass show api/<provider-name>", "label": "primary" }
-```
+Any ONE of these is sufficient — Pi resolves it, the router picks it up:
 
-**Alternative: auth.json**
+**Pi's built-in auth (recommended)**
 ```bash
-# pi's built-in auth — stored at ~/.pi/agent/auth.json
 pi auth <provider-name>
 ```
+Pi stores it in `~/.pi/agent/auth.json`. An entry may also be a `!`-prefixed
+secret-manager command (e.g. `!pass show api/openrouter`) — Pi executes it.
 
-**Alternative: environment variable**
+**Environment variable**
 ```bash
-# Export the env var — the router discovers it automatically
-export <PROVIDER_ENV_VAR>=sk-...
+export <PROVIDER_ENV_VAR>=sk-...   # e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY
 ```
 
-The router auto-discovers keys from all three sources (pass, auth.json, env vars) on startup via `discoverKeys()`. No manual config editing required for basic setup.
+**Never** store keys in `router-config.json`, and never edit Pi's auth files
+by hand unless the user explicitly asks — `pi auth` is the supported path.
 
-### 4. Validate connectivity
+### 4. Restart / reload and validate connectivity
 
-After the key is stored, verify:
+Ask the user to run `/reload` in pi (or restart). The router scans local
+daemons and cloud catalogs, and every provider Pi has a key for participates
+automatically. Then check:
 
-```bash
-# Force a model scan to discover available models
-# The router's scan() function will hit the provider's /v1/models endpoint
-```
-
-Ask the user to run `/router scan` or restart pi. Then check:
 - Does the provider appear in `/router` output?
 - Are models listed for the provider?
-- Is key health showing "valid"?
+- If models are missing: for providers without a scannable catalog
+  (qwen-cli, gemini-cli, antigravity), the models must be registered in
+  Pi's `models.json` (the router only uses what Pi knows — ADR-0021).
 
-### 5. Register models (if no auto-discovery)
-
-Some providers (qwen-cli, gemini-cli, ollama, antigravity) don't have scannable `/v1/models` endpoints. For these, models must be registered manually in `router-config.json` under `model_metrics`:
-
-```json
-{
-  "model_metrics": {
-    "qwen-cli/qwen3-coder-plus": {
-      "gdpval": 944,
-      "throughput_tps": 120,
-      "avg_latency_ms": 1000
-    }
-  }
-}
-```
-
-Ask the user which models they want to use. Look up gdpval scores from the `/router` display or https://www.gdpval.com.
-
-For providers with `modelsUrl` in PROVIDER_MAP (anthropic, openai, google, mistral, deepseek), this step is automatic.
-
-### 6. Verify pricing
+### 5. Verify pricing
 
 Models should appear with pricing. Pricing sources (in priority order):
 1. `cost_per_m` set in `model_metrics` config
-2. Direct pricing from the provider's API (Chutes)
+2. Direct pricing from the provider's API
 3. Backfill from OpenRouter's paid pricing for the same model name
 
-If pricing still shows `$0.0` for a paid model, set `cost_per_m` ($/1M input tokens) in `model_metrics`.
+If pricing still shows `$0.0` for a paid model, set `cost_per_m`
+($/1M input tokens) in `model_metrics` in `router-config.json`.
 
-Check: "Does `/router` show correct pricing for the new provider's models?"
+### 6. Confirm group selection
 
-### 7. Confirm group selection
+The new models automatically participate in group selection based on their
+quality scores (GDPval + AA capability columns):
 
-The new models automatically participate in group selection based on their gdpval scores:
-- **strategic**: best available model by intelligence
-- **tactical**: top 25% quality, cheapest by billing preference
-- **operational**: top 50% quality, cheapest by billing preference  
-- **scout**: top 25% quality, cheapest by billing preference
-- **fallback**: any available, cheapest by billing preference
-
-Billing preference order: free → subscription → local → pay-per-token
+- **strategic**: best available model (GDPval-ranked, quality window)
+- **planning**: top tier only (GDPval ≥ 1700, ranked by AA-Briefcase Elo)
+- **tactical**: daily coding tier (600–1700, ranked by SciCode/Terminal-Bench)
+- **operational / scout / fallback**: billing-preference-ranked cheap tiers
 
 Ask: "Run `/router` to verify the new models appear in the appropriate groups."
 
@@ -134,8 +111,7 @@ Ask: "Run `/router` to verify the new models appear in the appropriate groups."
 
 - [ ] Provider identified
 - [ ] API key obtained (or CLI OAuth completed)
-- [ ] Key stored securely (pass / auth.json / env var / CLI auth)
-- [ ] Connectivity validated — models discovered or manually registered
-- [ ] Models registered in `model_metrics` (if no auto-discovery)
+- [ ] Key stored with Pi (pi auth / env var / CLI auth) — NOT in router-config.json
+- [ ] Connectivity validated — models discovered or present in Pi's models.json
 - [ ] Pricing verified — not showing $0.0 for paid models
 - [ ] Group selection confirmed — models appear in expected tiers

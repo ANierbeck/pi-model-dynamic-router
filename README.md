@@ -4,68 +4,42 @@
 
 > **Fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router)** — adds content-based dynamic routing (prompt classification → model group) on top of the upstream's price/quality/availability routing.
 
-## Architecture
+## What You Get
 
-The router uses a **modular architecture** with the following components:
+- **Content-aware routing** — every prompt is classified (trivial one-liner up to
+  architecture review) and routed to a matching model tier: free models for daily
+  coding, top-tier models reserved for design and planning work.
+- **Automatic discovery & pricing** — the router scans local daemons (Ollama,
+  LM Studio) and cloud catalogs, and scrapes Artificial Analysis benchmark
+  scores (GDPval plus per-task capability columns: AA-Briefcase Elo for
+  planning work, SciCode/Terminal-Bench for coding).
+- **Cost & quota balancing** — flat-fee subscription models carry the daily
+  load so expensive top-tier models stay available; quality-equivalence
+  windows pick the cheapest model that is just as good.
+- **Failover everywhere** — model backoff, provider cooldowns, cascading
+  fallback groups, and mid-stream retries are all transparent: the session
+  just continues on the next best model.
 
-| Module | Purpose | Key Features |
-|--------|---------|--------------|
-| **providers.ts** | Provider definitions and mappings | 26 supported providers, authentication patterns |
-| **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
-| **utils.ts** | Utility functions | String manipulation, reference parsing |
-| **rate-limit.ts** | Rate limit management | Backoff cooldowns, cost multiplier |
-| **discovery.ts** | Discovery management | Free-model inventory (ADR-0022: key discovery removed — Pi owns credential resolution) |
-| **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
-| **cache.ts** | Cache management | Persistent caching, versioning |
-| **routing.ts** | Routing logic | Model selection, filtering, sorting |
-| **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
-| **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
-| **content-classifier.ts** | Content classification | mistral-nemo:latest primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
-| **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
-| **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
-| **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |
-| **exclude.ts** | Personalized exclude rules | Provider/pattern/paid-model filtering for all groups |
-| **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
+## Quick Start
 
-**index.ts wiring (2026-10 refactor):** index.ts is now a thin extension entry point
-(~640 lines, down from ~3750): it owns the shared mutable state (the one `cache`
-object, `cfg`, managers), `load()`/`loadCache()`, and
-`buildOrchestratorContext()`. All behavior lives in `createX(deps)` factory
-modules that receive **live getters** (plus setters for write access) so
-reload-time swaps are always seen — never stale closure captures:
+```bash
+pi install npm:@anierbeck/pi-model-dynamic-router
+# Development checkout instead:
+ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
+```
 
-| Factory module | Owns |
-|----------------|------|
-| **context-utils.ts** | context estimation, timeouts, compaction detection |
-| **limit-glue.ts** | metrics/rate-limit/cost glue functions |
-| **model-resolve-glue.ts** | `resolve`, `detectGroup`, `fmtModel`, `getTopModels` |
-| **scan-runner.ts** | `scan()` incl. GDPval scrape + LLM matching |
-| **dynamic-config-runner.ts** | `generateDynamicConfigNow` |
-| **free-model-registration.ts** | `registerFreeModelOnDemand` |
-| **stream-proxy.ts** | `groupStream`, `tryStream`, `consumeWithDetection`, local-stream limiter |
-| **group-registration.ts** | `registerGroupProviders` (Ü1 guard), `registerGroupModels` (merge-not-replace) |
-| **event-handlers.ts** | the core `pi.on(...)` handlers |
-| **tools.ts** | the four `pi.registerTool` registrations |
-| **commands.ts** | the `/router` command |
+1. **Add a provider key** — keys live with Pi, not with the router
+   (see [Adding a Provider](#adding-a-provider)).
+2. Run `/reload` in pi — the router discovers models, prices, and quality
+   scores automatically.
+3. Switch your session to a group: `scout`, `operational`, `tactical`,
+   `strategic`, `planning`, or `dynamic` (content-classified per prompt).
 
-The final `session_shutdown` handler and process-exit/signal cleanup stay at the
-bottom of index.ts (handler order is load-bearing). The router never calls
-`pi.setModel()` except in the `set_model_from_group` tool.
+The shipped defaults need no configuration. To personalize, see
+[Personalized configuration](#personalized-configuration) below — or jump
+straight to [How It Works](#how-it-works).
 
-This modular design enables better maintainability, testing, and extensibility.
-
-### GDPval model matching pipeline
-
-When a model needs a GDPval score, the router resolves it in three tiers:
-
-1. **model-map.yaml** (authoritative) — explicit model-id → slug mapping
-2. **Token-set fallback** (deterministic) — fuzzy token matching
-3. **LLM-assisted matching** (semantic) — a local LLM matches model ids to
-   GDPval slugs, with cross-family and size-tier guards
-
-See [`docs/architecture.md`](docs/architecture.md) for details.
-
-### Personalized configuration
+## Personalized configuration
 
 Users can override the embedded defaults without editing extension files:
 
@@ -74,16 +48,6 @@ Users can override the embedded defaults without editing extension files:
 
 Supports `exclude` rules (no paid OpenRouter models, no Fable, etc.).
 See [`docs/config-override.md`](docs/config-override.md) for details.
-
-## Install
-
-```bash
-pi install npm:@anierbeck/pi-model-dynamic-router
-# Or symlink for development
-ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
-```
-
-Then `/reload` in pi.
 
 ## How It Works
 
@@ -272,18 +236,22 @@ All scanning is async and non-blocking.
 
 ### Group Selection
 
-Each group auto-discovers available models, filters by quality, and selects by billing preference:
+Each group auto-discovers available models, filters by quality, and selects
+by billing preference. The shipped groups (see `router-config.json`):
 
-| Group | Method | Quality Filter | Use For |
-|-------|--------|---------------|---------|
-| **strategic** | `best` | — | Best model available. Critical decisions. |
-| **tactical** | `tiered` | >=75th percentile | Top quality, cost-optimized. Planning. |
-| **operational** | `tiered` | >=50th percentile | Good quality, cheapest. Daily coding. |
-| **scout** | `tiered` | >=25th percentile | Acceptable quality, cheapest. Exploration. |
-| **fallback** | `tiered` | >=0th percentile | Any available. Last resort. |
-| **dynamic** | `dynamic` | — | Auto-classifies prompts and routes to the best group. |
+| Group | Method | Quality gate | Ranks within the pool by | Use for |
+|-------|--------|--------------|--------------------------|---------|
+| **strategic** | `best` | GDPval ≥ 700 | GDPval (quality window) | Critical decisions |
+| **planning** | `best` | GDPval ≥ 1700 | AA-Briefcase Elo (`score_by`) | Design & architecture — top tier only |
+| **tactical** | `best` | 600 ≤ GDPval ≤ 1700 | SciCode/Terminal-Bench blend (`score_by`) | Daily coding — the free-tank tier |
+| **operational** | `tiered` | GDPval ≥ 300 | billing preference | Everyday tasks |
+| **scout** | `tiered` | GDPval ≥ 0 | billing preference | Exploration, cheap work |
+| **fallback** | `tiered` | GDPval ≥ 0 | billing preference | Last resort |
+| **dynamic** | `dynamic` | — | — | Auto-classifies each prompt and routes to the best group |
 
 No curated model lists. Groups draw from all discovered models automatically.
+Quality gates (`min_gdpval`/`max_gdpval`) always use GDPval — a `score_by`
+column only orders the models **within** an admitted pool.
 
 #### GDPval
 
@@ -299,7 +267,7 @@ GDPval is a composite quality score from [Artificial Analysis](https://artificia
    - Tier 3: pay-per-token (ascending effective cost)
 3. **Select** — pick the top-ranked model (cheapest within the preferred billing tier that clears the quality floor).
 
-This means `operational` always uses the cheapest model that is at least median quality, while `strategic` always picks the single highest-scoring model regardless of cost.
+This means `operational` picks the cheapest model that clears its GDPval floor, while `strategic` ranks by `best` (highest score, quality window applied) regardless of cost.
 
 #### costMux
 
@@ -585,11 +553,26 @@ Groups need no `models` arrays — everything is auto-discovered **plus** any ex
 
 ### Adding a Provider
 
-Use the built-in skill: `/skill:router-login`
+The router has **no credential storage of its own** (ADR-0022): API keys live
+exclusively with Pi, and Pi resolves them whenever a request needs one. Adding
+a provider is therefore a single step — give the key to Pi:
 
-Or manually:
-1. Set API key via env var, `pass`, or `pi auth <provider>`
-2. Restart pi — the router discovers keys and scans models automatically
+1. **Store the key where Pi looks for it** — any one of:
+   - `pi auth <provider>` (Pi's built-in auth)
+   - an environment variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …)
+   - an entry in Pi's `auth.json` — including a `!`-prefixed secret-manager
+     command (e.g. `!pass show api/openrouter`); Pi executes it
+   - CLI OAuth for CLI-auth providers (`qwen auth login`, `gemini auth login`)
+2. **Restart pi** — the router picks up everything Pi knows, scans local
+   daemons and cloud catalogs, and the provider's models start competing in
+   your groups automatically.
+
+For a non-standard base URL or model list, configure the provider in Pi's
+`models.json` — the router never overwrites an existing Pi registration
+(see [Provider Configuration](#provider-configuration) below).
+
+There is a guided walkthrough in the shipped skill: `/skill:router-login`
+(same steps, with connectivity checks and troubleshooting).
 
 ### Supported Providers
 
@@ -633,23 +616,6 @@ discovers automatically.
 - **Model availability** depends on your Claude subscription plan (Pro, Max, etc.).
 - **No double registration:** The router **does not** register claude-bridge providers itself — it only uses models already registered by the extension.
 
-### Requirements for Dynamic Routing
-
-To use the **`dynamic`** group, you need:
-- **Ollama** installed and running locally (`ollama serve`)
-- **mistral-nemo:latest** pulled for best classification quality (`ollama pull mistral-nemo:latest`)
-- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
-- Ollama accessible from your system (default: `http://localhost:11434`)
-
-Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
-shipped `dynamic` group) the classifier tries a chain of free cloud models
-FIRST — pinned `classifier_cloud_model` → scan-time probe-verified list →
-tiered discovery → configured free models — and treats Ollama as the last
-resort (see [Data handling & privacy](#data-handling--privacy)). If every
-cloud candidate fails and Ollama is unavailable, the classifier falls back
-to static keyword-based classification (only if `allowStaticFallback` is
-enabled) — otherwise the category `fallback` is returned.
-
 ## Commands
 
 | Command | Description |
@@ -692,12 +658,10 @@ watchdog wedge events and classifier health.
 | `set_model_from_group` | Switch session to best model from a group |
 | `resolve_model_group` | Preview what a group would resolve to |
 | `update_model_metrics` | Manual metric override |
+| `bulk_read` | Answer a question about files via a cheap reader model, without loading their content into the session context |
 
-### Dynamic Routing Tools
-
-The **`dynamic`** group uses the following internal tools:
-- **`classifyPrompt`**: Classifies user prompts into categories (via Ollama).
-- **`getGroupForCategory`**: Maps categories to model groups.
+The `dynamic` group has no dedicated tools — classification runs automatically
+inside the group's resolve path (`src/content-classifier.ts`).
 
 ## Footer
 
@@ -707,6 +671,72 @@ strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14
 
 The `⚠N err` part counts the session's recorded stream failures — the same
 entries `/router errors` lists in full.
+
+
+## Internals
+
+How the code is organized — relevant if you work on the router itself,
+not needed to use it.
+
+The router uses a **modular architecture** with the following components:
+
+| Module | Purpose | Key Features |
+|--------|---------|--------------|
+| **providers.ts** | Provider definitions and mappings | 26 supported providers, authentication patterns |
+| **types.ts** | Type definitions | Config, Cache, Metrics, RateLimit, Group, Provider types |
+| **utils.ts** | Utility functions | String manipulation, reference parsing |
+| **rate-limit.ts** | Rate limit management | Backoff cooldowns, cost multiplier |
+| **discovery.ts** | Discovery management | Free-model inventory (ADR-0022: key discovery removed — Pi owns credential resolution) |
+| **metrics.ts** | Metrics management | GDPval, throughput, latency tracking |
+| **cache.ts** | Cache management | Persistent caching, versioning |
+| **routing.ts** | Routing logic | Model selection, filtering, sorting |
+| **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
+| **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
+| **content-classifier.ts** | Content classification | mistral-nemo:latest primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
+| **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
+| **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
+| **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |
+| **exclude.ts** | Personalized exclude rules | Provider/pattern/paid-model filtering for all groups |
+| **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
+
+**index.ts wiring (2026-10 refactor):** index.ts is now a thin extension entry point
+(~640 lines, down from ~3750): it owns the shared mutable state (the one `cache`
+object, `cfg`, managers), `load()`/`loadCache()`, and
+`buildOrchestratorContext()`. All behavior lives in `createX(deps)` factory
+modules that receive **live getters** (plus setters for write access) so
+reload-time swaps are always seen — never stale closure captures:
+
+| Factory module | Owns |
+|----------------|------|
+| **context-utils.ts** | context estimation, timeouts, compaction detection |
+| **limit-glue.ts** | metrics/rate-limit/cost glue functions |
+| **model-resolve-glue.ts** | `resolve`, `detectGroup`, `fmtModel`, `getTopModels` |
+| **scan-runner.ts** | `scan()` incl. GDPval scrape + LLM matching |
+| **dynamic-config-runner.ts** | `generateDynamicConfigNow` |
+| **free-model-registration.ts** | `registerFreeModelOnDemand` |
+| **stream-proxy.ts** | `groupStream`, `tryStream`, `consumeWithDetection`, local-stream limiter |
+| **group-registration.ts** | `registerGroupProviders` (Ü1 guard), `registerGroupModels` (merge-not-replace) |
+| **event-handlers.ts** | the core `pi.on(...)` handlers |
+| **tools.ts** | the four `pi.registerTool` registrations |
+| **commands.ts** | the `/router` command |
+
+The final `session_shutdown` handler and process-exit/signal cleanup stay at the
+bottom of index.ts (handler order is load-bearing). The router never calls
+`pi.setModel()` except in the `set_model_from_group` tool.
+
+This modular design enables better maintainability, testing, and extensibility.
+
+
+### GDPval model matching pipeline
+
+When a model needs a GDPval score, the router resolves it in three tiers:
+
+1. **model-map.yaml** (authoritative) — explicit model-id → slug mapping
+2. **Token-set fallback** (deterministic) — fuzzy token matching
+3. **LLM-assisted matching** (semantic) — a local LLM matches model ids to
+   GDPval slugs, with cross-family and size-tier guards
+
+See [`docs/architecture.md`](docs/architecture.md) for details.
 
 ## Development
 

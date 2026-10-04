@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+- **Documentation overhauled (user-first)****: the README now opens with
+  What You Get / Quick Start / Adding a Provider instead of the internal
+  module tables (moved to an "Internals" section for contributors). The
+  "Adding a Provider" section and the shipped `router-login` skill no
+  longer describe pre-ADR-0022 key discovery — keys live exclusively with
+  Pi (`pi auth`, env vars, `auth.json` incl. `!` secret commands); the
+  router has no credential storage of its own. Stale facts corrected
+  across README/PI.md/AGENT.md/CLAUDE.md: category-to-group mappings
+  (design/planning → the `planning` group), the shipped group table
+  (strategic/planning/tactical with `score_by` columns), the tool list
+  (`bulk_read` added, never-existing `classifyPrompt`/`getGroupForCategory`
+  removed), Ollama as optional classifier last resort (cloud-first chain),
+  removed key-rotation rows (one key per provider, owned by Pi), and
+  current Claude model scores.
+
 ### Added
 - **Multi-benchmark capability sourcing from Artificial Analysis**
   (ADR-0023 round 2, docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md).
