@@ -1,10 +1,9 @@
 // test/aa-gdpval-scrape.test.ts
 //
-// Regression guard for the AA leaderboard scraper. The scraper lives inside
-// scan() (index.ts) and is module-private, so this test re-implements the
-// function with the SAME regexes and runs them against representative
-// fragments of the real AA HTML. The point is to fail loud if anyone changes
-// the regex shape without thinking about the consequences.
+// Regression guard for the AA leaderboard scraper: runs the REAL
+// production parser against representative fragments of the live AA
+// HTML (captured 2026-08-31), so any regex-shape change fails loud
+// here instead of silently in production.
 //
 // Background: as of 2026-08-31 the AA GDPval page embeds the leaderboard
 // in two distinct RSC JSON shapes:
@@ -24,53 +23,13 @@
 // (standard/complex/strategic/tactical/operational).
 
 import { describe, it, expect } from 'vitest';
-
-// ── Test-local copy of the function (kept in sync with index.ts) ──────────
-// If you change the regex here, change it in index.ts. If you change it in
-// index.ts, change it here. The goal is that any divergence fails the test
-// by either (a) this function not matching real AA HTML, or (b) a snapshot
-// below going red.
-function extractGdpvalScores(html: string): Record<string, number> {
-  const scores: Record<string, number> = {};
-  const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
-  let em;
-  while ((em = entryRe.exec(html))) {
-    const label = em[1];
-    const score = parseFloat(em[2]);
-    const slug = em[3];
-    scores[slug] = score;
-    const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    if (labelKey && labelKey !== slug) scores[labelKey] = score;
-  }
-
-  const normalized = html.replace(/\\"/g, '"');
-  const slugByDisplayName = new Map<string, string>();
-  const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
-  let s;
-  while ((s = slugRe.exec(normalized))) {
-    slugByDisplayName.set(s[2], s[1]);
-  }
-
-  const eloRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
-  while ((em = eloRe.exec(normalized))) {
-    const displayName = em[1];
-    const score = parseFloat(em[2]);
-    let slug = slugByDisplayName.get(displayName);
-    if (!slug) {
-      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      for (const [dn, sv] of slugByDisplayName) {
-        const dnKey = dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        if (dnKey === labelKey) { slug = sv; break; }
-      }
-    }
-    if (slug) {
-      scores[slug] = score;
-      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      if (labelKey && labelKey !== slug) scores[labelKey] = score;
-    }
-  }
-  return scores;
-}
+// Since 2026-10-04 this test imports the REAL parser
+// (exported from src/scan-runner.ts at module level). The previous
+// test-local mirror copy had already drifted from production (the
+// legacy window.__MODELS_DATA__ stage existed only in production) —
+// exactly the failure mode the mirror-sync comments were meant to
+// prevent. Any regex change now has exactly one home.
+import { extractGdpvalScores } from '../src/scan-runner.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 // These are REAL fragments captured from the live AA page on 2026-08-31

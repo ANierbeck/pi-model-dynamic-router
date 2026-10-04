@@ -38,6 +38,90 @@ interface ScanRunnerDeps {
 }
 
 /**
+ * Extract GDPval scores from Artificial Analysis HTML
+ * Tries JSON data first (modern), falls back to HTML table parsing
+ */
+export function extractGdpvalScores(html: string): Record<string, number> {
+  const scores: Record<string, number> = {};
+
+  // Stage 1 (Format A, 2025+): RSC payload uses {"label":"Model Name",
+  // "gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":N},...],
+  // "detailsUrl":"/models/slug"}.  detailsUrl gives the slug directly.
+  const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
+  let em;
+  while ((em = entryRe.exec(html))) {
+    const label = em[1];
+    const score = parseFloat(em[2]);
+    const slug = em[3];
+    scores[slug] = score;
+    const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    if (labelKey && labelKey !== slug) scores[labelKey] = score;
+  }
+
+  // Stage 2 (Format B): AA also embeds the full sorted leaderboard as
+  // {"id":"...","displayName":"Model Name","creator":{...},"elo":N,...}.
+  // No detailsUrl here — we look up the slug by matching displayName against
+  // the model-list JSON that lives in the same RSC payload:
+  //   {"slug":"glm-5-2","name":"GLM-5.2 (max)",...}
+  // We build the displayName→slug table once and reuse it for all entries.
+  // The HTML embeds JSON with HTML-escaped quotes (" → \"), so we normalise
+  // to plain JSON before parsing.
+  const normalized = html.replace(/\\"/g, '"');
+  const slugByDisplayName = new Map<string, string>();
+  const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
+  let s;
+  while ((s = slugRe.exec(normalized))) {
+    slugByDisplayName.set(s[2], s[1]);
+  }
+
+  // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
+  // Stop at the first closing brace so that nested creator objects don't break
+  // the regex.
+  const eloRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
+  while ((em = eloRe.exec(normalized))) {
+    const displayName = em[1];
+    const score = parseFloat(em[2]);
+    // Look up slug: exact displayName match first, then label-key match
+    // (strips parenthetical suffix like "(max)").
+    let slug = slugByDisplayName.get(displayName);
+    if (!slug) {
+      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      for (const [dn, sv] of slugByDisplayName) {
+        const dnKey = dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        if (dnKey === labelKey) { slug = sv; break; }
+      }
+    }
+    if (slug) {
+      scores[slug] = score; // Format B is authoritative for the full leaderboard
+      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      if (labelKey && labelKey !== slug) scores[labelKey] = score;
+    }
+  }
+
+  // Legacy: window.__MODELS_DATA__ = {...} (pre-2025 AA structure)
+  const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
+  if (scriptJsonMatch) {
+    try {
+      const modelsData = JSON.parse(scriptJsonMatch[1]);
+      for (const [slug, model] of Object.entries(modelsData)) {
+        const m = model as { gdpval?: number; shortName?: string; name?: string };
+        if (m.gdpval !== undefined) {
+          scores[slug] = m.gdpval;
+          if (m.shortName) scores[m.shortName] = m.gdpval;
+          if (m.name) {
+            const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            scores[nameKey] = m.gdpval;
+          }
+        }
+      }
+      if (Object.keys(scores).length > 0) return scores;
+    } catch {}
+  }
+
+  return scores;
+}
+
+/**
  * Extract per-model capability profiles from the SAME Artificial Analysis
  * payload the gdpval parser reads (ADR-0023 round 2, plan
  * docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md — the payload
@@ -221,90 +305,6 @@ export function createScanRunner(rt: ScanRunnerDeps) {
   // fmt/fmtTime: delegate to utils.ts, the single implementation.
 
   // ── Scan (GDPval forever, models 24hr) ─────────────────────────────────
-
-  /**
-   * Extract GDPval scores from Artificial Analysis HTML
-   * Tries JSON data first (modern), falls back to HTML table parsing
-   */
-  function extractGdpvalScores(html: string): Record<string, number> {
-    const scores: Record<string, number> = {};
-
-    // Stage 1 (Format A, 2025+): RSC payload uses {"label":"Model Name",
-    // "gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":N},...],
-    // "detailsUrl":"/models/slug"}.  detailsUrl gives the slug directly.
-    const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
-    let em;
-    while ((em = entryRe.exec(html))) {
-      const label = em[1];
-      const score = parseFloat(em[2]);
-      const slug = em[3];
-      scores[slug] = score;
-      const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      if (labelKey && labelKey !== slug) scores[labelKey] = score;
-    }
-
-    // Stage 2 (Format B): AA also embeds the full sorted leaderboard as
-    // {"id":"...","displayName":"Model Name","creator":{...},"elo":N,...}.
-    // No detailsUrl here — we look up the slug by matching displayName against
-    // the model-list JSON that lives in the same RSC payload:
-    //   {"slug":"glm-5-2","name":"GLM-5.2 (max)",...}
-    // We build the displayName→slug table once and reuse it for all entries.
-    // The HTML embeds JSON with HTML-escaped quotes (" → \"), so we normalise
-    // to plain JSON before parsing.
-    const normalized = html.replace(/\\"/g, '"');
-    const slugByDisplayName = new Map<string, string>();
-    const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
-    let s;
-    while ((s = slugRe.exec(normalized))) {
-      slugByDisplayName.set(s[2], s[1]);
-    }
-
-    // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
-    // Stop at the first closing brace so that nested creator objects don't break
-    // the regex.
-    const eloRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
-    while ((em = eloRe.exec(normalized))) {
-      const displayName = em[1];
-      const score = parseFloat(em[2]);
-      // Look up slug: exact displayName match first, then label-key match
-      // (strips parenthetical suffix like "(max)").
-      let slug = slugByDisplayName.get(displayName);
-      if (!slug) {
-        const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        for (const [dn, sv] of slugByDisplayName) {
-          const dnKey = dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-          if (dnKey === labelKey) { slug = sv; break; }
-        }
-      }
-      if (slug) {
-        scores[slug] = score; // Format B is authoritative for the full leaderboard
-        const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        if (labelKey && labelKey !== slug) scores[labelKey] = score;
-      }
-    }
-
-    // Legacy: window.__MODELS_DATA__ = {...} (pre-2025 AA structure)
-    const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
-    if (scriptJsonMatch) {
-      try {
-        const modelsData = JSON.parse(scriptJsonMatch[1]);
-        for (const [slug, model] of Object.entries(modelsData)) {
-          const m = model as { gdpval?: number; shortName?: string; name?: string };
-          if (m.gdpval !== undefined) {
-            scores[slug] = m.gdpval;
-            if (m.shortName) scores[m.shortName] = m.gdpval;
-            if (m.name) {
-              const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-              scores[nameKey] = m.gdpval;
-            }
-          }
-        }
-        if (Object.keys(scores).length > 0) return scores;
-      } catch {}
-    }
-
-    return scores;
-  }
 
   async function fetchJson(
     url: string,
