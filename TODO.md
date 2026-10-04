@@ -502,7 +502,22 @@ judged sufficient.
 - [x] ~~`resolve()` returns null for dynamic groups~~ - intentional, not a bug (DONE 2026-08-26)
 - [ ] No intelligent failure tracking (recordFailure/recordSuccess) — up next
 
+## 🔭 **Future Tasks (registered)**
+
+### Periodic mutation-testing audit of the suite
+A vacuous test (assert-true equivalent) is invisible to green runs — only
+breaking the code it claims to cover reveals it. Hand-rolled spot campaign
+2026-10-04: 9 core invariants mutated one at a time (calculateScore column
+branch, min_gdpval floor, best_quality_window, demoteUnhealthy, effCost,
+extractCapabilityProfiles, recordSoftFailure, sortBy-best scoreOf,
+isFreeModelRef) — **9/9 killed**, minimum 2 killers each (isFreeModelRef:
+88). Remaining risk: contract-change vacuance (a test's inputs never
+reaching a new path — the calculate-score incident) cannot be caught
+statically; the red-first rule (AGENTS.md §4) is the only guard at the moment
+of change. A full StrykerJS campaign would quantify suite-wide; revisit
+after the next major feature round.
+
 ---
 
-*Last updated: 2026-08-28 (Thread D rest closed out; tautological-test audit
-clean; resolve()/build-time stale entries corrected)*
+*Last updated: 2026-10-04 (suite hygiene round merged; mutation spot-campaign
+9/9 killed; stale calculate-score pin and drifted AA parser mirror fixed)*

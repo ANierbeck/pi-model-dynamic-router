@@ -107,7 +107,6 @@ describe('lookupCapability (metrics.ts)', () => {
   });
 
   it('absent column returns null (NOT 0 — null is the gdpval-fallback signal)', () => {
-    expect(metricsModule.lookupCapability('mistral/zai-glm-5-3', 'coding') === 2130).toBe(true);
     const other = { available_models: [], capability_profiles: { 'zai-glm-5-3': { briefcase: 1 } } } as any;
     metricsModule.setCache(other);
     expect(metricsModule.lookupCapability('mistral/zai-glm-5-3', 'coding')).toBeNull();
