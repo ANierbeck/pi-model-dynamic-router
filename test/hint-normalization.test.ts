@@ -1,6 +1,6 @@
 /**
  * Regression tests for HINT target normalization (2026-09-20 incident:
- * "warum funktioniert mein hint nicht mehr?").
+ * the owner reported that HINT model targeting had stopped working).
  *
  * The user issued "HINT: zai-glm-5.3" and "HINT: zai-glm-5_3" — the model
  * exists in Pi's registry as `zai-glm-5-3` (dash). All three hint-resolution

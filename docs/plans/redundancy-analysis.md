@@ -104,7 +104,7 @@ failure malus, repetition/health windows).
 ### Recommendations for Task 4
 
 1. **The honest headline: there are no artificial test delays to tune away.**
-   The original Task-4 premise (künstliche Delays → fake timers) does not
+   The original Task-4 premise (artificial delays → fake timers) does not
    hold. The slow files intentionally wait out REAL production windows
    (documented in the lock helper itself: "dominated by tests that
    intentionally wait out real setTimeout-based timeouts").

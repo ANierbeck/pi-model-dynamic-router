@@ -5,9 +5,9 @@ The router classifies every stream like this:
 - Content streamed + stream ends cleanly → **always** `ok: true` (blind spot)
 - The `done` event's reason (`{ type: "done", reason: "stop" | "length" | "toolUse", message }`) is **never** checked.
 
-Consequence: with `reason: 'length'` (max_tokens reached → answer truncated, task incomplete) the router records a success → no cooldown, no blocklist, no retry → the model gets picked **again** next turn. That is exactly the symptom: "es hört einfach auf, sagt nix mehr" (it just stops, says nothing more) and "wir landen immer wieder im mistral-small-latest" (we keep ending up on mistral-small-latest).
+Consequence: with `reason: 'length'` (max_tokens reached → answer truncated, task incomplete) the router records a success → no cooldown, no blocklist, no retry → the model gets picked **again** next turn.
 
-In today's log: 77 stall/empty events, **zero** for mistral/* — because the stream ends cleanly and the router has nothing to complain about.
+In today's log: 77 stall/empty events, **zero** for mistral/* — because the stream ends cleanly and the router has nothing to complain about. That matches the owner-reported symptom: answers silently cut off mid-task, with the same model (mistral-small-latest) picked again next turn.
 
 ## Goal
 Close the blind spot: recognize `stopReason: 'length'` as a new soft-failure class `truncated_length`, handle it and log it. This fixes the defect for ALL models, not just mistral-small-latest.

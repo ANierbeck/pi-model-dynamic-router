@@ -1,28 +1,54 @@
-# Test Suite Konsolidierung — Implementierungsplan
+# Test Suite Consolidation — Implementation Plan
 
-> **AUSFÜHRUNGS-PROTOKOLL (2026-09-20, nach Abschluss eingefügt):**
-> Die datengetriebene Ausführung hat den Plan **teilweise invertiert** — das ist das erwartbare Ergebnis eines Audits:
+> **EXECUTION PROTOCOL (2026-09-20, appended after completion):**
+> The data-driven execution **partially inverted** the plan — the expected
+> outcome of an audit:
 >
-> - **Task 1 (Inventur):** Alterskriterium (>6 Monate) trifft auf **NULL** Dateien zu (älteste: 2026-06-13). Zwei Plan-Kandidaten (`test/cache.test.ts`, `test/scratch-slug-debug.test.ts`) **existieren nicht**.
-> - **Task 2 (Kandidaten):** Alle 4 existierenden Kandidaten testen **Live-Features** (HINT-Resolution, Ghost-Purge, Classifier-Cache, Router-Cache-Refresh) → **KEIN .skip gerechtfertigt**. → `docs/plans/candidates_consolidation.md`
-> - **Tasks 5–8 (.skip-Löschungen): GESTRICHEN** (datenbasierte Entscheidung des Owners: „Nur Merges falls Doppelungen").
-> - **Task 3 (Redundanz):** Genau EIN echter Merge-Kandidat: lookupGdp-Describes in `refactor-golden-master.test.ts` duplizieren `metrics-selfheal.test.ts`. Wildcard- und Token-Set-Fallback-Tests sind **unique** und blieben erhalten. → `docs/plans/redundancy-analysis.md`
-> - **Phase-3-Ausführung:** 5 exakte Duplikate chirurgisch aus `refactor-golden-master.test.ts` entfernt (nicht whole-file .skip), mit NOTE-Kommentaren am jeweiligen Ort. Suite: 806 → **801 Tests**, alle grün, tsc clean, **null Unique-Coverage-Verlust**.
-> - **Task 4 (Flaky):** Ein intermittierender Failure (~3/17 Läufe, nur unter Last, Name nicht capturebar — Output-Piping-Fehler des Orchestrators, als Lesson dokumentiert). Keine Deaktivierung. → redundancy-analysis.md §4
-> - **Timeout-Tuning: ABGELEHNT** (Sackgasse lt. Analyse): Die 10 langsamsten Dateien warten **echte Produktions-Zeitfenster** ab (Rate-Limit-Cooldowns, Malus-Akkumulation) — keine künstlichen Delays zum Kürzen.
-> - **Tasks 11–12 (PR/finale Löschung): entfallen** — es gab nichts zu löschen; die Konsolidierung lief als direkter Commit auf main (Projekt-Konvention).
+> - **Task 1 (inventory):** The age criterion (>6 months) matches **ZERO**
+>   files (oldest: 2026-06-13). Two plan candidates (`test/cache.test.ts`,
+>   `test/scratch-slug-debug.test.ts`) **do not exist**.
+> - **Task 2 (candidates):** All 4 existing candidates test **live features**
+>   (HINT resolution, ghost purge, classifier cache, router cache refresh)
+>   → **NO .skip justified**. → `docs/plans/candidates_consolidation.md`
+> - **Tasks 5–8 (.skip removals): DROPPED** (data-based owner decision 2026-09-20:
+>   merges only where actual duplication exists).
+> - **Task 3 (redundancy):** Exactly ONE real merge candidate: the lookupGdp
+>   describes in `refactor-golden-master.test.ts` duplicate
+>   `metrics-selfheal.test.ts`. The wildcard and token-set fallback tests are
+>   **unique** and were kept. → `docs/plans/redundancy-analysis.md`
+> - **Phase-3 execution:** 5 exact duplicates surgically removed from
+>   `refactor-golden-master.test.ts` (not whole-file .skip), with NOTE comments
+>   at each location. Suite: 806 → **801 tests**, all green, tsc clean,
+>   **zero unique-coverage loss**.
+> - **Task 4 (flaky):** One intermittent failure (~3/17 runs, only under load,
+>   name not capturable — an output-piping error of the orchestrator,
+>   documented as a lesson). No deactivation. → redundancy-analysis.md §4
+> - **Timeout tuning: REJECTED** (dead end per the analysis): the 10 slowest
+>   files wait out **real production time windows** (rate-limit cooldowns,
+>   penalty accumulation) — no artificial delays left to shorten.
+> - **Tasks 11–12 (PR / final deletion): MOOT** — there was nothing to delete;
+>   the consolidation landed as a direct commit on main (project convention).
 >
-> **Fazit:** Die Suite ist gesund — jung, fast redundanzfrei, mit bewusster Multi-Pfad-Abdeckung. Der einzige echte Hebel war die Doppel-Dokumentation desselben lookupGdp-Vertrags in zwei Dateien (Drift-Risiko 1506 vs. 1506.11 — jetzt behoben).
+> **Conclusion:** The suite is healthy — young, nearly redundancy-free, with
+> deliberate multi-path coverage. The only real lever was the duplicate
+> documentation of the same lookupGdp contract in two files (drift risk 1506
+> vs. 1506.11 — now fixed).
 
-> **REQUIRED SUB-SKILL:** Verwende nach diesem Plan das `/skill:executing-plans`, um die Tasks Schritt für Schritt umzusetzen.
+> **REQUIRED SUB-SKILL:** Use `/skill:executing-plans` after this plan to work
+> through the tasks step by step.
 
-**Goal:** Reduziere die ~800 Tests auf eine wartbare, performante Suite durch Identifikation und Deaktivierung veralteter/unbenutzter Tests, ohne funktionale Abdeckung zu verlieren. Erhalte Reversibilität durch `.skip` statt Löschen.
+**Goal:** Reduce the ~800 tests to a maintainable, performant suite by
+identifying and deactivating stale/unused tests, without losing functional
+coverage. Keep reversibility via `.skip` instead of deletion.
 
-**Architektur:**
-- **Keine funktionalen Änderungen** — nur Test-Bereinigung.
-- **TDD-Prinzip:** Vor dem Deaktivieren/Löschen sicherstellen, dass die Test-Suite grün bleibt und die Abdeckung nicht sinkt.
-- **Reversibilität:** `.skip` statt Löschen; PR mit Begründung, Review vor finaler Löschung.
-- **Datengetrieben:** Inventur via `vitest list`, `git log`, `rg`, und Ausführungszeiten.
+**Architecture:**
+- **No functional changes** — test cleanup only.
+- **TDD principle:** Before deactivating/deleting, ensure the suite stays green
+  and coverage does not drop.
+- **Reversibility:** `.skip` instead of deletion; PR with rationale, review
+  before final deletion.
+- **Data-driven:** inventory via `vitest list`, `git log`, `rg`, and execution
+  times.
 
 **Tech Stack:**
 - vitest 1.x
@@ -32,50 +58,50 @@
 
 ---
 
-## Vorbereitung
+## Preparation
 
-### Task 0: Worktree und Baseline sichern
+### Task 0: Secure worktree and baseline
 **Files:**
-- Create: (keine neuen Dateien)
+- Create: (no new files)
 - Modify: `.gitignore` (optional)
 
-**Schritte:**
-1. **Aktuellen Stand commiten** (falls nicht bereits geschehen):
+**Steps:**
+1. **Commit the current state** (if not already done):
    ```bash
    git add .
-   git commit -m "chore: baseline vor Test-Konsolidierung"
+   git commit -m "chore: baseline before test consolidation"
    ```
-2. **Baseline-Ausführungszeit und -Coverage messen:**
+2. **Measure baseline runtime and coverage:**
    ```bash
    npx vitest run --run --reporter=basic > /tmp/before_consolidation.txt
    npx vitest run --run --coverage --reporter=basic > /tmp/coverage_before.txt
-   echo "Baseline gespeichert in /tmp/before_consolidation.txt und /tmp/coverage_before.txt"
+   echo "Baseline saved in /tmp/before_consolidation.txt and /tmp/coverage_before.txt"
    ```
 
-**Erwartet:**
-- `before_consolidation.txt` enthält die Test-Ergebnisse vor Änderungen.
-- `coverage_before.txt` enthält die Code-Coverage vor Änderungen.
+**Expected:**
+- `before_consolidation.txt` contains the test results before changes.
+- `coverage_before.txt` contains the code coverage before changes.
 
 ---
 
-## Phase 1: Inventur (1–2 Stunden)
+## Phase 1: Inventory (1–2 hours)
 
-### Task 1: Alle Testdateien auflisten und analysieren
+### Task 1: List and analyze all test files
 **Files:**
-- Modify: (keine Dateien, nur Befehle)
+- Modify: (no files, commands only)
 
-**Schritte:**
-1. **Alle Testdateien auflisten:**
+**Steps:**
+1. **List all test files:**
    ```bash
    find test -name "*.test.ts" -type f | sort > /tmp/all_tests.txt
    wc -l /tmp/all_tests.txt
    ```
-   **Erwartet:**
+   **Expected:**
    ```
    93 /tmp/all_tests.txt
    ```
 
-2. **Letzte Änderungen pro Testdatei anzeigen:**
+2. **Show the last change per test file:**
    ```bash
    for f in $(cat /tmp/all_tests.txt); do 
      echo -n "$f "; 
@@ -84,7 +110,7 @@
    head -20 /tmp/test_last_commit.txt
    ```
 
-3. **Testblöcke pro Datei zählen (describe/it):**
+3. **Count test blocks per file (describe/it):**
    ```bash
    for f in $(cat /tmp/all_tests.txt); do 
      echo -n "$f "; 
@@ -92,327 +118,322 @@
    done > /tmp/test_blocks.txt
    awk '$2<5 {print}' /tmp/test_blocks.txt | head -10
    ```
-   **Erwartet:**
-   - Dateien mit <5 Blöcken sind Kandidaten für Deaktivierung.
+   **Expected:**
+   - Files with <5 blocks are candidates for deactivation.
 
-4. **Ausführungszeit pro Testdatei messen:**
+4. **Measure runtime per test file:**
    ```bash
    npx vitest run --run --reporter=verbose --no-coverage 2>&1 | tee /tmp/vitest_run.txt | grep "✓ test/" | awk '{print $2, $3}' | sort -k2 > /tmp/test_times.txt
    wc -l /tmp/test_times.txt
    head -20 /tmp/test_times.txt
    ```
 
-**Ergebnis:**
-- `/tmp/all_tests.txt` – Liste aller 93 Testdateien
-- `/tmp/test_last_commit.txt` – Letzte Commits pro Datei
-- `/tmp/test_blocks.txt` – Testblock-Anzahl pro Datei
-- `/tmp/test_times.txt` – Ausführungszeiten pro Datei
+**Result:**
+- `/tmp/all_tests.txt` – list of all 93 test files
+- `/tmp/test_last_commit.txt` – last commits per file
+- `/tmp/test_blocks.txt` – block count per file
+- `/tmp/test_times.txt` – runtimes per file
 
 ---
 
-### Task 2: Kandidaten für Konsolidierung identifizieren
+### Task 2: Identify consolidation candidates
 **Files:**
 - Create: `docs/plans/candidates_consolidation.md`
 
-**Schritte:**
-1. **Kriterien anwenden:**
-   - **Alter:** Keine Commits seit >6 Monaten
-   - **Mock-Tiefe:** Nur Mock-Objekte, keine Router-Logik
-   - **Redundanz:** Gleiche Funktion getestet in mehreren Dateien
-   - **Architektur:** Vor ADR-0007 (Delegation, Bulk-Read)
+**Steps:**
+1. **Apply criteria:**
+   - **Age:** no commits for >6 months
+   - **Mock depth:** mock objects only, no router logic
 
-2. **Erste Kandidaten aus Audit-Plan übernehmen und verfeinern:**
+2. **Carry over and refine the initial candidates from the audit plan:**
    ```markdown
-   ## Erste Kandidaten (vorläufig)
+   ## Initial candidates (provisional)
    
-   | Datei | Letzter Commit | Blöcke | Zeit (ms) | Begründung |
-   |-------|----------------|--------|-----------|------------|
-   | test/cache.test.ts | <6 Monate | 3 | 120 | Nur Cache-Objekte, keine Router-Logik |
-   | test/model-matcher-batched.test.ts | <6 Monate | 2 | 80 | Altes Modell-Matching vor GDPval-Reengineering |
-   | test/scratch-slug-debug.test.ts | <6 Monate | 1 | 10 | Debug-Datei, keine Tests |
-   | test/provider-shadow.test.ts (Teile) | <6 Monate | 8 | 450 | Shadowing-Logik vor ADR-0007 |
+   | File | Last commit | Blocks | Time (ms) | Rationale |
+   |------|-------------|--------|-----------|-----------|
+   | test/cache.test.ts | <6 months | 3 | 120 | Cache objects only, no router logic |
+   | test/model-matcher-batched.test.ts | <6 months | 2 | 80 | Old model matching, pre GDPval reengineering |
+   | test/scratch-slug-debug.test.ts | <6 months | 1 | 10 | Debug file, no tests |
+   | test/provider-shadow.test.ts (parts) | <6 months | 8 | 450 | Shadowing logic, pre ADR-0007 |
    ```
 
-3. **Manuell prüfen:**
-   - `test/cache.test.ts`: `rg "Router\|routing\|applyGroupFilters" test/cache.test.ts` → sollte keine Treffer haben
-   - `test/model-matcher-batched.test.ts`: `rg "GDPval|slug" test/model-matcher-batched.test.ts` → sollte keine Treffer haben
-   - `test/scratch-slug-debug.test.ts`: `cat test/scratch-slug-debug.test.ts` → sollte nur Debug-Code enthalten
+3. **Verify manually:**
+   - `test/cache.test.ts`: `rg "Router\|routing\|applyGroupFilters" test/cache.test.ts` → should have no hits
+   - `test/model-matcher-batched.test.ts`: `rg "GDPval|slug" test/model-matcher-batched.test.ts` → should have no hits
+   - `test/scratch-slug-debug.test.ts`: `cat test/scratch-slug-debug.test.ts` → should contain debug code only
 
-**Ergebnis:**
-- `docs/plans/candidates_consolidation.md` mit Tabelle der Kandidaten und Begründungen.
+**Result:**
+- `docs/plans/candidates_consolidation.md` with a candidate table and rationales.
 
 ---
 
-## Phase 2: Analyse (2–4 Stunden)
+## Phase 2: Analysis (2–4 hours)
 
-### Task 3: Redundanz und Abdeckung prüfen
+### Task 3: Check redundancy and coverage
 **Files:**
 - Modify: `docs/plans/candidates_consolidation.md`
 
-**Schritte:**
-1. **Redundanz zwischen Dateien prüfen:**
+**Steps:**
+1. **Check redundancy across files:**
    ```bash
-   # Beispiel: provider-shadow vs. routing.integration
+   # Example: provider-shadow vs. routing.integration
    rg "provider.*mistral|mistral.*provider" test/provider-shadow.test.ts test/routing.integration.test.ts | wc -l
    ```
-   **Erwartet:**
-   - provider-shadow.test.ts hat Shadowing-Logik (vor ADR-0007), routing.integration.test.ts hat moderne Router-Tests → Teile können deaktiviert werden.
+   **Expected:**
+   - provider-shadow.test.ts has shadowing logic (pre ADR-0007), routing.integration.test.ts has modern router tests → parts can be deactivated.
 
-2. **Coverage-Report vor Konsolidierung anzeigen:**
+2. **Show the coverage report before consolidation:**
    ```bash
    npx vitest run --run --coverage --reporter=basic > /tmp/coverage_before.txt
    cat /tmp/coverage_before.txt | grep -A 20 "Coverage summary"
    ```
 
-3. **Funktionen identifizieren, die nur von Kandidaten-Tests abgedeckt werden:**
+3. **Identify functions covered only by candidate tests:**
    ```bash
-   # Beispiel: Cache-Funktionen
+   # Example: cache functions
    rg "setCache|getCache|cache" src/ | grep -v "test/" | cut -d: -f1 | sort -u
    ```
-   **Entscheidung:**
-   - Wenn keine funktionalen Aufrufe in `src/` → Cache-Tests können deaktiviert werden.
+   **Decision:**
+   - If there are no functional call sites in `src/` → the cache tests can be deactivated.
 
-**Ergebnis:**
-- `docs/plans/candidates_consolidation.md` um Spalte "Funktionale Abdeckung" und "Risiko bei Deaktivierung" ergänzt.
+**Result:**
+- `docs/plans/candidates_consolidation.md` extended with "functional coverage" and "risk of deactivation" columns.
 
 ---
 
-### Task 4: Flaky-Tests dokumentieren
+### Task 4: Document flaky tests
 **Files:**
 - Modify: `docs/plans/candidates_consolidation.md`
 
-**Schritte:**
-1. **Flaky-Tests identifizieren:**
+**Steps:**
+1. **Identify flaky tests:**
    ```bash
-   npx vitest run --run --retry=3 --reporter=verbose 2>&1 | grep -i "flaky\|failed after retries" || echo "Keine Flaky-Tests gefunden"
+   npx vitest run --run --retry=3 --reporter=verbose 2>&1 | grep -i "flaky\|failed after retries" || echo "No flaky tests found"
    ```
-   Falls Flaky-Tests gefunden werden:
+   If flaky tests are found:
    ```bash
    npx vitest run --run --retry=3 --reporter=basic > /tmp/flaky_before.txt
    ```
 
-2. **Separate Issue erstellen:**
-   - Titel: `Issue: Flaky-Tests identifizieren und beheben`
-   - Inhalt: Liste der Flaky-Tests aus `/tmp/flaky_before.txt`
+2. **Create a separate issue:**
+   - Title: `Issue: identify and fix flaky tests`
+   - Content: list of flaky tests from `/tmp/flaky_before.txt`
 
-**Ergebnis:**
-- Flaky-Tests in `candidates_consolidation.md` als separates Kapitel.
+**Result:**
+- Flaky tests in `candidates_consolidation.md` as a separate chapter.
 
 ---
 
-## Phase 3: Bereinigung (2–3 Stunden)
+## Phase 3: Cleanup (2–3 hours)
 
-### Task 5: Tests deaktivieren (`.skip`) statt löschen
+> **SUPERSEDED by the execution protocol at the top:** Tasks 5–8 were
+> dropped after the data-driven inventory — all 4 candidates test live
+> features, so no `.skip` was justified. The steps below are the original
+> plan text, kept for the record; do not execute them.
+
+### Task 5: Deactivate tests (`.skip`) instead of deleting
 **Files:**
 - Modify: `test/cache.test.ts`, `test/model-matcher-batched.test.ts`, `test/scratch-slug-debug.test.ts`, `test/provider-shadow.test.ts`
 
-**Schritte pro Datei:**
+**Steps per file:**
 
 #### 5.1: test/cache.test.ts
-**Schritte:**
-1. **Datei öffnen:**
+**Steps:**
+1. **Open the file:**
    ```bash
    code test/cache.test.ts
    ```
-2. **Alle `describe`/`it`-Blöcke mit `.skip` versehen:**
+2. **Mark all `describe`/`it` blocks with `.skip`:**
    ```ts
-   describe.skip('Cache tests (veraltet, nur Mock-Objekte)', () => {
+   describe.skip('Cache tests (stale, mock objects only)', () => {
      it.skip('should cache available models', () => { ... })
-     // ... alle Tests
+     // ... all tests
    });
    ```
 3. **Commit:**
    ```bash
    git add test/cache.test.ts
-   git commit -m "test: deaktivieren veraltete Cache-Tests"
+   git commit -m "test: deactivate stale cache tests"
    ```
 
 #### 5.2: test/model-matcher-batched.test.ts
-**Schritte:**
-1. **Datei öffnen:**
+**Steps:**
+1. **Open the file:**
    ```bash
    code test/model-matcher-batched.test.ts
    ```
-2. **Alle Tests mit `.skip` versehen:**
+2. **Mark all tests with `.skip`:**
    ```ts
-   describe.skip('Legacy model matcher (vor GDPval-Reengineering)', () => { ... })
+   describe.skip('Legacy model matcher (pre GDPval reengineering)', () => { ... })
    ```
 3. **Commit:**
    ```bash
    git add test/model-matcher-batched.test.ts
-   git commit -m "test: deaktivieren Legacy model-matcher-Tests"
+   git commit -m "test: deactivate legacy model-matcher tests"
    ```
 
 #### 5.3: test/scratch-slug-debug.test.ts
-**Schritte:**
-1. **Datei öffnen:**
+**Steps:**
+1. **Open the file:**
    ```bash
    code test/scratch-slug-debug.test.ts
    ```
-2. **Gesamte Datei mit `.skip` versehen:**
+2. **Mark the whole file with `.skip`:**
    ```ts
-   describe.skip('Debug-Tests (keine funktionalen Tests)', () => { ... });
+   describe.skip('Debug tests (no functional tests)', () => { ... });
    ```
 3. **Commit:**
    ```bash
    git add test/scratch-slug-debug.test.ts
-   git commit -m "test: deaktivieren Debug-Tests"
+   git commit -m "test: deactivate debug tests"
    ```
 
-#### 5.4: test/provider-shadow.test.ts (Teile)
-**Schritte:**
-1. **Datei öffnen:**
+#### 5.4: test/provider-shadow.test.ts (parts)
+**Steps:**
+1. **Open the file:**
    ```bash
    code test/provider-shadow.test.ts
    ```
-2. **Nur die Shadowing-Logik-Blöcke mit `.skip` versehen:**
+2. **Mark only the shadowing-logic blocks with `.skip`:**
    ```ts
-   describe.skip('Legacy provider shadowing (vor ADR-0007)', () => { ... });
+   describe.skip('Legacy provider shadowing (pre ADR-0007)', () => { ... });
    ```
 3. **Commit:**
    ```bash
    git add test/provider-shadow.test.ts
-   git commit -m "test: deaktivieren Legacy provider-shadowing-Tests"
+   git commit -m "test: deactivate legacy provider-shadowing tests"
    ```
 
-**Ergebnis:**
-- 4 Dateien mit `.skip` versehen
-- 4 neue Commits
+**Result:**
+- 4 files marked with `.skip`
+- 4 new commits
 
 ---
 
-### Task 6: Dokumentation aktualisieren
+### Task 6: Update documentation
 **Files:**
 - Modify: `CHANGES.md`, `IMPLEMENTATION_SUMMARY.md`
 
-**Schritte:**
-1. **CHANGES.md aktualisieren:**
+**Steps:**
+1. **Update CHANGES.md:**
    ```markdown
-   - test: Deaktivieren veralteter Tests (cache.test.ts, model-matcher-batched.test.ts, scratch-slug-debug.test.ts, provider-shadow.test.ts Teile) — .skip statt Löschen für Reversibilität
+   - test: deactivate stale tests (cache.test.ts, model-matcher-batched.test.ts, scratch-slug-debug.test.ts, provider-shadow.test.ts parts) — .skip instead of deletion for reversibility
    ```
-2. **IMPLEMENTATION_SUMMARY.md aktualisieren:**
+2. **Update IMPLEMENTATION_SUMMARY.md:**
    ```markdown
-   - Test-Konsolidierung: 4 Testdateien deaktiviert, Baseline erhalten, Reversibilität via .skip
+   - Test consolidation: 4 test files deactivated, baseline preserved, reversibility via .skip
    ```
 3. **Commit:**
    ```bash
    git add CHANGES.md IMPLEMENTATION_SUMMARY.md
-   git commit -m "docs: aktualisieren nach Test-Konsolidierung"
+   git commit -m "docs: update after test consolidation"
    ```
 
 ---
 
-## Phase 4: Validierung (1–2 Stunden)
+## Phase 4: Validation (1–2 hours)
 
-### Task 7: Baseline nach Konsolidierung messen
+### Task 7: Measure the baseline after consolidation
 **Files:**
-- Modify: (keine Dateien)
+- Modify: (no files)
 
-**Schritte:**
-1. **Tests ausführen und Ergebnisse speichern:**
+**Steps:**
+1. **Run tests and save results:**
    ```bash
    npx vitest run --run --reporter=basic > /tmp/after_consolidation.txt
    npx vitest run --run --coverage --reporter=basic > /tmp/coverage_after.txt
    ```
-2. **Differenz anzeigen:**
+2. **Show the diff:**
    ```bash
    diff /tmp/before_consolidation.txt /tmp/after_consolidation.txt
    diff /tmp/coverage_before.txt /tmp/coverage_after.txt
    ```
-   **Erwartet:**
-   - Keine neuen Fehler
-   - Coverage unverändert (oder minimal verbessert durch weniger Mock-Overhead)
+   **Expected:**
+   - No new failures
+   - Coverage unchanged (or minimally improved from less mock overhead)
 
-3. **Ausführungszeit vergleichen:**
+3. **Compare runtimes:**
    ```bash
-   echo "Vorher: $(grep "Test Files" /tmp/before_consolidation.txt | awk '{print $4}')"
-   echo "Nachher: $(grep "Test Files" /tmp/after_consolidation.txt | awk '{print $4}')"
+   echo "Before: $(grep "Test Files" /tmp/before_consolidation.txt | awk '{print $4}')"
+   echo "After: $(grep "Test Files" /tmp/after_consolidation.txt | awk '{print $4}')"
    ```
 
-**Ergebnis:**
-- `/tmp/after_consolidation.txt` und `/tmp/coverage_after.txt` zeigen keine Regression.
+**Result:**
+- `/tmp/after_consolidation.txt` and `/tmp/coverage_after.txt` show no regression.
 
 ---
 
-### Task 8: PR erstellen und Review abwarten
+### Task 8: Create a PR and wait for review
 **Files:**
-- Modify: (keine Code-Änderungen, nur PR-Erstellung)
+- Modify: (no code changes, PR creation only)
 
-**Schritte:**
-1. **PR erstellen:**
+**Steps:**
+1. **Create the PR:**
    ```bash
    git push origin HEAD:test-consolidation
-   gh pr create --title "test: Konsolidierung veralteter Tests" --body "$(cat docs/plans/candidates_consolidation.md)" --label "test"
+   gh pr create --title "test: consolidate stale tests" --body "$(cat docs/plans/candidates_consolidation.md)" --label "test"
    ```
-2. **Review abwarten:**
-   - Reviewer kann Änderungen kommentieren
-   - Bei Einwänden: `.skip` → `.only` oder Tests anpassen
-   - Bei Freigabe: nächste Phase
+2. **Wait for review:**
+   - Reviewers can comment on changes
+   - On objections: `.skip` → `.only` or adapt tests
+   - On approval: next phase
 
 ---
 
-### Task 9: Finale Löschung oder weitere Anpassung
+### Task 9: Final deletion or further adjustment
 **Files:**
 - Modify: `test/cache.test.ts`, `test/model-matcher-batched.test.ts`, `test/scratch-slug-debug.test.ts`, `test/provider-shadow.test.ts`
 
-**Schritte (nach Review-Freigabe):**
-1. **`.skip` → `.only` prüfen:**
-   Falls `.only` gesetzt, zurücksetzen.
-2. **Tests endgültig löschen:**
+**Steps (after review approval):**
+1. **Check `.skip` → `.only`:**
+   If `.only` was set, revert it.
+2. **Delete the tests for good:**
    ```bash
    git rm test/cache.test.ts test/model-matcher-batched.test.ts test/scratch-slug-debug.test.ts
-   git commit -m "test: entfernen veraltete Cache-Tests"
+   git commit -m "test: remove stale cache tests"
    ```
-3. **Oder Tests behalten und weiter reduzieren:**
+3. **Or keep the tests and reduce further:**
    ```bash
-   # Beispiel: Nur 1 Test behalten
+   # Example: keep only 1 test
    git checkout HEAD~1 -- test/cache.test.ts
-   # ... manuell reduzieren
+   # ... reduce manually
    git add test/cache.test.ts
-   git commit -m "test: behalten nur einen Cache-Test"
+   git commit -m "test: keep only one cache test"
    ```
 
 ---
 
-## Zusammenfassung der erwarteten Ergebnisse
+## Summary of expected results
 
-| Phase | Dauer | Ergebnis |
-|-------|-------|----------|
-| Vorbereitung | 10 min | Baseline gespeichert |
-| Inventur | 1–2 h | Kandidatenliste in `candidates_consolidation.md` |
-| Analyse | 2–4 h | Risikoanalyse und Abdeckungsprüfung |
-| Bereinigung | 2–3 h | 4 Dateien mit `.skip`, Dokumentation aktualisiert |
-| Validierung | 1–2 h | Keine Regression, PR erstellt |
-| Finale Löschung | 30 min | Optional nach Review |
+| Phase | Duration | Result |
+|-------|----------|--------|
+| Preparation | 10 min | Baseline saved |
+| Inventory | 1–2 h | Candidate list in `candidates_consolidation.md` |
+| Analysis | 2–4 h | Risk analysis and coverage check |
+| Cleanup | 2–3 h | 4 files with `.skip`, documentation updated |
+| Validation | 1–2 h | No regression, PR created |
+| Final deletion | 30 min | Optional after review |
 
-**Gesamt:** ~8 Stunden (1 Arbeitstag)
-
----
-
-## Risiken & Abwägungen
-
-- **Reversibilität:** `.skip` statt Löschen erlaubt schnelles Revert.
-- **Falsch-positive Kandidaten:** Im Zweifel Datei behalten und Tests reduzieren.
-- **Flaky-Tests:** Separate Issue erstellen, nicht in dieser Konsolidierung behandeln.
-- **Coverage:** Vor/nach Vergleich sicherstellen, dass keine funktionale Abdeckung verloren geht.
+**Total:** ~8 hours (1 workday)
 
 ---
 
-## Nächste Schritte nach diesem Plan
+## Risks & trade-offs
 
-1. **Plan ausführen** mit `/skill:executing-plans` (dieser Plan als Anleitung).
-2. **PR erstellen** und Review abwarten.
-3. **Nach Freigabe:** Finale Löschung oder weitere Anpassung.
-4. **Flaky-Tests separat behandeln** (Issue erstellen).
+- **Reversibility:** `.skip` instead of deletion allows a fast revert.
+- **False-positive candidates:** when in doubt, keep the file and reduce tests.
+- **Flaky tests:** create a separate issue, do not treat in this consolidation.
+- **Coverage:** before/after comparison ensures no functional coverage is lost.
 
 ---
 
-**Fertig.**
+## Next steps after this plan
 
-> **Frage an dich:** Soll ich diesen Plan jetzt mit `/skill:executing-plans` umsetzen?
-> 
-> Optionen:
-> - **Ja, Subagent-Driven in dieser Session** — ich führe jeden Task als Subagent aus, du reviewst zwischen den Tasks
-> - **Nein, ich mache es selbst** — du öffnest eine neue Session mit `/skill:executing-plans` und arbeitest den Plan dort ab
-> 
-> Wähle eine Option.
+1. **Execute the plan** with `/skill:executing-plans` (this plan as guide).
+2. **Create a PR** and wait for review.
+3. **After approval:** final deletion or further adjustment.
+4. **Treat flaky tests separately** (create an issue).
+
+---
+
+**Done.**
