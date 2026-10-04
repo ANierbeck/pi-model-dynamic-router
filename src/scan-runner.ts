@@ -37,6 +37,84 @@ interface ScanRunnerDeps {
   readonly sessionCtx: any;
 }
 
+/**
+ * Extract per-model capability profiles from the SAME Artificial Analysis
+ * payload the gdpval parser reads (ADR-0023 round 2, plan
+ * docs/plans/2026-10-04-aa-multi-benchmark-sourcing.md — the payload
+ * carries every benchmark column per model; the legacy parser keeps one
+ * field and discards the rest).
+ *
+ * Columns extracted:
+ *   briefcase — AA-Briefcase Elo (agentic knowledge work; Elo scale, used
+ *               as-is — the natural planning score)
+ *   coding    — 3000 * max(scicode, terminalBench40). The raw columns are
+ *               0–1 percentages; the monotonic blend only feeds
+ *               intra-group ordering (floors/caps stay on GDPval), so the
+ *               absolute calibration never meets a gate.
+ *
+ * Chunk-parse: each leaderboard entry ("{"id":"…","displayName":"…",
+ * "creator":{…}" up to the next entry start) is processed in isolation so
+ * fields are never paired ACROSS entries — an entry with scicode but no
+ * briefcaseElo keeps its coding score and gets no briefcase. Entries with
+ * no capability fields produce no profile. Fail-closed: an unrecognized
+ * payload yields {} (callers fall back to gdpval).
+ *
+ * EXPORTED at module level (unlike the closure-bound extractGdpvalScores,
+ * which is mirrored in test/aa-gdpval-scrape.test.ts and can drift) — the
+ * tests import this real implementation.
+ */
+export function extractCapabilityProfiles(html: string): NonNullable<Cache['capability_profiles']> {
+  const profiles: NonNullable<Cache['capability_profiles']> = {};
+
+  // displayName → slug table from the same RSC payload (identical to the
+  // legacy Format-B mapping, which is proven against the live page).
+  const slugByDisplayName = new Map<string, string>();
+  const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
+  let s: RegExpExecArray | null;
+  while ((s = slugRe.exec(html))) slugByDisplayName.set(s[2], s[1]);
+
+  const labelKeyOf = (dn: string) =>
+    dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // One chunk per entry: displayName + everything after creator{} up to the
+  // next entry start (or end of payload).
+  const entryRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\}([\s\S]*?)(?=\{"id":"[^"]+","displayName":|$)/g;
+  let em: RegExpExecArray | null;
+  while ((em = entryRe.exec(html))) {
+    const displayName = em[1];
+    let slug = slugByDisplayName.get(displayName) ?? labelKeyOf(displayName);
+    if (!slug) continue;
+    const chunk = em[2];
+
+    const profile: { gdpval?: number; briefcase?: number; coding?: number } = {};
+
+    const bc = /"briefcaseElo":([0-9.]+)/.exec(chunk);
+    if (bc) {
+      const briefcase = parseFloat(bc[1]);
+      if (Number.isFinite(briefcase)) profile.briefcase = briefcase;
+    }
+
+    const pct = (field: string): number | null => {
+      const m = new RegExp(`"${field}":(null|[0-9.]+)`).exec(chunk);
+      if (!m || m[1] === 'null') return null;
+      const v = parseFloat(m[1]);
+      return Number.isFinite(v) ? v : null;
+    };
+    const scicode = pct('scicode');
+    const terminalBench40 = pct('terminalBench40');
+    if (scicode !== null || terminalBench40 !== null) {
+      const best = Math.max(scicode ?? 0, terminalBench40 ?? 0);
+      // Round to 2 decimals — 3000 * 0.55 is 1650.0000000000002 in IEEE754;
+      // determinism matters because these values cross process boundaries
+      // (cache JSON) and are compared in tests.
+      if (best > 0) profile.coding = Math.round(3000 * best * 100) / 100;
+    }
+
+    if (Object.keys(profile).length) profiles[slug] = profile;
+  }
+  return profiles;
+}
+
 export function createScanRunner(rt: ScanRunnerDeps) {
   // ── Helpers ────────────────────────────────────────────────────────────
 
