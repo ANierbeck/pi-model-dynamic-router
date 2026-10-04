@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.7.0] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
+## [1.6.1] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
 
 ### Changed
 
