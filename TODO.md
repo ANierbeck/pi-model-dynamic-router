@@ -528,8 +528,33 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   high, stop at spot campaign + red-first. Rationale: the spot campaign
   found the suite alive (min 2 killers per invariant); a full campaign's
   value must beat its runtime + triage cost, not just exist.
+- Phase 1 ACTIVATED (owner decision 2026-10-04, PR #19): nightly Stryker
+  run on GitHub over the decision core, report-only. First local cold
+  run measured 1670 mutants at ~75 min (aborted at 67%, 265 untriaged
+  survivors — the baseline must come from CI). Open work once the first
+  nightly report lands: triage the survivors (equivalent mutants vs real
+  vacuity), then decide Phase 2 scope.
+
+**vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
+Dependabot proposed vitest 3.2.6 -> 5.0.3 (two majors, PRs #10/#13, both
+closed). Red CI: coverage-v8 5.x counts branches differently and the run
+lands at 74.27% against the pinned 76% threshold — AGENTS.md §4 forbids
+lowering thresholds to unblock a red run. When this round is scheduled:
+migrate the API surface, re-derive a JUSTIFIED branch threshold from the
+new accounting (documented, not fitted to pass), and remove the
+vitest-majors ignore in .github/dependabot.yml (guarded by
+test/dependabot-config.test.ts).
+
+**Host upgrade policy (pinned 2026-10-04, guarded by
+test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is
+never auto-bumped. Host upgrades are deliberate, planned rounds (see
+docs/plans/2026-09-30-router-0.99.1-hardening.md); Dependabot PR #12
+(pi 1.0.2, green CI proving nothing — the suite mocks most of pi) was
+closed on exactly this ground.
 
 ---
 
-*Last updated: 2026-10-04 (suite hygiene round merged; mutation spot-campaign
-9/9 killed; stale calculate-score pin and drifted AA parser mirror fixed)*
+*Last updated: 2026-10-04 (nightly mutation testing live, PR #19; Dependabot
+policy pinned: host never auto-bumped, vitest majors muted until migration
+round, PRs #10/#12/#13 closed with justification; PR #9 brace-expansion
+security patch merged)*
