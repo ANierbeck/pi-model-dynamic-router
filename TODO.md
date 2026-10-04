@@ -333,6 +333,19 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
+### Locale Robustness (date/reset-time parsing)
+- [ ] **Multi-locale month-name parsing** — `src/detection.ts` currently
+  recognizes only German month names ("Okt.", "März" …), because we render
+  our own reset messages with `de-DE` locale and parse them back. Provider
+  messages and foreign-locale systems produce English ("Oct 4th, 12:37 PM")
+  or other locales. Extension: explicit month tables for at least
+  en-US/en-GB + de-DE (short and full forms, with/without trailing dot),
+  plus a regression test per locale. Alternative considered: render our
+  own reset messages in a fixed locale (or ISO) so we parse only external
+  formats — owner preference needed, since the log is deliberately read
+  in German. Registered 2026-10-04 (owner request: make locale handling
+  more robust — deferred, small extension).
+
 ### Resilience & Fallback Strategies
 - [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
 - [ ] **Add batch processing** - Parallelize classification requests
