@@ -513,9 +513,11 @@ extractCapabilityProfiles, recordSoftFailure, sortBy-best scoreOf,
 isFreeModelRef) — **9/9 killed**, minimum 2 killers each (isFreeModelRef:
 88). Remaining risk: contract-change vacuance (a test's inputs never
 reaching a new path — the calculate-score incident) cannot be caught
-statically; the red-first rule (AGENTS.md §4) is the only guard at the moment
-of change. A full StrykerJS campaign would quantify suite-wide; revisit
-after the next major feature round.
+statically; AGENTS.md §4's non-vacuous regression-test requirement — driven
+red-first in this repo's practice (write the test, watch it fail, then
+implement) — is the only guard at the moment of change. A full StrykerJS
+campaign would quantify suite-wide; revisit after the next major feature
+round.
 
 ---
 
