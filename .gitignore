@@ -8,7 +8,7 @@ node_modules/
 /.roborev/
 dist/
 
-# Lokale Arbeitsdateien (nicht für Versionierung)
+# Local working files (not for version control)
 archive/
 
 # Generierte Konfigurationsdateien

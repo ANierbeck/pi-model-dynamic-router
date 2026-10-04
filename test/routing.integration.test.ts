@@ -1,6 +1,6 @@
 /**
  * Integration tests for router functionality
- * Testet die echte Interaktion zwischen Modulen
+ * Exercises the real interaction between modules
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
