@@ -112,7 +112,8 @@
         "scout",
         "fallback"
       ],
-      "max_gdpval": 1700
+      "max_gdpval": 1700,
+      "score_by": "coding"
     },
     "operational": {
       "description": "Broad quality pool - cheap but capable (GDPval >=300, cost <=2.0)",
@@ -134,10 +135,11 @@
         "tactical",
         "operational",
         "fallback"
-      ]
+      ],
+      "score_by": "briefcase"
     },
     "scout": {
-      "description": "Any available model, cheapest first — cloud models preferred, local Ollama as last resort",
+      "description": "Any available model, cheapest first \u2014 cloud models preferred, local Ollama as last resort",
       "method": "tiered",
       "billing_preference": "cloud_first",
       "max_cost": 0,

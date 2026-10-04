@@ -720,7 +720,24 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * silent quality downgrade to a much weaker free model instead of falling
  * through to the next-best paid/subscription candidate.
  */
-export function calculateScore(ref: string, _taskType?: string, _config?: Config): number {
+/**
+ * The 'best' method's ranking score (ADR-0023 round 2). The second param
+ * is the group's score_by column — it FINALLY does something: 'briefcase'
+ * ranks by AA-Briefcase Elo (agentic knowledge work), 'coding' by the
+ * SciCode/Terminal-Bench blend. Everything else (absent, 'gdpval', legacy
+ * group-name strings from pre-round callers) ranks by the global GDPval —
+ * the exact pre-round behavior.
+ *
+ * Group floors/caps (min_gdpval/max_gdpval) stay on GDPval regardless:
+ * a column never changes which models are ADMITTED to a pool, only their
+ * order within it (test pin: aa-capability-sourcing.test.ts "floors remain
+ * GDPval-only").
+ */
+export function calculateScore(ref: string, column?: string, _config?: Config): number {
+  if (column === 'briefcase' || column === 'coding') {
+    const v = lookupCapability(ref, column);
+    if (v !== null) return v;
+  }
   return getM(ref).gdpval;
 }
 
