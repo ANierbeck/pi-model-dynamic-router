@@ -108,7 +108,7 @@ export function baseTokens(s: string): Set<string> {
 /**
  * Normalizes a model hint target for second-chance matching: lowercase,
  * dots and underscores mapped to dashes, collapsed repeats (2026-09-20
- * "HINT funktioniert nicht mehr" incident — `zai-glm-5.3` / `zai-glm-5_3`
+ * HINT-targeting regression incident — `zai-glm-5.3` / `zai-glm-5_3`
  * must resolve to `zai-glm-5-3`). Exact matching always runs FIRST; this
  * normalization only fires as a fallback so registry ids that genuinely
  * contain dots (e.g. `mistral-medium-3.5`) keep their exact-match priority.

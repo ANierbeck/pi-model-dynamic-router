@@ -1,58 +1,61 @@
-# Finaler Stand: effCost Registry-First Fix & Display-Footer
+# Final Status: effCost Registry-First Fix & Display Footer
 
-## ✅ Erledigt
+## ✅ Done
 
-### 1) effCost Registry-First Fix (src/metrics.ts)
-- **Problem**: Abos mit Registry-Preis ($1.4) wurden als "free" eingestuft, landeten in max_cost:0-Gruppen.
-- **Lösung**: Registry-Abfrage **vor** Subscription-Zeroing; Heilung von `cost_per_m = 0`/`unknown` im Early-Return-Pfad.
-- **Tests**: `test/metrics-cost-heal.test.ts` (11 Tests) ✅
+### 1) effCost registry-first fix (src/metrics.ts)
+- **Problem:** subscriptions with a registry price ($1.4) were classified as
+  "free" and landed in max_cost:0 groups.
+- **Solution:** registry lookup **before** subscription zeroing; healing of
+  `cost_per_m = 0`/`unknown` in the early-return path.
+- **Tests:** `test/metrics-cost-heal.test.ts` (11 tests) ✅
 
-### 2) Display-Footer für `/router status` (src/routing.ts + index.ts)
-- **Problem**: Nutzer sehen nur Top-5 Modelle pro Gruppe, teure Modelle (z.B. pi-claude) sind unsichtbar.
-- **Lösung**: `getTopModels` gibt `{ models, total }` zurück; Footer-Zeile zeigt `… +N weitere (sortiert nach [method])`.
-- **Tests**: `test/get-top-models-total.test.ts` (3 Tests) ✅
+### 2) Display footer for `/router status` (src/routing.ts + index.ts)
+- **Problem:** users see only the top-5 models per group; expensive models
+  (e.g. pi-claude) are invisible.
+- **Solution:** `getTopModels` returns `{ models, total }`; a footer line
+  shows `… +N more (sorted by [method])`.
+- **Tests:** `test/get-top-models-total.test.ts` (3 tests) ✅
 
-### 3) Footer-Polish implementiert
-- Status-Seite zeigt nun:
+### 3) Footer polish implemented
+- The status page now shows:
   ```
-  │    … +9 weitere (sortiert nach tiered)
+  │    … +9 more (sorted by tiered)
   ```
-- **Code**: index.ts angepasst, TypeScript sauber ✅
+- **Code:** index.ts adapted, TypeScript clean ✅
 
-### 4) Mechanische Anpassungen
-- 8+ Testdateien auf neues `getTopModels`-Return umgestellt.
+### 4) Mechanical adjustments
+- 8+ test files migrated to the new `getTopModels` return value.
 - TypeScript: `npx tsc --noEmit` ✅
-- Delegation + Bulk-Read: 54/54 Tests ✅
+- Delegation + bulk-read: 54/54 tests ✅
 
-### 5) Audit-Plan erstellt
-- Strukturierter Plan zum Audit von ~800 Tests (Redundanzen, Flakes, alte Architektur).
-- **Zeitaufwand**: ~8h (1 Arbeitstag).
-- **Dokument**: `AUDIT_PLAN_800_TESTS.md` ✅
-
----
-
-## 📊 Metriken
-- **TypeScript**: ✅ sauber
-- **Tests**: 789/804 ✅ (12 Fehlschläge sind unrelated flakes/vorhanden)
-- **Neue Tests**: 14/14 ✅
-- **Bundle**: unverändert (~534KB)
+### 5) Audit plan created
+- Structured plan to audit the ~800 tests (redundancies, flakes, old
+  architecture).
+- **Effort:** ~8h (1 workday).
+- **Document:** `AUDIT_PLAN_800_TESTS.md` ✅
 
 ---
 
-## 📁 Artefakte
-| Datei | Zweck |
-|-------|-------|
-| `CHANGES.md` | Zusammenfassung der Änderungen (DE) |
-| `IMPLEMENTATION_SUMMARY.md` | Technische Details |
-| `AUDIT_PLAN_800_TESTS.md` | Plan zum Audit der ~800 Tests |
-| `FINAL_SUMMARY.md` | Dieser Stand |
+## 📊 Metrics
+- **TypeScript:** ✅ clean
+- **Tests:** 789/804 ✅ (12 failures are unrelated flakes/pre-existing)
+- **New tests:** 14/14 ✅
+- **Bundle:** unchanged (~534KB)
 
 ---
 
-## 🔄 Nächste Schritte (optional)
-1. **Footer-Polish in Produktion testen**: `/router status` auf der Pi ausführen und prüfen, ob die Fußzeile korrekt angezeigt wird.
-2. **Audit starten**: Inventur der Testdateien durchführen, Kandidaten zum Skipp/Löschen markieren.
+## 📁 Artifacts
+| File | Purpose |
+|------|---------|
+| `CHANGES.md` | Summary of the changes |
+| `IMPLEMENTATION_SUMMARY.md` | Technical details |
+| `AUDIT_PLAN_800_TESTS.md` | Plan for auditing the ~800 tests |
+| `FINAL_SUMMARY.md` | This status |
 
 ---
 
-**Fragen?** Gerne Feedback geben oder Anpassungen wünschen!
+## 🔄 Next steps (optional)
+1. **Test the footer polish in production:** run `/router status` in pi and
+   check that the footer line renders correctly.
+2. **Start the audit:** run the test-file inventory, mark candidates for
+   skip/delete.

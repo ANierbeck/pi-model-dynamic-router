@@ -1,7 +1,7 @@
 # ADR-0017: Bounded Wait-for-Short-Reset instead of Burning the Candidate Chain
 
 ## Status
-Accepted (2026-09-27) — replaces the first draft ("Explicit reset time in the narration"), which misread the problem: the absolute reset time was already being displayed (`formatResetMsg` renders "(resets 27.9.2026, 14:37:11)"). Achim's request ("das WARTEN darauf konfigurieren") meant actually WAITING, not the display.
+Accepted (2026-09-27) — replaces the first draft ("Explicit reset time in the narration"), which misread the problem: the absolute reset time was already being displayed (`formatResetMsg` renders "(resets 27.9.2026, 14:37:11)"). Achim's request was to make the router actually WAIT for such short resets — configurable — not to change the display.
 
 ## Context / Incident (2026-09-27, 12:36–12:44 UTC)
 
