@@ -53,6 +53,18 @@ export interface Group {
   filter_free?: boolean;
   min_gdpval_pct?: number;
   min_gdpval?: number;
+
+  /**
+   * Maximum GDPval a group member may have — the hard upper tier boundary,
+   * symmetric to `min_gdpval` (owner decision 2026-10-04, ADR-0023). Keeps
+   * top-tier models out of a group they would otherwise dominate via the
+   * `best` method's score convergence: e.g. `tactical` capped at 1700
+   * admits glm-5-3 (1644) but excludes claude-opus-5-5 (1900) and
+   * claude-sonnet-5-5 (1844), reserving those for `strategic`. Strict
+   * null-fails semantics, matching `min_gdpval`: a model with a null
+   * (unscored) GDPval fails a positive cap. Absent/0 = no upper bound.
+   */
+  max_gdpval?: number;
   max_cost?: number;
   max_cost_per_m?: number;
 
@@ -185,6 +197,20 @@ export interface Config {
    * dynamic-config whitelist in load() resyncs it.
    */
   non_agent_model_prefixes?: string[];
+
+  /**
+   * Quality-equivalence window (fraction of the best candidate's score,
+   * e.g. 0.05 = 5%) applied by the `best` group method: candidates within
+   * the window of the group's best score are treated as EQUALLY GOOD, and
+   * the cheapest of them is picked first (cost ties broken by the LOWER
+   * score — least overkill — since within the window quality is deemed
+   * equivalent). Models outside the window keep pure score order behind
+   * the pool (ADR-0023, owner decision 2026-10-04: score compression at the
+   * top — opus-5-5 1900 vs sonnet-5-5 1844 vs glm-5-3 1644 — made `best`
+   * converge on the single most expensive model). Absent/0 = off (pure
+   * score ordering, previous behaviour).
+   */
+  best_quality_window?: number;
   /**
    * Enforced delegation (ADR-0007, revised 2026-09-20): shrink oversized
    * file-inspection tool results (`read`, `bash`) with a cheap summarizer

@@ -82,3 +82,9 @@ strip_suffixes:
   - "-reasoning"
   - "-fp8"
   - "-preview"
+
+# Quality-equivalence window for `best` group method (ADR-0023):
+# candidates within this fraction of the group's best GDPval are treated as
+# equally good; the cheapest is picked first (cost ties -> lower score).
+# 0 = off (pure score ordering). 0.05 = ship default.
+best_quality_window: 0.05
