@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-### Removed (mutation triage Batches 1–4 — dead/redundant code)
+### Removed (mutation triage Batches 1–4 + Task 5 — dead/redundant code)
 
 - `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
   anywhere (the ADR-0023 round replicated their semantics inline in
@@ -12,6 +12,15 @@
   `Router.sortBy` — behaviorally identical to the fall-through.
 - Redundant explicit `min_cost_if_all_priced` arm in `resolveGroup` —
   the generic else dispatches identically (`sortBy(c, g.method, name)`).
+- `effCost`: the historical `lookupPrice` → provider-estimate →
+  $0.000020-default fallback steps. `getM()` guarantees `cost_per_m` is
+  always defined (0/'unknown' placeholders heal via `resolveCostPerM`),
+  so the fallbacks were unreachable; unpriced refs correctly resolve to
+  `'unknown'` through the heal.
+- `billingTier`: the third `freeList.includes(`${prov}/${bare}`)` check —
+  byte-identical to the first `includes(ref)` check for every ref with a
+  slash, so each copy masked every mutant on the other (found in the
+  Task 5 no-coverage sweep).
 
 ### Test
 
@@ -22,6 +31,15 @@
   found by the first nightly Stryker run. Red-first: 70 representative
   mutants observed RED before landing. Full batch records:
   `docs/mutation-triage.md`.
+- `test/no-coverage-sweep.test.ts` (26 tests): the Task 5 no-coverage
+  clusters — `isVirtualGroupRef` (140 mutants, the largest cluster),
+  `applyGroupFilters`' min_gdpval_pct gate, `detectGroup`'s no-score
+  fallback list, `getTopModels`' display pipeline (isLastStep: the last
+  step never truncates — deliberately different from the live path),
+  `effCost`'s reachable chain, `updateMetrics`' EMA updates,
+  `billingTier`'s free-model paths, `loadModelMap` valid/broken YAML.
+  Red-first: 13 representative mutants observed RED (one turned out to be
+  unkillable — a mutually-redundant double check, removed instead).
 
 - `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
   anywhere (the ADR-0023 round replicated their semantics inline in
