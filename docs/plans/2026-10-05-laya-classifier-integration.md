@@ -37,8 +37,13 @@
 2. Start `laya-serve`; probe `/v1/systemone`: document request schema (State, question types, options array), response fields for a `choice` question (chosen option, per-option probabilities, confidence), error codes, rate limits.
 3. Measure on this machine (M3 Max, 36 GB): cold start time, RAM (sidecar process), per-request latency over ≥100 requests (incl. p50/p95), behavior at 512-token State (find the truncation boundary), behavior with all 9 categories as options.
 4. Quick in-process check (no commitment): `receptron/laya` + `onnxruntime-node` load time + RAM. Only to have numbers for the sidecar-vs-in-process comparison table.
-5. Write `docs/research/2026-10-05-laya-spike.md` with: pinned versions, request/response examples (verbatim JSON), measurements, the mode recommendation with data, and the exact endpoint contract Task 2 codes against.
-6. Commit (docs-only). **Gate: if the spike kills sidecar mode, stop and re-ask the owner before continuing.**
+5. **Process-management evaluation (owner note 2026-10-05: the extension MAY spawn the sidecar, but that is NOT a given — evaluate it):** measure and compare the operating models against criteria, in a small Node harness simulating what the router extension would do (spawn → probe → classify → teardown):
+   - **(a) launchd service** — starts at boot, independent of pi; idle RAM permanently resident (688 MiB); zero pi involvement.
+   - (b) **extension-spawned** — the router spawns the sidecar on first need: `child_process.spawn`, port discovery via lock/known port (multi-session singleton: second pi reuses the first sidecar), health probe after spawn, crash-restart with backoff, idle-stop after N minutes to free RAM. Requires: cold-start latency measured (checkpoint load — likely seconds, NOT the 7.4 ms warm predict), teardown on pi exit (orphan handling), and an environment that ALREADY exists (venv + laya-mlx + checkpoint) — setup itself stays a documented manual/scripted step, the router never installs or downloads.
+   - (c) **manual** — owner starts it when wanted; simplest code, worst ergonomics.
+   - Decision gate: the spike RECOMMENDS one with data; if (b) wins, that changes the router's process model and needs a short ADR BEFORE implementation (who owns the lifecycle, restart policy, port conventions) — not a silent assumption.
+6. Write `docs/research/2026-10-05-laya-spike.md` with: pinned versions, request/response examples (verbatim JSON), measurements, the mode recommendation with data, the process-management recommendation with data, and the exact endpoint contract Task 2 codes against.
+7. Commit (docs-only). **Gate: if the spike kills sidecar mode, stop and re-ask the owner before continuing.**
 
 ### Task 1: Config + types (red-first)
 
