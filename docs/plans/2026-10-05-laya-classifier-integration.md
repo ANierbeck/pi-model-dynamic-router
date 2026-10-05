@@ -12,6 +12,7 @@
 1. Spike first, tendency sidecar.
 2. `classifier_laya.enabled` defaults to **false**; activation only after the Golden-Set benchmark justifies it (separate owner decision).
 3. Scope = integration only; the fine-tuning pipeline (brief §4.8) is a documented outlook, decided after Task 8's numbers.
+4. The spike runs on a DEDICATED feature branch (`laya-spike`), separate from the usual development cadence: it is exploratory (local installs, measurements, research doc), and the standard path continues meanwhile with the mutation-testing triage (docs/plans/2026-10-04-mutation-survivor-triage.md). The spike branch merges back via PR only when its research doc is done (owner decision 2026-10-05).
 
 **Out of scope:** fine-tuning, temperature re-calibration *training*, cloud-Jev stage, any change to HINT handling (deterministic, runs before, must never come from a classifier — pinned by existing tests, re-pinned in the golden set).
 
