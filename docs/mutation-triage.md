@@ -104,64 +104,35 @@ survived because of exactly that collision).
 documented rationale (mostly the defensive try/catch cluster of
 `registryCost`), 0 dead code — the chain's stages are all live.
 
-## HOTSPOT metrics.ts:100-350 (74 undetected)
+## HOTSPOT metrics.ts:100-350 (74 undetected) — ✅ TRIAGED (Batch 3, 2026-10-05)
 
-| line | mutator | status | verdict | rationale |
-|---|---|---|---|---|
-| 110 | UpdateOperator | Survived | UNTRIAGED | |
-| 130 | ConditionalExpression | Survived | UNTRIAGED | |
-| 130 | UnaryOperator | Survived | UNTRIAGED | |
-| 144 | ConditionalExpression | Survived | UNTRIAGED | |
-| 146 | BlockStatement | Survived | UNTRIAGED | |
-| 147 | ConditionalExpression | Survived | UNTRIAGED | |
-| 147 | MethodExpression | Survived | UNTRIAGED | |
-| 165 | UnaryOperator | Survived | UNTRIAGED | |
-| 174 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 174 | LogicalOperator | Survived | UNTRIAGED | |
-| 176 | ConditionalExpression | Survived | UNTRIAGED | |
-| 177 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 190 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 190 | ConditionalExpression | Survived | UNTRIAGED | |
-| 191 | ConditionalExpression ×3 | Survived | UNTRIAGED | |
-| 191 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 191 | LogicalOperator | Survived | UNTRIAGED | |
-| 194 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 194 | ConditionalExpression | Survived | UNTRIAGED | |
-| 194 | MethodExpression | Survived | UNTRIAGED | |
-| 202 | BlockStatement | Survived | UNTRIAGED | |
-| 203 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 203 | MethodExpression | Survived | UNTRIAGED | |
-| 203 | StringLiteral | Survived | UNTRIAGED | |
-| 205 | CallExpression | Survived | UNTRIAGED | |
-| 205 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 205 | EqualityOperator ×3 | Survived | UNTRIAGED | |
-| 205 | LogicalOperator | Survived | UNTRIAGED | |
-| 249 | BlockStatement | Survived | UNTRIAGED | |
-| 251 | StringLiteral | Survived | UNTRIAGED | |
-| 252 | ArrowFunction | Survived | UNTRIAGED | |
-| 252 | Regex ×4 | Survived | UNTRIAGED | |
-| 252 | StringLiteral ×2 | Survived | UNTRIAGED | |
-| 253 | StringLiteral | Survived | UNTRIAGED | |
-| 278 | BlockStatement | Survived | UNTRIAGED | |
-| 278 | ConditionalExpression | Survived | UNTRIAGED | |
-| 280 | BlockStatement | Survived | UNTRIAGED | |
-| 282 | BlockStatement | Survived | UNTRIAGED | |
-| 282 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 282 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 282 | LogicalOperator ×2 | Survived | UNTRIAGED | |
-| 283 | CallExpression | Survived | UNTRIAGED | |
-| 299 | UpdateOperator | Survived | UNTRIAGED | |
-| 318 | MethodExpression | Survived | UNTRIAGED | |
-| 319 | ConditionalExpression | Survived | UNTRIAGED | |
-| 321 | UpdateOperator | Survived | UNTRIAGED | |
-| 330 | ConditionalExpression | Survived | UNTRIAGED | |
-| 335 | ConditionalExpression | Survived | UNTRIAGED | |
-| 335 | EqualityOperator | Survived | UNTRIAGED | |
-| 346 | OptionalChaining | Survived | UNTRIAGED | |
-| 347 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 347 | EqualityOperator | Survived | UNTRIAGED | |
-| 347 | LogicalOperator ×2 | Survived | UNTRIAGED | |
-| 347 | StringLiteral | Survived | UNTRIAGED | |
+> Red-first evidence: 18 representative mutants applied and observed RED
+> against `test/slug-resolution.test.ts` (14 tests) before landing. The
+> private `aliasesFor()` is observed through the public `lookupPrice`
+> registry-alias retry — its only production consumer.
+
+| area | mutants | verdict | rationale |
+|---|---|---|---|
+| L107–110 setModelMap version counter (`++` → `--`) | 1 | EQUIVALENT | only consumed via `!==` staleness checks — any change (up or down) triggers the same rebuild; no collision is reachable |
+| L128–130 stripProvider (`i === -1` variants) | 2 | EQUIVALENT | slash-less refs return `ref` under every variant: slice(0, -1) never names a known provider, and `ref.slice(i + 1)` with i = -1 is the whole ref |
+| L141–147 mapLookup (exact gate, wildcard loop) | 5 | TESTED | exact-beats-wildcard and prefix semantics asserted on the STRIPPED id; in-map → 'true', startsWith → false/endsWith all red verified |
+| L165 alias-index version init | 1 | EQUIVALENT | consumed via `!==` only (see L110) |
+| L167–177 buildModelMapAliasIndex (skip guard, group accumulation, seed) | ~7 | TESTED ×2 / EQUIVALENT ×5 | slash-key exclusion verified with a registry that WOULD answer a slash-containing id (deepseek-ai/V3-style ids are real); 3-key group proves accumulation (2-key fixtures are self-filtering and mask it). `slug == null` part of the skip guard: null-slug groups are never queried (aliasesFor early-returns) — EQUIVALENT. Seed `[]` mutant: `[]` is TRUTHY, the next sibling pushes into it and the accumulation self-heals — EQUIVALENT |
+| L188–194 aliasesFor (staleness, self-filter) | ~9 | TESTED ×1 / EQUIVALENT ×8 | `||` → `&&` staleness kills via model-map change mid-file (stale index served old aliases). `=== null` → 'true' rebuilds every call — same results (perf only). Self-filter variants: retrying the already-missed primary id is a harmless extra miss — EQUIVALENT |
+| L200–206 buildGdpvalIndex (token key, sort, max) | 13 | TESTED | synonym slug resolves through the token-set index; max-score selection verified in BOTH insertion orders (kills first-wins AND last-wins); build-side sort drop verified (query side keeps sorting → key mismatch) |
+| L249–253 splatVersionRuns (regex, join) | 10 | TESTED | same-score twins collapse to ONE dedup identity; join/regex variants red verified. Remaining regex-variant pairs (e.g. `^\d{2,}$` vs `^\d{2,}`) are indistinguishable for realistic digit-run segments — EQUIVALENT |
+| L277–283 getSlugCanon (score cache, twin conditions) | 13 | TESTED ×2 / EQUIVALENT ×11 | different-score twins stay DISTINCT (kills `===` → `!==` and the `&&` → `\|\|` leak). `slugCanonScores !== scores` → 'true' rebuilds idempotently — EQUIVALENT. `twin !== key` → 'true' maps digit-run-less keys to themselves — harmless identity |
+| L292–299/318–321 resolveSlug self-heal (version counters, `.some`) | 4 | TESTED ×1 / EQUIVALENT ×3 | partial-wipe heal asserted (`.some` → `.every` red verified — the 13/148 scoring-collapse class). Version `++` → `--`: any change invalidates — EQUIVALENT. `missingBuiltin` → 'true': heal is idempotent — EQUIVALENT |
+| L330 explicit-exclusion early return | 1 | EQUIVALENT | REDUNDANT GUARD: the next line `if (mapped !== undefined) return mapped` returns the same null (`null !== undefined` is true) — the early return is documentation, not behavior |
+| L335 empty-gdpval ternary | 2 | EQUIVALENT | check-1 (empty → restore from cache.gdpval_scores) repopulates gdpval before this line can see an empty-but-cache-backed state; without cache scores both sides are `{}` |
+| L346–347 cached LLM matches | 8 | TESTED | cached duplicate spellings are CANONICALIZED (kills gate → false, `??` → `&&`); non-string cache entries are type-checked away (kills `&&` → `\|\|`, typeof → true). Optional-chaining crash on missing cache ≡ undefined — EQUIVALENT |
+
+**Batch 3 outcome (74 undetected):** ~34 closed by 14 new regression tests
+(red-first: 18 representative mutants observed RED), ~40 EQUIVALENT with
+documented rationale — this region is defensive/version-counter heavy, and
+three of its "obvious" guards turned out to be genuinely redundant
+(L330 double-guard, L177 truthy-seed self-heal, L335 unreachable-else).
+No dead code: every resolver stage is live.
 
 ## HOTSPOT routing.ts:1000-1100 (68 undetected)
 
