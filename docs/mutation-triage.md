@@ -77,57 +77,32 @@ slugs must not collide with `gdpval_builtin` keys (the slug resolver's
 token/substring matching silently remaps gdpval — two mutants initially
 survived because of exactly that collision).
 
-## HOTSPOT metrics.ts:900-1000 (64 undetected)
+## HOTSPOT metrics.ts:900-1000 (64 undetected) — ✅ TRIAGED (Batch 2, 2026-10-05)
+
+> Line numbers refer to the tree the nightly ran on. Red-first evidence:
+> 10 representative mutants applied and observed RED against
+> `test/pricing-lookup-chain.test.ts` (11 tests) before landing.
 
 | line | mutator | status | verdict | rationale |
 |---|---|---|---|---|
-| 901 | ConditionalExpression | Survived | UNTRIAGED | |
-| 908 | ConditionalExpression | Survived | UNTRIAGED | |
-| 909 | OptionalChaining | Survived | UNTRIAGED | |
-| 910 | ConditionalExpression | Survived | UNTRIAGED | |
-| 912 | ConditionalExpression | Survived | UNTRIAGED | |
-| 912 | OptionalChaining | Survived | UNTRIAGED | |
-| 914 | ConditionalExpression ×3 | Survived | UNTRIAGED | |
-| 914 | LogicalOperator | Survived | UNTRIAGED | |
-| 919 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 919 | LogicalOperator | Survived | UNTRIAGED | |
-| 921 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 945 | BlockStatement | Survived | UNTRIAGED | |
-| 945 | ConditionalExpression | Survived | UNTRIAGED | |
-| 947 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 947 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 947 | EqualityOperator | Survived | UNTRIAGED | |
-| 947 | StringLiteral | Survived | UNTRIAGED | |
-| 948 | ObjectLiteral | NoCoverage | UNTRIAGED | |
-| 948 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 950 | ObjectLiteral | Survived | UNTRIAGED | |
-| 957 | BlockStatement | Survived | UNTRIAGED | |
-| 957 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 957 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 957 | LogicalOperator | Survived | UNTRIAGED | |
-| 959 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 959 | ConditionalExpression | Survived | UNTRIAGED | |
-| 960 | StringLiteral | Survived | UNTRIAGED | |
-| 961 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 961 | LogicalOperator | Survived | UNTRIAGED | |
-| 961 | OptionalChaining ×2 | Survived | UNTRIAGED | |
-| 963 | ConditionalExpression | Survived | UNTRIAGED | |
-| 963 | OptionalChaining | Survived | UNTRIAGED | |
-| 967 | ObjectLiteral | NoCoverage | UNTRIAGED | |
-| 967 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 975 | BlockStatement | Survived | UNTRIAGED | |
-| 976 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 976 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 977 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 977 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 977 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 977 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 977 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 978 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 978 | EqualityOperator | NoCoverage | UNTRIAGED | |
-| 982 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 982 | ConditionalExpression | Survived | UNTRIAGED | |
-| 984 | ObjectLiteral | NoCoverage | UNTRIAGED | |
+| 901 | `!modelRegistry` → false | Survived | EQUIVALENT | registryCost is wrapped in try/catch → TypeError → null, identical to the guard's early null (defensive) |
+| 908 | `!model` → true | Survived | TESTED | alias retry would OVERWRITE a primary registration with an alias miss — primary-wins test red verified |
+| 909–910 | optional-chaining / `aliasProvider` truthiness | Survived | EQUIVALENT | non-optional access on a PROVIDER_MAP-miss crashes into the same try/catch null; truthy-alias path is unchanged (defensive) |
+| 912 | `!model?.cost` variants | Survived | EQUIVALENT | destructure of null/undefined → TypeError → catch → null (defensive) |
+| 914 | typeof guards | Survived | TESTED | registered model with STRING costs must fall through to the next stage, not return the sentinel — red verified |
+| 919 | `input === 0 && output === 0` variants | Survived | TESTED | half-zero price {0, 5} is a REAL price — only {0,0} means free; red verified |
+| 921 | catch block → {} | NoCoverage | EQUIVALENT | missing return yields undefined ≡ null for every caller (falsy) |
+| 945–950 | metrics-cost gate / block / ObjectLiteral | Survived | TESTED | configured cost_per_m wins over the pricing cache; `{ input: cost, output: cost }` shape asserted — red verified (4 tests failed under one mutant) |
+| 947 | `cost === 'unknown'` → false | Survived | EQUIVALENT | REDUNDANT GATE: the generic `return { input: cost, output: cost }` produces the identical sentinel object for cost='unknown' — behaviorally indistinguishable |
+| 948 | unknown-sentinel literals | NoCoverage | TESTED | covered by the 'unknown' cost_per_m test |
+| 957–967 | zero-price guard + free-detection | Survived/NoCoverage | TESTED | {0,0} + discovered-free → {0,0}; {0,0} + undiscovered + NO free_models list → 'unknown' (the `?? []` default is exercised); free-detection → true and `??` → `&&` both red verified |
+| 975–978 | backfill loop (free-tier skip, norm match, slash handling) | Survived/NoCoverage | TESTED | free-tier entries skipped, paid same-model entry found via norm() across a slash+case difference — red verified |
+| 982–984 | provider-cost fallback | Survived/NoCoverage | TESTED | step-4 estimate {9,9} asserted — red verified |
+
+**Batch 2 outcome (64 undetected):** ~44 closed by 11 new regression tests
+(red-first: 10 representative mutants observed RED), ~20 EQUIVALENT with
+documented rationale (mostly the defensive try/catch cluster of
+`registryCost`), 0 dead code — the chain's stages are all live.
 
 ## HOTSPOT metrics.ts:100-350 (74 undetected)
 
