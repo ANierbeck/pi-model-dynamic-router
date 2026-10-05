@@ -199,8 +199,9 @@ costs ~$0.28 once; every later step at 50k instead of 200k saves ~$0.02
   Measurement is always on.
 - Compaction runs **only between turns** (before the next user prompt is
   processed), never between tool steps of a running turn.
-- A fresh session is only **suggested**, never forced (an earlier
-  personal tool that stopped the session on cache loss was too harsh).
+- A fresh session is only ever **suggested**, never forced (an earlier
+  personal tool that stopped the session on cache loss was too harsh) —
+  and even the suggestion is deferred to a 2.0 version (see 5c).
 
 **Measures:**
 
@@ -220,12 +221,14 @@ costs ~$0.28 once; every later step at 50k instead of 200k saves ~$0.02
   Uses Pi's `ExtensionContext.getContextUsage()` and `compact()`. When
   disabled, the same conditions only produce a hint ("compacting now
   would pay off: /compact").
-- **5c Suggest a fresh start.** When compaction stops helping (e.g.
-  repeated compactions with a large summary, persistent misses), notify
-  the user with a suggestion; a new command `/router fresh` starts a new
-  session with a handoff summary linked via `parentSession`. Pi allows
-  `newSession()` only from user-invoked commands — the router can never
-  do this on its own, which matches the owner decision.
+- **5c Suggest a fresh start — DEFERRED to a 2.0 version** (owner
+  decision 2026-10-05; not part of this plan's implementation). Recorded
+  for later: when compaction stops helping (e.g. repeated compactions
+  with a large summary, persistent misses), notify the user with a
+  suggestion; a `/router fresh` command would start a new session with a
+  handoff summary linked via `parentSession`. Pi allows `newSession()`
+  only from user-invoked commands, so the router could never do this on
+  its own.
 - **5d Later options:** summarize via a cheaper model through the
   `session_before_compact` hook; threshold review for `bulk_read`
   (block_lines 350) and the shrinker.
