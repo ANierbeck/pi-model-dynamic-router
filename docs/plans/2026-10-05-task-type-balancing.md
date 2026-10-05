@@ -101,6 +101,12 @@ tests.
    signature) before routing more load to it.
 5. Diagnose why the local Ollama classifier fails (separate fix if
    needed).
+6. Find the cause of short-gap cache misses (owner decision 2026-10-05):
+   of 110 misses on contexts >20k, many follow the previous step by
+   6 s–1 min — not TTL expiry but a changed prompt prefix. Candidates:
+   model switches within a session, router-injected text near the top of
+   the context. If the router itself breaks the prefix, that is a cost
+   bug and gets fixed before Phase 5 builds on cache signals.
 
 ## Phase 1 — Sonnet before opus (repo, generic, bug fix)
 
@@ -156,45 +162,73 @@ Only if Phases 1–3 do not balance consumption enough.
 - Prerequisite: `usage_log` must count cached input (`cacheRead`) — this
   also makes `/router cost` more accurate.
 
-## Phase 5 — Token consumption (investigated 2026-10-05; staged measures)
+## Phase 5 — Token consumption: measure, then cache-aware compaction
 
-**Findings (router.log + usage_log, 2026-10-02..05):**
+**Measurement (Pi session files, zai-glm-5-3, 2026-10-02..05, list
+prices from Pi's registry):**
 
-1. `bulk_read` and the tool-result shrinker **work** (11 blocked full-file
-   reads, ~10 shrinks, e.g. 8607→2138 chars) — but they only limit context
-   GROWTH. They do nothing about RESENDING the accumulated context.
-2. The distribution shows the burner: median stream ~600–900 tokens, tail
-   up to 229k–424k. On 10-04, 5.66M tokens flowed over 1430 streams with a
-   median of 595 — the tail carries nearly everything.
-3. Root cause: Pi auto-compacts only at `contextWindow − reserveTokens`
-   (default 16384). The mid-tier model's 1M window therefore compacts
-   effectively never; sessions grow to 200–400k and every tool step
-   (~20–25 per turn) resends the full context. At 20 steps × 200k that is
-   ~4M tokens per turn.
-4. Pi reports `usage.cacheRead`/`cacheWrite`; the router logs neither.
-   The registry lists cacheRead for the mid-tier model at 0.14 vs 1.4 input
-   (10× cheaper) — IF provider caching engages, the resend burn is
-   already 10× lower than list price suggests. Engagement is unknown.
+| | tokens | cost | share |
+|---|---|---|---|
+| cacheRead (resent context, cache hit) | 473M | $66 | 72% |
+| uncached input (cache misses) | 12M | $17 | 19% |
+| output | 2M | $9 | 9% |
+| **total, 3770 steps** | **487M** | **$92** | |
 
-**Measures (staged, generic — PAYG users benefit equally):**
+1. **Provider caching works** — 97.5% hit rate. The burner is not the
+   hit rate but the VOLUME: on 10-04 the average context per step was
+   ~180k over 1426 steps. Context size is the lever.
+2. **`usage_log` undercounts ~40×** (11M recorded vs 487M processed): it
+   logs `input + output` and ignores `cacheRead`. `/router cost` windows
+   are wrong by the same factor.
+3. `bulk_read` and the tool-result shrinker work (11 blocked full-file
+   reads, ~10 shrinks) but only limit context GROWTH, not the resend.
+4. Pi auto-compacts only at `contextWindow − reserveTokens` (default
+   16384); with a 1M window, contexts reached 450k.
+5. 110 misses on contexts >20k; part after idle gaps (TTL), many after
+   seconds (prefix change — see Phase 0 step 6).
 
-- **5a Measure caching.** Log `cacheRead`/`cacheWrite` per stream; extend
-  `usage_log` with cached input (also makes the `/router cost` windows
-  more accurate). Red-first test. Decides whether 5b is urgent or the
-  burn is already dampened.
-- **5b Effective context budget.** The global `reserveTokens` cannot
-  distinguish a 1M window from a 200k one. Instead: a configurable
-  per-model/per-group context budget (e.g. ~150–200k for the 1M-window
-  model), enforced by the router via Pi's `ExtensionContext` compaction
-  controls when the projected context exceeds it. Minimal first cut: a
-  narration hint recommending `/compact` past the threshold. Default
-  conservative; values in the user layer.
-- **5c Threshold review** for `bulk_read` (block_lines 350) and the
-  shrinker — small expected effect; only after 5a/5b measurements.
+**Key insight:** a cold cache is the CHEAPEST moment to compact. After a
+miss the next step pays full input price anyway, so compacting then
+discards nothing already paid for; compacting on a warm cache throws a
+paid cache away. Break-even example: compacting 200k on a cold cache
+costs ~$0.28 once; every later step at 50k instead of 200k saves ~$0.02
+→ break-even after ~13 steps, i.e. within one typical turn (20–25 steps).
 
-**Owner decision points:** budget values (user layer); whether proactive
-compaction may run mid-turn (Pi supports chained compaction entries at
-`turn_end`) or only between turns.
+**Owner decisions (2026-10-05):**
+- Auto-compaction is **opt-in, default off** in the shipped config.
+  Measurement is always on.
+- Compaction runs **only between turns** (before the next user prompt is
+  processed), never between tool steps of a running turn.
+- A fresh session is only **suggested**, never forced (an earlier
+  personal tool that stopped the session on cache loss was too harsh).
+
+**Measures:**
+
+- **5a Measure (always on).** Per step: context tokens, cacheRead share,
+  step cost; per session: totals. Extend `usage_log` with
+  `cacheRead`/`cacheWrite` and fix the `/router cost` windows (red-first:
+  a usage with cacheRead must be counted). `/router` status line, e.g.
+  "context 182k · cache 97% · ~$0.03/step".
+- **5b Cache-aware compaction (opt-in).** Config (names illustrative):
+  `context_budget: { enabled, soft_tokens, hard_tokens, cache_ttl_s }`,
+  globally and per group.
+  - cold cache (miss on the last step, or idle gap > `cache_ttl_s`) AND
+    context > `soft_tokens` → `ctx.compact()` at the next turn boundary;
+  - context > `hard_tokens` regardless of cache state → compact at the
+    next turn boundary;
+  - otherwise leave a warm cache alone.
+  Uses Pi's `ExtensionContext.getContextUsage()` and `compact()`. When
+  disabled, the same conditions only produce a hint ("compacting now
+  would pay off: /compact").
+- **5c Suggest a fresh start.** When compaction stops helping (e.g.
+  repeated compactions with a large summary, persistent misses), notify
+  the user with a suggestion; a new command `/router fresh` starts a new
+  session with a handoff summary linked via `parentSession`. Pi allows
+  `newSession()` only from user-invoked commands — the router can never
+  do this on its own, which matches the owner decision.
+- **5d Later options:** summarize via a cheaper model through the
+  `session_before_compact` hook; threshold review for `bulk_read`
+  (block_lines 350) and the shrinker.
 
 ---
 
