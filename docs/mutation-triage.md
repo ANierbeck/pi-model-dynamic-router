@@ -462,6 +462,26 @@ variants, the negative-modulo rotation, the '' taskType).
 | 1244 | BlockStatement | NoCoverage | UNTRIAGED | |
 | 1248 | BlockStatement | Survived | UNTRIAGED | |
 
+## Task 5 verdicts — no-coverage sweep (2026-10-05, `test/no-coverage-sweep.test.ts`)
+
+| cluster | mutants | verdict |
+|---|---|---|
+| `isVirtualGroupRef` | 140 | REAL GAP — full truth table (slash presence, provider∈groupNames, self / `:use-static` id forms). Largest single cluster of report #1. |
+| `applyGroupFilters` min_gdpval_pct gate | ~6 | REAL GAP — percentile threshold vs pool max, gate-off, all-unscored pass-through. |
+| `detectGroup` no-score fallback list | ~8 | REAL GAP — first unrestricted tier of [scout, operational, tactical, strategic, fallback] wins; positive min skips a tier. |
+| `getTopModels` display pipeline (isLastStep, top_k, L1244) | ~30 | REAL GAP — display deliberately differs from resolveGroup: the LAST pipeline step never truncates. Pinned in both directions. |
+| `effCost` steps 2–3 (lookupPrice → provider estimate → $0.000020) | ~24 | DEAD — `getM()` guarantees `cost_per_m` is always defined (0/'unknown' heal via `resolveCostPerM`), so the fallbacks were unreachable for every input. Removed per §7; the invariant is pinned by test. |
+| `effCost` reachable chain (subscription discount, costMux, typeof) | ~10 | REAL GAP — pinned after the removal. |
+| `updateMetrics` (EMA α=0.3, zero-duration guard, benchmarks persist) | 24 | REAL GAP. |
+| `billingTier` free paths (:free tag, free_models, discovered-0) | 10 | REAL GAP — qualified/bare/discovered variants. The third `includes(prov+'/'+bare)` check was byte-identical to the first for every slash ref → REMOVED per §7 (each copy masked every mutant on the other; empirically unkillable). |
+| `loadModelMap` (valid map, wildcard longest-first, broken YAML) | 4 | REAL GAP. |
+| `liveGroupFilterLookups.isFree` (routing.ts ~L135, max_cost 0) | 3 | PARTIAL — `price !== null` and truthy mutants killed via an unpriced third ref (mutant throws on `price.input`); the `price.input === 0 && price.output === 0` conjunct is EQUIVALENT: both callers wrap `isFree` in `admitsZeroCostGroup`, which re-requires token-based, and for token-based providers `effCost(ref) === 0` coincides with a `{0,0}` pricing result (orFallbackPrice only returns `{0,0}` for discovered-0/free-list refs, and both also make resolveCostPerM return 0). Ledgered, not removed — cheap belt-and-braces. |
+| `updateMetrics`/misc single mutants (getCapabilityProfiles, aliasesFor, registryCost catch) | ~3 | covered by Batch 2/3 tests or defensive — see batch sections. |
+
+Red-first evidence: 13 representative mutants applied and observed RED
+(`/tmp/task5-redfirst.sh` pattern); 1 survivor was the redundancy proof
+for the billingTier removal. Lines refer to the pre-sweep tree.
+
 ## No-coverage clusters (Task 5 orientation)
 
 | function | NoCoverage mutants |
