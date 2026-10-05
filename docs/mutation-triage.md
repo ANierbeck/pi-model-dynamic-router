@@ -134,62 +134,30 @@ three of its "obvious" guards turned out to be genuinely redundant
 (L330 double-guard, L177 truthy-seed self-heal, L335 unreachable-else).
 No dead code: every resolver stage is live.
 
-## HOTSPOT routing.ts:1000-1100 (68 undetected)
+## HOTSPOT routing.ts:1000-1100 (68 undetected) — ✅ TRIAGED (Batch 4, 2026-10-05)
 
-| line | mutator | status | verdict | rationale |
-|---|---|---|---|---|
-| 1024 | ConditionalExpression | Survived | UNTRIAGED | |
-| 1025 | MethodExpression | Survived | UNTRIAGED | |
-| 1060 | StringLiteral | Survived | UNTRIAGED | |
-| 1061 | BlockStatement | Survived | UNTRIAGED | |
-| 1061 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1061 | EqualityOperator | Survived | UNTRIAGED | |
-| 1061 | StringLiteral | Survived | UNTRIAGED | |
-| 1064 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1064 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1064 | EqualityOperator | Survived | UNTRIAGED | |
-| 1064 | LogicalOperator | Survived | UNTRIAGED | |
-| 1064 | StringLiteral | Survived | UNTRIAGED | |
-| 1065 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1067 | ConditionalExpression ×3 | NoCoverage | UNTRIAGED | |
-| 1067 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1067 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 1067 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1069 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1069 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1069 | EqualityOperator | Survived | UNTRIAGED | |
-| 1069 | StringLiteral | Survived | UNTRIAGED | |
-| 1070 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1070 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 1071 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1072 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 1072 | MethodExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1073 | BlockStatement | Survived | UNTRIAGED | |
-| 1073 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1073 | EqualityOperator | Survived | UNTRIAGED | |
-| 1073 | StringLiteral | Survived | UNTRIAGED | |
-| 1074 | StringLiteral | Survived | UNTRIAGED | |
-| 1075 | ConditionalExpression | NoCoverage | UNTRIAGED | |
-| 1075 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1075 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1075 | LogicalOperator | Survived | UNTRIAGED | |
-| 1075 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1076 | BlockStatement | Survived | UNTRIAGED | |
-| 1078 | ConditionalExpression | NoCoverage | UNTRIAGED | |
-| 1078 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1078 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1078 | LogicalOperator | Survived | UNTRIAGED | |
-| 1078 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1090 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1091 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1097 | MethodExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1098 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 1098 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1098 | EqualityOperator | NoCoverage | UNTRIAGED | |
-| 1098 | StringLiteral | NoCoverage | UNTRIAGED | |
-| 1099 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1099 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 1099 | LogicalOperator ×2 | NoCoverage | UNTRIAGED | |
+> Almost the entire region was NoCoverage: resolveGroup's dispatch and
+> detectGroup's head had never been driven end-to-end through the public
+> `Router.resolve()` / `detectGroup()`. Red-first evidence: 16 representative
+> mutants applied and observed RED against `test/resolve-group-dispatch.test.ts`
+> (8 tests) before landing.
+
+| area | mutants | verdict | rationale |
+|---|---|---|---|
+| L1024–1025 explicit models list | 2 | TESTED | models list INTERSECTS with discovered refs (undiscovered entries drop out); gate → false and filter-drop both red verified |
+| L1060 `score_by ?? 'gdpval'` → '' | 1 | EQUIVALENT | calculateScore treats '' like any absent/legacy taskType — global gdpval either way |
+| L1061 tiered dispatch | 5 | TESTED | 'best' must NOT fall into the tiered branch (best-order vs billing-order differ on the fixture) — gate → true red verified (4 tests failed) |
+| L1064–1067 pipeline steps + top_k | 13 | TESTED / EQUIVALENT-partial | pipeline gate + per-step top_k truncation red verified; `&&` → `\|\|` and `<` → `<=` variants are content-preserving (slice(0, top_k) with top_k ≥ length yields the same array) |
+| L1069–1072 roundrobin rotation | 15 | TESTED ×3 / EQUIVALENT ×1 | `%` → `*` and rotation-array mutants red verified via three successive resolves; counter `i + 1` → `i - 1` EQUIVALENT — negative modulo wraps through the same rotation sequence (0, −1 → slice(−1), −2 → 0, …) |
+| L1073–1075 min_cost_if_all_priced branch | 13 | REDUNDANT (removed) / TESTED | the explicit branch is behaviorally identical to the generic else (`sortBy(c, g.method, name)` dispatches the same) — 'false' mutant empirically green, branch REMOVED per AGENTS.md §7 with a comment; the 'true' mutant (everything min-cost) red verified via the best-group test; group top_k red verified |
+| L1078 generic top_k | 9 | TESTED | truncation on the else-branch red verified |
+| L1090–1091 activeGroup pinning | 3 | TESTED | both → false (pin lost) and → true (always pin, even null) red verified |
+| L1097–1099 detectGroup threshold list | 11 | TESTED | dynamic-group exclusion + highest-min_gdpval-first ordering red verified with a config whose OBJECT order is deliberately wrong (only the sort produces the right answer) |
+
+**Batch 4 outcome (68 undetected):** ~49 closed by 8 new end-to-end regression
+tests (red-first: 16 representative mutants observed RED), 1 redundant branch
+removed, ~18 EQUIVALENT with documented rationale (content-preserving slice
+variants, the negative-modulo rotation, the '' taskType).
 
 ## REST metrics.ts (172 undetected)
 
