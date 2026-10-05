@@ -612,25 +612,11 @@ export class Router {
     return refs.filter((r) => !this.isLimited(r));
   }
 
-  /**
-   * Filters models by GDPval percentile
-   */
-  filterByQualityPct(refs: string[], pct: number): string[] {
-    if (!refs.length || pct <= 0) return refs;
-    const gdps = refs.map((r) => getM(r).gdpval).sort((a, b) => a - b);
-    const idx = Math.floor((pct / 100) * (gdps.length - 1));
-    const threshold = gdps[idx];
-    return refs.filter((r) => getM(r).gdpval >= threshold);
-  }
-
-  /**
-   * Filters models by minimum GDPval
-   */
-  filterByQualityMin(refs: string[], min: number): string[] {
-    if (!refs.length || min <= 0) return refs;
-    const filtered = refs.filter((r) => getM(r).gdpval >= min);
-    return filtered.length ? filtered : refs;
-  }
+  // REMOVED (mutation triage Batch 1, 2026-10-05): filterByQualityPct and
+  // filterByQualityMin had ZERO callers anywhere (the ADR-0023 round
+  // replicated their semantics inline in applyGroupFilters instead of
+  // calling them). Dead code — deleted per AGENTS.md §7. The
+  // min_gdpval / min_gdpval_pct gates live in applyGroupFilters.
 
   // ── Sorting ───────────────────────────────────────────────────────────────
 
@@ -686,7 +672,10 @@ export class Router {
       return [...pool, ...rest];
     }
     if (method === 'billing_preference') return this.sortByBillingPreference(s);
-    if (method === 'roundrobin') return s;
+    // 'roundrobin' and unrecognized methods: input order preserved.
+    // (The explicit `if (method === 'roundrobin') return s;` was removed as
+    // redundant — behaviorally identical to this fall-through; mutation
+    // triage Batch 1, 2026-10-05.)
     return s;
   }
 

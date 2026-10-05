@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed (mutation triage Batch 1 — dead code)
+
+- `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
+  anywhere (the ADR-0023 round replicated their semantics inline in
+  `applyGroupFilters`). Found by the first nightly Stryker run (35 mutants
+  with no coverage); removed per AGENTS.md §7.
+- Redundant `if (method === 'roundrobin') return s;` branch in
+  `Router.sortBy` — behaviorally identical to the fall-through.
+
+### Test
+
+- `test/sort-by-methods.test.ts` (24 tests): closes the REAL-GAP mutation
+  survivors of `routing.ts:600-760` (sortBy method dispatch, best-quality-
+  window pool comparator incl. unknown-cost placement and the exact floor
+  boundary, billing rank tables with anti-correlated fixtures,
+  subscription-tier limit-pressure preference, budget/availability filter
+  wrappers). Red-first: 26 representative mutants observed RED before
+  landing. Full batch record: `docs/mutation-triage.md`.
+
 ## [1.6.1] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
 
 ### Changed
