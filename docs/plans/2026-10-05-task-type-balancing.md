@@ -156,10 +156,45 @@ Only if Phases 1–3 do not balance consumption enough.
 - Prerequisite: `usage_log` must count cached input (`cacheRead`) — this
   also makes `/router cost` more accurate.
 
-## Phase 5 — Token consumption (separate investigation)
+## Phase 5 — Token consumption (investigated 2026-10-05; staged measures)
 
-Check whether provider prompt caching is effective for the mid-tier
-model, and whether the compaction threshold should trigger earlier.
+**Findings (router.log + usage_log, 2026-10-02..05):**
+
+1. `bulk_read` and the tool-result shrinker **work** (11 blocked full-file
+   reads, ~10 shrinks, e.g. 8607→2138 chars) — but they only limit context
+   GROWTH. They do nothing about RESENDING the accumulated context.
+2. The distribution shows the burner: median stream ~600–900 tokens, tail
+   up to 229k–424k. On 10-04, 5.66M tokens flowed over 1430 streams with a
+   median of 595 — the tail carries nearly everything.
+3. Root cause: Pi auto-compacts only at `contextWindow − reserveTokens`
+   (default 16384). The mid-tier model's 1M window therefore compacts
+   effectively never; sessions grow to 200–400k and every tool step
+   (~20–25 per turn) resends the full context. At 20 steps × 200k that is
+   ~4M tokens per turn.
+4. Pi reports `usage.cacheRead`/`cacheWrite`; the router logs neither.
+   The registry lists cacheRead for the mid-tier model at 0.14 vs 1.4 input
+   (10× cheaper) — IF provider caching engages, the resend burn is
+   already 10× lower than list price suggests. Engagement is unknown.
+
+**Measures (staged, generic — PAYG users benefit equally):**
+
+- **5a Measure caching.** Log `cacheRead`/`cacheWrite` per stream; extend
+  `usage_log` with cached input (also makes the `/router cost` windows
+  more accurate). Red-first test. Decides whether 5b is urgent or the
+  burn is already dampened.
+- **5b Effective context budget.** The global `reserveTokens` cannot
+  distinguish a 1M window from a 200k one. Instead: a configurable
+  per-model/per-group context budget (e.g. ~150–200k for the 1M-window
+  model), enforced by the router via Pi's `ExtensionContext` compaction
+  controls when the projected context exceeds it. Minimal first cut: a
+  narration hint recommending `/compact` past the threshold. Default
+  conservative; values in the user layer.
+- **5c Threshold review** for `bulk_read` (block_lines 350) and the
+  shrinker — small expected effect; only after 5a/5b measurements.
+
+**Owner decision points:** budget values (user layer); whether proactive
+compaction may run mid-turn (Pi supports chained compaction entries at
+`turn_end`) or only between turns.
 
 ---
 
