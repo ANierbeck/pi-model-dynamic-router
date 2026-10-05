@@ -462,6 +462,33 @@ variants, the negative-modulo rotation, the '' taskType).
 | 1244 | BlockStatement | NoCoverage | UNTRIAGED | |
 | 1248 | BlockStatement | Survived | UNTRIAGED | |
 
+## Task 6 baseline — re-measure (2026-10-05, run 37348781600 on main @ 337e2d3)
+
+| metric | report #1 (baseline) | re-measure | delta |
+|---|---|---|---|
+| total mutants | 1670 | 1622 | −48 (dead code removed) |
+| killed | 942 | 1252 | +310 |
+| survived | 468 | 330 | −138 |
+| no coverage | 260 | 40 | −220 |
+| **mutation score** | **56.41%** | **77.19%** | **+20.78pp** |
+
+Per file (re-measure): metrics.ts 74.68% (144 survived + 34 NoCov),
+routing.ts 79.11% (186 survived + 6 NoCov).
+
+**Closure judgment:** 77.19% sits just under the plan's ~80% heuristic —
+report #1 is NOT formally closed. Of the 330 survivors, roughly 110 are
+the EQUIVALENT/defensive verdicts already ledgered in the batch sections
+(their mutants stay green by design). The genuinely untriaged remainder
+(~220 survived + 40 NoCov) concentrates in the never-triaged REST regions
+— top clusters (by enclosing function, re-measure): routing.ts
+getTopModels/resolveGroup locals (26), metrics.ts price chain leftovers
+(20), routing.ts modelId/dedup comparators (~37), thanScore comparator
+(17), costB comparators (15), metrics.ts billingTier free paths (13),
+FALLBACK_GROUP_ORDER (9 — the fallback_groups CHAIN, distinct from
+detectGroup's tier fallback), isLastStep display-pipeline leftovers (10).
+Fresh report: `/tmp/mutation-report-2/mutation/mutation.json` (artifact
+`mutation-report` of run 37348781600).
+
 ## Task 5 verdicts — no-coverage sweep (2026-10-05, `test/no-coverage-sweep.test.ts`)
 
 | cluster | mutants | verdict |
