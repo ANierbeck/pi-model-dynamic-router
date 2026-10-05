@@ -33,101 +33,49 @@
 | No-coverage clusters (by function) | see below | Task 5 |
 
 
-## HOTSPOT routing.ts:600-760 (119 undetected)
+## HOTSPOT routing.ts:600-760 (119 undetected) — ✅ TRIAGED (Batch 1, 2026-10-05)
+
+> Line numbers refer to the tree the nightly ran on (pre-Batch-1); the
+> dead-code deletions below shift lines for the NEXT nightly.
+> Red-first evidence: 26 representative mutants were applied and observed
+> RED against `test/sort-by-methods.test.ts` before landing (per AGENTS.md §4).
+> Verdicts: TESTED = real gap, closed by a new regression test (red verified);
+> EQUIVALENT = semantically indistinguishable, ledger rationale below;
+> DEAD CODE / REDUNDANT = removed from `src/routing.ts`.
 
 | line | mutator | status | verdict | rationale |
 |---|---|---|---|---|
-| 602 | BooleanLiteral | Survived | UNTRIAGED | |
-| 602 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 603 | ObjectLiteral | Survived | UNTRIAGED | |
-| 612 | MethodExpression | Survived | UNTRIAGED | |
-| 618 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 619 | BooleanLiteral | NoCoverage | UNTRIAGED | |
-| 619 | ConditionalExpression ×3 | NoCoverage | UNTRIAGED | |
-| 619 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 619 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 620 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 620 | ArrowFunction ×2 | NoCoverage | UNTRIAGED | |
-| 620 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 621 | ArithmeticOperator ×3 | NoCoverage | UNTRIAGED | |
-| 623 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 623 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 623 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 623 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 629 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 630 | BooleanLiteral | NoCoverage | UNTRIAGED | |
-| 630 | ConditionalExpression ×3 | NoCoverage | UNTRIAGED | |
-| 630 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 630 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 631 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 631 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 631 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 631 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 643 | ConditionalExpression | Survived | UNTRIAGED | |
-| 643 | StringLiteral | Survived | UNTRIAGED | |
-| 644 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 644 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 644 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 645 | ConditionalExpression | Survived | UNTRIAGED | |
-| 645 | StringLiteral | Survived | UNTRIAGED | |
-| 646 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 646 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 646 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 647 | ConditionalExpression | Survived | UNTRIAGED | |
-| 647 | StringLiteral | Survived | UNTRIAGED | |
-| 651 | ConditionalExpression | Survived | UNTRIAGED | |
-| 651 | StringLiteral | Survived | UNTRIAGED | |
-| 652 | ArithmeticOperator | Survived | UNTRIAGED | |
-| 652 | ArrowFunction | Survived | UNTRIAGED | |
-| 652 | MethodExpression | Survived | UNTRIAGED | |
-| 653 | ConditionalExpression | Survived | UNTRIAGED | |
-| 666 | ConditionalExpression | Survived | UNTRIAGED | |
-| 666 | EqualityOperator | Survived | UNTRIAGED | |
-| 668 | EqualityOperator | Survived | UNTRIAGED | |
-| 669 | ConditionalExpression | Survived | UNTRIAGED | |
-| 676 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 676 | ConditionalExpression | NoCoverage | UNTRIAGED | |
-| 676 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 676 | EqualityOperator | NoCoverage | UNTRIAGED | |
-| 676 | EqualityOperator | Survived | UNTRIAGED | |
-| 676 | LogicalOperator | Survived | UNTRIAGED | |
-| 676 | StringLiteral | NoCoverage | UNTRIAGED | |
-| 676 | StringLiteral | Survived | UNTRIAGED | |
-| 677 | ConditionalExpression | Survived | UNTRIAGED | |
-| 677 | StringLiteral | Survived | UNTRIAGED | |
-| 678 | ConditionalExpression | Survived | UNTRIAGED | |
-| 678 | StringLiteral | Survived | UNTRIAGED | |
-| 678 | UnaryOperator | NoCoverage | UNTRIAGED | |
-| 679 | ArithmeticOperator | Survived | UNTRIAGED | |
-| 688 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 688 | EqualityOperator | Survived | UNTRIAGED | |
-| 688 | StringLiteral | Survived | UNTRIAGED | |
-| 689 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 689 | EqualityOperator | Survived | UNTRIAGED | |
-| 689 | StringLiteral | Survived | UNTRIAGED | |
-| 712 | ConditionalExpression ×3 | Survived | UNTRIAGED | |
-| 720 | ArrowFunction | Survived | UNTRIAGED | |
-| 720 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 730 | ConditionalExpression | Survived | UNTRIAGED | |
-| 730 | StringLiteral | Survived | UNTRIAGED | |
-| 732 | ConditionalExpression | Survived | UNTRIAGED | |
-| 743 | BlockStatement | Survived | UNTRIAGED | |
-| 743 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 743 | EqualityOperator | Survived | UNTRIAGED | |
-| 746 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 746 | ConditionalExpression | Survived | UNTRIAGED | |
-| 751 | BlockStatement | Survived | UNTRIAGED | |
-| 751 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 751 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 751 | LogicalOperator | Survived | UNTRIAGED | |
-| 751 | StringLiteral ×2 | Survived | UNTRIAGED | |
-| 752 | ConditionalExpression | Survived | UNTRIAGED | |
-| 752 | StringLiteral | Survived | UNTRIAGED | |
-| 753 | ConditionalExpression | Survived | UNTRIAGED | |
-| 753 | StringLiteral | Survived | UNTRIAGED | |
-| 753 | UnaryOperator | NoCoverage | UNTRIAGED | |
-| 754 | ArithmeticOperator | Survived | UNTRIAGED | |
-| 754 | ConditionalExpression | Survived | UNTRIAGED | |
+| 602 | BooleanLiteral / ConditionalExpression ×2 | Survived | TESTED ('true') / EQUIVALENT ('false') | 'true' (never filter) killed by filterByBudget wrapper test; 'false' passes `budget_cache: undefined` → hasBudget returns conservative-true → identical result (defensive guard) |
+| 603 | ObjectLiteral | Survived | EQUIVALENT | `{}` ctx → hasBudget with undefined cache → all pass — same as the guard's early return |
+| 612 | MethodExpression | Survived | TESTED | filterAvailable with a limited ref — killed |
+| 618–623 | (all, filterByQualityPct) | NoCoverage ×21 | DEAD CODE | zero callers anywhere (ADR-0023 replicated the gate inline in applyGroupFilters); method deleted |
+| 629–631 | (all, filterByQualityMin) | NoCoverage ×14 | DEAD CODE | zero callers anywhere; method deleted |
+| 643–647, 651–652 | dispatch + sort bodies | Survived/NoCoverage | TESTED | min_latency / max_throughput / min_cost / max_gdpval order assertions through the public dispatch (bodies had NoCoverage) — red verified |
+| 653 | ConditionalExpression ('best' → true) | Survived | TESTED | roundrobin/unknown-method order-preservation test — a 'true' best-branch would score-sort them |
+| 666 | ConditionalExpression ×2 ('w > 0' → true / 'w >= 0') | Survived | TESTED | window-OFF + tied-top-scores test: no cost-based reordering when the window is disabled — red verified |
+| 668 | EqualityOperator (>= floor → >) | Survived | TESTED | exact-floor boundary test (w=0.5 → FP-exact floor; boundary candidate stays in the pool) — red verified |
+| 669 | ConditionalExpression (pool < 2 → false) | Survived | EQUIVALENT | single-element pool: `[...pool, ...rest]` is identical to `sorted` — empirically green under mutation |
+| 676 | ×5 (both-unknown guard + gdpval diff) | Survived/NoCoverage | TESTED | mixed known/unknown pool: &&→|| and gdpval −→+ both red verified |
+| 677 | ConditionalExpression + StringLiteral | Survived | EQUIVALENT | the symmetric `costB === 'unknown' → -1` branch plus NaN-evaluates-false sort semantics enforce known-before-unknown in every comparison direction (insertion AND merge paths) — unkillable through the public API on V8 |
+| 678 | ×3 (incl. NoCoverage −1 → +1) | Survived/NoCoverage | TESTED | unknown-cost score leader must go to the pool END — red verified |
+| 679 | ArithmeticOperator (costA − costB → +) | Survived | TESTED | pool cost-order test — red verified |
+| 688 | ×4 (billing_preference dispatch) | Survived | TESTED | dispatch test (free before payg) + the 'true' variant killed by the method-order tests |
+| 689 | ×5 (roundrobin branch) | Survived | REDUNDANT | `if (method === 'roundrobin') return s;` followed by `return s;` — behaviorally identical; branch removed, fall-through documented |
+| 712 | ×4 (strictRank nested conditionals) | Survived | TESTED | 4-tier strict_local fixture with cost/gdpval ANTI-correlated to rank — all four variants red verified (cost tiebreaks can no longer mask rank changes; sub fixture carries a real post-discount cost ABOVE the payg fixture) |
+| 720 | ×5 (localBeforePaygRank) | Survived | TESTED ×3 / EQUIVALENT ×2 | `() => undefined`, t0→true, t1→true killed by the same anti-correlated 4-tier fixture; t2→false/true EQUIVALENT: local-vs-payg ties fall to cost and local effCost is invariantly 0 < any payg cost — the tiebreak reproduces the rank order |
+| 730, 732 | CaseStatement variants | Survived | EQUIVALENT | Stryker CaseStatement replacement text is identical to the original — vacuous by construction |
+| 743 | ×4 (ta === 1 gate) | Survived | TESTED | subscription-pair limit-pressure test (lower pressure BEFORE gdpval) + free-pair test (limitSecs must NOT leak outside tier 1) — 'false' and 'true' both red verified |
+| 746 | ×2 (pa − pb) | Survived/NoCoverage | TESTED | sign-flip red verified |
+| 751–754 | unknown-cost guard + ordering | Survived/NoCoverage | TESTED | unknown to END, both-unknown → gdpval DESC tiebreak; guard → false red verified |
+
+**Batch 1 outcome (119 undetected):** 35 DEAD CODE + 5 REDUNDANT removed
+(`filterByQualityPct`, `filterByQualityMin`, roundrobin branch); ~66 closed by
+24 new regression tests in `test/sort-by-methods.test.ts` (red-first verified);
+~13 EQUIVALENT with documented rationale. Fixture lesson recorded: billing-tier
+fixtures must ANTI-correlate cost and gdpval with the expected rank, and ref
+slugs must not collide with `gdpval_builtin` keys (the slug resolver's
+token/substring matching silently remaps gdpval — two mutants initially
+survived because of exactly that collision).
 
 ## HOTSPOT metrics.ts:900-1000 (64 undetected)
 
