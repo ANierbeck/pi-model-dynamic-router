@@ -2,7 +2,26 @@
 
 ## [Unreleased]
 
-### Removed (mutation triage Batch 1 — dead code)
+### Removed (mutation triage Batches 1–4 — dead/redundant code)
+
+- `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
+  anywhere (the ADR-0023 round replicated their semantics inline in
+  `applyGroupFilters`). Found by the first nightly Stryker run (35 mutants
+  with no coverage); removed per AGENTS.md §7.
+- Redundant `if (method === 'roundrobin') return s;` branch in
+  `Router.sortBy` — behaviorally identical to the fall-through.
+- Redundant explicit `min_cost_if_all_priced` arm in `resolveGroup` —
+  the generic else dispatches identically (`sortBy(c, g.method, name)`).
+
+### Test
+
+- `test/sort-by-methods.test.ts` (24 tests), `test/pricing-lookup-chain.test.ts`
+  (11), `test/slug-resolution.test.ts` (14), `test/resolve-group-dispatch.test.ts`
+  (8): close the REAL-GAP mutation survivors of all four hotspot regions
+  (routing 600-760, metrics 900-1000, metrics 100-350, routing 1000-1100)
+  found by the first nightly Stryker run. Red-first: 70 representative
+  mutants observed RED before landing. Full batch records:
+  `docs/mutation-triage.md`.
 
 - `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
   anywhere (the ADR-0023 round replicated their semantics inline in

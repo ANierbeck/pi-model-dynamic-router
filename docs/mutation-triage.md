@@ -77,173 +77,87 @@ slugs must not collide with `gdpval_builtin` keys (the slug resolver's
 token/substring matching silently remaps gdpval — two mutants initially
 survived because of exactly that collision).
 
-## HOTSPOT metrics.ts:900-1000 (64 undetected)
+## HOTSPOT metrics.ts:900-1000 (64 undetected) — ✅ TRIAGED (Batch 2, 2026-10-05)
+
+> Line numbers refer to the tree the nightly ran on. Red-first evidence:
+> 10 representative mutants applied and observed RED against
+> `test/pricing-lookup-chain.test.ts` (11 tests) before landing.
 
 | line | mutator | status | verdict | rationale |
 |---|---|---|---|---|
-| 901 | ConditionalExpression | Survived | UNTRIAGED | |
-| 908 | ConditionalExpression | Survived | UNTRIAGED | |
-| 909 | OptionalChaining | Survived | UNTRIAGED | |
-| 910 | ConditionalExpression | Survived | UNTRIAGED | |
-| 912 | ConditionalExpression | Survived | UNTRIAGED | |
-| 912 | OptionalChaining | Survived | UNTRIAGED | |
-| 914 | ConditionalExpression ×3 | Survived | UNTRIAGED | |
-| 914 | LogicalOperator | Survived | UNTRIAGED | |
-| 919 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 919 | LogicalOperator | Survived | UNTRIAGED | |
-| 921 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 945 | BlockStatement | Survived | UNTRIAGED | |
-| 945 | ConditionalExpression | Survived | UNTRIAGED | |
-| 947 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 947 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 947 | EqualityOperator | Survived | UNTRIAGED | |
-| 947 | StringLiteral | Survived | UNTRIAGED | |
-| 948 | ObjectLiteral | NoCoverage | UNTRIAGED | |
-| 948 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 950 | ObjectLiteral | Survived | UNTRIAGED | |
-| 957 | BlockStatement | Survived | UNTRIAGED | |
-| 957 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 957 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 957 | LogicalOperator | Survived | UNTRIAGED | |
-| 959 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 959 | ConditionalExpression | Survived | UNTRIAGED | |
-| 960 | StringLiteral | Survived | UNTRIAGED | |
-| 961 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 961 | LogicalOperator | Survived | UNTRIAGED | |
-| 961 | OptionalChaining ×2 | Survived | UNTRIAGED | |
-| 963 | ConditionalExpression | Survived | UNTRIAGED | |
-| 963 | OptionalChaining | Survived | UNTRIAGED | |
-| 967 | ObjectLiteral | NoCoverage | UNTRIAGED | |
-| 967 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 975 | BlockStatement | Survived | UNTRIAGED | |
-| 976 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 976 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 977 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 977 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 977 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 977 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 977 | StringLiteral ×2 | NoCoverage | UNTRIAGED | |
-| 978 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 978 | EqualityOperator | NoCoverage | UNTRIAGED | |
-| 982 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 982 | ConditionalExpression | Survived | UNTRIAGED | |
-| 984 | ObjectLiteral | NoCoverage | UNTRIAGED | |
+| 901 | `!modelRegistry` → false | Survived | EQUIVALENT | registryCost is wrapped in try/catch → TypeError → null, identical to the guard's early null (defensive) |
+| 908 | `!model` → true | Survived | TESTED | alias retry would OVERWRITE a primary registration with an alias miss — primary-wins test red verified |
+| 909–910 | optional-chaining / `aliasProvider` truthiness | Survived | EQUIVALENT | non-optional access on a PROVIDER_MAP-miss crashes into the same try/catch null; truthy-alias path is unchanged (defensive) |
+| 912 | `!model?.cost` variants | Survived | EQUIVALENT | destructure of null/undefined → TypeError → catch → null (defensive) |
+| 914 | typeof guards | Survived | TESTED | registered model with STRING costs must fall through to the next stage, not return the sentinel — red verified |
+| 919 | `input === 0 && output === 0` variants | Survived | TESTED | half-zero price {0, 5} is a REAL price — only {0,0} means free; red verified |
+| 921 | catch block → {} | NoCoverage | EQUIVALENT | missing return yields undefined ≡ null for every caller (falsy) |
+| 945–950 | metrics-cost gate / block / ObjectLiteral | Survived | TESTED | configured cost_per_m wins over the pricing cache; `{ input: cost, output: cost }` shape asserted — red verified (4 tests failed under one mutant) |
+| 947 | `cost === 'unknown'` → false | Survived | EQUIVALENT | REDUNDANT GATE: the generic `return { input: cost, output: cost }` produces the identical sentinel object for cost='unknown' — behaviorally indistinguishable |
+| 948 | unknown-sentinel literals | NoCoverage | TESTED | covered by the 'unknown' cost_per_m test |
+| 957–967 | zero-price guard + free-detection | Survived/NoCoverage | TESTED | {0,0} + discovered-free → {0,0}; {0,0} + undiscovered + NO free_models list → 'unknown' (the `?? []` default is exercised); free-detection → true and `??` → `&&` both red verified |
+| 975–978 | backfill loop (free-tier skip, norm match, slash handling) | Survived/NoCoverage | TESTED | free-tier entries skipped, paid same-model entry found via norm() across a slash+case difference — red verified |
+| 982–984 | provider-cost fallback | Survived/NoCoverage | TESTED | step-4 estimate {9,9} asserted — red verified |
 
-## HOTSPOT metrics.ts:100-350 (74 undetected)
+**Batch 2 outcome (64 undetected):** ~44 closed by 11 new regression tests
+(red-first: 10 representative mutants observed RED), ~20 EQUIVALENT with
+documented rationale (mostly the defensive try/catch cluster of
+`registryCost`), 0 dead code — the chain's stages are all live.
 
-| line | mutator | status | verdict | rationale |
-|---|---|---|---|---|
-| 110 | UpdateOperator | Survived | UNTRIAGED | |
-| 130 | ConditionalExpression | Survived | UNTRIAGED | |
-| 130 | UnaryOperator | Survived | UNTRIAGED | |
-| 144 | ConditionalExpression | Survived | UNTRIAGED | |
-| 146 | BlockStatement | Survived | UNTRIAGED | |
-| 147 | ConditionalExpression | Survived | UNTRIAGED | |
-| 147 | MethodExpression | Survived | UNTRIAGED | |
-| 165 | UnaryOperator | Survived | UNTRIAGED | |
-| 174 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 174 | LogicalOperator | Survived | UNTRIAGED | |
-| 176 | ConditionalExpression | Survived | UNTRIAGED | |
-| 177 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 190 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 190 | ConditionalExpression | Survived | UNTRIAGED | |
-| 191 | ConditionalExpression ×3 | Survived | UNTRIAGED | |
-| 191 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 191 | LogicalOperator | Survived | UNTRIAGED | |
-| 194 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 194 | ConditionalExpression | Survived | UNTRIAGED | |
-| 194 | MethodExpression | Survived | UNTRIAGED | |
-| 202 | BlockStatement | Survived | UNTRIAGED | |
-| 203 | ArrayDeclaration | Survived | UNTRIAGED | |
-| 203 | MethodExpression | Survived | UNTRIAGED | |
-| 203 | StringLiteral | Survived | UNTRIAGED | |
-| 205 | CallExpression | Survived | UNTRIAGED | |
-| 205 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 205 | EqualityOperator ×3 | Survived | UNTRIAGED | |
-| 205 | LogicalOperator | Survived | UNTRIAGED | |
-| 249 | BlockStatement | Survived | UNTRIAGED | |
-| 251 | StringLiteral | Survived | UNTRIAGED | |
-| 252 | ArrowFunction | Survived | UNTRIAGED | |
-| 252 | Regex ×4 | Survived | UNTRIAGED | |
-| 252 | StringLiteral ×2 | Survived | UNTRIAGED | |
-| 253 | StringLiteral | Survived | UNTRIAGED | |
-| 278 | BlockStatement | Survived | UNTRIAGED | |
-| 278 | ConditionalExpression | Survived | UNTRIAGED | |
-| 280 | BlockStatement | Survived | UNTRIAGED | |
-| 282 | BlockStatement | Survived | UNTRIAGED | |
-| 282 | ConditionalExpression ×4 | Survived | UNTRIAGED | |
-| 282 | EqualityOperator ×2 | Survived | UNTRIAGED | |
-| 282 | LogicalOperator ×2 | Survived | UNTRIAGED | |
-| 283 | CallExpression | Survived | UNTRIAGED | |
-| 299 | UpdateOperator | Survived | UNTRIAGED | |
-| 318 | MethodExpression | Survived | UNTRIAGED | |
-| 319 | ConditionalExpression | Survived | UNTRIAGED | |
-| 321 | UpdateOperator | Survived | UNTRIAGED | |
-| 330 | ConditionalExpression | Survived | UNTRIAGED | |
-| 335 | ConditionalExpression | Survived | UNTRIAGED | |
-| 335 | EqualityOperator | Survived | UNTRIAGED | |
-| 346 | OptionalChaining | Survived | UNTRIAGED | |
-| 347 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 347 | EqualityOperator | Survived | UNTRIAGED | |
-| 347 | LogicalOperator ×2 | Survived | UNTRIAGED | |
-| 347 | StringLiteral | Survived | UNTRIAGED | |
+## HOTSPOT metrics.ts:100-350 (74 undetected) — ✅ TRIAGED (Batch 3, 2026-10-05)
 
-## HOTSPOT routing.ts:1000-1100 (68 undetected)
+> Red-first evidence: 18 representative mutants applied and observed RED
+> against `test/slug-resolution.test.ts` (14 tests) before landing. The
+> private `aliasesFor()` is observed through the public `lookupPrice`
+> registry-alias retry — its only production consumer.
 
-| line | mutator | status | verdict | rationale |
-|---|---|---|---|---|
-| 1024 | ConditionalExpression | Survived | UNTRIAGED | |
-| 1025 | MethodExpression | Survived | UNTRIAGED | |
-| 1060 | StringLiteral | Survived | UNTRIAGED | |
-| 1061 | BlockStatement | Survived | UNTRIAGED | |
-| 1061 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1061 | EqualityOperator | Survived | UNTRIAGED | |
-| 1061 | StringLiteral | Survived | UNTRIAGED | |
-| 1064 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1064 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1064 | EqualityOperator | Survived | UNTRIAGED | |
-| 1064 | LogicalOperator | Survived | UNTRIAGED | |
-| 1064 | StringLiteral | Survived | UNTRIAGED | |
-| 1065 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1067 | ConditionalExpression ×3 | NoCoverage | UNTRIAGED | |
-| 1067 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1067 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 1067 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1069 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1069 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1069 | EqualityOperator | Survived | UNTRIAGED | |
-| 1069 | StringLiteral | Survived | UNTRIAGED | |
-| 1070 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1070 | LogicalOperator | NoCoverage | UNTRIAGED | |
-| 1071 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1072 | ArrayDeclaration | NoCoverage | UNTRIAGED | |
-| 1072 | MethodExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1073 | BlockStatement | Survived | UNTRIAGED | |
-| 1073 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1073 | EqualityOperator | Survived | UNTRIAGED | |
-| 1073 | StringLiteral | Survived | UNTRIAGED | |
-| 1074 | StringLiteral | Survived | UNTRIAGED | |
-| 1075 | ConditionalExpression | NoCoverage | UNTRIAGED | |
-| 1075 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1075 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1075 | LogicalOperator | Survived | UNTRIAGED | |
-| 1075 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1076 | BlockStatement | Survived | UNTRIAGED | |
-| 1078 | ConditionalExpression | NoCoverage | UNTRIAGED | |
-| 1078 | ConditionalExpression ×2 | Survived | UNTRIAGED | |
-| 1078 | EqualityOperator ×2 | NoCoverage | UNTRIAGED | |
-| 1078 | LogicalOperator | Survived | UNTRIAGED | |
-| 1078 | MethodExpression | NoCoverage | UNTRIAGED | |
-| 1090 | BlockStatement | NoCoverage | UNTRIAGED | |
-| 1091 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1097 | MethodExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1098 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 1098 | ConditionalExpression ×2 | NoCoverage | UNTRIAGED | |
-| 1098 | EqualityOperator | NoCoverage | UNTRIAGED | |
-| 1098 | StringLiteral | NoCoverage | UNTRIAGED | |
-| 1099 | ArithmeticOperator | NoCoverage | UNTRIAGED | |
-| 1099 | ArrowFunction | NoCoverage | UNTRIAGED | |
-| 1099 | LogicalOperator ×2 | NoCoverage | UNTRIAGED | |
+| area | mutants | verdict | rationale |
+|---|---|---|---|
+| L107–110 setModelMap version counter (`++` → `--`) | 1 | EQUIVALENT | only consumed via `!==` staleness checks — any change (up or down) triggers the same rebuild; no collision is reachable |
+| L128–130 stripProvider (`i === -1` variants) | 2 | EQUIVALENT | slash-less refs return `ref` under every variant: slice(0, -1) never names a known provider, and `ref.slice(i + 1)` with i = -1 is the whole ref |
+| L141–147 mapLookup (exact gate, wildcard loop) | 5 | TESTED | exact-beats-wildcard and prefix semantics asserted on the STRIPPED id; in-map → 'true', startsWith → false/endsWith all red verified |
+| L165 alias-index version init | 1 | EQUIVALENT | consumed via `!==` only (see L110) |
+| L167–177 buildModelMapAliasIndex (skip guard, group accumulation, seed) | ~7 | TESTED ×2 / EQUIVALENT ×5 | slash-key exclusion verified with a registry that WOULD answer a slash-containing id (deepseek-ai/V3-style ids are real); 3-key group proves accumulation (2-key fixtures are self-filtering and mask it). `slug == null` part of the skip guard: null-slug groups are never queried (aliasesFor early-returns) — EQUIVALENT. Seed `[]` mutant: `[]` is TRUTHY, the next sibling pushes into it and the accumulation self-heals — EQUIVALENT |
+| L188–194 aliasesFor (staleness, self-filter) | ~9 | TESTED ×1 / EQUIVALENT ×8 | `||` → `&&` staleness kills via model-map change mid-file (stale index served old aliases). `=== null` → 'true' rebuilds every call — same results (perf only). Self-filter variants: retrying the already-missed primary id is a harmless extra miss — EQUIVALENT |
+| L200–206 buildGdpvalIndex (token key, sort, max) | 13 | TESTED | synonym slug resolves through the token-set index; max-score selection verified in BOTH insertion orders (kills first-wins AND last-wins); build-side sort drop verified (query side keeps sorting → key mismatch) |
+| L249–253 splatVersionRuns (regex, join) | 10 | TESTED | same-score twins collapse to ONE dedup identity; join/regex variants red verified. Remaining regex-variant pairs (e.g. `^\d{2,}$` vs `^\d{2,}`) are indistinguishable for realistic digit-run segments — EQUIVALENT |
+| L277–283 getSlugCanon (score cache, twin conditions) | 13 | TESTED ×2 / EQUIVALENT ×11 | different-score twins stay DISTINCT (kills `===` → `!==` and the `&&` → `\|\|` leak). `slugCanonScores !== scores` → 'true' rebuilds idempotently — EQUIVALENT. `twin !== key` → 'true' maps digit-run-less keys to themselves — harmless identity |
+| L292–299/318–321 resolveSlug self-heal (version counters, `.some`) | 4 | TESTED ×1 / EQUIVALENT ×3 | partial-wipe heal asserted (`.some` → `.every` red verified — the 13/148 scoring-collapse class). Version `++` → `--`: any change invalidates — EQUIVALENT. `missingBuiltin` → 'true': heal is idempotent — EQUIVALENT |
+| L330 explicit-exclusion early return | 1 | EQUIVALENT | REDUNDANT GUARD: the next line `if (mapped !== undefined) return mapped` returns the same null (`null !== undefined` is true) — the early return is documentation, not behavior |
+| L335 empty-gdpval ternary | 2 | EQUIVALENT | check-1 (empty → restore from cache.gdpval_scores) repopulates gdpval before this line can see an empty-but-cache-backed state; without cache scores both sides are `{}` |
+| L346–347 cached LLM matches | 8 | TESTED | cached duplicate spellings are CANONICALIZED (kills gate → false, `??` → `&&`); non-string cache entries are type-checked away (kills `&&` → `\|\|`, typeof → true). Optional-chaining crash on missing cache ≡ undefined — EQUIVALENT |
+
+**Batch 3 outcome (74 undetected):** ~34 closed by 14 new regression tests
+(red-first: 18 representative mutants observed RED), ~40 EQUIVALENT with
+documented rationale — this region is defensive/version-counter heavy, and
+three of its "obvious" guards turned out to be genuinely redundant
+(L330 double-guard, L177 truthy-seed self-heal, L335 unreachable-else).
+No dead code: every resolver stage is live.
+
+## HOTSPOT routing.ts:1000-1100 (68 undetected) — ✅ TRIAGED (Batch 4, 2026-10-05)
+
+> Almost the entire region was NoCoverage: resolveGroup's dispatch and
+> detectGroup's head had never been driven end-to-end through the public
+> `Router.resolve()` / `detectGroup()`. Red-first evidence: 16 representative
+> mutants applied and observed RED against `test/resolve-group-dispatch.test.ts`
+> (8 tests) before landing.
+
+| area | mutants | verdict | rationale |
+|---|---|---|---|
+| L1024–1025 explicit models list | 2 | TESTED | models list INTERSECTS with discovered refs (undiscovered entries drop out); gate → false and filter-drop both red verified |
+| L1060 `score_by ?? 'gdpval'` → '' | 1 | EQUIVALENT | calculateScore treats '' like any absent/legacy taskType — global gdpval either way |
+| L1061 tiered dispatch | 5 | TESTED | 'best' must NOT fall into the tiered branch (best-order vs billing-order differ on the fixture) — gate → true red verified (4 tests failed) |
+| L1064–1067 pipeline steps + top_k | 13 | TESTED / EQUIVALENT-partial | pipeline gate + per-step top_k truncation red verified; `&&` → `\|\|` and `<` → `<=` variants are content-preserving (slice(0, top_k) with top_k ≥ length yields the same array) |
+| L1069–1072 roundrobin rotation | 15 | TESTED ×3 / EQUIVALENT ×1 | `%` → `*` and rotation-array mutants red verified via three successive resolves; counter `i + 1` → `i - 1` EQUIVALENT — negative modulo wraps through the same rotation sequence (0, −1 → slice(−1), −2 → 0, …) |
+| L1073–1075 min_cost_if_all_priced branch | 13 | REDUNDANT (removed) / TESTED | the explicit branch is behaviorally identical to the generic else (`sortBy(c, g.method, name)` dispatches the same) — 'false' mutant empirically green, branch REMOVED per AGENTS.md §7 with a comment; the 'true' mutant (everything min-cost) red verified via the best-group test; group top_k red verified |
+| L1078 generic top_k | 9 | TESTED | truncation on the else-branch red verified |
+| L1090–1091 activeGroup pinning | 3 | TESTED | both → false (pin lost) and → true (always pin, even null) red verified |
+| L1097–1099 detectGroup threshold list | 11 | TESTED | dynamic-group exclusion + highest-min_gdpval-first ordering red verified with a config whose OBJECT order is deliberately wrong (only the sort produces the right answer) |
+
+**Batch 4 outcome (68 undetected):** ~49 closed by 8 new end-to-end regression
+tests (red-first: 16 representative mutants observed RED), 1 redundant branch
+removed, ~18 EQUIVALENT with documented rationale (content-preserving slice
+variants, the negative-modulo rotation, the '' taskType).
 
 ## REST metrics.ts (172 undetected)
 

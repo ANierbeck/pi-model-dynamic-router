@@ -1059,10 +1059,11 @@ export class Router {
       const i = (this.rrCounters[name] ?? 0) % c.length;
       this.rrCounters[name] = i + 1;
       c = rank([...c.slice(i), ...c.slice(0, i)]);
-    } else if (g.method === 'min_cost_if_all_priced') {
-      c = rank(this.sortBy(c, 'min_cost_if_all_priced', name));
-      if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     } else {
+      // 'min_cost_if_all_priced' and any other sortBy method: the generic
+      // pass-through dispatches identically (the former explicit branch was
+      // removed as redundant — sortBy(c, g.method) is behaviorally the same
+      // for it; mutation triage Batch 4, 2026-10-05).
       c = rank(this.sortBy(c, g.method, name));
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
