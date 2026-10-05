@@ -21,6 +21,7 @@
 ## Background the implementer needs
 
 - Laya facts (from `~/Downloads/laya-integrations-brief-für-das-pi-model-dynamic-router-projekt.md`, self-contained): typed interface — send State (text/JSON) plus typed questions; per question returns `choice` (option + per-option probabilities + confidence), `score`, or `noul`. All questions answered in ONE forward pass. **Zero-shot is weak** (base checkpoints ~0.36 vs. ~0.32 random on typed decisions; competitive only after fine-tuning) — that is exactly why this ships disabled. Weak above ~20 choice options — our 9 categories are the sweet spot. Context limit checkpoint-dependent, tested at 512 tokens per question → State must be truncated. Calibration as shipped is poor (ECE 0.466; 0.081 after temperature fitting) → the confidence gate's absolute numbers must be treated as uncalibrated until the benchmark says otherwise. NOT operable via Ollama.
+- **laya-mlx (owner pointer 2026-10-05, https://pypi.org/project/laya-mlx/)**: independent MLX port (mizorewww, not an official Convai release; each HF checkpoint carries its model card/license/checksums), native Apple-Silicon inference, Python 3.11+, wheel 0.1 MB + FP16 weights from HF. Measured on M3 Max (FP16): **multilingual checkpoint (mmBERT-base, 322M, context 1024 — twice the base's 512): 7.39 ms P50, 395 q/s 50-question throughput, 688 MiB peak**; English 421M: 13.4 ms, 944 MiB. Port fidelity 63/63 validation questions vs upstream (378/378 comparisons, FP32+FP16). Upstream temperature calibration retained, clamped to [0.5, 5.0] with per-bucket warnings (the shipped choice:11+ bucket 0.1006 would sharpen a coin flip to near-certainty — the port clamps it). Hub revisions + weight hashes pinned in hub-publication.json. Built-in language Router routes non-English input to the multilingual checkpoint — exactly what German prompts need. Package is a PYTHON API only (no bundled HTTP server): for the Node router a sidecar needs a thin self-built HTTP wrapper (~50 lines FastAPI) exposing a systemone-compatible endpoint — MLX being Python-only makes the sidecar the only way to use it from Node regardless.
 - Router chain today: `classifyPrompt` (src/content-classifier.ts:395) → HINT/compaction/momentum deterministic paths → cloud chain (opt-in, 15 s/candidate) → Ollama (`mistral-nemo:latest` primary, `gemma2:2b` fallback) → static keyword fallback (opt-in). `ClassificationResult` = `{ category (9 valid + fallback), reason, confidence? }`; `ClassificationSourceInfo.source` strings appear in `/router status` (pattern: `'ollama:<id>'`, `'cloud:<provider/id>'`).
 - Low-confidence semantics today: **verify during Task 4** how the existing stages treat sub-threshold confidence (fall-through vs. fallback-category) and mirror the safer variant; the brief's rule "confidence < threshold → Kategorie fallback" is the *activation-time* default to benchmark against, not a reason to weaken the chain while disabled.
 
@@ -30,8 +31,9 @@
 
 **Files:** Create `docs/research/2026-10-05-laya-spike.md` (results), throwaway venv outside the repo.
 
-**Steps:**
-1. `python3 -m venv ~/venvs/laya-spike && pip install laya` — pin and record the exact package version; download the **multilingual** checkpoint, pin its version string (never "latest").
+**Steps (amended 2026-10-05 — laya-mlx is now the PRIMARY candidate):**
+0. **MLX variant first**: `pip install laya-mlx` in the spike venv; `laya.load("aac6fef/laya-multilingual-mlx")` (614 MB FP16) pinned by revision hash; write the thin HTTP wrapper (~50 lines, FastAPI) exposing one choice-question endpoint; measure: wrapper round-trip latency (HTTP overhead vs the 7.39 ms bare predict), RAM, cold start.
+1. `pip install laya` (upstream, PyTorch) as comparison: pin the exact package version; if `laya-serve` exists here, measure it on the same questions (it is the only pre-built server). Record numbers for the comparison table.
 2. Start `laya-serve`; probe `/v1/systemone`: document request schema (State, question types, options array), response fields for a `choice` question (chosen option, per-option probabilities, confidence), error codes, rate limits.
 3. Measure on this machine (M3 Max, 36 GB): cold start time, RAM (sidecar process), per-request latency over ≥100 requests (incl. p50/p95), behavior at 512-token State (find the truncation boundary), behavior with all 9 categories as options.
 4. Quick in-process check (no commitment): `receptron/laya` + `onnxruntime-node` load time + RAM. Only to have numbers for the sidecar-vs-in-process comparison table.
@@ -61,7 +63,7 @@
 
 **Files:** Modify `src/laya-classifier.ts`; tests in `test/laya-classifier.test.ts`.
 
-**Steps:** Red-first for `truncateState(prompt, ctx, budget)`: keeps head + tail, preserves HINT/whitespace integrity of the prompt head, drops the context block first, then the prompt tail; verify token budget against the spike's measured limit. Implement, green, commit.
+**Steps:** Red-first for `truncateState(prompt, ctx, budget)` (multilingual checkpoint budget: 1024 tokens incl. instructions + options — headroom doubled vs the 512 base, but truncation stays mandatory): keeps head + tail, preserves HINT/whitespace integrity of the prompt head, drops the context block first, then the prompt tail; verify token budget against the spike's measured limit. Implement, green, commit.
 
 ### Task 4: Chain integration in classifyPrompt (red-first)
 
