@@ -52,3 +52,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0021 — The router never registers models Pi does not know (removes the scan-union registration)](0021-no-scan-discovered-model-registration.md)
 - [0022 — The router never reads or writes Pi's auth.json (full credential separation)](0022-router-never-touches-auth-json.md)
 - [0023 — Tier routing restored: per-group GDPval cap and quality-equivalence window](0023-tier-routing-gdpval-cap-and-quality-window.md)
+- [0024 — Task-type balancing: continuations inherit, category mapping configurable (proposed)](0024-task-type-balancing.md)
