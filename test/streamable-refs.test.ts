@@ -30,6 +30,9 @@ const ctx = {
     (registry[provider] ?? []).includes(modelId),
   isLocalProvider: (provider: string) => provider === 'ollama',
   freeModelRefs: new Set(['openrouter/qwen/qwen-2.5-7b-instruct:free']),
+  // Baseline: every provider in these fixtures has a configured key, so
+  // the existing assertions below are unaffected by the new gate.
+  hasConfiguredAuth: () => true,
 };
 
 describe('isStreamableRef', () => {
@@ -60,5 +63,40 @@ describe('isStreamableRef', () => {
 
   it('drops malformed refs without a provider prefix', () => {
     expect(isStreamableRef('zai-glm-5-3', ctx)).toBe(false);
+  });
+});
+
+// Bug report 2026-10-06: a user with no openrouter key still had
+// openrouter/* free-model refs fill every cheap group and the classifier
+// fallback chain, failing at stream time with "Provider is not configured:
+// openrouter" on every single call. Root cause: the free-model branch
+// above returned true on CONFIG PRESENCE alone, never asking whether the
+// provider actually has credentials — the one check registryRefs/
+// getAvailable() already gets right for every other ref.
+describe('isStreamableRef — free-model refs require a configured provider', () => {
+  const unconfigured = {
+    ...ctx,
+    freeModelRefs: new Set(['openrouter/qwen/qwen-2.5-7b-instruct:free']),
+    hasConfiguredAuth: (provider: string) => provider !== 'openrouter',
+  };
+
+  it('drops a configured free-model ref when its provider has no key', () => {
+    expect(isStreamableRef('openrouter/qwen/qwen-2.5-7b-instruct:free', unconfigured)).toBe(false);
+  });
+
+  it('keeps it once the provider has a key (regression guard)', () => {
+    const configured = { ...unconfigured, hasConfiguredAuth: () => true };
+    expect(isStreamableRef('openrouter/qwen/qwen-2.5-7b-instruct:free', configured)).toBe(true);
+  });
+
+  it('does not let an unconfigured free-model ref fall through to the registry check', () => {
+    // Even if Pi's builtin catalog happens to know the model shape, an
+    // explicitly free-listed ref for an unconfigured provider must stay
+    // excluded — the free-model branch is a SHORTCUT, not a bypass.
+    const knownButUnconfigured = {
+      ...unconfigured,
+      hasRegistryModel: () => true,
+    };
+    expect(isStreamableRef('openrouter/qwen/qwen-2.5-7b-instruct:free', knownButUnconfigured)).toBe(false);
   });
 });

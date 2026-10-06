@@ -298,6 +298,32 @@ describe('probeAndCache', () => {
     expect(logs.some((l) => l.includes('broken-model failed'))).toBe(true);
   });
 
+  // Bug report 2026-10-06: an unconfigured provider's models reach the
+  // probe via cache.available_models (scan-runner deliberately includes
+  // openrouter's public free-tier catalog without credentials, ADR-0022) —
+  // probing them wastes a probe slot on a request that cannot possibly
+  // succeed. When hasConfiguredAuth is provided, such candidates are
+  // skipped before completeSimple is ever called.
+  it('skips a candidate whose provider has no configured auth, without calling completeSimple', async () => {
+    const cache: Cache = {
+      available_models: [{ id: 'unconfigured-model', provider: 'openrouter', cost_per_m: 0 }],
+      openrouter_pricing: { 'openrouter/unconfigured-model': { input: 0, output: 0 } },
+    };
+    seedMetrics(baseCfg, cache);
+
+    const completeSimple = vi.fn();
+    const pctx: ProbeContext = {
+      findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
+      completeSimple,
+      hasConfiguredAuth: () => false,
+    };
+    const logs: string[] = [];
+    const result = await probeAndCache(baseCfg, cache, pctx, (m) => logs.push(m));
+    expect(completeSimple).not.toHaveBeenCalled();
+    expect(result).not.toContain('openrouter/unconfigured-model');
+    expect(logs.some((l) => l.includes('unconfigured-model') && l.includes('not configured'))).toBe(true);
+  });
+
   it('narrates blocklist events from probe failures (block on permanent, never on transient, clear on revival)', async () => {
     // Realistic Tier-1 fixture (same shape as the live OpenRouter 404 body,
     // cf. test/model-blocklist.test.ts GUARDRAIL).

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed (unconfigured free-model provider, external bug report 2026-10-06)
+
+- **A user without an OpenRouter key had every cheap group and the
+  classifier fallback chain filled with dead OpenRouter candidates.**
+  `providers.openrouter.free_models` ships by default, and the router only
+  checked whether a free-model ref was *configured* or *known to Pi's
+  builtin catalog* — never whether Pi could actually authenticate the
+  provider. The result: `trivial`/`simple`/`scout`/`fallback` groups could
+  be up to 100% unusable refs, and the classifier retried the same ~8
+  OpenRouter candidates on every single classification, each failing with
+  "Provider is not configured: openrouter". Fixed at all three places a
+  free-model ref is admitted — persisted dynamic config
+  (`src/streamable-refs.ts`), the classifier's live cloud fallback
+  (`src/content-classifier.ts`), the scan-time fallback probe
+  (`src/classifier-fallback-probe.ts`), and the live resolver's discovered
+  pool (`src/routing.ts` `allDiscoveredRefs`, which backs groups without an
+  explicit models list in the pre-scan window) — using Pi's synchronous
+  `ModelRuntime.hasConfiguredAuth` (the same authoritative signal
+  `getAvailable()`-derived candidates already relied on). Generic: applies
+  to any provider's `free_models`, not just OpenRouter; users who DO have a
+  key configured see no change. Live paths are fixed immediately; already
+  persisted group lists in `router-config.dynamic.json` heal at the next
+  scan cycle (models cache TTL) — stale refs there are skipped gracefully
+  at stream time until then.
+
 ### Fixed (task-type balancing, Phase 0 + 1)
 
 - **Live routing ignored `best_quality_window`.** The key was never carried

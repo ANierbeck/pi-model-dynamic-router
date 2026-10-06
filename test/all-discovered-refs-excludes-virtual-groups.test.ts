@@ -25,7 +25,10 @@ import { Router, isVirtualGroupRef } from '../src/routing.ts';
 import type { Config, Cache } from '../src/types.ts';
 import * as metricsModule from '../src/metrics.ts';
 
-function makeRegistry(models: Array<{ provider: string; id: string; cost?: { input: number; output: number } }>) {
+function makeRegistry(
+  models: Array<{ provider: string; id: string; cost?: { input: number; output: number } }>,
+  configuredProviders: Set<string> = new Set(models.map((m) => m.provider))
+) {
   const all = models.map((m) => ({
     provider: m.provider,
     id: m.id,
@@ -37,6 +40,10 @@ function makeRegistry(models: Array<{ provider: string; id: string; cost?: { inp
     find: (provider: string, modelId: string) => all.find((m) => m.provider === provider && m.id === modelId),
     getAvailable: () => all,
     getRegisteredProviderIds: () => [...new Set(all.map((m) => m.provider))],
+    hasConfiguredAuth: (model: any) => configuredProviders.has(model.provider),
+    runtime: {
+      hasConfiguredAuth: (providerId: string) => configuredProviders.has(providerId),
+    },
   };
 }
 
@@ -191,5 +198,60 @@ describe('unknown-cost diagnostic excludes virtual group refs', () => {
     const groupNames = new Set(Object.keys(baseCfg.model_groups));
     const diagnosticRefs = allModelRefs.filter((r) => !isVirtualGroupRef(r, groupNames));
     expect(metricsModule.collectUnknownCostRefs(diagnosticRefs)).not.toContain('trivial/trivial');
+  });
+});
+
+// Bug report 2026-10-06, review finding 1 (the FIFTH free_models consumer):
+// allDiscoveredRefs() unconditionally added every cfg.providers[*]
+// .free_models ref — the same config-presence-without-credentials gap the
+// other three admission gates had. It feeds resolveGroup's candidate
+// fallback for groups WITHOUT an explicit models list (the shipped static
+// groups have none), so in the pre-scan window a keyless user's trivial /
+// simple groups still ranked dead openrouter/* refs first.
+describe('allDiscoveredRefs() gates free-model refs on configured providers', () => {
+  const cfg: Config = {
+    model_groups: {},
+    providers: {
+      openrouter: { billing: 'pay_per_token', free_models: ['openrouter/free-a:free'] },
+      mistral: { billing: 'pay_per_token', free_models: ['mistral/paid-free-a'] },
+    },
+    model_metrics: {},
+    gdpval_builtin: {},
+  } as any;
+
+  const cache: Cache = { available_models: [] } as any;
+
+  beforeEach(() => {
+    metricsModule.setConfig(cfg);
+    metricsModule.setCache(cache);
+    metricsModule.setModelMap({}, []);
+  });
+
+  it('drops a free-model ref whose provider has no configured auth', () => {
+    // Registry knows some mistral models; NO provider has credentials
+    // except mistral. openrouter has a free_models entry but no key.
+    const registry = makeRegistry(
+      [{ provider: 'mistral', id: 'glm-5-2', cost: { input: 0.3, output: 0.9 } }],
+      new Set(['mistral'])
+    );
+    const router = new Router(cfg, cache, new Map());
+    router.setSessionCtx({ modelRegistry: registry } as any);
+
+    const refs = router.allDiscoveredRefs();
+    expect(refs).not.toContain('openrouter/free-a:free');
+    // A free-model ref of a CONFIGURED provider stays (regression guard).
+    expect(refs).toContain('mistral/paid-free-a');
+  });
+
+  it('fails open when the registry cannot answer the auth question', () => {
+    // Degraded/headless: no runtime.hasConfiguredAuth — keep pre-fix
+    // behavior instead of silently emptying the candidate pool.
+    const registry = makeRegistry([]);
+    delete (registry as any).runtime;
+    const router = new Router(cfg, cache, new Map());
+    router.setSessionCtx({ modelRegistry: registry } as any);
+
+    const refs = router.allDiscoveredRefs();
+    expect(refs).toContain('openrouter/free-a:free');
   });
 });

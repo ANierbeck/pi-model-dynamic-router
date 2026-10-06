@@ -219,6 +219,16 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           isLocalProvider: (provider: string) =>
             PROVIDER_MAP[provider]?.local === true,
           freeModelRefs,
+          // Bug 2026-10-06: a free-model ref used to count as streamable on
+          // config presence alone. Reach-through to the private ModelRuntime
+          // (same pattern completeSimple uses, src/stream-orchestrator.ts) for
+          // the one synchronous, authoritative "can pi actually authenticate
+          // this provider" answer — getAvailable()-derived registryRefs
+          // already gets this right; only the free-model shortcut didn't ask.
+          hasConfiguredAuth: (provider: string) => {
+            const runtime = (rt.sessionCtx?.modelRegistry as any)?.runtime;
+            return typeof runtime?.hasConfiguredAuth === 'function' ? runtime.hasConfiguredAuth(provider) : true;
+          },
         };
         effectiveModelRefs = effectiveModelRefs.filter((ref) =>
           isStreamableRef(ref, streamableCtx)
