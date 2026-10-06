@@ -9,7 +9,7 @@
  */
 
 import { DiscoveryManager } from './discovery.ts';
-import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, DYNAMIC_CONFIG_RESYNC_KEYS } from './dynamic-config.ts';
+import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -403,7 +403,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // IMPORTANT: the object literal still spreads from `cfg` (which may be a
       // stale dynamic config), NOT from staticCfg — only the user-intent keys
       // (DYNAMIC_CONFIG_RESYNC_KEYS, shared with load()'s read-site re-sync)
-      // are forced explicitly from staticCfg, so the regenerated file never
+      // are forced explicitly from staticCfg (and DYNAMIC_CONFIG_MERGE_KEYS
+      // merged per entry, static winning — resyncDynamicFromStatic), so the regenerated file never
       // persists a stale user value for another 30-day cycle. staticCfg is
       // the layered config (defaults + user override) and therefore the
       // single source of truth for those fields.
@@ -420,9 +421,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           config_fingerprint: configFingerprint,
         }
       };
-      for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) {
-        (dynamicConfig as any)[key] = rt.staticCfg[key];
-      }
+      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg);
 
       const dynamicConfigPath = path.join(rt.stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));

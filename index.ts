@@ -28,7 +28,7 @@ import {
   isProviderWedged,
   WEDGE_COOLDOWN_TEXT,
 } from './src/provider-watchdog.ts';
-import { DYNAMIC_CONFIG_RESYNC_KEYS } from './src/dynamic-config.ts';
+import { resyncDynamicFromStatic } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
@@ -412,13 +412,12 @@ let previousTokenCount = 0;
           // state). The whitelist is a single exported list,
           // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
           // the write site in generateDynamicConfigNow — per-key rationale
-          // lives there. Final v1.6.0 review I4: ollama_max_concurrent_streams
+          // lives there; DYNAMIC_CONFIG_MERGE_KEYS (providers, model_metrics,
+          // gdpval_builtin) are merged per entry, static winning. Final v1.6.0 review I4: ollama_max_concurrent_streams
           // had been forgotten in both hand-maintained assignment blocks;
           // I5: the shared list + the data-driven staleness test keep the
           // next key from being forgotten the same way.
-          for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) {
-            (dynamicCfg as any)[key] = staticCfg[key];
-          }
+          resyncDynamicFromStatic(dynamicCfg, staticCfg);
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
