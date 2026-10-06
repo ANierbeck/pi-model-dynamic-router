@@ -319,6 +319,16 @@ export class StreamOrchestrator {
             const registry = this.ctx.sessionCtx?.modelRegistry as any;
             return registry?.runtime?.completeSimple?.(model, ctx, options);
           },
+          // Bug 2026-10-06: findModel resolving a ref only proves pi's catalog
+          // knows its shape, not that the provider has credentials — an
+          // unconfigured provider (e.g. openrouter with no key) still
+          // resolved and failed inside completeSimple on every candidate,
+          // every classification. hasConfiguredAuth IS on the public
+          // ModelRegistry facade (unlike completeSimple).
+          hasConfiguredAuth: (model: any) => {
+            const registry = this.ctx.sessionCtx?.modelRegistry as any;
+            return registry ? Boolean(registry.hasConfiguredAuth(model)) : true;
+          },
           context: {
             lastAssistantSnippet,
             previousUserMessage,

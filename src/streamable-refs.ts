@@ -26,13 +26,24 @@ interface StreamableRefContext {
   isLocalProvider(provider: string): boolean;
   /** Refs explicitly listed in cfg.providers[*].free_models. */
   freeModelRefs: ReadonlySet<string>;
+  /**
+   * Whether Pi can actually authenticate requests to this provider right
+   * now (ModelRuntime.hasConfiguredAuth — a synchronous snapshot read, no
+   * I/O). Bug 2026-10-06: a free-model ref was treated as streamable on
+   * CONFIG PRESENCE alone, so a provider the user never set up (e.g.
+   * openrouter with no key) still filled every cheap group and the
+   * classifier fallback chain with refs that fail every single stream
+   * attempt ("Provider is not configured: <provider>").
+   */
+  hasConfiguredAuth(provider: string): boolean;
 }
 
 /**
  * Whether a "provider/modelId" ref can plausibly be streamed right now:
  * registered in Pi's registry, served by a local runtime, or explicitly
- * configured as a free model (stream-time on-demand registration covers
- * those). Malformed refs (no provider prefix) are not streamable.
+ * configured as a free model of a provider Pi can actually authenticate
+ * (stream-time on-demand registration covers those — but only once a key
+ * resolves). Malformed refs (no provider prefix) are not streamable.
  */
 export function isStreamableRef(ref: string, ctx: StreamableRefContext): boolean {
   const slash = ref.indexOf('/');
@@ -40,7 +51,7 @@ export function isStreamableRef(ref: string, ctx: StreamableRefContext): boolean
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
   if (!modelId) return false;
-  if (ctx.freeModelRefs.has(ref)) return true;
+  if (ctx.freeModelRefs.has(ref)) return ctx.hasConfiguredAuth(provider);
   if (ctx.isLocalProvider(provider)) return true;
   return ctx.hasRegistryModel(provider, modelId);
 }

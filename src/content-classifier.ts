@@ -132,6 +132,18 @@ interface ClassificationOptions {
    * classifier can pick the cheapest without a second round-trip. Optional.
    */
   availableModels?: readonly any[];
+  /**
+   * modelRegistry.hasConfiguredAuth, given the Model findModel resolved.
+   * Bug 2026-10-06: findModel() succeeding only proves pi's builtin catalog
+   * knows the model's SHAPE, not that the provider has credentials — an
+   * unconfigured provider (e.g. openrouter with no key) still resolved and
+   * failed one level deeper inside completeSimple, on every single
+   * candidate, every classification. When provided, a resolved candidate
+   * is skipped before completeSimple is ever called if this returns false.
+   * Optional and fail-open: omitting it keeps the pre-fix behavior (a
+   * caller that doesn't wire it is not newly broken).
+   */
+  hasConfiguredAuth?: (model: any) => boolean;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────
@@ -483,6 +495,7 @@ async function classifyPromptUncounted(
     completeSimple,
     findModel,
     pinnedCloudModel,
+    hasConfiguredAuth,
   } = options;
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.
@@ -756,6 +769,13 @@ async function classifyPromptUncounted(
           const model = findModel(modelRef);
           if (!model) {
             routerLog(`[classifier] Cloud model ${modelRef} not in pi registry — skipping`);
+            continue;
+          }
+          // Resolving the model only proves pi's catalog knows its SHAPE,
+          // not that the provider has credentials (bug 2026-10-06) — skip
+          // before completeSimple would fail one level deeper.
+          if (hasConfiguredAuth && !hasConfiguredAuth(model)) {
+            routerLog(`[classifier] Cloud model ${modelRef} skipped — provider not configured (no credentials)`);
             continue;
           }
           // S3 (final v1.6.0 review): per-candidate timeout, probe parity.

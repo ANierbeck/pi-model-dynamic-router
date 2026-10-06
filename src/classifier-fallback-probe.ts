@@ -171,6 +171,16 @@ export interface ProbeContext {
   findModel: (ref: string) => any | undefined;
   /** Pi's one-shot completion API (modelRegistry.runtime.completeSimple). */
   completeSimple: (model: any, ctx: any, options: any) => Promise<any>;
+  /**
+   * modelRegistry.hasConfiguredAuth, given the Model findModel resolved.
+   * Bug 2026-10-06: candidates in cache.available_models can belong to a
+   * provider with no configured credentials (e.g. openrouter's public
+   * free-tier catalog is scanned unconditionally, ADR-0022) — probing them
+   * wastes a probe slot on a request that cannot possibly succeed. When
+   * provided, such a candidate is skipped before completeSimple is called.
+   * Optional and fail-open: omitting it keeps every candidate eligible.
+   */
+  hasConfiguredAuth?: (model: any) => boolean;
 }
 
 /**
@@ -331,6 +341,10 @@ export async function probeAndCache(
       const model = pctx.findModel(ref);
       if (!model) {
         log(`[classifier-probe] ${ref} not in pi registry — skipping`);
+        continue;
+      }
+      if (pctx.hasConfiguredAuth && !pctx.hasConfiguredAuth(model)) {
+        log(`[classifier-probe] ${ref} skipped — provider not configured (no credentials)`);
         continue;
       }
       // Quality probe: the candidate must classify EVERY probe case correctly
