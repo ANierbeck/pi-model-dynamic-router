@@ -94,3 +94,17 @@ describe('formatClassifierStatus renders the day counters', () => {
     expect(lines.some((l) => l.includes('Today:'))).toBe(false);
   });
 });
+
+describe('formatCategoryRoutes — the /router route list matches the live mapping', () => {
+  // Found while adding the counters (AGENTS.md §7): the block hardcoded
+  // 'design→strategic', 'planning→tactical', 'code_simple→operational'
+  // while CATEGORY_TO_GROUP routes design/planning → planning (ADR-0023
+  // follow-up) and code_simple → simple. The status lied about the routing.
+  it('lists every category with the group CATEGORY_TO_GROUP actually routes it to', async () => {
+    const { formatCategoryRoutes } = await import('../src/commands.ts');
+    const { CATEGORY_TO_GROUP } = await import('../src/content-classifier.ts');
+    expect(formatCategoryRoutes()).toEqual(
+      Object.entries(CATEGORY_TO_GROUP).map(([cat, group]) => `${cat}→${group}`)
+    );
+  });
+});

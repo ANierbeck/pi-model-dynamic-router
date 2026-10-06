@@ -16,6 +16,7 @@ import { costTracker } from './cost-tracker.ts';
 import {
   getLastClassificationSource,
   getClassificationCounts,
+  CATEGORY_TO_GROUP,
   type ClassificationSourceInfo,
   type ClassificationCounts,
 } from './content-classifier.ts';
@@ -90,6 +91,16 @@ export function costColumnFor(
   return cost !== 'unknown' && typeof cost === 'number'
     ? `$${cost.toFixed(1)}`
     : 'unknown';
+}
+
+/**
+ * The category→group routes listed in the dynamic group's /router block,
+ * derived from the live CATEGORY_TO_GROUP (a hardcoded copy had drifted:
+ * it showed design→strategic and planning→tactical after both moved to the
+ * planning group).
+ */
+export function formatCategoryRoutes(): string[] {
+  return Object.entries(CATEGORY_TO_GROUP).map(([cat, group]) => `${cat}→${group}`);
 }
 
 /** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
@@ -359,15 +370,8 @@ export function createCommands(rt: CommandDeps) {
         lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`);
 
         if (topModels.length === 0 && g.method === 'dynamic') {
-          const cats = [
-            'code_simple→operational',
-            'code_complex→tactical',
-            'design→strategic',
-            'planning→tactical',
-            'exploration→scout',
-          ];
           lines.push('│ Routes per prompt via content classification:');
-          cats.forEach((c) => lines.push(`│   ${c}`));
+          formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
           // Honest classifier state (2026-10-02 owner finding): the old block
           // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
           // was doing the actual work whenever Ollama is down. Show the backend
