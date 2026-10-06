@@ -552,9 +552,51 @@ docs/plans/2026-09-30-router-0.99.1-hardening.md); Dependabot PR #12
 (pi 1.0.2, green CI proving nothing — the suite mocks most of pi) was
 closed on exactly this ground.
 
+### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
+
+**`/router config` command** — a live-config command to change routing
+behaviour without a restart: exclude/un-exclude a model ref (today only
+router-config.user.json pattern lists do this, and only on reload) and an
+on/off flag for cache-aware auto-compaction (Phase 5b of
+`docs/plans/2026-10-05-task-type-balancing.md`, not yet implemented —
+5a's measurement landed, 5b builds on it). Design TBD; likely writes to
+the `router-config.user.json` layer so changes survive the session but
+stay out of the shipped defaults (same separation as every other
+personal-preference mechanism in this repo).
+
+**Cloud-provider wedge circuit breaker** — idea surfaced 2026-10-06 while
+investigating claude-bridge prompt-capture/empty-response failures
+(P0.4 of the task-type-balancing plan): `src/provider-watchdog.ts` only
+covers LOCAL providers (Ollama daemon wedges). A cloud provider/extension
+that wedges (e.g. a bridge daemon stuck after a load-order race) has no
+equivalent circuit breaker today — the existing Tier-2 blocklist (5
+failures/1h) and per-model cooldowns eventually route around it, but
+there is no explicit "this whole provider is wedged" signal or narration.
+Not scoped or decided yet; needs an owner call on whether the existing
+reactive mechanisms are sufficient before any design work starts.
+
+**`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1
+and 5a are DONE (branch `task-type-phase-0-1-5a`, not yet merged). Still
+open in that plan, each gated by the previous step or an explicit owner
+decision: Phase 2 (fallback classification inherits the previous turn's
+category), Phase 3 (`category_groups` config key to make the
+category→group mapping configurable), Phase 4 (optional provider budget
+pacing, needs 5a's cacheRead accounting — now available), 5b (cache-aware
+auto-compaction, opt-in, builds on 5a's measurement), 5c (fresh-session
+suggestion — explicitly deferred to a 2.0 version), 5d (compaction
+summary via a cheaper model, bulk_read threshold review).
+
+**Laya classifier integration** — full 9-task plan already committed:
+`docs/plans/2026-10-05-laya-classifier-integration.md`. Ships disabled by
+default; Task 0 (the spike: pinned checkpoint, ~1.7 GB local install)
+needs the owner's explicit go before any of it starts.
+
 ---
 
-*Last updated: 2026-10-04 (nightly mutation testing live, PR #19; Dependabot
-policy pinned: host never auto-bumped, vitest majors muted until migration
+*Last updated: 2026-10-06 (owner backlog registered: /router config
+command, cloud-provider wedge circuit breaker idea, task-type-balancing
+plan remainder (Phase 2-4, 5b-5d), Laya classifier integration pending
+owner go; nightly mutation testing live, PR #19; Dependabot policy
+pinned: host never auto-bumped, vitest majors muted until migration
 round, PRs #10/#12/#13 closed with justification; PR #9 brace-expansion
 security patch merged)*
