@@ -155,6 +155,22 @@ describe('checkReadBlock expensive-model escalation', () => {
     expect(out?.reason).to.include('bulk_read');
   });
 
+  // Owner backlog 2026-10-06: the expensive-model escalation fires for
+  // EVERY full-file read regardless of size — SKILL.md must be exempt from
+  // THAT path too, not just the size-based Layer 1 block.
+  it('does NOT block a full-file read of SKILL.md even for an expensive model', () => {
+    const skillDir = path.join(tmpDir, 'some-skill');
+    fs.mkdirSync(skillDir, { recursive: true });
+    const skillFile = path.join(skillDir, 'SKILL.md');
+    fs.writeFileSync(skillFile, 'line\n'.repeat(20));
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: skillFile } },
+      makeCfg(),
+      EXPENSIVE_GROUP_MEMBER
+    );
+    expect(out).to.equal(undefined);
+  });
+
   it('marks expensive blocks with expensive:true for logging', () => {
     const out = checkReadBlock(
       { toolName: 'read', input: { path: smallFile } },

@@ -147,6 +147,26 @@ describe('checkReadBlock', () => {
     const p = path.join(dir, 'does-not-exist.txt');
     expect(checkReadBlock({ toolName: 'read', input: { path: p } }, cfg)).toBeUndefined();
   });
+
+  // Owner backlog 2026-10-06: skills (SKILL.md) are instructions the agent
+  // must follow verbatim — a bulk_read summary answers a QUESTION about a
+  // file, which is the wrong shape for "here are your exact instructions".
+  // A full-file read of SKILL.md must never be redirected, regardless of
+  // line count.
+  it('never blocks a full-file read of SKILL.md, however large', () => {
+    const skillDir = path.join(dir, 'some-skill');
+    fs.mkdirSync(skillDir);
+    const p = path.join(skillDir, 'SKILL.md');
+    fs.writeFileSync(p, 'line\n'.repeat(5000)); // far above the 350-line threshold
+    expect(checkReadBlock({ toolName: 'read', input: { path: p } }, cfg)).toBeUndefined();
+  });
+
+  it('still blocks a same-size markdown file that is NOT named SKILL.md', () => {
+    const p = path.join(dir, 'skill.md'); // lowercase — not the exact skill filename
+    fs.writeFileSync(p, 'line\n'.repeat(5000));
+    const out = checkReadBlock({ toolName: 'read', input: { path: p } }, cfg);
+    expect(out?.block).toBe(true);
+  });
 });
 
 // ── executeBulkRead (shunt Layer 2: bulk-read script) ──────────────────────

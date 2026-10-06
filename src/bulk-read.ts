@@ -29,6 +29,7 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Config } from './types.ts';
 import {
   delegationSettings,
@@ -204,6 +205,14 @@ export function checkReadBlock(
     const input = event.input as Record<string, unknown> | undefined;
     const p = input?.path;
     if (typeof p !== 'string' || p.length === 0) return undefined;
+
+    // Owner backlog 2026-10-06: a skill's SKILL.md is the agent's verbatim
+    // instructions, not a corpus to be summarized — bulk_read answers a
+    // QUESTION about a file, which is the wrong shape for "read your own
+    // operating instructions in full". Exempt it from BOTH the size-based
+    // block below and the expensive-model escalation below — checked
+    // before either, so neither path can reach it.
+    if (path.basename(p) === 'SKILL.md') return undefined;
 
     let size: number;
     try {
