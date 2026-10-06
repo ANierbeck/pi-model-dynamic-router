@@ -389,12 +389,21 @@ export interface Cache {
     last_seen: number;
   }>;
   /**
-   * Local-provider watchdog (ADR-0016), keyed by provider id: recent
-   * generation timeouts per local model ref, and the wedge expiry.
+   * Provider circuit breaker (provider-breaker.ts), keyed by provider id:
+   * recent counting-evidence timestamps per distinct model ref, the open
+   * expiry, and how many times the breaker has tripped since the last
+   * success (ladder position). Replaces the local-only watchdog state of
+   * ADR-0016; a stale `local_provider_health` left in an old cache file is
+   * ignored. Phase 3 makes this key volatile (stripped on save).
    */
   local_provider_health?: Record<string, {
     timeouts: Record<string, number>;
     wedged_until?: number;
+  }>;
+  provider_breaker?: Record<string, {
+    evidence: Record<string, number>;
+    open_until?: number;
+    trip_count: number;
   }>;
   /**
    * Verified-working cloud models for the classifier's cloud fallback.

@@ -12,6 +12,8 @@
 
 import { isRateLimitText, isOverflowErrorText, isAbortLikeText } from './detection.ts';
 import { classifyFailure } from './error-signatures.ts';
+import { PROVIDER_MAP } from './providers.ts';
+import type { Cache } from './types.ts';
 
 /** Failure shapes the orchestrator can report to the breaker. */
 export type ProviderEvidenceKind = 'empty_response' | 'empty_timeout' | 'stall_timeout' | 'provider_error';
@@ -42,4 +44,93 @@ export function countsAsProviderEvidence(kind: ProviderEvidenceKind, detail?: st
   if (TRANSPORT_ERROR.test(detail)) return true;
   if (code !== undefined && code < 500) return false;
   return (code !== undefined && code >= 500) || GATEWAY_ERROR.test(detail);
+}
+
+/** Evidence older than this no longer counts toward a trip (D2). */
+export const WEDGE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Open time per trip without an intervening close (D5), capped at the last
+ * step; a success resets the ladder. Local providers use it too — this
+ * replaces ADR-0016's flat 5 min (owner decision 2026-10-06, plan Q2).
+ */
+export const BREAKER_COOLDOWN_LADDER_MS: readonly number[] = [2 * 60_000, 5 * 60_000, 15 * 60_000];
+
+// Distinct models with evidence needed to trip: local keeps ADR-0016's 2, the
+// cloud evidence shows cascades of 4-6 models, so 3 is safe against one flaky one.
+const MIN_MODELS_LOCAL = 2;
+const MIN_MODELS_CLOUD = 3;
+
+type ProviderBreaker = NonNullable<Cache['provider_breaker']>[string];
+
+function providerOf(ref: string): string {
+  return ref.split('/')[0];
+}
+
+function minModels(provider: string): number {
+  return PROVIDER_MAP[provider]?.local === true ? MIN_MODELS_LOCAL : MIN_MODELS_CLOUD;
+}
+
+function liveEvidence(s: ProviderBreaker, now: number): string[] {
+  return Object.entries(s.evidence)
+    .filter(([, at]) => now - at < WEDGE_WINDOW_MS)
+    .map(([ref]) => ref);
+}
+
+/**
+ * Records a failure of `ref`. Returns true only when this failure newly OPENS
+ * the breaker (so the caller narrates once). Failures that are not provider
+ * evidence are ignored. A failure while the breaker has tripped before and no
+ * success has cleared it (the half-open re-probe failed) re-opens at the next
+ * ladder step; otherwise the breaker opens once `minModels` distinct models
+ * have evidence inside the window.
+ */
+export function recordProviderFailure(
+  cache: Cache,
+  ref: string,
+  kind: ProviderEvidenceKind,
+  detail?: string,
+  now: number = Date.now()
+): boolean {
+  if (!countsAsProviderEvidence(kind, detail)) return false;
+  const provider = providerOf(ref);
+  if (!cache.provider_breaker) cache.provider_breaker = {};
+  const s = (cache.provider_breaker[provider] ??= { evidence: {}, trip_count: 0 });
+  for (const [model, at] of Object.entries(s.evidence)) {
+    if (now - at >= WEDGE_WINDOW_MS) delete s.evidence[model];
+  }
+  s.evidence[ref] = now;
+  if (isProviderOpen(cache, provider, now)) return false;
+  if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider)) return false;
+  s.trip_count++;
+  const step = Math.min(s.trip_count, BREAKER_COOLDOWN_LADDER_MS.length) - 1;
+  s.open_until = now + BREAKER_COOLDOWN_LADDER_MS[step];
+  return true;
+}
+
+/** Any success of the provider proves it answers: closes, clears evidence, resets the ladder (D5). */
+export function recordProviderSuccess(cache: Cache, ref: string): void {
+  delete cache.provider_breaker?.[providerOf(ref)];
+}
+
+export function isProviderOpen(cache: Cache | undefined, provider: string, now: number = Date.now()): boolean {
+  const until = cache?.provider_breaker?.[provider]?.open_until;
+  return until !== undefined && now < until;
+}
+
+/** Read-only view for status displays: open flag, expiry while open, ladder position, live evidence refs. */
+export function breakerState(
+  cache: Cache | undefined,
+  provider: string,
+  now: number = Date.now()
+): { open: boolean; until?: number; tripCount: number; evidence: string[] } {
+  const s = cache?.provider_breaker?.[provider];
+  if (!s) return { open: false, tripCount: 0, evidence: [] };
+  const open = isProviderOpen(cache, provider, now);
+  return {
+    open,
+    ...(open ? { until: s.open_until } : {}),
+    tripCount: s.trip_count,
+    evidence: liveEvidence(s, now),
+  };
 }
