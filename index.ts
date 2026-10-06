@@ -620,8 +620,11 @@ let previousTokenCount = 0;
     router.setSessionCtx(null);
   });
 
-  // Cleanup CostTracker on process exit
-  process.on('exit', () => costTracker.destroy());
+  // Cleanup CostTracker on process exit. Registered inside the dedupe
+  // guard below: the esbuild double-bundle hazard would otherwise stack one
+  // exit listener per extension load (the suite printed
+  // MaxListenersExceededWarning with 11 exit listeners; pinned by
+  // test/exit-listener-dedupe.test.ts).
   // Signal handlers (final v1.6.0 review minor #10): previously a bare
   // process.exit(0) skipped pi's graceful shutdown, so the session_shutdown
   // saveCache() never ran on Ctrl-C. Persist synchronously before exiting
@@ -630,6 +633,7 @@ let previousTokenCount = 0;
   // stack one handler per extension load.
   if (!(globalThis as any).__ROUTER_SIGNAL_CLEANUP__) {
     (globalThis as any).__ROUTER_SIGNAL_CLEANUP__ = true;
+    process.on('exit', () => costTracker.destroy());
     const persistAndExit = (): never => {
       try {
         saveCache();
