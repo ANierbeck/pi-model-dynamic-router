@@ -97,6 +97,69 @@ function findModelLiterals(text: string, opts: SourceScanOptions): string[] {
   return found;
 }
 
+/**
+ * One tolerated literal of scripts/hardcoded-model-baseline.json. Matched
+ * by (file, literal) with an occurrence count instead of a line number, so
+ * moving code never churns the baseline while a second copy of a baselined
+ * literal in the same file still fails the guard.
+ */
+export interface BaselineEntry {
+  file: string;
+  literal: string;
+  count: number;
+}
+
+const baselineKey = (file: string, literal: string) => `${file}\u0000${literal}`;
+
+/** Aggregates findings into baseline entries, sorted by file, then literal. */
+export function toBaselineEntries(findings: readonly HardcodedFinding[]): BaselineEntry[] {
+  const byKey = new Map<string, BaselineEntry>();
+  for (const f of findings) {
+    const key = baselineKey(f.file, f.literal);
+    const entry = byKey.get(key);
+    if (entry) entry.count++;
+    else byKey.set(key, { file: f.file, literal: f.literal, count: 1 });
+  }
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return [...byKey.values()].sort((a, b) => cmp(a.file, b.file) || cmp(a.literal, b.literal));
+}
+
+/**
+ * The ratchet: one violation message per (file, literal) found more often
+ * than the baseline allows (NEW) and per baseline entry found less often
+ * than recorded (stale — the baseline only ever shrinks). Empty = clean.
+ */
+export function compareToBaseline(findings: readonly HardcodedFinding[], baseline: readonly BaselineEntry[]): string[] {
+  const lines = new Map<string, number[]>();
+  for (const f of findings) {
+    const key = baselineKey(f.file, f.literal);
+    lines.set(key, [...(lines.get(key) ?? []), f.line]);
+  }
+  const allowed = new Map(baseline.map((e) => [baselineKey(e.file, e.literal), e.count]));
+  const violations: string[] = [];
+
+  for (const entry of toBaselineEntries(findings)) {
+    const max = allowed.get(baselineKey(entry.file, entry.literal)) ?? 0;
+    if (entry.count <= max) continue;
+    const where = (lines.get(baselineKey(entry.file, entry.literal)) ?? []).join(',');
+    const counts = max > 0 ? ` (${entry.count} found, baseline allows ${max})` : '';
+    violations.push(
+      `NEW hardcoded model literal in ${entry.file}:${where}: '${entry.literal}'${counts} — derive from Pi's registry ` +
+        `instead (ADR-0025), or extend the scanner's allowlist only for ADR-0025 class A/B files.`
+    );
+  }
+
+  for (const entry of baseline) {
+    const now = lines.get(baselineKey(entry.file, entry.literal))?.length ?? 0;
+    if (now >= entry.count) continue;
+    violations.push(
+      `BASELINE entry is stale and must be REMOVED (the ratchet only shrinks): ${JSON.stringify(entry)} — ` +
+        `now found ${now}; ${now === 0 ? 'delete the entry' : `lower its count to ${now}`}.`
+    );
+  }
+  return violations;
+}
+
 const SHIPPED_CONFIG_FILE = 'router-config.json';
 
 function isRecord(v: unknown): v is Record<string, unknown> {

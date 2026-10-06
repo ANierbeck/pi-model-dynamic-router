@@ -9,11 +9,19 @@
  * src/model-matcher.ts and the provider identifiers from src/providers.ts.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { PROVIDER_MAP, PI_BUILTIN_PROVIDER_IDS } from '../src/providers.ts';
-import { scanSourceText, isScannedSourcePath, scanConfig } from '../scripts/scan-hardcoded-models.ts';
+import {
+  scanSourceText,
+  isScannedSourcePath,
+  scanConfig,
+  toBaselineEntries,
+  compareToBaseline,
+  type BaselineEntry,
+  type HardcodedFinding,
+} from '../scripts/scan-hardcoded-models.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,6 +164,86 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
     expect(scanConfig({})).toEqual([]);
     expect(scanConfig(null)).toEqual([]);
     expect(scanConfig({ model_groups: { x: null }, providers: { y: 'z' }, exclude: [] })).toEqual([]);
+  });
+});
+
+describe('compareToBaseline() — the ratchet', () => {
+  const finding = (literal: string, line = 7): HardcodedFinding => ({ file: 'src/fixture.ts', literal, line });
+
+  it('flags a literal that is not in the baseline, naming file, line and literal', () => {
+    const findings = scan(`\n\nconst M = 'gemma9-nonexistent:12b';`);
+    const violations = compareToBaseline(findings, []);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatch(/^NEW hardcoded model literal in src\/fixture\.ts:3: 'gemma9-nonexistent:12b'/);
+    expect(violations[0]).toContain('ADR-0025');
+  });
+
+  it('flags a baseline entry that no longer matches any finding (stale)', () => {
+    const stale: BaselineEntry = { file: 'src/fixture.ts', literal: 'gone-model:1b', count: 1 };
+    const violations = compareToBaseline([], [stale]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatch(/^BASELINE entry is stale and must be REMOVED \(the ratchet only shrinks\)/);
+    expect(violations[0]).toContain('gone-model:1b');
+  });
+
+  it('counts occurrences: a second copy of a baselined literal is new, a removed copy is stale', () => {
+    const entry: BaselineEntry = { file: 'src/fixture.ts', literal: 'gemma2:2b', count: 1 };
+    expect(compareToBaseline([finding('gemma2:2b', 3), finding('gemma2:2b', 9)], [entry])).toEqual([
+      expect.stringMatching(/^NEW hardcoded model literal in src\/fixture\.ts:3,9: 'gemma2:2b' \(2 found, baseline allows 1\)/),
+    ]);
+    expect(compareToBaseline([finding('gemma2:2b')], [{ ...entry, count: 2 }])).toEqual([
+      expect.stringMatching(/^BASELINE entry is stale and must be REMOVED .*now found 1/),
+    ]);
+  });
+
+  it('passes when findings and baseline match exactly', () => {
+    const findings = [finding('gemma2:2b', 3), finding('gemma2:2b', 9), finding('ollama/x-1:1b', 4)];
+    expect(compareToBaseline(findings, toBaselineEntries(findings))).toEqual([]);
+  });
+
+  it('toBaselineEntries() aggregates per (file, literal) and sorts deterministically', () => {
+    const entries = toBaselineEntries([
+      { file: 'src/b.ts', literal: 'qwen3:4b', line: 1 },
+      { file: 'src/a.ts', literal: 'zz-gemma2:2b', line: 5 },
+      { file: 'src/a.ts', literal: 'gemma2:2b', line: 9 },
+      { file: 'src/a.ts', literal: 'gemma2:2b', line: 2 },
+    ]);
+    expect(entries).toEqual([
+      { file: 'src/a.ts', literal: 'gemma2:2b', count: 2 },
+      { file: 'src/a.ts', literal: 'zz-gemma2:2b', count: 1 },
+      { file: 'src/b.ts', literal: 'qwen3:4b', count: 1 },
+    ]);
+  });
+});
+
+/** Every finding in the shipped tree: scanned src/** + index.ts, plus the shipped config. */
+function scanShippedTree(): HardcodedFinding[] {
+  const sources = (readdirSync(path.join(REPO_ROOT, 'src'), { recursive: true }) as string[])
+    .map((p) => `src/${p.split(path.sep).join('/')}`)
+    .concat('index.ts')
+    .filter(isScannedSourcePath)
+    .sort();
+  const findings = sources.flatMap((file) => scan(readFileSync(path.join(REPO_ROOT, file), 'utf-8'), file));
+  const cfg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'router-config.json'), 'utf-8'));
+  return findings.concat(scanConfig(cfg));
+}
+
+describe('ADR-0025 guard: no new hardcoded models in shipped source or config', () => {
+  const baseline = JSON.parse(
+    readFileSync(path.join(REPO_ROOT, 'scripts/hardcoded-model-baseline.json'), 'utf-8')
+  ) as { note: string; entries: BaselineEntry[] };
+
+  it('every finding is in the baseline and every baseline entry is still found', () => {
+    const violations = compareToBaseline(scanShippedTree(), baseline.entries);
+    expect(violations, violations.join('\n')).toEqual([]);
+  });
+
+  it('the baseline is canonical: sorted, one entry per (file, literal), positive counts', () => {
+    const expanded: HardcodedFinding[] = baseline.entries.flatMap((e) =>
+      Array.from({ length: e.count }, () => ({ file: e.file, literal: e.literal, line: 0 }))
+    );
+    expect(baseline.entries).toEqual(toBaselineEntries(expanded));
+    expect(baseline.entries.every((e) => Number.isInteger(e.count) && e.count > 0)).toBe(true);
   });
 });
 
