@@ -51,6 +51,35 @@ describe('classifier feeds the local-provider watchdog', () => {
     expect(callOllama).not.toHaveBeenCalled();
   });
 
+  it('one classifier timeout is recorded as breaker evidence but does not trip it', async () => {
+    const cache: Cache = {};
+    // The fallback fails with a non-timeout error, which is not evidence.
+    callOllama.mockImplementationOnce(timeout).mockRejectedValueOnce(new Error('model not found'));
+    await classifyPrompt('watchdog classifier: single slow model', {
+      cache,
+      model: 'primary-model',
+      fallbackModel: 'fallback-model',
+      allowStaticFallback: true,
+    });
+    expect(callOllama).toHaveBeenCalledTimes(2);
+    expect(isProviderWedged(cache, 'ollama')).toBe(false);
+    expect(Object.keys(cache.provider_breaker?.ollama?.evidence ?? {})).toEqual(['ollama/primary-model']);
+  });
+
+  it('two distinct classifier timeouts trip the breaker under provider_breaker', async () => {
+    const cache: Cache = {};
+    callOllama.mockImplementation(timeout);
+    await classifyPrompt('watchdog classifier: two slow models', {
+      cache,
+      model: 'primary-model',
+      fallbackModel: 'fallback-model',
+      allowStaticFallback: true,
+    });
+    expect(isProviderWedged(cache, 'ollama')).toBe(true);
+    expect(cache.provider_breaker?.ollama?.open_until).toBeGreaterThan(Date.now());
+    expect(cache.provider_breaker?.ollama?.trip_count).toBe(1);
+  });
+
   it('a successful local classification clears the evidence', async () => {
     const cache: Cache = {};
     callOllama.mockImplementationOnce(timeout).mockResolvedValueOnce(
@@ -62,7 +91,8 @@ describe('classifier feeds the local-provider watchdog', () => {
       fallbackModel: 'fallback-model',
     });
     expect(isProviderWedged(cache, 'ollama')).toBe(false);
-    expect(cache.local_provider_health?.ollama).toBeUndefined();
+    // The timeout left evidence; the fallback's success removed the whole entry.
+    expect(cache.provider_breaker?.ollama).toBeUndefined();
   });
 });
 
@@ -141,7 +171,25 @@ describe('driveStream feeds the local-provider watchdog', () => {
       expect(called).toContain('local-a');
       expect(called).toContain('local-b');
       expect(called).not.toContain('local-c');
+      // First open: the first ladder step, and wording that does not claim a model count.
+      expect(text).toContain('Skipping ollama models for 2 min.');
+
+      // Half-open re-probe fails shortly after the 2 min cooldown: ONE timeout
+      // re-opens at the 5 min step, and the narration must say so.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(Date.now() + 3 * 60_000);
+      const reopenEvents: AssistantMessageEvent[] = [];
+      for await (const ev of defaultExport.groupStream(
+        { provider: 'standard', id: 'standard' },
+        { messages: [{ role: 'user', content: 'do the thing again' }] },
+        {}
+      )) reopenEvents.push(ev);
+      const reopenText = reopenEvents.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta).join('');
+      expect(reopenText).toContain('cloud answered');
+      expect(reopenText).toContain('Skipping ollama models for 5 min.');
+      expect(reopenText).not.toContain('2 min');
     } finally {
+      vi.useRealTimers();
       cwdSpy.mockRestore();
       removeNoOpScanCache(scanCachePath);
       fs.rmSync(tmpDir, { recursive: true, force: true });

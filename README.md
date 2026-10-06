@@ -49,6 +49,60 @@ Users can override the embedded defaults without editing extension files:
 Supports `exclude` rules (no paid OpenRouter models, no Fable, etc.).
 See [`docs/config-override.md`](docs/config-override.md) for details.
 
+You can also change exclusion rules live from the Pi prompt without editing JSON:
+
+```
+> /router config
+Router config
+
+Sources (later layers override earlier ones; exclude lists are unioned):
+  shipped   <pi-extensions>/pi-model-dynamic-router/router-config.json
+  user     <pi-agent>/router-config.user.json
+  project  <project>/.pi/router-config.json (not present)
+
+Exclude rules:
+  [shipped] models: openrouter/*  → matches 8 discovered model(s)
+  [user]    models: mistral/*  → matches 3 discovered model(s)
+
+compaction: not implemented yet (Phase 5b)
+
+Usage:
+  /router config                          show config sources + exclude rules
+  /router config exclude <ref|glob>       exclude a model/pattern from routing
+  /router config unexclude <ref|glob>     remove a user-layer exclusion
+  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)
+Shipped and project entries cannot be removed with unexclude — only user-layer entries can.
+```
+
+Example: exclude all Anthropic models from routing:
+```
+> /router config exclude anthropic/*
+Excluded "anthropic/*" — it matches 5 discovered model(s) right now.
+Saved to <pi-agent>/router-config.user.json. The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.
+```
+
+To undo:
+```
+> /router config unexclude anthropic/*
+Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json). The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.
+```
+
+### Category-to-Group Mapping
+
+The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to a model group (e.g., `code_complex` → `tactical`). Users can override individual mappings via the `category_groups` config key:
+
+```json
+{
+  "category_groups": {
+    "code_complex": "planning"
+  }
+}
+```
+
+Unknown categories or target groups are rejected with a warning at load time and ignored; the rest of the mapping still applies.
+
+When the classifier is uncertain and returns `fallback`, the classification now inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history the configured default (`fallback` → `tactical`) stands.
+
 ## How It Works
 
 ### Dynamic Routing
@@ -629,6 +683,10 @@ discovers automatically.
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 | `/router reload` | Hot-reload config and cache |
+| `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
+| `/router config exclude <ref|glob>` | Exclude a model/pattern from routing (saved to user layer, live without restart) |
+| `/router config unexclude <ref|glob>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
+| `/router config compaction on|off` | Cache-aware auto-compaction flag (Phase 5b, not yet implemented) |
 
 ### Logging
 

@@ -22,6 +22,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { homedir } from 'node:os';
 import type { Config } from './types.ts';
+import { CATEGORY_TO_GROUP } from './content-classifier.ts';
+import { warnLog } from './logger.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -112,7 +114,33 @@ export function loadLayeredConfig(
     sources.push(projectOverridePath);
   }
 
+  validateCategoryGroups(config);
+
   return { config, sources };
+}
+
+/**
+ * Task-type-balancing Phase 3: validate the user's `category_groups`
+ * mapping (category → group) after the layered merge. Unknown categories
+ * (not in the built-in CATEGORY_TO_GROUP) and unknown groups (not in
+ * `model_groups`) are rejected with a WARNING naming the offending entry;
+ * the offending entry is dropped, the rest of the mapping still applies.
+ * Warn, never throw — a typo in a user override must not break routing.
+ */
+function validateCategoryGroups(config: Config): void {
+  const mapping = config.category_groups;
+  if (!mapping || typeof mapping !== 'object') return;
+  for (const [category, group] of Object.entries(mapping)) {
+    if (!(category in CATEGORY_TO_GROUP)) {
+      warnLog(`[router] category_groups: unknown category "${category}" — entry ignored (known: ${Object.keys(CATEGORY_TO_GROUP).join(', ')})`);
+      delete mapping[category];
+      continue;
+    }
+    if (typeof group !== 'string' || !config.model_groups[group]) {
+      warnLog(`[router] category_groups: unknown group "${String(group)}" for category "${category}" — entry ignored (known groups: ${Object.keys(config.model_groups).join(', ')})`);
+      delete mapping[category];
+    }
+  }
 }
 
 /**

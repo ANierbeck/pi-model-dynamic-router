@@ -1,6 +1,6 @@
 // src/content-classifier.ts
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
-import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
+import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, wedgeCooldownText } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
@@ -472,9 +472,34 @@ export async function classifyPrompt(
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
   const holder: { source: string | null } = { source: null };
-  const result = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
+  const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
+  const result = inheritPreviousCategory(raw, options.context?.lastCategory);
   countClassification(result, holder.source);
   return result;
+}
+
+/**
+ * Phase 2 of the task-type-balancing plan: a 'fallback' classification ("could
+ * not tell", e.g. a long continuation like "ok, then carry on with the rest")
+ * inherits the previous turn's category — the same idea as the low-confidence
+ * and short-prompt momentum paths — instead of dropping to the default
+ * fallback→tactical group. Applied at the single exit of classifyPrompt so
+ * every producer of 'fallback' (LLM, cache, static, classifier-unavailable) is
+ * covered and the classification cache never stores an inherited result.
+ * HINT and compaction results carry no 'fallback' category and pass through;
+ * without a previous category (fresh session) the default stands.
+ */
+function inheritPreviousCategory(
+  result: FullClassificationResult,
+  lastCategory: ClassificationResult['category'] | undefined,
+): FullClassificationResult {
+  if (!('category' in result) || result.category !== 'fallback') return result;
+  if (!lastCategory || lastCategory === 'fallback') return result;
+  return {
+    ...result,
+    category: lastCategory,
+    reason: `Fallback classification — inheriting previous task category (${lastCategory})`,
+  };
 }
 
 async function classifyPromptUncounted(
@@ -582,7 +607,7 @@ async function classifyPromptUncounted(
       // Feed generation timeouts to the local-provider watchdog (ADR-0016).
       if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
         if (recordLocalTimeout(cache, `ollama/${m}`)) {
-          warnLog(`[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for ${WEDGE_COOLDOWN_TEXT}`);
+          warnLog(`[classifier] Ollama looks wedged (generations keep timing out) — skipping local models for ${wedgeCooldownText(cache, 'ollama')}`);
         }
       }
       throw err;
@@ -960,7 +985,40 @@ export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string>
   fallback:     'tactical',   // uncertain → use a decent model, not a free one
 };
 
-export function getGroupForCategory(category: string): string {
+/**
+ * Task-type-balancing Phase 3: the user's `category_groups` config
+ * (`{ <category>: <group> }`), merged over the built-in CATEGORY_TO_GROUP.
+ * Set once per process by setCategoryGroupMapping (index.ts load()); the
+ * orchestrator reads the live config through this module-level reference,
+ * so a config reload takes effect without a restart. Undefined = built-in
+ * mapping only (the default for everyone — the shipped router-config.json
+ * gains no such key).
+ */
+let categoryGroupOverrides: Record<string, string> | undefined;
+
+/**
+ * Installs the user's category→group overrides (from the layered static
+ * config). Called by index.ts load() on every config (re)load; passing
+ * undefined restores the built-in mapping.
+ */
+export function setCategoryGroupMapping(mapping: Record<string, string> | undefined): void {
+  categoryGroupOverrides = mapping;
+}
+
+/** Test seam: drop the installed overrides. */
+export function resetCategoryGroupMapping(): void {
+  categoryGroupOverrides = undefined;
+}
+
+export function getGroupForCategory(category: string, cfg?: Config): string {
+  // Task-type-balancing Phase 3: the user's category_groups mapping wins
+  // over the built-in CATEGORY_TO_GROUP. Two sources, same precedence:
+  // the cfg argument (live config at the call site) and the module-level
+  // overrides installed by setCategoryGroupMapping (index.ts load()). The
+  // argument wins when both are present so a caller holding a fresher
+  // config is never shadowed by a stale install.
+  const override = cfg?.category_groups?.[category] ?? categoryGroupOverrides?.[category];
+  if (override !== undefined) return override;
   return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'fallback';
 }
 
