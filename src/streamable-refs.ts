@@ -51,7 +51,10 @@ export function isStreamableRef(ref: string, ctx: StreamableRefContext): boolean
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
   if (!modelId) return false;
-  if (ctx.freeModelRefs.has(ref)) return ctx.hasConfiguredAuth(provider);
+  // Local runtimes need no credentials — checked BEFORE the free-model
+  // branch so a (exotic) local ref that also appears in some provider's
+  // free_models list never depends on hasConfiguredAuth.
   if (ctx.isLocalProvider(provider)) return true;
+  if (ctx.freeModelRefs.has(ref)) return ctx.hasConfiguredAuth(provider);
   return ctx.hasRegistryModel(provider, modelId);
 }

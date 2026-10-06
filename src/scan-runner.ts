@@ -573,7 +573,10 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             },
             completeSimple: (model: any, ctx: any, options: any) =>
               registry.runtime.completeSimple(model, ctx, options),
-            hasConfiguredAuth: (model: any) => Boolean(registry.hasConfiguredAuth(model)),
+            hasConfiguredAuth: (model: any) =>
+              typeof registry?.hasConfiguredAuth === 'function'
+                ? Boolean(registry.hasConfiguredAuth(model))
+                : true,
           }, routerLog);
           rt.saveCache();
         }

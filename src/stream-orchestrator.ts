@@ -327,7 +327,12 @@ export class StreamOrchestrator {
           // ModelRegistry facade (unlike completeSimple).
           hasConfiguredAuth: (model: any) => {
             const registry = this.ctx.sessionCtx?.modelRegistry as any;
-            return registry ? Boolean(registry.hasConfiguredAuth(model)) : true;
+            // typeof guard mirrors dynamic-config-runner: a future pi
+            // version dropping the facade method fails OPEN, not with a
+            // TypeError that would silently degrade cloud classification.
+            return typeof registry?.hasConfiguredAuth === 'function'
+              ? Boolean(registry.hasConfiguredAuth(model))
+              : true;
           },
           context: {
             lastAssistantSnippet,

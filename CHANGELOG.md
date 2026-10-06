@@ -15,12 +15,17 @@
   "Provider is not configured: openrouter". Fixed at all three places a
   free-model ref is admitted — persisted dynamic config
   (`src/streamable-refs.ts`), the classifier's live cloud fallback
-  (`src/content-classifier.ts`), and the scan-time fallback probe
-  (`src/classifier-fallback-probe.ts`) — using Pi's synchronous
+  (`src/content-classifier.ts`), the scan-time fallback probe
+  (`src/classifier-fallback-probe.ts`), and the live resolver's discovered
+  pool (`src/routing.ts` `allDiscoveredRefs`, which backs groups without an
+  explicit models list in the pre-scan window) — using Pi's synchronous
   `ModelRuntime.hasConfiguredAuth` (the same authoritative signal
   `getAvailable()`-derived candidates already relied on). Generic: applies
   to any provider's `free_models`, not just OpenRouter; users who DO have a
-  key configured see no change.
+  key configured see no change. Live paths are fixed immediately; already
+  persisted group lists in `router-config.dynamic.json` heal at the next
+  scan cycle (models cache TTL) — stale refs there are skipped gracefully
+  at stream time until then.
 
 ### Fixed (task-type balancing, Phase 0 + 1)
 

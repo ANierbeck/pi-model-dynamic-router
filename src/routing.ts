@@ -560,9 +560,20 @@ export class Router {
     }
     
     // Also include free models from configuration (e.g., openrouter free tier)
-    // These might not be in the registry but are available via the provider
-    for (const provConfig of Object.values(this.cfg.providers ?? {})) {
+    // These might not be in the registry but are available via the provider.
+    // Bug 2026-10-06 (review finding 1, the fifth free_models consumer):
+    // credential gate — a free_models entry only counts when Pi can actually
+    // authenticate the provider (ModelRuntime.hasConfiguredAuth, the same
+    // synchronous signal the other admission gates use). This resolver feeds
+    // groups WITHOUT an explicit models list, so without the gate a keyless
+    // user's trivial/simple groups still ranked dead openrouter/* refs in the
+    // pre-scan window. Fail-open: a registry that cannot answer keeps the
+    // pre-fix behavior instead of silently emptying the pool.
+    const runtime = (this.sessionCtx?.modelRegistry as any)?.runtime;
+    const canAnswerAuth = typeof runtime?.hasConfiguredAuth === 'function';
+    for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
       if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
+        if (canAnswerAuth && !runtime.hasConfiguredAuth(provId)) continue;
         for (const freeModel of provConfig.free_models) {
           refs.add(freeModel);
         }
