@@ -606,7 +606,7 @@ export function createCommands(rt: CommandDeps) {
         }
         // Footer: show total count if more than shown
         if (total > n) {
-          lines.push(`│    … +${total - n} weitere (sortiert nach ${g.method})`);
+          lines.push(`│    … +${total - n} more (sorted by ${g.method})`);
         }
         lines.push('│');
       }

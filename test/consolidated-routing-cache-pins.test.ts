@@ -556,14 +556,14 @@ describe('dynamic-config-staleness', () => {
 
 describe('get-top-models-total', () => {
   // test/get-top-models-total.test.ts
-  // Regression + feature tests for the "…+N weitere" display footer in /router status.
+  // Regression + feature tests for the "…+N more" display footer in /router status.
   //
   // Symptom (2026-09-20): Users see only the top 5 models per group and wonder why
   // expensive models (e.g. pi-claude) are "weg". The candidates are present but
   // ranked below position 5 in cost-sorted groups.
   //
   // Fix: getTopModels returns both the top-N slice AND the total candidate count.
-  // Status rendering appends a footer line: `│    … +9 weitere (Kandidaten weiter hinten im Cost-Sort)`
+  // Status rendering appends a footer line: `│    … +9 more (candidates further down the cost sort)`
   //
   // The footer should show the total count *after* the same filters/sorts/dedup that
   // produce the top-N slice (i.e., the count of models that would be shown if the user
