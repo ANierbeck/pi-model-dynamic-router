@@ -564,7 +564,10 @@ the `router-config.user.json` layer so changes survive the session but
 stay out of the shipped defaults (same separation as every other
 personal-preference mechanism in this repo).
 
-**Cloud-provider wedge circuit breaker** — idea surfaced 2026-10-06 while
+**Cloud-provider wedge circuit breaker** — PLANNED:
+`docs/plans/2026-10-06-provider-circuit-breaker.md` (one generalized
+local+cloud mechanism, never-dead-end, volatile state; 4 open owner
+questions). Original idea, surfaced 2026-10-06 while
 investigating claude-bridge prompt-capture/empty-response failures
 (P0.4 of the task-type-balancing plan): `src/provider-watchdog.ts` only
 covers LOCAL providers (Ollama daemon wedges). A cloud provider/extension
@@ -572,8 +575,8 @@ that wedges (e.g. a bridge daemon stuck after a load-order race) has no
 equivalent circuit breaker today — the existing Tier-2 blocklist (5
 failures/1h) and per-model cooldowns eventually route around it, but
 there is no explicit "this whole provider is wedged" signal or narration.
-Not scoped or decided yet; needs an owner call on whether the existing
-reactive mechanisms are sufficient before any design work starts.
+The owner confirmed the idea (2026-10-06); the plan's open questions
+gate the implementation.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1
 and 5a are DONE (branch `task-type-phase-0-1-5a`, not yet merged). Still

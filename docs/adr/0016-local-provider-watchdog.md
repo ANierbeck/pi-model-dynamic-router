@@ -72,8 +72,14 @@ not module state, same reason as `model-health.ts`):
 - A daemon that is merely overloaded (two large models cold-starting at
   once) can be skipped for 5 minutes by mistake. Cloud candidates carry the
   load in the meantime.
-- Watchdog state is persisted only when the cache is saved. A restart
-  starts clean, which errs toward trying local again.
+- Watchdog state lives in the cache object, which is written to disk
+  (debounced / every 10 turns) and re-merged on load — so an open wedge
+  *can* survive a restart until its timestamp expires (corrected
+  2026-10-06; this line used to claim "a restart starts clean", which is
+  not what the code does). The provider circuit breaker plan
+  (`docs/plans/2026-10-06-provider-circuit-breaker.md`, D7) proposes making
+  breaker state volatile so that a restart — the usual remedy for a wedge —
+  never leaves a stale skip behind.
 
 Tests: `test/provider-watchdog.test.ts` (thresholds, window, success
 clears, cooldown expiry, narrate once, provider isolation) and
