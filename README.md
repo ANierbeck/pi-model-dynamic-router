@@ -49,6 +49,20 @@ Users can override the embedded defaults without editing extension files:
 Supports `exclude` rules (no paid OpenRouter models, no Fable, etc.).
 See [`docs/config-override.md`](docs/config-override.md) for details.
 
+### Category-to-Group Mapping
+
+The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to a model group (e.g., `code_complex` → `tactical`). Users can override individual mappings via the `category_groups` config key:
+
+```json
+{
+  "category_groups": {
+    "code_complex": "planning"
+  }
+}
+```
+
+Unknown categories or target groups are rejected with a warning at load time and ignored; the rest of the mapping still applies.
+
 ## How It Works
 
 ### Dynamic Routing

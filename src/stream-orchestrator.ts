@@ -220,7 +220,7 @@ export interface StreamOrchestratorContext {
   // Classification helpers
   classifyPrompt: (prompt: string, opts: any) => Promise<any>;
   detectHintDirectly: (prompt: string) => any;
-  getGroupForCategory: (category: string) => string;
+  getGroupForCategory: (category: string, cfg?: Config) => string;
   // Context helpers
   extractLastUserPrompt: (context: Context) => string | undefined;
   extractLastAssistantSnippet: (context: Context) => string | undefined;
@@ -518,7 +518,7 @@ export class StreamOrchestrator {
           targetGroup = this.ctx.escalation.level;
           routerLog(`[escalation] Using escalated group: ${targetGroup}`);
         } else {
-          targetGroup = this.ctx.getGroupForCategory(normalClassification.category);
+          targetGroup = this.ctx.getGroupForCategory(normalClassification.category, cfg);
         }
 
         let res = this.ctx.resolve(targetGroup);
