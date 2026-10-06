@@ -229,6 +229,12 @@ costs ~$0.28 once; every later step at 50k instead of 200k saves ~$0.02
   handoff summary linked via `parentSession`. Pi allows `newSession()`
   only from user-invoked commands, so the router could never do this on
   its own.
+  *Assessment (agent, 2026-10-06 — not an owner decision):* the same
+  cold-cache logic that makes compaction cheapest after a miss applies to a
+  fresh start (everything is paid at full price anyway), and 5b already
+  captures most of the in-session saving with a fraction of the machinery —
+  which is why deferring 5c costs little. The owner's recorded reasons for
+  suggest-only remain the ones above.
 - **5d Later options:** summarize via a cheaper model through the
   `session_before_compact` hook; threshold review for `bulk_read`
   (block_lines 350) and the shrinker.
