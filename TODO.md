@@ -594,8 +594,8 @@ The owner confirmed the idea (2026-10-06); the plan's open questions
 gate the implementation.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1,
-2, 3 and 5a are DONE (Phase 0, 1, 5a merged in PR #36; Phase 2, 3 merged in
-PR #46). Still open in that plan, each gated by the previous step or an
+2, 3 and 5a are DONE (Phase 0, 1, 5a merged in PR #36; Phase 2, 3 in the
+2026-10-07 work-round PR). Still open in that plan, each gated by the previous step or an
 explicit owner decision: Phase 4 (optional provider budget pacing, needs
 5a's cacheRead accounting — now available), 5b (cache-aware auto-compaction,
 opt-in, builds on 5a's measurement), 5c (fresh-session suggestion — explicitly
