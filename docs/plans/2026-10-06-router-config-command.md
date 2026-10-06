@@ -145,3 +145,14 @@ Phase 2 still works with the D4 limitation.
 3. **Q3 — scope v1:** exclude/un-exclude + compaction flag only, as the
    backlog item says? (Not: group edits, pinning, budgets — those stay in
    hand-edited config until asked for.)
+
+## Review follow-ups (Lane C round, 2026-10-07)
+
+- **Bare provider pattern (review Minor 1 — product decision, deferred):**
+  `/router config exclude openrouter` passes validation but lands in
+  `exclude.models`, where it matches only the exact (nonexistent) ref
+  `openrouter` — match count 0, reversible, visible. Options: reject bare
+  patterns that look like provider ids, or map them to
+  `exclude.providers`. Needs an owner call; not a routing risk.
+- Provider-level coverage of unexclude notes (review Minor 2) and the
+  README alignment (Minor 3) were fixed in the round.
