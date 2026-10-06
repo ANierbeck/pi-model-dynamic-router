@@ -31,7 +31,7 @@ import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
 import { isExcluded } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
-import { readConfigLayers, type ConfigLayerView } from './user-config-store.ts';
+import { openUserConfigStore, readConfigLayers, validateExcludePattern, type ConfigLayerView } from './user-config-store.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
@@ -210,12 +210,72 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
   return lines.join('\n');
 }
 
+const SCAN_CYCLE_NOTE = 'The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.';
+
+/** `/router config exclude <pattern>` — validate, persist to the user layer, apply live. */
+function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], pattern: string): string {
+  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  const invalid = validateExcludePattern(pattern);
+  if (invalid) return invalid;
+
+  const store = openUserConfigStore();
+  // A corrupt user file reads as no config here; applyDelta then refuses to write over it.
+  const current = userExcludeModels(store.read().config);
+  if (current.includes(pattern)) return `"${pattern}" is already in the user config's exclude list.`;
+
+  const matches = countMatches(rt, { models: [pattern] }, rawDiscoveredRefs(rt, ctx));
+  const next = [...current, pattern];
+  const res = store.applyDelta({ exclude: { models: next } });
+  if (!res.ok) return res.error;
+
+  // Immediate in-memory effect, then the authoritative re-read (same path as
+  // session_start) so the running router sees exactly what the next start will.
+  rt.cfg.exclude = { ...rt.cfg.exclude, models: [...new Set([...(rt.cfg.exclude?.models ?? []), pattern])] };
+  rt.load();
+  return [
+    `Excluded "${pattern}" — it matches ${matches} discovered model(s) right now.`,
+    `Saved to ${res.written}. ${SCAN_CYCLE_NOTE}`,
+  ].join('\n');
+}
+
+/** `/router config unexclude <pattern>` — user-layer entries only (D4). */
+function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: string): string {
+  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  const user = layers.find((l) => l.origin === 'user')!;
+  if (user.error) return `Not written — ${user.error}; fix or remove it first.`;
+  const others = layers.filter((l) => l.origin !== 'user' && l.exclude.models?.includes(pattern));
+
+  const current = user.exclude.models ?? [];
+  if (!current.includes(pattern)) {
+    if (others.length === 0) return `"${pattern}" is not in any exclude list.`;
+    const origin = others[0].origin;
+    return `"${pattern}" is part of the ${origin} defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round).`;
+  }
+
+  const res = openUserConfigStore().applyDelta({ exclude: { models: current.filter((p) => p !== pattern) } });
+  if (!res.ok) return res.error;
+
+  if (others.length === 0 && rt.cfg.exclude?.models) {
+    rt.cfg.exclude = { ...rt.cfg.exclude, models: rt.cfg.exclude.models.filter((p) => p !== pattern) };
+  }
+  rt.load();
+  const still = others.length ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.` : '';
+  return `Removed "${pattern}" from the user config (${res.written}).${still} ${SCAN_CYCLE_NOTE}`;
+}
+
+function userExcludeModels(config: Record<string, unknown> | undefined): string[] {
+  const exclude = config?.exclude as { models?: unknown } | undefined;
+  return Array.isArray(exclude?.models) ? exclude.models.filter((p): p is string => typeof p === 'string') : [];
+}
+
 /** `/router config ...` — returns the text to show. */
 function handleConfigCommand(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], rest: string): string {
-  const [sub] = rest.split(/\s+/);
-  const layers = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
-  if (!sub) return formatConfigDisplay(rt, layers, rawDiscoveredRefs(rt, ctx));
+  const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
+  const layers = () => readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
+  if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
   if (sub === 'compaction') return COMPACTION_PENDING;
+  if (sub === 'exclude') return excludePattern(rt, ctx, arg);
+  if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
 }
 

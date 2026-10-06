@@ -27,7 +27,8 @@ let prevAgentDir: string | undefined;
 function writeShipped(extra: Record<string, unknown> = {}): void {
   const base = {
     model_groups: {
-      trivial: { description: 'Trivial', method: 'min_cost_if_all_priced', max_cost: 0, min_gdpval: 0, fallback_groups: [] },
+      // roundrobin = no price/score gates, so unscored fixture models stay candidates.
+      trivial: { description: 'Trivial', method: 'roundrobin', fallback_groups: [] },
     },
     providers: {},
     model_metrics: {},
@@ -66,6 +67,7 @@ function setup(refs: string[] = REGISTRY_REFS) {
   const load = vi.fn(() => {
     cfg = loadLayeredConfig(extDir, cwd).config;
     router = new Router(cfg, cache, new Map());
+    router.setSessionCtx(rt.sessionCtx);
     metricsModule.setConfig(cfg);
     metricsModule.setCache(cache);
     metricsModule.setModelMap({}, []);
@@ -78,7 +80,7 @@ function setup(refs: string[] = REGISTRY_REFS) {
     cache,
     cfgPath: path.join(extDir, 'router-config.json'),
     load,
-    sessionCtx: null,
+    sessionCtx: null as any,
     rateLimitManager: { getLimits: () => new Map(), listLimits: () => [] },
     allDiscoveredRefs: () => router.allDiscoveredRefs(),
     getTopModels: () => ({ models: [], total: 0 }),
@@ -91,9 +93,10 @@ function setup(refs: string[] = REGISTRY_REFS) {
     },
   };
   createCommands(rt);
-  load();
   const notify = vi.fn();
   const ctx = { modelRegistry: makeRegistry(refs), ui: { notify } };
+  rt.sessionCtx = ctx; // the running session; the handler restores it after every call
+  load();
   const run = async (args: string): Promise<string> => {
     notify.mockClear();
     await handler(args, ctx);
@@ -197,5 +200,138 @@ describe('/router config — autocomplete', () => {
   it('lists config in the unfiltered completions', () => {
     writeShipped();
     expect(setup().completions('')!.map((r) => r.value)).toContain('config');
+  });
+});
+
+describe('/router config exclude', () => {
+  const SHIPPED_PATH = () => path.join(extDir, 'router-config.json');
+  const candidates = (rt: any) => rt.resolve('trivial')?.candidates ?? [];
+
+  beforeEach(() => {
+    writeShipped();
+  });
+
+  it('applies live: rt.cfg.exclude gains the pattern and the next resolve skips the matching model', async () => {
+    const { rt, run } = setup(['aprov/m1:free', 'bprov/m2:free']);
+    expect(candidates(rt)).toContain('aprov/m1:free');
+
+    await run('config exclude aprov/*');
+
+    expect(rt.cfg.exclude.models).toContain('aprov/*');
+    expect(candidates(rt)).not.toContain('aprov/m1:free');
+    expect(candidates(rt)).toContain('bprov/m2:free');
+  });
+
+  it('persists the pattern to the user file and keeps every key it already had', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['p'], models: ['old/*'] } }));
+    await setup(['aprov/m1:free']).run('config exclude aprov/*');
+
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.log_level).toBe('debug');
+    expect(after.exclude.providers).toEqual(['p']);
+    expect(after.exclude.models).toEqual(['old/*', 'aprov/*']);
+  });
+
+  it('leaves the shipped config byte-identical and writes no project config', async () => {
+    const before = fs.readFileSync(SHIPPED_PATH());
+    await setup(['aprov/m1:free']).run('config exclude aprov/*');
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).exclude.models).toEqual(['aprov/*']);
+    expect(fs.readFileSync(SHIPPED_PATH()).equals(before)).toBe(true);
+    expect(fs.existsSync(path.join(cwd, '.pi'))).toBe(false);
+  });
+
+  it('reports the match count and the scan-cycle note', async () => {
+    const out = await setup(['aprov/m1:free', 'aprov/m2:free', 'bprov/m3:free']).run('config exclude aprov/*');
+    expect(out).toContain('matches 2 discovered model(s)');
+    expect(out).toContain('takes full effect at the next scan cycle for persisted group lists');
+  });
+
+  it('rejects an implausible pattern without writing anything', async () => {
+    const out = await setup().run('config exclude has space');
+    expect(out).toMatch(/not a model ref or glob/);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('answers a missing pattern with the usage hint', async () => {
+    const out = await setup().run('config exclude');
+    expect(out).toContain('Missing pattern');
+    expect(out).toContain('/router config exclude <ref|glob>');
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('refuses to write over a corrupt user file and surfaces the error', async () => {
+    fs.writeFileSync(userFile, '{ corrupt');
+    const { rt, run } = setup(['aprov/m1:free']);
+    const out = await run('config exclude aprov/*');
+    expect(out).toMatch(/Not written/);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe('{ corrupt');
+    expect(rt.cfg.exclude?.models ?? []).not.toContain('aprov/*');
+  });
+
+  it('does not duplicate a pattern the user layer already has', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['aprov/*'] } }));
+    const out = await setup(['aprov/m1:free']).run('config exclude aprov/*');
+    expect(out).toMatch(/already/);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).exclude.models).toEqual(['aprov/*']);
+  });
+});
+
+describe('/router config unexclude', () => {
+  beforeEach(() => {
+    writeShipped({ exclude: { models: ['shipped-prov/*'] } });
+  });
+
+  it('removes a user-layer entry, persists it, keeps other keys and re-admits the model', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov/*', 'keep/*'] } }));
+    const { rt, run } = setup(['aprov/m1:free', 'bprov/m2:free']);
+    expect(rt.resolve('trivial')!.candidates).not.toContain('aprov/m1:free');
+
+    const out = await run('config unexclude aprov/*');
+
+    expect(out).toContain('takes full effect at the next scan cycle for persisted group lists');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.log_level).toBe('debug');
+    expect(after.exclude.models).toEqual(['keep/*']);
+    expect(rt.cfg.exclude.models).not.toContain('aprov/*');
+    expect(rt.resolve('trivial')!.candidates).toContain('aprov/m1:free');
+  });
+
+  it('refuses a shipped entry with the documented answer and leaves the user file alone', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['other/*'] } }));
+    const before = fs.readFileSync(userFile, 'utf-8');
+    const out = await setup().run('config unexclude shipped-prov/*');
+    expect(out).toContain(
+      '"shipped-prov/*" is part of the shipped defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round)'
+    );
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
+  });
+
+  it('refuses a project entry naming the project layer', async () => {
+    fs.mkdirSync(path.join(cwd, '.pi'));
+    fs.writeFileSync(path.join(cwd, '.pi', 'router-config.json'), JSON.stringify({ exclude: { models: ['proj/*'] } }));
+    const out = await setup().run('config unexclude proj/*');
+    expect(out).toContain('"proj/*" is part of the project defaults — removable only in that layer');
+  });
+
+  it('says so when a removed user entry is still excluded by another layer', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['shipped-prov/*'] } }));
+    const { rt, run } = setup();
+    const out = await run('config unexclude shipped-prov/*');
+    expect(out).toMatch(/still excluded by the shipped layer/);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).exclude.models).toEqual([]);
+    expect(rt.cfg.exclude.models).toContain('shipped-prov/*');
+  });
+
+  it('answers honestly when the pattern is in no layer', async () => {
+    const out = await setup().run('config unexclude nowhere/*');
+    expect(out).toContain('"nowhere/*" is not in any exclude list');
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('refuses to rewrite a corrupt user file', async () => {
+    fs.writeFileSync(userFile, '{ corrupt');
+    const out = await setup().run('config unexclude aprov/*');
+    expect(out).toMatch(/Not written|unreadable|not in any/);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe('{ corrupt');
   });
 });
