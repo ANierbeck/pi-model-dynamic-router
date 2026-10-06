@@ -396,10 +396,6 @@ export interface Cache {
    * ADR-0016; a stale `local_provider_health` left in an old cache file is
    * ignored. Phase 3 makes this key volatile (stripped on save).
    */
-  local_provider_health?: Record<string, {
-    timeouts: Record<string, number>;
-    wedged_until?: number;
-  }>;
   provider_breaker?: Record<string, {
     evidence: Record<string, number>;
     open_until?: number;

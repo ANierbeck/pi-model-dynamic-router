@@ -81,6 +81,13 @@ not module state, same reason as `model-health.ts`):
   breaker state volatile so that a restart — the usual remedy for a wedge —
   never leaves a stale skip behind.
 
+**Update 2026-10-06 (breaker plan, Phase 1):** the mechanism moved to
+`src/provider-breaker.ts` (one breaker for local and cloud providers);
+`src/provider-watchdog.ts` is now a thin shim with the names above. The flat
+5-minute cooldown was replaced by the breaker's `[2, 5, 15]` min ladder (first
+trip 2 min, repeated trips without a success escalate, capped at 15 min) —
+owner decision on plan question Q2. State moved to `cache.provider_breaker`.
+
 Tests: `test/provider-watchdog.test.ts` (thresholds, window, success
 clears, cooldown expiry, narrate once, provider isolation) and
 `test/provider-watchdog-integration.test.ts`. The integration test covers

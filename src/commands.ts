@@ -26,6 +26,7 @@ import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
 import { isProviderWedged, wedgeFixHint } from './provider-watchdog.ts';
+import { openBreakers } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
@@ -469,9 +470,9 @@ export function createCommands(rt: CommandDeps) {
       }
 
       // Local-provider watchdog (ADR-0016)
-      for (const [provider, h] of Object.entries(rt.cache.local_provider_health ?? {})) {
+      for (const { provider, until } of openBreakers(rt.cache)) {
         if (!isProviderWedged(rt.cache, provider)) continue;
-        const secs = Math.ceil(((h.wedged_until ?? 0) - Date.now()) / 1000);
+        const secs = Math.ceil((until - Date.now()) / 1000);
         lines.push('├─ Local provider watchdog '.padEnd(72, '─'));
         lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s. Fix: ${wedgeFixHint(provider)}.`);
       }

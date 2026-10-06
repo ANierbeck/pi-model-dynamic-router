@@ -11,6 +11,7 @@ import {
   recordProviderSuccess,
   isProviderOpen,
   breakerState,
+  openBreakers,
   BREAKER_COOLDOWN_LADDER_MS,
   WEDGE_WINDOW_MS,
 } from '../src/provider-breaker.ts';
@@ -214,5 +215,17 @@ describe('state machine and cooldown ladder (D5)', () => {
     trip(cache, 0);
     recordProviderSuccess(cache, 'cloud-a/m1');
     expect(isProviderOpen(cache, 'ollama', 100)).toBe(true);
+  });
+});
+
+describe('openBreakers (status displays)', () => {
+  it('lists only currently open breakers with their expiry', () => {
+    const cache: Cache = {};
+    recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, 0);
+    recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, 1);
+    recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, 2);
+    expect(openBreakers(cache, 10)).toEqual([{ provider: 'ollama', until: 1 + BREAKER_COOLDOWN_LADDER_MS[0] }]);
+    expect(openBreakers(cache, 1 + BREAKER_COOLDOWN_LADDER_MS[0])).toEqual([]);
+    expect(openBreakers(undefined, 10)).toEqual([]);
   });
 });

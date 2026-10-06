@@ -134,3 +134,10 @@ export function breakerState(
     evidence: liveEvidence(s, now),
   };
 }
+
+/** Providers whose breaker is open right now, with the expiry, for status displays. */
+export function openBreakers(cache: Cache | undefined, now: number = Date.now()): { provider: string; until: number }[] {
+  return Object.entries(cache?.provider_breaker ?? {})
+    .filter(([provider]) => isProviderOpen(cache, provider, now))
+    .map(([provider, s]) => ({ provider, until: s.open_until! }));
+}
