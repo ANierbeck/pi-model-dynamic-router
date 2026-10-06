@@ -22,9 +22,10 @@ export interface ExcludeContext {
 
 /**
  * Build a fast matcher for a glob pattern. "*" matches any run of chars.
- * Returns a function that tests a model ref.
+ * Returns a function that tests a model ref. Exported for callers that need
+ * to test non-ref strings (e.g. provider names) with the same semantics.
  */
-function globMatcher(pattern: string): (ref: string) => boolean {
+export function globMatcher(pattern: string): (ref: string) => boolean {
   // Escape regex specials, then turn * into ".*"
   const re = new RegExp(
     '^' +

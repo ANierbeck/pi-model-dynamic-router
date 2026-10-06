@@ -5,10 +5,12 @@
 ### Added
 
 - **Configurable category-to-group mapping** (task-type-balancing Phase 3): users can override individual category→group assignments via `category_groups` in any config layer; unknown categories or groups are warned and dropped at load time, the rest applies.
+- **`/router config` command (Phases 1–2):** live routing configuration without a restart. Display shows config sources with origin markers (shipped/user/project), every effective `exclude` rule with its origin and how many currently discovered models it matches, and the compaction state (Phase 5b stub). Subcommands: `exclude <ref|glob>` to add a user-layer exclusion (applies live, persisted group lists regenerate at next scan cycle), `unexclude <ref|glob>` to remove user-layer entries only (shipped/project defaults remain and are reported honestly), `compaction on|off` (Phase 5b, not yet implemented). All writes go only to `router-config.user.json`.
 
 ### Changed
 
 - **Fallback classifications inherit the previous turn's category** (task-type-balancing Phase 2): when the classifier returns `fallback` and a previous non-fallback category exists in the session context, that previous category is inherited — same mechanism as the existing low-confidence and short-prompt momentum paths. Applied at the single `classifyPrompt` exit so every producer of `fallback` (LLM, cache, static, classifier-unavailable) is covered; HINT and compaction results are never overridden; without history the configured default (`fallback` → `tactical`) stands.
+- **Live exclusion takes effect without restart:** added exclusions are applied to the running router immediately (next turn); persisted dynamic group candidate lists update at the next scan cycle.
 
 ### Security (dev-tooling dependency round, 2026-10-06)
 

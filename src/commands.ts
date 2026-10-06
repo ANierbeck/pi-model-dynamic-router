@@ -12,6 +12,7 @@
  * can follow later if wanted. Pure code motion.
  */
 
+import * as path from 'node:path';
 import { costTracker } from './cost-tracker.ts';
 import {
   getLastClassificationSource,
@@ -29,8 +30,11 @@ import { isProviderWedged, wedgeFixHint } from './provider-watchdog.ts';
 import { openBreakers } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
+import { isExcluded, globMatcher } from './exclude.ts';
+import { isVirtualGroupRef } from './routing.ts';
+import { openUserConfigStore, readConfigLayers, validateExcludePattern, type ConfigLayerView } from './user-config-store.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import type { Cache, Config, Group, Metrics } from './types.ts';
+import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
@@ -47,6 +51,8 @@ interface CommandDeps {
   readonly cache: Cache;
   readonly cacheManager: CacheManager;
   readonly cfg: Config;
+  /** Path of the shipped router-config.json (its directory is the extension dir). */
+  readonly cfgPath: string;
   readonly costMux: (prov: string) => number;
   readonly curModel: string;
   readonly effCost: (ref: string) => number | "unknown";
@@ -151,12 +157,159 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   return lines;
 }
 
+const CONFIG_USAGE_LINES = [
+  'Usage:',
+  '  /router config                          show config sources + exclude rules',
+  '  /router config exclude <ref|glob>       exclude a model/pattern from routing',
+  '  /router config unexclude <ref|glob>     remove a user-layer exclusion',
+  '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
+];
+
+const COMPACTION_PENDING = 'compaction: not implemented yet (Phase 5b)';
+
+/**
+ * Every model ref Pi currently offers, BEFORE the exclude rules: the router's
+ * own allDiscoveredRefs() is post-exclude, so a rule already in effect would
+ * always count 0 matches against it.
+ */
+function rawDiscoveredRefs(rt: CommandDeps, ctx: { modelRegistry?: { getAvailable(): Array<{ provider: string; id: string }> } }): string[] {
+  const refs = new Set(rt.router.allDiscoveredRefs());
+  for (const m of ctx.modelRegistry?.getAvailable() ?? []) refs.add(`${m.provider}/${m.id}`);
+  for (const m of rt.cache.available_models ?? []) refs.add(`${m.provider}/${m.id}`);
+  const groupNames = new Set(Object.keys(rt.cfg.model_groups ?? {}));
+  return [...refs].filter((r) => !isVirtualGroupRef(r, groupNames));
+}
+
+/** How many of `refs` a single exclude rule drops (the rule alone, not the union). */
+function countMatches(rt: CommandDeps, rule: ExcludeRules, refs: string[]): number {
+  return refs.filter((ref) => isExcluded(ref, { rules: rule, cfg: rt.cfg, cache: rt.cache })).length;
+}
+
+/** `/router config` (bare): sources with origin, every exclude rule with origin + match count, hints. */
+function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: string[]): string {
+  const lines: string[] = ['Router config', '', 'Sources (later layers override earlier ones; exclude lists are unioned):'];
+  for (const l of layers) {
+    const note = l.error ? ` (unusable: ${l.error})` : l.present ? '' : ' (not present)';
+    lines.push(`  ${l.origin.padEnd(8)} ${l.path}${note}`);
+  }
+  lines.push('', 'Exclude rules:');
+  let any = false;
+  for (const l of layers) {
+    const tag = `[${l.origin}]`.padEnd(9);
+    const kinds = ['models', 'providers', 'paid_models_from'] as const;
+    for (const kind of kinds) {
+      for (const pattern of l.exclude[kind] ?? []) {
+        any = true;
+        const n = countMatches(rt, { [kind]: [pattern] }, refs);
+        lines.push(`  ${tag} ${kind}: ${pattern}  → matches ${n} discovered model(s)`);
+      }
+    }
+  }
+  if (!any) lines.push('  (none)');
+  lines.push('', COMPACTION_PENDING, '', ...CONFIG_USAGE_LINES);
+  lines.push('Shipped and project entries cannot be removed with unexclude — only user-layer entries can.');
+  return lines.join('\n');
+}
+
+const SCAN_CYCLE_NOTE = 'The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.';
+
+/** `/router config exclude <pattern>` — validate, persist to the user layer, apply live. */
+function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], pattern: string): string {
+  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  const invalid = validateExcludePattern(pattern);
+  if (invalid) return invalid;
+
+  const store = openUserConfigStore();
+  // A corrupt user file reads as no config here; applyDelta then refuses to write over it.
+  const current = userExcludeModels(store.read().config);
+  if (current.includes(pattern)) return `"${pattern}" is already in the user config's exclude list.`;
+
+  const matches = countMatches(rt, { models: [pattern] }, rawDiscoveredRefs(rt, ctx));
+  const next = [...current, pattern];
+  const res = store.applyDelta({ exclude: { models: next } });
+  if (!res.ok) return res.error;
+
+  // Immediate in-memory effect, then the authoritative re-read (same path as
+  // session_start) so the running router sees exactly what the next start will.
+  rt.cfg.exclude = { ...rt.cfg.exclude, models: [...new Set([...(rt.cfg.exclude?.models ?? []), pattern])] };
+  rt.load();
+  return [
+    `Excluded "${pattern}" — it matches ${matches} discovered model(s) right now.`,
+    `Saved to ${res.written}. ${SCAN_CYCLE_NOTE}`,
+  ].join('\n');
+}
+
+/**
+ * The exclude kind of a non-user layer whose provider-level rules
+ * (exclude.providers / exclude.paid_models_from) still cover the pattern's
+ * models, or null. Review Minor 2: the unexclude notes used to check only
+ * exclude.models, so a provider-level exclusion in another layer produced
+ * a misleading "not in any exclude list" / missing "still excluded" note.
+ */
+function coveringProviderRuleKind(layer: ConfigLayerView, pattern: string): 'providers' | 'paid_models_from' | null {
+  const prov = pattern.split('/')[0];
+  const covers = (entries: string[] | undefined) =>
+    (entries ?? []).some((e) => e === prov || (e.includes('*') && globMatcher(e)(prov)));
+  if (covers(layer.exclude.providers)) return 'providers';
+  if (covers(layer.exclude.paid_models_from)) return 'paid_models_from';
+  return null;
+}
+
+/** `/router config unexclude <pattern>` — user-layer entries only (D4). */
+function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: string): string {
+  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  const user = layers.find((l) => l.origin === 'user')!;
+  if (user.error) return `Not written — ${user.error}; fix or remove it first.`;
+  const others = layers.filter(
+    (l) =>
+      l.origin !== 'user' &&
+      (l.exclude.models?.includes(pattern) || coveringProviderRuleKind(l, pattern) !== null)
+  );
+
+  const current = user.exclude.models ?? [];
+  if (!current.includes(pattern)) {
+    if (others.length === 0) return `"${pattern}" is not in any exclude list.`;
+    const first = others[0];
+    if (first.exclude.models?.includes(pattern)) {
+      return `"${pattern}" is part of the ${first.origin} defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round).`;
+    }
+    const kind = coveringProviderRuleKind(first, pattern);
+    return `"${pattern}" is not in any models exclude list, but "${pattern.split('/')[0]}" models stay excluded by the ${first.origin} layer (exclude.${kind}).`;
+  }
+
+  const res = openUserConfigStore().applyDelta({ exclude: { models: current.filter((p) => p !== pattern) } });
+  if (!res.ok) return res.error;
+
+  if (others.length === 0 && rt.cfg.exclude?.models) {
+    rt.cfg.exclude = { ...rt.cfg.exclude, models: rt.cfg.exclude.models.filter((p) => p !== pattern) };
+  }
+  rt.load();
+  const still = others.length ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.` : '';
+  return `Removed "${pattern}" from the user config (${res.written}).${still} ${SCAN_CYCLE_NOTE}`;
+}
+
+function userExcludeModels(config: Record<string, unknown> | undefined): string[] {
+  const exclude = config?.exclude as { models?: unknown } | undefined;
+  return Array.isArray(exclude?.models) ? exclude.models.filter((p): p is string => typeof p === 'string') : [];
+}
+
+/** `/router config ...` — returns the text to show. */
+function handleConfigCommand(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], rest: string): string {
+  const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
+  const layers = () => readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
+  if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
+  if (sub === 'compaction') return COMPACTION_PENDING;
+  if (sub === 'exclude') return excludePattern(rt, ctx, arg);
+  if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
+  return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
+}
+
 export function createCommands(rt: CommandDeps) {
   // ── Command: /router ───────────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {
     description:
-      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]]',
+      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref>]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
@@ -168,6 +321,10 @@ export function createCommands(rt: CommandDeps) {
         { value: 'blocklist clear', label: 'blocklist clear', description: 'Unblock all models, or one: blocklist clear <provider/model>' },
         { value: 'cooldowns', label: 'cooldowns', description: 'Show active rate-limit cooldowns (ref, remaining, hits)' },
         { value: 'cooldowns clear', label: 'cooldowns clear', description: 'Clear all cooldowns + model-health streaks (incident relief, no restart needed)' },
+        { value: 'config', label: 'config', description: 'Show config sources, exclude rules (with origin) and how many models each matches' },
+        { value: 'config exclude', label: 'config exclude <ref>', description: 'Exclude a model/glob from routing (saved to the user config, live without restart)' },
+        { value: 'config unexclude', label: 'config unexclude <ref>', description: 'Remove an exclusion from the user config' },
+        { value: 'config compaction', label: 'config compaction on|off', description: 'Cache-aware auto-compaction flag (not implemented yet, Phase 5b)' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
         const desc = rt.cfg.model_groups?.[g]?.description;
@@ -196,6 +353,11 @@ export function createCommands(rt: CommandDeps) {
           rt.router.setSessionCtx(ctx);
         }
         
+        if (arg === 'config' || arg?.startsWith('config ')) {
+          ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
+          return;
+        }
+
         if (arg === 'scan') {
           ctx.ui.notify('Scanning...');
           await rt.scan(true);
