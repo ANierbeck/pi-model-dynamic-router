@@ -20,10 +20,11 @@ updates:
       # bumps. The first Dependabot run (2026-10-04) proposed pi 1.0.2;
       # green CI proved nothing because the suite mocks most of pi.
       - dependency-name: "@earendil-works/pi-coding-agent"
-      # vitest 3 -> 5 is a two-major jump whose coverage-v8 branch
-      # accounting currently fails the pinned coverage threshold
-      # (AGENTS.md §4 forbids lowering it to unblock the run). Muted
-      # until the dedicated vitest-5 migration round (see TODO.md).
+      # vitest is on 4.x since the 2026-10-06 security round. The 4 -> 5
+      # major needs Node >= 22.12 and its coverage-v8 branch accounting
+      # currently fails the pinned coverage threshold (AGENTS.md §4
+      # forbids lowering it to unblock the run). Muted until the
+      # dedicated vitest-5 migration round (see TODO.md).
       - dependency-name: "vitest"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@vitest/*"

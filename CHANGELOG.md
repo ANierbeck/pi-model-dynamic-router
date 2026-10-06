@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Security (dev-tooling dependency round, 2026-10-06)
+
+- **Dependabot/`npm audit` findings evaluated and the reachable ones fixed.**
+  None of the flagged packages is part of the published artifact: the only
+  third-party code bundled into `dist/index.js` is `yaml`, and consumers
+  install none of the devDependencies, so exposure was dev machines and CI
+  only. Still lifted: `vitest`/`@vitest/coverage-v8` 3.2.6 -> 4.1.11 (drops
+  `tinypool` — critical prototype-pollution gadget — and fixes the
+  `@vitest/mocker` file-read advisory; thresholds unchanged), `vite` ->
+  8.3.3 with `esbuild` deduplicated to 0.28.1 (a plain `npm audit fix` had
+  only *downgraded* the nested esbuild below the advisory range — not a
+  fix), `postcss`, `qs`, `source-map-js`, `protobufjs`, `nanoid`.
+  Still open and host-pinned: `undici` and a nested `brace-expansion`
+  inside `pi-coding-agent@0.83.0` (its `npm-shrinkwrap.json` defeats
+  overrides) — resolved by the planned host-upgrade round, tracked in
+  TODO.md.
+
 ### Fixed (unconfigured free-model provider, external bug report 2026-10-06)
 
 - **A user without an OpenRouter key had every cheap group and the

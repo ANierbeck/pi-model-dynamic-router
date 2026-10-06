@@ -536,6 +536,9 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   vacuity), then decide Phase 2 scope.
 
 **vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
+UPDATE 2026-10-06: vitest is now on 4.1.11 (security round, see CHANGELOG) —
+it passes the pinned coverage thresholds unchanged, so only the 4 -> 5 step
+(Node >= 22.12 engines, the coverage-v8 5.x accounting below) is still open.
 Dependabot proposed vitest 3.2.6 -> 5.0.3 (two majors, PRs #10/#13, both
 closed). Red CI: coverage-v8 5.x counts branches differently and the run
 lands at 74.27% against the pinned 76% threshold — AGENTS.md §4 forbids
@@ -544,6 +547,14 @@ migrate the API surface, re-derive a JUSTIFIED branch threshold from the
 new accounting (documented, not fitted to pass), and remove the
 vitest-majors ignore in .github/dependabot.yml (guarded by
 test/dependabot-config.test.ts).
+
+**Host-pinned security alerts (evaluated 2026-10-06):** `pi-coding-agent@0.83.0`
+ships an `npm-shrinkwrap.json` that pins its whole dependency tree, so
+`overrides` cannot lift its nested `undici` (8.5.0, 14 advisories) or
+`brace-expansion` (5.0.7) — verified: overrides are ignored, even on a fresh
+lock resolution. Exposure here is dev/CI only (nothing of it is bundled into
+`dist/index.js`; consumers run their own pi). The real fix is the host round
+(pi >= 1.0.4, per `npm audit`): schedule it, do not dismiss the alerts.
 
 **Host upgrade policy (pinned 2026-10-04, guarded by
 test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is
