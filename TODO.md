@@ -562,12 +562,15 @@ config, derived local classifier, `non_agent_model_prefixes` spike):
 `docs/plans/2026-10-06-no-hardcoded-models.md`. Target line 1.7.0; awaiting the
 owner's go per phase and answers to the three open questions in the plan.
 
-**`/router config` command** — a live-config command to change routing
+**`/router config` command** — PLANNED:
+`docs/plans/2026-10-06-router-config-command.md` (phases 1-2 ready to
+implement; compaction flag gated on 5b; un-exclude fully free after ADR-0025
+B3 empties the shipped exclude list). A live-config command to change routing
 behaviour without a restart: exclude/un-exclude a model ref (today only
 router-config.user.json pattern lists do this, and only on reload) and an
 on/off flag for cache-aware auto-compaction (Phase 5b of
 `docs/plans/2026-10-05-task-type-balancing.md`, not yet implemented —
-5a's measurement landed, 5b builds on it). Design TBD; likely writes to
+5a's measurement landed, 5b builds on it). Writes to
 the `router-config.user.json` layer so changes survive the session but
 stay out of the shipped defaults (same separation as every other
 personal-preference mechanism in this repo).
