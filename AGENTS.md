@@ -207,3 +207,36 @@
   was admitted on config presence alone, so users without that provider's key
   got dead candidates in every cheap group and in the classifier chain.
 
+## 10. Dependency security alerts are always evaluated
+
+- **Owner rule 2026-10-06:** every Dependabot alert and every `npm audit`
+  finding must be evaluated — never ignored, never batch-dismissed. The
+  goal is the smallest possible attack surface for malicious code, so the
+  question is always "does this reach us, and how do we remove it?", not
+  "is CI green?".
+- Evaluate **per alert**: (1) reachability — dev or runtime scope; is the
+  package bundled into `dist/index.js` or otherwise shipped (check the
+  bundle's `// node_modules/` markers, `files`, `peerDependencies`)?
+  (2) exploit preconditions versus how this repo actually uses the package
+  (attacker-controlled input, network exposure); (3) fix path, in this
+  order: in-range lock refresh, then a targeted bump, then `overrides`
+  (they do NOT apply inside a dependency that ships `npm-shrinkwrap.json`,
+  e.g. the pi host), then a planned major round, and only last a
+  documented accepted risk.
+- **Review what a fix actually does.** `npm audit fix` can "fix" an alert
+  by *downgrading* a package below the advisory's range — that is not a
+  fix. Read the lock diff.
+- Verification bar for dependency changes: `npx tsc --noEmit`,
+  `npx vitest run`, `npm run test:coverage` with thresholds UNCHANGED, and
+  `npm run build` — all green.
+- Report the result to the owner per alert class: fixed / not reachable
+  (why) / blocked (what unblocks it). Open ones are tracked in `TODO.md`.
+  Dismissing an alert on GitHub requires the owner's go.
+- Host upgrades (`@earendil-works/pi-coding-agent`) stay deliberate rounds
+  (see `.github/dependabot.yml`) — but a vulnerable host-pinned transitive
+  dependency is a reason to **schedule** that round, not to ignore the
+  alert.
+- Before a release is proposed (§1), include the current `npm audit`
+  summary in the report.
+ 6a4e239 (chore: dev-tooling security round (vitest 4.1.11, lock refresh) + AGENTS.md §10)
+
