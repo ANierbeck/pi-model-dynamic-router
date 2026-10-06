@@ -18,6 +18,7 @@ import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
 import { fmt, fmtTime } from './utils.ts';
+import { buildUsageLogEntry, formatCacheStatus } from './cache-stats.ts';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import { fileURLToPath } from 'node:url';
@@ -166,15 +167,22 @@ export function createEventHandlers(rt: EventHandlerDeps) {
 
           let inp = 0,
             out = 0,
-            cost = 0;
+            cost = 0,
+            steps = 0;
+          let lastUsage: AssistantMessage['usage'] | undefined;
           for (const e of ctx.sessionManager.getBranch()) {
             if (e.type === 'message' && e.message.role === 'assistant') {
               const a = e.message as AssistantMessage;
               inp += a.usage.input;
               out += a.usage.output;
               cost += a.usage.cost.total;
+              steps++;
+              lastUsage = a.usage;
             }
           }
+          // Phase 5a: context size, cache share of the last step and the
+          // session-average cost per step ("ctx 182.0k · cache 97% · ~$0.03/step").
+          const cacheStr = formatCacheStatus(lastUsage, steps, cost);
           const u = ctx.getContextUsage(),
             pct = u?.percent ?? 0;
           const pCol = pct > 75 ? 'error' : pct > 50 ? 'warning' : 'success';
@@ -203,7 +211,9 @@ export function createEventHandlers(rt: EventHandlerDeps) {
           const sep = theme.fg('dim', ' | ');
           const parts = [rStr];
           if (iStr && tStr) parts.push(`${iStr} ${tStr}`);
-          parts.push(tok, el, cwd);
+          parts.push(tok);
+          if (cacheStr) parts.push(theme.fg('dim', cacheStr));
+          parts.push(el, cwd);
           if (brS) parts.push(brS);
           if (rlS) parts.push(rlS);
           if (errS) parts.push(errS);
@@ -256,10 +266,11 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       // back to curModel for non-routed sessions where they coincide.
       const factualRef = rt.router.getCurModel(rt.turnStart) || rt.curModel;
       const a = msg as AssistantMessage;
-      const realTok =
-        a.usage && typeof a.usage.input === 'number' && typeof a.usage.output === 'number'
-          ? a.usage.input + a.usage.output
-          : 0;
+      // Real usage entry (Phase 5a): tokens = input + output + cacheRead +
+      // cacheWrite — input alone excluded the cached bulk of a long context
+      // (~40x undercount). Null when the provider reported no usage.
+      const usageEntry = buildUsageLogEntry(factualRef, a.usage, Date.now());
+      const realTok = usageEntry?.tokens ?? 0;
       const txt =
         typeof msg.content === 'string'
           ? msg.content
@@ -268,16 +279,16 @@ export function createEventHandlers(rt: EventHandlerDeps) {
               .map((b: any) => b.text)
               .join('');
       // usage_log basis (review I1): REAL tokens when the provider reported
-      // usage (input+output — the old text.length/4 was an output-only
-      // approximation that understated the blended-price estimate badly);
-      // text/4 remains a last-resort fallback for usage-less messages.
+      // usage (the old text.length/4 was an output-only approximation that
+      // understated the blended-price estimate badly); text/4 remains a
+      // last-resort fallback for usage-less messages.
       const tok = realTok > 0 ? realTok : Math.ceil(txt.length / 4);
       if (tok > 0) {
         rt.updateMetrics(factualRef, ms, tok, ms);
         rt.recordOk(factualRef);
         // Log usage
         if (!rt.cache.usage_log) rt.cache.usage_log = [];
-        rt.cache.usage_log.push({ ref: factualRef, tokens: tok, ts: Date.now() });
+        rt.cache.usage_log.push(usageEntry ?? { ref: factualRef, tokens: tok, ts: Date.now() });
         // Trim log to last 30 days
         const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
         rt.cache.usage_log = rt.cache.usage_log.filter((e) => e.ts > cutoff);
@@ -287,7 +298,13 @@ export function createEventHandlers(rt: EventHandlerDeps) {
         // turns whose provider reported no usage are not tracked at all
         // rather than fabricated.
         if (realTok > 0) {
-          costTracker.trackRequest(factualRef, a.usage!.input, a.usage!.output);
+          costTracker.trackRequest(
+            factualRef,
+            a.usage!.input,
+            a.usage!.output,
+            a.usage!.cacheRead ?? 0,
+            a.usage!.cacheWrite ?? 0
+          );
         }
       }
     }

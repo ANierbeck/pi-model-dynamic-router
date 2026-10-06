@@ -1110,3 +1110,20 @@ export function getUsageAll(days: number): Record<string, number> {
   }
   return result;
 }
+
+/**
+ * Provider cache tokens per reference over the last days (Phase 5a). Entries
+ * written before 5a carry no cache fields and contribute 0, so the share is a
+ * lower bound for windows that straddle the upgrade.
+ */
+export function getCacheUsageAll(days: number): Record<string, { cacheRead: number; cacheWrite: number }> {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const result: Record<string, { cacheRead: number; cacheWrite: number }> = {};
+  for (const e of cache.usage_log ?? []) {
+    if (e.ts <= cutoff || (!e.cacheRead && !e.cacheWrite)) continue;
+    const r = (result[e.ref] ??= { cacheRead: 0, cacheWrite: 0 });
+    r.cacheRead += e.cacheRead ?? 0;
+    r.cacheWrite += e.cacheWrite ?? 0;
+  }
+  return result;
+}

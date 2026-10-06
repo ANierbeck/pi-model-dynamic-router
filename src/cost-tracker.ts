@@ -72,8 +72,16 @@ export class CostTracker {
    * @param modelRef - Model reference (e.g. 'openrouter/qwen/qwen3-4b:free')
    * @param inputTokens - Number of input tokens
    * @param outputTokens - Number of output tokens
+   * @param cacheReadTokens - Provider-reported cache reads (Phase 5a; not part of the marginal cost estimate)
+   * @param cacheWriteTokens - Provider-reported cache writes (Phase 5a)
    */
-  trackRequest(modelRef: string, inputTokens: number, outputTokens: number): void {
+  trackRequest(
+    modelRef: string,
+    inputTokens: number,
+    outputTokens: number,
+    cacheReadTokens = 0,
+    cacheWriteTokens = 0
+  ): void {
     const price = lookupPrice(modelRef);
     // Models without a resolvable price (subscription via registry gap,
     // local, newly discovered) still COUNT — requests and in/out tokens are
@@ -97,6 +105,8 @@ export class CostTracker {
     this.metrics.totalCost += cost;
     this.metrics.totalInputTokens += inputTokens;
     this.metrics.totalOutputTokens += outputTokens;
+    this.metrics.totalCacheReadTokens = (this.metrics.totalCacheReadTokens ?? 0) + cacheReadTokens;
+    this.metrics.totalCacheWriteTokens = (this.metrics.totalCacheWriteTokens ?? 0) + cacheWriteTokens;
 
     // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
@@ -105,6 +115,8 @@ export class CostTracker {
     const tok = this.metrics.tokensByModel[modelRef] ?? { in: 0, out: 0 };
     tok.in += inputTokens;
     tok.out += outputTokens;
+    if (cacheReadTokens > 0) tok.cacheRead = (tok.cacheRead ?? 0) + cacheReadTokens;
+    if (cacheWriteTokens > 0) tok.cacheWrite = (tok.cacheWrite ?? 0) + cacheWriteTokens;
     this.metrics.tokensByModel[modelRef] = tok;
 
     // Debug log (optional)
@@ -183,7 +195,7 @@ export class CostTracker {
    */
   formatCostReport(deps: {
     billingTier: (ref: string) => number;
-    windowsAll: () => Record<string, { d1: number; d7: number; d30: number }>;
+    windowsAll: () => Record<string, { d1: number; d7: number; d30: number; cacheRead30?: number }>;
     price: (ref: string) => { input: number; output: number } | undefined;
   }): string {
     const uptime = new Date().getTime() - this.startTime.getTime();
@@ -213,8 +225,17 @@ export class CostTracker {
     if (models.length === 0) {
       lines.push('No requests yet this session.');
     } else {
+      // Phase 5a: cache reads are reported separately from `in` (which is the
+      // fresh, uncached input), so the share is cacheRead / everything read.
+      const cr = this.metrics.totalCacheReadTokens ?? 0;
+      const cw = this.metrics.totalCacheWriteTokens ?? 0;
+      const ctxRead = this.metrics.totalInputTokens + cr + cw;
+      const cacheNote =
+        cr + cw > 0
+          ? `, cache read ${fmtK(cr)} (${ctxRead > 0 ? Math.round((cr / ctxRead) * 100) : 0}%), write ${fmtK(cw)}`
+          : '';
       lines.push(
-        `Total: $${this.metrics.totalCost.toFixed(6)} (in ${fmtK(this.metrics.totalInputTokens)}, out ${fmtK(this.metrics.totalOutputTokens)}, ${Object.values(this.metrics.requestsByModel).reduce((a, b) => a + b, 0)} req)`,
+        `Total: $${this.metrics.totalCost.toFixed(6)} (in ${fmtK(this.metrics.totalInputTokens)}, out ${fmtK(this.metrics.totalOutputTokens)}${cacheNote}, ${Object.values(this.metrics.requestsByModel).reduce((a, b) => a + b, 0)} req)`,
         ``,
         `${'Model'.padEnd(30)} ${'Req'.padStart(3)} ${'In/Out'.padStart(6)}/${''.padEnd(6)} ${'Marginal'.padStart(9)}  Tier`
       );
@@ -239,19 +260,23 @@ export class CostTracker {
       (a, b) => (win[b]?.d30 ?? 0) - (win[a]?.d30 ?? 0)
     );
     if (winRefs.length > 0) {
-      lines.push(``, `--- Windows (usage_log; ≈ = blended-price estimate) ---`);
+      lines.push(``, `--- Windows (usage_log; ≈ = blended-price estimate, cache reads excluded) ---`);
       lines.push(
-        `${'Model'.padEnd(28)} ${'1d'.padStart(7)} ${'7d'.padStart(9)} ${'30d'.padStart(9)}   ≈30d`
+        `${'Model'.padEnd(28)} ${'1d'.padStart(7)} ${'7d'.padStart(9)} ${'30d'.padStart(9)} ${'Cache30d'.padStart(8)}  ≈30d`
       );
       for (const ref of winRefs) {
         const w = win[ref] ?? { d1: 0, d7: 0, d30: 0 };
+        const cacheShare = w.d30 > 0 && w.cacheRead30 ? `${Math.round((w.cacheRead30 / w.d30) * 100)}%` : '-';
         const price = deps.price(ref);
+        // Cache reads are billed far below list price, so the blended list
+        // estimate covers only the non-cacheRead tokens (Phase 5a).
+        const billable = Math.max(0, w.d30 - (w.cacheRead30 ?? 0));
         const est =
           price && w.d30 > 0
-            ? `≈$${((w.d30 * (price.input + price.output) / 2) / 1_000_000).toFixed(4)}`
+            ? `≈$${((billable * (price.input + price.output) / 2) / 1_000_000).toFixed(4)}`
             : '-';
         lines.push(
-          `${ref.slice(0, 28).padEnd(28)} ${fmtK(w.d1).padStart(7)} ${fmtK(w.d7).padStart(9)} ${fmtK(w.d30).padStart(9)}  ${est}`
+          `${ref.slice(0, 28).padEnd(28)} ${fmtK(w.d1).padStart(7)} ${fmtK(w.d7).padStart(9)} ${fmtK(w.d30).padStart(9)} ${cacheShare.padStart(8)}  ${est}`
         );
       }
     }

@@ -219,6 +219,8 @@ export function createCommands(rt: CommandDeps) {
           // sunk — virtual prices, not real spend) + persistent token windows
           // 1d/7d/30d from usage_log with a blended-price estimate (≈ —
           // usage_log has only total tokens per request; honest labeling).
+          // Phase 5a: tokens include cacheRead/cacheWrite; the Cache30d column
+          // shows the cache-read share of the 30d window.
           ctx.ui.notify(
             costTracker.formatCostReport({
               billingTier: (ref) => metricsModule.billingTier(ref),
@@ -229,9 +231,10 @@ export function createCommands(rt: CommandDeps) {
                 const d1 = metricsModule.getUsageAll(1);
                 const d7 = metricsModule.getUsageAll(7);
                 const d30 = metricsModule.getUsageAll(30);
-                const out: Record<string, { d1: number; d7: number; d30: number }> = {};
+                const c30 = metricsModule.getCacheUsageAll(30);
+                const out: Record<string, { d1: number; d7: number; d30: number; cacheRead30: number }> = {};
                 for (const ref of new Set([...Object.keys(d1), ...Object.keys(d7), ...Object.keys(d30)])) {
-                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0 };
+                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0, cacheRead30: c30[ref]?.cacheRead ?? 0 };
                 }
                 return out;
               },
