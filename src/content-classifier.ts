@@ -472,9 +472,34 @@ export async function classifyPrompt(
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
   const holder: { source: string | null } = { source: null };
-  const result = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
+  const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
+  const result = inheritPreviousCategory(raw, options.context?.lastCategory);
   countClassification(result, holder.source);
   return result;
+}
+
+/**
+ * Phase 2 of the task-type-balancing plan: a 'fallback' classification ("could
+ * not tell", e.g. a long continuation like "ok, then carry on with the rest")
+ * inherits the previous turn's category — the same idea as the low-confidence
+ * and short-prompt momentum paths — instead of dropping to the default
+ * fallback→tactical group. Applied at the single exit of classifyPrompt so
+ * every producer of 'fallback' (LLM, cache, static, classifier-unavailable) is
+ * covered and the classification cache never stores an inherited result.
+ * HINT and compaction results carry no 'fallback' category and pass through;
+ * without a previous category (fresh session) the default stands.
+ */
+function inheritPreviousCategory(
+  result: FullClassificationResult,
+  lastCategory: ClassificationResult['category'] | undefined,
+): FullClassificationResult {
+  if (!('category' in result) || result.category !== 'fallback') return result;
+  if (!lastCategory || lastCategory === 'fallback') return result;
+  return {
+    ...result,
+    category: lastCategory,
+    reason: `Fallback classification — inheriting previous task category (${lastCategory})`,
+  };
 }
 
 async function classifyPromptUncounted(
