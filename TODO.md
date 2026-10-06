@@ -584,7 +584,7 @@ Not scoped or decided yet; needs an owner call on whether the existing
 reactive mechanisms are sufficient before any design work starts.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1
-and 5a are DONE (branch `task-type-phase-0-1-5a`, not yet merged). Still
+and 5a are DONE (merged, PR #36). Still
 open in that plan, each gated by the previous step or an explicit owner
 decision: Phase 2 (fallback classification inherits the previous turn's
 category), Phase 3 (`category_groups` config key to make the
