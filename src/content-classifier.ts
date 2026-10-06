@@ -211,6 +211,56 @@ function noteSource(source: string): void {
   lastClassificationSource = { source, at: Date.now() };
 }
 
+/**
+ * Today's classification mix (Phase 0 of the task-type-balancing plan):
+ * how many prompts each source classified and which categories came out.
+ * Sources are coarse ('ollama:<id>' → 'ollama', 'cloud:<ref>' → 'cloud');
+ * a HINT result has no category and counts as 'hint:<type>'. In-memory per
+ * process, reset when the local day changes.
+ */
+export interface ClassificationCounts {
+  /** Local calendar day, YYYY-MM-DD. */
+  day: string;
+  total: number;
+  bySource: Record<string, number>;
+  byCategory: Record<string, number>;
+}
+
+function localDay(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+let classificationCounts: ClassificationCounts = { day: localDay(), total: 0, bySource: {}, byCategory: {} };
+
+function currentCounts(): ClassificationCounts {
+  const day = localDay();
+  if (classificationCounts.day !== day) classificationCounts = { day, total: 0, bySource: {}, byCategory: {} };
+  return classificationCounts;
+}
+
+function countClassification(result: FullClassificationResult): void {
+  const c = currentCounts();
+  const source = (lastClassificationSource?.source ?? 'unknown').split(':')[0];
+  const category = 'category' in result && result.category
+    ? result.category
+    : `hint:${(result as HintClassificationResult).hintType ?? 'unknown'}`;
+  c.total++;
+  c.bySource[source] = (c.bySource[source] ?? 0) + 1;
+  c.byCategory[category] = (c.byCategory[category] ?? 0) + 1;
+}
+
+/** Snapshot of today's classification counters (for /router status). */
+export function getClassificationCounts(): ClassificationCounts {
+  const c = currentCounts();
+  return { day: c.day, total: c.total, bySource: { ...c.bySource }, byCategory: { ...c.byCategory } };
+}
+
+/** Test seam: start counting from zero. */
+export function resetClassificationCounts(): void {
+  classificationCounts = { day: localDay(), total: 0, bySource: {}, byCategory: {} };
+}
+
 function classifyCacheGet(prompt: string): FullClassificationResult | null {
   const entry = classifyCache.get(prompt);
   if (!entry) return null;
@@ -392,9 +442,23 @@ function containsHintMarker(prompt: string): boolean {
   return /(?:^|[^A-Za-z0-9_-])(?:HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+\S/i.test(prompt);
 }
 
+/**
+ * Classifies a prompt and counts the result in the day's classification
+ * counters (source + category, see {@link getClassificationCounts}). The
+ * classification itself lives in {@link classifyPromptUncounted}.
+ */
 export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
+): Promise<FullClassificationResult> {
+  const result = await classifyPromptUncounted(prompt, options);
+  countClassification(result);
+  return result;
+}
+
+async function classifyPromptUncounted(
+  prompt: string,
+  options: ClassificationOptions
 ): Promise<FullClassificationResult> {
   const {
     model = DEFAULT_MODEL,

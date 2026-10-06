@@ -13,7 +13,12 @@
  */
 
 import { costTracker } from './cost-tracker.ts';
-import { getLastClassificationSource, type ClassificationSourceInfo } from './content-classifier.ts';
+import {
+  getLastClassificationSource,
+  getClassificationCounts,
+  type ClassificationSourceInfo,
+  type ClassificationCounts,
+} from './content-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
@@ -93,6 +98,8 @@ export interface ClassifierStatusInput {
   last: ClassificationSourceInfo | null;
   probedCount: number;
   ollamaUp: boolean;
+  /** Today's classification mix; omitted or empty → no counter lines. */
+  counts?: ClassificationCounts;
 }
 
 /**
@@ -120,6 +127,15 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   );
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
+  // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
+  // digging through the router log.
+  const counts = input.counts;
+  if (counts && counts.total > 0) {
+    const byFreq = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]);
+    const pct = (n: number) => Math.round((n / counts.total) * 100);
+    lines.push(`│ Today: ${counts.total} classified — ${byFreq(counts.bySource).map(([k, n]) => `${k} ${n}`).join(', ')}`);
+    lines.push(`│ Categories: ${byFreq(counts.byCategory).map(([k, n]) => `${k} ${n} (${pct(n)}%)`).join(', ')}`);
+  }
   return lines;
 }
 
@@ -362,6 +378,7 @@ export function createCommands(rt: CommandDeps) {
               last: getLastClassificationSource(),
               probedCount: getCachedFallbackModels(rt.cache).length,
               ollamaUp: await isOllamaAvailable(),
+              counts: getClassificationCounts(),
             })
           );
         } else if (topModels.length === 0) {
