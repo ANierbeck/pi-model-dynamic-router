@@ -98,7 +98,6 @@ export function buildModelsWithMetadata(
 }
 
 
-/** Applies a group's min_gdpval / max_cost_per_m / max_cost gates to the scored candidate pool. */
 /**
  * Collapses same-provider slug clusters to their canonical representative —
  * the persist-path mirror of applyGroupFilters' dedup-before-gates step
@@ -354,4 +353,56 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // ollama/lm-studio) — user intent; was missing from BOTH whitelists
   // (final v1.6.0 review I4).
   'ollama_max_concurrent_streams',
+  // ADR-0023 quality-equivalence window. Missing here, it never reached the
+  // live config: a dynamic file generated before the key existed is spread
+  // into every regeneration, so `best` ranked by pure score live (opus
+  // before sonnet in strategic/planning) while an offline simulation on the
+  // static config showed the intended order (Phase 0 step 3, 2026-10-06).
+  'best_quality_window',
+  // Log verbosity is applied from the layered config (index.ts setLogLevel);
+  // re-synced so the persisted dynamic copy is never a stale, misleading one.
+  'log_level',
 ] as const satisfies readonly (keyof Config)[];
+
+/**
+ * Keys that BOTH layers legitimately write: the static layers (shipped
+ * defaults, user/project overrides, update_model_metrics) and the scan (it
+ * auto-registers unknown providers as subscription, persists per-model
+ * values). Re-syncing them wholesale would drop the scan's entries; never
+ * re-syncing them shadowed every static edit for as long as the dynamic file
+ * existed. They are merged per entry instead — static wins per provider /
+ * ref / slug (field-wise for object entries), scan-only entries stay. A
+ * static entry REMOVED later lingers in the dynamic file — the write site
+ * spreads the previous dynamic config, so regeneration never prunes it; only
+ * deleting router-config.dynamic.json does. An added or changed entry
+ * applies at once.
+ */
+export const DYNAMIC_CONFIG_MERGE_KEYS = [
+  'providers',
+  'model_metrics',
+  'gdpval_builtin',
+] as const satisfies readonly (keyof Config)[];
+
+/**
+ * Brings a (possibly stale) dynamic config up to date with the layered
+ * static config, in place: DYNAMIC_CONFIG_RESYNC_KEYS are copied wholesale,
+ * DYNAMIC_CONFIG_MERGE_KEYS merged per entry. `model_groups` stays — it is
+ * the scan's output. Used by both resync sites (load() and the write site in
+ * generateDynamicConfigNow).
+ */
+export function resyncDynamicFromStatic(dynamicCfg: Config, staticCfg: Config): void {
+  const dyn = dynamicCfg as unknown as Record<string, unknown>;
+  const stat = staticCfg as unknown as Record<string, unknown>;
+  for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) dyn[key] = stat[key];
+  for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
+    const s = stat[key] as Record<string, unknown> | undefined;
+    if (!s) continue;
+    const merged: Record<string, unknown> = { ...((dyn[key] as Record<string, unknown> | undefined) ?? {}) };
+    for (const [entry, value] of Object.entries(s)) {
+      const prev = merged[entry];
+      const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+      merged[entry] = isObj(prev) && isObj(value) ? { ...prev, ...value } : value;
+    }
+    dyn[key] = merged;
+  }
+}

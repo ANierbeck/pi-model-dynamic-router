@@ -4,11 +4,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type { Cache, SessionError } from './types.ts';
-
-/** The usage_log entry shape (inline in types.ts's Cache interface). */
-type UsageEntry = { ref: string; tokens: number; ts: number };
+import type { Cache, SessionError, UsageLogEntry } from './types.ts';
 import { SESSION_ERROR_CAP } from './session-errors.ts';
+
+/** The usage_log entry shape (types.ts). */
+type UsageEntry = UsageLogEntry;
 
 // ── Cache Management ───────────────────────────────────────────────────────
 

@@ -322,7 +322,7 @@ export interface Cache {
   lastScanTimestamp?: number;
   exhausted_keys?: Record<string, number>; // "provider:keyIdx" → exhausted_until timestamp
   openrouter_pricing?: Record<string, { input: number; output: number }>; // provider/modelId ref → $/1M
-  usage_log?: { ref: string; tokens: number; ts: number }[]; // token usage history
+  usage_log?: UsageLogEntry[]; // token usage history
   /** Ring buffer of main-session stream failures (single source of truth for
    * the status-line error counter and /router errors — src/session-errors.ts). */
   session_errors?: SessionError[];
@@ -486,12 +486,30 @@ export interface GroupResolution {
 
 // ── Cost Tracking Types ────────────────────────────────────────────────
 
+/**
+ * One completed assistant step in the persistent usage_log. `tokens` is the
+ * TOTAL the model processed (input + output + cacheRead + cacheWrite — Phase
+ * 5a: input+output alone undercounted long agentic contexts ~40x);
+ * cacheRead/cacheWrite are recorded separately (omitted when the provider
+ * reports none) so cache hit rates are derivable per window.
+ */
+export interface UsageLogEntry {
+  ref: string;
+  tokens: number;
+  ts: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
 export interface CostMetrics {
   totalCost: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  /** Provider-reported cache reads/writes this session (Phase 5a). */
+  totalCacheReadTokens?: number;
+  totalCacheWriteTokens?: number;
   requestsByModel: Record<string, number>;
   costByModel: Record<string, number>;
   /** Per-model token split for the /router cost report (audit depth, 2026-09-27). */
-  tokensByModel?: Record<string, { in: number; out: number }>;
+  tokensByModel?: Record<string, { in: number; out: number; cacheRead?: number; cacheWrite?: number }>;
 }

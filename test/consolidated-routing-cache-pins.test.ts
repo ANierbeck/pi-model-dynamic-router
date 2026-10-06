@@ -143,6 +143,10 @@ describe('dynamic-config-resync-keys', () => {
     'soft_backoff_ms',
     'delegation',
     'ollama_max_concurrent_streams',
+    // Phase 0 step 3 (2026-10-06): the ADR-0023 window never reached the live
+    // (dynamic) config, so `best` ranked by pure score — opus before sonnet.
+    'best_quality_window',
+    'log_level',
   ] as const;
 
   describe('DYNAMIC_CONFIG_RESYNC_KEYS whitelist', () => {
@@ -163,6 +167,8 @@ describe('dynamic-config-resync-keys', () => {
     soft_backoff_ms: 999_005,
     delegation: { enabled: false, min_length: 999_999 },
     ollama_max_concurrent_streams: 42,
+    best_quality_window: 0.99,
+    log_level: 'debug',
   };
 
   /** Fresh value in the PROJECT config layer (what the user changed TO). */
@@ -177,6 +183,8 @@ describe('dynamic-config-resync-keys', () => {
     soft_backoff_ms: 111_005,
     delegation: { enabled: true, min_length: 123 },
     ollama_max_concurrent_streams: 2,
+    best_quality_window: 0.07,
+    log_level: 'warn',
   };
 
   function assertResynced(key: string, written: Record<string, any>): void {

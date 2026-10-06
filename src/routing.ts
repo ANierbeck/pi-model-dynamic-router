@@ -16,7 +16,8 @@ import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
-import { demoteUnhealthy } from './model-health.ts';
+import { demoteUnhealthy, isUnhealthy } from './model-health.ts';
+import { isDebugEnabled, debugLogOnce } from './logger.ts';
 import { filterByBudget } from './budget.ts';
 import { isRefLimited, refLimitSecs } from './rate-limit.ts';
 
@@ -193,7 +194,9 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  *
  * OUTPUT CONTRACT: returns a NEW filtered array (does not mutate input).
  *
- * SIDE EFFECTS: none. Pure w.r.t. the lookups.
+ * SIDE EFFECTS: none. Pure w.r.t. the lookups. The optional `onDrop`
+ * recorder is told every ref a gate removes and the gate's name (the
+ * group-decision debug log, Phase 0); it never changes the result.
  *
  * INVARIANTS:
  *   - `max_cost: 0` admits only local providers and genuinely free
@@ -214,17 +217,26 @@ export function applyGroupFilters(
   dedup: boolean = false,
   dedupFn?: (refs: string[]) => string[],
   lookups: GroupFilterLookups = liveGroupFilterLookups(cfg),
+  onDrop?: (ref: string, gate: string) => void,
 ): string[] {
   let c = refs;
   const L = lookups;
+  // Every gate filters through this, so the drop recorder sees exactly what
+  // the gate removed — no parallel re-implementation of the rules.
+  const gate = (name: string, keep: (ref: string) => boolean): string[] =>
+    c.filter((ref) => {
+      const kept = keep(ref);
+      if (!kept) onDrop?.(ref, name);
+      return kept;
+    });
 
   // 1. exclude_providers
   if (g.exclude_providers?.length) {
-    c = c.filter(ref => !g.exclude_providers!.includes(ref.split('/')[0]));
+    c = gate('exclude_providers', ref => !g.exclude_providers!.includes(ref.split('/')[0]));
   }
   // 2. exclude_models
   if (g.exclude_models?.length) {
-    c = c.filter(ref => !g.exclude_models!.includes(ref));
+    c = gate('exclude_models', ref => !g.exclude_models!.includes(ref));
   }
   // 3. Same-provider same-slug dedup — BEFORE the quality/cost/context
   //    gates (2026-09-20). The gates must act on the CANONICAL cluster
@@ -236,7 +248,14 @@ export function applyGroupFilters(
   //    either keeps the honest model or drops the whole cluster.
   //    Quality gates are slug-based (same slug = same score), so running
   //    dedup before them cannot change their outcomes.
-  if (dedup && dedupFn) c = dedupFn(c);
+  if (dedup && dedupFn) {
+    const kept = dedupFn(c);
+    if (onDrop) {
+      const keptSet = new Set(kept);
+      for (const ref of c) if (!keptSet.has(ref)) onDrop(ref, 'dedup');
+    }
+    c = kept;
+  }
   // 3b. Agent-capability tier: curated non-agent families (small/code/audio
   // models that pass GDPval floors but cannot carry main-agent work — the
   // 2026-09-27 incidents; see src/agent-capability.ts for the evidence).
@@ -247,7 +266,7 @@ export function applyGroupFilters(
   // operational/tactical keep magistral-small (665). The prompt classifier
   // chain does not pass through applyGroupFilters, so classification keeps
   // these models.
-  c = c.filter((ref) => isAgentCapableRef(ref, cfg.non_agent_model_prefixes));
+  c = gate('non_agent', (ref) => isAgentCapableRef(ref, cfg.non_agent_model_prefixes));
   // 4. min_gdpval / min_gdpval_pct
   // min_gdpval <= 0 means "no quality gate" — pass everything through (matches
   // the historical filterByQualityMin guard against min <= 0). A null score
@@ -255,7 +274,7 @@ export function applyGroupFilters(
   // the 13/148-style collapse where unscored models leaked past the gate via
   // the old `return filtered.length ? filtered : refs` fallback.
   if (g.min_gdpval != null && g.min_gdpval > 0) {
-    c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v >= g.min_gdpval!; });
+    c = gate('min_gdpval', ref => { const v = L.gdp(ref); return v !== null && v >= g.min_gdpval!; });
   } else if (g.min_gdpval_pct != null && g.min_gdpval_pct > 0) {
     // delegate to the existing quality-pct filter for identical semantics
     // (compute max once; filterByQualityPct is on the Router instance, so
@@ -264,7 +283,7 @@ export function applyGroupFilters(
     if (all.length) {
       const max = Math.max(...all);
       const thresh = (g.min_gdpval_pct! / 100) * max;
-      c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
+      c = gate('min_gdpval_pct', ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
     }
   }
   // 4b. max_gdpval — the upper tier boundary (ADR-0023). Mirrors
@@ -273,7 +292,7 @@ export function applyGroupFilters(
   // top-tier models out of groups they would dominate via the `best`
   // method's score convergence (owner decision 2026-10-04).
   if (g.max_gdpval != null && g.max_gdpval > 0) {
-    c = c.filter(ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
+    c = gate('max_gdpval', ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
   }
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
@@ -281,7 +300,7 @@ export function applyGroupFilters(
   //    For a positive cap, free models pass and unknown cost is billing-aware
   //    (subscription/local = sunk cost → keep; pay_per_token → drop).
   if (g.max_cost !== undefined) {
-    c = c.filter(ref => {
+    c = gate('max_cost', ref => {
       const isFree = L.isFree(ref);
       if (g.max_cost === 0) return admitsZeroCostGroup(ref, isFree, cfg);
       if (isFree) return true;
@@ -295,7 +314,7 @@ export function applyGroupFilters(
   //    under the cap — a subscription model without a registry price drops
   //    out (owner decision, ADR-0010).
   if (g.max_cost_per_m !== undefined) {
-    c = c.filter(ref => {
+    c = gate('max_cost_per_m', ref => {
       if (admitsZeroCostGroup(ref, L.isFree(ref), cfg)) return true;
       const price = L.price(ref);
       if (!price || typeof price.input !== 'number' || price.output === 'unknown') return false;
@@ -307,7 +326,7 @@ export function applyGroupFilters(
   //    model whose capacity is unverified into a group that *needs* a large
   //    context window). Absent/0 means "no context-length gate".
   if (g.min_context_length != null && g.min_context_length > 0) {
-    c = c.filter(ref => {
+    c = gate('min_context_length', ref => {
       const cw = L.contextWindow(ref);
       return cw !== null && cw >= g.min_context_length!;
     });
@@ -1020,11 +1039,22 @@ export class Router {
     // dedup, min_gdpval/pct, max_cost, max_cost_per_m. Unknown-cost handling is
     // billing-aware (subscription/local kept, payg dropped) — see
     // applyGroupFilters INVARIANTS.
-    c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r));
+    // Group-decision debug log (Phase 0): record what each gate dropped. Only
+    // collected when the line will actually be written — resolveGroup runs
+    // on every routed prompt.
+    const drops: Array<[string, string]> | null = isDebugEnabled() ? [] : null;
+    const onDrop = drops ? (ref: string, gate: string) => { drops.push([ref, gate]); } : undefined;
+    c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r), undefined, onDrop);
 
     // Filter by budget availability (subscription providers)
     // This ensures we only use models with remaining tokens in their window
+    const beforeBudget = c;
     c = this.filterByBudget(c);
+    if (drops && c.length !== beforeBudget.length) {
+      const kept = new Set(c);
+      for (const ref of beforeBudget) if (!kept.has(ref)) drops.push([ref, 'budget']);
+    }
+    const beforeRank = c;
 
     // Deduplicate: remove models that are the SAME underlying model
     // (e.g. mistral-medium-2604 and mistral-medium-latest both match
@@ -1068,8 +1098,37 @@ export class Router {
       if (g.top_k && g.top_k < c.length) c = c.slice(0, g.top_k);
     }
 
+    if (drops) {
+      const kept = new Set(c);
+      for (const ref of beforeRank) if (!kept.has(ref)) drops.push([ref, 'top_k']);
+      debugLogOnce(`group-decision:${name}`, this.formatGroupDecision(name, g, c, drops));
+    }
+
     if (c.length === 0) return null;
     return { selected: c[0], candidates: c };
+  }
+
+  /**
+   * One debug line per group decision (Phase 0 of the task-type-balancing
+   * plan): the ranked candidates as resolveGroup returns them, with the
+   * values the ranking used, and every dropped ref with the gate that
+   * dropped it. Logged via debugLogOnce, so an unchanged decision is not
+   * repeated on every prompt.
+   */
+  private formatGroupDecision(name: string, g: Group, ranked: string[], drops: Array<[string, string]>): string {
+    const fmt = (v: number) => String(Number(v.toPrecision(4)));
+    const candidates = ranked.map((ref, i) => {
+      const gdp = lookupGdp(ref);
+      const cost = effCost(ref);
+      let s = `${i + 1}. ${ref} gdp=${gdp ?? 'none'} cost=${cost === 'unknown' ? 'unknown' : fmt(cost)}`;
+      if (g.method === 'best') s += ` score=${fmt(calculateScore(ref, g.score_by ?? 'gdpval', this.cfg))}`;
+      if (isUnhealthy(this.cache, ref)) s += ' [unhealthy]';
+      if (this.isLimited(ref)) s += ' [limited]';
+      return s;
+    });
+    const excluded = drops.map(([ref, gate]) => `${ref}=${gate}`);
+    return `[routing] group=${name} method=${g.method} candidates: ${candidates.join(' | ') || '(none)'}`
+      + ` || excluded: ${excluded.join(', ') || '(none)'}`;
   }
 
   // ── Group Detection ─────────────────────────────────────────────────────

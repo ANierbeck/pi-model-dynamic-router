@@ -178,6 +178,12 @@ function logAt(cls: LogLevel, msg: string, extra?: unknown): void {
   writeLogLine(`${new Date().toISOString()}  ${msg}${suffix}`);
 }
 
+/** Whether debug lines are written — lets callers skip building an expensive
+ * diagnostic line that would be discarded anyway. */
+export function isDebugEnabled(): boolean {
+  return level === 'debug';
+}
+
 /** Diagnostic line, written only at level "debug". */
 export function debugLog(msg: string, extra?: unknown): void {
   if (level === 'debug') routerLog(msg, extra);

@@ -27,6 +27,9 @@
     ]
   },
   "providers": {
+    "claude-bridge": {
+      "billing": "subscription"
+    },
     "openrouter": {
       "billing": "pay_per_token",
       "free_models": [
@@ -196,6 +199,9 @@
     },
     "claude-bridge/claude-opus-5-5": {
       "cost_per_m": 1.5e-06
+    },
+    "claude-bridge/claude-sonnet-5-5": {
+      "cost_per_m": 1e-06
     },
     "claude-bridge/claude-fable-5": {
       "cost_per_m": 1.5e-06

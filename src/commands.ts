@@ -13,7 +13,13 @@
  */
 
 import { costTracker } from './cost-tracker.ts';
-import { getLastClassificationSource, type ClassificationSourceInfo } from './content-classifier.ts';
+import {
+  getLastClassificationSource,
+  getClassificationCounts,
+  CATEGORY_TO_GROUP,
+  type ClassificationSourceInfo,
+  type ClassificationCounts,
+} from './content-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
@@ -87,12 +93,24 @@ export function costColumnFor(
     : 'unknown';
 }
 
+/**
+ * The category→group routes listed in the dynamic group's /router block,
+ * derived from the live CATEGORY_TO_GROUP (a hardcoded copy had drifted:
+ * it showed design→strategic and planning→tactical after both moved to the
+ * planning group).
+ */
+export function formatCategoryRoutes(): string[] {
+  return Object.entries(CATEGORY_TO_GROUP).map(([cat, group]) => `${cat}→${group}`);
+}
+
 /** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
 export interface ClassifierStatusInput {
   group: Group;
   last: ClassificationSourceInfo | null;
   probedCount: number;
   ollamaUp: boolean;
+  /** Today's classification mix; omitted or empty → no counter lines. */
+  counts?: ClassificationCounts;
 }
 
 /**
@@ -120,6 +138,15 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   );
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
+  // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
+  // digging through the router log.
+  const counts = input.counts;
+  if (counts && counts.total > 0) {
+    const byFreq = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]);
+    const pct = (n: number) => Math.round((n / counts.total) * 100);
+    lines.push(`│ Today: ${counts.total} classified — ${byFreq(counts.bySource).map(([k, n]) => `${k} ${n}`).join(', ')}`);
+    lines.push(`│ Categories: ${byFreq(counts.byCategory).map(([k, n]) => `${k} ${n} (${pct(n)}%)`).join(', ')}`);
+  }
   return lines;
 }
 
@@ -192,6 +219,8 @@ export function createCommands(rt: CommandDeps) {
           // sunk — virtual prices, not real spend) + persistent token windows
           // 1d/7d/30d from usage_log with a blended-price estimate (≈ —
           // usage_log has only total tokens per request; honest labeling).
+          // Phase 5a: tokens include cacheRead/cacheWrite; the Cache30d column
+          // shows the cache-read share of the 30d window.
           ctx.ui.notify(
             costTracker.formatCostReport({
               billingTier: (ref) => metricsModule.billingTier(ref),
@@ -202,9 +231,10 @@ export function createCommands(rt: CommandDeps) {
                 const d1 = metricsModule.getUsageAll(1);
                 const d7 = metricsModule.getUsageAll(7);
                 const d30 = metricsModule.getUsageAll(30);
-                const out: Record<string, { d1: number; d7: number; d30: number }> = {};
+                const c30 = metricsModule.getCacheUsageAll(30);
+                const out: Record<string, { d1: number; d7: number; d30: number; cacheRead30: number }> = {};
                 for (const ref of new Set([...Object.keys(d1), ...Object.keys(d7), ...Object.keys(d30)])) {
-                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0 };
+                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0, cacheRead30: c30[ref]?.cacheRead ?? 0 };
                 }
                 return out;
               },
@@ -343,15 +373,8 @@ export function createCommands(rt: CommandDeps) {
         lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`);
 
         if (topModels.length === 0 && g.method === 'dynamic') {
-          const cats = [
-            'code_simple→operational',
-            'code_complex→tactical',
-            'design→strategic',
-            'planning→tactical',
-            'exploration→scout',
-          ];
           lines.push('│ Routes per prompt via content classification:');
-          cats.forEach((c) => lines.push(`│   ${c}`));
+          formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
           // Honest classifier state (2026-10-02 owner finding): the old block
           // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
           // was doing the actual work whenever Ollama is down. Show the backend
@@ -362,6 +385,7 @@ export function createCommands(rt: CommandDeps) {
               last: getLastClassificationSource(),
               probedCount: getCachedFallbackModels(rt.cache).length,
               ollamaUp: await isOllamaAvailable(),
+              counts: getClassificationCounts(),
             })
           );
         } else if (topModels.length === 0) {
