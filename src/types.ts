@@ -229,6 +229,17 @@ export interface Config {
    * the static layered config — a dynamic config can never silently change it.
    */
   delegation?: DelegationConfig;
+  /**
+   * User override of the category→group mapping (task-type-balancing
+   * Phase 3): `{ <category>: <group> }`, merged OVER the built-in
+   * CATEGORY_TO_GROUP in src/content-classifier.ts. Only the nine known
+   * categories are valid keys and only groups present in `model_groups`
+   * are valid values — anything else is rejected with a warning at load
+   * time and ignored. Absent = the built-in mapping applies unchanged.
+   * Like `exclude`, this is user intent and is ALWAYS taken from the
+   * static layered config — a dynamic config can never silently change it.
+   */
+  category_groups?: Record<string, string>;
 }
 
 /**

@@ -147,6 +147,10 @@ describe('dynamic-config-resync-keys', () => {
     // (dynamic) config, so `best` ranked by pure score — opus before sonnet.
     'best_quality_window',
     'log_level',
+    // Task-type-balancing Phase 3 (2026-10-06): the user's category→group
+    // mapping is user intent and must reach the live config even when a
+    // stale dynamic file predates the key.
+    'category_groups',
   ] as const;
 
   describe('DYNAMIC_CONFIG_RESYNC_KEYS whitelist', () => {
@@ -169,6 +173,7 @@ describe('dynamic-config-resync-keys', () => {
     ollama_max_concurrent_streams: 42,
     best_quality_window: 0.99,
     log_level: 'debug',
+    category_groups: { code_complex: 'tactical' },
   };
 
   /** Fresh value in the PROJECT config layer (what the user changed TO). */
@@ -185,6 +190,7 @@ describe('dynamic-config-resync-keys', () => {
     ollama_max_concurrent_streams: 2,
     best_quality_window: 0.07,
     log_level: 'warn',
+    category_groups: { code_complex: 'planning' },
   };
 
   function assertResynced(key: string, written: Record<string, any>): void {
@@ -199,6 +205,9 @@ describe('dynamic-config-resync-keys', () => {
       expect(written.delegation.enabled).toBe(true);
       expect(written.delegation.min_length).toBe(123);
     } else if (Array.isArray(fresh)) {
+      expect(written[key]).toEqual(fresh);
+    } else if (fresh !== null && typeof fresh === 'object') {
+      // Plain-object user intent (e.g. category_groups) — deep equality.
       expect(written[key]).toEqual(fresh);
     } else {
       expect(written[key]).toBe(fresh);

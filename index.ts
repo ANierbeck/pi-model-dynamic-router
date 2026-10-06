@@ -31,7 +31,7 @@ import {
 import { resyncDynamicFromStatic } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, detectHintDirectly, getGroupForCategory, ClassificationResult } from './src/content-classifier.ts';
+import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { costTracker } from './src/cost-tracker.ts';
 // Shared router logger (D2): the log functions live in src/logger.ts so every
@@ -430,7 +430,14 @@ let previousTokenCount = 0;
     if (!loadedFromDynamic) {
       cfg = staticCfg;
     }
-    
+
+    // Task-type-balancing Phase 3: install the user's category→group
+    // overrides (category_groups) into the classifier. ALWAYS from the
+    // static layered config — like exclude/delegation this is user intent,
+    // and category_groups is in DYNAMIC_CONFIG_RESYNC_KEYS so a stale
+    // dynamic file can never shadow it either.
+    setCategoryGroupMapping(staticCfg.category_groups);
+
     // gdpval state lives in metrics.ts (single source of truth).
     // setConfig + setCache below populate it correctly, including self-healing
     // from cache.gdpval_scores when needed.

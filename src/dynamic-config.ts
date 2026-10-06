@@ -362,6 +362,10 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // Log verbosity is applied from the layered config (index.ts setLogLevel);
   // re-synced so the persisted dynamic copy is never a stale, misleading one.
   'log_level',
+  // Category→group mapping overrides (task-type-balancing Phase 3) — user
+  // intent; without the re-sync a dynamic file generated before the key
+  // existed would shadow the user's mapping for as long as it exists.
+  'category_groups',
 ] as const satisfies readonly (keyof Config)[];
 
 /**
