@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable category-to-group mapping** (task-type-balancing Phase 3): users can override individual category→group assignments via `category_groups` in any config layer; unknown categories or groups are warned and dropped at load time, the rest applies.
+
+### Changed
+
+- **Fallback classifications inherit the previous turn's category** (task-type-balancing Phase 2): when the classifier returns `fallback` and a previous non-fallback category exists in the session context, that previous category is inherited — same mechanism as the existing low-confidence and short-prompt momentum paths. Applied at the single `classifyPrompt` exit so every producer of `fallback` (LLM, cache, static, classifier-unavailable) is covered; HINT and compaction results are never overridden; without history the configured default (`fallback` → `tactical`) stands.
+
 ### Security (dev-tooling dependency round, 2026-10-06)
 
 - **Dependabot/`npm audit` findings evaluated and the reachable ones fixed.**
