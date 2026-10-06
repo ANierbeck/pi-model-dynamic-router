@@ -548,13 +548,12 @@ new accounting (documented, not fitted to pass), and remove the
 vitest-majors ignore in .github/dependabot.yml (guarded by
 test/dependabot-config.test.ts).
 
-**Host-pinned security alerts (evaluated 2026-10-06):** `pi-coding-agent@0.83.0`
-ships an `npm-shrinkwrap.json` that pins its whole dependency tree, so
-`overrides` cannot lift its nested `undici` (8.5.0, 14 advisories) or
-`brace-expansion` (5.0.7) — verified: overrides are ignored, even on a fresh
-lock resolution. Exposure here is dev/CI only (nothing of it is bundled into
-`dist/index.js`; consumers run their own pi). The real fix is the host round
-(pi >= 1.0.4, per `npm audit`): schedule it, do not dismiss the alerts.
+**Host-pinned security alerts (evaluated 2026-10-06): RESOLVED** by the
+host alignment round the same day: devDependencies pinned to
+pi-coding-agent 1.0.4, which ships `undici` 8.10.2 and dropped the
+`npm-shrinkwrap.json` that had made `overrides` impossible under 0.83.0
+(overrides were ignored even on a fresh lock resolution). `npm audit` is
+clean; the Dependabot alerts auto-close.
 
 **Host upgrade policy (pinned 2026-10-04, guarded by
 test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is

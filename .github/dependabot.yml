@@ -15,10 +15,11 @@ updates:
           - "minor"
           - "patch"
     ignore:
-      # Host upgrades are deliberate, planned rounds here (see
-      # docs/plans/2026-09-30-router-0.99.1-hardening.md), never automated
-      # bumps. The first Dependabot run (2026-10-04) proposed pi 1.0.2;
-      # green CI proved nothing because the suite mocks most of pi.
+      # Host upgrades are deliberate, planned rounds here, never automated
+      # bumps. Aligned to the installed host (1.0.4) in the 2026-10-06
+      # host-alignment round; the first Dependabot run (2026-10-04) proposed
+      # pi 1.0.2 and green CI proved nothing because the suite mocks most
+      # of pi — that is why these stay manual.
       - dependency-name: "@earendil-works/pi-coding-agent"
       # vitest is on 4.x since the 2026-10-06 security round. The 4 -> 5
       # major needs Node >= 22.12 and its coverage-v8 branch accounting
