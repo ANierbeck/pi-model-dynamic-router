@@ -30,15 +30,34 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
  * table is module-private, so the tokens are read from its source text —
  * keeps the guard coupled to the one real list without touching src/.
  */
-function readFamilyTokens(): string[] {
-  const text = readFileSync(path.join(REPO_ROOT, 'src/model-matcher.ts'), 'utf-8');
+/**
+ * Pure core of the family-token reader, so the parsing contract itself is
+ * testable. Accepts single AND double quotes (a reformatted row must not
+ * silently drop its tokens — review Minor 2) and refuses to run with a
+ * half-parsed table: every row must be non-empty, and the number of parsed
+ * token rows must match the number of family rows in the table.
+ */
+export function parseFamilyTokens(text: string): string[] {
   const table = /const MODEL_FAMILIES[^=]*=\s*\[([\s\S]*?)\n\];/.exec(text);
-  if (!table) throw new Error('MODEL_FAMILIES table not found in src/model-matcher.ts');
+  if (!table) throw new Error('MODEL_FAMILIES table not found');
+  const tokenRows = [...table[1].matchAll(/tokens:\s*\[([^\]]*)\]/g)];
+  const familyRows = [...table[1].matchAll(/family:/g)];
+  if (tokenRows.length === 0) throw new Error('no tokens rows found in MODEL_FAMILIES');
+  if (tokenRows.length !== familyRows.length) {
+    throw new Error(`MODEL_FAMILIES parse mismatch: ${tokenRows.length} token rows vs ${familyRows.length} family rows`);
+  }
   const tokens: string[] = [];
-  for (const m of table[1].matchAll(/tokens:\s*\[([^\]]*)\]/g)) {
-    for (const t of m[1].matchAll(/'([^']+)'/g)) tokens.push(t[1]);
+  for (const m of tokenRows) {
+    const row = [...m[1].matchAll(/['"]([^'"]+)['"]/g)].map((t) => t[1]);
+    if (row.length === 0) throw new Error('empty tokens row in MODEL_FAMILIES');
+    tokens.push(...row);
   }
   return tokens;
+}
+
+function readFamilyTokens(): string[] {
+  const text = readFileSync(path.join(REPO_ROOT, 'src/model-matcher.ts'), 'utf-8');
+  return parseFamilyTokens(text);
 }
 
 /** Provider ids and API kinds: identifiers that share a family prefix but name no model. */
@@ -57,6 +76,21 @@ const literals = (text: string) => scan(text).map((f) => f.literal);
 describe('readFamilyTokens() reads the real model-matcher table', () => {
   it('finds the documented families', () => {
     expect(FAMILY_TOKENS).toEqual(expect.arrayContaining(['claude', 'mistral', 'gemma', 'qwen', 'glm', 'nvidia']));
+  });
+  it('still parses every row if the table is reformatted with double quotes', () => {
+    const text = [
+      "const MODEL_FAMILIES: readonly { tokens: string[]; family: string }[] = [",
+      "  { tokens: [\"claude\", \"opus\"], family: 'anthropic' },",
+      "  { tokens: [\"mistral\", \"nemo\"], family: 'mistral' },",
+      "];",
+    ].join("\n");
+    expect(parseFamilyTokens(text)).toEqual(['claude', 'opus', 'mistral', 'nemo']);
+  });
+  it('refuses a half-parsed table instead of silently dropping tokens', () => {
+    const broken = "const MODEL_FAMILIES = [\n  { tokens: [], family: 'x' },\n];";
+    expect(() => parseFamilyTokens(broken)).toThrow();
+    const mismatched = "const MODEL_FAMILIES = [\n  { tokens: ['a'], family: 'x' },\n  { family: 'y' },\n];";
+    expect(() => parseFamilyTokens(mismatched)).toThrow();
   });
 });
 
@@ -264,5 +298,29 @@ describe('isScannedSourcePath() — ADR-0025 class A/B allowlist', () => {
     expect(isScannedSourcePath('test/routing.test.ts')).toBe(false);
     expect(isScannedSourcePath('scripts/scan-hardcoded-models.ts')).toBe(false);
     expect(isScannedSourcePath('src/notes.md')).toBe(false);
+  });
+});
+
+
+// Ratchet ceiling (review Minor 1): the note in the baseline file claims
+// entries are never ADDED, but the matching guard only catches additions as
+// NEW findings when they are NOT accompanied by a baseline edit. A PR that
+// adds a literal AND a baseline entry would pass the findguard. This ceiling
+// makes that mechanically impossible: both numbers may only go DOWN. Lower
+// the constants when the baseline shrinks; never raise them to make a PR
+// green — derive instead (ADR-0025).
+describe('ratchet ceiling — the baseline may only shrink', () => {
+  const BASELINE_CEILING_ENTRIES = 56;
+  const BASELINE_CEILING_OCCURRENCES = 62;
+  it('baseline size is at or below the recorded ceiling', () => {
+    const baseline = JSON.parse(
+      readFileSync(path.join(REPO_ROOT, 'scripts/hardcoded-model-baseline.json'), 'utf-8')
+    );
+    const occurrences = baseline.entries.reduce(
+      (n: number, e: { count?: number }) => n + (e.count ?? 1),
+      0
+    );
+    expect(baseline.entries.length).toBeLessThanOrEqual(BASELINE_CEILING_ENTRIES);
+    expect(occurrences).toBeLessThanOrEqual(BASELINE_CEILING_OCCURRENCES);
   });
 });

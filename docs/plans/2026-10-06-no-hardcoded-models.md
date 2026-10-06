@@ -107,6 +107,26 @@ observe the guard fail; add a stale baseline entry and observe it fail.
 
 ## Phase C — Derived local classifier (the flow that decides)
 
+> **Baseline triage from the Lane A review (2026-10-07):** the 56-entry
+> baseline splits into three groups for later rounds. (1) The 13
+> `src/local-llm.ts` entries (`FAMILY_RANK` regex table, lines 85–95) are the
+> Phase C deletion target — a ranking table is a rank/select violation.
+> (2) **Non-selecting entries** that are safely tolerated but are NOT model
+> choices, so later rounds should remove or reclassify them instead of
+> "deriving" anything: `src/slug-matcher.ts:29` (`'zai-'`, a vendor prefix
+> used for normalisation — class A in spirit), `src/scan-runner.ts:274` (log
+> text) and `src/classification-prompt.ts:48-57` (3×, few-shot examples
+> inside the classifier prompt). (3) Residual blind spot of the token-based
+> scanner (documented, not a defect): bare model ids whose family token is
+> missing from `MODEL_FAMILIES` or not id-initial (e.g. `chatgpt-4o`, `phi4`,
+> `o3-mini`) are only caught when written as `provider/model` refs.
+> **Open scope question for the owner:** `model-map.yaml` is shipped into
+> `dist/` and contains name-keyed `~` entries (e.g. `voxtral-*: ~`) that make
+> `lookupGdp` return null. ADR-0025 §4 limits the guard to `src/**` and
+> `router-config.json`, so it is out of scope today — the owner decides
+> whether to classify it explicitly as class B (annotation, never admitting)
+> or to add it to the guard's scope in a later phase.
+
 ### C1. Candidate selection + probe (`src/classifier-local-probe.ts`)
 - `selectLocalClassifierCandidates(cache, cfg)`: from
   `cache.available_models` where `provider === 'ollama'` (and LM Studio if
