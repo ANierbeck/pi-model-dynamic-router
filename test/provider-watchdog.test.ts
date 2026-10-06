@@ -13,7 +13,7 @@ import {
   recordLocalSuccess,
   isProviderWedged,
   wedgeFixHint,
-  WEDGE_COOLDOWN_TEXT,
+  wedgeCooldownText,
 } from '../src/provider-watchdog.ts';
 import type { Cache } from '../src/types.ts';
 
@@ -79,8 +79,24 @@ describe('provider watchdog', () => {
 });
 
 describe('wedge narration text', () => {
-  it('derives the cooldown from WEDGE_COOLDOWN_MS', () => {
-    expect(WEDGE_COOLDOWN_TEXT).toBe(`${WEDGE_COOLDOWN_MS / 60_000} min`);
+  it('names the cooldown of the first open (WEDGE_COOLDOWN_MS)', () => {
+    const cache: Cache = {};
+    recordLocalTimeout(cache, 'ollama/a', 0);
+    recordLocalTimeout(cache, 'ollama/b', 1_000);
+    expect(wedgeCooldownText(cache, 'ollama')).toBe(`${WEDGE_COOLDOWN_MS / 60_000} min`);
+  });
+
+  it('names the ladder step of a re-open, not the first cooldown', () => {
+    const cache: Cache = {};
+    recordLocalTimeout(cache, 'ollama/a', 0);
+    recordLocalTimeout(cache, 'ollama/b', 1_000);
+    const expiry = 1_000 + WEDGE_COOLDOWN_MS;
+    // The half-open re-probe fails: one timeout re-opens at the 5 min step.
+    expect(recordLocalTimeout(cache, 'ollama/a', expiry)).toBe(true);
+    expect(wedgeCooldownText(cache, 'ollama')).toBe('5 min');
+    // ... and the next one at the capped 15 min step.
+    expect(recordLocalTimeout(cache, 'ollama/a', expiry + 5 * 60_000)).toBe(true);
+    expect(wedgeCooldownText(cache, 'ollama')).toBe('15 min');
   });
 
   it('suggests pkill ollama only for Ollama, not for other local providers', () => {

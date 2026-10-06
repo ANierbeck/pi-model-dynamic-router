@@ -26,7 +26,7 @@ import { readRouterVersion } from './src/version.ts';
 import {
   recordLocalTimeout,
   isProviderWedged,
-  WEDGE_COOLDOWN_TEXT,
+  wedgeCooldownText,
 } from './src/provider-watchdog.ts';
 import { resyncDynamicFromStatic } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
@@ -585,9 +585,10 @@ let previousTokenCount = 0;
     observeFailure,
     observeLocalTimeout: (ref: string) => {
       const newlyWedged = recordLocalTimeout(cache, ref);
-      if (newlyWedged) warnLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${WEDGE_COOLDOWN_TEXT}`);
+      if (newlyWedged) warnLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${wedgeCooldownText(cache, ref.split('/')[0])}`);
       return newlyWedged;
     },
+    wedgeCooldownText: (ref: string) => wedgeCooldownText(cache, ref.split('/')[0]),
     isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),
     recordStreamFailure,
     formatResetMsg,

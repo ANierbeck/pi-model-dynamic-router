@@ -1,6 +1,6 @@
 // src/content-classifier.ts
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
-import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
+import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, wedgeCooldownText } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
@@ -582,7 +582,7 @@ async function classifyPromptUncounted(
       // Feed generation timeouts to the local-provider watchdog (ADR-0016).
       if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
         if (recordLocalTimeout(cache, `ollama/${m}`)) {
-          warnLog(`[classifier] Ollama looks wedged (timeouts on several models) — skipping local models for ${WEDGE_COOLDOWN_TEXT}`);
+          warnLog(`[classifier] Ollama looks wedged (generations keep timing out) — skipping local models for ${wedgeCooldownText(cache, 'ollama')}`);
         }
       }
       throw err;
