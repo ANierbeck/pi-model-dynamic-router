@@ -19,6 +19,21 @@
   overrides) — resolved by the planned host-upgrade round, tracked in
   TODO.md.
 
+### Changed (host dependency alignment, 2026-10-06)
+
+- **devDependencies pinned to the host we actually run:**
+  `@earendil-works/pi-coding-agent` / `pi-ai` / `pi-tui` `0.83.0 -> 1.0.4`.
+  The extension itself is unaffected at runtime (peerDependencies stay
+  `*`, and it has been running under pi 1.0.4 daily) — this aligns
+  `tsc`, the test suite and CI with the real host instead of a
+  three-month-old pin, and it closes the remaining dev-scope Dependabot
+  alerts: pi 1.0.4 ships `undici` 8.10.2 (patched) and no longer pins its
+  dependency tree via `npm-shrinkwrap.json`, so `npm audit` is now clean
+  (0 findings). Verified: `tsc --noEmit` clean, the private-API
+  reach-throughs used by the router (`ModelRuntime.hasConfiguredAuth`,
+  `completeSimple`) are unchanged in 1.0.4, suite 1395 passed / 3 skipped,
+  coverage thresholds unchanged and met, build green.
+
 ### Fixed (unconfigured free-model provider, external bug report 2026-10-06)
 
 - **A user without an OpenRouter key had every cheap group and the
