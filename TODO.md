@@ -554,6 +554,14 @@ closed on exactly this ground.
 
 ### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
 
+**No hardcoded models (ADR-0025)** — owner rule 2026-10-06: nothing shipped may
+name a model that can admit, select, rank or exclude; everything derives from
+what Pi uses, including the classifier flow. Plan with phases A–E (guard +
+ratchet baseline, free_models / cost sentinels / exclusions out of the shipped
+config, derived local classifier, `non_agent_model_prefixes` spike):
+`docs/plans/2026-10-06-no-hardcoded-models.md`. Target line 1.7.0; awaiting the
+owner's go per phase and answers to the three open questions in the plan.
+
 **`/router config` command** — a live-config command to change routing
 behaviour without a restart: exclude/un-exclude a model ref (today only
 router-config.user.json pattern lists do this, and only on reload) and an
@@ -576,7 +584,7 @@ Not scoped or decided yet; needs an owner call on whether the existing
 reactive mechanisms are sufficient before any design work starts.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1
-and 5a are DONE (branch `task-type-phase-0-1-5a`, not yet merged). Still
+and 5a are DONE (merged, PR #36). Still
 open in that plan, each gated by the previous step or an explicit owner
 decision: Phase 2 (fallback classification inherits the previous turn's
 category), Phase 3 (`category_groups` config key to make the

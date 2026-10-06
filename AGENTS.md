@@ -182,3 +182,28 @@
 - History rewrites (`git filter-repo` + force push) require the owner's
   explicit instruction. The ruleset is disabled for exactly that operation
   and re-enabled immediately afterwards.
+
+## 9. No hardcoded models — derive everything from what Pi uses
+
+- **Owner rule 2026-10-06 (ADR-0025):** shipped source and shipped default
+  configuration must not name a concrete model (ref, id, slug or family) in
+  any position where it can **admit** a candidate, **select** a model
+  (classifier, escalation, fallback), **rank** it (cost sentinels, quality
+  order) or **exclude** it. This includes the flow that decides which model
+  to use — the classifier is the most consequential selection in the router.
+- Candidate pools, classifier/fallback choices, free-model sets and cost
+  ordering are **derived** from Pi's registry (inventory, credentials via
+  `hasConfiguredAuth`, list prices, capability flags), scan data, probes and
+  learned state (ADR-0008) — never assumed.
+- Allowed (ADR-0025 §2): (A) provider adapters that describe *how* to read a
+  provider, (B) name-keyed annotation tables that only score/identify models
+  Pi already supplied and can never admit one, (C) the user layer
+  (`router-config.user.json`), where the user's own choices belong.
+- The gate is `test/no-hardcoded-models.test.ts` with a **ratcheting
+  baseline** (`scripts/hardcoded-model-baseline.json`): the baseline only
+  shrinks. Never add an entry to make a PR green — derive instead. Tests may
+  use model literals freely.
+- Incident that motivated the rule (2026-10-06): a shipped `free_models` list
+  was admitted on config presence alone, so users without that provider's key
+  got dead candidates in every cheap group and in the classifier chain.
+
