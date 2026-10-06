@@ -350,6 +350,7 @@ let previousTokenCount = 0;
     get cache() { return cache; },
     get cacheManager() { return cacheManager; },
     get cfg() { return cfg; },
+    get cfgPath() { return cfgPath; },
     get costMux() { return costMux; },
     get curModel() { return curModel; },
     get effCost() { return effCost; },
