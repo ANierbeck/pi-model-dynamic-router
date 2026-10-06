@@ -101,6 +101,8 @@ The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to 
 
 Unknown categories or target groups are rejected with a warning at load time and ignored; the rest of the mapping still applies.
 
+When the classifier is uncertain and returns `fallback`, the classification now inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history the configured default (`fallback` → `tactical`) stands.
+
 ## How It Works
 
 ### Dynamic Routing

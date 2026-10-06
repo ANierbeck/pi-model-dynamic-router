@@ -569,29 +569,29 @@ name a model that can admit, select, rank or exclude; everything derives from
 what Pi uses, including the classifier flow. Plan with phases A–E (guard +
 ratchet baseline, free_models / cost sentinels / exclusions out of the shipped
 config, derived local classifier, `non_agent_model_prefixes` spike):
-`docs/plans/2026-10-06-no-hardcoded-models.md`. Target line 1.7.0; awaiting the
-owner's go per phase and answers to the three open questions in the plan.
+`docs/plans/2026-10-06-no-hardcoded-models.md`. Target line 1.7.0. **Phase A
+DONE** (work-round 2026-10-07): AST scanner, ratcheting baseline guard (56
+entries / 62 occurrences, ceiling-pinned) and class-B admission pins live.
+Phases B–E still await the owner's go; also open: the `model-map.yaml`
+guard-scope classification (Lane A review, owner decision).
 
 **`/router config` command** — ✅ DONE (Phases 1–2):
-`docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list.
-5a's measurement landed, 5b builds on it). Writes to
-the `router-config.user.json` layer so changes survive the session but
-stay out of the shipped defaults (same separation as every other
-personal-preference mechanism in this repo).
+`docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list. Writes to `router-config.user.json` so changes survive the session but stay out of the shipped defaults.
 
-**Cloud-provider wedge circuit breaker** — PLANNED:
-`docs/plans/2026-10-06-provider-circuit-breaker.md` (one generalized
-local+cloud mechanism, never-dead-end, volatile state; 4 open owner
-questions). Original idea, surfaced 2026-10-06 while
-investigating claude-bridge prompt-capture/empty-response failures
-(P0.4 of the task-type-balancing plan): `src/provider-watchdog.ts` only
-covers LOCAL providers (Ollama daemon wedges). A cloud provider/extension
-that wedges (e.g. a bridge daemon stuck after a load-order race) has no
-equivalent circuit breaker today — the existing Tier-2 blocklist (5
-failures/1h) and per-model cooldowns eventually route around it, but
-there is no explicit "this whole provider is wedged" signal or narration.
-The owner confirmed the idea (2026-10-06); the plan's open questions
-gate the implementation.
+Open follow-up from the Lane C review (owner product decision): a bare provider pattern like `openrouter` passes validation but lands in `exclude.models` where it matches nothing — reject it, or map it to `exclude.providers`?
+
+**Cloud-provider wedge circuit breaker** — **Phase 1 DONE** (work-round
+2026-10-07): core module + local parity. One generalized local+cloud
+mechanism: evidence classification, distinct-model trip rule (cloud 3 /
+local 2, 10-min window), cooldown ladder [2,5,15] min with window-bounded
+half-open re-opens, state under the new `provider_breaker` cache key;
+`src/provider-watchdog.ts` is now a shim over it (ADR-0016 update note).
+Still open per plan: Phases 2–4 (orchestrator wiring + never-dead-end
+forced probe, visibility/narration wiring, volatile state across
+restarts). Original motivation: claude-bridge
+prompt-capture/empty-response failures (P0.4) — a cloud provider that
+wedges had no explicit "this whole provider is wedged" signal or
+narration; the owner confirmed the idea 2026-10-06.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1,
 2, 3 and 5a are DONE (Phase 0, 1, 5a merged in PR #36; Phase 2, 3 in the
@@ -609,9 +609,11 @@ needs the owner's explicit go before any of it starts.
 
 ---
 
-*Last updated: 2026-10-06 (owner backlog registered: /router config
-command, cloud-provider wedge circuit breaker idea, task-type-balancing
-plan remainder (Phase 2-4, 5b-5d), Laya classifier integration pending
+*Last updated: 2026-10-07 (work-round PR #46 landed: ADR-0025 Phase A guard,
+circuit breaker Phase 1, /router config Phases 1–2, task-type Phases 2–3;
+owner backlog updated: /router config command,
+circuit breaker Phases 2–4, task-type-balancing
+plan remainder (Phase 4, 5b–5d), Laya classifier integration pending
 owner go; nightly mutation testing live, PR #19; Dependabot policy
 pinned: host never auto-bumped, vitest majors muted until migration
 round, PRs #10/#12/#13 closed with justification; PR #9 brace-expansion

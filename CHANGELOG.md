@@ -9,6 +9,7 @@
 
 ### Changed
 
+- **Local-provider wedge cooldowns follow a 2/5/15-minute ladder instead of a flat 5 minutes** (circuit-breaker Phase 1): the first wedge cools for 2 minutes, repeat wedges step up to 5 and 15 minutes (capped), and re-opens are bounded by the evidence window — a single timeout long after a wedge never re-opens it. The `/router` overview wedge warning is unchanged and now driven by the new breaker state.
 - **Fallback classifications inherit the previous turn's category** (task-type-balancing Phase 2): when the classifier returns `fallback` and a previous non-fallback category exists in the session context, that previous category is inherited — same mechanism as the existing low-confidence and short-prompt momentum paths. Applied at the single `classifyPrompt` exit so every producer of `fallback` (LLM, cache, static, classifier-unavailable) is covered; HINT and compaction results are never overridden; without history the configured default (`fallback` → `tactical`) stands.
 - **Live exclusion takes effect without restart:** added exclusions are applied to the running router immediately (next turn); persisted dynamic group candidate lists update at the next scan cycle.
 
