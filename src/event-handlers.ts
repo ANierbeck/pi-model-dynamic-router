@@ -284,7 +284,11 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       // last-resort fallback for usage-less messages.
       const tok = realTok > 0 ? realTok : Math.ceil(txt.length / 4);
       if (tok > 0) {
-        rt.updateMetrics(factualRef, ms, tok, ms);
+        // Throughput basis: tokens the model PRODUCED/consumed fresh. Cache
+        // reads are served from the provider cache, not generated — feeding
+        // them in would inflate tps (and cache.benchmarks) ~40x.
+        const tpsTok = a.usage ? Math.max(0, (a.usage.input || 0) + (a.usage.output || 0)) : 0;
+        rt.updateMetrics(factualRef, ms, tpsTok > 0 ? tpsTok : tok, ms);
         rt.recordOk(factualRef);
         // Log usage
         if (!rt.cache.usage_log) rt.cache.usage_log = [];

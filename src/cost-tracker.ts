@@ -188,9 +188,12 @@ export class CostTracker {
    * subscription prices (the cost_per_m sunk-cost convention — virtual
    * prices, NOT real spend) — sorted by marginal cost desc. Windows section
    * shows persistent token usage 1d/7d/30d (usage_log) with a blended-price
-   * estimate, labeled ≈: usage_log records only TOTAL tokens per request,
-   * so the honest estimate is tokens × (pIn+pOut)/2 / 1M; models without a
-   * known price show tokens only. Deps are injected (metrics module +
+   * estimate, labeled ≈: usage_log records the TOTAL tokens per request
+   * (input + output + cache; the cache read/write split is kept separately),
+   * so the honest estimate is (tokens − cacheRead) × (pIn+pOut)/2 / 1M —
+   * cache reads are billed far below list; models without a known price show
+   * tokens only. Cache30d is cacheRead / window tokens (output included),
+   * whereas the session line's share is cacheRead / everything READ. Deps are injected (metrics module +
    * usage_log windows) to keep CostTracker free of config/cache imports.
    */
   formatCostReport(deps: {

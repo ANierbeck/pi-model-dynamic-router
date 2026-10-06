@@ -43,6 +43,20 @@ describe('turn_end usage_log wiring (Phase 5a)', () => {
     });
   });
 
+  it('feeds throughput metrics WITHOUT cache tokens (tps must not inflate ~40x)', async () => {
+    const { rt, turnEnd } = harness();
+    await turnEnd({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'ok' }],
+        usage: { input: 2, output: 163, cacheRead: 50120, cacheWrite: 3322, cost: { total: 0 } },
+      },
+    });
+    // updateMetrics(ref, latMs, tokens, durMs): tokens drive throughput_tps.
+    expect(rt.updateMetrics).toHaveBeenCalledTimes(1);
+    expect(rt.updateMetrics.mock.calls[0][2]).toBe(2 + 163);
+  });
+
   it('keeps the legacy shape for a provider without cache fields', async () => {
     const { rt, turnEnd } = harness();
     await turnEnd({

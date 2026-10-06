@@ -6,6 +6,7 @@ import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   buildContextBlock,
   buildClassificationPrompt,
@@ -207,8 +208,15 @@ export function getLastClassificationSource(): ClassificationSourceInfo | null {
   return lastClassificationSource;
 }
 
+// Per-call source holder. `lastClassificationSource` is process-global, so a
+// counter reading it after an await could credit an overlapping call's source
+// (subagent fan-out); each classifyPrompt call runs inside its own holder.
+const callSource = new AsyncLocalStorage<{ source: string | null }>();
+
 function noteSource(source: string): void {
   lastClassificationSource = { source, at: Date.now() };
+  const holder = callSource.getStore();
+  if (holder) holder.source = source;
 }
 
 /**
@@ -239,9 +247,9 @@ function currentCounts(): ClassificationCounts {
   return classificationCounts;
 }
 
-function countClassification(result: FullClassificationResult): void {
+function countClassification(result: FullClassificationResult, callSourceName: string | null): void {
   const c = currentCounts();
-  const source = (lastClassificationSource?.source ?? 'unknown').split(':')[0];
+  const source = (callSourceName ?? 'unknown').split(':')[0];
   const category = 'category' in result && result.category
     ? result.category
     : `hint:${(result as HintClassificationResult).hintType ?? 'unknown'}`;
@@ -451,8 +459,9 @@ export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
-  const result = await classifyPromptUncounted(prompt, options);
-  countClassification(result);
+  const holder: { source: string | null } = { source: null };
+  const result = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
+  countClassification(result, holder.source);
   return result;
 }
 

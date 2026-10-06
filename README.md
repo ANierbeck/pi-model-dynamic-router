@@ -672,6 +672,12 @@ strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14
 The `⚠N err` part counts the session's recorded stream failures — the same
 entries `/router errors` lists in full.
 
+After the token/cost part the footer shows the prompt-cache state of the
+last step, e.g. `ctx 182.0k · cache 97% · ~$0.03/step`: the context the model
+read, the share served from the provider cache, and the session-average
+billed cost per step (omitted for subscription/free models). `/router cost`
+adds the session cache-read share and a `Cache30d` column per model.
+
 
 ## Internals
 

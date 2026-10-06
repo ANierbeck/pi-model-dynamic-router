@@ -108,3 +108,27 @@ describe('formatCategoryRoutes — the /router route list matches the live mappi
     );
   });
 });
+
+describe('classification counters under overlapping calls (review 2026-10-06, minor 5)', () => {
+  it('attributes each call to ITS OWN source, not whichever finished last', async () => {
+    // A is an LLM call that completes late; B is a deterministic momentum
+    // continuation that completes while A is still in flight. A global
+    // "last source" read after the await would credit both to one source.
+    let releaseA: (v: string) => void = () => {};
+    vi.mocked(callOllama).mockImplementation(
+      () => new Promise<string>((res) => { releaseA = res; })
+    );
+    const a = classifyPrompt('refactor the stream orchestrator into three modules, overlap probe a');
+    // Let A reach its (pending) Ollama call.
+    await new Promise((r) => setTimeout(r, 0));
+    // A's answer arrives and, in the same tick, B (momentum) starts and
+    // records ITS source before A's continuation reads the shared state.
+    releaseA(json('code_complex'));
+    const b = classifyPrompt('yes do it', { context: { lastCategory: 'design' } });
+    await Promise.all([a, b]);
+
+    const c = getClassificationCounts();
+    expect(c.total).toBe(2);
+    expect(c.bySource).toEqual({ ollama: 1, momentum: 1 });
+  });
+});

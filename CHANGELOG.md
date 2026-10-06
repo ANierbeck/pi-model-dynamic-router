@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed (task-type balancing, Phase 0 + 1)
+
+- **Live routing ignored `best_quality_window`.** The key was never carried
+  into `router-config.dynamic.json` (not in `DYNAMIC_CONFIG_RESYNC_KEYS`),
+  so live `best` groups ranked by pure score — opus before sonnet in
+  strategic/planning although the simulation (static config) said otherwise.
+  `best_quality_window` and `log_level` are now re-synced, and
+  `providers` / `model_metrics` / `gdpval_builtin` are merged per entry
+  (static wins, scan-added entries stay) so static edits finally reach live
+  routing. A guard test fails when a shipped top-level config key is
+  unclassified.
+- **`claude-sonnet-5-5` ranked behind `claude-opus-5-5`.** It was the only
+  claude-bridge model without a sunk-cost sentinel, so its effCost was
+  `'unknown'` (sorts last in the quality window). It now has a sentinel
+  below opus' and `claude-bridge` is declared `billing: subscription` in the
+  shipped config.
+- `/router` category route list is derived from the live mapping
+  (`CATEGORY_TO_GROUP`) instead of a stale hardcoded copy.
+
+### Added (observability, always on)
+
+- Debug log of every live group decision
+  (`[routing] group=… method=… candidates: … || excluded: ref=gate`).
+- `/router` shows today's classification mix (source and category counters).
+- **Prompt-cache measurement (Phase 5a).** `usage_log` now counts
+  input + output + cacheRead + cacheWrite (it undercounted long contexts
+  ~40×) and records `cacheRead`/`cacheWrite` separately; `/router cost`
+  shows the session cache-read share and a `Cache30d` column and excludes
+  cache reads from the blended price estimate; the footer shows
+  `ctx 182.0k · cache 97% · ~$0.03/step` (cost part omitted for
+  subscription/free). Measurement only — throughput metrics deliberately
+  keep using fresh input + output tokens.
+
 ### Removed (mutation triage Batches 1–4 + Task 5 — dead/redundant code)
 
 - `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers

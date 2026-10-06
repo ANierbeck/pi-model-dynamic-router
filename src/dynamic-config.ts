@@ -98,7 +98,6 @@ export function buildModelsWithMetadata(
 }
 
 
-/** Applies a group's min_gdpval / max_cost_per_m / max_cost gates to the scored candidate pool. */
 /**
  * Collapses same-provider slug clusters to their canonical representative —
  * the persist-path mirror of applyGroupFilters' dedup-before-gates step
@@ -373,8 +372,10 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
  * re-syncing them shadowed every static edit for as long as the dynamic file
  * existed. They are merged per entry instead — static wins per provider /
  * ref / slug (field-wise for object entries), scan-only entries stay. A
- * static entry REMOVED later lingers in the dynamic file until the next
- * full regeneration from scratch; an added or changed one applies at once.
+ * static entry REMOVED later lingers in the dynamic file — the write site
+ * spreads the previous dynamic config, so regeneration never prunes it; only
+ * deleting router-config.dynamic.json does. An added or changed entry
+ * applies at once.
  */
 export const DYNAMIC_CONFIG_MERGE_KEYS = [
   'providers',
