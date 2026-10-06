@@ -236,6 +236,13 @@
   (see `.github/dependabot.yml`) — but a vulnerable host-pinned transitive
   dependency is a reason to **schedule** that round, not to ignore the
   alert.
+- **Regularly check the pi devDependencies against the installed pi
+  version** (owner rule 2026-10-06): `pi --version` vs
+  `npm ls @earendil-works/pi-coding-agent`. The 0.83.0 pin once silently
+  drifted from the installed host for weeks. On mismatch: deliberate
+  alignment round (tsc, suite, coverage thresholds unchanged, build, and
+  verify the private reach-throughs still exist). Check at the start of
+  larger work rounds and before every release proposal.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
  6a4e239 (chore: dev-tooling security round (vitest 4.1.11, lock refresh) + AGENTS.md §10)
