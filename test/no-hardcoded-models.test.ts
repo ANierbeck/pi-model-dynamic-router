@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { PROVIDER_MAP, PI_BUILTIN_PROVIDER_IDS } from '../src/providers.ts';
-import { scanSourceText, isScannedSourcePath } from '../scripts/scan-hardcoded-models.ts';
+import { scanSourceText, isScannedSourcePath, scanConfig } from '../scripts/scan-hardcoded-models.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -102,6 +102,60 @@ describe('scanSourceText()', () => {
       `const f = 'ollama/';`,
     ].join('\n');
     expect(scan(text)).toEqual([]);
+  });
+});
+
+describe('scanConfig() — named-model positions in the shipped config', () => {
+  const cfg = {
+    log_level: 'warn',
+    non_agent_model_prefixes: ['acme-small-'],
+    exclude: { providers: ['someprov'], models: ['openrouter/acme/bad:free'], paid_models_from: ['openrouter'] },
+    providers: {
+      openrouter: { billing: 'pay_per_token', free_models: ['openrouter/acme/tiny-1:free'] },
+      'claude-bridge': { billing: 'subscription' },
+    },
+    model_groups: {
+      simple: { method: 'tiered', max_cost: 0, models: ['acme/pinned-1'], exclude_models: ['acme/never-1'] },
+      dynamic: {
+        method: 'dynamic',
+        classifier_model: 'ollama/judge:1b',
+        classifier_fallback: 'ollama/judge:0.5b',
+        classifier_cloud_model: 'acme/cloud-judge',
+        classifier_cloud_fallback: true,
+      },
+    },
+    model_metrics: { 'claude-bridge/acme-5': { cost_per_m: 0.000001 } },
+    gdpval_builtin: { 'acme-5': 1500 },
+  };
+
+  it('reports every named-model position with a config:<path> literal', () => {
+    expect(scanConfig(cfg).map((f) => f.literal).sort()).toEqual(
+      [
+        'config:non_agent_model_prefixes[]=acme-small-',
+        'config:exclude.models[]=openrouter/acme/bad:free',
+        'config:providers.openrouter.free_models[]=openrouter/acme/tiny-1:free',
+        'config:model_groups.simple.models[]=acme/pinned-1',
+        'config:model_groups.simple.exclude_models[]=acme/never-1',
+        'config:model_groups.dynamic.classifier_model=ollama/judge:1b',
+        'config:model_groups.dynamic.classifier_fallback=ollama/judge:0.5b',
+        'config:model_groups.dynamic.classifier_cloud_model=acme/cloud-judge',
+        'config:model_metrics["claude-bridge/acme-5"]',
+      ].sort()
+    );
+    expect(scanConfig(cfg).every((f) => f.file === 'router-config.json' && f.line === 0)).toBe(true);
+  });
+
+  it('does not report gdpval_builtin (class B annotation data) or provider-level entries', () => {
+    const literals = scanConfig(cfg).map((f) => f.literal).join('\n');
+    expect(literals).not.toContain('gdpval_builtin');
+    expect(literals).not.toContain('exclude.providers');
+    expect(literals).not.toContain('paid_models_from');
+  });
+
+  it('tolerates missing sections and non-object input', () => {
+    expect(scanConfig({})).toEqual([]);
+    expect(scanConfig(null)).toEqual([]);
+    expect(scanConfig({ model_groups: { x: null }, providers: { y: 'z' }, exclude: [] })).toEqual([]);
   });
 });
 
