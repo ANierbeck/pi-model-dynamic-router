@@ -62,7 +62,7 @@ Sources (later layers override earlier ones; exclude lists are unioned):
 
 Exclude rules:
   [shipped] models: openrouter/*  → matches 8 discovered model(s)
-  [user]   models: mistral/*  → matches 3 discovered model(s)
+  [user]    models: mistral/*  → matches 3 discovered model(s)
 
 compaction: not implemented yet (Phase 5b)
 

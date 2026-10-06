@@ -334,4 +334,20 @@ describe('/router config unexclude', () => {
     expect(out).toMatch(/Not written|unreadable|not in any/);
     expect(fs.readFileSync(userFile, 'utf-8')).toBe('{ corrupt');
   });
+
+  it('mentions the layer whose provider rule still covers a removed user entry (review Minor 2)', async () => {
+    writeShipped({ exclude: { providers: ['shipped-prov'] } });
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['shipped-prov/*'] } }));
+    const out = await setup().run('config unexclude shipped-prov/*');
+    expect(out).toMatch(/still excluded by the shipped layer/);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).exclude.models).toEqual([]);
+  });
+
+  it('names the covering layer when provider rules exclude the pattern but no models list does (review Minor 2)', async () => {
+    writeShipped({ exclude: { providers: ['shipped-prov'] } });
+    const out = await setup().run('config unexclude shipped-prov/*');
+    expect(out).toMatch(/excluded by the shipped layer/);
+    expect(out).not.toMatch(/not in any exclude list/);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
 });

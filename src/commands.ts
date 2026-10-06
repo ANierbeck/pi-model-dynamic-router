@@ -29,7 +29,7 @@ import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
 import { isProviderWedged, wedgeFixHint } from './provider-watchdog.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
-import { isExcluded } from './exclude.ts';
+import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
 import { openUserConfigStore, readConfigLayers, validateExcludePattern, type ConfigLayerView } from './user-config-store.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
@@ -238,18 +238,42 @@ function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRef
   ].join('\n');
 }
 
+/**
+ * The exclude kind of a non-user layer whose provider-level rules
+ * (exclude.providers / exclude.paid_models_from) still cover the pattern's
+ * models, or null. Review Minor 2: the unexclude notes used to check only
+ * exclude.models, so a provider-level exclusion in another layer produced
+ * a misleading "not in any exclude list" / missing "still excluded" note.
+ */
+function coveringProviderRuleKind(layer: ConfigLayerView, pattern: string): 'providers' | 'paid_models_from' | null {
+  const prov = pattern.split('/')[0];
+  const covers = (entries: string[] | undefined) =>
+    (entries ?? []).some((e) => e === prov || (e.includes('*') && globMatcher(e)(prov)));
+  if (covers(layer.exclude.providers)) return 'providers';
+  if (covers(layer.exclude.paid_models_from)) return 'paid_models_from';
+  return null;
+}
+
 /** `/router config unexclude <pattern>` — user-layer entries only (D4). */
 function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: string): string {
   if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
   const user = layers.find((l) => l.origin === 'user')!;
   if (user.error) return `Not written — ${user.error}; fix or remove it first.`;
-  const others = layers.filter((l) => l.origin !== 'user' && l.exclude.models?.includes(pattern));
+  const others = layers.filter(
+    (l) =>
+      l.origin !== 'user' &&
+      (l.exclude.models?.includes(pattern) || coveringProviderRuleKind(l, pattern) !== null)
+  );
 
   const current = user.exclude.models ?? [];
   if (!current.includes(pattern)) {
     if (others.length === 0) return `"${pattern}" is not in any exclude list.`;
-    const origin = others[0].origin;
-    return `"${pattern}" is part of the ${origin} defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round).`;
+    const first = others[0];
+    if (first.exclude.models?.includes(pattern)) {
+      return `"${pattern}" is part of the ${first.origin} defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round).`;
+    }
+    const kind = coveringProviderRuleKind(first, pattern);
+    return `"${pattern}" is not in any models exclude list, but "${pattern.split('/')[0]}" models stay excluded by the ${first.origin} layer (exclude.${kind}).`;
   }
 
   const res = openUserConfigStore().applyDelta({ exclude: { models: current.filter((p) => p !== pattern) } });
