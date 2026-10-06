@@ -82,7 +82,8 @@ function liveEvidence(s: ProviderBreaker, now: number): string[] {
  * the breaker (so the caller narrates once). Failures that are not provider
  * evidence are ignored. A failure while the breaker has tripped before and no
  * success has cleared it (the half-open re-probe failed) re-opens at the next
- * ladder step; otherwise the breaker opens once `minModels` distinct models
+ * ladder step, provided it comes within WEDGE_WINDOW_MS of the last expiry;
+ * otherwise the breaker opens once `minModels` distinct models
  * have evidence inside the window.
  */
 export function recordProviderFailure(
@@ -101,6 +102,10 @@ export function recordProviderFailure(
   }
   s.evidence[ref] = now;
   if (isProviderOpen(cache, provider, now)) return false;
+  // The half-open re-probe only counts shortly after the cooldown ended: once
+  // a whole window has passed, the old trip no longer vouches for a single
+  // failure ("one slow model alone never triggers it", ADR-0016).
+  if (now - (s.open_until ?? 0) >= WEDGE_WINDOW_MS) s.trip_count = 0;
   if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider)) return false;
   s.trip_count++;
   const step = Math.min(s.trip_count, BREAKER_COOLDOWN_LADDER_MS.length) - 1;

@@ -183,6 +183,36 @@ describe('state machine and cooldown ladder (D5)', () => {
     });
   });
 
+  it('a single failure re-opens only within the window past expiry; beyond it the distinct-model rule applies again', () => {
+    const cache: Cache = {};
+    trip(cache, 0);
+    const expiry = 1 + BREAKER_COOLDOWN_LADDER_MS[0];
+    // One cold-start timeout of one slow model, long after the cooldown ended.
+    const later = expiry + WEDGE_WINDOW_MS;
+    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, later)).toBe(false);
+    expect(isProviderOpen(cache, 'ollama', later)).toBe(false);
+    expect(breakerState(cache, 'ollama', later).tripCount).toBe(0);
+
+    // A second distinct model inside the window trips again, at the FIRST step.
+    expect(recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, later + 1)).toBe(true);
+    expect(breakerState(cache, 'ollama', later + 1)).toMatchObject({
+      until: later + 1 + BREAKER_COOLDOWN_LADDER_MS[0],
+      tripCount: 1,
+    });
+  });
+
+  it('a single failure just inside the window past expiry still re-opens one step up (half-open)', () => {
+    const cache: Cache = {};
+    trip(cache, 0);
+    const expiry = 1 + BREAKER_COOLDOWN_LADDER_MS[0];
+    const justInside = expiry + WEDGE_WINDOW_MS - 1;
+    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, justInside)).toBe(true);
+    expect(breakerState(cache, 'ollama', justInside)).toMatchObject({
+      until: justInside + BREAKER_COOLDOWN_LADDER_MS[1],
+      tripCount: 2,
+    });
+  });
+
   it('caps at the last ladder step', () => {
     const cache: Cache = {};
     trip(cache, 0);

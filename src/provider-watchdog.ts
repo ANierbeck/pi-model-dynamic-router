@@ -13,6 +13,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import {
   BREAKER_COOLDOWN_LADDER_MS,
   WEDGE_WINDOW_MS,
+  breakerState,
   recordProviderFailure,
   recordProviderSuccess,
   isProviderOpen,
@@ -25,11 +26,20 @@ export { WEDGE_WINDOW_MS };
  * owner decided (2026-10-06, plan Q2) that local providers use the same
  * [2, 5, 15] min ladder as cloud ones — a daemon restart takes seconds, so
  * a short first skip costs little and a persistent wedge escalates anyway.
- * Later trips are longer than this value; it is the text for the first one.
+ * Later trips are longer than this value; it is the cooldown of the first one.
  */
 export const WEDGE_COOLDOWN_MS = BREAKER_COOLDOWN_LADDER_MS[0];
-/** The cooldown for log lines and narration ("2 min"). */
-export const WEDGE_COOLDOWN_TEXT = `${Math.round(WEDGE_COOLDOWN_MS / 60_000)} min`;
+
+/**
+ * The cooldown the provider's current open runs for, for log lines and
+ * narration ("2 min", "5 min", "15 min"): the ladder step of its latest trip.
+ * Call it right after a failure was reported as newly opening the breaker,
+ * which is true for every re-open too, not just the first.
+ */
+export function wedgeCooldownText(cache: Cache | undefined, provider: string): string {
+  const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), BREAKER_COOLDOWN_LADDER_MS.length) - 1;
+  return `${Math.round(BREAKER_COOLDOWN_LADDER_MS[step] / 60_000)} min`;
+}
 
 /** How the user un-wedges a local provider; the router never restarts it itself. */
 export function wedgeFixHint(provider: string): string {
@@ -44,7 +54,8 @@ function isLocal(provider: string): boolean {
 
 /**
  * Records a generation timeout for a local model. Returns true only when this
- * timeout newly opens the breaker (so the caller narrates once).
+ * timeout newly opens the breaker, the first time or as a re-open after a
+ * failed re-probe (so the caller narrates once per open).
  */
 export function recordLocalTimeout(cache: Cache, ref: string, now: number = Date.now()): boolean {
   if (!isLocal(ref.split('/')[0])) return false;

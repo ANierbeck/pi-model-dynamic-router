@@ -87,6 +87,22 @@ not module state, same reason as `model-health.ts`):
 5-minute cooldown was replaced by the breaker's `[2, 5, 15]` min ladder (first
 trip 2 min, repeated trips without a success escalate, capped at 15 min) —
 owner decision on plan question Q2. State moved to `cache.provider_breaker`.
+The Decision and Consequences sections above keep their original wording
+("5 min", "two more timeouts per window"); where they differ, this note wins:
+
+- **Cooldown ladder `[2, 5, 15]` min.** The first trip skips the provider for
+  2 min; each further trip without an intervening local success moves one step
+  up, capped at 15 min. The narration names the step actually in force, not
+  always the first one.
+- **Re-opens are bounded by the evidence window.** After a cooldown expires, a
+  *single* timeout re-opens the breaker one ladder step up (the half-open
+  re-probe failed) only if it arrives within 10 min of the expiry. Later than
+  that, the trip history is forgotten and the full rule applies again: 2
+  distinct local models inside the window, so "one slow model alone never
+  triggers it" still holds hours or days after a trip. The wording of the
+  narration is accordingly neutral about how many models timed out.
+- **State key.** `cache.provider_breaker[provider]` (`evidence`, `trip_count`,
+  `open_until`) replaces `cache.local_provider_health`.
 
 Tests: `test/provider-watchdog.test.ts` (thresholds, window, success
 clears, cooldown expiry, narrate once, provider isolation) and

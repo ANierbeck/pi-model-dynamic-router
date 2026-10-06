@@ -106,7 +106,7 @@ import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
-import { wedgeFixHint, WEDGE_COOLDOWN_TEXT } from './provider-watchdog.ts';
+import { wedgeFixHint } from './provider-watchdog.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
@@ -198,6 +198,8 @@ export interface StreamOrchestratorContext {
   observeFailure: (ref: string, failureText: string) => void;
   /** Local-provider watchdog (ADR-0016): true when this timeout newly marks the provider wedged. */
   observeLocalTimeout: (ref: string) => boolean;
+  /** Cooldown of the provider's current open, e.g. "5 min"; valid right after observeLocalTimeout returned true. */
+  wedgeCooldownText: (ref: string) => string;
   isProviderWedged: (ref: string) => boolean;
   recordStreamFailure: (
     ref: string,
@@ -925,8 +927,8 @@ export class StreamOrchestrator {
           const provider = ref.split('/')[0];
           pushRouterInfoLogged(
             proxy,
-            `> [router] ${provider} looks wedged: generations time out on several local models while the daemon still answers. ` +
-              `Skipping ${provider} models for ${WEDGE_COOLDOWN_TEXT}. Fix: ${wedgeFixHint(provider)}.\n\n`
+            `> [router] ${provider} looks wedged: generations keep timing out on local models while the daemon still answers. ` +
+              `Skipping ${provider} models for ${ctx.wedgeCooldownText(ref)}. Fix: ${wedgeFixHint(provider)}.\n\n`
           );
         }
         const reason = result.reason === 'empty_timeout'
