@@ -142,41 +142,6 @@
       "count": 1
     },
     {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/cohere/north-mini-code:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/google/gemma-4-26b-a4b-it:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/google/gemma-4-31b-it:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/liquid/lfm-2.5-2.6b:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/mistral/mistral-small-3-2",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/qwen/qwen-2.5-7b-instruct",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/z-ai/glm-5.2:free",
-      "count": 1
-    },
-    {
       "file": "src/classification-prompt.ts",
       "literal": "mistral-medium-3.5",
       "count": 3
