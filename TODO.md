@@ -535,9 +535,10 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   nightly report lands: triage the survivors (equivalent mutants vs real
   vacuity), then decide Phase 2 scope.
 - Phase 1 first-report triage DONE (Nightly R1, 2026-10-07, run 37606222840,
-  docs/mutation-triage.md): 435 undetected -> 211 real vacuity (48.5 %, all
-  killed by +146 tests), 70 false survivors (perTest artifact, 16 %), 100
-  equivalent, 54 dead/redundant (removed), 0 obsolete; score 75.6 -> 94.2 %.
+  docs/mutation-triage.md): 435 undetected -> 254 real vacuity (58.4 %, all
+  killed by +152 tests), 11 false survivors (2.5 %), 112 equivalent, 58
+  dead/redundant (removed), 0 obsolete; projected score 75.6 -> ~93.5 %
+  (re-measured by the next nightly).
   OPEN OWNER DECISION: Phase 2 scope (see the evidence table and the
   recommendation at the end of that section).
 
