@@ -45,6 +45,22 @@ import { matchSlug } from './slug-matcher.ts';
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
 
+/**
+ * Subscription cost rule (ADR-0025 B2). A subscription model's routing cost
+ * is a sunk-cost stand-in: `SUBSCRIPTION_COST_EPSILON × listPrice ($/M)`.
+ * ε is small enough that every subscription model undercuts any real
+ * pay-per-token price, while the list price keeps the RELATIVE order among
+ * subscription models (cheaper tier first — the quota-burn order the
+ * quality window relies on).
+ */
+const SUBSCRIPTION_COST_EPSILON = 1e-6;
+/**
+ * Last-resort stand-in for a subscription model with no list price anywhere
+ * (no registry price, no same-model OpenRouter entry): same magnitude as a
+ * ~$1.5/M list price under the rule. A documented fallback, not model data.
+ */
+const SUBSCRIPTION_FALLBACK_COST = 1.5e-6;
+
 // ── Model Map: authoritative model → GDPval slug mapping ──────────────────
 
 type ModelMap = Record<string, string | null>;
@@ -1029,6 +1045,23 @@ export function collectUnknownCostRefs(refs: string[]): string[] {
   return refs.filter((r) => effCost(r) === 'unknown');
 }
 
+/**
+ * The subscription cost rule (ADR-0025 B2): for a subscription-billed,
+ * non-local provider, `ε × listPrice` from the registry/OpenRouter backfill
+ * chain (lookupListPrice), or the constant fallback when no list price
+ * exists. Returns null for every other provider (the caller keeps its
+ * existing zero/free handling). Evaluated per call, never cached in getM:
+ * the OpenRouter pricing cache can arrive after the first cost lookup.
+ */
+function subscriptionRuleCost(ref: string): number | null {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local) return null;
+  if ((cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) !== 'subscription') return null;
+  const list = lookupListPrice(ref);
+  if (list && typeof list.input === 'number' && list.input > 0) return SUBSCRIPTION_COST_EPSILON * list.input;
+  return SUBSCRIPTION_FALLBACK_COST;
+}
+
 export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
@@ -1037,8 +1070,14 @@ export function effCost(ref: string): number | 'unknown' {
   //    cost_per_m: 0 is a valid value (free model) and must NOT trigger
   //    the fallback to lookupPrice or the 0.000020 default — that would
   //    cause max_cost: 0 groups to exclude free models!
+  //    Exception: an unpriced subscription model (registry cost {0,0} → 0)
+  //    is not free — it takes the subscription rule's stand-in cost.
   let base: number | 'unknown' | undefined = m.cost_per_m;
-  if (base === 0) return 0; // explicitly free
+  if (base === 0) {
+    const sub = subscriptionRuleCost(ref);
+    if (sub === null) return 0; // explicitly free
+    base = sub;
+  }
   
   // 2. Look up in OpenRouter/Chutes pricing cache
   if (base === undefined) {

@@ -181,29 +181,7 @@
       ]
     }
   },
-  "model_metrics": {
-    "claude-bridge/claude-sonnet-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-opus-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-opus-5-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-sonnet-5-5": {
-      "cost_per_m": 1e-06
-    },
-    "claude-bridge/claude-fable-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-3-sonnet": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-3-haiku": {
-      "cost_per_m": 1.5e-06
-    }
-  },
+  "model_metrics": {},
   "gdpval_builtin": {
     "magistral-small": 665,
     "magistral-medium": 669,

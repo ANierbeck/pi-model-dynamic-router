@@ -310,8 +310,8 @@ describe('isScannedSourcePath() — ADR-0025 class A/B allowlist', () => {
 // the constants when the baseline shrinks; never raise them to make a PR
 // green — derive instead (ADR-0025).
 describe('ratchet ceiling — the baseline may only shrink', () => {
-  const BASELINE_CEILING_ENTRIES = 49;
-  const BASELINE_CEILING_OCCURRENCES = 55;
+  const BASELINE_CEILING_ENTRIES = 42;
+  const BASELINE_CEILING_OCCURRENCES = 48;
   it('baseline size is at or below the recorded ceiling', () => {
     const baseline = JSON.parse(
       readFileSync(path.join(REPO_ROOT, 'scripts/hardcoded-model-baseline.json'), 'utf-8')
