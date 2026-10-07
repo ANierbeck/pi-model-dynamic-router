@@ -54,15 +54,23 @@ describe('global-log-tag', () => {
 
   describe('global router.log provenance tag', () => {
     it('home lines carry [<project>/<pid>] after the timestamp; project lines stay untagged', () => {
-      setProjectLogDir('/tmp/some-project');
-      routerLog('[router] tagged check');
-      const tag = `[${path.basename('/tmp/some-project')}/${process.pid}]`;
-      expect(lastLine(homeLog())).toContain(tag);
-      expect(lastLine(homeLog())).toContain('[router] tagged check');
-      // ISO timestamp still leads the line (log tooling contract).
-      expect(lastLine(homeLog())).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
-      const projLog = path.join('/tmp/some-project', '.pi', 'logs', 'router.log');
-      expect(read(projLog)).not.toContain(tag);
+      // Unique project dir (mutation R1 re-review m6): a fixed shared path is
+      // the same parallel-safety class as the cache-per-project race, and a
+      // leaked /tmp dir never gets cleaned up.
+      const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-provenance-'));
+      try {
+        setProjectLogDir(projectDir);
+        routerLog('[router] tagged check');
+        const tag = `[${path.basename(projectDir)}/${process.pid}]`;
+        expect(lastLine(homeLog())).toContain(tag);
+        expect(lastLine(homeLog())).toContain('[router] tagged check');
+        // ISO timestamp still leads the line (log tooling contract).
+        expect(lastLine(homeLog())).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+        const projLog = path.join(projectDir, '.pi', 'logs', 'router.log');
+        expect(read(projLog)).not.toContain(tag);
+      } finally {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
     });
 
     it('falls back to a [pi/<pid>] tag before session_start sets the project', () => {

@@ -118,21 +118,23 @@ documented rationale (mostly the defensive try/catch cluster of
 | L107–110 setModelMap version counter (`++` → `--`) | 1 | EQUIVALENT → **CORRECTED (Nightly R1): TESTED** | only consumed via `!==` staleness checks; a SINGLE decrement is harmless, but decrement + one correct increment returns to the build-time version and serves a stale alias index — killed by the round-trip tests in `metrics-decision-core-r1` |
 | L128–130 stripProvider (`i === -1` variants) | 2 | EQUIVALENT | slash-less refs return `ref` under every variant: slice(0, -1) never names a known provider, and `ref.slice(i + 1)` with i = -1 is the whole ref |
 | L141–147 mapLookup (exact gate, wildcard loop) | 5 | TESTED | exact-beats-wildcard and prefix semantics asserted on the STRIPPED id; in-map → 'true', startsWith → false/endsWith all red verified |
-| L165 alias-index version init | 1 | EQUIVALENT | consumed via `!==` only (see L110) |
+| L165 alias-index version init | 1 | EQUIVALENT | shadowed by the `=== null` staleness check (aliasesFor early-returns), so the cached init value is never consulted directly |
 | L167–177 buildModelMapAliasIndex (skip guard, group accumulation, seed) | ~7 | TESTED ×2 / EQUIVALENT ×5 | slash-key exclusion verified with a registry that WOULD answer a slash-containing id (deepseek-ai/V3-style ids are real); 3-key group proves accumulation (2-key fixtures are self-filtering and mask it). `slug == null` part of the skip guard: null-slug groups are never queried (aliasesFor early-returns) — EQUIVALENT. Seed `[]` mutant: `[]` is TRUTHY, the next sibling pushes into it and the accumulation self-heals — EQUIVALENT |
 | L188–194 aliasesFor (staleness, self-filter) | ~9 | TESTED ×1 / EQUIVALENT ×8 | `||` → `&&` staleness kills via model-map change mid-file (stale index served old aliases). `=== null` → 'true' rebuilds every call — same results (perf only). Self-filter variants: retrying the already-missed primary id is a harmless extra miss — EQUIVALENT |
 | L200–206 buildGdpvalIndex (token key, sort, max) | 13 | TESTED | synonym slug resolves through the token-set index; max-score selection verified in BOTH insertion orders (kills first-wins AND last-wins); build-side sort drop verified (query side keeps sorting → key mismatch) |
 | L249–253 splatVersionRuns (regex, join) | 10 | TESTED | same-score twins collapse to ONE dedup identity; join/regex variants red verified. Remaining regex-variant pairs (e.g. `^\d{2,}$` vs `^\d{2,}`) are indistinguishable for realistic digit-run segments — EQUIVALENT |
 | L277–283 getSlugCanon (score cache, twin conditions) | 13 | TESTED ×2 / EQUIVALENT ×11 | different-score twins stay DISTINCT (kills `===` → `!==` and the `&&` → `\|\|` leak). `slugCanonScores !== scores` → 'true' rebuilds idempotently — EQUIVALENT. `twin !== key` → 'true' maps digit-run-less keys to themselves — harmless identity |
-| L292–299/318–321 resolveSlug self-heal (version counters, `.some`) | 4 | TESTED ×1 / EQUIVALENT ×3 | partial-wipe heal asserted (`.some` → `.every` red verified — the 13/148 scoring-collapse class). Version `++` → `--`: any change invalidates — EQUIVALENT. `missingBuiltin` → 'true': heal is idempotent — EQUIVALENT |
+| L292–299/318–321 resolveSlug self-heal (version counters, `.some`) | 4 | TESTED ×3 / EQUIVALENT ×1 | partial-wipe heal asserted (`.some` → `.every` red verified — the 13/148 scoring-collapse class). Version `++` → `--` was ledgered EQUIVALENT — **CORRECTED (Nightly R1): TESTED**: these are the L315/L337 sites; decrement + one correct increment returns to the build-time version and serves a stale token index (round-trip tests in `metrics-decision-core-r1`). `missingBuiltin` → 'true': heal is idempotent — EQUIVALENT |
 | L330 explicit-exclusion early return | 1 | EQUIVALENT | REDUNDANT GUARD: the next line `if (mapped !== undefined) return mapped` returns the same null (`null !== undefined` is true) — the early return is documentation, not behavior |
 | L335 empty-gdpval ternary | 2 | EQUIVALENT | check-1 (empty → restore from cache.gdpval_scores) repopulates gdpval before this line can see an empty-but-cache-backed state; without cache scores both sides are `{}` |
 | L346–347 cached LLM matches | 8 | TESTED | cached duplicate spellings are CANONICALIZED (kills gate → false, `??` → `&&`); non-string cache entries are type-checked away (kills `&&` → `\|\|`, typeof → true). Optional-chaining crash on missing cache ≡ undefined — EQUIVALENT |
 
 **Batch 3 outcome (74 undetected):** ~34 closed by 14 new regression tests
-(red-first: 18 representative mutants observed RED), ~40 EQUIVALENT with
+(red-first: 18 representative mutants observed RED), ~38 EQUIVALENT with
 documented rationale — this region is defensive/version-counter heavy, and
-three of its "obvious" guards turned out to be genuinely redundant
+three of its "obvious" guards turned out to be genuinely redundant (the two
+resolveSlug version-counter mutants were re-tested by the Nightly R1
+round-trip tests, see the corrected row above)
 (L330 double-guard, L177 truthy-seed self-heal, L335 unreachable-else).
 No dead code: every resolver stage is live.
 
@@ -150,7 +152,7 @@ No dead code: every resolver stage is live.
 | L1060 `score_by ?? 'gdpval'` → '' | 1 | EQUIVALENT | calculateScore treats '' like any absent/legacy taskType — global gdpval either way |
 | L1061 tiered dispatch | 5 | TESTED | 'best' must NOT fall into the tiered branch (best-order vs billing-order differ on the fixture) — gate → true red verified (4 tests failed) |
 | L1064–1067 pipeline steps + top_k | 13 | TESTED / EQUIVALENT-partial | pipeline gate + per-step top_k truncation red verified; `&&` → `\|\|` and `<` → `<=` variants are content-preserving (slice(0, top_k) with top_k ≥ length yields the same array) |
-| L1069–1072 roundrobin rotation | 15 | TESTED ×3 / EQUIVALENT ×1 | `%` → `*` and rotation-array mutants red verified via three successive resolves; counter `i + 1` → `i - 1` was ledgered EQUIVALENT — **CORRECTED (Nightly R1): TESTED**: the second pick becomes the LAST element for 3+ candidates (two-model fixtures cannot tell), killed by `display-dispatch` |
+| L1069–1072 roundrobin rotation | 15 | TESTED ×4 | `%` → `*` and rotation-array mutants red verified via three successive resolves; counter `i + 1` → `i - 1` was ledgered EQUIVALENT — **CORRECTED (Nightly R1): TESTED**: the second pick becomes the LAST element for 3+ candidates (two-model fixtures cannot tell), killed by `display-dispatch` |
 | L1073–1075 min_cost_if_all_priced branch | 13 | REDUNDANT (removed) / TESTED | the explicit branch is behaviorally identical to the generic else (`sortBy(c, g.method, name)` dispatches the same) — 'false' mutant empirically green, branch REMOVED per AGENTS.md §7 with a comment; the 'true' mutant (everything min-cost) red verified via the best-group test; group top_k red verified |
 | L1078 generic top_k | 9 | TESTED | truncation on the else-branch red verified |
 | L1090–1091 activeGroup pinning | 3 | TESTED | both → false (pin lost) and → true (always pin, even null) red verified |
@@ -597,7 +599,10 @@ killing test; nothing is deferred.
    red-first evidence (AGENTS.md §4); `mutation-recheck.ts --tests <files>`
    does the same in bulk for the new tests.
 
-Regeneration of the dataset (pristine tree = the commit the nightly mutated):
+Regeneration of the dataset (pristine tree = `c05a4e5`, the triage branch's
+base; its decision-core files differ from the nightly-mutated `faca950` only
+by three comment lines that shifted no line numbers — the recheck reported
+0 stale):
 
 ```
 gh run download 37606222840 -n mutation-report -D /tmp/r1/report
@@ -681,7 +686,9 @@ actually had):
   decrement followed by one correct increment returns to the version a cached
   index was built at and serves a stale index. The first ledger version called
   these (L94, L103, L126, L315, L337) EQUIVALENT; five round-trip tests now
-  kill them. The same correction applies to Batch 3 L107–110 below.
+  kill them. The same correction applies to Batch 3 L107–110 below and to
+  the resolveSlug self-heal version counters (L292–299/318–321, corrected in
+  the Batch 3 rows above).
 - **Config semantics**: `top_k: 0` means "no limit" (three code paths), a stray
   `pipeline` field on a non-pipeline group is ignored, a non-array
   `free_models` contributes nothing, and roundrobin visits three candidates in

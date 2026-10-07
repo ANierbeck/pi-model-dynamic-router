@@ -22,13 +22,16 @@
 // kills by tests that cannot load the mutated module and kills caused by
 // shared-state races between the parallel jobs (nightly R1 review I1: a test
 // deleting a fixed shared tmp dir "killed" 14 mutants it could never see).
-// Unconfirmed kills are reported as "unconfirmed" with the rejected files.
+// Confirmation runs in a SERIAL pass after the worker pool has drained, so a
+// lone-file failure cannot be a parallel-load artifact either (R1 re-review
+// m2). Unconfirmed kills are reported as "unconfirmed" with the rejected
+// files.
 //
 // With --tests <comma-separated test files> only those files run per mutant
 // (the second use: "which survivors do the NEW tests kill?").
 //
 // Usage: node scripts/mutation-recheck.ts <mutation.json> --tree <dir> --out <results.json> [--jobs 4] [--max-workers 3] [--tests a.test.ts,b.test.ts]
-// Output: JSON array of { file, line, id, mutatorName, replacement, result: "killed"|"survived"|"stale"|"timeout", killer? }
+// Output: JSON array of { file, line, id, mutatorName, replacement, result: "killed"|"survived"|"stale"|"timeout"|"unconfirmed", killer?, rejected? }
 
 import { cpSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -68,14 +71,20 @@ function flag(args: string[], name: string, fallback?: string): string | undefin
   return i < 0 ? fallback : args[i + 1];
 }
 
+// Live vitest children, so a signal can kill them before the scratch dir is
+// removed (R1 re-review m4: orphaned runs kept writing into a deleted dir).
+const liveChildren = new Set<ReturnType<typeof spawn>>();
+
 function runVitest(dir: string, maxWorkers: string, tests: string[], bail = true): Promise<{ code: number | null; out: string; timedOut: boolean }> {
   return new Promise((resolve) => {
     const child = spawn('npx', ['vitest', 'run', '--silent=true', ...(bail ? ['--bail=1'] : []), `--maxWorkers=${maxWorkers}`, ...tests], { cwd: dir });
+    liveChildren.add(child);
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
     const timer = setTimeout(() => child.kill('SIGKILL'), RUN_TIMEOUT_MS);
     child.on('close', (code, signal) => {
+      liveChildren.delete(child);
       clearTimeout(timer);
       resolve({ code, out, timedOut: signal === 'SIGKILL' });
     });
@@ -109,7 +118,7 @@ async function main(argv: string[]): Promise<number> {
   const outFile: string = outPath;
   const scratch = join(tmpdir(), `mutation-recheck-${process.pid}`);
   const cleanup = () => rmSync(scratch, { recursive: true, force: true });
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { cleanup(); process.exit(130); });
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { for (const c of liveChildren) c.kill('SIGKILL'); cleanup(); process.exit(130); });
   try {
     return await recheck();
   } finally {
@@ -146,6 +155,7 @@ async function main(argv: string[]): Promise<number> {
     }
     return { rejected };
   };
+  const pending: Array<{ base: Omit<Result, 'result'>; dir: string; file: string; mutated: string; original: string; bailOut: string; timedOut: boolean }> = [];
   const worker = async (n: number): Promise<void> => {
     const dir = join(scratch, `w${n}`);
     cpSync(treeDir, dir, { recursive: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) });
@@ -165,24 +175,18 @@ async function main(argv: string[]): Promise<number> {
         results.push({ ...base, result: 'stale' });
         continue;
       }
-      writeFileSync(join(dir, file), original.slice(0, start) + (mutant.replacement ?? '') + original.slice(end));
+      const mutated = original.slice(0, start) + (mutant.replacement ?? '') + original.slice(end);
+      writeFileSync(join(dir, file), mutated);
       try {
         const run = await runVitest(dir, maxWorkers, tests);
         if (!run.timedOut && run.code === 0) {
           results.push({ ...base, result: 'survived' });
         } else {
-          // bail=1 names only the first failing file; if it does not confirm,
-          // widen to every failing file of a full (non-bail) run.
-          let { killer, rejected } = await confirm(dir, failingFiles(run.out));
-          if (!killer) {
-            const full = await runVitest(dir, maxWorkers, tests, false);
-            const more = failingFiles(full.out).filter((f) => !rejected.includes(f));
-            const second = await confirm(dir, more);
-            killer = second.killer;
-            rejected = [...rejected, ...second.rejected];
-          }
-          const result: Result['result'] = killer ? 'killed' : run.timedOut ? 'timeout' : 'unconfirmed';
-          results.push({ ...base, result, ...(killer ? { killer } : {}), ...(rejected.length ? { rejected } : {}) });
+          // NOT confirmed here: the other workers are still running full
+          // suites, so a lone-file failure could still be a load artifact.
+          // The serial pass after the pool drains re-applies the mutant and
+          // confirms the kill without any parallel load (R1 re-review m2).
+          pending.push({ base, dir, file, mutated, original, bailOut: run.out, timedOut: run.timedOut });
         }
       } finally {
         writeFileSync(join(dir, file), original);
@@ -191,6 +195,28 @@ async function main(argv: string[]): Promise<number> {
     }
   };
   await Promise.all(Array.from({ length: jobs }, (_, n) => worker(n)));
+  // Serial kill confirmation, after the pool drained: a lone-file failure on
+  // a mutated copy is now free of parallel-load timing.
+  for (const p of pending) {
+    const dir = p.dir;
+    writeFileSync(join(dir, p.file), p.mutated);
+    try {
+      // bail=1 names only the first failing file; if it does not confirm,
+      // widen to every failing file of a full (non-bail) run.
+      let { killer, rejected } = await confirm(dir, failingFiles(p.bailOut));
+      if (!killer) {
+        const full = await runVitest(dir, maxWorkers, tests, false);
+        const more = failingFiles(full.out).filter((f) => !rejected.includes(f));
+        const second = await confirm(dir, more);
+        killer = second.killer;
+        rejected = [...rejected, ...second.rejected];
+      }
+      const result: Result['result'] = killer ? 'killed' : p.timedOut ? 'timeout' : 'unconfirmed';
+      results.push({ ...p.base, result, ...(killer ? { killer } : {}), ...(rejected.length ? { rejected } : {}) });
+    } finally {
+      writeFileSync(join(dir, p.file), p.original);
+    }
+  }
   writeFileSync(outFile, JSON.stringify(results.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line), null, 1));
   const tally = results.reduce<Record<string, number>>((acc, r) => ((acc[r.result] = (acc[r.result] ?? 0) + 1), acc), {});
   process.stdout.write(`${JSON.stringify(tally)}\n`);
