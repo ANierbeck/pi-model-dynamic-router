@@ -81,7 +81,9 @@
   PR #16). Exceptions (docs-only, pure config) are stated explicitly in the
   report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
-- `npx vitest run` must be green (current count: 1344 passing / 3 skipped).
+- `npx vitest run` must be green (the exact count ratchets with every
+  round — as of the ADR-0025 closure: 1629 passing / 3 skipped; do not
+  lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix

@@ -213,6 +213,20 @@ describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU 
     expect(calls(again)).toBeGreaterThan(0);
   });
 
+  it('does not re-probe after a 501: the fingerprint records the post-mark candidate set', async () => {
+    // Review M1: a model marked 501 during the probe drops out of the NEXT
+    // candidate set — the fingerprint must match that set, or every later
+    // scan re-burns GPU time on the survivors.
+    const cache = cacheWith(ollama('bad:1b', { completion: true }), ollama('ok:2b', { completion: true }));
+    const first = deps((m, p) => (m === 'bad:1b' ? Promise.reject(new Error(NO_SCHEMA_501)) : Promise.resolve(goodReply(p))));
+    await probeLocalClassifierCandidates(cfg, cache, first);
+    expect(cache.classifier_local_probe!.candidates).toEqual(['ok:2b']);
+
+    const second = deps(async (_m, p) => goodReply(p));
+    expect(await probeLocalClassifierCandidates(cfg, cache, second)).toEqual(['ok:2b']);
+    expect(calls(second)).toBe(0);
+  });
+
   it('re-probes once the previous probe is older than the TTL', async () => {
     const cache = cacheWith(ollama('foo:3b'));
     await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
@@ -239,7 +253,7 @@ describe('resolveLocalClassifierChain — pin › probed list › provisional �
   });
 
   it('provisional: before the first probe, the smallest completion-capable model leads', () => {
-    const cache = cacheWith(ollama('bar:9b'), ollama('foo:3b'));
+    const cache = cacheWith(ollama('bar:9b', { completion: true }), ollama('foo:3b', { completion: true }));
     expect(resolveLocalClassifierChain(cache, cfg)).toEqual({ primary: 'foo:3b', fallback: 'bar:9b' });
   });
 
@@ -249,7 +263,24 @@ describe('resolveLocalClassifierChain — pin › probed list › provisional �
   });
 
   it('a single local model yields a primary and no fallback', () => {
-    expect(resolveLocalClassifierChain(cacheWith(ollama('foo:3b')), cfg)).toEqual({ primary: 'foo:3b' });
+    expect(resolveLocalClassifierChain(cacheWith(ollama('foo:3b', { completion: true })), cfg)).toEqual({ primary: 'foo:3b' });
+  });
+
+  it('an EMPTY probed list is final: no fallback to provisional (probed-and-nothing-qualified)', () => {
+    // Review I1, 2026-10-07: the provisional candidates are the very models
+    // that just failed the probe (timeout / misclassification / HINT trap).
+    // Re-admitting them would burn the 45s primary timeout on every prompt
+    // or let a known-bad judge decide.
+    const cache = cacheWith(ollama('foo:3b', { completion: true }), ollama('bar:9b', { completion: true }));
+    cache.classifier_local_models = []; // probe ran; nothing qualified
+    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({});
+  });
+
+  it('provisional skips models whose completion capability is unknown (pre-upgrade cache)', () => {
+    // Review M7: /api/show data missing (old cache) — an embedding-only model
+    // must not lead the local leg before the first probe verifies it.
+    const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b', { completion: true }));
+    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({ primary: 'bar:9b' });
   });
 
   it('skips a probed head that was marked no-schema after the probe ran', () => {

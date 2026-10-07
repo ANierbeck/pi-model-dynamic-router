@@ -50,7 +50,7 @@ export function writeNoOpScanCache(scanCachePath: string, opts: { localModels?: 
         { id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 },
         // Tests that drive the mocked-Ollama classifier path need a local
         // model in the registry: the chain is derived, not defaulted (ADR-0025).
-        ...(opts.localModels ?? []).map((id) => ({ id, provider: 'ollama', cost_per_m: 0 })),
+        ...(opts.localModels ?? []).map((id) => ({ id, provider: 'ollama', cost_per_m: 0, capabilities: { completion: true } })),
       ],
       // No router-config.dynamic.json belongs to this fixture: without this,
       // the missing file would trigger a regeneration mid-test.

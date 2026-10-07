@@ -571,6 +571,12 @@ Arrays replace the shipped value in any layer, so set the full list you want.
 Absent or empty (the default) turns the filter off. The classifier chain never
 passes through this filter, so small models still classify.
 
+> Upgrading from a pre-1.7.0 version? The CHANGELOG's combined migration
+> snippet carries the concrete prefix list this filter used to ship with
+> (mistral-small-, magistral-small-, ministral-, voxtral-, codestral-).
+
+#### Billing preference (`billing_preference` on tiered groups)
+
 ```json
 "scout": {
   "method": "tiered",

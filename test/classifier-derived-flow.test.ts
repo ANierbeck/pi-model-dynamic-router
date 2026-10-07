@@ -22,7 +22,9 @@ const OLD_DEFAULTS = ['mistral-nemo:latest', 'gemma2:2b'];
 const VALID = JSON.stringify({ category: 'trivial', reason: 'test', confidence: 0.9 });
 const NO_SCHEMA_501 = 'Ollama HTTP 501: {"error":"structured output is unavailable"}';
 
-const ollama = (id: string) => ({ id, provider: 'ollama', cost_per_m: 0 });
+// capabilities.completion: the provisional (pre-probe) path only admits
+// models the scan has EXPLICITLY seen answering completions (review M7).
+const ollama = (id: string) => ({ id, provider: 'ollama', cost_per_m: 0, capabilities: { completion: true } });
 const cacheWith = (...ids: string[]): Cache => ({ available_models: ids.map(ollama) }) as Cache;
 const calledModels = () => vi.mocked(callOllama).mock.calls.map((c) => c[0]);
 

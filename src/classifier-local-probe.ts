@@ -191,7 +191,12 @@ export async function probeLocalClassifierCandidates(
   }
 
   cache.classifier_local_models = working;
-  cache.classifier_local_probe = { at: Date.now(), candidates };
+  // Fingerprint the candidates the NEXT scan will see: a model marked 501
+  // during this probe drops out of the next candidate set (marks last 24h),
+  // so it must drop out of the fingerprint too — otherwise every later scan
+  // sees a "changed" candidate set and re-burns GPU time on the survivors
+  // (review M1, 2026-10-07).
+  cache.classifier_local_probe = { at: Date.now(), candidates: candidates.filter((m) => !isMarkedNoSchema(cache, m)) };
   log(`[classifier-local-probe] ${working.length} working local model(s) cached: ${working.join(', ') || '(none)'}`);
   return working;
 }
@@ -219,17 +224,38 @@ export interface LocalClassifierChain {
 
 /**
  * The local primary/fallback for one classification: user pin per slot ›
- * probed list › provisional candidate order › nothing. A pin is never
- * duplicated into the other slot, and derived entries marked no-schema after
- * the probe ran are skipped. An empty result means: skip the local leg.
+ * probed list › provisional candidate order (only before the first probe) ›
+ * nothing. A pin is never duplicated into the other slot, and derived entries
+ * marked no-schema after the probe ran are skipped. An empty result means:
+ * skip the local leg.
+ *
+ * An EMPTY probed list is final ("probed and nothing qualified", the
+ * types.ts contract): it must NOT fall back to the provisional candidates —
+ * those are the very models that just timed out, misclassified or echoed the
+ * HINT trap in the probe. Re-admitting them would burn the primary timeout
+ * (45s) plus the fallback timeout on every prompt, or let a model that is
+ * KNOWN to misclassify judge the prompt (review I1, 2026-10-07). The next
+ * scan re-probes when the candidate set or the 24h TTL changes.
  */
 export function resolveLocalClassifierChain(
   cache: Cache | undefined,
   cfg: Config | undefined,
   pins: { model?: string; fallbackModel?: string } = {},
 ): LocalClassifierChain {
-  const probed = (cache?.classifier_local_models ?? []).filter((m) => !isMarkedNoSchema(cache, m));
-  const pool = probed.length > 0 ? probed : cache ? selectLocalClassifierCandidates(cache, cfg) : [];
+  const probedList = cache?.classifier_local_models;
+  const probed = Array.isArray(probedList)
+    ? probedList.filter((m) => !isMarkedNoSchema(cache, m))
+    : undefined;
+  // Provisional order (only when NO probe ever ran): the candidate order,
+  // restricted to models the scan has EXPLICITLY seen answering completions —
+  // a pre-upgrade cache lacks the capability fields, and an embedding-only
+  // model must not lead the local leg before the first probe verifies it
+  // (review M7, 2026-10-07).
+  const provisional = (cache ? selectLocalClassifierCandidates(cache, cfg) : []).filter((id) => {
+    const m = (cache!.available_models ?? []).find((x) => x.provider === 'ollama' && x.id === id);
+    return m?.capabilities?.completion === true;
+  });
+  const pool = probed ?? provisional;
   const primary = pins.model ?? pool.find((m) => m !== pins.fallbackModel);
   const fallback = pins.fallbackModel ?? pool.find((m) => m !== primary);
   return {

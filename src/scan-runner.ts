@@ -586,7 +586,14 @@ export function createScanRunner(rt: ScanRunnerDeps) {
         warnLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
 
-      // Derive + probe the LOCAL classifier chain right after the cloud probe
+      // Generate the dynamic configuration FIRST (review M2, 2026-10-07):
+      // the local classifier probe can take minutes (up to 6 candidates x
+      // 3 cases x 45s cold-start bound) and the dynamic config does not read
+      // its result — delaying regeneration by the probe would stall routing
+      // and compete with a live classification for the GPU.
+      await rt.generateDynamicConfig(force);
+
+      // Derive + probe the LOCAL classifier chain after the dynamic config
       // (ADR-0025 C): candidates come from the Ollama models this scan just
       // found, verified with the same classification cases, persisted as
       // cache.classifier_local_models. Non-fatal — without a list the
@@ -597,9 +604,6 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       } catch (probeErr) {
         warnLog('[scan] local classifier probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
-
-      // Generate the dynamic configuration after the scan
-      await rt.generateDynamicConfig(force);
     } finally {
       rt.scanning = false;
     }
