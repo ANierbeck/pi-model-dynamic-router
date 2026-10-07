@@ -576,8 +576,14 @@ entries / 62 occurrences, ceiling-pinned) and class-B admission pins live.
 `free_models`, `model_metrics` sentinels, `exclude.models` and provider billing
 removed — baseline 28 entries / 34 occurrences; the owner's
 `router-config.user.json` needs the migration snippet from the CHANGELOG at
-merge time. Phases C–E still await the owner's go; also open: the `model-map.yaml`
-guard-scope classification (Lane A review, owner decision).
+merge time (including deleting `router-config.dynamic.json` — removed
+merge-key entries linger there). Open follow-up from the Phase B review
+(review M3/I1, 2026-10-07): make the config-fingerprint resync PRUNE
+dynamic `providers.*.free_models` and `model_metrics` entries that no
+static layer contains any more, so upgraded installs self-heal instead of
+relying on the manual dynamic-file deletion. Phases C–E still await the
+owner's go; also open: the `model-map.yaml` guard-scope classification
+(Lane A review, owner decision).
 
 **`/router config` command** — ✅ DONE (Phases 1–2):
 `docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list. Writes to `router-config.user.json` so changes survive the session but stay out of the shipped defaults.

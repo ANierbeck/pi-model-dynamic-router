@@ -100,7 +100,11 @@ describe('live path: free-tier candidates follow the credential gate', () => {
 
   beforeEach(() => metricsModule.setModelMap({}, []));
 
-  it('credentialed provider: the :free scan entry is a candidate with no shipped list', () => {
+  // With a session registry present, allDiscoveredRefs serves registry refs
+  // (getAvailable), not cache.available_models — the "entry" here is the
+  // registry's model, admitted because the provider is credentialed. The
+  // scan-entry admission itself is pinned by the save-path tests above.
+  it('credentialed provider: the :free registry entry is a candidate with no shipped list', () => {
     expect(makeRouter({ configured: true }).allDiscoveredRefs()).toContain(FREE_REF);
   });
 

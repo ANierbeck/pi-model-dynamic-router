@@ -43,6 +43,8 @@
     ```
 
     Optionally restore the former free-model pins as `"free_models": [...]` under `providers.openrouter` (not required: free-tier models of a credentialed provider are derived). The exclusions above are optional too — the learned blocklist re-discovers the permanent failures on first contact.
+
+    **Required for existing installs:** `providers` and `model_metrics` are dynamic-config MERGE keys — entries removed from the shipped config linger in `router-config.dynamic.json` (regeneration never prunes a merge key; the removed sentinels and the old `free_models` list would stay effective). After upgrading, delete `router-config.dynamic.json` in the router state dir (next to the installed extension, or `$PI_ROUTER_STATE_DIR`); the next scan regenerates it from the new shipped config plus your user layer. `exclude` is a resync key and updates automatically.
   - Ratcheting baseline: 56 → 28 entries (62 → 34 occurrences).
 
 - **Local-provider wedge cooldowns follow a 2/5/15-minute ladder instead of a flat 5 minutes** (circuit-breaker Phase 1): the first wedge cools for 2 minutes, repeat wedges step up to 5 and 15 minutes (capped), and re-opens are bounded by the evidence window — a single timeout long after a wedge never re-opens it. The `/router` overview wedge warning is unchanged and now driven by the new breaker state.

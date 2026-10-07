@@ -120,6 +120,58 @@ describe('subscription cost rule (no model_metrics sentinels)', () => {
   });
 });
 
+// ── Review fixes M2/M3 (2026-10-07 full-range review of Phase B) ─────────────
+
+describe('subscription rule uniformity', () => {
+  const TWIN_CFG = 'fake-sub/quill-twin-x'; // cfg-declared subscription provider
+  const TWIN_MAP = 'chutes/quill-twin-x'; // subscription ONLY via PROVIDER_MAP
+
+  it('applies the same rule cost to PROVIDER_MAP-only and cfg-declared subscription providers (no 2x skew)', () => {
+    // Both twins carry the same $2 list price; the rule cost must be
+    // eps x list for BOTH. The old code applied SUB_DISCOUNT only when
+    // billing came from cfg.providers, halving one twin and not the other.
+    const withTwins = makeCfg();
+    metricsModule.setConfig(withTwins);
+    const pricing = { ...PRICING, 'vendorx/quill-twin-x': { input: 2, output: 10 } };
+    metricsModule.setCache({ ...cache, openrouter_pricing: pricing } as any);
+    const registry = {
+      find: (provider: string, id: string) =>
+        (provider === 'fake-sub' || provider === 'chutes') && id === 'quill-twin-x'
+          ? { provider, id, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+          : REGISTRY.find(provider, id),
+    };
+    metricsModule.setModelRegistry(registry as any);
+
+    const fromCfg = metricsModule.effCost(TWIN_CFG);
+    const fromMap = metricsModule.effCost(TWIN_MAP);
+    expect(fromMap).toBeCloseTo(fromCfg, 15);
+    expect(fromCfg).toBeCloseTo(1e-6 * 2, 15); // eps x list, undiscounted
+  });
+
+  it('sees pricing-cache entries added in place (no setCache) — the backfill index must not go stale', () => {
+    // M3 pin: the same-model backfill is indexed for O(1) lookups (effCost
+    // runs inside sort comparators), but scan-runner mutates the pricing
+    // object in place. A naive memo would keep serving the stale miss;
+    // the index must rebuild when the pricing generation changes.
+    metricsModule.setConfig(makeCfg());
+    // The SAME object must go to setCache and be mutated below — scan-runner
+    // mutates the live pricing object in place.
+    const livePricing: Cache['openrouter_pricing'] = { ...PRICING };
+    metricsModule.setCache({ ...cache, openrouter_pricing: livePricing } as any);
+    metricsModule.setModelRegistry(REGISTRY as any);
+
+    // Warm whatever index exists with a lookup for the model added below
+    // (a miss now, so a naive memo would cache the constant fallback).
+    const stale = metricsModule.effCost('fake-sub/quill-late-x');
+    expect(stale).toBeCloseTo(1.5e-6, 15); // constant fallback while unpriced
+
+    // Scan shape: pricing gains a key in place, no setCache call
+    // (scan-runner mutates rt.cache.openrouter_pricing directly).
+    Object.assign(livePricing!, { 'vendorx/quill-late-x': { input: 6, output: 30 } });
+    expect(metricsModule.effCost('fake-sub/quill-late-x')).toBeCloseTo(1e-6 * 6, 15);
+  });
+});
+
 describe('shipped router-config.json carries no model_metrics sentinels', () => {
   it('has no model_metrics entry (cost ordering is derived by the subscription rule)', () => {
     const shipped = JSON.parse(readFileSync(resolve(__dirname, '../router-config.json'), 'utf8'));

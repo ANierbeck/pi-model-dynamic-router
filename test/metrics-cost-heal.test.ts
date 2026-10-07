@@ -106,7 +106,9 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
   it('subscription model WITHOUT registry price or list price takes the constant stand-in (not free, not unknown)', () => {
     // No registry at all: the subscription branch resolves the placeholder 0
     // (healed per call); effCost then applies the ADR-0025 B2 rule's constant
-    // fallback 1.5e-6 × SUB_DISCOUNT(0.5) — positive, but far below any real price.
+    // fallback 1.5e-6 — positive, but far below any real price. No SUB_DISCOUNT
+    // on the rule path (review M2: a uniform rule cost for cfg-declared and
+    // PROVIDER_MAP-only subscription providers alike).
     setConfig({
       model_groups: {}, model_metrics: {}, gdpval_builtin: {},
       providers: { mistral: { billing: 'subscription' } },
@@ -114,7 +116,7 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
 
     const ref = 'mistral/not-in-registry';
     expect(getM(ref).cost_per_m).toBe(0);
-    expect(effCost(ref)).toBeCloseTo(7.5e-7, 12);
+    expect(effCost(ref)).toBeCloseTo(1.5e-6, 12);
   });
 
   it('local provider (ollama) stays free', () => {
