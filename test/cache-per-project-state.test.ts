@@ -22,7 +22,7 @@
  * - session_errors entries carry the recording process's pid; the status
  *   counter ignores other processes' entries (their windows overlap).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -30,7 +30,10 @@ import { CacheManager } from '../src/cache.ts';
 import { pushSessionError, countSessionErrorsSince, SESSION_ERROR_CAP } from '../src/session-errors.ts';
 import type { Cache } from '../src/types.ts';
 
-const stateDir = path.join(os.tmpdir(), 'router-state-global');
+// Per-run unique dir: a FIXED shared path raced with any concurrent run of
+// this file (parallel mutation rechecks, two vitest processes) because the
+// beforeEach below deletes it.
+const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-state-global-'));
 const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-state-project-'));
 const globalCache = () => path.join(stateDir, '.cache', 'scan-cache.json');
 const projectState = () => path.join(projectDir, '.pi', 'cache', 'router-state.json');
@@ -38,6 +41,10 @@ const readJson = (p: string) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p
 beforeEach(() => {
   fs.rmSync(stateDir, { recursive: true, force: true });
   fs.rmSync(projectState(), { force: true });
+});
+afterAll(() => {
+  fs.rmSync(stateDir, { recursive: true, force: true });
+  fs.rmSync(projectDir, { recursive: true, force: true });
 });
 
 describe('CacheManager: per-project instance state', () => {

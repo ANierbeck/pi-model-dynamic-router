@@ -740,8 +740,9 @@ export class Router {
     const cloudFirstRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3);
     // local_before_payg: free (tier 0) → subscription (tier 1) → local (tier 2) → payg (tier 3).
     // For trivial/simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
-    // local ahead of free/subscription like the old strict_local did.
-    const localBeforePaygRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 2 ? 2 : 3);
+    // local ahead of free/subscription like the old strict_local did. This IS the tier numbering itself, so it needs
+    // no rank table of its own: it takes the `default` branch below (an identity table was removed as redundant —
+    // nightly R1 mutation triage, 2026-10-07).
     const rank = (t: number): number => {
       switch (billingPreference) {
         case 'strict_local':
@@ -751,8 +752,6 @@ export class Router {
           return t === 2 ? 0.5 : t;
         case 'cloud_first':
           return cloudFirstRank(t);
-        case 'local_before_payg':
-          return localBeforePaygRank(t);
         default:
           return t;
       }
@@ -1275,9 +1274,11 @@ export class Router {
         const isLastStep = i === g.pipeline.length - 1;
         if (step.top_k && step.top_k < c.length && !isLastStep) c = c.slice(0, step.top_k);
       }
-    } else if (g.method === 'min_cost_if_all_priced') {
-      c = this.sortBy(c, 'min_cost_if_all_priced');
     } else {
+      // 'min_cost_if_all_priced' and any other sortBy method: the generic
+      // pass-through dispatches identically (the former explicit
+      // min_cost_if_all_priced branch was removed as redundant — same as in
+      // resolveGroup; nightly R1 mutation triage, 2026-10-07).
       c = this.sortBy(c, g.method);
     }
 

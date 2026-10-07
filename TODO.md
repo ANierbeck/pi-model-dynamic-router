@@ -534,6 +534,13 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   survivors — the baseline must come from CI). Open work once the first
   nightly report lands: triage the survivors (equivalent mutants vs real
   vacuity), then decide Phase 2 scope.
+- Phase 1 first-report triage DONE (Nightly R1, 2026-10-07, run 37606222840,
+  docs/mutation-triage.md): 435 undetected -> 254 real vacuity (58.4 %, all
+  killed by +152 tests), 11 false survivors (2.5 %), 112 equivalent, 58
+  dead/redundant (removed), 0 obsolete; projected score 75.6 -> ~93.5 %
+  (re-measured by the next nightly).
+  OPEN OWNER DECISION: Phase 2 scope (see the evidence table and the
+  recommendation at the end of that section).
 
 **vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
 UPDATE 2026-10-06: vitest is now on 4.1.11 (security round, see CHANGELOG) —
