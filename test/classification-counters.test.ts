@@ -18,6 +18,7 @@ import { callOllama } from '../src/ollama-utils';
 import { classifyPrompt, getClassificationCounts, resetClassificationCounts } from '../src/content-classifier.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
 import type { Group } from '../src/types.ts';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 const json = (category: string) => JSON.stringify({ category, reason: 'test', confidence: 0.9 });
 
@@ -33,7 +34,7 @@ afterEach(() => {
 describe('classification counters (Phase 0 step 2)', () => {
   it('counts each classification by coarse source and by category', async () => {
     vi.mocked(callOllama).mockResolvedValue(json('code_complex'));
-    await classifyPrompt('refactor the stream orchestrator into three modules, counter probe one');
+    await classifyPrompt('refactor the stream orchestrator into three modules, counter probe one', { cache: localModelCache() });
     await classifyPrompt('yes do it', { context: { lastCategory: 'design' } });
     await classifyPrompt('HINT: use mistral/zai-glm-5-3 please fix the failing test');
 
@@ -118,7 +119,7 @@ describe('classification counters under overlapping calls (review 2026-10-06, mi
     vi.mocked(callOllama).mockImplementation(
       () => new Promise<string>((res) => { releaseA = res; })
     );
-    const a = classifyPrompt('refactor the stream orchestrator into three modules, overlap probe a');
+    const a = classifyPrompt('refactor the stream orchestrator into three modules, overlap probe a', { cache: localModelCache() });
     // Let A reach its (pending) Ollama call.
     await new Promise((r) => setTimeout(r, 0));
     // A's answer arrives and, in the same tick, B (momentum) starts and

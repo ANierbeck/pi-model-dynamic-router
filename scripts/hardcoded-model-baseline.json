@@ -3,16 +3,6 @@
   "entries": [
     {
       "file": "router-config.json",
-      "literal": "config:model_groups.dynamic.classifier_fallback=ollama/gemma2:2b",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_groups.dynamic.classifier_model=ollama/mistral-nemo:latest",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
       "literal": "config:non_agent_model_prefixes[]=codestral-",
       "count": 1
     },
@@ -40,31 +30,6 @@
       "file": "src/classification-prompt.ts",
       "literal": "mistral-medium-3.5",
       "count": 3
-    },
-    {
-      "file": "src/commands.ts",
-      "literal": "ollama/gemma2:2b",
-      "count": 1
-    },
-    {
-      "file": "src/commands.ts",
-      "literal": "ollama/mistral-nemo:latest",
-      "count": 1
-    },
-    {
-      "file": "src/content-classifier.ts",
-      "literal": "gemma2:2b",
-      "count": 1
-    },
-    {
-      "file": "src/content-classifier.ts",
-      "literal": "mistral-nemo:latest",
-      "count": 1
-    },
-    {
-      "file": "src/escalation.ts",
-      "literal": "ollama/gemma2:2b",
-      "count": 2
     },
     {
       "file": "src/local-llm.ts",

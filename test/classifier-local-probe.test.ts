@@ -182,6 +182,47 @@ describe('probeLocalClassifierCandidates — verified, persisted chain', () => {
   });
 });
 
+describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU time)', () => {
+  const calls = (d: ReturnType<typeof deps>) => d.callOllama.mock.calls.length;
+
+  it('does not re-probe while the persisted list is fresh and the candidates are unchanged', async () => {
+    const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b'));
+    const first = deps(async (_m, p) => goodReply(p));
+    await probeLocalClassifierCandidates(cfg, cache, first);
+    expect(calls(first)).toBeGreaterThan(0);
+
+    const second = deps(async (_m, p) => goodReply(p));
+    expect(await probeLocalClassifierCandidates(cfg, cache, second)).toEqual(['foo:3b', 'bar:9b']);
+    expect(calls(second)).toBe(0);
+  });
+
+  it('re-probes when forced (an explicit /router scan)', async () => {
+    const cache = cacheWith(ollama('foo:3b'));
+    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    const again = deps(async (_m, p) => goodReply(p));
+    await probeLocalClassifierCandidates(cfg, cache, again, undefined, { force: true });
+    expect(calls(again)).toBeGreaterThan(0);
+  });
+
+  it('re-probes when the candidate set changed (a model was pulled or removed)', async () => {
+    const cache = cacheWith(ollama('foo:3b'));
+    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    cache.available_models!.push(ollama('bar:9b'));
+    const again = deps(async (_m, p) => goodReply(p));
+    expect(await probeLocalClassifierCandidates(cfg, cache, again)).toEqual(['foo:3b', 'bar:9b']);
+    expect(calls(again)).toBeGreaterThan(0);
+  });
+
+  it('re-probes once the previous probe is older than the TTL', async () => {
+    const cache = cacheWith(ollama('foo:3b'));
+    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    cache.classifier_local_probe!.at = Date.now() - 25 * 60 * 60_000;
+    const again = deps(async (_m, p) => goodReply(p));
+    await probeLocalClassifierCandidates(cfg, cache, again);
+    expect(calls(again)).toBeGreaterThan(0);
+  });
+});
+
 describe('resolveLocalClassifierChain — pin › probed list › provisional › none', () => {
   it('uses the probed list heads', () => {
     const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b'));

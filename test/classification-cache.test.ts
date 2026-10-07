@@ -17,6 +17,7 @@ vi.mock('../src/ollama-utils', () => ({
 // Import AFTER the mock is registered.
 import { classifyPrompt } from '../src/content-classifier.ts';
 import * as ollamaUtils from '../src/ollama-utils.ts';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
   beforeEach(() => {
@@ -25,7 +26,7 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
 
   it('returns the cached result on the second identical prompt without calling the LLM again', async () => {
     const prompt = 'Refactor the router module into smaller files and add tests';
-    const opts = { allowStaticFallback: true } as any;
+    const opts = { allowStaticFallback: true, cache: localModelCache() } as any;
 
     const r1 = await classifyPrompt(prompt, opts);
     const r2 = await classifyPrompt(prompt, opts);
@@ -41,6 +42,7 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
     const prompt = 'Do the thing now please and make it good for the project';
     const optsWithContext = {
       allowStaticFallback: true,
+      cache: localModelCache(),
       context: { previousUserMessage: 'previous', lastAssistantSnippet: 'snippet' },
     } as any;
 

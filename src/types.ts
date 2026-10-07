@@ -113,9 +113,14 @@ export interface Group {
     | 'strict_local'
     | 'cloud_first'
     | 'local_before_payg';
-  /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
+  /**
+   * Optional user PIN for the local classifier primary (dynamic group only),
+   * an Ollama model ref such as "ollama/<model>:<tag>". No shipped value
+   * (ADR-0025): unset, the primary is derived from the models Ollama reports
+   * and verified by the scan-time probe (src/classifier-local-probe.ts).
+   */
   classifier_model?: string;
-  /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
+  /** Optional user PIN for the local classifier fallback; unset = derived (see classifier_model). */
   classifier_fallback?: string;
   /**
    * Pinned cloud classifier model ref ("provider/id") for the dynamic
@@ -430,6 +435,12 @@ export interface Cache {
    * nothing qualified.
    */
   classifier_local_models?: string[];
+  /**
+   * When classifier_local_models was last probed and for which candidates
+   * (size order) — lets a scan reuse a fresh result instead of spending GPU
+   * time on every session start.
+   */
+  classifier_local_probe?: { at: number; candidates: string[] };
 }
 
 // ── Provider Discovery Types ────────────────────────────────────────────

@@ -43,6 +43,12 @@ export const LOCAL_CLASSIFIER_TIMEOUT_MS = 45_000;
  */
 const MAX_LOCAL_PROBE_CANDIDATES = 6;
 const MAX_LOCAL_WORKING_MODELS = 3;
+/**
+ * A scan runs on every session start but a probe costs GPU time (3 cases per
+ * candidate), so a persisted result is reused until the candidate set changes,
+ * a forced scan asks for a fresh one, or this TTL lapses.
+ */
+const LOCAL_PROBE_TTL_MS = 24 * 60 * 60_000;
 
 // ── No-structured-output marks (live incident 2026-09-26) ──────────────────
 // Ollama's MLX backend answers JSON-schema calls with HTTP 501
@@ -69,11 +75,16 @@ export function markNoSchema(cache: Cache | undefined, model: string): void {
 // ── Candidate selection ─────────────────────────────────────────────────────
 
 /** Parameter count in billions: what Ollama reported, else the `<n>b` tag in the id. */
-function parameterSizeB(model: { id: string; capabilities?: { parameterSizeB?: number } }): number | undefined {
+export function parameterSizeB(model: { id: string; capabilities?: { parameterSizeB?: number } }): number | undefined {
   const reported = model.capabilities?.parameterSizeB;
   if (typeof reported === 'number') return reported;
   const m = /(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)b(?![A-Za-z0-9])/i.exec(model.id);
   return m ? parseFloat(m[1]) : undefined;
+}
+
+/** Embedding-only and non-completion models can never answer a chat prompt; unknown capability stays eligible. */
+export function isCompletionCapable(model: { capabilities?: { completion?: boolean; embedding?: boolean } }): boolean {
+  return model.capabilities?.embedding !== true && model.capabilities?.completion !== false;
 }
 
 /**
@@ -85,7 +96,7 @@ export function selectLocalClassifierCandidates(cache: Cache, cfg?: Config): str
   const exCtx = cfg?.exclude ? { rules: cfg.exclude, cfg, cache } : undefined;
   return (cache.available_models ?? [])
     .filter((m) => m.provider === 'ollama' && m.id)
-    .filter((m) => m.capabilities?.embedding !== true && m.capabilities?.completion !== false)
+    .filter(isCompletionCapable)
     .filter((m) => !isMarkedNoSchema(cache, m.id))
     .filter((m) => !isBlocked(cache, `ollama/${m.id}`))
     .filter((m) => !(exCtx && isExcluded(`ollama/${m.id}`, exCtx)))
@@ -114,6 +125,8 @@ export interface LocalProbeDeps {
  * Skipped without touching the previous list when the daemon is unreachable
  * or the watchdog marks it wedged — an outage must not wipe a good chain.
  * With no candidates the persisted list is empty and nothing is called.
+ * A fresh persisted result for the same candidates is reused (no GPU time)
+ * unless `opts.force` (an explicit `/router scan`) asks for a re-probe.
  *
  * @returns the working model names (also written to the cache).
  */
@@ -122,9 +135,20 @@ export async function probeLocalClassifierCandidates(
   cache: Cache,
   deps: LocalProbeDeps,
   onLog?: (msg: string) => void,
+  opts: { force?: boolean } = {},
 ): Promise<string[]> {
   const log = onLog ?? (() => {});
   const candidates = selectLocalClassifierCandidates(cache, cfg).slice(0, MAX_LOCAL_PROBE_CANDIDATES);
+  const previous = cache.classifier_local_probe;
+  if (
+    !opts.force &&
+    Array.isArray(cache.classifier_local_models) &&
+    previous &&
+    Date.now() - previous.at < LOCAL_PROBE_TTL_MS &&
+    previous.candidates.join('\n') === candidates.join('\n')
+  ) {
+    return cache.classifier_local_models;
+  }
   if (candidates.length === 0) {
     cache.classifier_local_models = [];
     log('[classifier-local-probe] no local classifier candidates (no completion-capable Ollama model)');
@@ -167,11 +191,26 @@ export async function probeLocalClassifierCandidates(
   }
 
   cache.classifier_local_models = working;
+  cache.classifier_local_probe = { at: Date.now(), candidates };
   log(`[classifier-local-probe] ${working.length} working local model(s) cached: ${working.join(', ') || '(none)'}`);
   return working;
 }
 
 // ── Resolution at classification time ───────────────────────────────────────
+
+/**
+ * The user's optional local pins from a dynamic group (`classifier_model` /
+ * `classifier_fallback`, no shipped value), as bare Ollama model names.
+ */
+export function localClassifierPins(
+  group: { classifier_model?: string; classifier_fallback?: string } | undefined,
+): { model?: string; fallbackModel?: string } {
+  const bare = (ref: string) => ref.replace(/^ollama\//, '');
+  return {
+    ...(group?.classifier_model ? { model: bare(group.classifier_model) } : {}),
+    ...(group?.classifier_fallback ? { fallbackModel: bare(group.classifier_fallback) } : {}),
+  };
+}
 
 export interface LocalClassifierChain {
   primary?: string;

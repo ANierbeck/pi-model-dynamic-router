@@ -130,8 +130,6 @@
     "dynamic": {
       "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
       "method": "dynamic",
-      "classifier_model": "ollama/mistral-nemo:latest",
-      "classifier_fallback": "ollama/gemma2:2b",
       "classifier_cloud_fallback": true
     },
     "bulk_reader": {

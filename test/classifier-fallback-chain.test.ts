@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 import type { FullClassificationResult } from '../src/content-classifier.ts';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
@@ -450,6 +451,7 @@ describe('classifyPrompt fallback chain', () => {
 
       const result = await classifyPrompt('Design a distributed queue with retries please', {
         context: { lastModel: 'unknown/cheap-model' },
+        cache: localModelCache(),
       });
 
       expect('hintType' in result).toBe(false);
@@ -463,6 +465,7 @@ describe('classifyPrompt fallback chain', () => {
 
       const result = await classifyPrompt('Set the PR to ready please', {
         context: { lastModel: 'unknown/cheap-model' },
+        cache: localModelCache(),
       });
 
       expect('hintType' in result).toBe(false);
@@ -476,6 +479,7 @@ describe('classifyPrompt fallback chain', () => {
 
       const result = await classifyPrompt('Show me the todo list in this repository now', {
         context: { lastModel: 'unknown/cheap-model' },
+        cache: localModelCache(),
       });
 
       expect('hintType' in result).toBe(false);
@@ -504,7 +508,7 @@ describe('classifyPrompt fallback chain', () => {
         ollamaReply({ category: 'trivial', reason: 'empty prompt', confidence: 0.8 })
       );
 
-      const result = await classifyPrompt('');
+      const result = await classifyPrompt('', { cache: localModelCache() });
 
       expect(result.category).toBe('trivial');
     });

@@ -26,8 +26,9 @@ let originalFetch: typeof fetch | undefined;
  * for why the cache alone isn't enough). Call AFTER moving the real
  * scan-cache aside and BEFORE firing session_start. The caller is
  * responsible for undoing both (removeNoOpScanCache) in afterEach.
+ * `opts.localModels` seeds Ollama entries for classifier-path tests.
  */
-export function writeNoOpScanCache(scanCachePath: string): void {
+export function writeNoOpScanCache(scanCachePath: string, opts: { localModels?: string[] } = {}): void {
   const backupPath = `${scanCachePath}${NOOP_CACHE_BACKUP_SUFFIX}`;
   if (fs.existsSync(scanCachePath)) fs.renameSync(scanCachePath, backupPath);
 
@@ -45,11 +46,24 @@ export function writeNoOpScanCache(scanCachePath: string): void {
       // A single placeholder model satisfies the sanity check without
       // affecting routing (tests set up their own candidates via
       // router-config + modelRegistry stubs, not via available_models).
-      available_models: [{ id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 }],
+      available_models: [
+        { id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 },
+        // Tests that drive the mocked-Ollama classifier path need a local
+        // model in the registry: the chain is derived, not defaulted (ADR-0025).
+        ...(opts.localModels ?? []).map((id) => ({ id, provider: 'ollama', cost_per_m: 0 })),
+      ],
       // No router-config.dynamic.json belongs to this fixture: without this,
       // the missing file would trigger a regeneration mid-test.
       dynamic_config_expected: false,
       gdpval_scores: {},
+      // Steady state: the local chain was probed recently, so the background
+      // scan does not re-probe (and call the mocked Ollama) mid-test.
+      ...(opts.localModels?.length
+        ? {
+            classifier_local_models: opts.localModels,
+            classifier_local_probe: { at: Date.now(), candidates: opts.localModels },
+          }
+        : {}),
     })
   );
 

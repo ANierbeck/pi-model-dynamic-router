@@ -592,7 +592,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // cache.classifier_local_models. Non-fatal — without a list the
       // classifier uses the unprobed candidate order.
       try {
-        await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog);
+        await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog, { force });
         rt.saveCache();
       } catch (probeErr) {
         warnLog('[scan] local classifier probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));

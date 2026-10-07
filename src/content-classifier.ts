@@ -6,6 +6,13 @@ import { isExcluded } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
+import {
+  LOCAL_CLASSIFIER_TIMEOUT_MS,
+  NO_SCHEMA_MARKER,
+  isMarkedNoSchema,
+  markNoSchema,
+  resolveLocalClassifierChain,
+} from './classifier-local-probe.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   buildContextBlock,
@@ -148,45 +155,15 @@ interface ClassificationOptions {
 
 // ── Defaults ────────────────────────────────────────────────────────────
 
-// mistral-nemo:latest (12b, GGUF via llama-server) answers structured
-// output directly (~4-5s warm on M3 Max; schema capability verified live
-// 2026-09-26 via an /api/chat schema probe). The previous default,
-// gemma4:12b-mlx, runs on Ollama's MLX backend, which rejects every
-// JSON-schema call with HTTP 501 "structured output is unavailable" —
-// each classification burned a guaranteed-501 hop before the fallback
-// answered (live incident 2026-09-26). If a future primary ever rejects
-// structured output again, the 501 marks it in cache.classifier_no_schema
-// and subsequent calls skip it entirely.
-const DEFAULT_MODEL = 'mistral-nemo:latest';
-const DEFAULT_TIMEOUT = 45_000; // generous cold-start bound for a ~12b local model
-
-// ── No-structured-output self-healing (live incident 2026-09-26) ───────────
-// Ollama's MLX backend answers JSON-schema calls with HTTP 501
-// "structured output is unavailable" — a permanent property of the backend,
-// not a transient failure. Retrying the marked model on every prompt wastes
-// one guaranteed-501 hop per classification, so we persist the observation in
-// the cache and skip the model as primary. A TTL keeps the mark self-healing:
-// if an Ollama upgrade adds schema support to the backend, the primary is
-// retried after expiry.
-const NO_SCHEMA_MARKER = 'structured output is unavailable';
-const CLASSIFIER_NO_SCHEMA_TTL_MS = 24 * 60 * 60_000; // 24h
-
-/** True if the local model is marked as rejecting structured output (within TTL). */
-function isMarkedNoSchema(cache: Cache | undefined, model: string): boolean {
-  const ts = cache?.classifier_no_schema?.[model];
-  return typeof ts === 'number' && Date.now() - ts < CLASSIFIER_NO_SCHEMA_TTL_MS;
-}
-
-/** Persist a 501 "structured output is unavailable" observation in the cache. */
-function markNoSchema(cache: Cache | undefined, model: string): void {
-  if (!cache) return; // no cache to persist into — the 501 hop just repeats this session
-  if (!cache.classifier_no_schema) cache.classifier_no_schema = {};
-  cache.classifier_no_schema[model] = Date.now();
-}
+// The local model(s) are NOT defaulted here: ADR-0025 derives them from the
+// Ollama models the scan found (see classifier-local-probe.ts —
+// resolveLocalClassifierChain). Only the user's optional pins arrive as
+// options.model / options.fallbackModel.
+const DEFAULT_TIMEOUT = LOCAL_CLASSIFIER_TIMEOUT_MS; // generous cold-start bound for a local model
 
 // ── Classification cache (LRU + TTL) ────────────────────────────────────────
 // Repeated identical prompts (subagent fan-out, retry loops, re-asks) would
-// otherwise re-run the LLM classifier every time — a 22s gemma4:12b call each.
+// otherwise re-run the LLM classifier every time — a multi-second local call each.
 // Cache the prompt → classification result, evicting least-recently-used past
 // MAX_CLASSIFY_CACHE entries and expiring entries after CLASSIFY_CACHE_TTL_MS.
 const MAX_CLASSIFY_CACHE = 64;
@@ -302,7 +279,6 @@ function classifyCacheSet(prompt: string, result: FullClassificationResult): voi
   }
   classifyCache.set(prompt, { result, ts: Date.now() });
 }
-const FALLBACK_MODEL = 'gemma2:2b';
 const FALLBACK_TIMEOUT = 10_000;
 // Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
 // v1.6.0 review): probe parity — the scan-time probe caps each candidate at
@@ -507,9 +483,9 @@ async function classifyPromptUncounted(
   options: ClassificationOptions
 ): Promise<FullClassificationResult> {
   const {
-    model = DEFAULT_MODEL,
+    model: pinnedModel,
     timeoutMs = DEFAULT_TIMEOUT,
-    fallbackModel = FALLBACK_MODEL,
+    fallbackModel: pinnedFallbackModel,
     fallbackTimeoutMs = FALLBACK_TIMEOUT,
     context = {},
     allowStaticFallback = false,
@@ -662,60 +638,67 @@ async function classifyPromptUncounted(
     return parsed;
   };
 
-  // Primary model — may be slow on cold start. A short availability probe
-  // guards BOTH local attempts: when the daemon is unreachable (down or
-  // hanging port), we skip straight to the cloud fallback chain instead of
-  // burning primary+fallback timeouts on every prompt.
+  // Local leg. The primary/fallback come from the derived chain (user pin >
+  // probed list > provisional candidate order, ADR-0025); with no local model
+  // at all the leg is skipped without touching the daemon. A short
+  // availability probe guards BOTH local attempts: when the daemon is
+  // unreachable (down or hanging port), we skip straight to the next leg
+  // instead of burning primary+fallback timeouts on every prompt.
   let classificationResult: FullClassificationResult | null = null;
   const ollamaWedged = isProviderWedged(cache, 'ollama');
 
   const tryOllama = async (): Promise<void> => {
-    if (!ollamaWedged && (await isOllamaAvailable())) {
-      // Self-healing: a primary marked as rejecting structured output (a 501
-      // from e.g. the MLX backend — permanent for that backend, not transient)
-      // is skipped entirely. No guaranteed-501 hop on every prompt.
-      if (model !== fallbackModel && isMarkedNoSchema(cache, model)) {
-        routerLog(
-          `[classifier] Primary model "${model}" marked no-structured-output (501) — trying ${fallbackModel} directly`
-        );
-        try {
-          classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
-        } catch (fallbackError) {
-          warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
-        }
-      } else {
-        try {
-          classificationResult = await tryClassify(model, timeoutMs);
-        } catch (primaryError) {
-          const primaryMsg = String((primaryError as Error)?.message ?? '');
-          // Cold-start timeout or load error → retry immediately with the fallback model
-          if (model !== fallbackModel) {
-            if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
-              // Permanent backend property, not transient — mark and never
-              // burn this hop again while the mark is within its TTL.
-              markNoSchema(cache, model);
-              routerLog(
-                `[classifier] Primary model "${model}" rejects structured output (501) — marked in cache, retrying with ${fallbackModel}`,
-                primaryMsg
-              );
-            } else {
-              routerLog(
-                `[classifier] Primary model "${model}" failed, retrying with ${fallbackModel}`,
-                primaryMsg
-              );
-            }
-            try {
-              classificationResult = await tryClassify(fallbackModel, fallbackTimeoutMs);
-            } catch (fallbackError) {
-              warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
-            }
-          }
-        }
-      }
-    } else if (ollamaWedged) {
+    const { primary, fallback } = resolveLocalClassifierChain(cache, cfg, {
+      ...(pinnedModel ? { model: pinnedModel } : {}),
+      ...(pinnedFallbackModel ? { fallbackModel: pinnedFallbackModel } : {}),
+    });
+    if (!primary) {
+      routerLog('[classifier] No local classifier model derived — skipping the local leg');
+      return;
+    }
+    if (ollamaWedged) {
       warnLog('[classifier] Ollama marked wedged by the watchdog — skipping both local models');
-    } else {
+      return;
+    }
+    if (!(await isOllamaAvailable())) {
       routerLog('[classifier] Ollama daemon unreachable — skipping both local models');
+      return;
+    }
+    const retryTarget = fallback && fallback !== primary ? fallback : undefined;
+    const tryFallback = async (): Promise<void> => {
+      if (!retryTarget) return;
+      try {
+        classificationResult = await tryClassify(retryTarget, fallbackTimeoutMs);
+      } catch (fallbackError) {
+        warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
+      }
+    };
+    // Self-healing: a primary marked as rejecting structured output (a 501
+    // from e.g. the MLX backend — permanent for that backend, not transient)
+    // is skipped entirely. No guaranteed-501 hop on every prompt.
+    if (isMarkedNoSchema(cache, primary)) {
+      if (!retryTarget) {
+        routerLog(`[classifier] Local model "${primary}" marked no-structured-output (501) and no fallback — skipping the local leg`);
+        return;
+      }
+      routerLog(`[classifier] Primary model "${primary}" marked no-structured-output (501) — trying ${retryTarget} directly`);
+      await tryFallback();
+      return;
+    }
+    try {
+      classificationResult = await tryClassify(primary, timeoutMs);
+    } catch (primaryError) {
+      const primaryMsg = String((primaryError as Error)?.message ?? '');
+      if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
+        // Permanent backend property, not transient — mark and never burn
+        // this hop again while the mark is within its TTL.
+        markNoSchema(cache, primary);
+        routerLog(`[classifier] Primary model "${primary}" rejects structured output (501) — marked in cache`, primaryMsg);
+      } else if (retryTarget) {
+        routerLog(`[classifier] Primary model "${primary}" failed, retrying with ${retryTarget}`, primaryMsg);
+      }
+      // Cold-start timeout or load error → retry immediately with the fallback model
+      await tryFallback();
     }
   };
 

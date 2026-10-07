@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { classifyPrompt, classifyStatically, detectHintDirectly } from '../src/content-classifier.js';
 import type { ClassificationResult, HintClassificationResult, FullClassificationResult } from '../src/content-classifier.js';
+import { localModelCache } from './helpers/local-model-cache.ts';
 import { resolveShortModelName } from '../src/utils.js';
 
 // ── Mock for callOllama ─────────────────────────────────────────────────
@@ -222,7 +223,7 @@ describe('HINT Classification', () => {
       vi.mocked(callOllama).mockResolvedValue(
         JSON.stringify({ category: 'fallback', reason: 'Empty HINT', confidence: 0.5 })
       );
-      const result = await classifyPrompt('HINT: ');
+      const result = await classifyPrompt('HINT: ', { cache: localModelCache() });
       // detectHintDirectly returns null → classifyPrompt calls LLM
       expect(vi.mocked(callOllama)).toHaveBeenCalled();
     });
@@ -232,7 +233,7 @@ describe('HINT Classification', () => {
       vi.mocked(callOllama).mockResolvedValue(
         JSON.stringify({ category: 'fallback', reason: 'Incomplete group hint', confidence: 0.5 })
       );
-      const result = await classifyPrompt('HINT: use group');
+      const result = await classifyPrompt('HINT: use group', { cache: localModelCache() });
       // detectHintDirectly returns null → classifyPrompt calls LLM
       expect(vi.mocked(callOllama)).toHaveBeenCalled();
       expect(result).toHaveProperty('category', 'fallback');
@@ -252,7 +253,7 @@ describe('HINT Classification', () => {
         })
       );
 
-      const result = await classifyPrompt('Refactor this complex function');
+      const result = await classifyPrompt('Refactor this complex function', { cache: localModelCache() });
       
       // Sollte normale ClassificationResult sein
       expect(result).toHaveProperty('category', 'code_complex');
@@ -271,7 +272,7 @@ describe('HINT Classification', () => {
         })
       );
 
-      const result = await classifyPrompt('What is the capital of France?');
+      const result = await classifyPrompt('What is the capital of France?', { cache: localModelCache() });
       
       expect(result).toHaveProperty('category', 'simple');
       expect(result).toHaveProperty('confidence', 0.9);
@@ -287,7 +288,8 @@ describe('HINT Classification', () => {
 
       // Use a prompt that classifyStatically maps to 'simple' (not 'fallback')
       const result = await classifyPrompt('What is the capital of France?', { 
-        allowStaticFallback: true 
+        allowStaticFallback: true,
+        cache: localModelCache(),
       });
       
       // Should use static classification
@@ -409,6 +411,7 @@ describe('classifier prompt hardening: HINT rule scoped away from Context block'
     );
 
     await classifyPrompt('What does this function do?', {
+      cache: localModelCache(),
       context: {
         // Simulates leaked router narration from a prior turn (what
         // extractLastAssistantSnippet() used to hand the classifier before

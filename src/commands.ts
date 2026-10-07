@@ -22,6 +22,7 @@ import {
   type ClassificationCounts,
 } from './content-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
+import { localClassifierPins, resolveLocalClassifierChain, type LocalClassifierChain } from './classifier-local-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -117,6 +118,10 @@ export interface ClassifierStatusInput {
   last: ClassificationSourceInfo | null;
   probedCount: number;
   ollamaUp: boolean;
+  /** Derived local primary/fallback (resolveLocalClassifierChain); omitted = none yet. */
+  localChain?: LocalClassifierChain;
+  /** True once the scan probed the local chain; false = provisional (unprobed) heads. */
+  localProbed?: boolean;
   /** Today's classification mix; omitted or empty → no counter lines. */
   counts?: ClassificationCounts;
 }
@@ -140,10 +145,9 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         : `cloud (${probedCount} probed)`
     );
   }
-  const local = (ref: string | undefined, dflt: string) => (ref ?? dflt).replace(/^ollama\//, '');
-  legs.push(
-    `Ollama (${ollamaUp ? 'up' : 'down'}: ${local(g.classifier_model, 'ollama/mistral-nemo:latest')} → ${local(g.classifier_fallback, 'ollama/gemma2:2b')})`
-  );
+  const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string => Boolean(m));
+  const localDetail = heads.length > 0 ? `${heads.join(' → ')}${input.localProbed === false ? ' (unprobed)' : ''}` : 'none yet';
+  legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
   // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
@@ -549,6 +553,8 @@ export function createCommands(rt: CommandDeps) {
               last: getLastClassificationSource(),
               probedCount: getCachedFallbackModels(rt.cache).length,
               ollamaUp: await isOllamaAvailable(),
+              localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
+              localProbed: Array.isArray(rt.cache.classifier_local_models),
               counts: getClassificationCounts(),
             })
           );
