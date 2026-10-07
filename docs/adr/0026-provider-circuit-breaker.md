@@ -88,6 +88,14 @@ One breaker in `src/provider-breaker.ts` (state in
   highest-ranked candidate of the **soonest-expiring** breaker (labeled
   "probing wedged provider" in the error aggregation). A breaker can only
   reorder and delay attempts, never remove the last option.
+
+  Known limitation (review M3 of the Phases 2–4 round, 2026-10-07): the
+  condition covers breaker-skipped candidates only. In a walk where one
+  candidate is breaker-skipped AND another is rate-limit-cooldown-skipped,
+  the mixed state is not covered by D4 as specified and the walk fails
+  hard — it self-heals on a later turn once the cooldown expires. Extending
+  the probe condition to "every candidate is breaker-open or in cooldown"
+  is a deliberate future option, outside this ADR's approved scope.
 - **State machine (D5).** `closed → open(until) → half-open → closed |
   open(escalated)`; cooldown ladder `[2, 5, 15]` min, reset by any success of
   any model of the provider. After the cooldown, one failing re-probe

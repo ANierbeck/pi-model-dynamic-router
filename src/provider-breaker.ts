@@ -115,9 +115,9 @@ function minModels(provider: string, tuning: BreakerTuning): number {
   return isLocalProviderName(provider) ? tuning.minModelsLocal : tuning.minModelsCloud;
 }
 
-function liveEvidence(s: ProviderBreaker, now: number): { ref: string; at: number; kind: ProviderEvidenceKind }[] {
+function liveEvidence(s: ProviderBreaker, now: number, windowMs: number = WEDGE_WINDOW_MS): { ref: string; at: number; kind: ProviderEvidenceKind }[] {
   return Object.entries(s.evidence)
-    .filter(([, e]) => now - e.at < WEDGE_WINDOW_MS)
+    .filter(([, e]) => now - e.at < windowMs)
     .map(([ref, e]) => ({ ref, at: e.at, kind: e.kind as ProviderEvidenceKind }));
 }
 
@@ -130,11 +130,12 @@ function liveEvidence(s: ProviderBreaker, now: number): { ref: string; at: numbe
 export function breakerEvidenceSummary(
   cache: Cache | undefined,
   provider: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  tuning: BreakerTuning = DEFAULT_BREAKER_TUNING
 ): { count: number; spanMs: number; kinds: ProviderEvidenceKind[] } | undefined {
   const s = cache?.provider_breaker?.[provider];
   if (!s) return undefined;
-  const live = liveEvidence(s, now);
+  const live = liveEvidence(s, now, tuning.windowMs);
   if (live.length === 0) return undefined;
   const kinds = [...new Set(live.map((e) => e.kind))];
   const spanMs = now - Math.min(...live.map((e) => e.at));
@@ -218,7 +219,8 @@ export function isProviderOpen(cache: Cache | undefined, provider: string, now: 
 export function breakerState(
   cache: Cache | undefined,
   provider: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  tuning: BreakerTuning = DEFAULT_BREAKER_TUNING
 ): { open: boolean; until?: number; tripCount: number; evidence: string[] } {
   const s = cache?.provider_breaker?.[provider];
   if (!s) return { open: false, tripCount: 0, evidence: [] };
@@ -227,7 +229,7 @@ export function breakerState(
     open,
     ...(open ? { until: s.open_until } : {}),
     tripCount: s.trip_count,
-    evidence: liveEvidence(s, now).map((e) => e.ref),
+    evidence: liveEvidence(s, now, tuning.windowMs).map((e) => e.ref),
   };
 }
 

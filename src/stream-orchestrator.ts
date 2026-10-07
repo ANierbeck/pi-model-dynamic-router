@@ -108,7 +108,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
-import { breakerState, breakerEvidenceSummary, isLocalProviderName } from './provider-breaker.ts';
+import { breakerState, breakerEvidenceSummary, isLocalProviderName, resolveBreakerTuning } from './provider-breaker.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
@@ -169,7 +169,7 @@ function narrateBreakerOpen(
   ref: string
 ): void {
   const provider = ref.split('/')[0];
-  const summary = breakerEvidenceSummary(ctx.cache, provider);
+  const summary = breakerEvidenceSummary(ctx.cache, provider, Date.now(), resolveBreakerTuning(ctx.cfg.provider_breaker));
   const evidence = summary ? breakerEvidencePhrase(summary) : 'several distinct models failed';
   const hint = isLocalProviderName(provider)
     ? wedgeFixHint(provider)

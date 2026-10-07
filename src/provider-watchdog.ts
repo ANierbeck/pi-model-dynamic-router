@@ -23,6 +23,20 @@ import {
 export { WEDGE_WINDOW_MS };
 
 /**
+ * Tuning for classifier-path observations (review M2 of the Phases 2-4
+ * round): classifyPrompt's call site has no Config in scope, so it cannot
+ * resolve provider_breaker tuning itself. index.ts load() installs the live
+ * tuning here (the same module-level pattern as setCategoryGroupMapping), so
+ * local-timeout observations from the classifier honor user overrides of
+ * min_models.local / window_s / cooldown_s instead of the code defaults.
+ */
+let installedTuning: BreakerTuning | undefined;
+
+export function setWatchdogBreakerTuning(tuning: BreakerTuning | undefined): void {
+  installedTuning = tuning;
+}
+
+/**
  * First ladder step of the breaker. Replaces ADR-0016's flat 5 min: the
  * owner decided (2026-10-06, plan Q2) that local providers use the same
  * [2, 5, 15] min ladder as cloud ones — a daemon restart takes seconds, so
@@ -61,7 +75,7 @@ function isLocal(provider: string): boolean {
  */
 export function recordLocalTimeout(cache: Cache, ref: string, now: number = Date.now()): boolean {
   if (!isLocal(ref.split('/')[0])) return false;
-  return recordProviderFailure(cache, ref, 'empty_timeout', undefined, now);
+  return recordProviderFailure(cache, ref, 'empty_timeout', undefined, now, installedTuning);
 }
 
 /** Any local success proves the daemon generates: clears evidence and wedge. */

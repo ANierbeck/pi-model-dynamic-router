@@ -23,7 +23,7 @@ import { lookupGdp, lookupContextWindow } from './src/metrics.ts';
 import { countSessionErrorsSince } from './src/session-errors.ts';
 import { CacheManager } from './src/cache.ts';
 import { readRouterVersion } from './src/version.ts';
-import { wedgeCooldownText } from './src/provider-watchdog.ts';
+import { wedgeCooldownText, setWatchdogBreakerTuning } from './src/provider-watchdog.ts';
 import {
   recordProviderFailure,
   recordBreakerSkip,
@@ -471,6 +471,13 @@ let previousTokenCount = 0;
     // and category_groups is in DYNAMIC_CONFIG_RESYNC_KEYS so a stale
     // dynamic file can never shadow it either.
     setCategoryGroupMapping(staticCfg.category_groups);
+
+    // Breaker tuning for classifier-path observations (review M2 of the
+    // Phases 2-4 round): classifyPrompt has no Config in scope, so its
+    // local-timeout observations resolve the user's provider_breaker
+    // tuning here instead of the code defaults (module-level reference,
+    // live on every load() — same pattern as setCategoryGroupMapping).
+    setWatchdogBreakerTuning(resolveBreakerTuning(staticCfg.provider_breaker));
 
     // gdpval state lives in metrics.ts (single source of truth).
     // setConfig + setCache below populate it correctly, including self-healing
