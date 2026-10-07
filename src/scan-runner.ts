@@ -9,6 +9,8 @@
 
 import { extractCapabilities } from './capabilities.ts';
 import { probeAndCache } from './classifier-fallback-probe.ts';
+import { probeLocalClassifierCandidates } from './classifier-local-probe.ts';
+import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { type LocalLlmDeps, callLocalLlm } from './local-llm.ts';
 import { routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -213,7 +215,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
 
     // Serve from cache first (avoid repeat LLM calls for the same models).
     // BUT validate cached matches with isPlausibleMatch — old cached entries
-    // from a weaker model (e.g. gemma2:2b) may contain cross-family
+    // from a weaker model may contain cross-family
     // hallucinations that must not be trusted.
     const cachedMatches = rt.cache.model_score_cache ?? {};
     const cachedHits: Record<string, string> = {};
@@ -271,7 +273,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // Distinguish "LLM call failed" (error) from "LLM answered but no matches".
       if (result.error) {
         routerLog(
-          `[router] LLM matcher call failed (${result.error}); ${stillUnscored.length} model(s) remain unscored. Check that a local model (Ollama gemma2:2b) or a free OpenRouter model is available.`
+          `[router] LLM matcher call failed (${result.error}); ${stillUnscored.length} model(s) remain unscored. Check that a local Ollama model or a free OpenRouter model is available.`
         );
       } else if (result.matches && Object.keys(result.matches).length) {
         routerLog(
@@ -583,9 +585,26 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       } catch (probeErr) {
         warnLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
-      
-      // Generate the dynamic configuration after the scan
+
+      // Generate the dynamic configuration FIRST (review M2, 2026-10-07):
+      // the local classifier probe can take minutes (up to 6 candidates x
+      // 3 cases x 45s cold-start bound) and the dynamic config does not read
+      // its result — delaying regeneration by the probe would stall routing
+      // and compete with a live classification for the GPU.
       await rt.generateDynamicConfig(force);
+
+      // Derive + probe the LOCAL classifier chain after the dynamic config
+      // (ADR-0025 C): candidates come from the Ollama models this scan just
+      // found, verified with the same classification cases, persisted as
+      // cache.classifier_local_models. Non-fatal — the provisional candidate
+      // order applies only before the first probe (review N2, 2026-10-07);
+      // after a probe, an empty list is final until a re-probe.
+      try {
+        await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog, { force });
+        rt.saveCache();
+      } catch (probeErr) {
+        warnLog('[scan] local classifier probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+      }
     } finally {
       rt.scanning = false;
     }

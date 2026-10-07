@@ -33,6 +33,7 @@ import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
+import { localClassifierPins, resolveLocalClassifierChain } from './src/classifier-local-probe.ts';
 import { costTracker } from './src/cost-tracker.ts';
 // Shared router logger (D2): the log functions live in src/logger.ts so every
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
@@ -492,12 +493,15 @@ let previousTokenCount = 0;
     // re-apply here; callers must never need to remember to redo this themselves.
     if (sessionCtx) router.setSessionCtx(sessionCtx);
     metricsModule.setCache(cache);
-    // Keep escalation's loop-detection model in sync with the configured dynamic
-    // group's classifier_fallback — don't hardcode a specific local model.
-    const dynGroup = cfg.model_groups?.['dynamic'];
-    if (dynGroup?.classifier_fallback) {
-      escalation.setClassifierModel(dynGroup.classifier_fallback);
-    }
+    // Loop detection's local model: a user pin (classifier_fallback) wins,
+    // else the head of the derived local classifier chain (ADR-0025); none
+    // disables the LLM leg. Resolved at call time so a scan's fresh probe
+    // result is picked up without a reload.
+    escalation.setClassifierModel(() => {
+      const group = cfg.model_groups?.['dynamic'];
+      const pins = localClassifierPins(group);
+      return pins.fallbackModel ?? resolveLocalClassifierChain(cache, cfg, pins).primary;
+    });
   }
 
   function loadCache() {

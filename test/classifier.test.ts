@@ -4,6 +4,7 @@
 import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt, CATEGORY_TO_GROUP, classifyStatically } from "../src/content-classifier.js";
 import * as ollamaUtils from "../src/ollama-utils";
+import { localModelCache } from "./helpers/local-model-cache.ts";
 
 // ── Mock for Ollama calls (for unit tests) ────────────────────────────────
 
@@ -25,7 +26,7 @@ describe("classifyPrompt (Unit Tests)", () => {
       '{"category": "code_simple", "reason": "Simple text replacement", "confidence": 0.95}'
     );
     
-    const result = await classifyPrompt("Replace 'foo' with 'bar' in line 42");
+    const result = await classifyPrompt("Replace 'foo' with 'bar' in line 42", { cache: localModelCache() });
     expect(result.category).toBe("code_simple");
     expect(result.reason).toContain("Simple text replacement");
     expect(CATEGORY_TO_GROUP[result.category]).toBe("simple");
@@ -36,7 +37,7 @@ describe("classifyPrompt (Unit Tests)", () => {
       '{"category": "code_complex", "reason": "Refactoring required", "confidence": 0.9}'
     );
     
-    const result = await classifyPrompt("Optimize this 200-line function for performance");
+    const result = await classifyPrompt("Optimize this 200-line function for performance", { cache: localModelCache() });
     expect(result.category).toBe("code_complex");
     expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical");
   });
@@ -46,7 +47,7 @@ describe("classifyPrompt (Unit Tests)", () => {
       '{"category": "design", "reason": "Architecture design", "confidence": 0.85}'
     );
     
-    const result = await classifyPrompt("Design an event-sourcing architecture");
+    const result = await classifyPrompt("Design an event-sourcing architecture", { cache: localModelCache() });
     expect(result.category).toBe("design");
     expect(CATEGORY_TO_GROUP[result.category]).toBe("planning");
   });
@@ -56,7 +57,7 @@ describe("classifyPrompt (Unit Tests)", () => {
       '{"category": "fallback", "reason": "Unclear request", "confidence": 0.3}'
     );
     
-    const result = await classifyPrompt("Make this better");
+    const result = await classifyPrompt("Make this better", { cache: localModelCache() });
     expect(result.category).toBe("fallback");
     expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical"); // Default fallback
   });
@@ -64,7 +65,7 @@ describe("classifyPrompt (Unit Tests)", () => {
   it("handles Ollama errors with allowStaticFallback=false (default)", async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
-    const result = await classifyPrompt("Some request");
+    const result = await classifyPrompt("Some request", { cache: localModelCache() });
     expect(result.category).toBe("fallback");
     expect(result.reason).toBe("Ollama unavailable, static classifier disabled");
   });
@@ -72,7 +73,7 @@ describe("classifyPrompt (Unit Tests)", () => {
   it("handles Ollama errors with allowStaticFallback=true", async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
-    const result = await classifyPrompt("Explain something", { allowStaticFallback: true });
+    const result = await classifyPrompt("Explain something", { allowStaticFallback: true, cache: localModelCache() });
     expect(result.category).toBe("simple");
     expect(result.reason).toBe("Simple question - simple classification");
   });
@@ -83,7 +84,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue('{"category": "invalid_category", "reason": "test"}');
     
     // Should fall back to fallback, since "invalid_category" is not allowed
-    const result = await classifyPrompt("Test");
+    const result = await classifyPrompt("Test", { cache: localModelCache() });
     expect(result.category).toBe("fallback");
   });
 

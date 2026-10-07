@@ -45,16 +45,16 @@ request and return:
 - For group hints: {"category": "hint:group:<group-name>", "reason": "User specified group via HINT", "confidence": 1.0}
 
 Examples of HINT instructions:
-- "HINT: use mistral-medium-3.5"
+- "HINT: use example-model-1"
 - "HINT: use group tactical"
-- "HINT: nutze mistral-medium-3.5"
+- "HINT: nutze example-model-1"
 - "HINT: verwende Gruppe complex"
 - "HINT: benutz modell xyz"
 
 If the CURRENT REQUEST (not the Context block) contains a HINT instruction
 (in any language), extract the model or group name and return it with the
 "hint:" prefix:
-- For models: {"category": "hint:mistral-medium-3.5", "reason": "User specified model via HINT", "confidence": 1.0}
+- For models: {"category": "hint:example-model-1", "reason": "User specified model via HINT", "confidence": 1.0}
 - For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
 
 If NO HINT is present, classify normally into one of these categories:

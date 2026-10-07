@@ -18,7 +18,15 @@
 // All dependencies (PROVIDER_MAP, cache, config) are injected so the module
 // is fully unit-testable with a mocked fetch and no network.
 
-import type { ProviderDef, Config, Cache } from './types.ts';
+import type { ProviderDef, Config, Cache, AvailableModel } from './types.ts';
+import { isCompletionCapable, parameterSizeB } from './classifier-local-probe.ts';
+
+/**
+ * Size budget (billions of parameters) for the model-name matcher's local
+ * model: beyond this a cold start can exceed the call timeout. A heuristic
+ * about hardware and latency, not about any model.
+ */
+const MATCHER_MAX_PARAMS_B = 14;
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -52,10 +60,9 @@ interface ResolvedLocalProvider {
  * Strategy:
  * - Iterate providers that are marked `local: true` in PROVIDER_MAP.
  * - For each, find models in cache.available_models whose `provider` matches.
- * - RANK candidates by suitability for short, structured tasks (model-name
- *   matching, classification): prefer SMALL fast models over large slow ones,
- *   because the matcher prompt can be large (100+ models) and a 12B model
- *   may time out. Prefer gemma2:2b > gemma(3-4b) > gemma(others) > llama3.1 > others.
+ * - RANK candidates by size, derived from the scan (no model names, ADR-0025):
+ *   the largest model within the matcher size budget wins, because the
+ *   matcher prompt is large (100+ models) and a very large model may time out.
  * - Return the highest-ranked match (deterministic given cache order).
  *
  * Returns null when no local provider has any discovered model.
@@ -66,42 +73,38 @@ export function resolveLocalProvider(deps: LocalLlmDeps): ResolvedLocalProvider 
   if (available.length === 0) return null;
 
   // Collect candidate (providerId, modelId) pairs from local providers.
-  const candidates: { providerId: string; modelId: string }[] = [];
+  const candidates: { providerId: string; modelId: string; model: AvailableModel }[] = [];
   for (const [provId, def] of Object.entries(providers)) {
     if (!def.local) continue;
     for (const m of available) {
       if (m.provider === provId) {
-        candidates.push({ providerId: provId, modelId: m.id });
+        candidates.push({ providerId: provId, modelId: m.id, model: m });
       }
     }
   }
   if (candidates.length === 0) return null;
 
-  // Rank by suitability for structured-output matching tasks.
-  // The matcher needs a model that reliably produces valid JSON and
-  // understands semantic model-name similarity, BUT must also respond
-  // within ~45s. Very large models (35B+, 20GB+) may time out.
-  // Lower rank = better.
-  const FAMILY_RANK: { regex: RegExp; rank: number }[] = [
-    { regex: /gemma4:12b|gemma-4[.-]12b/i, rank: 0 }, // 12B — best balance of speed + capability
-    { regex: /qwen3[.:]?5|qwen-3[.-]5/i, rank: 1 }, // 6GB — fast + capable
-    { regex: /gemma4:latest|gemma-4(?!.*12b)/i, rank: 2 }, // 9GB gemma4
-    { regex: /mistral-nemo|llama3[.:]1|llama-3\.1/i, rank: 3 },
-    { regex: /qwen3[.:]6|qwen-3[.-]6/i, rank: 4 }, // 35B — capable but SLOW, may time out
-    { regex: /gemma2:9b|gemma-2:9b/i, rank: 5 },
-    { regex: /gemma4|llama|qwen|mistral|glm|phi|deepseek/i, rank: 6 },
-    { regex: /gemma2:2b|gemma-2:2b/i, rank: 9 }, // TOO WEAK for matching — last resort only
-    { regex: /.*/, rank: 7 }, // anything else
-  ];
-  function rankOf(modelId: string): number {
-    for (const { regex, rank } of FAMILY_RANK) if (regex.test(modelId)) return rank;
-    return 5;
-  }
-
-  const chosen = [...candidates].sort((a, b) => {
-    const ra = rankOf(a.modelId);
-    const rb = rankOf(b.modelId);
-    if (ra !== rb) return ra - rb;
+  // Rank by suitability for the model-name matching task, DERIVED from what
+  // the scan reported (ADR-0025 — no model names). The matcher needs a model
+  // that reliably produces valid JSON and understands semantic name
+  // similarity, but its prompt is large (100+ models) and must answer within
+  // the call timeout, so: the LARGEST model that fits the size budget wins;
+  // models over the budget come after (smallest first); size-unknown models
+  // last; name as the stable tiebreak. Embedding-only / non-completion
+  // models are never candidates.
+  const sized = candidates
+    .filter((c) => isCompletionCapable(c.model))
+    .map((c) => ({ ...c, size: parameterSizeB(c.model) }));
+  if (sized.length === 0) return null;
+  const tier = (size: number | undefined) =>
+    size === undefined ? 2 : size <= MATCHER_MAX_PARAMS_B ? 0 : 1;
+  const chosen = [...sized].sort((a, b) => {
+    const ta = tier(a.size);
+    const tb = tier(b.size);
+    if (ta !== tb) return ta - tb;
+    if (a.size !== undefined && b.size !== undefined && a.size !== b.size) {
+      return ta === 0 ? b.size - a.size : a.size - b.size;
+    }
     return a.modelId.localeCompare(b.modelId);
   })[0];
 

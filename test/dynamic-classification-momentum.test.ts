@@ -59,7 +59,7 @@ async function withIsolatedRouter(
   if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
   if (hadCache) fs.renameSync(scanCachePath, cacheBak);
 
-  writeNoOpScanCache(scanCachePath);
+  writeNoOpScanCache(scanCachePath, { localModels: ['foo:3b'] });
 
   try {
     vi.resetModules();

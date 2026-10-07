@@ -107,7 +107,7 @@ When the classifier is uncertain and returns `fallback`, the classification now 
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, Ollama **mistral-nemo:latest** primary / **gemma2:2b** fallback as the local last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
 
 #### Categories for Classification
 
@@ -141,14 +141,13 @@ Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
 To use the **`dynamic`** group, you need:
-- **Ollama** installed and running locally (`ollama serve`)
-- **mistral-nemo:latest** pulled for best classification quality (`ollama pull mistral-nemo:latest`)
-- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
+- **Ollama** installed and running locally (`ollama serve`) with at least one chat model pulled — optional when the cloud classifier chain is enabled
+- No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud fallback uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier_model` / `classifier_fallback` in the `dynamic` group of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
 Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
@@ -517,6 +516,19 @@ a subscription bridge or a pay-per-token aggregator:
   gate, 404 guardrail) are blocked automatically after the first failure (`/router blocklist`), so no
   shipped exclusion list is needed.
 
+#### Pinning the classifier, and what no longer ships
+
+The shipped config names no model that can admit, select, rank or exclude one (ADR-0025; guard:
+`test/no-hardcoded-models.test.ts`, baseline closed at 0). Everything that used to be a shipped
+default is either derived or a **user-layer** choice in `router-config.user.json`:
+
+| You want | Put in your user layer |
+|---|---|
+| A specific local classifier (instead of the derived/probed chain) | `"model_groups": { "dynamic": { "classifier_model": "ollama/<model>:<tag>", "classifier_fallback": "ollama/<model>:<tag>" } }` |
+| A specific cloud classifier tried first | `"model_groups": { "dynamic": { "classifier_cloud_model": "<provider>/<model>" } }` |
+| Provider billing / free-tier pins / exclusions | the `providers` / `exclude` block above |
+| Families kept out of routing groups (poor agents) | `"non_agent_model_prefixes": ["<family>-"]` (see below) |
+
 #### Billing Preference (per-group tier override)
 
 By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local models conceptually belong on top.
@@ -533,28 +545,6 @@ By default, `method: "tiered"` sorts by billing tier first: **free → subscript
 
 `payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `trivial`/`simple` → `local_before_payg`, `scout`/`bulk_reader`/`code_writer` → `cloud_first`.
 
-> **A subscription model's $0 cost is not free.** Flat-rate plans like pi-claude hide a hard time/token limit, so a trivial prompt routed there is the single most expensive thing the router can do. Prefer a local model or a genuine `:free` model for cheap work.
-
-#### Agent-capability filter (`non_agent_model_prefixes`)
-
-Models whose ref starts with one of these prefixes are excluded from all
-routing groups (they remain selectable as plain chat models). GDPval scores
-capability, not agent-reliability — raw chat/completion/audio families
-(e.g. `voxtral-`, `ministral-`) must never win a routing slot over an
-agent-capable model, whatever their benchmark score. The shipped default:
-
-```json
-"non_agent_model_prefixes": [
-  "mistral-small-",
-  "magistral-small-",
-  "ministral-",
-  "voxtral-",
-  "codestral-"
-]
-```
-
-Replace the array in any config layer to change the filter.
-
 ```json
 "scout": {
   "method": "tiered",
@@ -567,6 +557,36 @@ Replace the array in any config layer to change the filter.
   "min_gdpval": 0
 }
 ```
+
+> **A subscription model's $0 cost is not free.** Flat-rate plans like pi-claude hide a hard time/token limit, so a trivial prompt routed there is the single most expensive thing the router can do. Prefer a local model or a genuine `:free` model for cheap work.
+
+#### Agent-capability filter (`non_agent_model_prefixes`)
+
+Models whose ref has a path segment starting with one of these prefixes are
+excluded from all routing groups (they remain selectable as plain chat
+models). GDPval scores capability, not agent-reliability: families that
+benchmark well but serve garbage on main-agent work (stopping after
+announcing a result, 0–220-char tool turns) can otherwise win a routing slot.
+
+**Nothing ships in the default config** (ADR-0025). Whether a model is
+reliable as an agent is a quality judgement, not a capability flag: Pi's model
+type carries no tool-calling field, and the model families this filter was
+written for advertise function calling — they just do it badly — so there is
+nothing to derive the list from, and the router cannot learn it from errors
+(their streams finish normally). If you have models like that, list them in
+**your** layer, `router-config.user.json`:
+
+```json
+"non_agent_model_prefixes": ["acme-small-", "acme-audio-"]
+```
+
+Arrays replace the shipped value in any layer, so set the full list you want.
+Absent or empty (the default) turns the filter off. The classifier chain never
+passes through this filter, so small models still classify.
+
+> Upgrading from a pre-1.7.0 version? The CHANGELOG's combined migration
+> snippet carries the concrete prefix list this filter used to ship with
+> (mistral-small-, magistral-small-, ministral-, voxtral-, codestral-).
 
 #### Read Delegation (bulk reads)
 
@@ -776,7 +796,7 @@ The router uses a **modular architecture** with the following components:
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
 | **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
 | **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
-| **content-classifier.ts** | Content classification | mistral-nemo:latest primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
+| **content-classifier.ts** | Content classification | derived local Ollama chain (classifier-local-probe.ts), cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 | **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
 | **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |

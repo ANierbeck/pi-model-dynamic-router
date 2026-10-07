@@ -99,6 +99,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 }
 
 import { type ClassificationResult } from './content-classifier.ts';
+import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
 import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
@@ -294,7 +295,6 @@ export class StreamOrchestrator {
         const lastAssistantSnippet = this.ctx.extractLastAssistantSnippet(context);
         const previousUserMessage = this.extractPreviousUserMessage(context);
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
-        const stripOllama = (ref: string) => ref.replace(/^ollama\//, '');
         const classifyOpts: any = {
           allowStaticFallback: useStatic,
           allowCloudFallback: dynamicGroupCfg?.classifier_cloud_fallback === true,
@@ -345,8 +345,9 @@ export class StreamOrchestrator {
             lastModelLimited: this.ctx.lastDynamicModel ? this.ctx.isLimited(this.ctx.lastDynamicModel) : false,
           },
         };
-        if (dynamicGroupCfg?.classifier_model) classifyOpts.model = stripOllama(dynamicGroupCfg.classifier_model);
-        if (dynamicGroupCfg?.classifier_fallback) classifyOpts.fallbackModel = stripOllama(dynamicGroupCfg.classifier_fallback);
+        // The local model(s) are derived inside classifyPrompt from cache
+        // (ADR-0025); only the user's optional pins are passed.
+        Object.assign(classifyOpts, localClassifierPins(dynamicGroupCfg));
         // Cloud ref is NOT ollama-stripped — findModel needs the full
         // "provider/id" form to resolve it against pi's model registry.
         if (dynamicGroupCfg?.classifier_cloud_model) classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;

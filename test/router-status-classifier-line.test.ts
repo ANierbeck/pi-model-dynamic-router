@@ -24,6 +24,7 @@ import { callOllama } from '../src/ollama-utils';
 import { classifyPrompt, getLastClassificationSource, type ClassificationSourceInfo } from '../src/content-classifier.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
 import type { Group } from '../src/types.ts';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 const VALID_JSON = JSON.stringify({
   category: 'trivial',
@@ -37,8 +38,6 @@ function baseDynamicGroup(overrides: Partial<Group> = {}): Group {
     method: 'dynamic',
     description: 'content-based routing',
     models: [],
-    classifier_model: 'ollama/mistral-nemo:latest',
-    classifier_fallback: 'ollama/gemma2:2b',
     classifier_cloud_fallback: true,
     ...overrides,
   } as unknown as Group;
@@ -52,8 +51,8 @@ beforeEach(() => {
 describe('getLastClassificationSource — who actually classified', () => {
   it('records the local Ollama model after a local classification', async () => {
     vi.mocked(callOllama).mockResolvedValue(VALID_JSON);
-    await classifyPrompt('read the file src/utils.ts and summarize it');
-    expect(getLastClassificationSource()?.source).toBe('ollama:mistral-nemo:latest');
+    await classifyPrompt('read the file src/utils.ts and summarize it', { cache: localModelCache('foo:3b') });
+    expect(getLastClassificationSource()?.source).toBe('ollama:foo:3b');
   });
 
   it('records the cloud model after a cloud-fallback classification', async () => {
@@ -87,8 +86,8 @@ describe('getLastClassificationSource — who actually classified', () => {
   it('records cache hits on repeated identical prompts', async () => {
     const prompt = 'list all modules in this very unique cache probe prompt xyzzy1';
     vi.mocked(callOllama).mockResolvedValue(VALID_JSON);
-    await classifyPrompt(prompt);
-    expect(getLastClassificationSource()?.source).toBe('ollama:mistral-nemo:latest');
+    await classifyPrompt(prompt, { cache: localModelCache('foo:3b') });
+    expect(getLastClassificationSource()?.source).toBe('ollama:foo:3b');
     // Second identical call with no context must hit the classification cache.
     await classifyPrompt(prompt);
     expect(getLastClassificationSource()?.source).toBe('cache');
@@ -104,6 +103,8 @@ describe('formatClassifierStatus — honest /router status lines', () => {
       last: last('cloud:mistral/ministral-3b-latest'),
       probedCount: 7,
       ollamaUp: false,
+      localChain: { primary: 'foo:3b', fallback: 'bar:9b' },
+      localProbed: true,
     });
     expect(lines.some((l) => l.includes('cloud:mistral/ministral-3b-latest (last used)'))).toBe(true);
     // The chain must reflect execution order: cloud BEFORE Ollama (cloud-first
@@ -112,8 +113,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
     expect(chain).toContain('cloud');
     expect(chain.indexOf('cloud')).toBeLessThan(chain.indexOf('Ollama'));
     expect(chain).toContain('Ollama (down');
-    expect(chain).toContain('mistral-nemo:latest');
-    expect(chain).toContain('gemma2:2b');
+    expect(chain).toContain('foo:3b → bar:9b');
     expect(chain).toContain('7 probed');
     // The old hardcoded claim must be gone.
     expect(lines.join('\n')).not.toContain('via Ollama (gemma2:2b)');
@@ -122,7 +122,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
   it('reports Ollama as up when it actually is', () => {
     const lines = formatClassifierStatus({
       group: baseDynamicGroup(),
-      last: last('ollama:mistral-nemo:latest'),
+      last: last('ollama:foo:3b'),
       probedCount: 3,
       ollamaUp: true,
     });
@@ -143,7 +143,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
   it('omits the cloud leg when classifier_cloud_fallback is disabled', () => {
     const lines = formatClassifierStatus({
       group: baseDynamicGroup({ classifier_cloud_fallback: false }),
-      last: last('ollama:gemma2:2b'),
+      last: last('ollama:foo:3b'),
       probedCount: 0,
       ollamaUp: true,
     });

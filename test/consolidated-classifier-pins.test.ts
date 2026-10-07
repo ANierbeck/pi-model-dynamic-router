@@ -87,26 +87,24 @@ describe('classifier.integration', () => {
 
 describe('config-classifier-model', () => {
   // test/config-classifier-model.test.ts
-  // ADR-0009: the bundled dynamic.classifier_model overrides DEFAULT_MODEL in
-  // content-classifier.ts, so it must itself be schema-capable. Ollama's MLX
-  // backend rejects every JSON-schema call with HTTP 501 (live 2026-09-26).
-
+  // ADR-0025 C2 (supersedes the ADR-0009 "bundled classifier model" pins): the
+  // shipped dynamic group carries NO local classifier model. The local chain
+  // is derived from the models Ollama reports (classifier-local-probe.ts);
+  // classifier_model / classifier_fallback remain optional USER pins only.
 
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
   const repoCfg = JSON.parse(readFileSync(join(repoRoot, 'router-config.json'), 'utf-8'));
 
   describe('bundled classifier model config', () => {
-    it('does not configure an MLX-backend model as classifier primary', () => {
-      const primary: string = repoCfg.model_groups.dynamic.classifier_model;
-      expect(primary).toBeTruthy();
-      expect(primary).not.toMatch(/-mlx\b/i);
+    it('ships no classifier_model / classifier_fallback in the dynamic group', () => {
+      expect(repoCfg.model_groups.dynamic).not.toHaveProperty('classifier_model');
+      expect(repoCfg.model_groups.dynamic).not.toHaveProperty('classifier_fallback');
     });
 
-    it('matches the DEFAULT_MODEL in content-classifier.ts', () => {
+    it('content-classifier.ts carries no default local model constants', () => {
       const src = readFileSync(join(repoRoot, 'src/content-classifier.ts'), 'utf-8');
-      const def = src.match(/const DEFAULT_MODEL = '([^']+)'/)?.[1];
-      expect(def).toBeTruthy();
-      expect(repoCfg.model_groups.dynamic.classifier_model).toBe(`ollama/${def}`);
+      expect(src).not.toMatch(/const DEFAULT_MODEL\b/);
+      expect(src).not.toMatch(/const FALLBACK_MODEL\b/);
     });
   });
 });

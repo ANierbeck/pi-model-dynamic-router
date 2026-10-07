@@ -334,7 +334,7 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // when a stale dynamic file exists (ADR-0009 union semantics apply within
   // the static layers).
   'exclude',
-  // Agent-capability tier (2026-09-27): curated non-agent family prefixes.
+  // Agent-capability tier (2026-09-27): the user-layer list of non-agent family prefixes.
   'non_agent_model_prefixes',
   // Empty-response watchdog windows.
   'empty_response_timeout_ms',

@@ -1,6 +1,13 @@
 # ADR-0009: Union-merge for `exclude.*` arrays, and the bundled classifier model as source of truth
 
-**Status**: Accepted (2026-09-26). Decided by the owner after a code review
+**Status**: Accepted (2026-09-26); the *classifier model* half is
+**superseded in part by [ADR-0025](0025-no-hardcoded-models.md)** (2026-10-07).
+The bundled `classifier_model` / `classifier_fallback` and the `DEFAULT_MODEL`
+/ `FALLBACK_MODEL` constants it pinned together are gone: the local chain is
+now derived from the models Ollama reports and verified by a probe
+(`src/classifier-local-probe.ts`); the two config keys remain only as optional
+user pins. The `exclude.*` union-merge half stands. The 501 / MLX incident
+below is kept as history. Decided by the owner after a code review
 of the 2026-09-26 fixes (`b04cd87`, `913d53e`) found that neither fix had
 any effect on the owner's machine.
 

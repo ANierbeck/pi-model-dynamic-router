@@ -77,6 +77,13 @@ export async function detectLoopWithLLM(
   history: Array<{ prompt: string; response: string }>,
   options: { model?: string; timeoutMs?: number } = {}
 ): Promise<{ shouldEscalate: boolean; reason: string }> {
+  // No derived local model (ADR-0025): nothing to ask — the rule-based streak
+  // path in recordTurn is the whole detection, and the daemon is not touched.
+  const modelRef = options.model;
+  if (!modelRef) {
+    return { shouldEscalate: false, reason: 'No local model available, using rule-based detection' };
+  }
+
   const historyText = history
     .map((t, i) => `Turn ${i + 1}:\nUser: ${t.prompt.slice(0, 200)}\nAssistant: ${t.response.slice(0, 200)}`)
     .join('\n\n');
@@ -91,7 +98,6 @@ export async function detectLoopWithLLM(
   }
 
   try {
-    const modelRef = options.model ?? 'ollama/gemma2:2b';
     const ollamaModel = modelRef.startsWith('ollama/') ? modelRef.slice(7) : modelRef;
     const response = await callOllama(ollamaModel, prompt, { timeoutMs: options.timeoutMs ?? 10_000 });
     try {
@@ -121,7 +127,7 @@ export type TurnRecord = { prompt: string; response: string };
  *  1. Streak-based check (synchronous, every turn) — the LATEST turn alone is
  *     scanned for frustration/failure keywords; STREAK_THRESHOLD consecutive
  *     hits escalates one tier and resets the streak.
- *  2. LLM check (fire-and-forget, gemma2:2b, every 3rd turn) — a slower,
+ *  2. LLM check (fire-and-forget, local model, every 3rd turn) — a slower,
  *     secondary signal for loops the keyword streak misses. Its result is
  *     ignored when the streak check already escalated in the same recordTurn
  *     call, preventing double-escalation. A monotonic _sessionId ensures
@@ -150,16 +156,17 @@ export class SessionEscalation {
   private _turnCount = 0;
   private _llmInFlight = false;
   private _sessionId = 0;
-  private _classifierModel: string;
+  private _classifierModel: string | (() => string | undefined) | undefined;
   private _frustrationStreak = 0;
   private _streakEscalatedPending = false;
 
   /**
-   * @param classifierModel Ollama ref used for LLM-based loop detection. Should come
-   *   from the dynamic group's classifier_fallback in router-config.json — the local
-   *   model set differs per setup, so this must not be hardcoded.
+   * @param classifierModel Ollama model for LLM-based loop detection, or a
+   *   function resolving it at call time (index.ts passes the head of the
+   *   derived local classifier chain, ADR-0025). Undefined disables the LLM
+   *   leg — the rule-based streak detection stays on.
    */
-  constructor(classifierModel = 'ollama/gemma2:2b') {
+  constructor(classifierModel?: string | (() => string | undefined)) {
     this._classifierModel = classifierModel;
   }
 
@@ -173,7 +180,7 @@ export class SessionEscalation {
   }
 
   /** Update the classifier model after config load (constructor runs before config is available). */
-  setClassifierModel(classifierModel: string): void {
+  setClassifierModel(classifierModel: string | (() => string | undefined) | undefined): void {
     this._classifierModel = classifierModel;
   }
 
@@ -238,7 +245,7 @@ export class SessionEscalation {
   }
 
   /**
-   * LLM-based escalation check (fire-and-forget, gemma2:2b). The synchronous
+   * LLM-based escalation check (fire-and-forget, local model). The synchronous
    * rule-based path lives entirely in recordTurn's streak counter above —
    * this is a secondary, slower signal for loops the keyword streak misses
    * (e.g. repeated semantic frustration without the specific tracked words).
@@ -249,6 +256,8 @@ export class SessionEscalation {
    */
   private _checkAndEscalate(): void {
     const recent = this._history.slice(-2);
+    const model = typeof this._classifierModel === 'function' ? this._classifierModel() : this._classifierModel;
+    if (!model) return; // no derived local model: rule-based detection only
 
     if (!this._llmInFlight) {
       // Only consume the pending flag when a call is actually about to be
@@ -262,7 +271,7 @@ export class SessionEscalation {
       this._llmInFlight = true;
       const levelAtCallTime = this._level;
       const sessionAtCallTime = this._sessionId;
-      detectLoopWithLLM(recent, { model: this._classifierModel, timeoutMs: 8_000 })
+      detectLoopWithLLM(recent, { model, timeoutMs: 8_000 })
         .then(result => {
           this._llmInFlight = false;
           if (

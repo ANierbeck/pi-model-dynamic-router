@@ -42,9 +42,10 @@ The `dynamic` group classifies prompts into these categories:
 ### 3. Requirements
 
 The shipped classifier chain is **cloud-first** — classification runs on free
-cloud models, no local setup required. Ollama (`mistral-nemo:latest` primary,
-`gemma2:2b` fallback) is only the local last resort: `ollama serve` +
-`ollama pull mistral-nemo:latest` + `ollama pull gemma2:2b`.
+cloud models, no local setup required. Ollama is only the local last resort:
+`ollama serve` + any pulled chat model — the router derives and probes the
+local classifier chain from what you have pulled (pin one with
+`classifier_model` / `classifier_fallback` in `router-config.user.json`).
 
 ### 4. Common Commands
 

@@ -47,6 +47,47 @@
     **Required for existing installs:** `providers` and `model_metrics` are dynamic-config MERGE keys — entries removed from the shipped config linger in `router-config.dynamic.json` (regeneration never prunes a merge key; the removed sentinels and the old `free_models` list would stay effective). After upgrading, delete `router-config.dynamic.json` in the router state dir (next to the installed extension, or `$PI_ROUTER_STATE_DIR`); the next scan regenerates it from the new shipped config plus your user layer. `exclude` is a resync key and updates automatically.
   - Ratcheting baseline: 56 → 28 entries (62 → 34 occurrences).
 
+- **ADR-0025 Phases C–E — the local classifier is derived; the baseline is closed at 0 (migration notes).**
+  - **Derived local classifier chain (C1–C3).** The classifier's local leg no longer has a shipped model: the two code constants and the bundled `dynamic.classifier_model` / `classifier_fallback` are gone. After every scan the router derives the chain from the Ollama models it found (completion-capable only; models that answered a classification with the 501 "structured output is unavailable" are skipped and marked; ordered by parameter size, small first), probes the candidates with the same classification cases as the cloud fallback and persists the verified list (`cache.classifier_local_models`). Resolution per classification: your pin › probed list › provisional (smallest model the scan EXPLICITLY saw answering completions, before the first probe) › none (local leg skipped, no Ollama hop). An empty probed list is final — nothing qualified, the failed models do not sneak back in. `/router` shows the derived heads (`none yet` until a scan ran; `none qualified — pin or /router scan` after a probe where nothing passed); the escalation loop detector uses the head of the chain or, with no local model, runs rule-based only. The probe is bounded (6 candidates, stops at 3 working) and re-runs only on a forced scan, a changed candidate set or after 24 h — **if a probe fails only transiently (e.g. the GPU is busy with a live classification and every candidate times out), the local leg stays off until one of those triggers fires; `/router scan` recovers immediately.** `classifier_model` / `classifier_fallback` remain as optional **user pins**. The scan-time model-name matcher (`local-llm.ts`) lost its 13-literal family-rank table: it now takes the largest completion-capable local model within a 14B size budget. ADR-0009's "bundled classifier model" half is marked superseded.
+  - **Classifier upgrade note (order flip + restore).** The derived chain sorts smallest-first, so on a machine whose models used to match the old defaults the order FLIPS: a 2B model becomes primary where the shipped default was a 12B primary with the 2B as fallback. The probe verifies every primary, so a too-weak model fails the probe and drops out — but if you prefer the old primary, pin it explicitly (this also answers the plan's C1 ordering question: smallest-first is the default, pins override):
+
+    ```json
+    { "model_groups": { "dynamic": { "classifier_model": "ollama/<your-primary>", "classifier_fallback": "ollama/<your-fallback>" } } }
+    ```
+  - **`non_agent_model_prefixes` no longer ships (D).** Spike outcome: neither Pi's model type, the scan, nor learned failures expose a signal that separates agent-capable from poor-agent models (the listed families advertise function calling; the incidents were quality failures on streams that finish normally; `no-tool-support` is a per-request verdict that never blocks), so the list is a user-layer quality judgement. The shipped default is empty (= filter off). **Plainly: without the migration snippet below, the five filtered families return to your agent groups** (the 2026-09-27 incident class — models that call tools badly on long agentic turns). The dynamic-config resync copies this key from the static layers, so a stale generated dynamic file cannot keep the old list alive.
+  - **Combined user-layer migration for upgraders** (one `~/.pi/agent/router-config.user.json`; merge with what you already have — Phase B's billing/exclude needs from above are included):
+
+    ```json
+    {
+      "providers": {
+        "claude-bridge": { "billing": "subscription" },
+        "openrouter": { "billing": "pay_per_token" }
+      },
+      "non_agent_model_prefixes": ["mistral-small-", "magistral-small-", "ministral-", "voxtral-", "codestral-"],
+      "exclude": {
+        "models": [
+          "openrouter/thinkingmachines/inkling:free",
+          "openrouter/thinkingmachines/inkling-small:free",
+          "openrouter/liquid/lfm-2.5-2.6b:free",
+          "openrouter/nvidia/nemotron-3.5-lightning:free",
+          "openrouter/nvidia/nemotron-3.5-content-safety:free",
+          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/poolside/laguna-s-2.1:free",
+          "openrouter/poolside/laguna-xs-2.1:free",
+          "openrouter/z-ai/glm-5.2:free",
+          "openrouter/minimax/minimax-m2.7:free",
+          "openrouter/minimax/minimax-m3:free",
+          "openrouter/deepseek/deepseek-v4-flash-0731:free"
+        ]
+      }
+    }
+    ```
+
+    Plus the Phase B requirement of deleting `router-config.dynamic.json` once after upgrading (merge keys are never pruned — see the Phase B entry above).
+  - **Closure (E).** The few-shot HINT examples in the classifier prompt use a neutral placeholder, the `zai-` vendor prefix moved into the provider adapter (`modelIdVendorPrefix` on `PROVIDER_MAP['mistral-zai']`, class A), and the scan log text names no model. **The ratcheting baseline is empty: 56 → 0 entries (62 → 0 occurrences) across Phases A–E**, the test ceiling is pinned at 0, and any new hardcoded model literal in shipped source/config fails the suite. Existing installs that pinned `classifier_model` / `classifier_fallback` in their user layer keep working (pins win).
+
 - **Local-provider wedge cooldowns follow a 2/5/15-minute ladder instead of a flat 5 minutes** (circuit-breaker Phase 1): the first wedge cools for 2 minutes, repeat wedges step up to 5 and 15 minutes (capped), and re-opens are bounded by the evidence window — a single timeout long after a wedge never re-opens it. The `/router` overview wedge warning is unchanged and now driven by the new breaker state.
 - **Fallback classifications inherit the previous turn's category** (task-type-balancing Phase 2): when the classifier returns `fallback` and a previous non-fallback category exists in the session context, that previous category is inherited — same mechanism as the existing low-confidence and short-prompt momentum paths. Applied at the single `classifyPrompt` exit so every producer of `fallback` (LLM, cache, static, classifier-unavailable) is covered; HINT and compaction results are never overridden; without history the configured default (`fallback` → `tactical`) stands.
 - **Live exclusion takes effect without restart:** added exclusions are applied to the running router immediately (next turn); persisted dynamic group candidate lists update at the next scan cycle.
@@ -121,9 +162,10 @@
   unclassified.
 - **`claude-sonnet-5-5` ranked behind `claude-opus-5-5`.** It was the only
   claude-bridge model without a sunk-cost sentinel, so its effCost was
-  `'unknown'` (sorts last in the quality window). It now has a sentinel
-  below opus' and `claude-bridge` is declared `billing: subscription` in the
-  shipped config.
+  `'unknown'` (sorts last in the quality window). Originally fixed with a
+  per-model sentinel; **superseded in this same release by the ADR-0025
+  Phase B subscription rule** (see above) — sonnet-before-opus is now
+  derived from list prices, not configured.
 - `/router` category route list is derived from the live mapping
   (`CATEGORY_TO_GROUP`) instead of a stale hardcoded copy.
 
@@ -179,23 +221,6 @@
   `billingTier`'s free-model paths, `loadModelMap` valid/broken YAML.
   Red-first: 13 representative mutants observed RED (one turned out to be
   unkillable — a mutually-redundant double check, removed instead).
-
-- `Router.filterByQualityPct` and `Router.filterByQualityMin`: zero callers
-  anywhere (the ADR-0023 round replicated their semantics inline in
-  `applyGroupFilters`). Found by the first nightly Stryker run (35 mutants
-  with no coverage); removed per AGENTS.md §7.
-- Redundant `if (method === 'roundrobin') return s;` branch in
-  `Router.sortBy` — behaviorally identical to the fall-through.
-
-### Test
-
-- `test/sort-by-methods.test.ts` (24 tests): closes the REAL-GAP mutation
-  survivors of `routing.ts:600-760` (sortBy method dispatch, best-quality-
-  window pool comparator incl. unknown-cost placement and the exact floor
-  boundary, billing rank tables with anti-correlated fixtures,
-  subscription-tier limit-pressure preference, budget/availability filter
-  wrappers). Red-first: 26 representative mutants observed RED before
-  landing. Full batch record: `docs/mutation-triage.md`.
 
 ## [1.6.1] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
 

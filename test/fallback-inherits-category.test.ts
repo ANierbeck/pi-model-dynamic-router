@@ -13,6 +13,7 @@ import {
   resetClassificationCounts,
 } from '../src/content-classifier.ts';
 import * as ollamaUtils from '../src/ollama-utils.ts';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 vi.mock('../src/ollama-utils.ts', () => ({
   callOllama: vi.fn(),
@@ -40,7 +41,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('design turn, then a confident LLM "fallback" → routes to the design group, not tactical', async () => {
     llmSays('fallback');
-    const result = await classifyPrompt(continuation(), { context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     expect('category' in result && result.category).toBe('design');
     expect(getGroupForCategory((result as { category: string }).category)).toBe(getGroupForCategory('design'));
     expect(getGroupForCategory('design')).not.toBe(getGroupForCategory('fallback'));
@@ -49,7 +50,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('counts the inherited category, not the raw fallback', async () => {
     llmSays('fallback');
-    await classifyPrompt(continuation(), { context: { lastCategory: 'design' } });
+    await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     const counts = getClassificationCounts();
     expect(counts.byCategory.design).toBe(1);
     expect(counts.byCategory.fallback).toBeUndefined();
@@ -57,7 +58,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('inherits on the static path too (LLM unavailable, static classifier says fallback)', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
-    const result = await classifyPrompt(continuation(), {
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(),
       allowStaticFallback: true,
       context: { lastCategory: 'planning' },
     });
@@ -66,20 +67,20 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('inherits when the classifier is unavailable and static fallback is disabled', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
-    const result = await classifyPrompt(continuation(), { context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     expect('category' in result && result.category).toBe('design');
   });
 
   it('without a previous category, fallback stays fallback and maps to the default group', async () => {
     llmSays('fallback');
-    const result = await classifyPrompt(continuation(), { context: {} });
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: {} });
     expect('category' in result && result.category).toBe('fallback');
     expect(getGroupForCategory('fallback')).toBe('tactical');
   });
 
   it('a concrete (non-fallback) classification is never replaced by the previous category', async () => {
     llmSays('trivial');
-    const result = await classifyPrompt(continuation(), { context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     expect('category' in result && result.category).toBe('trivial');
   });
 
@@ -92,7 +93,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
   });
 
   it('a compaction turn is never overridden by inheritance', async () => {
-    const result = await classifyPrompt(continuation(), {
+    const result = await classifyPrompt(continuation(), { cache: localModelCache(),
       context: { lastCategory: 'design', isCompaction: true },
     });
     expect('category' in result && result.category).toBe('code_complex');

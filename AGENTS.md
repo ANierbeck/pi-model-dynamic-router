@@ -81,7 +81,9 @@
   PR #16). Exceptions (docs-only, pure config) are stated explicitly in the
   report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
-- `npx vitest run` must be green (current count: 1344 passing / 3 skipped).
+- `npx vitest run` must be green (the exact count ratchets with every
+  round — as of the ADR-0025 closure: 1629 passing / 3 skipped; do not
+  lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
 - New features/fixes get a regression test that actually exercises the fix
@@ -201,8 +203,10 @@
   (`router-config.user.json`), where the user's own choices belong.
 - The gate is `test/no-hardcoded-models.test.ts` with a **ratcheting
   baseline** (`scripts/hardcoded-model-baseline.json`): the baseline only
-  shrinks. Never add an entry to make a PR green — derive instead. Tests may
-  use model literals freely.
+  shrinks — it is **closed at 0 entries** (ADR-0025 Phase E, 2026-10-07) and
+  the test's ceiling is pinned at 0, so every finding is a new violation.
+  Never add an entry to make a PR green — derive instead. Tests may use model
+  literals freely.
 - Incident that motivated the rule (2026-10-06): a shipped `free_models` list
   was admitted on config presence alone, so users without that provider's key
   got dead candidates in every cheap group and in the classifier chain.

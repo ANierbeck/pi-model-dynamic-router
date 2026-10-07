@@ -12,11 +12,18 @@
  * these: the streams finish normally (non-empty, stopReason `stop`).
  *
  * The curated family list lives in the config key `non_agent_model_prefixes`
- * (Config, src/types.ts) — the owner's requirement (2026-09-27 evening): the
- * tier must be configurable identically for all users, in the normal config
- * layers. The embedded router-config.json ships the default list; user and
- * project layers REPLACE it (standard array semantics — set the full list
- * you want). An absent or empty key is an EXPLICIT off-switch.
+ * (Config, src/types.ts), in the USER layer (router-config.user.json): the
+ * shipped router-config.json carries no list (ADR-0025 Phase D). The list is
+ * a quality judgement from the incidents above, not a capability fact: Pi's
+ * model type has no tool-calling flag, the scan carries none for those
+ * providers, and the families listed here advertise function calling — they
+ * just do it badly — so no flag could have derived it, and the failure
+ * classifier (error-signatures.ts) only learns 'no-tool-support' as a
+ * per-request verdict that never blocks. The spike report with the evidence
+ * is in docs/plans/2026-10-06-no-hardcoded-models.md (Phase D). User and
+ * project layers REPLACE arrays (standard array semantics — set the full list
+ * you want). An absent or empty key is the shipped default and an EXPLICIT
+ * off-switch.
  *
  * Matching is family-prefix-based (new `-latest`/dated variants are covered
  * automatically) against ANY path segment of the model id, so provider

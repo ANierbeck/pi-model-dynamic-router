@@ -113,9 +113,14 @@ export interface Group {
     | 'strict_local'
     | 'cloud_first'
     | 'local_before_payg';
-  /** Ollama model ref used to classify prompts (dynamic group only). e.g. "ollama/gemma4:12b-mlx" */
+  /**
+   * Optional user PIN for the local classifier primary (dynamic group only),
+   * an Ollama model ref such as "ollama/<model>:<tag>". No shipped value
+   * (ADR-0025): unset, the primary is derived from the models Ollama reports
+   * and verified by the scan-time probe (src/classifier-local-probe.ts).
+   */
   classifier_model?: string;
-  /** Fallback Ollama model ref if classifier_model fails (dynamic group only). e.g. "ollama/gemma2:2b" */
+  /** Optional user PIN for the local classifier fallback; unset = derived (see classifier_model). */
   classifier_fallback?: string;
   /**
    * Pinned cloud classifier model ref ("provider/id") for the dynamic
@@ -200,9 +205,10 @@ export interface Config {
    * 2026-09-27 incident evidence: GDPval floors cannot keep small-but-
    * benchmark-capable models out). Matched against ANY path segment of the
    * model id, so provider re-hosts (e.g. openrouter/mistral/mistral-small-3-2)
-   * are covered. The embedded router-config.json ships the default list;
-   * user/project layers REPLACE it (standard array semantics — set the full
-   * list you want). Absent/empty = tier explicitly OFF. Like `exclude`, this
+   * are covered. Nothing ships (ADR-0025 Phase D: the list is a quality
+   * judgement, not a Pi/scan capability flag) — set it in
+   * router-config.user.json; layers REPLACE arrays (set the full list you
+   * want). Absent/empty (the shipped default) = tier explicitly OFF. Like `exclude`, this
    * is user intent and is ALWAYS taken from the static layered config — the
    * dynamic-config whitelist in load() resyncs it.
    */
@@ -422,6 +428,20 @@ export interface Cache {
    * absent = probe hasn't run yet this scan cycle.
    */
   classifier_fallback_models?: string[];
+  /**
+   * Probe-verified LOCAL classifier chain (ADR-0025 C): Ollama model names in
+   * size order, written at scan time by probeLocalClassifierCandidates.
+   * [0] is the primary, [1] the fallback; absent = not probed yet (the
+   * classifier then uses the unprobed candidate order), empty = probed and
+   * nothing qualified.
+   */
+  classifier_local_models?: string[];
+  /**
+   * When classifier_local_models was last probed and for which candidates
+   * (size order) — lets a scan reuse a fresh result instead of spending GPU
+   * time on every session start.
+   */
+  classifier_local_probe?: { at: number; candidates: string[] };
 }
 
 // ── Provider Discovery Types ────────────────────────────────────────────
@@ -447,6 +467,14 @@ export interface ProviderDef {
    * cost_per_m:0 placeholder (ADR-0006 "F3"), never the real price.
    */
   pricingAlias?: string;
+  /**
+   * Prefix this provider puts in front of the model ids it hosts for another
+   * vendor (e.g. a re-host that namespaces its upstream's models as
+   * "<vendor>-<model>"). Slug normalisation strips it so the upstream's
+   * GDPval slug matches. Protocol knowledge about HOW the provider names
+   * models (ADR-0025 class A) — it never admits or ranks a model.
+   */
+  modelIdVendorPrefix?: string;
 }
 
 // ── Utility Types ────────────────────────────────────────────────────────
@@ -475,6 +503,17 @@ export interface ModelCapabilities {
   contextWindow?: number;
   /** Max output tokens per request, if reported. */
   maxTokens?: number;
+  /**
+   * Local runtimes only (Ollama /api/show `capabilities`): true when the model
+   * generates text. Undefined = the runtime reported no capability list
+   * (unknown, NOT false) — the local classifier derivation (ADR-0025 C1)
+   * keeps unknown models and lets the probe decide.
+   */
+  completion?: boolean;
+  /** Local runtimes only: true for embedding-only models (never a classifier). */
+  embedding?: boolean;
+  /** Local runtimes only: parameter count in billions (Ollama `details.parameter_size`). */
+  parameterSizeB?: number;
 }
 
 /**

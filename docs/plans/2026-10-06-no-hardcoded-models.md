@@ -120,6 +120,16 @@ observe the guard fail; add a stale baseline entry and observe it fail.
 
 ## Phase C — Derived local classifier (the flow that decides)
 
+> **DONE (2026-10-07, branch `adr0025-cde-derived`).** C1–C3 landed: derived
+> candidates + probe (`src/classifier-local-probe.ts`), flow wiring (user pin >
+> probed list > provisional > none), `FAMILY_RANK`/constants/config keys
+> removed. Deviations from the text below: the orchestrator passes only the
+> user's pins and `classifyPrompt` derives from `cache` itself (same result,
+> one resolution point); a probe re-run policy (force / candidate change /
+> 24 h TTL) was added because scans run on every session start; the scan-time
+> *matcher's* local model (the real `FAMILY_RANK` caller) now derives from
+> size, see CHANGELOG.
+
 > **Baseline triage from the Lane A review (2026-10-07):** the 56-entry
 > baseline splits into three groups for later rounds. (1) The 13
 > `src/local-llm.ts` entries (`FAMILY_RANK` regex table, lines 85–95) are the
@@ -184,6 +194,9 @@ observe the guard fail; add a stale baseline entry and observe it fail.
 
 ## Phase D — `non_agent_model_prefixes` spike (decision, then maybe code)
 
+> **DONE (2026-10-07):** spike report below; outcome (c); the owner
+> pre-authorized finishing D, so the implementation landed with the report.
+
 - **Spike (1 h):** inspect what Pi exposes per model (`reasoning`, `input`,
   `compat`, tool-call flags) and what the failure classifier already learns
   ("does not support tools"). Report whether any available signal separates
@@ -194,7 +207,54 @@ observe the guard fail; add a stale baseline entry and observe it fail.
   layer with an empty shipped default and a documented caveat. Owner decides
   after the spike report; no code before that.
 
+### Spike report (2026-10-07) — outcome (c)
+
+> **DONE.** Evidence below; every claim is re-checkable with the command next
+> to it. Outcome chosen by the evidence: **(c) neither** — empty shipped
+> default, the list moves to the user layer, README documents the caveat.
+
+**Question.** Does anything Pi or the scan exposes per model separate
+agent-capable models from the `non_agent_model_prefixes` families
+(`mistral-small-`, `magistral-small-`, `ministral-`, `voxtral-`,
+`codestral-`)?
+
+| Signal | Finding | Re-check |
+|---|---|---|
+| Pi `Model` / `BaseModel` (pi-ai `types.d.ts`) | Fields: `id, name, api, provider, baseUrl, input, inputLimits, cost, headers, reasoning, thinkingLevelMap, promptCache, contextWindow, maxTokens, samplingParams*, compat`. **No tool-calling / function-calling flag.** `input` is modalities (`text`/`image`) only. `compat` is per-API wire-format quirks (`supportsStore`, `thinkingFormat`, …) — it DOES carry tool-*wire-format* flags (`requiresToolResultName`, `supportsToolSearch`, `supportsStrictTools`, pi-ai `types.d.ts:638-763`), but these describe HOW tool calls must be encoded for that API, not WHETHER a model is a reliable agent; `MistralConversationsCompat` has a single field (`supportsMidConvoSystemMessages`). `type?: 'chat'` separates chat from image/classifier models, not agent-capable from chat-only. The canary in `test/agent-capability-tier.test.ts` scans only `BaseModel` and `Model` (not the `compat` interfaces) — a capability flag added there re-opens the question; a `compat` flag alone does not. | `test/agent-capability-tier.test.ts` → "spike canary" reads the installed `types.d.ts` and fails if a tool/function field appears on `BaseModel`/`Model` (host upgrades re-open this question). |
+| Scan capabilities (`src/capabilities.ts`, `cache.available_models[].capabilities`) | `ModelCapabilities` = `vision, reasoning, contextWindow, maxTokens` (+ the C1 local fields). Ollama `/api/show` reports a `tools` capability, but it is **not extracted** and only covers local models — the filtered families are cloud. Since ADR-0022 the router no longer scans the Mistral catalog at all (cloud inventory = Pi's registry), so a Mistral `capabilities.function_calling` flag is not available either. | `grep -n "tools" src/capabilities.ts` (comment only). |
+| The flag, even if present, would not separate the families | The 2026-09-27 evidence (`src/agent-capability.ts` header): the models **do** call tools — the failure is quality (35+ consecutive 0–220-char `toolUse` turns; a final turn that announces a result and stops). To the best of our knowledge these families advertise function calling in their provider's model metadata (not re-fetched in this round — the catalog is no longer scanned). A capability flag says "can emit a tool call", not "reliable as the main agent". | evidence block in `src/agent-capability.ts`. |
+| Learned failures (ADR-0008, `error-signatures.ts`) | `no-tool-support` ("does not support tools", `Filter by Tool Compatibility`) is classified verdict **`request`**: request-dependent, *never blocks* (the model works without tools — it still classifies). And the incident streams **finish normally** (`stopReason: stop`, non-empty): no failure fires at all ("No failure detection can fire on these"). | `src/error-signatures.ts:47-61,221`; `provider-breaker.ts:40`. |
+
+**Verdict.** (a) fails — no flag exists; (b) fails — nothing is ever learned,
+and a learned tool-incapacity would be a per-request verdict by design. The
+list encodes an *empirical quality judgement about named families on a
+specific workload* — a user preference in the sense of ADR-0025 class C, not
+data Pi can supply. It therefore moves to the **user layer**:
+
+- shipped `router-config.json`: no `non_agent_model_prefixes` key (absent =
+  filter off, the documented off-switch);
+- `src/agent-capability.ts` evidence comment, README section and CHANGELOG
+  document the caveat and the user snippet;
+- pins: shipped config carries no list; with the shipped default the former
+  families are NOT dropped by name while a user-supplied list still gates
+  (red against the prefix-list default); spike canary above.
+
+**Behavior change (1.7.0, migration).** Installs that relied on the shipped
+default stop filtering those five families in routing groups until they add
+the list to `router-config.user.json`. The dynamic-config resync copies the
+key from the static layers, so a stale generated dynamic file cannot keep the
+old list alive. The owner's user config needs
+`"non_agent_model_prefixes": ["mistral-small-", "magistral-small-", "ministral-", "voxtral-", "codestral-"]`
+to keep today's behavior (parent step — not applied by this round).
+
 ## Phase E — Closure
+
+> **DONE (2026-10-07):** baseline **0 entries / 0 occurrences** (ceiling pinned
+> at 0). AGENTS.md §9 already carried the rule (landed with an earlier phase);
+> it now also records the closed baseline. The ADR index already listed 0025.
+> README (pins/user-layer table, classifier requirements), CHANGELOG
+> migration notes and TODO.md updated. The final §1 review over the whole
+> range stays a pre-release gate and is NOT part of this branch.
 
 - **AGENTS.md §9** (rule, per §2): shipped code/config names no model that can
   admit, select, rank or exclude; allowed classes A–C; the guard test is the
@@ -227,3 +287,8 @@ observe the guard fail; add a stale baseline entry and observe it fail.
    latency. Prefer a quality bias (largest that answers under N seconds) for
    classification accuracy? Default proposal: smallest first, since the
    probe already verifies correctness.
+   **ANSWERED (2026-10-07, Phase C review):** smallest-first shipped as the
+   default (the probe verifies correctness, so a too-weak model drops out);
+   users who prefer the old larger-primary order pin `classifier_model` /
+   `classifier_fallback` (CHANGELOG carries the restore snippet and the order
+   flip note).

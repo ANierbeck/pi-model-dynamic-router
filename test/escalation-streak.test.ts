@@ -145,7 +145,8 @@ describe('SessionEscalation — streak-based escalation', () => {
       .mockResolvedValueOnce(noEscalate)
       .mockResolvedValueOnce(noEscalate)
       .mockResolvedValueOnce(doEscalate);
-    const esc = new SessionEscalation();
+    // The LLM leg only runs with a derived local model (ADR-0025).
+    const esc = new SessionEscalation(() => 'foo:3b');
 
     esc.recordTurn('hello', ''); // len 1
     esc.recordTurn('', 'hi'); // len 2 -> periodic check dispatches call #1

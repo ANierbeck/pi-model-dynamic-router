@@ -25,6 +25,7 @@
 import { describe, it, beforeEach, expect, vi } from "vitest";
 import { classifyPrompt } from "../src/content-classifier.js";
 import * as ollamaUtils from "../src/ollama-utils";
+import { localModelCache } from "./helpers/local-model-cache.ts";
 
 vi.mock("../src/ollama-utils", () => ({
   callOllama: vi.fn(),
@@ -48,7 +49,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     // First call: primary rejects with the 501, fallback answers.
     callOllama.mockRejectedValueOnce(new Error(NO_SCHEMA_501));
     callOllama.mockResolvedValueOnce(VALID);
-    const cache: Record<string, any> = {};
+    const cache: Record<string, any> = localModelCache();
     const r1 = await classifyPrompt("no-schema marking: first turn prompt", { cache });
     expect(r1?.category).toBe("trivial");
     // The failing primary must now be marked.
@@ -71,7 +72,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     // First call: primary times out (NOT a 501), fallback answers.
     callOllama.mockRejectedValueOnce(new Error("no response within timeout"));
     callOllama.mockResolvedValueOnce(VALID);
-    const cache: Record<string, any> = {};
+    const cache: Record<string, any> = localModelCache();
     const r1 = await classifyPrompt("timeout marking: first turn prompt", { cache });
     expect(r1?.category).toBe("trivial");
     expect(cache.classifier_no_schema).toBeUndefined();
@@ -91,7 +92,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     // Mark via the real path (primary 501, fallback answers).
     callOllama.mockRejectedValueOnce(new Error(NO_SCHEMA_501));
     callOllama.mockResolvedValueOnce(VALID);
-    const cache: Record<string, any> = {};
+    const cache: Record<string, any> = localModelCache();
     await classifyPrompt("aged mark: first turn prompt", { cache });
     const markedName = Object.keys(cache.classifier_no_schema ?? {})[0];
     expect(markedName).toBeTruthy();
@@ -114,7 +115,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     // Mark the primary via the real path.
     callOllama.mockRejectedValueOnce(new Error(NO_SCHEMA_501));
     callOllama.mockResolvedValueOnce(VALID);
-    const cache: Record<string, any> = {};
+    const cache: Record<string, any> = localModelCache();
     await classifyPrompt("skip fail-open: first turn prompt", { cache });
 
     // Now the fallback fails too — classifyPrompt must degrade without

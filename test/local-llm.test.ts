@@ -40,35 +40,38 @@ function makeDeps(overrides: Partial<LocalLlmDeps> = {}): LocalLlmDeps {
 }
 
 describe('resolveLocalProvider', () => {
-  it('returns the first local provider that has discovered models', () => {
-    const deps = makeDeps({
-      cache: {
-        available_models: [
-          { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-          { id: 'llama3.1:latest', provider: 'ollama', cost_per_m: 0 },
-        ],
-      },
-    });
-    const result = resolveLocalProvider(deps);
-    expect(result).not.toBeNull();
-    expect(result?.providerId).toBe('ollama');
-    expect(result?.modelId).toBe('gemma4:latest');
+  const ollamaModel = (id: string, capabilities?: Record<string, unknown>) => ({
+    id,
+    provider: 'ollama',
+    cost_per_m: 0,
+    ...(capabilities ? { capabilities } : {}),
+  });
+  const pick = (...models: ReturnType<typeof ollamaModel>[]) =>
+    resolveLocalProvider(makeDeps({ cache: { available_models: models } as Cache }))?.modelId;
+
+  // ADR-0025 C3: the choice is DERIVED from size, never from model names.
+  // The matcher prompt is large, so the LARGEST model that still fits the
+  // size budget wins: capable enough for semantic matching, small enough not
+  // to blow the call timeout on a cold start.
+  it('prefers the largest model within the matcher size budget', () => {
+    expect(pick(ollamaModel('a:2b'), ollamaModel('b:9b'), ollamaModel('c:35b'))).toBe('b:9b');
   });
 
-  it('prefers a CAPABLE model (qwen3.6:35b) over gemma2:2b (too weak for matching)', () => {
-    // The matcher needs reliable JSON + semantic understanding.
-    // gemma2:2b hallucinates cross-family matches and is ranked LAST.
-    const deps = makeDeps({
-      cache: {
-        available_models: [
-          { id: 'gemma2:2b', provider: 'ollama', cost_per_m: 0 },
-          { id: 'qwen3.6:35b-mlx', provider: 'ollama', cost_per_m: 0 },
-        ],
-      },
-    });
-    const result = resolveLocalProvider(deps);
-    expect(result).not.toBeNull();
-    expect(result?.modelId).toBe('qwen3.6:35b-mlx');
+  it('falls back to the smallest over-budget model when every model is oversized', () => {
+    expect(pick(ollamaModel('c:70b'), ollamaModel('d:35b'))).toBe('d:35b');
+  });
+
+  it('ranks size-unknown models after sized ones, then by name', () => {
+    expect(pick(ollamaModel('a:latest'), ollamaModel('z:2b'))).toBe('z:2b');
+    expect(pick(ollamaModel('y:latest'), ollamaModel('x:latest'))).toBe('x:latest');
+  });
+
+  it('prefers the size Ollama reported over the one in the id', () => {
+    expect(pick(ollamaModel('tagless:latest', { parameterSizeB: 8 }), ollamaModel('a:2b'))).toBe('tagless:latest');
+  });
+
+  it('never picks an embedding-only or non-completion model', () => {
+    expect(pick(ollamaModel('a:9b', { embedding: true }), ollamaModel('b:9b', { completion: false }), ollamaModel('z:2b'))).toBe('z:2b');
   });
 
   it('works with LM Studio instead of Ollama (provider-agnostic)', () => {

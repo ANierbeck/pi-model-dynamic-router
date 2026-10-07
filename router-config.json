@@ -1,12 +1,5 @@
 {
   "log_level": "warn",
-  "non_agent_model_prefixes": [
-    "mistral-small-",
-    "magistral-small-",
-    "ministral-",
-    "voxtral-",
-    "codestral-"
-  ],
   "best_quality_window": 0.05,
   "exclude": {
     "models": []
@@ -130,8 +123,6 @@
     "dynamic": {
       "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
       "method": "dynamic",
-      "classifier_model": "ollama/mistral-nemo:latest",
-      "classifier_fallback": "ollama/gemma2:2b",
       "classifier_cloud_fallback": true
     },
     "bulk_reader": {
