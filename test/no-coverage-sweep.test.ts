@@ -290,6 +290,13 @@ describe('loadModelMap — valid map loads, broken YAML disables overrides loudl
   });
 
   it('a broken YAML clears the map and wildcards (overrides disabled, not stale)', () => {
+    // Self-contained: load a valid map FIRST. Without this the test only
+    // killed the "catch block does nothing" mutant when the previous test had
+    // loaded entries; run in isolation (as StrykerJS perTest does) it was
+    // vacuous — nightly R1 finding.
+    fs.writeFileSync(path.join(tmpDir, 'model-map.yaml'), 'mm-x: mm-slug\nw-long*: w-long-slug\n');
+    metricsModule.loadModelMap(tmpDir);
+    expect(metricsModule.mapLookup('mistral/mm-x')).toBe('mm-slug');
     fs.writeFileSync(path.join(tmpDir, 'model-map.yaml'), '{ unparseable');
     metricsModule.loadModelMap(tmpDir);
     expect(metricsModule.mapLookup('mistral/mm-x')).toBeUndefined();
