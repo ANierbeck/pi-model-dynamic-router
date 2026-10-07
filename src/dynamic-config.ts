@@ -319,7 +319,7 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
  *    such a key in router-config.json / router-config.user.json has NO
  *    effect for as long as the dynamic file exists (the common steady
  *    state) — the stale file silently shadows the user's intent.
- * 2. index.ts generateDynamicConfigNow(), when the dynamic config is
+ * 2. the write site in src/dynamic-config-runner.ts, when the dynamic config is
  *    (re)written: forcing these keys from staticCfg means the regenerated
  *    file never persists a stale user value for another 30-day cycle.
  *
@@ -418,6 +418,28 @@ const STATIC_AUTHORITATIVE_FIELDS: Partial<Record<MergeKey, readonly string[]>> 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Registers a lightweight provider stub for each registry-discovered provider
+ * the config doesn't know yet (e.g. claude-bridge): without the entry
+ * stripProvider() won't recognize the prefix and GDPval/price inference via
+ * the base model name would fail. Never overwrites an existing entry.
+ * Extracted (review M2, 2026-10-07) so BOTH the scan write site AND load()
+ * can register stubs: a static `billing` field that was removed (or a
+ * project-layer switch) prunes the entry at the next resync, and the stub
+ * must come back immediately — not at the next regeneration, which can be
+ * up to 30 days away.
+ */
+export function registerRegistryProviderStubs(cfg: Config, registryRefs: string[]): void {
+  for (const ref of registryRefs) {
+    const slash = ref.indexOf('/');
+    if (slash === -1) continue;
+    const prov = ref.slice(0, slash);
+    if (!PROVIDER_MAP[prov] && !cfg.providers?.[prov]) {
+      (cfg.providers ??= {})[prov] = { billing: 'subscription' };
+    }
+  }
+}
+
 /** Snapshot of the entries/fields the static layers currently declare under the merge keys. */
 export function collectStaticContributions(staticCfg: Config): StaticContributions {
   const stat = staticCfg as unknown as Record<string, unknown>;
@@ -468,6 +490,7 @@ function pruneRemovedStaticEntries(
   key: MergeKey,
   remembered: Record<string, string[] | null> | undefined,
   current: Record<string, string[] | null>,
+  dropped?: Set<string>,
 ): void {
   const entries = dyn[key];
   if (!isPlainObject(entries)) return;
@@ -477,13 +500,13 @@ function pruneRemovedStaticEntries(
     if (!isPlainObject(value)) return;
     const rest = { ...value };
     for (const f of fields) delete rest[f];
-    if (Object.keys(rest).length === 0) delete pruned[entry];
+    if (Object.keys(rest).length === 0) { delete pruned[entry]; dropped?.add(entry); }
     else pruned[entry] = rest;
   };
   for (const [entry, fields] of Object.entries(remembered ?? {})) {
     const now = current[entry];
     if (fields === null) {
-      if (now === undefined) delete pruned[entry];
+      if (now === undefined) { delete pruned[entry]; dropped?.add(entry); }
     } else {
       const kept = Array.isArray(now) ? now : [];
       // A static entry that turned scalar replaces the dynamic one in the merge.
@@ -506,7 +529,7 @@ function pruneRemovedStaticEntries(
  * dropped since the last resync, then merged per entry. `model_groups` stays
  * — it is the scan's output. Finally the current static contribution is
  * recorded in `_dynamic.static_contributions` for the next resync. Used by
- * both resync sites (load() and the write site in generateDynamicConfigNow).
+ * both resync sites (index.ts load() and the src/dynamic-config-runner.ts write site).
  *
  * `contributions` defaults to the snapshot of `staticCfg`; the write site
  * passes one taken BEFORE the scan stub-registers providers into a config
@@ -516,13 +539,21 @@ export function resyncDynamicFromStatic(
   dynamicCfg: Config,
   staticCfg: Config,
   contributions: StaticContributions = collectStaticContributions(staticCfg),
-): void {
+): { droppedProviders: string[] } {
   const dyn = dynamicCfg as unknown as Record<string, unknown>;
   const stat = staticCfg as unknown as Record<string, unknown>;
   const remembered = readRememberedContributions(dynamicCfg);
+  // Providers this resync DROPPED entirely (a static `billing` field removed
+  // from a layer): load() re-registers exactly these as registry stubs so the
+  // provider keeps its subscription billing until the next regeneration —
+  // without it, billingTier/the cost rule would treat it as pay_per_token
+  // for up to a 30-day scan cycle (review M2, 2026-10-07). Only the dropped
+  // ones: stubbing every unknown provider at load time would reorder tiered
+  // groups (subscription ahead of local) BEFORE the first regeneration.
+  const droppedProviders = new Set<string>();
   for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) dyn[key] = stat[key];
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
-    pruneRemovedStaticEntries(dyn, key, remembered[key], contributions[key]);
+    pruneRemovedStaticEntries(dyn, key, remembered[key], contributions[key], key === 'providers' ? droppedProviders : undefined);
     const s = stat[key];
     if (!isPlainObject(s)) continue;
     const merged: Record<string, unknown> = { ...(isPlainObject(dyn[key]) ? dyn[key] : {}) };
@@ -533,4 +564,5 @@ export function resyncDynamicFromStatic(
     dyn[key] = merged;
   }
   if (isPlainObject(dyn._dynamic)) dyn._dynamic.static_contributions = contributions;
+  return { droppedProviders: [...droppedProviders] };
 }

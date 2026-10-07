@@ -98,4 +98,68 @@ describe('regeneration prunes static-removed merge-key entries', () => {
       fs.rmSync(dynamicPath, { force: true });
     }
   });
+
+  it('fresh install (no dynamic file): the provider stub lands on disk but is NEVER recorded as a static contribution', async () => {
+    // Review I1/M1, 2026-10-07: with no dynamic file, cfg IS staticCfg, so the
+    // stub loop mutates the static config object. The contribution snapshot
+    // must be taken before any stub lands — otherwise the stub is remembered
+    // as static and pruned at the next load(), leaving the provider
+    // pay_per_token until the next regeneration (up to 30 days).
+    const stateDir = process.env.PI_ROUTER_STATE_DIR!;
+    const dynamicPath = path.join(stateDir, 'router-config.dynamic.json');
+    const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
+    // NO dynamic file: fresh-install shape.
+    fs.rmSync(dynamicPath, { force: true });
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({
+        lastScanTimestamp: 0,
+        gdpval_scraped: true,
+        models_cached: new Date().toISOString(),
+        available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
+        gdpval_scores: { 'model-a': 800 },
+      })
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-dyn-prune2-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error('network disabled in test'))) as typeof fetch;
+    try {
+      vi.resetModules();
+      const mod = await import('../index.ts');
+      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+      (mod.default as any)({
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
+        setModel: vi.fn(async () => true),
+        on: vi.fn((event: string, handler: any) => {
+          onHandlers[event] = handler;
+        }),
+      });
+      const model = { provider: 'healthy-provider', id: 'model-a', api: 'openai-completions', contextWindow: 128_000,
+        cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 } };
+      const modelRegistry = {
+        getAvailable: () => [model],
+        find: (p: string, id: string) => (p === model.provider && id === model.id ? model : null),
+        getApiKeyForProvider: async () => 'k',
+        runtime: { streamSimple: vi.fn() },
+      };
+      await onHandlers['session_start']?.({}, { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } });
+
+      const exists = () => fs.existsSync(dynamicPath);
+      expect(await waitFor(exists)).toBe(true);
+      const onDisk = JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'));
+      // The stub the scan registered is on disk ...
+      expect(onDisk.providers['healthy-provider']).toEqual({ billing: 'subscription' });
+      // ... but NOT remembered as a static contribution (that is the I1 bug:
+      // the next load() would prune it again).
+      expect(onDisk._dynamic.static_contributions.providers['healthy-provider']).toBeUndefined();
+    } finally {
+      cwdSpy.mockRestore();
+      globalThis.fetch = originalFetch;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(dynamicPath, { force: true });
+    }
+  });
 });

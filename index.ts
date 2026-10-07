@@ -28,7 +28,7 @@ import {
   isProviderWedged,
   wedgeCooldownText,
 } from './src/provider-watchdog.ts';
-import { resyncDynamicFromStatic } from './src/dynamic-config.ts';
+import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, type StaticContributions } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
@@ -113,6 +113,11 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   let cfg: Config;
   let staticCfg: Config; // Static configuration (always from the embedded router-config.json + its layers)
+  // Clean-by-construction snapshot of what the static layers declare under
+  // the merge keys — taken in load() right after loadLayeredConfig, BEFORE
+  // any provider stub registration can mutate the config (review M1, 2026-10-07:
+  // a snapshot taken at the write site could be stale or stub-polluted).
+  let staticContributions: StaticContributions = {} as StaticContributions;
   // The ONE cache object: never reassigned. loadCache() re-reads disk into it,
   // so every holder (managers, router, metrics) sees the same state.
   const cache: Cache = {};
@@ -257,6 +262,7 @@ let previousTokenCount = 0;
     set settleRetryScheduled(v) { settleRetryScheduled = v; },
     get stateDir() { return stateDir; },
     get staticCfg() { return staticCfg; },
+    get staticContributions() { return staticContributions; },
     get turnStart() { return turnStart; },
   });
 
@@ -391,6 +397,8 @@ let previousTokenCount = 0;
     const { config: layeredCfg, sources } = loadLayeredConfig(extDir, process.cwd(), routerLog);
     setLogLevel(layeredCfg.log_level);
     staticCfg = layeredCfg;
+    // Snapshot BEFORE anything can add provider stubs into this object.
+    staticContributions = collectStaticContributions(staticCfg);
     if (sources.length > 1) {
       routerLog(`[router] Config loaded from ${sources.length} layer(s): ${sources.join(' → ')}`);
     }
@@ -398,6 +406,7 @@ let previousTokenCount = 0;
     // Try to load the dynamic configuration
     const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
+    let loadResync: { droppedProviders: string[] } = { droppedProviders: [] };
     
     try {
       if (fs.existsSync(dynamicConfigPath)) {
@@ -415,11 +424,14 @@ let previousTokenCount = 0;
           // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
           // the write site in generateDynamicConfigNow — per-key rationale
           // lives there; DYNAMIC_CONFIG_MERGE_KEYS (providers, model_metrics,
-          // gdpval_builtin) are pruned of static-removed entries, then merged per entry, static winning. Final v1.6.0 review I4: ollama_max_concurrent_streams
+          // gdpval_builtin) are pruned of static-removed entries (the
+          // contribution snapshot is taken in load(), before any stub can
+          // pollute it), then merged per entry, static winning. Final
+          // v1.6.0 review I4: ollama_max_concurrent_streams
           // had been forgotten in both hand-maintained assignment blocks;
           // I5: the shared list + the data-driven staleness test keep the
           // next key from being forgotten the same way.
-          resyncDynamicFromStatic(dynamicCfg, staticCfg);
+          loadResync = resyncDynamicFromStatic(dynamicCfg, staticCfg, staticContributions);
           cfg = dynamicCfg;
           loadedFromDynamic = true;
         }
@@ -431,6 +443,22 @@ let previousTokenCount = 0;
     // If there is no dynamic configuration, use the static one
     if (!loadedFromDynamic) {
       cfg = staticCfg;
+    }
+
+    // Review M2, 2026-10-07: a static `billing` field that a layer removed
+    // since the last generation was pruned above — re-register exactly those
+    // dropped providers as registry stubs so the provider keeps its
+    // subscription billing until the next regeneration (up to 30 days away).
+    // ONLY the dropped ones: stubbing every unknown provider at load time
+    // would reorder tiered groups (subscription ahead of local) before the
+    // first regeneration (regression caught by the ollama-fallback tests).
+    if (loadResync.droppedProviders.length && sessionCtx?.modelRegistry) {
+      const dropped = new Set(loadResync.droppedProviders);
+      const refs: string[] = [];
+      for (const m of sessionCtx.modelRegistry.getAvailable()) {
+        if (dropped.has(m.provider)) refs.push(`${m.provider}/${m.id}`);
+      }
+      registerRegistryProviderStubs(cfg, refs);
     }
 
     // Task-type-balancing Phase 3: install the user's category→group

@@ -168,3 +168,41 @@ describe('resyncDynamicFromStatic prune is fail-open', () => {
     expect(contributions(dyn)).toEqual({ providers: {}, model_metrics: {}, gdpval_builtin: {} });
   });
 });
+
+describe('registerRegistryProviderStubs (review M2 extraction)', () => {
+  // Pins of behaviour that already held in the inline write-site loop (§4
+  // exception, stated: pure extraction); the NEW behaviour — the after-load()
+  // call — is pinned e2e in dynamic-config-prune-e2e.test.ts.
+  it('stubs unknown registry providers and never overwrites an existing entry', async () => {
+    const { registerRegistryProviderStubs } = await import('../src/dynamic-config.ts');
+    const cfg: any = { providers: { 'known-provider': { billing: 'pay_per_token' } } };
+    registerRegistryProviderStubs(cfg, ['bridge-a/model-x', 'known-provider/model-y', 'nonsense', 'bridge-a/model-z']);
+    expect(cfg.providers['bridge-a']).toEqual({ billing: 'subscription' });
+    expect(cfg.providers['known-provider']).toEqual({ billing: 'pay_per_token' }); // untouched
+    expect(Object.keys(cfg.providers)).toEqual(['known-provider', 'bridge-a']); // idempotent: one entry per provider
+  });
+});
+
+describe('resyncDynamicFromStatic reports dropped providers (review M2 contract)', () => {
+  it('lists exactly the provider entries this resync removed, so load() can re-stub them', async () => {
+    const { resyncDynamicFromStatic, collectStaticContributions } = await import('../src/dynamic-config.ts');
+    // Dynamic file: bridge-x was recorded as a static contribution but no
+    // static layer declares it any more; bridge-keep was never recorded
+    // (scan-added) and must not be reported.
+    const dyn: any = {
+      _dynamic: {
+        static_contributions: {
+          providers: { 'bridge-x': ['billing'] },
+          model_metrics: {},
+          gdpval_builtin: {},
+        },
+      },
+      providers: { 'bridge-x': { billing: 'subscription' }, 'bridge-keep': { billing: 'subscription' } },
+    };
+    const staticCfg: any = { model_groups: {} };
+    const res = resyncDynamicFromStatic(dyn, staticCfg, collectStaticContributions(staticCfg));
+    expect(res.droppedProviders).toEqual(['bridge-x']);
+    expect(dyn.providers['bridge-x']).toBeUndefined(); // pruned ...
+    expect(dyn.providers['bridge-keep']).toEqual({ billing: 'subscription' }); // ... but the scan-added one stays
+  });
+});
