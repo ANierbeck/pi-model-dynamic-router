@@ -17,6 +17,7 @@ import {
   recordProviderFailure,
   recordProviderSuccess,
   isProviderOpen,
+  type BreakerTuning,
 } from './provider-breaker.ts';
 
 export { WEDGE_WINDOW_MS };
@@ -36,9 +37,10 @@ export const WEDGE_COOLDOWN_MS = BREAKER_COOLDOWN_LADDER_MS[0];
  * Call it right after a failure was reported as newly opening the breaker,
  * which is true for every re-open too, not just the first.
  */
-export function wedgeCooldownText(cache: Cache | undefined, provider: string): string {
-  const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), BREAKER_COOLDOWN_LADDER_MS.length) - 1;
-  return `${Math.round(BREAKER_COOLDOWN_LADDER_MS[step] / 60_000)} min`;
+export function wedgeCooldownText(cache: Cache | undefined, provider: string, tuning?: BreakerTuning): string {
+  const ladder = tuning?.cooldownMs ?? BREAKER_COOLDOWN_LADDER_MS;
+  const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), ladder.length) - 1;
+  return `${Math.round(ladder[step] / 60_000)} min`;
 }
 
 /** How the user un-wedges a local provider; the router never restarts it itself. */

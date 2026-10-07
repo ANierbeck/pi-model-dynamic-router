@@ -23,11 +23,15 @@ import { lookupGdp, lookupContextWindow } from './src/metrics.ts';
 import { countSessionErrorsSince } from './src/session-errors.ts';
 import { CacheManager } from './src/cache.ts';
 import { readRouterVersion } from './src/version.ts';
+import { wedgeCooldownText } from './src/provider-watchdog.ts';
 import {
-  recordLocalTimeout,
-  isProviderWedged,
-  wedgeCooldownText,
-} from './src/provider-watchdog.ts';
+  recordProviderFailure,
+  recordBreakerSkip,
+  isProviderOpen,
+  resolveBreakerTuning,
+  isLocalProviderName,
+  type ProviderEvidenceKind,
+} from './src/provider-breaker.ts';
 import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, type StaticContributions } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
@@ -623,13 +627,36 @@ let previousTokenCount = 0;
     // one buffer, no bypass.
     recordOk,
     observeFailure,
-    observeLocalTimeout: (ref: string) => {
-      const newlyWedged = recordLocalTimeout(cache, ref);
-      if (newlyWedged) warnLog(`[router] watchdog: ${ref.split('/')[0]} looks wedged — skipping its models for ${wedgeCooldownText(cache, ref.split('/')[0])}`);
-      return newlyWedged;
+    // Provider circuit breaker (ADR-0026, plan Phase 2): every soft failure
+    // of a D1 evidence kind feeds the breaker. Local refs keep ADR-0016
+    // parity (always observed, N=2); cloud refs only while the kill switch
+    // (provider_breaker.enabled, default on) is on. Returns true only when
+    // this failure newly OPENS the breaker, so the orchestrator narrates
+    // once per open.
+    observeProviderFailure: (ref: string, reason: string, detail?: string) => {
+      const kind = reason as ProviderEvidenceKind;
+      if (
+        kind !== 'empty_response' && kind !== 'empty_timeout' &&
+        kind !== 'stall_timeout' && kind !== 'provider_error'
+      ) return false;
+      const provider = ref.split('/')[0];
+      const tuning = resolveBreakerTuning(cfg.provider_breaker);
+      if (!isLocalProviderName(provider) && !tuning.cloudEnabled) return false;
+      const newlyOpen = recordProviderFailure(cache, ref, kind, detail, Date.now(), tuning);
+      if (newlyOpen) {
+        warnLog(`[router] breaker: ${provider} looks wedged — skipping its models for ${wedgeCooldownText(cache, provider, tuning)}`);
+      }
+      return newlyOpen;
     },
-    wedgeCooldownText: (ref: string) => wedgeCooldownText(cache, ref.split('/')[0]),
-    isProviderWedged: (ref: string) => isProviderWedged(cache, ref.split('/')[0]),
+    isBreakerOpen: (ref: string) => {
+      const provider = ref.split('/')[0];
+      if (!isProviderOpen(cache, provider)) return false;
+      // Local providers keep ADR-0016's always-on watchdog; the kill switch
+      // only ever disarms the cloud generalization (plan D8).
+      return isLocalProviderName(provider) || resolveBreakerTuning(cfg.provider_breaker).cloudEnabled;
+    },
+    noteBreakerSkip: (ref: string) => recordBreakerSkip(cache, ref.split('/')[0]),
+    wedgeCooldownText: (ref: string) => wedgeCooldownText(cache, ref.split('/')[0], resolveBreakerTuning(cfg.provider_breaker)),
     recordStreamFailure,
     formatResetMsg,
     limitFreeDayCap,

@@ -163,6 +163,18 @@ export interface ProviderConfig {
   cost_per_m?: number;  // Cost per million tokens (for subscription providers)
 }
 
+/** User-tunable knobs of the provider circuit breaker (Config.provider_breaker, plan D8). */
+export interface BreakerConfig {
+  /** Kill switch for the CLOUD breaker; local (ADR-0016) always stays active. Default true. */
+  enabled?: boolean;
+  /** Distinct models with evidence needed to trip, per provider class. Defaults: cloud 3, local 2. */
+  min_models?: { cloud?: number; local?: number };
+  /** Evidence window in seconds. Default 600. */
+  window_s?: number;
+  /** Cooldown ladder per repeated trip, in seconds. Default [120, 300, 900]. */
+  cooldown_s?: number[];
+}
+
 export interface Config {
   providers?: Record<string, ProviderConfig>;
   model_groups: Record<string, Group>;
@@ -213,6 +225,18 @@ export interface Config {
    * dynamic-config whitelist in load() resyncs it.
    */
   non_agent_model_prefixes?: string[];
+
+  /**
+   * Provider circuit breaker (docs/plans/2026-10-06-provider-circuit-breaker.md,
+   * D8/ADR-0026). Defaults live in code (provider-breaker.ts); the shipped
+   * config carries NO entry — set overrides in router-config.user.json.
+   * `enabled: false` is the kill switch for CLOUD providers (restores the
+   * pre-1.7.0 behaviour exactly); the local watchdog of ADR-0016 always
+   * stays active. No provider names appear here — per-provider overrides
+   * live in the user layer only, and the mechanism itself is provider-agnostic
+   * (ADR-0025 class A).
+   */
+  provider_breaker?: BreakerConfig;
 
   /**
    * Quality-equivalence window (fraction of the best candidate's score,
@@ -407,16 +431,28 @@ export interface Cache {
   }>;
   /**
    * Provider circuit breaker (provider-breaker.ts), keyed by provider id:
-   * recent counting-evidence timestamps per distinct model ref, the open
-   * expiry, and how many times the breaker has tripped since the last
-   * success (ladder position). Replaces the local-only watchdog state of
-   * ADR-0016; a stale `local_provider_health` left in an old cache file is
-   * ignored. Phase 3 makes this key volatile (stripped on save).
+   * counting evidence per distinct model ref (timestamp + D1 evidence kind),
+   * the open expiry, and how many times the breaker has tripped since the
+   * last success (ladder position). Replaces the local-only watchdog state
+   * of ADR-0016; a stale `local_provider_health` left in an old cache file
+   * is ignored. VOLATILE (plan D7): stripped on save and ignored on load —
+   * a restart is the standard remedy for a wedged provider and must never
+   * re-open a breaker the restart just fixed.
    */
   provider_breaker?: Record<string, {
-    evidence: Record<string, number>;
+    evidence: Record<string, { at: number; kind: string }>;
     open_until?: number;
     trip_count: number;
+  }>;
+  /**
+   * Persisted breaker telemetry (plan D7): trips, last trip time and
+   * avoided hops per provider — the tuning evidence that outlives the
+   * volatile open state above. Survives restarts.
+   */
+  provider_breaker_stats?: Record<string, {
+    trips: number;
+    avoided_hops: number;
+    last_trip_at?: number;
   }>;
   /**
    * Verified-working cloud models for the classifier's cloud fallback.

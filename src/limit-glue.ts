@@ -10,7 +10,7 @@ import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { recordBlocklistSuccess, activeBlocks, recordBlocklistFailure, formatBlockLogLine } from './model-blocklist.ts';
 import { recordModelFailure, recordModelSuccess } from './model-health.ts';
-import { recordLocalSuccess } from './provider-watchdog.ts';
+import { recordProviderSuccess } from './provider-breaker.ts';
 import { recordSessionErrorFromFailure } from './session-errors.ts';
 import type { Metrics, Cache, Config } from './types.ts';
 import type { CacheManager } from './cache.ts';
@@ -64,7 +64,10 @@ export function createLimitGlue(d: LimitGlueDeps) {
   function recordOk(ref: string) {
     d.rateLimitManager.recordOk(ref);
     recordModelSuccess(d.cache, ref);
-    recordLocalSuccess(d.cache, ref);
+    // Any success of ANY model of the provider closes its circuit breaker
+    // (ADR-0026 D5 — generalizes ADR-0016's recordLocalSuccess, which only
+    // ever saw local refs).
+    recordProviderSuccess(d.cache, ref);
     if (recordBlocklistSuccess(d.cache, ref)) {
       routerLog(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
       d.cacheManager.saveCache(d.cache);
