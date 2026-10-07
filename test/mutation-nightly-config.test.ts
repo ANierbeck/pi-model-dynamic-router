@@ -87,6 +87,13 @@ describe('nightly mutation testing', () => {
     expect(wf).toMatch(/upload-artifact/);
   });
 
+  it('keeps the report artifact for the maximum retention window (triage happens days later)', () => {
+    const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
+    const m = wf.match(/retention-days:\s*(\d+)/);
+    expect(m, 'upload step must set retention-days explicitly').not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(90);
+  });
+
   it('stryker sandbox and report dirs are ignored, not committed or shipped', () => {
     const gitignore = fs.readFileSync(path.join(repoRoot, '.gitignore'), 'utf8');
     expect(gitignore).toMatch(/\.stryker-tmp/);

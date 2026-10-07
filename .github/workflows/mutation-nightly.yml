@@ -67,3 +67,8 @@ jobs:
             reports/mutation/
             reports/stryker-incremental.json
           if-no-files-found: warn
+          # Explicit, not the repo default: the triage ledger
+          # (docs/mutation-triage.md) is worked from this artifact, often
+          # days after the run, and the incremental state inside it seeds
+          # the next nights. 90 days is the GitHub maximum.
+          retention-days: 90
