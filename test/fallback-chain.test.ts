@@ -97,4 +97,34 @@ describe('getFallbackGroup', () => {
   it('FALLBACK_GROUP_ORDER ends with fallback (last resort)', () => {
     expect(FALLBACK_GROUP_ORDER[FALLBACK_GROUP_ORDER.length - 1]).toBe('fallback');
   });
+
+  // Nightly R1 (2026-10-07): the tests above import FALLBACK_GROUP_ORDER, so
+  // its contents were never pinned — an emptied or renamed list passed.
+  it('FALLBACK_GROUP_ORDER is the coarse-to-cheap cascade, spelled out', () => {
+    expect([...FALLBACK_GROUP_ORDER]).toEqual([
+      'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+    ]);
+  });
+
+  it('walks the whole global order one hop at a time when no group configures fallbacks', () => {
+    const modelGroups: Record<string, Group> = {};
+    for (const name of FALLBACK_GROUP_ORDER) modelGroups[name] = { method: 'best' };
+    const visited = new Set<string>();
+    const walk: string[] = [];
+    let cur: string | null = 'strategic';
+    while (cur !== null) {
+      walk.push(cur);
+      visited.add(cur);
+      cur = getFallbackGroup(cur, modelGroups, visited);
+    }
+    expect(walk).toEqual([
+      'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+    ]);
+  });
+
+  it('a current group that is absent from config still cascades through the global order', () => {
+    // g is undefined here: the configured-fallbacks lookup must not crash.
+    const modelGroups: Record<string, Group> = { complex: { method: 'best' } };
+    expect(getFallbackGroup('strategic', modelGroups, new Set())).toBe('complex');
+  });
 });

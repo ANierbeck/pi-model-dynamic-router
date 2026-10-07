@@ -133,3 +133,114 @@ describe('applyGroupFilters drop recorder', () => {
     expect(drops).toHaveLength(3);
   });
 });
+
+// Nightly R1 triage (2026-10-07): the assertions above are all `toContain`,
+// so extra, missing, mislabeled or constant fragments of the line passed.
+// These pin its exact shape: separators, the "(none)" placeholders, flags
+// only where they apply, score= only for `best`, and the two late drop
+// reasons (budget, top_k).
+describe('group decision debug log — exact shape (nightly R1)', () => {
+  const lineFor = (group: string) => {
+    const call = mockDebugOnce.mock.calls.find(([key]) => key === `group-decision:${group}`);
+    expect(call, `resolve() must log the ${group} group decision`).toBeDefined();
+    return call![1] as string;
+  };
+
+  const withGroups = (groups: Record<string, any>, c: Cache = cache) => {
+    const config = { ...cfg, model_groups: groups } as Config;
+    metricsModule.setConfig(config);
+    return new Router(config, c, new Map());
+  };
+
+  it('a clean decision lists no exclusions, no flags, and separates fields exactly', () => {
+    const router = withGroups({ open: { method: 'best', fallback_groups: [] } });
+    router.resolve('open');
+    const line = lineFor('open');
+    expect(line.startsWith('[routing] group=open method=best candidates: 1. ')).toBe(true);
+    expect(line).toContain(' | 2. ');
+    expect(line.endsWith(' || excluded: (none)')).toBe(true);
+    expect(line).not.toContain('[unhealthy]');
+    expect(line).not.toContain('[limited]');
+  });
+
+  it('score= is logged for best groups only', () => {
+    const router = withGroups({
+      b: { method: 'best', fallback_groups: [] },
+      m: { method: 'min_cost', fallback_groups: [] },
+    });
+    router.resolve('b');
+    router.resolve('m');
+    expect(lineFor('b')).toMatch(/gdp=\d+ cost=\S+ score=\d+/);
+    expect(lineFor('m')).not.toContain('score=');
+  });
+
+  it('an empty result logs (none) candidates and the drops', () => {
+    const router = withGroups({ dead: { method: 'best', min_gdpval: 99999, fallback_groups: [] } });
+    expect(router.resolve('dead')).toBeNull();
+    const line = lineFor('dead');
+    expect(line).toContain('candidates: (none) || excluded: ');
+    expect(line).toContain('claude-bridge/claude-opus-5-5=min_gdpval');
+  });
+
+  it('top_k truncation is reported as the gate that dropped the cut refs, and only those', () => {
+    const router = withGroups({ cut: { method: 'min_cost', top_k: 1, min_gdpval: 900, max_gdpval: 1700, fallback_groups: [] } });
+    const res = router.resolve('cut');
+    const line = lineFor('cut');
+    expect(res!.candidates).toHaveLength(1);
+    expect(line).toContain('mistral/mistral-medium-3.5=top_k');
+    expect(line).not.toContain(`${res!.selected}=top_k`);
+  });
+
+  it('a subscription provider with an exhausted budget is reported as dropped by the budget gate', () => {
+    const budgetCache = {
+      ...cache,
+      budget_cache: { 'claude-bridge': { remaining_tokens: 0 } },
+    } as Cache;
+    metricsModule.setCache(budgetCache);
+    const config = {
+      ...cfg,
+      model_groups: { wide: { method: 'best', fallback_groups: [] } },
+      providers: { 'claude-bridge': { billing: 'subscription' } },
+    } as Config;
+    metricsModule.setConfig(config);
+    new Router(config, budgetCache, new Map()).resolve('wide');
+    const line = lineFor('wide');
+    expect(line).toContain('claude-bridge/claude-opus-5-5=budget');
+    expect(line).toContain('claude-bridge/claude-sonnet-5-5=budget');
+    expect(line).not.toContain('mistral/zai-glm-5-3=budget');
+  });
+
+  it('an unscored candidate is logged as gdp=none; exclusions are comma-separated', () => {
+    const router = withGroups({ wide: { method: 'best', fallback_groups: [] } });
+    router.resolve('wide');
+    expect(lineFor('wide')).toContain('mistral/unscored-thing gdp=none');
+    // two gates drop refs in the tactical decision → "ref=gate, ref=gate"
+    new Router(cfg, cache, new Map()).resolve('tactical');
+    expect(decisionLine()).toMatch(/=\w+, \S+=\w+/);
+  });
+
+  it('the score= shown for a best group follows its score_by column', () => {
+    const profiled = { ...cache, capability_profiles: { 'zai-glm-5-3': { briefcase: 777 } } } as Cache;
+    metricsModule.setCache(profiled);
+    const config = { ...cfg, model_groups: { col: { method: 'best', score_by: 'briefcase', fallback_groups: [] } } } as Config;
+    metricsModule.setConfig(config);
+    new Router(config, profiled, new Map()).resolve('col');
+    expect(lineFor('col')).toContain('mistral/zai-glm-5-3 gdp=1644 cost=1.4 score=777');
+  });
+
+  it('a budget drop with debug logging OFF neither throws nor logs', () => {
+    mockDebugEnabled.mockReturnValue(false);
+    const budgetCache = { ...cache, budget_cache: { 'claude-bridge': { remaining_tokens: 0 } } } as Cache;
+    metricsModule.setCache(budgetCache);
+    const config = {
+      ...cfg,
+      model_groups: { wide: { method: 'best', fallback_groups: [] } },
+      providers: { 'claude-bridge': { billing: 'subscription' } },
+    } as Config;
+    metricsModule.setConfig(config);
+    const router = new Router(config, budgetCache, new Map());
+    expect(() => router.resolve('wide')).not.toThrow();
+    expect(mockDebugOnce).not.toHaveBeenCalled();
+  });
+});
+
