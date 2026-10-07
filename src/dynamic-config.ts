@@ -546,8 +546,10 @@ export function resyncDynamicFromStatic(
   // Providers this resync DROPPED entirely (a static `billing` field removed
   // from a layer): load() re-registers exactly these as registry stubs so the
   // provider keeps its subscription billing until the next regeneration —
-  // without it, billingTier/the cost rule would treat it as pay_per_token
-  // for up to a 30-day scan cycle (review M2, 2026-10-07). Only the dropped
+  // without it, the live group-admission and budget filters would treat it
+  // as pay_per_token for up to a 30-day scan cycle (billingTier/the cost
+  // rule read the static layers at load and heal at the next regeneration;
+  // review M2, 2026-10-07). Only the dropped
   // ones: stubbing every unknown provider at load time would reorder tiered
   // groups (subscription ahead of local) BEFORE the first regeneration.
   const droppedProviders = new Set<string>();
