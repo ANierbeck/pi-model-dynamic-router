@@ -604,11 +604,10 @@ export function getCapabilityProfiles(): NonNullable<Cache['capability_profiles'
 /**
  * Resolves cost_per_m for a reference using the authoritative chain:
  * 1) registryCost (modelRegistry.find(provider,modelId).cost)
- * 2) local provider (truly free)
- * 3) subscription provider with no registry price → free
- * 4) cache-discovered cost_per_m: 0
- * 5) :free tag / free_models list → free
- * 6) otherwise 'unknown'
+ * 2) subscription provider with no registry price → 0 placeholder
+ * 3) isFreeModelRef: local provider, :free tag, free_models list, or
+ *    cache-discovered cost_per_m: 0 → free
+ * 4) otherwise 'unknown'
  * 
  * This helper is used by both the config-default path and the early-return
  * healing path.
@@ -630,12 +629,7 @@ function resolveCostPerM(ref: string): number | 'unknown' {
     return regCost.input;
   }
 
-  // 2. Local providers are truly free
-  if (provDef?.local) {
-    return 0;
-  }
-
-  // 3. Subscription providers with no registry price → 0 placeholder.
+  // 2. Subscription providers with no registry price → 0 placeholder.
     // effCost's subscription rule (ADR-0025 B2) turns it into eps x list
     // price; billing counts from cfg.providers OR PROVIDER_MAP (an
     // anthropic/chutes model must get the rule cost, not 'unknown').
@@ -643,18 +637,16 @@ function resolveCostPerM(ref: string): number | 'unknown' {
       return 0;
     }
 
-  // 4. Cache-discovered placeholder 0
-  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-  if (discovered?.cost_per_m === 0) {
-    return 0;
-  }
-
-  // 5. :free tag / free_models list
+  // 3. Free: local provider ($0 compute), :free tag, free_models list, or a
+  //    scan-discovered cost_per_m of 0 — isFreeModelRef covers all four, so
+  //    the former separate local-provider and discovered-0 steps were
+  //    redundant copies of it (each masked every mutant on the other; nightly
+  //    R1 mutation triage, 2026-10-07).
   if (isFreeModelRef(ref, cfg.providers, cache.available_models)) {
     return 0;
   }
 
-  // 6. Unknown
+  // 4. Unknown
   return 'unknown';
 }
 
@@ -797,7 +789,6 @@ export function isFreeModelRef(
     if (freeList.includes(ref)) return true;
     const bare = ref.includes('/') ? ref.split('/').slice(1).join('/') : ref;
     if (freeList.includes(bare)) return true;
-    if (freeList.includes(`${prov}/${bare}`)) return true;
   }
   // Discovered with cost_per_m === 0
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
@@ -837,7 +828,6 @@ export function billingTier(ref: string): number {
     if (freeList.includes(ref)) return 0;
     const bare = ref.includes('/') ? ref.split('/').slice(1).join('/') : ref;
     if (freeList.includes(bare)) return 0;
-    if (freeList.includes(`${prov}/${bare}`)) return 0;
   }
   const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   if (discovered?.cost_per_m === 0) return 0;
@@ -996,8 +986,7 @@ function orPaidNormIndex(): Map<string, { input: number; output: number }> {
     if (pricing) {
       for (const [k, v] of Object.entries(pricing)) {
         if (v.input <= 0) continue; // skip free-tier
-        const kModel = k.indexOf('/') >= 0 ? k.slice(k.indexOf('/') + 1) : k;
-        const n = norm(kModel);
+        const n = norm(k); // norm() itself keeps only the last path segment
         if (!idx.has(n)) idx.set(n, v); // first entry wins, like the loop
       }
     }
@@ -1107,7 +1096,7 @@ export function effCost(ref: string): number | 'unknown' {
   //    cause max_cost: 0 groups to exclude free models!
   //    Exception: an unpriced subscription model (registry cost {0,0} → 0)
   //    is not free — it takes the subscription rule's stand-in cost.
-  let base: number | 'unknown' | undefined = m.cost_per_m;
+  let base: number | 'unknown' = m.cost_per_m;
   if (base === 0) {
     const sub = subscriptionRuleCost(ref);
     // The rule cost IS the effective subscription price (eps x list). It must
@@ -1119,33 +1108,11 @@ export function effCost(ref: string): number | 'unknown' {
     return sub * costMux(prov);
   }
   
-  // 2. Look up in OpenRouter/Chutes pricing cache
-  if (base === undefined) {
-    const price = lookupPrice(ref);
-    if (price) {
-      if (price.input === 'unknown' || price.output === 'unknown') {
-        return 'unknown';
-      }
-      base = price.input; // use input price as representative
-    }
-  }
-  
-  // 3. Check if base is still unknown/undefined
-  if (base === undefined) {
-    // Local providers (ollama, lm-studio) are truly free
-    const provDef = PROVIDER_MAP[prov];
-    if (provDef?.local) return 0;
-    
-    // Try provider-based cost estimate
-    const provCost = cfg.providers?.[prov]?.cost_per_m;
-    if (provCost !== undefined) {
-      return provCost;
-    }
-    
-    // Unknown cost — assume high to be safe
-    return 0.000020; // ~$20/Mio Tokens
-  }
-  
+  // getM() heals every ref's cost_per_m to a defined value (number, or the
+  // 'unknown' sentinel via resolveCostPerM), so `base` is never undefined
+  // here. The former lookupPrice / provider-estimate / $0.000020 fallback
+  // steps were unreachable and are removed (nightly R1 mutation triage,
+  // 2026-10-07; pinned by test/no-coverage-sweep.test.ts).
   // At this point, base must be a number
   if (typeof base !== 'number') {
     return 'unknown';
