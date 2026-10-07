@@ -596,8 +596,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // Derive + probe the LOCAL classifier chain after the dynamic config
       // (ADR-0025 C): candidates come from the Ollama models this scan just
       // found, verified with the same classification cases, persisted as
-      // cache.classifier_local_models. Non-fatal — without a list the
-      // classifier uses the unprobed candidate order.
+      // cache.classifier_local_models. Non-fatal — the provisional candidate
+      // order applies only before the first probe (review N2, 2026-10-07);
+      // after a probe, an empty list is final until a re-probe.
       try {
         await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog, { force });
         rt.saveCache();

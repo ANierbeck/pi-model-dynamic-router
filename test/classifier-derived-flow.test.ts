@@ -147,4 +147,13 @@ describe('formatClassifierStatus — derived heads, no shipped defaults', () => 
     expect(line).toContain('none yet');
     for (const old of OLD_DEFAULTS) expect(line).not.toContain(old);
   });
+
+  it('says "none qualified" after a probe where nothing passed (review N2)', () => {
+    // A probe ran (localProbed: true) and every candidate failed: the empty
+    // result is final — the status names the recovery paths instead of
+    // pretending no probe ever happened.
+    const line = chainLine({ localProbed: true });
+    expect(line).toContain('none qualified');
+    expect(line).not.toContain('none yet');
+  });
 });

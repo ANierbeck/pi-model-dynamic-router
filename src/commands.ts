@@ -146,7 +146,15 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
     );
   }
   const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string => Boolean(m));
-  const localDetail = heads.length > 0 ? `${heads.join(' → ')}${input.localProbed === false ? ' (unprobed)' : ''}` : 'none yet';
+  // Review N2, 2026-10-07: an empty head list AFTER a probe is honest about
+  // the result — "none qualified" — and names the recovery paths; "none yet"
+  // stays correct only while no probe ever ran.
+  const localDetail =
+    heads.length > 0
+      ? `${heads.join(' → ')}${input.localProbed === false ? ' (unprobed)' : ''}`
+      : input.localProbed
+        ? 'none qualified — pin or /router scan'
+        : 'none yet';
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);

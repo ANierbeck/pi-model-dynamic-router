@@ -243,19 +243,17 @@ export function resolveLocalClassifierChain(
   pins: { model?: string; fallbackModel?: string } = {},
 ): LocalClassifierChain {
   const probedList = cache?.classifier_local_models;
-  const probed = Array.isArray(probedList)
+  // Provisional order (only when NO probe ever ran — review N4: not computed
+  // when a probed list exists): the candidate order, restricted to models the
+  // scan has EXPLICITLY seen answering completions — a pre-upgrade cache lacks
+  // the capability fields, and an embedding-only model must not lead the local
+  // leg before the first probe verifies it (review M7, 2026-10-07).
+  const pool = Array.isArray(probedList)
     ? probedList.filter((m) => !isMarkedNoSchema(cache, m))
-    : undefined;
-  // Provisional order (only when NO probe ever ran): the candidate order,
-  // restricted to models the scan has EXPLICITLY seen answering completions —
-  // a pre-upgrade cache lacks the capability fields, and an embedding-only
-  // model must not lead the local leg before the first probe verifies it
-  // (review M7, 2026-10-07).
-  const provisional = (cache ? selectLocalClassifierCandidates(cache, cfg) : []).filter((id) => {
-    const m = (cache!.available_models ?? []).find((x) => x.provider === 'ollama' && x.id === id);
-    return m?.capabilities?.completion === true;
-  });
-  const pool = probed ?? provisional;
+    : (cache ? selectLocalClassifierCandidates(cache, cfg) : []).filter((id) => {
+        const m = (cache!.available_models ?? []).find((x) => x.provider === 'ollama' && x.id === id);
+        return m?.capabilities?.completion === true;
+      });
   const primary = pins.model ?? pool.find((m) => m !== pins.fallbackModel);
   const fallback = pins.fallbackModel ?? pool.find((m) => m !== primary);
   return {

@@ -545,6 +545,19 @@ By default, `method: "tiered"` sorts by billing tier first: **free → subscript
 
 `payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `trivial`/`simple` → `local_before_payg`, `scout`/`bulk_reader`/`code_writer` → `cloud_first`.
 
+```json
+"scout": {
+  "method": "tiered",
+  "billing_preference": "cloud_first",
+  "min_gdpval": 0
+},
+"trivial": {
+  "method": "tiered",
+  "billing_preference": "local_before_payg",
+  "min_gdpval": 0
+}
+```
+
 > **A subscription model's $0 cost is not free.** Flat-rate plans like pi-claude hide a hard time/token limit, so a trivial prompt routed there is the single most expensive thing the router can do. Prefer a local model or a genuine `:free` model for cheap work.
 
 #### Agent-capability filter (`non_agent_model_prefixes`)
@@ -574,21 +587,6 @@ passes through this filter, so small models still classify.
 > Upgrading from a pre-1.7.0 version? The CHANGELOG's combined migration
 > snippet carries the concrete prefix list this filter used to ship with
 > (mistral-small-, magistral-small-, ministral-, voxtral-, codestral-).
-
-#### Billing preference (`billing_preference` on tiered groups)
-
-```json
-"scout": {
-  "method": "tiered",
-  "billing_preference": "cloud_first",
-  "min_gdpval": 0
-},
-"trivial": {
-  "method": "tiered",
-  "billing_preference": "local_before_payg",
-  "min_gdpval": 0
-}
-```
 
 #### Read Delegation (bulk reads)
 
