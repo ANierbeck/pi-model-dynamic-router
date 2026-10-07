@@ -3,117 +3,12 @@
   "entries": [
     {
       "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/deepseek/deepseek-v4-flash-0731:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/liquid/lfm-2.5-2.6b:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/minimax/minimax-m2.7:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/minimax/minimax-m3:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/nvidia/nemotron-3.5-content-safety:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/nvidia/nemotron-3.5-lightning:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/poolside/laguna-s-2.1:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/poolside/laguna-xs-2.1:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/thinkingmachines/inkling-small:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/thinkingmachines/inkling:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:exclude.models[]=openrouter/z-ai/glm-5.2:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
       "literal": "config:model_groups.dynamic.classifier_fallback=ollama/gemma2:2b",
       "count": 1
     },
     {
       "file": "router-config.json",
       "literal": "config:model_groups.dynamic.classifier_model=ollama/mistral-nemo:latest",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-3-haiku\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-3-sonnet\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-fable-5\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-opus-5\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-opus-5-5\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-sonnet-5\"]",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:model_metrics[\"claude-bridge/claude-sonnet-5-5\"]",
       "count": 1
     },
     {
@@ -139,41 +34,6 @@
     {
       "file": "router-config.json",
       "literal": "config:non_agent_model_prefixes[]=voxtral-",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/cohere/north-mini-code:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/google/gemma-4-26b-a4b-it:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/google/gemma-4-31b-it:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/liquid/lfm-2.5-2.6b:free",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/mistral/mistral-small-3-2",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/qwen/qwen-2.5-7b-instruct",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:providers.openrouter.free_models[]=openrouter/z-ai/glm-5.2:free",
       "count": 1
     },
     {

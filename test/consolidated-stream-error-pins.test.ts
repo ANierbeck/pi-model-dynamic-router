@@ -670,7 +670,10 @@ describe('claude-bridge-empty-response-narration', () => {
       await withIsolatedRouter(
         {
           free_models: [],
-          providers: {},
+          // ADR-0025 B3: the bridge's billing is a user-layer declaration now
+          // (this override plays the user config); the subscription cost rule
+          // then ranks the bridge model ahead of the priced healthy provider.
+          providers: { 'claude-bridge': { billing: 'subscription' } },
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
           gdpval_builtin: { 'claude-opus-5-5': 1000, 'next-model': 900 },
         },

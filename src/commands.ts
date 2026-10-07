@@ -65,8 +65,9 @@ interface CommandDeps {
   readonly limitSecs: (ref: string) => number;
   readonly load: () => void;
   readonly lookupPrice: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
-  /** PAYG list price for DISPLAY — skips the model_metrics subscription
-   * sentinel (see metrics.lookupListPrice). Falls back to lookupPrice/effCost. */
+  /** PAYG list price for DISPLAY — shows would-cost even when routing
+   * prices the model via the subscription rule (see metrics.lookupListPrice).
+   * Falls back to lookupPrice/effCost. */
   readonly lookupListPrice?: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;
@@ -79,10 +80,10 @@ interface CommandDeps {
 
 /**
  * The "Cost I/O" column of the /router group table. Prefers the PAYG list
- * price (would-cost, like the /router cost report's Marginal column) over the
- * routing-effective price: subscription models carry a tiny sunk-cost
- * sentinel in model_metrics that routing must keep using, but "$0.0/$0.0"
- * in the table hid what the model would cost on pay-as-you-go (2026-10-04:
+ * price (would-cost, like the /router cost report's Marginal column) over
+ * the routing-effective price: the ADR-0025 B2 rule prices subscription
+ * models at eps x list for ordering, and "$0.0/$0.0" in the table would
+ * hide what the model would cost on pay-as-you-go (2026-10-04 regression:
  * opus-5-5 vs sonnet-5-5). No list price -> the old display chain
  * (effective price, then 'unknown').
  */

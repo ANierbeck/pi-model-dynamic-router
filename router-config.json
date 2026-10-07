@@ -9,40 +9,9 @@
   ],
   "best_quality_window": 0.05,
   "exclude": {
-    "models": [
-      "openrouter/thinkingmachines/inkling:free",
-      "openrouter/thinkingmachines/inkling-small:free",
-      "openrouter/liquid/lfm-2.5-2.6b:free",
-      "openrouter/nvidia/nemotron-3.5-lightning:free",
-      "openrouter/nvidia/nemotron-3.5-content-safety:free",
-      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-      "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-      "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-      "openrouter/poolside/laguna-s-2.1:free",
-      "openrouter/poolside/laguna-xs-2.1:free",
-      "openrouter/z-ai/glm-5.2:free",
-      "openrouter/minimax/minimax-m2.7:free",
-      "openrouter/minimax/minimax-m3:free",
-      "openrouter/deepseek/deepseek-v4-flash-0731:free"
-    ]
+    "models": []
   },
-  "providers": {
-    "claude-bridge": {
-      "billing": "subscription"
-    },
-    "openrouter": {
-      "billing": "pay_per_token",
-      "free_models": [
-        "openrouter/google/gemma-4-31b-it:free",
-        "openrouter/google/gemma-4-26b-a4b-it:free",
-        "openrouter/z-ai/glm-5.2:free",
-        "openrouter/cohere/north-mini-code:free",
-        "openrouter/liquid/lfm-2.5-2.6b:free",
-        "openrouter/mistral/mistral-small-3-2",
-        "openrouter/qwen/qwen-2.5-7b-instruct"
-      ]
-    }
-  },
+  "providers": {},
   "model_groups": {
     "trivial": {
       "description": "Trivial tasks - free/subscription first, local Ollama as a fallback before PAYG",
@@ -190,29 +159,7 @@
       ]
     }
   },
-  "model_metrics": {
-    "claude-bridge/claude-sonnet-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-opus-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-opus-5-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-sonnet-5-5": {
-      "cost_per_m": 1e-06
-    },
-    "claude-bridge/claude-fable-5": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-3-sonnet": {
-      "cost_per_m": 1.5e-06
-    },
-    "claude-bridge/claude-3-haiku": {
-      "cost_per_m": 1.5e-06
-    }
-  },
+  "model_metrics": {},
   "gdpval_builtin": {
     "magistral-small": 665,
     "magistral-medium": 669,

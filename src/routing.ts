@@ -145,10 +145,12 @@ function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
  * Two disjoint admissions:
  *   1. LOCAL daemon models (PROVIDER_MAP[prov].local — ollama, lm-studio):
  *      $0 variable cost. Admitted by PROVIDER DEFINITION, not by cost:
- *      PROVIDER_MAP bills ollama as 'subscription', and `effCost` returns 0
- *      for BOTH an ollama ref and a real cloud subscription ref without a
- *      registry price, so neither the billing label nor the effective cost
- *      can tell the two apart. Only the provider-level `local` flag does.
+ *      PROVIDER_MAP bills ollama as 'subscription', and while the ADR-0025
+ *      B2 rule gives cloud subscription refs a small positive stand-in
+ *      cost (eps x list price), that is an ORDERING stand-in, not a real
+ *      price — neither the billing label nor the effective cost can tell
+ *      a local daemon from a paid subscription. Only the provider-level
+ *      `local` flag does.
  *   2. Genuinely free TOKEN-BASED models (:free tags, free_models lists,
  *      $0 prices): admitted only when the provider is pay_per_token, which
  *      keeps cloud subscription models (real money) out.
@@ -201,7 +203,9 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  * INVARIANTS:
  *   - `max_cost: 0` admits only local providers and genuinely free
  *     token-based models (admitsZeroCostGroup). Cloud subscription models
- *     stay out even though their effCost is 0 without a registry price.
+ *     stay out: the ADR-0025 B2 rule prices them at eps x list price
+ *     (positive), and even an unpriced one (constant fallback) must not
+ *     slip in — admission is by definition, not by cost sign.
  *   - `max_cost > 0`: free models pass; unknown cost is kept for
  *     subscription/local (sunk cost) and dropped for pay_per_token.
  *   - `max_cost_per_m`: local and free token-based models pass; everything
@@ -296,7 +300,8 @@ export function applyGroupFilters(
   }
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
-  //    resolves to effCost 0 without a registry price and must NOT slip in.
+  //    carries the rule's positive stand-in cost (ADR-0025 B2) and must
+  //    NOT slip in, not even the unpriced constant-fallback shape.
   //    For a positive cap, free models pass and unknown cost is billing-aware
   //    (subscription/local = sunk cost → keep; pay_per_token → drop).
   if (g.max_cost !== undefined) {

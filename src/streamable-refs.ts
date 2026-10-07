@@ -15,9 +15,10 @@
 // The rule: a ref may only enter the generated config if it can actually be
 // streamed. Both the live paths (allDiscoveredRefs) and this persist-path
 // filter key on Pi's registry directly — since ADR-0021 the router registers
-// no scan-discovered models, so "resolvable in Pi's registry" is the sole
-// authoritative streamability gate. Local runtimes (ollama) and refs the
-// user explicitly listed as free models are exempt.
+// no scan-discovered models, "resolvable in Pi's registry AND authenticated"
+// is the authoritative streamability gate. Local runtimes (ollama) are exempt;
+// refs the user explicitly listed as free models are exempt from the registry
+// check only, never from the credential check.
 
 interface StreamableRefContext {
   /** Registry resolution, e.g. metrics' findRegistryModel wrapper. */
@@ -41,9 +42,9 @@ interface StreamableRefContext {
 /**
  * Whether a "provider/modelId" ref can plausibly be streamed right now:
  * registered in Pi's registry, served by a local runtime, or explicitly
- * configured as a free model of a provider Pi can actually authenticate
- * (stream-time on-demand registration covers those — but only once a key
- * resolves). Malformed refs (no provider prefix) are not streamable.
+ * configured as a free model — in the first and last case only for a provider
+ * Pi can actually authenticate (stream-time on-demand registration covers the
+ * free-model shortcut, but only once a key resolves). Malformed refs (no provider prefix) are not streamable.
  */
 export function isStreamableRef(ref: string, ctx: StreamableRefContext): boolean {
   const slash = ref.indexOf('/');
@@ -56,5 +57,9 @@ export function isStreamableRef(ref: string, ctx: StreamableRefContext): boolean
   // free_models list never depends on hasConfiguredAuth.
   if (ctx.isLocalProvider(provider)) return true;
   if (ctx.freeModelRefs.has(ref)) return ctx.hasConfiguredAuth(provider);
-  return ctx.hasRegistryModel(provider, modelId);
+  // Scan-discovered refs (ADR-0025 B1: the shipped free_models list is gone,
+  // so OpenRouter's free tier arrives ONLY through the scan) are resolvable in
+  // Pi's catalog whether or not the user holds a key — resolvability alone is
+  // not streamability. Same credential gate as the free-model shortcut.
+  return ctx.hasRegistryModel(provider, modelId) && ctx.hasConfiguredAuth(provider);
 }

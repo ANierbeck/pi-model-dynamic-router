@@ -45,6 +45,22 @@ import { matchSlug } from './slug-matcher.ts';
 
 const SUB_DISCOUNT = 0.5; // Subscription discount factor
 
+/**
+ * Subscription cost rule (ADR-0025 B2). A subscription model's routing cost
+ * is a sunk-cost stand-in: `SUBSCRIPTION_COST_EPSILON × listPrice ($/M)`.
+ * ε is small enough that every subscription model undercuts any real
+ * pay-per-token price, while the list price keeps the RELATIVE order among
+ * subscription models (cheaper tier first — the quota-burn order the
+ * quality window relies on).
+ */
+const SUBSCRIPTION_COST_EPSILON = 1e-6;
+/**
+ * Last-resort stand-in for a subscription model with no list price anywhere
+ * (no registry price, no same-model OpenRouter entry): same magnitude as a
+ * ~$1.5/M list price under the rule. A documented fallback, not model data.
+ */
+const SUBSCRIPTION_FALLBACK_COST = 1.5e-6;
+
 // ── Model Map: authoritative model → GDPval slug mapping ──────────────────
 
 type ModelMap = Record<string, string | null>;
@@ -619,10 +635,13 @@ function resolveCostPerM(ref: string): number | 'unknown' {
     return 0;
   }
 
-  // 3. Subscription providers with no registry price → free
-  if (provCfg?.billing === 'subscription') {
-    return 0;
-  }
+  // 3. Subscription providers with no registry price → 0 placeholder.
+    // effCost's subscription rule (ADR-0025 B2) turns it into eps x list
+    // price; billing counts from cfg.providers OR PROVIDER_MAP (an
+    // anthropic/chutes model must get the rule cost, not 'unknown').
+    if ((provCfg?.billing ?? provDef?.billing) === 'subscription') {
+      return 0;
+    }
 
   // 4. Cache-discovered placeholder 0
   const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
@@ -958,6 +977,37 @@ export function lookupPrice(ref: string): { input: number | 'unknown'; output: n
  * lookupListPrice: exact pricing-cache ref, same-model backfill from other
  * providers, then the provider-level cost estimate.
  */
+// Normalized-id index of the PAID entries in openrouter_pricing (M3).
+// A generation is keyed by object identity + key count: scan-runner
+// mutates the pricing object in place (adds/overwrites keys) without
+// calling setCache, so identity alone would go stale; the key count
+// catches additions. A same-count price OVERWRITE is not detected until
+// the next generation change — acceptable for this stand-in cost (the
+// table is fully rewritten by every scan; new ids change the count).
+let orNormIndex: Map<string, { input: number; output: number }> | null = null;
+let orNormIndexPricing: Cache['openrouter_pricing'] | undefined | null = null;
+let orNormIndexKeys = -1;
+
+function orPaidNormIndex(): Map<string, { input: number; output: number }> {
+  const pricing = cache.openrouter_pricing;
+  const keys = pricing ? Object.keys(pricing).length : 0;
+  if (pricing !== orNormIndexPricing || keys !== orNormIndexKeys) {
+    const idx = new Map<string, { input: number; output: number }>();
+    if (pricing) {
+      for (const [k, v] of Object.entries(pricing)) {
+        if (v.input <= 0) continue; // skip free-tier
+        const kModel = k.indexOf('/') >= 0 ? k.slice(k.indexOf('/') + 1) : k;
+        const n = norm(kModel);
+        if (!idx.has(n)) idx.set(n, v); // first entry wins, like the loop
+      }
+    }
+    orNormIndex = idx;
+    orNormIndexPricing = pricing;
+    orNormIndexKeys = keys;
+  }
+  return orNormIndex!;
+}
+
 function orFallbackPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
   // 2. Check pricing cache by exact provider/model ref
   if (cache.openrouter_pricing?.[ref]) {
@@ -978,14 +1028,15 @@ function orFallbackPrice(ref: string): { input: number | 'unknown'; output: numb
     return price;
   }
 
-  // 3. Backfill: find paid OpenRouter pricing for same model
+  // 3. Backfill: find paid OpenRouter pricing for same model. The paid
+  // entries are indexed by normalized model id (review M3, 2026-10-07):
+  // this runs inside sort comparators via effCost, and a linear norm()
+  // scan over the whole pricing table per call made group sorts O(n^2) in
+  // the table size. The index keeps first-entry-wins order, matching the
+  // loop it replaces.
   const { provider, modelId } = splitRef(ref);
-  const n = norm(modelId);
-  for (const [k, v] of Object.entries(cache.openrouter_pricing ?? {})) {
-    if (v.input <= 0) continue; // skip free-tier
-    const kModel = k.indexOf('/') >= 0 ? k.slice(k.indexOf('/') + 1) : k;
-    if (norm(kModel) === n) return v;
-  }
+  const hit = orPaidNormIndex().get(norm(modelId));
+  if (hit) return hit;
 
   // 4. Fallback: use provider-based cost estimate if available
   if (cfg.providers?.[provider]?.cost_per_m !== undefined) {
@@ -997,15 +1048,15 @@ function orFallbackPrice(ref: string): { input: number | 'unknown'; output: numb
 }
 
 /**
- * PAYG list price for DISPLAY ("what would this cost on pay-as-you-go") —
- * the same philosophy as the /router cost report's Marginal column. Unlike
- * lookupPrice this SKIPS the model_metrics sentinel: subscription providers
- * (claude-bridge et al.) carry a tiny sunk-cost cost_per_m so routing sorts
- * them as near-free and max_cost groups admit them, but that sentinel must
- * not hide the real list price from the status table (2026-10-04: opus-5-5
- * displayed "$0.0/$0.0" while sonnet-5-5, which has no sentinel, showed its
- * real $2/$10 via the OR backfill). Routing cost is UNAFFECTED — effCost
- * and the classifier-fallback probe keep using lookupPrice.
+ * PAYG list price ("what would this cost on pay-as-you-go") — the same
+ * philosophy as the /router cost report's Marginal column, and the price
+ * SOURCE of the ADR-0025 B2 subscription rule: effCost prices a subscription
+ * model without a usable registry price at eps x this list price, so the
+ * "sentinel models are gone" problem is solved by derivation. Unlike
+ * lookupPrice this SKIPS model_metrics: a user-layer cost_per_m wins for
+ * routing (and max_cost gating, ADR-0010) but must not hide the real list
+ * price from the display (2026-10-04 regression: opus-5-5 showed "$0.0/$0.0"
+ * while sonnet-5-5 showed its real $2/$10 via the OR backfill).
  */
 export function lookupListPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
   const { provider, modelId } = splitRef(ref);
@@ -1029,6 +1080,23 @@ export function collectUnknownCostRefs(refs: string[]): string[] {
   return refs.filter((r) => effCost(r) === 'unknown');
 }
 
+/**
+ * The subscription cost rule (ADR-0025 B2): for a subscription-billed,
+ * non-local provider, `ε × listPrice` from the registry/OpenRouter backfill
+ * chain (lookupListPrice), or the constant fallback when no list price
+ * exists. Returns null for every other provider (the caller keeps its
+ * existing zero/free handling). Evaluated per call, never cached in getM:
+ * the OpenRouter pricing cache can arrive after the first cost lookup.
+ */
+function subscriptionRuleCost(ref: string): number | null {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local) return null;
+  if ((cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) !== 'subscription') return null;
+  const list = lookupListPrice(ref);
+  if (list && typeof list.input === 'number' && list.input > 0) return SUBSCRIPTION_COST_EPSILON * list.input;
+  return SUBSCRIPTION_FALLBACK_COST;
+}
+
 export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
@@ -1037,8 +1105,19 @@ export function effCost(ref: string): number | 'unknown' {
   //    cost_per_m: 0 is a valid value (free model) and must NOT trigger
   //    the fallback to lookupPrice or the 0.000020 default — that would
   //    cause max_cost: 0 groups to exclude free models!
+  //    Exception: an unpriced subscription model (registry cost {0,0} → 0)
+  //    is not free — it takes the subscription rule's stand-in cost.
   let base: number | 'unknown' | undefined = m.cost_per_m;
-  if (base === 0) return 0; // explicitly free
+  if (base === 0) {
+    const sub = subscriptionRuleCost(ref);
+    // The rule cost IS the effective subscription price (eps x list). It must
+    // NOT fall through to the SUB_DISCOUNT below: that would halve it a
+    // second time, and only for providers whose billing comes from
+    // cfg.providers — a 2x skew between cfg-declared and PROVIDER_MAP-only
+    // subscription providers (review M2, 2026-10-07).
+    if (sub === null) return 0; // explicitly free
+    return sub * costMux(prov);
+  }
   
   // 2. Look up in OpenRouter/Chutes pricing cache
   if (base === undefined) {

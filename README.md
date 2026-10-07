@@ -468,26 +468,17 @@ See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-deco
 
 ### Main Configuration File
 
-`router-config.json`:
+`router-config.json` ships group definitions and tuning only. Concrete model and provider
+choices (`providers.*`, `free_models`, `exclude.models`, `model_metrics`) are **user-layer** keys:
+put them in `router-config.user.json` (see [docs/config-override.md](docs/config-override.md)) — the
+router derives candidates, free-tier models and subscription cost ordering from what Pi has registered.
 
 ```jsonc
 {
-  "providers": {
-    "openrouter": {
-      "billing": "pay_per_token",
-      "free_models": [
-        "openrouter/qwen/qwen3-4b:free",
-        "openrouter/openai/gpt-4o-mini:free"
-      ]
-    }
-  },
   "model_groups": {
     "strategic": { "method": "best" },
     "tactical": { "method": "tiered", "min_gdpval_pct": 75 },
     "scout": { "method": "tiered", "min_gdpval_pct": 25 }
-  },
-  "model_metrics": {
-    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 }
   },
   "gdpval_builtin": {
     "mistral-medium-3-5": 933,
@@ -496,6 +487,35 @@ See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-deco
   }
 }
 ```
+
+#### Declaring billing, free models and exclusions (`router-config.user.json`)
+
+Provider billing is declared per provider in your **user** config (it is not shipped). Providers the
+router knows (e.g. Mistral, Ollama) have a built-in default; declare it for everything else, for example
+a subscription bridge or a pay-per-token aggregator:
+
+```jsonc
+{
+  "providers": {
+    "claude-bridge": { "billing": "subscription" },
+    "openrouter": {
+      "billing": "pay_per_token",
+      // optional: pin extra free-tier refs. Free-tier models of credentialed
+      // providers are derived from the scan without this list.
+      "free_models": ["openrouter/vendor/some-model:free"]
+    }
+  },
+  "exclude": { "models": ["openrouter/vendor/never-use-this:free"] }
+}
+```
+
+- `billing`: `"subscription"` | `"pay_per_token"`. A subscription model's routing cost is
+  `ε × OpenRouter list price` (constant fallback when unlisted), so subscription models sort ahead of
+  pay-per-token peers and cheaper tiers sort ahead of pricier ones — no per-model `model_metrics` needed.
+- `free_models` and `exclude.models` are user-layer keys: arrays under `exclude` are unioned across layers,
+  `free_models` still requires a credentialed provider. Models that fail permanently (403 agentic-harness
+  gate, 404 guardrail) are blocked automatically after the first failure (`/router blocklist`), so no
+  shipped exclusion list is needed.
 
 #### Billing Preference (per-group tier override)
 
