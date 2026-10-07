@@ -334,22 +334,25 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
 ### Locale Robustness (date/reset-time parsing)
-- [ ] **Multi-locale month-name parsing** — `src/detection.ts` currently
-  recognizes only German month names ("Okt.", "März" …), because we render
-  our own reset messages with `de-DE` locale and parse them back. Provider
-  messages and foreign-locale systems produce English ("Oct 4th, 12:37 PM")
-  or other locales. Extension: explicit month tables for at least
-  en-US/en-GB + de-DE (short and full forms, with/without trailing dot),
-  plus a regression test per locale. Alternative considered: render our
-  own reset messages in a fixed locale (or ISO) so we parse only external
-  formats — owner preference needed, since the log is deliberately read
-  in German. Registered 2026-10-04 (owner request: make locale handling
-  more robust — deferred, small extension).
+- [x] **Multi-locale month-name parsing — DECIDED 2026-10-07, ready to
+  implement (owner: “international, best case”)** — `src/detection.ts`
+  currently recognizes only German month names ("Okt.", "März" …), because
+  we render our own reset messages with `de-DE` locale and parse them
+  back. Provider messages and foreign-locale systems produce English
+  ("Oct 4th, 12:37 PM") or other locales. Owner decision: keep the
+  deliberately German-readable log AND make the parser robust — explicit
+  month tables for at least en-US + en-GB + de-DE (short and full forms,
+  with/without trailing dot), plus a regression test per locale. Small
+  extension, registered 2026-10-04.
 
 ### Resilience & Fallback Strategies
 - [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
 - [ ] **Add batch processing** - Parallelize classification requests
-- [ ] **Optimize model selection** - Evaluate smaller models for classification
+- [x] ~~Optimize model selection - Evaluate smaller models for
+  classification~~ DONE 2026-10-07 via ADR-0025 Phase C (PR #50): the local
+  classifier chain is DERIVED from the scan, ordered smallest-first — the
+  probed chain prefers the smallest schema-capable local model, with a
+  24 h re-probe; no hardcoded pick remains.
 
 ### Extended Classification
 - [ ] **Add more categories** - More specific distinction
@@ -377,7 +380,11 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
   `✅ resolve() "→ none" for dynamic groups` entry above, DONE 2026-08-26),
   not a bug. Cross-referenced here to stop it resurfacing as "open".
 - [ ] **Improve error handling** - Better error messages and recovery
-- [ ] **Add more unit tests** - Increase coverage for edge cases
+- [x] ~~Add more unit tests - Increase coverage for edge cases~~ DONE
+  2026-10-07 via the Nightly R1 mutation triage: the edge cases the suite
+  was missing ARE what mutation survivors pointed at — +152 tests now pin
+  gate boundaries, comparator permutations, pricing fallbacks, usage
+  windows and the turn pin (docs/mutation-triage.md, Finding 2).
 
 ---
 
@@ -446,8 +453,12 @@ judged sufficient.
 ## 📅 **Suggested Timeline**
 
 ### Phase 1: Stabilization (1-2 days) — DONE 2026-08-28, see entries above
-- [ ] Increase test coverage to 90%+ (currently 70.5%, not pursued further —
-  no concrete gap identified)
+- [x] ~~Increase test coverage to 90%+~~ CLOSED 2026-10-07: the meaningful
+  goal (enforced floor + CI gate + boundary-pin tests) is achieved —
+  coverage 87.14 % statements / 80.97 % branches against pinned
+  thresholds, and the Nightly R1 mutation triage added 152 tests that pin
+  the boundaries the suite was missing (docs/mutation-triage.md). The 90 %
+  figure was aspirational, not a requirement.
 - [x] ~~Improve mock data for unit tests~~ CLOSED, not pursued
 - [x] ~~Optimize build process~~ CLOSED, not a real problem (5.6s total)
 - [x] Refactor resolveGroup() and getTopModels() — DONE as A1
@@ -462,9 +473,12 @@ judged sufficient.
 
 ### Phase 3: New Features (1-2 weeks)
 - [ ] Multi-label classification
-- [ ] Context-based classification
+- [x] ~~Context-based classification~~ DONE 2026-08-29 (see Extended
+  Classification above — `lastCategory` momentum + previous message in
+  the LLM context; the multi-turn extension remains open there)
 - [ ] Learning from user feedback
-- [ ] User-specific configurations
+- [x] ~~User-specific configurations~~ already built (layered config,
+  closed 2026-08-29 — see Long-term Features)
 
 ---
 
@@ -500,7 +514,9 @@ judged sufficient.
 ### Known Issues
 - [x] ~~Code duplication in `resolveGroup()` and `getTopModels()`~~ - FIXED by A1 (`applyGroupFilters()`)
 - [x] ~~`resolve()` returns null for dynamic groups~~ - intentional, not a bug (DONE 2026-08-26)
-- [ ] No intelligent failure tracking (recordFailure/recordSuccess) — up next
+- [x] ~~No intelligent failure tracking (recordFailure/recordSuccess)~~
+  CLOSED: already existed as the cooldown ladder — see the ✅ Intelligent
+  Failure Management section (2026-08-28).
 
 ## 🔭 **Future Tasks (registered)**
 
@@ -594,9 +610,12 @@ recorded) stay until the dynamic file is deleted once. **Phases C–E DONE** (me
 (`src/classifier-local-probe.ts`), `non_agent_model_prefixes` spike → outcome
 (c), closure — **baseline 56 → 0 entries (62 → 0 occurrences), ceiling pinned
 at 0**; the owner's `router-config.user.json` needs the
-`non_agent_model_prefixes` snippet from the CHANGELOG at merge time. Open:
-the `model-map.yaml` guard-scope classification (Lane A review, owner
-decision) and the final §1 whole-range review before any release proposal.
+`non_agent_model_prefixes` snippet from the CHANGELOG at merge time. The
+`model-map.yaml` guard-scope question is **RESOLVED 2026-10-07** (owner
+decision): explicitly class B (annotation, never admitting), single
+loader pinned by `test/model-map-class-b.test.ts`, ADR-0025 §2B updated —
+no guard-scope extension. Still open: the final §1 whole-range review
+before any release proposal.
 
 **`/router config` command** — ✅ DONE (Phases 1–2):
 `docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list. Writes to `router-config.user.json` so changes survive the session but stay out of the shipped defaults.
@@ -632,12 +651,14 @@ needs the owner's explicit go before any of it starts.
 
 ---
 
-*Last updated: 2026-10-07 (work-round PR #46 landed: ADR-0025 Phase A guard,
-circuit breaker Phase 1, /router config Phases 1–2, task-type Phases 2–3;
-owner backlog updated: /router config command,
-circuit breaker Phases 2–4, task-type-balancing
-plan remainder (Phase 4, 5b–5d), Laya classifier integration pending
-owner go; nightly mutation testing live, PR #19; Dependabot policy
-pinned: host never auto-bumped, vitest majors muted until migration
-round, PRs #10/#12/#13 closed with justification; PR #9 brace-expansion
-security patch merged)*
+*Last updated: 2026-10-07 (evening round: PR #51 auto-prune of dynamic
+merge keys, PR #52 routing-flow decision-tree doc, PR #53 Nightly R1
+mutation triage — 435 mutants triaged, +152 tests, dead code removed;
+`model-map.yaml` classified class B with canary pin, owner decision;
+locale-parser direction decided (international); stale entries cleaned
+up. Suite 1801 passed / 3 skipped, coverage 87.14/80.97, thresholds
+pinned. In progress in worktree lanes: circuit breaker Phases 2–4,
+task-type Phase 4 + 5b. Earlier same day: PR #46 ADR-0025 Phase A,
+circuit breaker Phase 1, /router config Phases 1–2, task-type Phases
+2–3; PRs #49–#50 ADR-0025 Phases B–E, baseline closed at 0; nightly
+mutation testing live; Dependabot policy pinned)*

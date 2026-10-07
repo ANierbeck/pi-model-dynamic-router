@@ -143,12 +143,13 @@ observe the guard fail; add a stale baseline entry and observe it fail.
 > scanner (documented, not a defect): bare model ids whose family token is
 > missing from `MODEL_FAMILIES` or not id-initial (e.g. `chatgpt-4o`, `phi4`,
 > `o3-mini`) are only caught when written as `provider/model` refs.
-> **Open scope question for the owner:** `model-map.yaml` is shipped into
-> `dist/` and contains name-keyed `~` entries (e.g. `voxtral-*: ~`) that make
-> `lookupGdp` return null. ADR-0025 §4 limits the guard to `src/**` and
-> `router-config.json`, so it is out of scope today — the owner decides
-> whether to classify it explicitly as class B (annotation, never admitting)
-> or to add it to the guard's scope in a later phase.
+> **Open scope question for the owner — RESOLVED 2026-10-07:**
+> `model-map.yaml` is explicitly classified as **class B** (annotation,
+> never admitting). It stays out of the guard's scan scope; the
+> single-loader and never-admit invariants are pinned by
+> `test/model-map-class-b.test.ts`, and ADR-0025 §2B records the
+> classification. No guard-scope extension needed: the entries are
+> per-construction annotation data.
 
 ### C1. Candidate selection + probe (`src/classifier-local-probe.ts`)
 - `selectLocalClassifierCandidates(cache, cfg)`: from

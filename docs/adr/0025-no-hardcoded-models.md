@@ -107,9 +107,16 @@ about foreign machines, not the file it lives in.
    - **B — Annotation data that can never admit.** Name-keyed lookup tables
      that only *score or identify* models Pi already supplied:
      `gdpval_builtin`, the Ollama family-score priors, the family-token
-     table in `model-matcher.ts`. Invariant (pinned by a test): **no entry
-     in these tables ever creates a candidate**; a model absent from them
-     degrades to a conservative default, never to a failure.
+     table in `model-matcher.ts`, and — classified explicitly by the
+     owner decision of 2026-10-07 — **`model-map.yaml`** (name-keyed
+     slug annotations; `~` entries answer "no benchmark score", they do
+     not remove supply). It ships into `dist/` but stays OUT of the
+     guard's scan scope (`src/**` + `router-config.json`): its single
+     loader is `src/metrics.ts` `loadModelMap`, and the never-admit +
+     single-consumer invariants are pinned by
+     `test/model-map-class-b.test.ts`. Invariant (pinned by a test): **no
+     entry in these tables ever creates a candidate**; a model absent
+     from them degrades to a conservative default, never to a failure.
    - **C — User layer.** `router-config.user.json` may name anything: pins,
      exclusions, billing declarations, free-model lists. These are the
      user's explicit choices about their own setup.
