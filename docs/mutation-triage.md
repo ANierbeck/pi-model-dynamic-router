@@ -5,6 +5,8 @@
 > tight line cluster); verdicts are filled batch-by-batch. New nightly
 > reports are triaged against THIS ledger: a survivor already carrying a
 > verdict stays parked; only new/changed entries become work items.
+> The first nightly report (run 37606222840, 435 undetected) is fully triaged
+> in "Nightly R1 (2026-10-07)" at the end of this file.
 
 ## Verdicts
 
@@ -525,3 +527,517 @@ for the billingTier removal. Lines refer to the pre-sweep tree.
 | metrics.ts: function aliasesFor(modelId: string): string[] { | 1 |
 | metrics.ts: export function getCapabilityProfiles(): NonNullable<Cache[' | 1 |
 | metrics.ts: function registryCost( | 1 |
+
+## Nightly R1 (2026-10-07) — first nightly report, run 37606222840
+
+> Artifact `mutation-report` of "Nightly Mutation Testing" (2026-10-07T10:15Z,
+> 44m46s, incremental run, decision core `src/metrics.ts` + `src/routing.ts`).
+> Line numbers below are the report's (source = commit faca950, ADR-0025
+> Phase B). Triage round: branch `stryker-triage-r1`, ~2.2 h active time.
+
+### Numbers
+
+| | nightly | after R1 triage |
+|---|---|---|
+| mutants | 1781 | 1727 (54 removed with dead/redundant code) |
+| killed | 1346 | 1627 (+70 false survivors, +211 killed by new tests) |
+| survived / no coverage | 382 / 53 | 100 (all ledgered EQUIVALENT) |
+| score | 75.58 % | **94.2 %** (1627 / 1727); 100 % of the non-equivalent mutants |
+
+Per file: metrics.ts 167 survived + 35 NoCov (202), routing.ts 215 survived +
+18 NoCov (233). Raw report: not committed (2.7 MB) — re-derive it with
+`gh run download 37606222840 -n mutation-report`.
+
+### Pre-CDE caveat, quantified: 0 obsolete
+
+The report embeds the exact source it mutated: it is byte-identical to commit
+faca950 (Phase B). `git diff faca950 HEAD -- src/metrics.ts src/routing.ts` is
+three comment lines (ADR-0025 C/D touched other modules), so every mutated
+line still exists semantically. **Obsolete mutants: 0 / 435.**
+
+### Category distribution (435 undetected = 382 survived + 53 no coverage)
+
+| category | mutants | share | meaning |
+|---|---|---|---|
+| (c) real vacuity → killed by new tests | **211** | 48.5 % | alive against the existing full suite, killed by the R1 tests |
+| (g) false survivor → killed by the existing full suite | **70** | 16.1 % | the nightly says "Survived", the full suite kills it (perTest artifact, see below); 47 of them are additionally pinned in isolation now |
+| (b) equivalent | 100 | 23.0 % | 70 distinct lines, rationale per row below |
+| (d) dead/redundant code → removed (§7) | 54 | 12.4 % | 26 of the 53 NoCov are here; the rest of the NoCov: 19 killed by new tests, 7 equivalent (`?? []` junk fallbacks), 1 false survivor |
+| (a) obsolete | 0 | 0 % | |
+| (e) cosmetic / untestable | 0 | 0 % | the log-text string literals turned out testable (decision-log shape) |
+
+Survived (382): 192 real vacuity, 69 false survivors, 93 equivalent, 28 dead.
+NoCoverage (53): 19 real vacuity, 1 false survivor, 7 equivalent, 26 dead.
+Nothing is deferred: every mutant has a verdict and every real one a killing
+test.
+
+### Method (reusable, all in `scripts/`)
+
+1. `mutation-survivors.ts` — per-line worklist of the report; extracts the
+   embedded source for the obsolete check.
+2. `mutation-recheck.ts` — every undetected mutant re-run against the FULL
+   suite in parallel pristine copies (`git archive HEAD`; the script first
+   proves the unmutated tree green — a first attempt reported "435 killed"
+   because the `node_modules` symlink pointed at a partial directory). This
+   separates (g) from the genuinely alive 365.
+3. `mutation-apply.ts` — re-applies ONE reported mutant by its location for
+   red-first evidence (AGENTS.md §4); `mutation-recheck.ts --tests <files>`
+   does the same in bulk for the new tests.
+
+Red-first evidence for the whole batch: all 258 mutants (211 + 47 hardened)
+were re-applied at their reported location against the nightly source plus the
+new tests and observed RED; the unmutated tree with the new tests is green.
+The 211 are exactly the mutants that survive the pre-existing suite
+(`recheck.json`: 365 alive, 211 of them killed by the new tests).
+
+### Finding 1 — perTest isolation produces false survivors (70 = 16 %)
+
+Stryker runs only the tests that the coverage pass attributed to a mutant. The
+70 false survivors are killed by the full suite; their killers are mostly
+integration tests (`cache-per-project-state` 14, `runtime-overflow-detection` 9,
+`delegation` 7, `consolidated-routing-cache-pins` 7, `adr-0021-…` 5, …) whose
+coverage is not attributed to the decision-core lines they pin. One cause was
+demonstrated directly and is a real test defect: the broken-YAML test of
+`loadModelMap` (`test/no-coverage-sweep.test.ts`) was the ONLY covering test of
+a SURVIVED mutant (`catch { }` emptied) because it depended on the previous
+test having loaded the map — run alone it passed vacuously. It now loads a valid
+map first (red evidence: old test isolated + emptied catch → SURVIVED; fixed
+test isolated + emptied catch → KILLED). The mechanism behind the other kills
+(integration tests absent from `coveredBy`) is not established; a candidate is
+the incremental cache (the run took 44 min vs ~75 min cold, so results of
+unchanged mutants were reused). Consequence for operations: a survivor from the
+nightly is a *candidate*; confirm with `mutation-recheck.ts` before spending
+triage time.
+
+### Finding 2 — real vacuity: where the suite was assertion-light (211)
+
+No product defect was found — the decision core behaves as designed. The 211
+are behaviors the suite did not pin. By incident class (the ones this repo
+actually had):
+
+- **Gating** (`applyGroupFilters`, live `isFree`, `free_models`): every
+  threshold boundary was unpinned (min/max_gdpval, pct, max_cost,
+  max_cost_per_m, min_context_length are inclusive), `max_gdpval` null-fail,
+  the dedup opt-in, the per-gate drop reasons; `free_models` prefixed vs bare;
+  an undeclared provider is pay_per_token for unknown cost but never
+  token-based for the $0 admission; a half-zero list price is a real price.
+  → `group-filter-boundaries`, `group-filter-live-lookups`.
+- **Ordering**: the cost comparators passed because V8's insertion sort only
+  ever calls `cmp(later, earlier)` — half of every comparator was dead to the
+  suite (the `unknown`-cost branches, the pool tiebreak direction). New tests
+  run over all input permutations AND assert the comparator on every ordered
+  pair. Same-model variant selection (canonical > dated > versioned > -latest,
+  tie rule, 3-variant replacement) was only exercised through one fixture.
+  → `min-cost-ordering`, `model-variant-preference`.
+- **Cost / pricing** (metrics.ts): stale `'unknown'`/0 placeholder healing vs a
+  real configured price; registry retry rules (`:free` only for `:free`, never
+  overwriting a hit, alias seed including the FIRST group member); OpenRouter
+  paid-index staleness (in-place additions AND same-size table replacement);
+  the subscription rule cost (eps × list, multiplier, fallbacks); usage-log
+  window boundaries; registry context-window guards.
+  → `metrics-decision-core-r1`.
+- **Config semantics**: `top_k: 0` means "no limit" (three code paths), a stray
+  `pipeline` field on a non-pipeline group is ignored, a non-array
+  `free_models` contributes nothing.
+- **State contracts**: turn-pin boundaries (`turn-pin-boundaries`), the
+  fallback order contents (the tests imported `FALLBACK_GROUP_ORDER` but never
+  asserted it — `fallback-chain`), the decision-log line shape (old assertions
+  were all `toContain` — `group-decision-log`), display dispatch and
+  dedup-before-cost-gate (`display-dispatch`), the first-ever GDPval version
+  bump building the token index (fresh-module tests).
+
+Killing tests (killed survivors per file; some mutants are killed by several):
+`metrics-decision-core-r1` 68, `display-dispatch` 37, `group-decision-log` 26,
+`group-filter-live-lookups` 25, `model-variant-preference` 20,
+`group-filter-boundaries` 18, `min-cost-ordering` 9, `turn-pin-boundaries` 4,
+`fallback-chain` 4. +146 killing tests and +1 workflow pin overall (1630 → 1777 passed, 3 skipped).
+
+### Finding 3 — dead and redundant code (54, removed per §7)
+
+- `effCost` steps 2–3 (lookupPrice / provider estimate / $0.000020 default):
+  unreachable because `getM()` heals `cost_per_m`. **Process note:** commit
+  03a0b8e (Task 5 sweep) documents this removal in its message and in
+  `test/no-coverage-sweep.test.ts`, but the source deletion never landed.
+  The same commit's `billingTier` third-`includes` removal was missing too.
+- `isFreeModelRef` / `billingTier`: the third `freeList.includes(prov/bare)` is
+  byte-identical to the first for every slash ref — each copy masked every
+  mutant on the other (mutually unkillable).
+- `resolveCostPerM` local-provider and discovered-0 steps: clauses of
+  `isFreeModelRef`, which the chain consults next (local providers are also
+  `billing: subscription` in `PROVIDER_MAP`, so they returned 0 one step
+  earlier anyway).
+- `orPaidNormIndex` `kModel` strip: `norm()` already keeps only the last
+  segment.
+- `sortByBillingPreference` `local_before_payg` table: the identity on the tier
+  numbering — takes the default branch.
+- `getTopModels` explicit `min_cost_if_all_priced` branch: identical to the
+  generic else (same redundancy removed from `resolveGroup` in Batch 4).
+
+### Equivalent-mutant examples (100 mutants on 70 lines, rationale per row)
+
+- **Junk-array fallbacks (`?? []` → `["Stryker was here"]`, 12 ArrayDeclaration mutants):** the fallback
+  holds a string; `find`/`filter`/`includes` over it never matches.
+- **Guard duplicated by the comparison it guards (9):** `null >= positive
+  floor` and `undefined > 0` are false anyway, so `v !== null`,
+  `g.min_gdpval != null` etc. cannot change an outcome.
+- **Version counters (4 + the init sentinels):** only compared with `!==`; a decrement collides
+  with the `-1` sentinel only on a first-ever bump, which the real call
+  sequences never make a heal (the first-bump cases that CAN collide —
+  setGdpval/setConfig/setCache — are pinned by fresh-module tests).
+- **`slice(0, top_k)` with `top_k ≥ length` (8), `'' ?? ref` vs `'' && ref`,
+  `canon.get(null)`:** content-preserving by JavaScript semantics.
+- **Earlier-batch verdicts (31 mutants cite Batch 2/3/4):** try/catch-wrapped
+  optional chaining in registry code lands in the same `null`; redundant
+  guards; idempotent rebuilds. The earlier rationale applies unchanged.
+
+### Workflow gaps (§7)
+
+Only one: the artifact upload relied on the repo-default retention although
+triage happens days later and the artifact carries the incremental state →
+`retention-days: 90` explicit and pinned. Scope, schedule and report-only
+status untouched. The score threshold is already in the run summary
+(`scripts/mutation-summary.ts`).
+
+### Phase-2 evidence (the owner decides)
+
+| input | R1 value |
+|---|---|
+| undetected mutants triaged | 435 (382 + 53) |
+| real vacuity | **211 mutants = 48.5 %**, clustering into ~18 regions → 9 test files, +146 tests (+1 workflow pin) |
+| product defects found | 0 |
+| test-quality defects found | 1 order-dependent test (vacuous in isolation); several assertion-light areas (comparators, log shape, fallback order) |
+| dead/redundant code | 54 mutants → 6 removals, one of them a missed removal from an earlier "done" commit |
+| false survivors (tool noise) | 70 = 16.1 % |
+| equivalent | 100 = 23.0 % |
+| triage tax | ~2.2 h active (≈ 18 s/mutant), ~45 % of it waiting for machine runs; with the three scripts above (they are reusable for every later report) |
+
+Recommendation (data, not a decision): the Phase-2 gate ("only if Phase 1
+finds genuine vacuity") is met — 48.5 % real vacuity is a high yield, and the
+findings are in the incident classes this repo has actually had (gating,
+ordering, cost, free-tier admission). But the yield is a **first-report
+effect**: the next nightly on this scope should show few new survivors
+(incremental mode makes unchanged nights near-free), so the *ongoing* tax on
+the current scope is small, while extending to more files re-pays the
+first-report cost (~2 h per ~1 800 mutants). The numbers therefore support
+(1) keeping the nightly on the decision core, triaging only nights where the
+core changed (the existing operating model), (2) extending ONE module at a
+time — the next candidate by blast radius is `stream-orchestrator.ts` — not
+suite-wide, and (3) adding `mutation-recheck.ts` as a second nightly step
+before any triage, because 16 % of the "survivors" are noise and the
+equivalent rate (23 %) is the irreducible tax. The score (75.6 → 94.2 %) is
+not a KPI; the 100 remaining mutants are ledgered, not open.
+
+### Per-region verdicts
+
+> Nightly R1 line numbers (faca950). Verdict legend: REAL GAP → TESTED (red
+> verified, killing test named), FALSE SURVIVOR (killed by the full suite),
+> DEAD/REDUNDANT → removed, EQUIVALENT (rationale). Where a row says "(Batch
+> N ledger)" the earlier batch verdict applies unchanged.
+
+### routing.ts L40-140 — cluster representatives, billing helpers, free_models, live isFree (24 undetected)
+
+Verdicts: EQUIVALENT ×2, REAL-KILLED ×22
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 49 | 1 | SV ×1 | EQUIVALENT ×1 | canonical() is never evaluated for slug-less refs (their cluster key is the ref itself) |
+| 50 | 1 | SV ×1 | EQUIVALENT ×1 | split('/').pop() always returns a string; `'' ?? ref` ≡ `'' && ref` |
+| 70 | 2 | SV ×2 | REAL GAP → TESTED ×2 | model-variant-preference |
+| 89 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-live-lookups |
+| 90 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-live-lookups |
+| 99 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-live-lookups |
+| 116 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-live-lookups |
+| 117 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-live-lookups |
+| 118 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-live-lookups |
+| 119 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-live-lookups |
+| 120 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-live-lookups |
+| 121 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-live-lookups |
+| 134 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-live-lookups |
+| 136 | 5 | SV ×5 | REAL GAP → TESTED ×5 | group-filter-live-lookups |
+
+### routing.ts L215-340 — applyGroupFilters gates (38 undetected)
+
+Verdicts: REAL-KILLED ×18, EQUIVALENT ×5, SUITE-KILLED ×15
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 221 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-boundaries |
+| 239 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-boundaries |
+| 243 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-boundaries |
+| 255 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-boundaries |
+| 257 | 2 | SV ×2 | REAL GAP → TESTED ×2 | group-filter-boundaries |
+| 259 | 4 | SV ×3, NC ×1 | REAL GAP → TESTED ×4 | group-filter-boundaries |
+| 273 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-filter-boundaries |
+| 280 | 1 | SV ×1 | EQUIVALENT ×1 | `undefined > 0` is false: the null guard duplicates the comparison |
+| 281 | 2 | SV ×2 | REAL GAP → TESTED ×1; EQUIVALENT ×1 | group-filter-boundaries — `null >= positive floor` is false: the null guard duplicates the comparison |
+| 282 | 4 | SV ×4 | REAL GAP → TESTED ×3; EQUIVALENT ×1 | group-filter-boundaries — `undefined > 0` is false: the null guard duplicates the comparison |
+| 290 | 3 | SV ×3 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1; EQUIVALENT ×1 | group-filter-boundaries — killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests — `null >= positive threshold` is false: the null guard duplicates the comparison |
+| 298 | 1 | SV ×1 | EQUIVALENT ×1 | `undefined > 0` is false: the null guard duplicates the comparison |
+| 299 | 2 | SV ×2 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1 | group-filter-boundaries — killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 308 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (overflow-try-larger); 1 also killed in isolation by the new tests |
+| 311 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-routing-cache-pins); 1 also killed in isolation by the new tests |
+| 313 | 2 | SV ×2 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1 | group-filter-boundaries — killed by the full suite (adr-0021-no-unknown-model-registration); 1 also killed in isolation by the new tests |
+| 314 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (delegation); 1 also killed in isolation by the new tests |
+| 322 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (runtime-overflow-detection); 1 also killed in isolation by the new tests |
+| 325 | 3 | SV ×3 | FALSE SURVIVOR ×3 | killed by the full suite (consolidated-routing-cache-pins); 2 also killed in isolation by the new tests |
+| 326 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-routing-cache-pins); 1 also killed in isolation by the new tests |
+| 333 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (delegation) |
+| 334 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (delegation); 1 also killed in isolation by the new tests |
+| 336 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (dynamic-config-missing-regen, delegation); 1 also killed in isolation by the new tests |
+
+### routing.ts L345-410 — fallback order, isVirtualGroupRef (13 undetected)
+
+Verdicts: SUITE-KILLED ×8, REAL-KILLED ×4, EQUIVALENT ×1
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 349 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (fallback-chain); 1 also killed in isolation by the new tests |
+| 350 | 8 | SV ×8 | REAL GAP → TESTED ×4; FALSE SURVIVOR ×4 | fallback-chain — killed by the full suite (cache-per-project-state, fallback-chain); 4 also killed in isolation by the new tests |
+| 375 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (dynamic-config-missing-regen); 1 also killed in isolation by the new tests |
+| 384 | 1 | SV ×1 | EQUIVALENT ×1 | FALLBACK_GROUP_ORDER[length] is undefined → modelGroups[undefined] is falsy |
+| 404 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (adr-0021-no-unknown-model-registration); 1 also killed in isolation by the new tests |
+
+### routing.ts L440-640 — Router turn pin, discovery, exclude/budget wrappers (22 undetected)
+
+Verdicts: REAL-KILLED ×4, EQUIVALENT ×5, SUITE-KILLED ×13
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 446 | 5 | SV ×5 | REAL GAP → TESTED ×3; EQUIVALENT ×2 | turn-pin-boundaries — assigning an equal boundary is a no-op; typeof half is redundant for number-typed input |
+| 459 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (dynamic-config-missing-regen); 1 also killed in isolation by the new tests |
+| 473 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (adr-0021-no-unknown-model-registration); 1 also killed in isolation by the new tests |
+| 487 | 5 | SV ×5 | FALSE SURVIVOR ×5 | killed by the full suite (ollama-merge-registration, runtime-overflow-detection); 1 also killed in isolation by the new tests |
+| 505 | 6 | SV ×6 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×2; EQUIVALENT ×3 | turn-pin-boundaries — killed by the full suite (expensive-model-read-block, cache-per-project-state); 1 also killed in isolation by the new tests — turnStartMs 0 / non-number both end in the same live-ref return; curModelAt is never negative |
+| 544 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (delegation) |
+| 580 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (ollama-merge-registration); 1 also killed in isolation by the new tests |
+| 620 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (tool-result-rate-limit) |
+| 637 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (tool-result-rate-limit) |
+
+### routing.ts L690-830 — sort comparators (21 undetected)
+
+Verdicts: SUITE-KILLED ×12, REAL-KILLED ×9
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 690 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-stream-error-pins) |
+| 697 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (delegation); 1 also killed in isolation by the new tests |
+| 698 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (delegation, consolidated-stream-error-pins); 2 also killed in isolation by the new tests |
+| 727 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (runtime-overflow-detection) |
+| 744 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (consolidated-stream-error-pins, cache-per-project-state) |
+| 754 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (adr-0021-no-unknown-model-registration, cache-per-project-state) |
+| 775 | 1 | SV ×1 | REAL GAP → TESTED ×1 | min-cost-ordering |
+| 776 | 2 | SV ×2 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1 | min-cost-ordering — killed by the full suite (classifier-cloud-candidate-timeout); 1 also killed in isolation by the new tests |
+| 778 | 2 | SV ×2 | REAL GAP → TESTED ×2 | min-cost-ordering |
+| 797 | 4 | SV ×3, NC ×1 | REAL GAP → TESTED ×4 | min-cost-ordering |
+| 798 | 1 | NC ×1 | REAL GAP → TESTED ×1 | min-cost-ordering |
+| 800 | 2 | SV ×2 | FALSE SURVIVOR ×2 | killed by the full suite (runtime-overflow-detection); 2 also killed in isolation by the new tests |
+
+### routing.ts L860-1010 — resolve cascade, same-model dedup, variant preference (27 undetected)
+
+Verdicts: SUITE-KILLED ×4, REAL-KILLED ×19, EQUIVALENT ×4
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 867 | 2 | SV ×2 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1 | display-dispatch — killed by the full suite (runtime-overflow-detection); 1 also killed in isolation by the new tests |
+| 874 | 1 | SV ×1 | EQUIVALENT ×1 | unknown fallback group name → `!fbGroup` continue |
+| 876 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-stream-error-pins); 1 also killed in isolation by the new tests |
+| 878 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (bulk-read); 1 also killed in isolation by the new tests |
+| 914 | 2 | SV ×2 | REAL GAP → TESTED ×1; EQUIVALENT ×1 | model-variant-preference — the incumbent is always present in result, so indexOf never misses |
+| 915 | 1 | SV ×1 | REAL GAP → TESTED ×1 | model-variant-preference |
+| 986 | 1 | SV ×1 | EQUIVALENT ×1 | split('/').pop() always returns a string |
+| 987 | 1 | SV ×1 | EQUIVALENT ×1 | split('/').pop() always returns a string |
+| 990 | 1 | SV ×1 | REAL GAP → TESTED ×1 | model-variant-preference |
+| 1004 | 3 | SV ×3 | REAL GAP → TESTED ×3 | model-variant-preference |
+| 1006 | 9 | SV ×9 | REAL GAP → TESTED ×8; FALSE SURVIVOR ×1 | model-variant-preference — killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 1008 | 4 | SV ×4 | REAL GAP → TESTED ×4 | model-variant-preference |
+
+### routing.ts L1060-1180 — resolveGroup, decision log, detectGroup (56 undetected)
+
+Verdicts: REAL-KILLED ×42, EQUIVALENT ×6, SUITE-KILLED ×8
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 1061 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-decision-log |
+| 1069 | 6 | SV ×5, NC ×1 | REAL GAP → TESTED ×3; FALSE SURVIVOR ×2; EQUIVALENT ×1 | group-decision-log — killed by the full suite (overflow-try-larger, tool-result-rate-limit); 2 also killed in isolation by the new tests — the length comparison only skips work when nothing was dropped; the kept-set diff is empty then |
+| 1071 | 5 | NC ×5 | REAL GAP → TESTED ×5 | group-decision-log |
+| 1095 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-routing-cache-pins) |
+| 1096 | 3 | SV ×3 | REAL GAP → TESTED ×3 | display-dispatch |
+| 1099 | 2 | SV ×2 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1 | display-dispatch — killed by the full suite (exit-listener-dedupe); 1 also killed in isolation by the new tests |
+| 1102 | 4 | SV ×4 | REAL GAP → TESTED ×2; EQUIVALENT ×2 | group-filter-live-lookups — slice(0, top_k) with top_k ≥ length is content-preserving (Batch 4 L1064-1067) |
+| 1106 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (exit-listener-dedupe) |
+| 1107 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (consolidated-routing-cache-pins); 1 also killed in isolation by the new tests |
+| 1114 | 4 | SV ×4 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1; EQUIVALENT ×2 | group-filter-live-lookups — killed by the full suite (dynamic-config-missing-regen); 1 also killed in isolation by the new tests — slice(0, top_k) with top_k ≥ length is content-preserving (Batch 4 L1078) |
+| 1119 | 5 | SV ×3, NC ×2 | REAL GAP → TESTED ×5 | group-decision-log |
+| 1139 | 1 | NC ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 1140 | 7 | SV ×7 | REAL GAP → TESTED ×6; EQUIVALENT ×1 | group-decision-log — '' taskType ranks like gdpval (Batch 4 L1060) |
+| 1141 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-decision-log |
+| 1142 | 1 | SV ×1 | REAL GAP → TESTED ×1 | group-decision-log |
+| 1146 | 2 | SV ×1, NC ×1 | REAL GAP → TESTED ×2 | group-decision-log |
+| 1147 | 2 | SV ×1, NC ×1 | REAL GAP → TESTED ×2 | group-decision-log |
+| 1164 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1166 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1168 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1169 | 2 | SV ×2 | REAL GAP → TESTED ×2 | display-dispatch |
+| 1176 | 3 | SV ×3 | REAL GAP → TESTED ×3 | display-dispatch |
+| 1178 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+
+### routing.ts L1245-1316 — getTopModels display (32 undetected)
+
+Verdicts: REAL-KILLED ×25, EQUIVALENT ×3, SUITE-KILLED ×2, REMOVED ×2
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 1248 | 3 | NC ×2, SV ×1 | REAL GAP → TESTED ×3 | display-dispatch |
+| 1249 | 4 | SV ×4 | REAL GAP → TESTED ×4 | display-dispatch |
+| 1261 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1263 | 3 | SV ×3 | REAL GAP → TESTED ×3 | display-dispatch |
+| 1267 | 3 | SV ×3 | REAL GAP → TESTED ×2; EQUIVALENT ×1 | display-dispatch — '' taskType ranks like gdpval (Batch 4 L1060) |
+| 1268 | 3 | SV ×3 | REAL GAP → TESTED ×2; FALSE SURVIVOR ×1 | display-dispatch — killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 1270 | 2 | SV ×2 | REAL GAP → TESTED ×2 | display-dispatch, group-filter-live-lookups |
+| 1276 | 4 | SV ×4 | REAL GAP → TESTED ×1; FALSE SURVIVOR ×1; EQUIVALENT ×2 | group-filter-live-lookups — killed by the full suite (no-coverage-sweep); 1 also killed in isolation by the new tests — slice(0, top_k) with top_k ≥ length is content-preserving (Batch 4 L1064-1067) |
+| 1278 | 4 | SV ×4 | REAL GAP → TESTED ×2; DEAD/REDUNDANT → removed ×2 | display-dispatch — getTopModels min_cost_if_all_priced branch dispatches exactly like the generic else — removed |
+| 1280 | 1 | NC ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1298 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1299 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1300 | 1 | SV ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+| 1309 | 1 | NC ×1 | REAL GAP → TESTED ×1 | display-dispatch |
+
+### metrics.ts L60-350 — model map, alias index, GDPval index, slug canon (40 undetected)
+
+Verdicts: EQUIVALENT ×28, REAL-KILLED ×8, SUITE-KILLED ×4
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 68 | 1 | SV ×1 | EQUIVALENT ×1 | initial wildcard list is overwritten by any loadModelMap/setModelMap before the first lookup |
+| 73 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 83 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 85 | 4 | SV ×4 | EQUIVALENT ×4 | Object.entries of a parsed YAML map yields string keys only — the guard is a type-narrowing belt |
+| 86 | 2 | SV ×2 | REAL GAP → TESTED ×2 | metrics-decision-core-r1 |
+| 94 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state) |
+| 95 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 100 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 102 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 103 | 1 | SV ×1 | EQUIVALENT ×1 | model-map version counter is only compared with !== (Batch 3 L110) |
+| 112 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 126 | 1 | SV ×1 | EQUIVALENT ×1 | model-map version counter is only compared with !== (Batch 3 L110) |
+| 146 | 2 | SV ×2 | EQUIVALENT ×2 | slash-less refs return `ref` under every variant (Batch 3 L128-130) |
+| 181 | 1 | SV ×1 | EQUIVALENT ×1 | alias-index version init: the `modelMapAliasIndex === null` check short-circuits first |
+| 190 | 1 | SV ×1 | EQUIVALENT ×1 | `slug == null` half of the skip guard: null-slug groups are never queried (aliasesFor early-returns); the slash-key half is killed |
+| 193 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 206 | 2 | SV ×2 | EQUIVALENT ×2 | aliasesFor early return: null-slug lookups end in an empty group either way (Batch 3 L188-194) |
+| 207 | 3 | SV ×3 | EQUIVALENT ×3 | staleness/rebuild checks: rebuilding is idempotent (Batch 3 L188-194) |
+| 210 | 3 | NC ×1, SV ×2 | EQUIVALENT ×3 | self-filter / `?? []`: retrying the already-missed id is a harmless extra miss, the `?? []` is unreachable for a mapped slug (Batch 3 L188-194) |
+| 221 | 1 | SV ×1 | EQUIVALENT ×1 | equal scores store the same value |
+| 268 | 2 | SV ×2 | EQUIVALENT ×2 | regex anchor variants are indistinguishable for realistic digit-run segments (Batch 3 L249-253) |
+| 294 | 1 | SV ×1 | EQUIVALENT ×1 | slug-canon cache check: rebuilding is idempotent (Batch 3 L277-283) |
+| 298 | 3 | SV ×3 | FALSE SURVIVOR ×1; EQUIVALENT ×2 | killed by the full suite (slug-canon-dedup) — twin-condition variants map keys to themselves or to an equal-score twin (Batch 3 L277-283) |
+| 315 | 1 | SV ×1 | EQUIVALENT ×1 | version counter decrement only coincides with the -1 sentinel on a first-ever bump; this heal is never the first bump (setCache bumps whenever gdpval_scores is truthy) |
+| 335 | 1 | SV ×1 | EQUIVALENT ×1 | heal is idempotent (Batch 3 L292-299) |
+| 337 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state) |
+| 346 | 1 | SV ×1 | EQUIVALENT ×1 | redundant guard: the next line returns the same null (Batch 3 L330) |
+
+### metrics.ts L351-600 — slug pipeline, context window, state setters (32 undetected)
+
+Verdicts: EQUIVALENT ×23, REAL-KILLED ×8, SUITE-KILLED ×1
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 351 | 2 | SV ×2 | EQUIVALENT ×2 | empty-gdpval ternary: check 1 already restores from the cache (Batch 3 L335) |
+| 362 | 1 | SV ×1 | EQUIVALENT ×1 | optional chaining on a cache that is always an object (Batch 3 L346-347) |
+| 371 | 7 | SV ×7 | EQUIVALENT ×7 | canon.get(null\|undefined) is undefined, so `?? matched` returns the same null/undefined |
+| 393 | 1 | SV ×1 | EQUIVALENT ×1 | rebuilding the token index on every call is a performance difference only |
+| 397 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 409 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-usage-wiring); 1 also killed in isolation by the new tests |
+| 441 | 4 | SV ×4 | EQUIVALENT ×4 | no-slash refs and a missing registry both end in the try/catch → scan-cache fallthrough |
+| 444 | 1 | SV ×1 | EQUIVALENT ×1 | optional chaining crash is caught by the surrounding try/catch (degraded registry path) |
+| 445 | 1 | SV ×1 | EQUIVALENT ×1 | `undefined > 0` is false, so the typeof half of the guard is redundant |
+| 454 | 1 | SV ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; find() over it never matches |
+| 525 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 534 | 3 | SV ×3 | REAL GAP → TESTED ×2; EQUIVALENT ×1 | metrics-decision-core-r1 — Object.assign(gdpval, undefined) is a no-op; the extra version bump only rebuilds an index |
+| 538 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 539 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 552 | 1 | SV ×1 | EQUIVALENT ×1 | spreading undefined capability_profiles is a no-op |
+| 555 | 1 | SV ×1 | EQUIVALENT ×1 | spreading undefined gdpval_scores is a no-op; extra bump only rebuilds an index |
+| 560 | 1 | SV ×1 | EQUIVALENT ×1 | Object.assign(merged, undefined) is a no-op |
+| 564 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 590 | 1 | SV ×1 | EQUIVALENT ×1 | capabilityProfiles[null\|undefined] is undefined → the next line returns the same null |
+| 598 | 1 | NC ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+
+### metrics.ts L600-860 — cost resolution, getM, updateMetrics, free/billing (44 undetected)
+
+Verdicts: REMOVED ×17, EQUIVALENT ×5, REAL-KILLED ×20, SUITE-KILLED ×2
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 634 | 2 | SV ×2 | DEAD/REDUNDANT → removed ×2 | resolveCostPerM local-provider step: masked by the subscription step (local providers are billing:subscription) and by isFreeModelRef — removed |
+| 647 | 4 | SV ×4 | DEAD/REDUNDANT → removed ×4 | resolveCostPerM discovered-0 step: duplicate of isFreeModelRef's discovered check — removed |
+| 648 | 2 | SV ×2 | DEAD/REDUNDANT → removed ×2 | resolveCostPerM discovered-0 step: duplicate of isFreeModelRef's discovered check — removed |
+| 669 | 1 | SV ×1 | EQUIVALENT ×1 | Config.model_metrics is a required field; optional chaining is belt-and-braces |
+| 679 | 6 | SV ×6 | REAL GAP → TESTED ×6 | metrics-decision-core-r1 |
+| 700 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (sort-by-methods); 1 also killed in isolation by the new tests |
+| 714 | 5 | SV ×5 | REAL GAP → TESTED ×5 | metrics-decision-core-r1 |
+| 716 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 756 | 1 | SV ×1 | EQUIVALENT ×1 | lookupCapability(ref, <other column>) finds no such profile key → null → same gdpval fallthrough |
+| 795 | 2 | SV ×2 | REAL GAP → TESTED ×2 | metrics-decision-core-r1 |
+| 797 | 2 | SV ×2 | REAL GAP → TESTED ×1; DEAD/REDUNDANT → removed ×1 | metrics-decision-core-r1 — isFreeModelRef free-list check masked by the byte-identical third check — duplicate removed |
+| 798 | 4 | SV ×4 | REAL GAP → TESTED ×3; DEAD/REDUNDANT → removed ×1 | metrics-decision-core-r1 — bare-id derivation masked by the duplicate third check — duplicate removed |
+| 799 | 2 | NC ×1, SV ×1 | REAL GAP → TESTED ×2 | metrics-decision-core-r1 |
+| 800 | 3 | NC ×1, SV ×2 | DEAD/REDUNDANT → removed ×3 | third free-list check byte-identical to the first for every slash ref — removed |
+| 803 | 1 | SV ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; find() over it never matches |
+| 826 | 1 | SV ×1 | EQUIVALENT ×1 | an empty billing string falls to tier 3 exactly like pay_per_token |
+| 837 | 1 | SV ×1 | DEAD/REDUNDANT → removed ×1 | billingTier free-list check masked by the duplicate third check — duplicate removed |
+| 838 | 2 | SV ×2 | REAL GAP → TESTED ×1; DEAD/REDUNDANT → removed ×1 | metrics-decision-core-r1 — bare-id derivation masked by the duplicate third check — duplicate removed |
+| 840 | 2 | SV ×2 | DEAD/REDUNDANT → removed ×2 | third free-list check byte-identical to the first for every slash ref — removed |
+| 842 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; find() over it never matches |
+
+### metrics.ts L880-1150 — registry lookup, pricing chain, effCost, subscription rule (70 undetected)
+
+Verdicts: REAL-KILLED ×19, SUITE-KILLED ×1, EQUIVALENT ×15, REMOVED ×35
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 899 | 2 | SV ×2 | REAL GAP → TESTED ×2 | metrics-decision-core-r1 |
+| 910 | 1 | SV ×1 | FALSE SURVIVOR ×1 | killed by the full suite (cache-per-project-state); 1 also killed in isolation by the new tests |
+| 920 | 1 | SV ×1 | EQUIVALENT ×1 | registryCost is wrapped in try/catch → TypeError → null (Batch 2 L901) |
+| 928 | 1 | SV ×1 | EQUIVALENT ×1 | PROVIDER_MAP miss crashes into the same try/catch null (Batch 2 L909-910) |
+| 929 | 1 | SV ×1 | EQUIVALENT ×1 | retrying the primary provider with an undefined alias yields the same miss (Batch 2 L909-910) |
+| 931 | 2 | SV ×2 | EQUIVALENT ×2 | destructure of a missing cost → TypeError → catch → null (Batch 2 L912) |
+| 933 | 3 | SV ×3 | REAL GAP → TESTED ×3 | metrics-decision-core-r1 |
+| 938 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 940 | 1 | NC ×1 | EQUIVALENT ×1 | missing return yields undefined ≡ null for every caller (Batch 2 L921) |
+| 966 | 3 | SV ×3 | EQUIVALENT ×3 | redundant gate: the generic `{input: cost, output: cost}` produces the identical sentinel (Batch 2 L947) |
+| 989 | 1 | SV ×1 | EQUIVALENT ×1 | first call: `pricing !== null` already differs from the initial identity |
+| 994 | 3 | SV ×3 | REAL GAP → TESTED ×2; EQUIVALENT ×1 | metrics-decision-core-r1 — rebuilding the paid index on every call is a performance difference only |
+| 999 | 8 | SV ×8 | DEAD/REDUNDANT → removed ×8 | kModel prefix strip removed: norm() already keeps only the last path segment, so every variant produced the same key |
+| 1001 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1016 | 4 | SV ×4 | REAL GAP → TESTED ×4 | metrics-decision-core-r1 |
+| 1018 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; find() over it never matches |
+| 1019 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1020 | 2 | SV ×2 | REAL GAP → TESTED ×1; EQUIVALENT ×1 | metrics-decision-core-r1 — `?? []` fallback holds a string; includes(ref) never matches |
+| 1064 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1096 | 3 | SV ×3 | REAL GAP → TESTED ×2; EQUIVALENT ×1 | metrics-decision-core-r1 — `'unknown' > 0` is false, so the typeof half of the guard is redundant |
+| 1118 | 1 | SV ×1 | EQUIVALENT ×1 | `null * costMux(prov)` is 0 — same as the explicit early return |
+| 1119 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1123 | 2 | NC ×1, SV ×1 | DEAD/REDUNDANT → removed ×2 | effCost step 2 unreachable (getM heals cost_per_m to a defined value) — removed |
+| 1125 | 3 | NC ×3 | DEAD/REDUNDANT → removed ×3 | effCost step 2 unreachable — removed |
+| 1126 | 10 | NC ×10 | DEAD/REDUNDANT → removed ×10 | effCost step 2 unreachable — removed |
+| 1127 | 1 | NC ×1 | DEAD/REDUNDANT → removed ×1 | effCost step 2 unreachable — removed |
+| 1134 | 2 | NC ×1, SV ×1 | DEAD/REDUNDANT → removed ×2 | effCost step 3 unreachable — removed |
+| 1137 | 3 | NC ×3 | DEAD/REDUNDANT → removed ×3 | effCost step 3 unreachable — removed |
+| 1140 | 2 | NC ×2 | DEAD/REDUNDANT → removed ×2 | effCost step 3 unreachable — removed |
+| 1141 | 4 | NC ×4 | DEAD/REDUNDANT → removed ×4 | effCost step 3 unreachable — removed |
+
+### metrics.ts L1170-1210 — usage windows (16 undetected)
+
+Verdicts: EQUIVALENT ×3, REAL-KILLED ×13
+
+| line | mutants | nightly status | verdict | killed by / rationale |
+|---|---|---|---|---|
+| 1176 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; the filter predicate never matches |
+| 1177 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1187 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; `undefined > cutoff` is false |
+| 1188 | 1 | SV ×1 | REAL GAP → TESTED ×1 | metrics-decision-core-r1 |
+| 1199 | 3 | SV ×3 | REAL GAP → TESTED ×3 | metrics-decision-core-r1 |
+| 1201 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; `undefined <= cutoff` is false and the cache check skips it |
+| 1202 | 8 | SV ×8 | REAL GAP → TESTED ×8 | metrics-decision-core-r1 |
+
