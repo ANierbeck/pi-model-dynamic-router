@@ -205,9 +205,10 @@ export interface Config {
    * 2026-09-27 incident evidence: GDPval floors cannot keep small-but-
    * benchmark-capable models out). Matched against ANY path segment of the
    * model id, so provider re-hosts (e.g. openrouter/mistral/mistral-small-3-2)
-   * are covered. The embedded router-config.json ships the default list;
-   * user/project layers REPLACE it (standard array semantics — set the full
-   * list you want). Absent/empty = tier explicitly OFF. Like `exclude`, this
+   * are covered. Nothing ships (ADR-0025 Phase D: the list is a quality
+   * judgement, not a Pi/scan capability flag) — set it in
+   * router-config.user.json; layers REPLACE arrays (set the full list you
+   * want). Absent/empty (the shipped default) = tier explicitly OFF. Like `exclude`, this
    * is user intent and is ALWAYS taken from the static layered config — the
    * dynamic-config whitelist in load() resyncs it.
    */

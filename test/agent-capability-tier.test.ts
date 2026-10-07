@@ -30,8 +30,11 @@ import type { Config, Group } from '../src/types.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-// The shipped default families (must match the embedded router-config.json —
-// pinned by the defaults test below so the protection cannot silently vanish).
+// The families a USER lists in their own layer (router-config.user.json).
+// ADR-0025 Phase D: nothing ships — the list is a quality judgement from the
+// 2026-09-27 incidents, not a capability flag Pi or the scan can supply (see
+// the spike report in docs/plans/2026-10-06-no-hardcoded-models.md) — so the
+// filter mechanism is tested with this user-supplied fixture.
 export const SHIPPED_PREFIXES = [
   'mistral-small-',
   'magistral-small-',
@@ -167,13 +170,23 @@ describe('agent-capability tier — applyGroupFilters wiring (config-driven)', (
 });
 
 describe('agent-capability tier — shipped defaults + classifier chain independence', () => {
-  it('embedded router-config.json ships the default family list (protection cannot silently vanish)', () => {
+  it('embedded router-config.json ships NO family list (ADR-0025 D: the list lives in the user layer)', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'router-config.json'), 'utf-8'));
-    const shipped = cfg.non_agent_model_prefixes;
-    expect(Array.isArray(shipped)).toBe(true);
-    for (const p of SHIPPED_PREFIXES) {
-      expect(shipped, `embedded defaults must contain ${p}`).toContain(p);
-    }
+    const shipped: unknown = cfg.non_agent_model_prefixes;
+    expect(shipped === undefined || (Array.isArray(shipped) && shipped.length === 0)).toBe(true);
+  });
+
+  it('with the shipped (empty) default no model is excluded by name, while a user-supplied list still gates', () => {
+    const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'router-config.json'), 'utf-8'));
+    const g: Group = { method: 'best', min_gdpval: 0 } as any;
+    // The former shipped families included: nothing may drop them by default.
+    const refs = ['mistral/voxtral-small-latest', 'mistral/codestral-2508', 'acme/ocr-only-1', 'acme/chat-agent-1'];
+    expect(applyGroupFilters(refs, g, makeCfg(shipped.non_agent_model_prefixes))).toEqual(refs);
+    expect(applyGroupFilters(refs, g, makeCfg(['ocr-only-']))).toEqual([
+      'mistral/voxtral-small-latest',
+      'mistral/codestral-2508',
+      'acme/chat-agent-1',
+    ]);
   });
 
   it('classifier modules do not depend on the tier predicates (classification keeps small models)', () => {
@@ -187,5 +200,43 @@ describe('agent-capability tier — shipped defaults + classifier chain independ
         /agent-capability|isAgentCapable/
       );
     }
+  });
+});
+
+
+// Spike evidence canary (ADR-0025 Phase D, docs/plans/2026-10-06-no-hardcoded-models.md):
+// Pi's per-model surface carries NO tool-calling / agent-capability flag, which
+// is why the list cannot be derived. If a host upgrade ever adds one, this
+// goes red and the spike must be re-run (outcome (a): derive from the flag).
+/** True if an interface body in the d.ts declares a tool/function-calling capability field. */
+export function declaresToolCapability(dts: string, interfaces: readonly string[]): boolean {
+  return interfaces.some((name) => {
+    const m = new RegExp(`export interface ${name}\\b[^{]*\\{([\\s\\S]*?)\\n\\}`).exec(dts);
+    if (!m) throw new Error(`interface ${name} not found in pi-ai types`);
+    return /^\s*(?:readonly\s+)?\w*(?:tool|function)\w*\??\s*:/im.test(m[1]);
+  });
+}
+
+describe('agent-capability spike canary — Pi exposes no per-model tool-capability flag', () => {
+  it('the detector sees a synthetic tool flag (non-vacuous)', () => {
+    const synthetic = 'export interface Model<T> {\n    reasoning: boolean;\n    supportsTools?: boolean;\n}\n';
+    expect(declaresToolCapability(synthetic, ['Model'])).toBe(true);
+    expect(declaresToolCapability('export interface Model<T> {\n    reasoning: boolean;\n}\n', ['Model'])).toBe(false);
+  });
+
+  it('pi-ai Model / BaseModel declare no tool or function-calling capability field', () => {
+    let dir = repoRoot;
+    let typesPath = '';
+    for (;;) {
+      const candidate = path.join(dir, 'node_modules/@earendil-works/pi-ai/dist/types.d.ts');
+      if (fs.existsSync(candidate)) {
+        typesPath = candidate;
+        break;
+      }
+      if (path.dirname(dir) === dir) throw new Error('@earendil-works/pi-ai types.d.ts not found');
+      dir = path.dirname(dir);
+    }
+    const dts = fs.readFileSync(typesPath, 'utf-8');
+    expect(declaresToolCapability(dts, ['BaseModel', 'Model'])).toBe(false);
   });
 });

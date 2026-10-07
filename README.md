@@ -537,23 +537,27 @@ By default, `method: "tiered"` sorts by billing tier first: **free → subscript
 
 #### Agent-capability filter (`non_agent_model_prefixes`)
 
-Models whose ref starts with one of these prefixes are excluded from all
-routing groups (they remain selectable as plain chat models). GDPval scores
-capability, not agent-reliability — raw chat/completion/audio families
-(e.g. `voxtral-`, `ministral-`) must never win a routing slot over an
-agent-capable model, whatever their benchmark score. The shipped default:
+Models whose ref has a path segment starting with one of these prefixes are
+excluded from all routing groups (they remain selectable as plain chat
+models). GDPval scores capability, not agent-reliability: families that
+benchmark well but serve garbage on main-agent work (stopping after
+announcing a result, 0–220-char tool turns) can otherwise win a routing slot.
+
+**Nothing ships in the default config** (ADR-0025). Whether a model is
+reliable as an agent is a quality judgement, not a capability flag: Pi's model
+type carries no tool-calling field, and the model families this filter was
+written for advertise function calling — they just do it badly — so there is
+nothing to derive the list from, and the router cannot learn it from errors
+(their streams finish normally). If you have models like that, list them in
+**your** layer, `router-config.user.json`:
 
 ```json
-"non_agent_model_prefixes": [
-  "mistral-small-",
-  "magistral-small-",
-  "ministral-",
-  "voxtral-",
-  "codestral-"
-]
+"non_agent_model_prefixes": ["acme-small-", "acme-audio-"]
 ```
 
-Replace the array in any config layer to change the filter.
+Arrays replace the shipped value in any layer, so set the full list you want.
+Absent or empty (the default) turns the filter off. The classifier chain never
+passes through this filter, so small models still classify.
 
 ```json
 "scout": {

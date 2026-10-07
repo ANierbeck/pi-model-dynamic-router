@@ -263,9 +263,9 @@ export function applyGroupFilters(
   // 3b. Agent-capability tier: curated non-agent families (small/code/audio
   // models that pass GDPval floors but cannot carry main-agent work — the
   // 2026-09-27 incidents; see src/agent-capability.ts for the evidence).
-  // CONFIG-DRIVEN via cfg.non_agent_model_prefixes (owner requirement: the
-  // same key for all users; shipped default in the embedded
-  // router-config.json; absent/empty = explicitly off). Floor-INDEPENDENT
+  // CONFIG-DRIVEN via cfg.non_agent_model_prefixes (the same key for all
+  // users, set in the user layer — nothing ships, ADR-0025 Phase D;
+  // absent/empty = explicitly off). Floor-INDEPENDENT
   // and group-independent: without this, trivial/simple stay a zoo door and
   // operational/tactical keep magistral-small (665). The prompt classifier
   // chain does not pass through applyGroupFilters, so classification keeps

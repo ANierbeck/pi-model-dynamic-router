@@ -2,31 +2,6 @@
   "note": "Ratcheting baseline (ADR-0025): entries are only ever REMOVED or their count lowered, never added. Matched by (file, literal); count = occurrences in that file. Enforced by test/no-hardcoded-models.test.ts.",
   "entries": [
     {
-      "file": "router-config.json",
-      "literal": "config:non_agent_model_prefixes[]=codestral-",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:non_agent_model_prefixes[]=magistral-small-",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:non_agent_model_prefixes[]=ministral-",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:non_agent_model_prefixes[]=mistral-small-",
-      "count": 1
-    },
-    {
-      "file": "router-config.json",
-      "literal": "config:non_agent_model_prefixes[]=voxtral-",
-      "count": 1
-    },
-    {
       "file": "src/classification-prompt.ts",
       "literal": "mistral-medium-3.5",
       "count": 3
