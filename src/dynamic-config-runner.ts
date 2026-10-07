@@ -9,7 +9,7 @@
  */
 
 import { DiscoveryManager } from './discovery.ts';
-import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic } from './dynamic-config.ts';
+import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic, collectStaticContributions } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -239,6 +239,12 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         }
       }
 
+      // rt.cfg may BE rt.staticCfg (no dynamic file loaded yet), so the stub
+      // below can land in the static config: snapshot what the static layers
+      // declare first, or the stub would be remembered as a static
+      // contribution and pruned again at the next load().
+      const staticContributions = collectStaticContributions(rt.staticCfg);
+
       // Register a lightweight provider stub for each registry-discovered
       // provider the router doesn't know yet (e.g. claude-bridge). Without this entry
       // stripProvider() won't recognize the prefix and GDPval/price inference via
@@ -414,7 +420,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // stale dynamic config), NOT from staticCfg — only the user-intent keys
       // (DYNAMIC_CONFIG_RESYNC_KEYS, shared with load()'s read-site re-sync)
       // are forced explicitly from staticCfg (and DYNAMIC_CONFIG_MERGE_KEYS
-      // merged per entry, static winning — resyncDynamicFromStatic), so the regenerated file never
+      // pruned of static-removed entries, then merged per entry, static
+      // winning — resyncDynamicFromStatic), so the regenerated file never
       // persists a stale user value for another 30-day cycle. staticCfg is
       // the layered config (defaults + user override) and therefore the
       // single source of truth for those fields.
@@ -429,9 +436,11 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           free_models_count: staticFreeModels.length,
           scanned_models_count: scannedModels.length,
           config_fingerprint: configFingerprint,
+          // static_contributions is recorded by resyncDynamicFromStatic below
+          // (load() already pruned rt.cfg against the previous one).
         }
       };
-      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg);
+      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg, staticContributions);
 
       const dynamicConfigPath = path.join(rt.stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));

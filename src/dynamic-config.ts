@@ -375,11 +375,9 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
  * values). Re-syncing them wholesale would drop the scan's entries; never
  * re-syncing them shadowed every static edit for as long as the dynamic file
  * existed. They are merged per entry instead — static wins per provider /
- * ref / slug (field-wise for object entries), scan-only entries stay. A
- * static entry REMOVED later lingers in the dynamic file — the write site
- * spreads the previous dynamic config, so regeneration never prunes it; only
- * deleting router-config.dynamic.json does. An added or changed entry
- * applies at once.
+ * ref / slug (field-wise for object entries), scan-only entries stay. An
+ * added or changed static entry applies at once; a REMOVED one is pruned via
+ * the remembered static contribution (see StaticContributions).
  */
 export const DYNAMIC_CONFIG_MERGE_KEYS = [
   'providers',
@@ -387,26 +385,152 @@ export const DYNAMIC_CONFIG_MERGE_KEYS = [
   'gdpval_builtin',
 ] as const satisfies readonly (keyof Config)[];
 
+type MergeKey = (typeof DYNAMIC_CONFIG_MERGE_KEYS)[number];
+
+/**
+ * What the static layers contributed to the merge keys at the last resync,
+ * persisted as `_dynamic.static_contributions` in router-config.dynamic.json:
+ * merge key → entry → names of the fields the static entry carried (`null`
+ * for a scalar entry such as a gdpval_builtin score).
+ *
+ * The merge alone cannot tell "this dynamic entry came from a static layer
+ * that dropped it" from "the scan / a learned path added it" — both look
+ * like a dynamic entry the static layers lack. The remembered set can: an
+ * entry that is REMEMBERED but no longer in the current static set is
+ * pruned; one that was never remembered (scan-added) stays. Provenance
+ * unknown (no remembered set yet, or a corrupt one) → nothing is pruned,
+ * the same conservatism as the merge itself.
+ */
+export type StaticContributions = Record<MergeKey, Record<string, string[] | null>>;
+
+/**
+ * Pure-config fields the scan never writes: for these the static layers are
+ * authoritative with no provenance needed, so a dynamic file that predates
+ * the remembered set (every install upgrading from before the prune) still
+ * heals. `providers.*.free_models` is the field whose lingering list kept
+ * feeding max_cost: 0 groups after ADR-0025 B1 removed it from the shipped
+ * config.
+ */
+const STATIC_AUTHORITATIVE_FIELDS: Partial<Record<MergeKey, readonly string[]>> = {
+  providers: ['free_models'],
+};
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Snapshot of the entries/fields the static layers currently declare under the merge keys. */
+export function collectStaticContributions(staticCfg: Config): StaticContributions {
+  const stat = staticCfg as unknown as Record<string, unknown>;
+  const out = {} as StaticContributions;
+  for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
+    const section: Record<string, string[] | null> = {};
+    const s = stat[key];
+    if (isPlainObject(s)) {
+      for (const [entry, value] of Object.entries(s)) {
+        section[entry] = isPlainObject(value) ? Object.keys(value) : null;
+      }
+    }
+    out[key] = section;
+  }
+  return out;
+}
+
+/**
+ * Parses the remembered set defensively; a malformed section or entry is
+ * skipped (→ nothing pruned there), never thrown on.
+ */
+function readRememberedContributions(dynamicCfg: Config): Partial<StaticContributions> {
+  const raw = (dynamicCfg as unknown as { _dynamic?: { static_contributions?: unknown } })._dynamic?.static_contributions;
+  const out: Partial<StaticContributions> = {};
+  if (!isPlainObject(raw)) return out;
+  for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
+    const section = raw[key];
+    if (!isPlainObject(section)) continue;
+    const parsed: Record<string, string[] | null> = {};
+    for (const [entry, fields] of Object.entries(section)) {
+      if (fields === null) parsed[entry] = null;
+      else if (Array.isArray(fields) && fields.every((f) => typeof f === 'string')) parsed[entry] = fields as string[];
+    }
+    out[key] = parsed;
+  }
+  return out;
+}
+
+/**
+ * Removes from `dyn[key]` what the static layers contributed at the last
+ * resync (`remembered`) but no longer declare (`current`), plus the
+ * STATIC_AUTHORITATIVE_FIELDS the static layers lack. A pruned object entry
+ * keeps its other (scan-added) fields and goes away only when nothing is
+ * left of it. Only the container is replaced, never the shared entry objects.
+ */
+function pruneRemovedStaticEntries(
+  dyn: Record<string, unknown>,
+  key: MergeKey,
+  remembered: Record<string, string[] | null> | undefined,
+  current: Record<string, string[] | null>,
+): void {
+  const entries = dyn[key];
+  if (!isPlainObject(entries)) return;
+  const pruned: Record<string, unknown> = { ...entries };
+  const dropFields = (entry: string, fields: readonly string[]) => {
+    const value = pruned[entry];
+    if (!isPlainObject(value)) return;
+    const rest = { ...value };
+    for (const f of fields) delete rest[f];
+    if (Object.keys(rest).length === 0) delete pruned[entry];
+    else pruned[entry] = rest;
+  };
+  for (const [entry, fields] of Object.entries(remembered ?? {})) {
+    const now = current[entry];
+    if (fields === null) {
+      if (now === undefined) delete pruned[entry];
+    } else {
+      const kept = Array.isArray(now) ? now : [];
+      // A static entry that turned scalar replaces the dynamic one in the merge.
+      if (now === null) continue;
+      dropFields(entry, fields.filter((f) => !kept.includes(f)));
+    }
+  }
+  for (const field of STATIC_AUTHORITATIVE_FIELDS[key] ?? []) {
+    for (const entry of Object.keys(pruned)) {
+      if (!(current[entry] ?? []).includes(field)) dropFields(entry, [field]);
+    }
+  }
+  dyn[key] = pruned;
+}
+
 /**
  * Brings a (possibly stale) dynamic config up to date with the layered
  * static config, in place: DYNAMIC_CONFIG_RESYNC_KEYS are copied wholesale,
- * DYNAMIC_CONFIG_MERGE_KEYS merged per entry. `model_groups` stays — it is
- * the scan's output. Used by both resync sites (load() and the write site in
- * generateDynamicConfigNow).
+ * DYNAMIC_CONFIG_MERGE_KEYS are first pruned of what the static layers
+ * dropped since the last resync, then merged per entry. `model_groups` stays
+ * — it is the scan's output. Finally the current static contribution is
+ * recorded in `_dynamic.static_contributions` for the next resync. Used by
+ * both resync sites (load() and the write site in generateDynamicConfigNow).
+ *
+ * `contributions` defaults to the snapshot of `staticCfg`; the write site
+ * passes one taken BEFORE the scan stub-registers providers into a config
+ * that may alias staticCfg, so scan-added stubs are never recorded as static.
  */
-export function resyncDynamicFromStatic(dynamicCfg: Config, staticCfg: Config): void {
+export function resyncDynamicFromStatic(
+  dynamicCfg: Config,
+  staticCfg: Config,
+  contributions: StaticContributions = collectStaticContributions(staticCfg),
+): void {
   const dyn = dynamicCfg as unknown as Record<string, unknown>;
   const stat = staticCfg as unknown as Record<string, unknown>;
+  const remembered = readRememberedContributions(dynamicCfg);
   for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) dyn[key] = stat[key];
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
-    const s = stat[key] as Record<string, unknown> | undefined;
-    if (!s) continue;
-    const merged: Record<string, unknown> = { ...((dyn[key] as Record<string, unknown> | undefined) ?? {}) };
+    pruneRemovedStaticEntries(dyn, key, remembered[key], contributions[key]);
+    const s = stat[key];
+    if (!isPlainObject(s)) continue;
+    const merged: Record<string, unknown> = { ...(isPlainObject(dyn[key]) ? dyn[key] : {}) };
     for (const [entry, value] of Object.entries(s)) {
       const prev = merged[entry];
-      const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-      merged[entry] = isObj(prev) && isObj(value) ? { ...prev, ...value } : value;
+      merged[entry] = isPlainObject(prev) && isPlainObject(value) ? { ...prev, ...value } : value;
     }
     dyn[key] = merged;
   }
+  if (isPlainObject(dyn._dynamic)) dyn._dynamic.static_contributions = contributions;
 }

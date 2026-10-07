@@ -415,7 +415,7 @@ let previousTokenCount = 0;
           // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
           // the write site in generateDynamicConfigNow — per-key rationale
           // lives there; DYNAMIC_CONFIG_MERGE_KEYS (providers, model_metrics,
-          // gdpval_builtin) are merged per entry, static winning. Final v1.6.0 review I4: ollama_max_concurrent_streams
+          // gdpval_builtin) are pruned of static-removed entries, then merged per entry, static winning. Final v1.6.0 review I4: ollama_max_concurrent_streams
           // had been forgotten in both hand-maintained assignment blocks;
           // I5: the shared list + the data-driven staleness test keep the
           // next key from being forgotten the same way.

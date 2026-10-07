@@ -577,11 +577,12 @@ entries / 62 occurrences, ceiling-pinned) and class-B admission pins live.
 removed — baseline 28 entries / 34 occurrences; the owner's
 `router-config.user.json` needs the migration snippet from the CHANGELOG at
 merge time (including deleting `router-config.dynamic.json` — removed
-merge-key entries linger there). Open follow-up from the Phase B review
-(review M3/I1, 2026-10-07): make the config-fingerprint resync PRUNE
-dynamic `providers.*.free_models` and `model_metrics` entries that no
-static layer contains any more, so upgraded installs self-heal instead of
-relying on the manual dynamic-file deletion. **Phases C–E DONE** (branch
+merge-key entries linger there). Phase B review follow-up (M3/I1, 2026-10-07) **DONE**
+(branch `auto-prune-dynamic-config`): the dynamic-config resync records the
+static layers' contribution (`_dynamic.static_contributions`) and prunes
+entries they dropped — `providers.*.free_models` heals even on a pre-prune
+file, but `model_metrics` sentinels of such a file (no provenance
+recorded) stay until the dynamic file is deleted once. **Phases C–E DONE** (branch
 `adr0025-cde-derived`, awaiting merge): derived local classifier chain
 (`src/classifier-local-probe.ts`), `non_agent_model_prefixes` spike → outcome
 (c), closure — **baseline 56 → 0 entries (62 → 0 occurrences), ceiling pinned
