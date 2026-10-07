@@ -107,7 +107,7 @@ When the classifier is uncertain and returns `fallback`, the classification now 
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, Ollama **mistral-nemo:latest** primary / **gemma2:2b** fallback as the local last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
 
 #### Categories for Classification
 
@@ -141,14 +141,13 @@ Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: **mistral-nemo:latest** primary, **gemma2:2b** fallback) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
 To use the **`dynamic`** group, you need:
-- **Ollama** installed and running locally (`ollama serve`)
-- **mistral-nemo:latest** pulled for best classification quality (`ollama pull mistral-nemo:latest`)
-- **gemma2:2b** pulled as fallback (`ollama pull gemma2:2b`) — used automatically if mistral-nemo:latest fails
+- **Ollama** installed and running locally (`ollama serve`) with at least one chat model pulled — optional when the cloud classifier chain is enabled
+- No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud fallback uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier_model` / `classifier_fallback` in the `dynamic` group of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
 Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
@@ -517,6 +516,19 @@ a subscription bridge or a pay-per-token aggregator:
   gate, 404 guardrail) are blocked automatically after the first failure (`/router blocklist`), so no
   shipped exclusion list is needed.
 
+#### Pinning the classifier, and what no longer ships
+
+The shipped config names no model that can admit, select, rank or exclude one (ADR-0025; guard:
+`test/no-hardcoded-models.test.ts`, baseline closed at 0). Everything that used to be a shipped
+default is either derived or a **user-layer** choice in `router-config.user.json`:
+
+| You want | Put in your user layer |
+|---|---|
+| A specific local classifier (instead of the derived/probed chain) | `"model_groups": { "dynamic": { "classifier_model": "ollama/<model>:<tag>", "classifier_fallback": "ollama/<model>:<tag>" } }` |
+| A specific cloud classifier tried first | `"model_groups": { "dynamic": { "classifier_cloud_model": "<provider>/<model>" } }` |
+| Provider billing / free-tier pins / exclusions | the `providers` / `exclude` block above |
+| Families kept out of routing groups (poor agents) | `"non_agent_model_prefixes": ["<family>-"]` (see below) |
+
 #### Billing Preference (per-group tier override)
 
 By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local models conceptually belong on top.
@@ -780,7 +792,7 @@ The router uses a **modular architecture** with the following components:
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
 | **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
 | **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
-| **content-classifier.ts** | Content classification | mistral-nemo:latest primary, gemma2:2b fallback, cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
+| **content-classifier.ts** | Content classification | derived local Ollama chain (classifier-local-probe.ts), cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 | **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
 | **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |

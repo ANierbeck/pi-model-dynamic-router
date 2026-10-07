@@ -201,8 +201,10 @@
   (`router-config.user.json`), where the user's own choices belong.
 - The gate is `test/no-hardcoded-models.test.ts` with a **ratcheting
   baseline** (`scripts/hardcoded-model-baseline.json`): the baseline only
-  shrinks. Never add an entry to make a PR green — derive instead. Tests may
-  use model literals freely.
+  shrinks — it is **closed at 0 entries** (ADR-0025 Phase E, 2026-10-07) and
+  the test's ceiling is pinned at 0, so every finding is a new violation.
+  Never add an entry to make a PR green — derive instead. Tests may use model
+  literals freely.
 - Incident that motivated the rule (2026-10-06): a shipped `free_models` list
   was admitted on config presence alone, so users without that provider's key
   got dead candidates in every cheap group and in the classifier chain.

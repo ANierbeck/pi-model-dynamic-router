@@ -215,7 +215,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
 
     // Serve from cache first (avoid repeat LLM calls for the same models).
     // BUT validate cached matches with isPlausibleMatch — old cached entries
-    // from a weaker model (e.g. gemma2:2b) may contain cross-family
+    // from a weaker model may contain cross-family
     // hallucinations that must not be trusted.
     const cachedMatches = rt.cache.model_score_cache ?? {};
     const cachedHits: Record<string, string> = {};
@@ -273,7 +273,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // Distinguish "LLM call failed" (error) from "LLM answered but no matches".
       if (result.error) {
         routerLog(
-          `[router] LLM matcher call failed (${result.error}); ${stillUnscored.length} model(s) remain unscored. Check that a local model (Ollama gemma2:2b) or a free OpenRouter model is available.`
+          `[router] LLM matcher call failed (${result.error}); ${stillUnscored.length} model(s) remain unscored. Check that a local Ollama model or a free OpenRouter model is available.`
         );
       } else if (result.matches && Object.keys(result.matches).length) {
         routerLog(

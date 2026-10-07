@@ -2,10 +2,12 @@
 
 ## Status
 
-Accepted as a principle (owner directive, 2026-10-06). The implementation
-plan in [`docs/plans/2026-10-06-no-hardcoded-models.md`](../plans/2026-10-06-no-hardcoded-models.md)
-is **proposed**; the phases listed there need the owner's go before they land
-(two of them change shipped defaults for every installation).
+Accepted as a principle (owner directive, 2026-10-06). Implemented in
+phases A–E (2026-10-06/07; see
+[`docs/plans/2026-10-06-no-hardcoded-models.md`](../plans/2026-10-06-no-hardcoded-models.md)):
+the ratcheting baseline is closed at 0. The `non_agent_model_prefixes` spike
+ended in outcome (c) — the list is a user-layer quality judgement, not a
+derivable capability flag (details in the plan's spike report).
 
 Extends [ADR-0021](0021-no-scan-discovered-model-registration.md) (Pi's
 registry is the single source of truth for the cloud model inventory) and

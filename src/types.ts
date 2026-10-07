@@ -467,6 +467,14 @@ export interface ProviderDef {
    * cost_per_m:0 placeholder (ADR-0006 "F3"), never the real price.
    */
   pricingAlias?: string;
+  /**
+   * Prefix this provider puts in front of the model ids it hosts for another
+   * vendor (e.g. a re-host that namespaces its upstream's models as
+   * "<vendor>-<model>"). Slug normalisation strips it so the upstream's
+   * GDPval slug matches. Protocol knowledge about HOW the provider names
+   * models (ADR-0025 class A) — it never admits or ranks a model.
+   */
+  modelIdVendorPrefix?: string;
 }
 
 // ── Utility Types ────────────────────────────────────────────────────────

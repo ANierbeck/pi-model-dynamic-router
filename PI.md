@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_fallback`), with Ollama (**mistral-nemo:latest** primary, **gemma2:2b** fallback) as the local last resort.
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_fallback`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
 2. **Group Mapping**: The category is mapped to a specific model group via the shipped `CATEGORY_TO_GROUP` table (`scout`, `operational`, `simple`, `tactical`, or the top-tier `planning` group).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
@@ -35,7 +35,7 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and integr
 With the shipped cloud-first classifier chain, **no local setup is required** —
 classification runs on free cloud models, and Ollama is only the last resort:
 
-- **Optional, for local-only classification**: **Ollama** installed and running (`ollama serve`), with **mistral-nemo:latest** (primary) and **gemma2:2b** (fallback) pulled
+- **Optional, for local-only classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
 - If every classifier hop fails, the category `fallback` is returned (or static keyword classification, if `allowStaticFallback` is enabled)
 
 ## Architecture

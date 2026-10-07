@@ -1,20 +1,4 @@
 {
-  "note": "Ratcheting baseline (ADR-0025): entries are only ever REMOVED or their count lowered, never added. Matched by (file, literal); count = occurrences in that file. Enforced by test/no-hardcoded-models.test.ts.",
-  "entries": [
-    {
-      "file": "src/classification-prompt.ts",
-      "literal": "mistral-medium-3.5",
-      "count": 3
-    },
-    {
-      "file": "src/scan-runner.ts",
-      "literal": "gemma2:2b",
-      "count": 1
-    },
-    {
-      "file": "src/slug-matcher.ts",
-      "literal": "zai-",
-      "count": 1
-    }
-  ]
+  "note": "Ratcheting baseline (ADR-0025): CLOSED at 0 entries (Phase E, 2026-10-07). Every finding of test/no-hardcoded-models.test.ts is now a NEW violation; entries are only ever REMOVED or their count lowered, never added (the ceiling in the test is pinned at 0). Matched by (file, literal); count = occurrences in that file.",
+  "entries": []
 }

@@ -65,6 +65,9 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
     // catalog never registers this router-internal key, so it has no
     // pricing of its own to find. Borrow mistral's registry pricing.
     pricingAlias: 'mistral',
+    // The Z-AI GLM models are namespaced 'zai-<model>' on this platform; the
+    // upstream (and its GDPval slug) is just '<model>'.
+    modelIdVendorPrefix: 'zai-',
   },
 
   groq: {

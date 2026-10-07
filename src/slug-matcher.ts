@@ -12,6 +12,8 @@
  *    (e.g. "mistral-medium-2604" → {mistral,medium} → matches "mistral-medium-3-5")
  */
 
+import { PROVIDER_MAP } from './providers.ts';
+
 // ── Stage 1: Normalization ────────────────────────────────────────────────
 
 // Date suffixes: -2512, -2604, -2505, -2508, -20250514, -0324
@@ -23,10 +25,17 @@ const TAG_SUFFIXES = [
   '-reasoning', '-tee', '-fp8', '-adaptive', '-non-reasoning',
 ];
 
-// Vendor prefixes that should be stripped: "zai-glm-5-2" → "glm-5-2"
-// Note: "mistral-" is NOT a vendor prefix here — "mistral-medium" is a model name,
-// not a vendor prefix. Only strip prefixes that are clearly vendor tags.
-const VENDOR_PREFIXES = ['zai-'];
+// Vendor prefixes that should be stripped ("<vendor>-glm-5-2" → "glm-5-2"):
+// derived from the provider adapters (PROVIDER_MAP[*].modelIdVendorPrefix),
+// not listed here. Note: "mistral-" is NOT a vendor prefix — "mistral-medium"
+// is a model name, not a vendor tag.
+const VENDOR_PREFIXES: readonly string[] = [
+  ...new Set(
+    Object.values(PROVIDER_MAP)
+      .map((def) => def.modelIdVendorPrefix)
+      .filter((p): p is string => typeof p === 'string' && p.length > 0)
+  ),
+];
 
 /**
  * Strip the provider prefix from a model ref.
