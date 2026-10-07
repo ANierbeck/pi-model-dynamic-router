@@ -13,7 +13,7 @@
 import { isRateLimitText, isOverflowErrorText, isAbortLikeText } from './detection.ts';
 import { classifyFailure } from './error-signatures.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import type { Cache } from './types.ts';
+import type { BreakerConfig, Cache } from './types.ts';
 
 /** Failure shapes the orchestrator can report to the breaker. */
 export type ProviderEvidenceKind = 'empty_response' | 'empty_timeout' | 'stall_timeout' | 'provider_error';
@@ -61,20 +61,110 @@ export const BREAKER_COOLDOWN_LADDER_MS: readonly number[] = [2 * 60_000, 5 * 60
 const MIN_MODELS_LOCAL = 2;
 const MIN_MODELS_CLOUD = 3;
 
+/** Fully resolved breaker tuning (plan D8): code defaults with user overrides applied. */
+export interface BreakerTuning {
+  /** Kill switch for CLOUD providers (plan D8). Local (ADR-0016) always stays active. */
+  cloudEnabled: boolean;
+  minModelsCloud: number;
+  minModelsLocal: number;
+  windowMs: number;
+  cooldownMs: readonly number[];
+}
+
+/** Code defaults (plan D8): the shipped config carries no provider_breaker entry. */
+export const DEFAULT_BREAKER_TUNING: BreakerTuning = {
+  cloudEnabled: true,
+  minModelsCloud: MIN_MODELS_CLOUD,
+  minModelsLocal: MIN_MODELS_LOCAL,
+  windowMs: WEDGE_WINDOW_MS,
+  cooldownMs: BREAKER_COOLDOWN_LADDER_MS,
+};
+
+function positiveInt(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : fallback;
+}
+
+/** Resolves the optional `provider_breaker` config fragment over the code defaults. */
+export function resolveBreakerTuning(o?: BreakerConfig): BreakerTuning {
+  if (!o) return DEFAULT_BREAKER_TUNING;
+  const cooldown = Array.isArray(o.cooldown_s) && o.cooldown_s.length > 0
+    ? o.cooldown_s.filter((s) => Number.isFinite(s) && s > 0).map((s) => s * 1000)
+    : undefined;
+  return {
+    cloudEnabled: o.enabled !== false,
+    minModelsCloud: positiveInt(o.min_models?.cloud, MIN_MODELS_CLOUD),
+    minModelsLocal: positiveInt(o.min_models?.local, MIN_MODELS_LOCAL),
+    windowMs: positiveInt(o.window_s, WEDGE_WINDOW_MS / 1000) * 1000,
+    cooldownMs: cooldown && cooldown.length > 0 ? cooldown : BREAKER_COOLDOWN_LADDER_MS,
+  };
+}
+
+/** A ref's provider is local (no key, daemon on the machine) — ADR-0016 territory. */
+export function isLocalProviderName(provider: string): boolean {
+  return PROVIDER_MAP[provider]?.local === true;
+}
+
 type ProviderBreaker = NonNullable<Cache['provider_breaker']>[string];
+type ProviderBreakerStats = NonNullable<Cache['provider_breaker_stats']>[string];
 
 function providerOf(ref: string): string {
   return ref.split('/')[0];
 }
 
-function minModels(provider: string): number {
-  return PROVIDER_MAP[provider]?.local === true ? MIN_MODELS_LOCAL : MIN_MODELS_CLOUD;
+function minModels(provider: string, tuning: BreakerTuning): number {
+  return isLocalProviderName(provider) ? tuning.minModelsLocal : tuning.minModelsCloud;
 }
 
-function liveEvidence(s: ProviderBreaker, now: number): string[] {
+function liveEvidence(s: ProviderBreaker, now: number, windowMs: number = WEDGE_WINDOW_MS): { ref: string; at: number; kind: ProviderEvidenceKind }[] {
   return Object.entries(s.evidence)
-    .filter(([, at]) => now - at < WEDGE_WINDOW_MS)
-    .map(([ref]) => ref);
+    .filter(([, e]) => now - e.at < windowMs)
+    .map(([ref, e]) => ({ ref, at: e.at, kind: e.kind as ProviderEvidenceKind }));
+}
+
+/**
+ * Human-readable summary of a provider's live evidence for the narration
+ * (plan D6: provider, evidence — e.g. "4 models returned empty responses
+ * within 40 s" — cooldown, fix hint). Kinds collapse to one phrase when the
+ * evidence is uniform, otherwise the generic "failed".
+ */
+export function breakerEvidenceSummary(
+  cache: Cache | undefined,
+  provider: string,
+  now: number = Date.now(),
+  tuning: BreakerTuning = DEFAULT_BREAKER_TUNING
+): { count: number; spanMs: number; kinds: ProviderEvidenceKind[] } | undefined {
+  const s = cache?.provider_breaker?.[provider];
+  if (!s) return undefined;
+  const live = liveEvidence(s, now, tuning.windowMs);
+  if (live.length === 0) return undefined;
+  const kinds = [...new Set(live.map((e) => e.kind))];
+  const spanMs = now - Math.min(...live.map((e) => e.at));
+  return { count: live.length, spanMs, kinds };
+}
+
+/**
+ * Persists a skipped candidate of an open breaker as an avoided hop (plan
+ * D6/D7): the hop the breaker saved the user — the tuning evidence that
+ * outlives the volatile open state.
+ */
+export function recordBreakerSkip(cache: Cache, provider: string): void {
+  const stats = (cache.provider_breaker_stats ??= {});
+  const s = (stats[provider] ??= { trips: 0, avoided_hops: 0 });
+  s.avoided_hops++;
+}
+
+function recordTripStats(cache: Cache, provider: string, now: number): void {
+  const stats = (cache.provider_breaker_stats ??= {});
+  const s = (stats[provider] ??= { trips: 0, avoided_hops: 0 });
+  s.trips++;
+  s.last_trip_at = now;
+}
+
+/** Closes every open breaker (the `/router cooldowns clear` relief path, plan D6). Kept stats survive. */
+export function clearBreakers(cache: Cache): number {
+  const open = openBreakers(cache).length;
+  if (cache.provider_breaker) delete cache.provider_breaker;
+  return open;
 }
 
 /**
@@ -91,25 +181,27 @@ export function recordProviderFailure(
   ref: string,
   kind: ProviderEvidenceKind,
   detail?: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  tuning: BreakerTuning = DEFAULT_BREAKER_TUNING
 ): boolean {
   if (!countsAsProviderEvidence(kind, detail)) return false;
   const provider = providerOf(ref);
   if (!cache.provider_breaker) cache.provider_breaker = {};
   const s = (cache.provider_breaker[provider] ??= { evidence: {}, trip_count: 0 });
-  for (const [model, at] of Object.entries(s.evidence)) {
-    if (now - at >= WEDGE_WINDOW_MS) delete s.evidence[model];
+  for (const [model, e] of Object.entries(s.evidence)) {
+    if (now - e.at >= tuning.windowMs) delete s.evidence[model];
   }
-  s.evidence[ref] = now;
+  s.evidence[ref] = { at: now, kind };
   if (isProviderOpen(cache, provider, now)) return false;
   // The half-open re-probe only counts shortly after the cooldown ended: once
   // a whole window has passed, the old trip no longer vouches for a single
   // failure ("one slow model alone never triggers it", ADR-0016).
-  if (now - (s.open_until ?? 0) >= WEDGE_WINDOW_MS) s.trip_count = 0;
-  if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider)) return false;
+  if (now - (s.open_until ?? 0) >= tuning.windowMs) s.trip_count = 0;
+  if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider, tuning)) return false;
   s.trip_count++;
-  const step = Math.min(s.trip_count, BREAKER_COOLDOWN_LADDER_MS.length) - 1;
-  s.open_until = now + BREAKER_COOLDOWN_LADDER_MS[step];
+  const step = Math.min(s.trip_count, tuning.cooldownMs.length) - 1;
+  s.open_until = now + tuning.cooldownMs[step];
+  recordTripStats(cache, provider, now);
   return true;
 }
 
@@ -127,7 +219,8 @@ export function isProviderOpen(cache: Cache | undefined, provider: string, now: 
 export function breakerState(
   cache: Cache | undefined,
   provider: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  tuning: BreakerTuning = DEFAULT_BREAKER_TUNING
 ): { open: boolean; until?: number; tripCount: number; evidence: string[] } {
   const s = cache?.provider_breaker?.[provider];
   if (!s) return { open: false, tripCount: 0, evidence: [] };
@@ -136,7 +229,7 @@ export function breakerState(
     open,
     ...(open ? { until: s.open_until } : {}),
     tripCount: s.trip_count,
-    evidence: liveEvidence(s, now),
+    evidence: liveEvidence(s, now, tuning.windowMs).map((e) => e.ref),
   };
 }
 

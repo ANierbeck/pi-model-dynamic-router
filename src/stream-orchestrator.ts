@@ -108,6 +108,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
+import { breakerState, breakerEvidenceSummary, isLocalProviderName, resolveBreakerTuning } from './provider-breaker.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
@@ -141,6 +142,43 @@ import { isOllamaProbablyDown } from './ollama-utils.ts';
  */
 function emptyResponseLabel(_ref: string): string {
   return 'empty response (no content, no error reported)';
+}
+
+/** Evidence phrase for the breaker-open narration (plan D6). Kinds collapse to one phrase when uniform. */
+function breakerEvidencePhrase(summary: { count: number; spanMs: number; kinds: string[] }): string {
+  const KIND_PHRASE: Record<string, string> = {
+    empty_response: 'returned empty responses',
+    empty_timeout: 'timed out with no response',
+    stall_timeout: 'stalled mid-stream',
+    provider_error: 'reported provider errors',
+  };
+  const phrase = summary.kinds.length === 1 ? KIND_PHRASE[summary.kinds[0]] ?? 'failed' : 'failed';
+  const secs = Math.max(1, Math.round(summary.spanMs / 1000));
+  return `${summary.count} distinct model(s) ${phrase} within ${secs} s`;
+}
+
+/**
+ * The one narration per breaker open (plan D6): provider, evidence, cooldown,
+ * GENERIC fix hint — local providers keep ADR-0016's restart advice, cloud
+ * ones get the "check the provider/extension" wording. No provider-specific
+ * advice in code (ADR-0025 class A).
+ */
+function narrateBreakerOpen(
+  ctx: StreamOrchestratorContext,
+  proxy: AssistantMessageEventStream,
+  ref: string
+): void {
+  const provider = ref.split('/')[0];
+  const summary = breakerEvidenceSummary(ctx.cache, provider, Date.now(), resolveBreakerTuning(ctx.cfg.provider_breaker));
+  const evidence = summary ? breakerEvidencePhrase(summary) : 'several distinct models failed';
+  const hint = isLocalProviderName(provider)
+    ? wedgeFixHint(provider)
+    : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
+  routerLog(`[router] ${provider} looks wedged: ${evidence} — skipping its models for ${ctx.wedgeCooldownText(ref)}`);
+  pushRouterInfoLogged(
+    proxy,
+    `> [router] ${provider} looks wedged: ${evidence}. Skipping ${provider} models for ${ctx.wedgeCooldownText(ref)}. Fix: ${hint}.\n\n`
+  );
 }
 
 // ── Context interface ───────────────────────────────────────────────────────
@@ -197,11 +235,23 @@ export interface StreamOrchestratorContext {
   recordOk: (ref: string) => void;
   /** Feeds a failure text into the learned blocklist (ADR-0008). */
   observeFailure: (ref: string, failureText: string) => void;
-  /** Local-provider watchdog (ADR-0016): true when this timeout newly marks the provider wedged. */
-  observeLocalTimeout: (ref: string) => boolean;
-  /** Cooldown of the provider's current open, e.g. "5 min"; valid right after observeLocalTimeout returned true. */
+  /**
+   * Provider circuit breaker (ADR-0026 / plan
+   * docs/plans/2026-10-06-provider-circuit-breaker.md): feeds a soft
+   * failure of `ref` (a D1 evidence reason: empty_response, empty_timeout,
+   * stall_timeout, provider_error — non-evidence reasons are ignored) to the
+   * breaker. Returns true only when this failure newly OPENS the provider's
+   * breaker, so the caller narrates once per open. Replaces the local-only
+   * observeLocalTimeout seam of ADR-0016 (the classifier path keeps its own
+   * local-only call).
+   */
+  observeProviderFailure: (ref: string, reason: string, detail?: string) => boolean;
+  /** True while the ref's provider breaker is open (any provider — the generalized pre-flight skip, plan D3/D4). */
+  isBreakerOpen: (ref: string) => boolean;
+  /** Counts a pre-flight breaker skip as an avoided hop (plan D6/D7 persisted stats). */
+  noteBreakerSkip: (ref: string) => void;
+  /** Cooldown of the provider's current open, e.g. "5 min"; valid right after observeProviderFailure returned true. */
   wedgeCooldownText: (ref: string) => string;
-  isProviderWedged: (ref: string) => boolean;
   recordStreamFailure: (
     ref: string,
     reason: string,
@@ -618,7 +668,7 @@ export class StreamOrchestrator {
       for (let j = from; j < candidates.length; j++) {
         const r = candidates[j];
         if (ctx.isLimited(r)) continue;
-        if (ctx.isProviderWedged(r)) continue;
+        if (ctx.isBreakerOpen(r)) continue;
         if (r.startsWith('ollama/') && isOllamaProbablyDown()) continue;
         const w = ctx.getModelContextWindow(r);
         if (w && contextTokens > w) continue;
@@ -634,9 +684,19 @@ export class StreamOrchestrator {
         cooldownSkips++;
         continue;
       }
-      if (ctx.isProviderWedged(ref)) {
-        pushError(ref, 'skipped, local provider looks wedged (watchdog)');
+      // Pre-flight breaker skip (plan Phase 2, generalized from the
+      // local-only watchdog skip): the provider's breaker is open — the
+      // candidate would burn its own hop (and, for stalls, its own
+      // timeout) on a provider the evidence already condemned. Because the
+      // check re-runs on every loop iteration, the trip rule fires
+      // MID-WALK and the remaining candidates of the just-tripped provider
+      // are skipped within the SAME walk (plan D3).
+      if (ctx.isBreakerOpen(ref)) {
+        const st = breakerState(ctx.cache, ref.split('/')[0]);
+        const secsLeft = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
+        pushError(ref, `skipped, provider breaker open (${secsLeft}s remaining)`);
         cooldownSkips++;
+        ctx.noteBreakerSkip(ref);
         continue;
       }
       // Local availability guard (live finding 2026-10-03): when the Ollama
@@ -676,6 +736,10 @@ export class StreamOrchestrator {
         // failure now correctly takes the hard path instead of a soft hop.
         openFailureText = errorMsg;
         ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
+        // A thrown OPEN is a request-level provider failure (e.g. a cloud
+        // provider's "Connection error" — the 172-line Ollama gap in the
+        // plan's evidence table): provider-level evidence, plan D1.
+        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg)) narrateBreakerOpen(ctx, proxy, ref);
         pushRouterInfoLogged(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
         return null;
       });
@@ -904,6 +968,18 @@ export class StreamOrchestrator {
         if (isPaidCloudRateLimitFailure(ref, String(result.reason), result.detail)) {
           ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
           pushError(ref, `${result.reason} (treated as rate-limit)`);
+          // Empty responses and timeouts on PAID cloud models take this
+          // per-model "likely rate limit" path — but they are still
+          // provider-level evidence (plan D1; the biggest class in the log
+          // evidence: the bridge wedge cascades). A provider_error that
+          // REACHED this branch is 429/402/rate-limit-shaped text and never
+          // counts as evidence.
+          if (
+            result.reason !== 'provider_error' &&
+            ctx.observeProviderFailure(ref, String(result.reason), result.detail)
+          ) {
+            narrateBreakerOpen(ctx, proxy, ref);
+          }
           const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
           const paidLabel = result.reason === 'stall_timeout'
@@ -921,16 +997,12 @@ export class StreamOrchestrator {
         // deterministically soft here.
         pushError(ref, String(result.reason));
         ctx.recordStreamFailure(ref, String(result.reason), result.resetAtMs, result.detail);
-        if (
-          (result.reason === 'empty_timeout' || result.reason === 'stall_timeout') &&
-          ctx.observeLocalTimeout(ref)
-        ) {
-          const provider = ref.split('/')[0];
-          pushRouterInfoLogged(
-            proxy,
-            `> [router] ${provider} looks wedged: generations keep timing out on local models while the daemon still answers. ` +
-              `Skipping ${provider} models for ${ctx.wedgeCooldownText(ref)}. Fix: ${wedgeFixHint(provider)}.\n\n`
-          );
+        // Every soft failure of a D1 evidence kind feeds the provider
+        // breaker (plan Phase 2 — not only local timeouts anymore); the
+        // seam filters non-evidence reasons/texts, and returns true only
+        // when this failure newly OPENS the breaker (narrate once, D6).
+        if (ctx.observeProviderFailure(ref, String(result.reason), result.detail)) {
+          narrateBreakerOpen(ctx, proxy, ref);
         }
         const reason = result.reason === 'empty_timeout'
           ? 'no response within timeout'
@@ -950,6 +1022,7 @@ export class StreamOrchestrator {
         // the session_errors buffer as well — this catch is where the
         // 2026-09-27 422/timeout waves would have been invisible.
         ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
+        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg)) narrateBreakerOpen(ctx, proxy, ref);
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
@@ -996,6 +1069,98 @@ export class StreamOrchestrator {
       return;
     }
 
+    // Never dead-end behind open breakers (plan D4). The gap this closes:
+    // a breaker skip is not `isLimited`, so the total-cooldown collapse
+    // below never saw it — when EVERY remaining attemptable candidate sits
+    // behind an open breaker, the walk used to hard-fail with "all
+    // candidates failed". Instead, pick the candidate of the breaker with
+    // the SOONEST expiry and treat it as a forced half-open probe (the
+    // same idea as the cooldown collapse, but breaker-aware). A breaker can
+    // only ever reorder and delay attempts, never remove the last option.
+    const allBehindBreaker = allFailed && candidates.length > 0 && candidates.every((r) => ctx.isBreakerOpen(r));
+    if (allBehindBreaker) {
+      let probeRef: string | null = null;
+      let soonestUntil = Number.POSITIVE_INFINITY;
+      for (const r of candidates) {
+        const st = breakerState(ctx.cache, r.split('/')[0]);
+        // Ties keep the earlier (higher-ranked) candidate — the same one
+        // the regular half-open would probe (plan D5).
+        if (st.open && st.until !== undefined && st.until < soonestUntil) {
+          soonestUntil = st.until;
+          probeRef = r;
+        }
+      }
+      if (probeRef) {
+        const probeProvider = probeRef.split('/')[0];
+        routerLog(
+          `[router] Breaker dead-end — every remaining candidate sits behind an open breaker. Forced half-open probe of ${probeRef} (breaker expires in ${Math.ceil((soonestUntil - Date.now()) / 1000)}s).`
+        );
+        pushRouterInfoLogged(
+          proxy,
+          `> [router] All remaining candidates sit behind open provider breakers — probing wedged provider ${probeProvider} via ${probeRef}…\n\n`
+        );
+        // Mirror the cooldown collapse's self-poisoning guard: if the probe
+        // ref also sits in a rate-limit cooldown with a NEAR reset, wait for
+        // it instead of force-retrying into a known-unexpired cooldown.
+        const probeSecs = ctx.router.limitSecs(probeRef);
+        const waitMaxMs = ctx.getRateLimitWaitMaxMs();
+        if (ctx.isLimited(probeRef) && waitMaxMs > 0 && probeSecs * 1000 <= waitMaxMs) {
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] Waiting ${probeSecs}s for ${probeRef}'s cooldown, then probing…\n\n`
+          );
+          await sleepMs(probeSecs * 1000 + 2000);
+        }
+        ctx.router.setCurModel(probeRef);
+        ctx.router.setActiveGroup(ctx.activeGroup);
+        ctx.lastDynamicModel = probeRef;
+        const probeAttempt = openCandidateAttempt(options);
+        const probeTarget = await ctx.tryStream(probeRef, context, probeAttempt.options).catch((err) => {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          pushError(probeRef!, `probing wedged provider (forced half-open probe): ${errorMsg}`);
+          ctx.recordStreamFailure(probeRef!, 'provider_error', undefined, errorMsg);
+          ctx.observeProviderFailure(probeRef!, 'provider_error', errorMsg);
+          return null;
+        });
+        if (!probeTarget) probeAttempt.abandon();
+        if (probeTarget) {
+          let probeSucceeded = false;
+          try {
+            const result = await ctx.consumeWithDetection(
+              probeTarget.stream, proxy,
+              ctx.getEmptyResponseTimeout(probeRef),
+              ctx.getStallTimeout(probeRef),
+              probeRef as string
+            );
+            if (result.ok) {
+              probeSucceeded = true;
+              ctx.recordOk(probeRef);
+              return;
+            }
+            if (result.reason === 'aborted') return;
+            if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(probeRef, result.detail);
+            // The forced probe failed: label it as the probe attempt in the
+            // error aggregation (plan D4) — never as a plain cascade failure.
+            pushError(probeRef, `probing wedged provider (forced half-open probe): ${result.reason}`);
+            ctx.recordStreamFailure(probeRef, String(result.reason), result.resetAtMs, result.detail);
+            ctx.observeProviderFailure(probeRef, String(result.reason), result.detail);
+          } catch (streamError) {
+            const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+            pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
+            ctx.observeFailure(probeRef, errorMsg);
+            ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
+            ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
+          } finally {
+            if (!probeSucceeded) probeAttempt.abandon();
+            ctx.releaseLocalSlot(probeRef);
+          }
+        }
+        // A successful probe returned above; a failed one falls through to
+        // the aggregate error below (which ends the proxy stream) — the walk
+        // really tried its last option before failing.
+      }
+    }
+
     // Total cooldown collapse.
     // The original strict-equality check (`cooldownSkips === allErrors.length`)
     // misses an important case: when N-1 candidates are pre-skipped as in
@@ -1016,7 +1181,7 @@ export class StreamOrchestrator {
     // + the rest rate-limited) should NOT trigger the cooldown safety net
     // (the ctx-too-small ref has nothing to retry). Kept this way on purpose;
     // a future refactor of the skip logic must preserve this distinction.
-    const allInCooldownNow = allFailed && candidates.every((r) => ctx.isLimited(r));
+    const allInCooldownNow = allFailed && !allBehindBreaker && candidates.every((r) => ctx.isLimited(r));
     if (allInCooldownNow && candidates.length > 0) {
       let bestRef: string | null = null;
       let bestSecs = Number.POSITIVE_INFINITY;

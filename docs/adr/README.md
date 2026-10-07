@@ -54,3 +54,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0023 — Tier routing restored: per-group GDPval cap and quality-equivalence window](0023-tier-routing-gdpval-cap-and-quality-window.md)
 - [0024 — Task-type balancing: continuations inherit, category mapping configurable (proposed)](0024-task-type-balancing.md)
 - [0025 — No hardcoded models: everything derives from the models Pi uses](0025-no-hardcoded-models.md)
+- [0026 — One provider circuit breaker for local and cloud providers](0026-provider-circuit-breaker.md)

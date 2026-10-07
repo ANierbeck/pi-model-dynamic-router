@@ -622,15 +622,19 @@ before any release proposal.
 
 Open follow-up from the Lane C review (owner product decision): a bare provider pattern like `openrouter` passes validation but lands in `exclude.models` where it matches nothing — reject it, or map it to `exclude.providers`?
 
-**Cloud-provider wedge circuit breaker** — **Phase 1 DONE** (work-round
-2026-10-07): core module + local parity. One generalized local+cloud
-mechanism: evidence classification, distinct-model trip rule (cloud 3 /
-local 2, 10-min window), cooldown ladder [2,5,15] min with window-bounded
-half-open re-opens, state under the new `provider_breaker` cache key;
-`src/provider-watchdog.ts` is now a shim over it (ADR-0016 update note).
-Still open per plan: Phases 2–4 (orchestrator wiring + never-dead-end
-forced probe, visibility/narration wiring, volatile state across
-restarts). Original motivation: claude-bridge
+**Cloud-provider wedge circuit breaker** — ✅ **DONE (Phases 1–4)**
+(2026-10-07): core module + local parity (Phase 1), orchestrator wiring
+with intra-walk short-circuit and never-dead-end forced probe (Phase 2),
+narration + `/router` lines + counters + volatile state + `/router cooldowns
+clear` (Phase 3), replay validation over the 6-day router.log — 0 false
+trips, no trip on the Mistral 422 days, a trip on every bridge cascade,
+172 avoided attempts — plus ADR-0026 (Phase 4). One generalized
+local+cloud mechanism: evidence classification, distinct-model trip rule
+(cloud 3 / local 2, 10-min window), cooldown ladder [2,5,15] min,
+state under the `provider_breaker` cache key (volatile by policy,
+`provider_breaker_stats` persists); `src/provider-watchdog.ts` is a shim
+over it. Optional `provider_breaker` config with an `enabled` kill switch
+for the cloud half. Original motivation: claude-bridge
 prompt-capture/empty-response failures (P0.4) — a cloud provider that
 wedges had no explicit "this whole provider is wedged" signal or
 narration; the owner confirmed the idea 2026-10-06.

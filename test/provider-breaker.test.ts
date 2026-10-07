@@ -11,10 +11,13 @@ import {
   recordProviderSuccess,
   isProviderOpen,
   breakerState,
+  breakerEvidenceSummary,
   openBreakers,
   BREAKER_COOLDOWN_LADDER_MS,
   WEDGE_WINDOW_MS,
+  type BreakerTuning,
 } from '../src/provider-breaker.ts';
+import { recordLocalTimeout, setWatchdogBreakerTuning } from '../src/provider-watchdog.ts';
 import type { Cache } from '../src/types.ts';
 
 const MIN = 60_000;
@@ -257,5 +260,41 @@ describe('openBreakers (status displays)', () => {
     expect(openBreakers(cache, 10)).toEqual([{ provider: 'ollama', until: 1 + BREAKER_COOLDOWN_LADDER_MS[0] }]);
     expect(openBreakers(cache, 1 + BREAKER_COOLDOWN_LADDER_MS[0])).toEqual([]);
     expect(openBreakers(undefined, 10)).toEqual([]);
+  });
+});
+
+describe('tuning consistency (Phases 2-4 review M1/M2, red-first)', () => {
+  const tunedWindow: BreakerTuning = {
+    cloudEnabled: true,
+    minModelsCloud: 3,
+    minModelsLocal: 2,
+    windowMs: 10_000,
+    cooldownMs: BREAKER_COOLDOWN_LADDER_MS,
+  };
+
+  it('M1: breakerEvidenceSummary prunes with the TUNED window, not the code default', () => {
+    // Evidence recorded at t=0; tuned window is 10s; the view is taken at
+    // t=20s — OUTSIDE the tuned window but INSIDE the 40s code default. The
+    // unfixed implementation pruned with WEDGE_WINDOW_MS regardless of the
+    // passed tuning and reported count 1 (observed RED before the fix).
+    const cache: Cache = {};
+    for (const m of ['m1', 'm2', 'm3']) recordProviderFailure(cache, `cloud-a/${m}`, 'empty_response', undefined, 0);
+    const summary = breakerEvidenceSummary(cache, 'cloud-a', 20_000, tunedWindow);
+    expect(summary).toBeUndefined();
+  });
+
+  it('M2: classifier-path local timeouts honor installed tuning (minModelsLocal 1)', () => {
+    // The classifier's call site has no Config in scope; load() installs the
+    // user's provider_breaker tuning on the watchdog shim. With
+    // min_models.local tuned to 1, ONE distinct local timeout must trip. The
+    // unfixed shim ignored the installed tuning (code default N=2) and
+    // returned false (observed RED before the fix).
+    setWatchdogBreakerTuning({ ...tunedWindow, minModelsLocal: 1 });
+    try {
+      const cache: Cache = {};
+      expect(recordLocalTimeout(cache, 'ollama/m1', 0)).toBe(true);
+    } finally {
+      setWatchdogBreakerTuning(undefined);
+    }
   });
 });

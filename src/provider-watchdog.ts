@@ -17,9 +17,24 @@ import {
   recordProviderFailure,
   recordProviderSuccess,
   isProviderOpen,
+  type BreakerTuning,
 } from './provider-breaker.ts';
 
 export { WEDGE_WINDOW_MS };
+
+/**
+ * Tuning for classifier-path observations (review M2 of the Phases 2-4
+ * round): classifyPrompt's call site has no Config in scope, so it cannot
+ * resolve provider_breaker tuning itself. index.ts load() installs the live
+ * tuning here (the same module-level pattern as setCategoryGroupMapping), so
+ * local-timeout observations from the classifier honor user overrides of
+ * min_models.local / window_s / cooldown_s instead of the code defaults.
+ */
+let installedTuning: BreakerTuning | undefined;
+
+export function setWatchdogBreakerTuning(tuning: BreakerTuning | undefined): void {
+  installedTuning = tuning;
+}
 
 /**
  * First ladder step of the breaker. Replaces ADR-0016's flat 5 min: the
@@ -36,9 +51,10 @@ export const WEDGE_COOLDOWN_MS = BREAKER_COOLDOWN_LADDER_MS[0];
  * Call it right after a failure was reported as newly opening the breaker,
  * which is true for every re-open too, not just the first.
  */
-export function wedgeCooldownText(cache: Cache | undefined, provider: string): string {
-  const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), BREAKER_COOLDOWN_LADDER_MS.length) - 1;
-  return `${Math.round(BREAKER_COOLDOWN_LADDER_MS[step] / 60_000)} min`;
+export function wedgeCooldownText(cache: Cache | undefined, provider: string, tuning?: BreakerTuning): string {
+  const ladder = tuning?.cooldownMs ?? BREAKER_COOLDOWN_LADDER_MS;
+  const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), ladder.length) - 1;
+  return `${Math.round(ladder[step] / 60_000)} min`;
 }
 
 /** How the user un-wedges a local provider; the router never restarts it itself. */
@@ -59,7 +75,7 @@ function isLocal(provider: string): boolean {
  */
 export function recordLocalTimeout(cache: Cache, ref: string, now: number = Date.now()): boolean {
   if (!isLocal(ref.split('/')[0])) return false;
-  return recordProviderFailure(cache, ref, 'empty_timeout', undefined, now);
+  return recordProviderFailure(cache, ref, 'empty_timeout', undefined, now, installedTuning);
 }
 
 /** Any local success proves the daemon generates: clears evidence and wedge. */

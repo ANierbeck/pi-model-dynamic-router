@@ -1,0 +1,46 @@
+{
+  "description": "The 2026-10-06 08:03Z burst (plan Phase 4 replay gate): four claude-bridge models failed empty within 16 ms, one after another, after two single-model empties earlier in the same window.",
+  "origin": "router.log 2026-10-06T08:03:19Z-08:03:51Z window, extracted with scripts/provider-breaker-replay.ts --extract and sanitized (paths, hosts and session tags removed; only timestamps, model refs and error details remain)",
+  "events": [
+    {
+      "ts": 1791273799825,
+      "ref": "mistral/zai-glm-5-3",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273801873,
+      "ref": "claude-bridge/claude-opus-5-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273801874,
+      "ref": "claude-bridge/claude-sonnet-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273831878,
+      "ref": "mistral/devstral-2512",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273831889,
+      "ref": "claude-bridge/claude-sonnet-5-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273831891,
+      "ref": "claude-bridge/claude-sonnet-4-6",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273831893,
+      "ref": "claude-bridge/claude-haiku-4-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791273831894,
+      "ref": "claude-bridge/claude-sonnet-4-5",
+      "kind": "empty_response"
+    }
+  ]
+}

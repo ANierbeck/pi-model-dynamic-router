@@ -32,6 +32,18 @@ const lastProjectSync = new WeakMap<Cache, string>();
  */
 const INSTANCE_KEYS = ['session_errors', 'usage_log'] as const;
 
+/**
+ * Volatile cache keys (provider circuit breaker, plan D7 / ADR-0026):
+ * stripped from every disk read AND write. Breaker state must NOT survive a
+ * restart — a restart is the standard remedy for a wedged provider, and an
+ * open breaker that outlives it would keep skipping the provider for up to
+ * 15 min after the user already fixed the problem. The telemetry
+ * (provider_breaker_stats) is a normal persisted key. Stripping on read also
+ * keeps an older version's persisted breaker state from being adopted or
+ * resurrected through mergeExternal.
+ */
+const VOLATILE_KEYS = ['provider_breaker'] as const;
+
 
 
 /** Atomic JSON write: temp file in the same directory, then rename. */
@@ -152,7 +164,10 @@ export class CacheManager {
     try {
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
       if (fs.existsSync(this.cachePath)) {
-        return JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
+        const disk: Cache = JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
+        const volatile = disk as unknown as Record<string, unknown>;
+        for (const k of VOLATILE_KEYS) delete volatile[k];
+        return disk;
       }
     } catch {
       /* first run */
@@ -259,6 +274,8 @@ export class CacheManager {
     }
     const globalPart: Record<string, unknown> = { ...(data as Record<string, unknown>) };
     if (this.projectPath) for (const k of INSTANCE_KEYS) delete globalPart[k];
+    // Volatile breaker state never reaches disk (any scope), plan D7.
+    for (const k of VOLATILE_KEYS) delete globalPart[k];
     writeJsonAtomic(this.cachePath, globalPart);
     lastSync.set(data, this.fileState());
 

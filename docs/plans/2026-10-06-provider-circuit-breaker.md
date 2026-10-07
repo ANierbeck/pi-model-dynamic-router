@@ -2,7 +2,10 @@
 
 > Backlog item "Cloud-provider wedge circuit breaker" (TODO.md, registered
 > 2026-10-06), promoted to a plan on the owner's request. Status:
-> **proposed** — phases need the owner's go; open questions at the end.
+> **implemented** — Phase 1 (core module + local parity) merged 2026-10-07;
+> Phases 2–4 (orchestrator wiring, visibility/volatile state, replay
+> validation + ADR-0026) implemented in the circuit-breaker-phases-2-4
+> lane, 2026-10-07. Open questions at the end.
 > Target line: 1.7.0. Follows AGENTS.md §4 (red-first), §5, §8. **No release
 > action is part of this plan (§1).**
 >
