@@ -19,6 +19,7 @@ import { isBlocked } from './model-blocklist.ts';
 import { demoteUnhealthy, isUnhealthy } from './model-health.ts';
 import { isDebugEnabled, debugLogOnce } from './logger.ts';
 import { filterByBudget } from './budget.ts';
+import { pacedProviders } from './budget-pacing.ts';
 import { isRefLimited, refLimitSecs } from './rate-limit.ts';
 
 /**
@@ -1010,6 +1011,26 @@ export class Router {
   }
 
   /**
+   * Budget pacing (task-type-balancing Phase 4): refs of a provider that is
+   * AHEAD of its declared `providers.<p>.budget` pace move to the END of the
+   * candidate list (behind every on-pace candidate), preserving their
+   * relative order. A rank penalty, never an exclusion — a paced provider
+   * stays available for failover when nothing on-pace can serve the group.
+   * Applied on the LIVE selection path only (resolveGroup); the display
+   * path (getTopModels) keeps showing the method's own ranking — the live
+   * pacing effect is observable in the Phase 0 group-decision debug line
+   * ('[paced]'). Runs before demoteUnhealthy so a failing model still
+   * ranks behind everything, paced or not.
+   */
+  private paceDemote(refs: string[]): string[] {
+    const paced = pacedProviders(this.cfg, this.cache.usage_log);
+    if (paced.size === 0) return refs;
+    const isPaced = (ref: string) => paced.has(ref.split('/')[0]);
+    if (!refs.some(isPaced)) return refs;
+    return [...refs.filter((r) => !isPaced(r)), ...refs.filter(isPaced)];
+  }
+
+  /**
    * Builds the ordered candidate list for ONE group, applying the group's raw
    * cost constraints (max_cost / max_cost_per_m).
    *
@@ -1084,7 +1105,8 @@ export class Router {
     // exactly what health tracking exists to prevent.
     // Coalesce before demoteUnhealthy so same-slug variants are adjacent
     // and stay together when health demotion splits into healthy/unhealthy buckets.
-    const rank = (refs: string[]): string[] => demoteUnhealthy(this.cache, this.coalesceBySlug(refs));
+    const rank = (refs: string[]): string[] =>
+      demoteUnhealthy(this.cache, this.paceDemote(this.coalesceBySlug(refs)));
 
     if (g.method === 'best') {
       // Multi-metric scoring for 'best' method. The third arg is the group's
@@ -1139,6 +1161,7 @@ export class Router {
       if (g.method === 'best') s += ` score=${fmt(calculateScore(ref, g.score_by ?? 'gdpval', this.cfg))}`;
       if (isUnhealthy(this.cache, ref)) s += ' [unhealthy]';
       if (this.isLimited(ref)) s += ' [limited]';
+      if (pacedProviders(this.cfg, this.cache.usage_log).has(ref.split('/')[0])) s += ' [paced]';
       return s;
     });
     const excluded = drops.map(([ref, gate]) => `${ref}=${gate}`);

@@ -90,6 +90,13 @@ export interface Group {
   exclude_providers?: string[];
   exclude_models?: string[];
   /**
+   * Per-group cache-aware compaction settings (Phase 5b): each field wins
+   * over the same field of the global `context_budget`; absent fields fall
+   * back to the global values. Absent everywhere = feature off.
+   * See src/context-compaction.ts.
+   */
+  context_budget?: ContextBudgetConfig;
+  /**
    * Billing-tier ranking override, applied as a post-sort pass by
    * `resolveGroup()` (live selection) and `getTopModels()` (display) AFTER
    * the group's `method` has ordered the candidates. It re-ranks by billing
@@ -153,6 +160,15 @@ export interface ProviderKey {
 export interface ProviderConfig {
   billing: string;
   monthly_cost_usd?: number;
+  /**
+   * Budget pacing (task-type-balancing Phase 4): a spend allowance the
+   * router compares its own usage_log counter against. A provider that runs
+   * ahead of the LINEAR target for the current window is DEMOTED (ranked
+   * behind on-pace candidates, never excluded). Works for capped
+   * subscriptions and pay-per-token spend limits alike; absent = off (the
+   * shipped default — user-layer key). See src/budget-pacing.ts.
+   */
+  budget?: ProviderBudget;
   /**
    * Legacy (ADR-0022): key entries are no longer read, resolved, or written
    * by the router — pi resolves credentials. The field stays so old
@@ -270,6 +286,33 @@ export interface Config {
    * static layered config — a dynamic config can never silently change it.
    */
   category_groups?: Record<string, string>;
+  /**
+   * Global cache-aware compaction settings (task-type-balancing Phase 5b):
+   * `{ enabled, soft_tokens, hard_tokens, cache_ttl_s }`, OPT-IN — absent =
+   * off (measurement only, which Phase 5a ships always-on). Setting
+   * thresholds opts into the "compacting now would pay off" hints at cold
+   * turn boundaries; `enabled: true` additionally compacts automatically
+   * (only between turns, never mid-turn). Per-group overrides live on
+   * `model_groups.<g>.context_budget` and win per field. Compaction runs on
+   * a COLD cache only (over soft) or above `hard_tokens` regardless — a
+   * warm paid cache is never thrown away. See src/context-compaction.ts.
+   */
+  context_budget?: ContextBudgetConfig;
+}
+
+/**
+ * Cache-aware compaction settings (Phase 5b of
+ * docs/plans/2026-10-05-task-type-balancing.md), globally and per group.
+ */
+export interface ContextBudgetConfig {
+  /** Master switch: compact automatically at turn boundaries. Default false. */
+  enabled?: boolean;
+  /** Context size (tokens) that pays off to compact below WHEN THE CACHE IS COLD. 0/absent = off. */
+  soft_tokens?: number;
+  /** Context size (tokens) that compacts regardless of cache state. 0/absent = off. */
+  hard_tokens?: number;
+  /** Provider-cache TTL in seconds: an idle gap longer than this counts as a cold cache. */
+  cache_ttl_s?: number;
 }
 
 /**
@@ -514,6 +557,23 @@ export interface ProviderDef {
 }
 
 // ── Utility Types ────────────────────────────────────────────────────────
+
+/**
+ * Declared spend allowance for one provider (budget pacing, Phase 4 of
+ * docs/plans/2026-10-05-task-type-balancing.md). Structural twin of
+ * src/budget-pacing.ts's runtime-validated ProviderBudget — the config type
+ * lives here so `providers.<p>.budget` type-checks in Config.
+ */
+export interface ProviderBudget {
+  /** Allowance per window; must be > 0. */
+  amount: number;
+  /** 'tokens' counts usage_log tokens (incl. cacheRead, Phase 5a); 'usd' estimates spend via the blended effCost. */
+  unit: 'usd' | 'tokens';
+  /** Only 'month' is supported today. */
+  period: 'month';
+  /** Day of month (1-31) the window starts; clamped to shorter months. */
+  reset_day: number;
+}
 
 export interface ModelRef {
   provider: string;

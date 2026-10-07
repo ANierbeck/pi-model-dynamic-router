@@ -178,7 +178,43 @@ const CONFIG_USAGE_LINES = [
   '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
 ];
 
-const COMPACTION_PENDING = 'compaction: not implemented yet (Phase 5b)';
+/**
+ * Cache-aware compaction state line (Phase 5b, implemented): the master
+ * switch plus whatever thresholds are configured. OFF with no thresholds is
+ * the shipped default — measurement only (Phase 5a), no hints, no
+ * auto-compaction.
+ */
+function compactionStateLine(cfg: { context_budget?: { enabled?: boolean; soft_tokens?: number; hard_tokens?: number; cache_ttl_s?: number } }): string {
+  const b = cfg.context_budget;
+  const enabled = b?.enabled ? 'on' : 'off';
+  const bits: string[] = [];
+  if (b && (b.soft_tokens ?? 0) > 0) bits.push(`soft ${b.soft_tokens} tok`);
+  if (b && (b.hard_tokens ?? 0) > 0) bits.push(`hard ${b.hard_tokens} tok`);
+  if (b && (b.cache_ttl_s ?? 0) > 0) bits.push(`ttl ${b.cache_ttl_s}s`);
+  const detail = bits.length ? ` (${bits.join(', ')})` : ' (no soft_tokens/hard_tokens configured — triggers disarmed)';
+  return `Compaction (context_budget): ${enabled}${detail}`;
+}
+
+/** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
+function setCompaction(rt: CommandDeps, on: boolean): string {
+  const res = openUserConfigStore().applyDelta({ context_budget: { enabled: on } });
+  if (!res.ok) return res.error;
+  // Immediate in-memory effect, then the authoritative re-read (same path as
+  // session_start) so the running router sees exactly what the next start will.
+  rt.cfg.context_budget = { ...rt.cfg.context_budget, enabled: on };
+  rt.load();
+  const armed =
+    (rt.cfg.context_budget?.soft_tokens ?? 0) > 0 || (rt.cfg.context_budget?.hard_tokens ?? 0) > 0;
+  const note = on
+    ? armed
+      ? 'Armed: cold turn boundaries over the thresholds compact (or hint while disabled); over hard compacts regardless.'
+      : 'No soft_tokens/hard_tokens configured yet — set them in context_budget to arm the triggers; without thresholds nothing compacts and no hints fire.'
+    : 'Thresholds still configure the "compacting now would pay off" hints; only the automatic compaction is off.';
+  return [
+    `Cache-aware auto-compaction ${on ? 'enabled' : 'disabled'} — saved to ${res.written}; applies from the next turn boundary (never mid-turn).`,
+    note,
+  ].join('\n');
+}
 
 /**
  * Every model ref Pi currently offers, BEFORE the exclude rules: the router's
@@ -219,7 +255,7 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
     }
   }
   if (!any) lines.push('  (none)');
-  lines.push('', COMPACTION_PENDING, '', ...CONFIG_USAGE_LINES);
+  lines.push('', compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES);
   lines.push('Shipped and project entries cannot be removed with unexclude — only user-layer entries can.');
   return lines.join('\n');
 }
@@ -311,7 +347,11 @@ function handleConfigCommand(rt: CommandDeps, ctx: Parameters<typeof rawDiscover
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = () => readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
   if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
-  if (sub === 'compaction') return COMPACTION_PENDING;
+  if (sub === 'compaction') {
+    if (arg === 'on') return setCompaction(rt, true);
+    if (arg === 'off') return setCompaction(rt, false);
+    return [compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES].join('\n');
+  }
   if (sub === 'exclude') return excludePattern(rt, ctx, arg);
   if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
@@ -337,7 +377,7 @@ export function createCommands(rt: CommandDeps) {
         { value: 'config', label: 'config', description: 'Show config sources, exclude rules (with origin) and how many models each matches' },
         { value: 'config exclude', label: 'config exclude <ref>', description: 'Exclude a model/glob from routing (saved to the user config, live without restart)' },
         { value: 'config unexclude', label: 'config unexclude <ref>', description: 'Remove an exclusion from the user config' },
-        { value: 'config compaction', label: 'config compaction on|off', description: 'Cache-aware auto-compaction flag (not implemented yet, Phase 5b)' },
+        { value: 'config compaction', label: 'config compaction on|off', description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
         const desc = rt.cfg.model_groups?.[g]?.description;
