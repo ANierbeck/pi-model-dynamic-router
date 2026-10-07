@@ -9,7 +9,7 @@
  */
 
 import { DiscoveryManager } from './discovery.ts';
-import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic } from './dynamic-config.ts';
+import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic, registerRegistryProviderStubs, type StaticContributions } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -47,6 +47,8 @@ interface DynamicConfigRunnerDeps {
   settleRetryScheduled: boolean;
   readonly stateDir: string;
   readonly staticCfg: Config;
+  /** Clean-by-construction contribution snapshot; taken in load() after loadLayeredConfig. */
+  readonly staticContributions: StaticContributions;
   readonly turnStart: number;
 }
 
@@ -239,18 +241,13 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         }
       }
 
-      // Register a lightweight provider stub for each registry-discovered
-      // provider the router doesn't know yet (e.g. claude-bridge). Without this entry
-      // stripProvider() won't recognize the prefix and GDPval/price inference via
-      // the base model name (e.g. "claude-sonnet-5") would fail.
-      for (const ref of registryRefs) {
-        const slash = ref.indexOf('/');
-        if (slash === -1) continue;
-        const prov = ref.slice(0, slash);
-        if (!PROVIDER_MAP[prov] && !rt.cfg.providers?.[prov]) {
-          (rt.cfg.providers ??= {})[prov] = { billing: 'subscription' };
-        }
-      }
+      // Registry provider stubs (see dynamic-config.ts). The snapshot for the
+      // resync comes from rt.staticContributions — taken in load() right
+      // after loadLayeredConfig, so it is clean by construction: neither the
+      // stubs this loop adds (rt.cfg may BE rt.staticCfg when no dynamic file
+      // was loaded yet) nor a mid-turn load() replacement can pollute it
+      // (review M1, 2026-10-07).
+      registerRegistryProviderStubs(rt.cfg, registryRefs);
       
       // 4. Enrich the models with GDPval and cost
       // All models are now dynamic, no separate static models
@@ -414,7 +411,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // stale dynamic config), NOT from staticCfg — only the user-intent keys
       // (DYNAMIC_CONFIG_RESYNC_KEYS, shared with load()'s read-site re-sync)
       // are forced explicitly from staticCfg (and DYNAMIC_CONFIG_MERGE_KEYS
-      // merged per entry, static winning — resyncDynamicFromStatic), so the regenerated file never
+      // pruned of static-removed entries, then merged per entry, static
+      // winning — resyncDynamicFromStatic), so the regenerated file never
       // persists a stale user value for another 30-day cycle. staticCfg is
       // the layered config (defaults + user override) and therefore the
       // single source of truth for those fields.
@@ -429,9 +427,11 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           free_models_count: staticFreeModels.length,
           scanned_models_count: scannedModels.length,
           config_fingerprint: configFingerprint,
+          // static_contributions is recorded by resyncDynamicFromStatic below
+          // (load() already pruned rt.cfg against the previous one).
         }
       };
-      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg);
+      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg, rt.staticContributions);
 
       const dynamicConfigPath = path.join(rt.stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
