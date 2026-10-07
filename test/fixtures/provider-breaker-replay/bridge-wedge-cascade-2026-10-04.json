@@ -1,0 +1,58 @@
+{
+  "description": "The 2026-10-04 08:31Z claude-bridge wedge cascade (plan Phase 4 replay gate): the bridge returned empty responses across its whole model line. Two failures, one flaky success in between (the breaker closes on it), then five distinct models empty within 3 ms of each other - the cascade the intra-walk short-circuit (D3) exists for: after the third distinct model the rest is skipped in the same walk.",
+  "origin": "router.log 2026-10-04T08:31:14Z-08:31:45Z window, extracted with scripts/provider-breaker-replay.ts --extract and sanitized (paths, hosts and session tags removed; only timestamps, model refs and error details remain)",
+  "events": [
+    {
+      "ts": 1791102674618,
+      "ref": "mistral/zai-glm-5-3",
+      "kind": "provider_error",
+      "detail": "terminated"
+    },
+    {
+      "ts": 1791102674718,
+      "ref": "claude-bridge/claude-opus-5-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102674719,
+      "ref": "claude-bridge/claude-sonnet-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102687991,
+      "ref": "claude-bridge/claude-opus-5-5",
+      "ok": true
+    },
+    {
+      "ts": 1791102704721,
+      "ref": "mistral/devstral-2512",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102705364,
+      "ref": "mistral/mistral-large-2411",
+      "kind": "provider_error",
+      "detail": "Mistral API error (400): {\"object\":\"error\",\"message\":\"Invalid model: mistral-large-2411\",\"type\":\"invalid_model\",\"param\":null,\"code\":\"1500\",\"raw_status_code\":400}"
+    },
+    {
+      "ts": 1791102705367,
+      "ref": "claude-bridge/claude-sonnet-5-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102705368,
+      "ref": "claude-bridge/claude-sonnet-4-6",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102705369,
+      "ref": "claude-bridge/claude-sonnet-4-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1791102705370,
+      "ref": "claude-bridge/claude-haiku-4-5",
+      "kind": "empty_response"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "description": "The 2026-09-27 08:36Z Mistral 422 wave (plan Phase 4 replay gate, the no-trip side): SIX distinct mistral models answered \"422 status code (no body)\" within 12 s - a per-model request/shape error wave, NOT a provider wedge. The breaker must NOT trip on this.",
+  "origin": "router.log 2026-09-27T08:36:24Z-08:36:36Z window, extracted with scripts/provider-breaker-replay.ts --extract and sanitized (paths, hosts and session tags removed; only timestamps, model refs and error details remain)",
+  "events": [
+    {
+      "ts": 1790498184133,
+      "ref": "claude-bridge/claude-opus-5-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1790498184443,
+      "ref": "mistral/zai-glm-5",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    },
+    {
+      "ts": 1790498184610,
+      "ref": "mistral/zai-glm-latest",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    },
+    {
+      "ts": 1790498193356,
+      "ref": "claude-bridge/claude-sonnet-5",
+      "kind": "empty_response"
+    },
+    {
+      "ts": 1790498194338,
+      "ref": "mistral/glm-5-2",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    },
+    {
+      "ts": 1790498195929,
+      "ref": "mistral/mistral-medium-3-5",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    },
+    {
+      "ts": 1790498196005,
+      "ref": "mistral/magistral-small-latest",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    },
+    {
+      "ts": 1790498196667,
+      "ref": "mistral/codestral-2508",
+      "kind": "provider_error",
+      "detail": "422 status code (no body)"
+    }
+  ]
+}

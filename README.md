@@ -341,6 +341,17 @@ On HTTP 429 the router works through two escalating responses:
 
 Both mechanisms are transparent to the user — the session continues with the next available model.
 
+#### Provider Circuit Breaker
+
+All of the above is per **model**. When a whole **provider** wedges — several *different* models of the same provider failing the same way in a short window (empty responses, timeouts, connection errors; live evidence: a bridge that answered every request with empty responses for six days) — the breaker opens for that provider ([ADR-0026](docs/adr/0026-provider-circuit-breaker.md)):
+
+- **Trip:** 3 distinct cloud models (2 for local ones) fail with provider-level evidence within 10 minutes, with no success in between. Per-model request/shape errors (400/404/422) and rate limits (a parsed reset time) never trip it.
+- **Skip:** while open, the provider's candidates are skipped — including the rest of the very candidate walk that discovered the wedge. One narration line states the provider, the evidence and a fix hint.
+- **Never a dead end:** if *every* remaining candidate sits behind an open breaker, the walk force-probes the soonest-expiring breaker's best candidate instead of failing.
+- **Close:** any success of the provider, the cooldown ladder expiring (2 → 5 → 15 min per repeated trip), `/router cooldowns clear`, or a session restart (breaker state is volatile on purpose — a restart is the usual fix, and it must never leave a stale skip behind).
+- **Visibility:** `/router` shows every open breaker with its remaining skip time plus persisted trip/avoided-hop counters per provider.
+- **Kill switch:** `"provider_breaker": { "enabled": false }` in the user config disarms the cloud breaker (local providers keep the ADR-0016 watchdog). Thresholds are tunable too (`min_models`, `window_s`, `cooldown_s`).
+
 #### Rate Limit & Subscription Handling
 
 The router automatically handles **rate limits, usage limits, and subscription errors** from all providers, including third-party extensions like **claude-bridge**.

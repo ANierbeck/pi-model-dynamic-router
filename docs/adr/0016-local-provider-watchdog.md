@@ -77,9 +77,13 @@ not module state, same reason as `model-health.ts`):
   *can* survive a restart until its timestamp expires (corrected
   2026-10-06; this line used to claim "a restart starts clean", which is
   not what the code does). The provider circuit breaker plan
-  (`docs/plans/2026-10-06-provider-circuit-breaker.md`, D7) proposes making
-  breaker state volatile so that a restart — the usual remedy for a wedge —
-  never leaves a stale skip behind.
+  (`docs/plans/2026-10-06-provider-circuit-breaker.md`, D7) made breaker
+  state VOLATILE by policy (implemented 2026-10-07, breaker Phases 2–4):
+  stripped from every cache read and write (`VOLATILE_KEYS` in
+  `src/cache.ts`), so a restart — the usual remedy for a wedge — never
+  leaves a stale skip behind; only the trip/hop telemetry
+  (`provider_breaker_stats`) persists. See
+  [ADR-0026](0026-provider-circuit-breaker.md).
 
 **Update 2026-10-06 (breaker plan, Phase 1):** the mechanism moved to
 `src/provider-breaker.ts` (one breaker for local and cloud providers);
