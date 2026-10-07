@@ -27,8 +27,8 @@ import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
-import { isProviderWedged, wedgeFixHint } from './provider-watchdog.ts';
-import { openBreakers } from './provider-breaker.ts';
+import { wedgeFixHint } from './provider-watchdog.ts';
+import { openBreakers, clearBreakers, isLocalProviderName } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { fmt, splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
@@ -491,13 +491,18 @@ export function createCommands(rt: CommandDeps) {
           if (health) {
             healthCleared = Object.keys(health).length;
             rt.cache.model_health = {};
-            rt.cacheManager.saveCache(rt.cache);
           }
+          // Provider circuit breakers clear with the cooldowns (plan D6):
+          // incident relief without a restart — same contract as for model
+          // cooldowns. Only the volatile open state goes; the persisted
+          // trip/hop telemetry stays (plan D7).
+          const breakersCleared = clearBreakers(rt.cache);
+          rt.cacheManager.saveCache(rt.cache);
           routerLog(
-            `[router] cooldowns cleared manually: ${cleared} cooldown(s) + ${healthCleared} model-health streak(s)`
+            `[router] cooldowns cleared manually: ${cleared} cooldown(s) + ${healthCleared} model-health streak(s) + ${breakersCleared} breaker(s)`
           );
           ctx.ui.notify(
-            `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s)). All models are immediately available for routing again.`,
+            `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s), ${breakersCleared} breaker(s)). All models are immediately available for routing again.`,
             'info'
           );
           return;
@@ -646,12 +651,35 @@ export function createCommands(rt: CommandDeps) {
         );
       }
 
-      // Local-provider watchdog (ADR-0016)
-      for (const { provider, until } of openBreakers(rt.cache)) {
-        if (!isProviderWedged(rt.cache, provider)) continue;
-        const secs = Math.ceil((until - Date.now()) / 1000);
-        lines.push('├─ Local provider watchdog '.padEnd(72, '─'));
-        lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s. Fix: ${wedgeFixHint(provider)}.`);
+      // Provider circuit breaker (ADR-0026, generalizes ADR-0016's
+      // local-only watchdog line): one line per open breaker — ANY provider,
+      // cloud included — with the remaining skip time and the persisted
+      // trip/avoided-hop counters (plan D6/D7). Providers whose breaker
+      // closed still show their telemetry: it is the tuning evidence that
+      // survives restarts. The fix hint is generic per provider class
+      // (ADR-0025 class A): local → restart the daemon, cloud → check the
+      // provider/extension.
+      {
+        const stats = rt.cache.provider_breaker_stats ?? {};
+        const openByProvider = new Map(openBreakers(rt.cache).map((b) => [b.provider, b.until]));
+        const providers = [...new Set([...Object.keys(stats), ...openByProvider.keys()])].sort();
+        if (providers.length > 0) {
+          lines.push('├─ Provider breaker '.padEnd(72, '─'));
+          for (const provider of providers) {
+            const st = stats[provider];
+            const counters = st ? `, ${st.trips} trip(s), ${st.avoided_hops} hop(s) avoided` : '';
+            const until = openByProvider.get(provider);
+            if (until !== undefined) {
+              const secs = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+              const hint = isLocalProviderName(provider)
+                ? wedgeFixHint(provider)
+                : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
+              lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s${counters}. Fix: ${hint}.`);
+            } else {
+              lines.push(`│ ⏱ ${provider}: breaker closed${counters}.`);
+            }
+          }
+        }
       }
 
       // Learned blocklist summary (details: /router blocklist)
