@@ -481,6 +481,85 @@ describe('loadModelMap — exact vs wildcard, reload, loud failure', () => {
   });
 });
 
+// ── version-counter round trips ───────────────────────────────────────────
+//
+// The model-map and GDPval version counters are only compared with `!==`, so a
+// DECREMENT is harmless on its own — but a decrement followed by one correct
+// increment returns the counter to the value a cached index was built at, and
+// the stale index is served. Each test builds the index, runs the path under
+// test (mutated: -1) and then one other change (+1) that lands back on the
+// build-time version. (Nightly R1 review: L94/L103/L126/L315/L337 had been
+// ledgered "equivalent", which only holds for a SINGLE decrement.)
+
+describe('version counters — a changed model map / GDPval map always invalidates the cached index', () => {
+  const aliasRegistry = (known: Record<string, unknown>): Registry => ({ find: (p, id) => known[`${p}/${id}`] });
+  /** Price of zz/m-a through the alias retry: needs a CURRENT alias index. */
+  const aliasPrice = () => m.lookupPrice('zz/m-a');
+  const mapDir = (yaml: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'modelmap-r1-ver-'));
+    fs.writeFileSync(path.join(dir, 'model-map.yaml'), yaml);
+    return dir;
+  };
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+  const buildStaleCandidate = () => {
+    world({
+      modelMap: { 'm-a': 'slug', 'm-b': 'slug' },
+      registry: aliasRegistry({ 'zz/m-d': priced(6, 6) }),
+    });
+    expect(aliasPrice()).toBeNull(); // builds the alias index at version k (aliases of m-a: m-b only)
+  };
+  const finalMap = { 'm-a': 'slug3', 'm-d': 'slug3' };
+
+  it('loadModelMap success, then setModelMap', () => {
+    buildStaleCandidate();
+    const dir = mapDir('m-a: slug2\nm-c: slug2\n');
+    dirs.push(dir);
+    m.loadModelMap(dir); // path under test
+    m.setModelMap(finalMap, []); // +1: back on the build-time version when the first one decremented
+    expect(aliasPrice()).toEqual({ input: 6, output: 6 });
+  });
+
+  it('loadModelMap parse failure, then setModelMap', () => {
+    buildStaleCandidate();
+    const dir = mapDir('{ unparseable');
+    dirs.push(dir);
+    m.loadModelMap(dir); // path under test (catch branch)
+    m.setModelMap(finalMap, []);
+    expect(aliasPrice()).toEqual({ input: 6, output: 6 });
+  });
+
+  it('setModelMap, then loadModelMap success', () => {
+    buildStaleCandidate();
+    m.setModelMap({ 'm-a': 'slug2', 'm-c': 'slug2' }, []); // path under test
+    const dir = mapDir('m-a: slug3\nm-d: slug3\n');
+    dirs.push(dir);
+    m.loadModelMap(dir); // +1
+    expect(aliasPrice()).toEqual({ input: 6, output: 6 });
+  });
+
+  const TOKEN_MAP = { 'x-model': 'alpha-beta' };
+
+  it('resolveSlug empty-gdpval restore from cache.gdpval_scores', () => {
+    const { cache } = world({ modelMap: TOKEN_MAP, cache: { gdpval_scores: { 'beta-alpha': 100 } } });
+    m.setGdpval({ 'beta-alpha': 100 });
+    expect(m.lookupGdp('x-model')).toBe(100); // builds the token index at version k
+    m.setGdpval({}); // k+1, now empty
+    cache.gdpval_scores = { 'beta-alpha': 200 }; // refreshed behind the module's back
+    expect(m.lookupGdp('x-model')).toBe(200); // restore bumps to k+2 (mutated: back on k -> stale 100)
+  });
+
+  it('resolveSlug missing-builtin heal', () => {
+    world({ modelMap: TOKEN_MAP, cfg: { gdpval_builtin: { 'builtin-slug': 5 } } });
+    m.setGdpval({ 'beta-alpha': 100, 'builtin-slug': 5 });
+    expect(m.lookupGdp('x-model')).toBe(100); // builds the token index at version k
+    m.setGdpval({ 'beta-alpha': 200 }); // k+1, builtin now missing
+    expect(m.lookupGdp('x-model')).toBe(200); // heal bumps to k+2 (mutated: back on k -> stale 100)
+  });
+});
+
 // ── fresh-module contracts ────────────────────────────────────────────────
 
 describe('fresh module — first version bump must build the token-set index', () => {
