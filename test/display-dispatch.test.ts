@@ -197,6 +197,19 @@ describe('roundrobin', () => {
     expect(new Set(second.candidates).size).toBe(3);
     expect(second.candidates[0]).toBe(second.selected);
   });
+
+  // Nightly R1 review: the Batch 4 ledger called the counter `i + 1` -> `i - 1`
+  // mutant equivalent ("negative modulo wraps through the same rotation").
+  // It does not for 3+ candidates: the second pick becomes the LAST element
+  // instead of the second. Two-model fixtures cannot tell the difference.
+  it('three candidates are visited in order, one step per resolve, then wrap', () => {
+    const router = mk();
+    const order = router.resolve('rr')!.candidates; // i = 0: the pool in its natural order
+    expect(order).toHaveLength(3);
+    const picks = [order[0]];
+    for (let i = 0; i < 5; i++) picks.push(router.resolve('rr')!.selected);
+    expect(picks).toEqual([order[0], order[1], order[2], order[0], order[1], order[2]]);
+  });
 });
 
 describe('resolve() — fallback cascade', () => {
