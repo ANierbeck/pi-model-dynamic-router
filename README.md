@@ -64,7 +64,7 @@ Exclude rules:
   [shipped] models: openrouter/*  → matches 8 discovered model(s)
   [user]    models: mistral/*  → matches 3 discovered model(s)
 
-compaction: not implemented yet (Phase 5b)
+Compaction (context_budget): off (no soft_tokens/hard_tokens configured — triggers disarmed)
 
 Usage:
   /router config                          show config sources + exclude rules
@@ -134,7 +134,9 @@ Long agentic sessions burn most of their cost resending context — and a **cold
 }
 ```
 
-Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step, an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
+Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step (cacheRead below half the step's tokens; partial hits count as mostly-reprocessed), an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
+
+Heuristic caveat (honest disclosure): the "last step" is the last entry of the shared persistent `usage_log` — with concurrent sessions, or right after resuming one, the signal can come from another session, in which case the trigger can misfire in the wasteful direction (compacting a warm cache costs one full-price step — the same cost the feature already accepts on a genuinely cold start) or the conservative direction (a cheap compaction opportunity is missed). Never a wrong exclusion; opt-in only.
 
 - **Hints** (default): with `enabled` false or absent but thresholds configured, the same conditions only produce a hint — "compacting now would pay off: /compact" (at most one per 30 minutes).
 - **Automatic**: `enabled: true` additionally calls Pi's compaction at the boundary instead of hinting.
@@ -767,7 +769,7 @@ discovers automatically.
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob>` | Exclude a model/pattern from routing (saved to user layer, live without restart) |
 | `/router config unexclude <ref|glob>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
-| `/router config compaction on|off` | Cache-aware auto-compaction flag (Phase 5b, not yet implemented) |
+| `/router config compaction on|off` | Cache-aware auto-compaction flag (opt-in, default off) |
 
 ### Logging
 

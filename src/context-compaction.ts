@@ -55,6 +55,12 @@ export interface LastStepCacheState {
  * The last step's cache state from the persistent usage_log. An entry without
  * `cacheRead` is a full miss (share 0): the provider reported no cached
  * context — either it caches nothing or the cache missed entirely.
+ *
+ * Heuristic caveat (review M4): the log is shared across sessions — with
+ * concurrent sessions, or right after resuming one, the "last step" can be
+ * another session's. A misfire then is bounded to one wasteful-direction
+ * full-price step (the cost the feature already accepts on a genuine cold
+ * start) or a conservative miss; never a wrong exclusion. Opt-in only.
  */
 export function lastStepCacheState(usageLog: UsageLogEntry[] | undefined): LastStepCacheState {
   const last = usageLog?.[usageLog.length - 1];
