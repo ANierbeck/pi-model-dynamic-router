@@ -11,7 +11,7 @@
 //   $0.000020 default), updateMetrics' EMA updates, billingTier's free-model
 //   paths, and loadModelMap's valid/broken YAML handling.
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -271,6 +271,10 @@ describe('loadModelMap — valid map loads, broken YAML disables overrides loudl
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'modelmap-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   afterAll(() => {

@@ -62,6 +62,9 @@ function main(argv: string[]): number {
   }
   process.stdout.write(`mutant ${mutant.id} (${mutator}) ${file}:${lineArg}: ${JSON.stringify(original.slice(0, 80))} -> ${JSON.stringify((mutant.replacement ?? '').slice(0, 80))}\n`);
   writeFileSync(file, current.slice(0, start) + (mutant.replacement ?? '') + current.slice(end));
+  // Ctrl-C during the synchronous test run skips `finally`; restore on signals too.
+  const restore = () => execFileSync('git', ['checkout', '-q', '--', file]);
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { restore(); process.exit(130); });
   try {
     const run = spawnSync('npx', ['vitest', 'run', '--silent=true', ...tests], { encoding: 'utf8' });
     const tail = (run.stdout + run.stderr).split('\n').filter((l) => /Tests |Test Files /.test(l)).join(' | ');
@@ -69,7 +72,7 @@ function main(argv: string[]): number {
     const verdict = !tail ? 'ERROR (no vitest summary)' : run.status === 0 ? 'SURVIVED' : 'KILLED';
     process.stdout.write(`${verdict}: ${tail}\n`);
   } finally {
-    execFileSync('git', ['checkout', '-q', '--', file]);
+    restore();
   }
   return 0;
 }

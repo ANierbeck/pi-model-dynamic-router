@@ -16,6 +16,14 @@
 // (location from the report); the range text must match the copy, otherwise
 // the mutant is reported as "stale" instead of being run.
 //
+// A kill is only counted when it is CONFIRMED: the failing test file named by
+// vitest is re-run ALONE against the same mutated copy (it must fail there)
+// and ALONE against the unmutated baseline (it must pass there). This rejects
+// kills by tests that cannot load the mutated module and kills caused by
+// shared-state races between the parallel jobs (nightly R1 review I1: a test
+// deleting a fixed shared tmp dir "killed" 14 mutants it could never see).
+// Unconfirmed kills are reported as "unconfirmed" with the rejected files.
+//
 // With --tests <comma-separated test files> only those files run per mutant
 // (the second use: "which survivors do the NEW tests kill?").
 //
@@ -41,8 +49,9 @@ interface Result {
   id: string;
   mutatorName: string;
   replacement: string;
-  result: 'killed' | 'survived' | 'stale' | 'timeout';
+  result: 'killed' | 'survived' | 'stale' | 'timeout' | 'unconfirmed';
   killer?: string;
+  rejected?: string[];
 }
 
 const RUN_TIMEOUT_MS = 180_000;
@@ -59,9 +68,9 @@ function flag(args: string[], name: string, fallback?: string): string | undefin
   return i < 0 ? fallback : args[i + 1];
 }
 
-function runVitest(dir: string, maxWorkers: string, tests: string[]): Promise<{ code: number | null; out: string; timedOut: boolean }> {
+function runVitest(dir: string, maxWorkers: string, tests: string[], bail = true): Promise<{ code: number | null; out: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const child = spawn('npx', ['vitest', 'run', '--silent=true', '--bail=1', `--maxWorkers=${maxWorkers}`, ...tests], { cwd: dir });
+    const child = spawn('npx', ['vitest', 'run', '--silent=true', ...(bail ? ['--bail=1'] : []), `--maxWorkers=${maxWorkers}`, ...tests], { cwd: dir });
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));
@@ -71,6 +80,10 @@ function runVitest(dir: string, maxWorkers: string, tests: string[]): Promise<{ 
       resolve({ code, out, timedOut: signal === 'SIGKILL' });
     });
   });
+}
+
+function failingFiles(out: string): string[] {
+  return [...new Set([...out.matchAll(/FAIL\s+(\S+\.test\.ts)/g)].map((m) => m[1]))];
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -92,24 +105,51 @@ async function main(argv: string[]): Promise<number> {
     }
   }
 
+  const treeDir: string = tree;
+  const outFile: string = outPath;
   const scratch = join(tmpdir(), `mutation-recheck-${process.pid}`);
+  const cleanup = () => rmSync(scratch, { recursive: true, force: true });
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { cleanup(); process.exit(130); });
+  try {
+    return await recheck();
+  } finally {
+    cleanup();
+  }
+
+  async function recheck(): Promise<number> {
   const results: Result[] = [];
   // A red unmutated tree would report every mutant as "killed" — verify the
   // baseline first (nightly R1 lesson: a node_modules symlink pointing at a
   // partial directory produced "435 killed" without a single real run).
   const baselineDir = join(scratch, 'baseline');
-  cpSync(tree, baselineDir, { recursive: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) });
-  symlinkSync(realpathSync(join(tree, 'node_modules')), join(baselineDir, 'node_modules'));
+  cpSync(treeDir, baselineDir, { recursive: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) });
+  symlinkSync(realpathSync(join(treeDir, 'node_modules')), join(baselineDir, 'node_modules'));
   const baseline = await runVitest(baselineDir, maxWorkers, tests);
   if (baseline.code !== 0) {
     process.stderr.write(`ABORT: the unmutated tree is not green:\n${baseline.out.slice(-1500)}\n`);
-    rmSync(scratch, { recursive: true, force: true });
     return 2;
   }
+  // Per test file, run alone on the unmutated baseline (cached): a killer
+  // that is not green on its own cannot be trusted as a killer.
+  const greenAlone = new Map<string, Promise<boolean>>();
+  const isGreenAlone = (file: string): Promise<boolean> => {
+    if (!greenAlone.has(file)) greenAlone.set(file, runVitest(baselineDir, maxWorkers, [file], false).then((r) => r.code === 0 && !r.timedOut));
+    return greenAlone.get(file)!;
+  };
+  /** First candidate file that fails ALONE on the mutated copy and is green alone on the baseline. */
+  const confirm = async (dir: string, candidates: string[]): Promise<{ killer?: string; rejected: string[] }> => {
+    const rejected: string[] = [];
+    for (const file of candidates) {
+      const alone = (await isGreenAlone(file)) ? await runVitest(dir, maxWorkers, [file], false) : undefined;
+      if (alone && !alone.timedOut && alone.code !== 0 && failingFiles(alone.out).includes(file)) return { killer: file, rejected };
+      rejected.push(file);
+    }
+    return { rejected };
+  };
   const worker = async (n: number): Promise<void> => {
     const dir = join(scratch, `w${n}`);
-    cpSync(tree, dir, { recursive: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) });
-    symlinkSync(realpathSync(join(tree, 'node_modules')), join(dir, 'node_modules'));
+    cpSync(treeDir, dir, { recursive: true, filter: (src) => !/[\\/]node_modules([\\/]|$)/.test(src) });
+    symlinkSync(realpathSync(join(treeDir, 'node_modules')), join(dir, 'node_modules'));
     const originals = new Map<string, string>();
     for (const file of Object.keys(report.files)) originals.set(file, readFileSync(join(dir, file), 'utf8'));
     for (let item = queue.shift(); item; item = queue.shift()) {
@@ -128,9 +168,22 @@ async function main(argv: string[]): Promise<number> {
       writeFileSync(join(dir, file), original.slice(0, start) + (mutant.replacement ?? '') + original.slice(end));
       try {
         const run = await runVitest(dir, maxWorkers, tests);
-        const killer = /FAIL\s+(\S+\.test\.ts)/.exec(run.out)?.[1];
-        const result: Result['result'] = run.timedOut ? 'timeout' : run.code === 0 ? 'survived' : 'killed';
-        results.push({ ...base, result, ...(killer ? { killer } : {}) });
+        if (!run.timedOut && run.code === 0) {
+          results.push({ ...base, result: 'survived' });
+        } else {
+          // bail=1 names only the first failing file; if it does not confirm,
+          // widen to every failing file of a full (non-bail) run.
+          let { killer, rejected } = await confirm(dir, failingFiles(run.out));
+          if (!killer) {
+            const full = await runVitest(dir, maxWorkers, tests, false);
+            const more = failingFiles(full.out).filter((f) => !rejected.includes(f));
+            const second = await confirm(dir, more);
+            killer = second.killer;
+            rejected = [...rejected, ...second.rejected];
+          }
+          const result: Result['result'] = killer ? 'killed' : run.timedOut ? 'timeout' : 'unconfirmed';
+          results.push({ ...base, result, ...(killer ? { killer } : {}), ...(rejected.length ? { rejected } : {}) });
+        }
       } finally {
         writeFileSync(join(dir, file), original);
       }
@@ -138,11 +191,11 @@ async function main(argv: string[]): Promise<number> {
     }
   };
   await Promise.all(Array.from({ length: jobs }, (_, n) => worker(n)));
-  rmSync(scratch, { recursive: true, force: true });
-  writeFileSync(outPath, JSON.stringify(results.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line), null, 1));
+  writeFileSync(outFile, JSON.stringify(results.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line), null, 1));
   const tally = results.reduce<Record<string, number>>((acc, r) => ((acc[r.result] = (acc[r.result] ?? 0) + 1), acc), {});
   process.stdout.write(`${JSON.stringify(tally)}\n`);
   return 0;
+  }
 }
 
 process.exit(await main(process.argv.slice(2)));

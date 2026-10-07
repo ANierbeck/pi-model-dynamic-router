@@ -1055,10 +1055,6 @@ export function lookupListPrice(ref: string): { input: number | 'unknown'; outpu
 }
 
 /**
- * Calculates the effective cost for a reference
- * Returns 'unknown' if cost cannot be determined
- */
-/**
  * Diagnostic helper for the /router scan: which of the given refs have
  * 'unknown' effCost? These are the models that can no longer flip a
  * min_cost_if_all_priced group (2026-09-26 fix), but an unpriced model is
@@ -1086,14 +1082,18 @@ function subscriptionRuleCost(ref: string): number | null {
   return SUBSCRIPTION_FALLBACK_COST;
 }
 
+/**
+ * Calculates the effective cost for a reference
+ * Returns 'unknown' if cost cannot be determined
+ */
 export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
   
   // 1. Use metrics cost_per_m if set to a non-zero value.
-  //    cost_per_m: 0 is a valid value (free model) and must NOT trigger
-  //    the fallback to lookupPrice or the 0.000020 default — that would
-  //    cause max_cost: 0 groups to exclude free models!
+  //    cost_per_m: 0 is a valid value (free model) and must NOT be treated
+  //    as "unpriced" and replaced by a positive default — that would cause
+  //    max_cost: 0 groups to exclude free models!
   //    Exception: an unpriced subscription model (registry cost {0,0} → 0)
   //    is not free — it takes the subscription rule's stand-in cost.
   let base: number | 'unknown' = m.cost_per_m;
@@ -1110,10 +1110,10 @@ export function effCost(ref: string): number | 'unknown' {
   
   // getM() heals every ref's cost_per_m to a defined value (number, or the
   // 'unknown' sentinel via resolveCostPerM), so `base` is never undefined
-  // here. The former lookupPrice / provider-estimate / $0.000020 fallback
-  // steps were unreachable and are removed (nightly R1 mutation triage,
-  // 2026-10-07; pinned by test/no-coverage-sweep.test.ts).
-  // At this point, base must be a number
+  // here. The former price-lookup / provider-estimate / default-cost
+  // fallback steps were unreachable and are removed (nightly R1 mutation
+  // triage, 2026-10-07; pinned by test/no-coverage-sweep.test.ts).
+  // At this point, base is a number or the 'unknown' sentinel.
   if (typeof base !== 'number') {
     return 'unknown';
   }

@@ -441,6 +441,9 @@ describe('loadModelMap — exact vs wildcard, reload, loud failure', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'modelmap-r1-'));
     vi.mocked(loggerModule.errorLog).mockClear();
   });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 
   it('an exact key is not a prefix; a wildcard is', () => {
     fs.writeFileSync(path.join(dir, 'model-map.yaml'), 'abcd: exact-slug\nwild-*: wild-slug\n');
@@ -457,6 +460,9 @@ describe('loadModelMap — exact vs wildcard, reload, loud failure', () => {
     fs.writeFileSync(path.join(dir, 'model-map.yaml'), 'only: only-slug\n');
     m.loadModelMap(dir);
     expect(m.mapLookup('wild-anything')).toBeUndefined();
+    // 'Sonnet-5' probes the Stryker "ArrayDeclaration" mutant on the wildcard reset: its
+    // replacement text (["Stryker was here"]) makes the mutated list a wildcard with the
+    // prefix 'S' — so a leftover synthetic wildcard would match any id starting with 'S'.
     expect(m.mapLookup('Sonnet-5')).toBeUndefined();
     expect(m.mapLookup('only')).toBe('only-slug');
   });
@@ -467,6 +473,7 @@ describe('loadModelMap — exact vs wildcard, reload, loud failure', () => {
     fs.writeFileSync(path.join(dir, 'model-map.yaml'), '{ unparseable');
     m.loadModelMap(dir);
     expect(m.mapLookup('a-x')).toBeUndefined();
+    // see the 'Sonnet-5' note above: the mutated wildcard list becomes the prefix 'S'
     expect(m.mapLookup('Sonnet-5')).toBeUndefined();
     const msg = String(vi.mocked(loggerModule.errorLog).mock.calls[0]?.[0] ?? '');
     expect(msg).toContain('model-map.yaml failed to parse');

@@ -69,6 +69,7 @@ jobs:
           if-no-files-found: warn
           # Explicit, not the repo default: the triage ledger
           # (docs/mutation-triage.md) is worked from this artifact, often
-          # days after the run, and the incremental state inside it seeds
-          # the next nights. 90 days is the GitHub maximum.
+          # days after the run. (The incremental state that seeds the next
+          # nights comes from actions/cache above; the copy in this artifact
+          # is for diagnosis only.) 90 days is the GitHub maximum.
           retention-days: 90
