@@ -105,6 +105,10 @@ When the classifier is uncertain and returns `fallback`, the classification now 
 
 ## How It Works
 
+For the full runtime decision tree (classification → category → group →
+gates → ranking → failure handling) as a Mermaid diagram, see
+[`docs/routing-flow.md`](docs/routing-flow.md).
+
 ### Dynamic Routing
 
 The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
