@@ -572,7 +572,11 @@ config, derived local classifier, `non_agent_model_prefixes` spike):
 `docs/plans/2026-10-06-no-hardcoded-models.md`. Target line 1.7.0. **Phase A
 DONE** (work-round 2026-10-07): AST scanner, ratcheting baseline guard (56
 entries / 62 occurrences, ceiling-pinned) and class-B admission pins live.
-Phases B–E still await the owner's go; also open: the `model-map.yaml`
+**Phase B DONE** (branch `phase-b-derived-configs`, awaiting merge): shipped
+`free_models`, `model_metrics` sentinels, `exclude.models` and provider billing
+removed — baseline 28 entries / 34 occurrences; the owner's
+`router-config.user.json` needs the migration snippet from the CHANGELOG at
+merge time. Phases C–E still await the owner's go; also open: the `model-map.yaml`
 guard-scope classification (Lane A review, owner decision).
 
 **`/router config` command** — ✅ DONE (Phases 1–2):

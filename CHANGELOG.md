@@ -9,6 +9,42 @@
 
 ### Changed
 
+- **ADR-0025 Phase B — shipped config no longer names models (migration required for existing installs).** Three removals from `router-config.json`; everything they provided is now derived or lives in the user layer (`router-config.user.json`):
+  - **`providers.openrouter.free_models` removed (B1).** Free-tier candidates are derived from the scan (every OpenRouter `pricing.prompt === '0'` entry) and Pi's registry, and now pass the SAME credential gate as every other candidate. Fixes a gap on the way: the persist path (`isStreamableRef`) admitted a scan-discovered `:free` ref on registry resolvability alone, so a keyless user could still get dead `openrouter/*:free` candidates in the persisted groups. The `free_models` key stays supported as a user-layer key (credential-gated).
+  - **`model_metrics` cost sentinels for the claude-bridge removed; subscription cost is now a rule (B2).** For a `billing: "subscription"` non-local provider, an unpriced model (registry cost `{0,0}`) costs `1e-6 × OpenRouter list price` (same-model backfill); a model with no list price anywhere gets one documented constant. Order among subscription models follows list price (sonnet-5-5 before opus-5-5 without any per-model data), and every subscription model undercuts real pay-per-token prices. An unpriced subscription model is therefore no longer `effCost` 0 but a tiny positive stand-in. `lookupPrice` is unchanged: bridge models now show their list price there instead of the sentinel (cost-tracker marginal figure, classifier-probe price tiers) — routing order is unaffected.
+  - **`exclude.models` (14 refs) and `providers.*` billing removed (B3).** The guardrail/agentic-harness gate failures that motivated the list are classified permanent and blocked after the FIRST failure by the learned blocklist (ADR-0008); the exclude machinery and `billing` key stay supported in the user layer. `test/config-excludes-guardrail-blocked.test.ts` is retired in favour of `test/guardrail-learned-blocklist.test.ts`.
+  - **Migration:** add what you need to `~/.pi/agent/router-config.user.json` (without `billing`, a bridge provider has unknown cost until the first scan registers it as a subscription provider):
+
+    ```json
+    {
+      "providers": {
+        "claude-bridge": { "billing": "subscription" },
+        "openrouter": { "billing": "pay_per_token" }
+      },
+      "exclude": {
+        "models": [
+          "openrouter/thinkingmachines/inkling:free",
+          "openrouter/thinkingmachines/inkling-small:free",
+          "openrouter/liquid/lfm-2.5-2.6b:free",
+          "openrouter/nvidia/nemotron-3.5-lightning:free",
+          "openrouter/nvidia/nemotron-3.5-content-safety:free",
+          "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+          "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+          "openrouter/poolside/laguna-s-2.1:free",
+          "openrouter/poolside/laguna-xs-2.1:free",
+          "openrouter/z-ai/glm-5.2:free",
+          "openrouter/minimax/minimax-m2.7:free",
+          "openrouter/minimax/minimax-m3:free",
+          "openrouter/deepseek/deepseek-v4-flash-0731:free"
+        ]
+      }
+    }
+    ```
+
+    Optionally restore the former free-model pins as `"free_models": [...]` under `providers.openrouter` (not required: free-tier models of a credentialed provider are derived). The exclusions above are optional too — the learned blocklist re-discovers the permanent failures on first contact.
+  - Ratcheting baseline: 56 → 28 entries (62 → 34 occurrences).
+
 - **Local-provider wedge cooldowns follow a 2/5/15-minute ladder instead of a flat 5 minutes** (circuit-breaker Phase 1): the first wedge cools for 2 minutes, repeat wedges step up to 5 and 15 minutes (capped), and re-opens are bounded by the evidence window — a single timeout long after a wedge never re-opens it. The `/router` overview wedge warning is unchanged and now driven by the new breaker state.
 - **Fallback classifications inherit the previous turn's category** (task-type-balancing Phase 2): when the classifier returns `fallback` and a previous non-fallback category exists in the session context, that previous category is inherited — same mechanism as the existing low-confidence and short-prompt momentum paths. Applied at the single `classifyPrompt` exit so every producer of `fallback` (LLM, cache, static, classifier-unavailable) is covered; HINT and compaction results are never overridden; without history the configured default (`fallback` → `tactical`) stands.
 - **Live exclusion takes effect without restart:** added exclusions are applied to the running router immediately (next turn); persisted dynamic group candidate lists update at the next scan cycle.

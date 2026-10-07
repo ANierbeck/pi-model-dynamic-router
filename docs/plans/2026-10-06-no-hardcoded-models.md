@@ -57,6 +57,19 @@ observe the guard fail; add a stale baseline entry and observe it fail.
 
 ## Phase B — Config-only removals (the incident class)
 
+> **DONE (2026-10-07, branch `phase-b-derived-configs`).** B1–B3 landed as
+> three commits. Final baseline: **28 entries / 34 occurrences** (was 56 / 62;
+> ceiling pin lowered to match). Findings: (B1) the persist path admitted
+> scan-discovered `:free` refs on registry resolvability alone — now gated on
+> `hasConfiguredAuth` like every other candidate; (B2) the claude-bridge
+> registry costs are zeros, so order comes from the OpenRouter list-price
+> backfill (`effCost = 1e-6 × list price`, constant fallback for unlisted
+> models) — owner decision (a), 2026-10-07; (B3) both guardrail patterns were
+> already `permanent` in `error-signatures.ts`, so the retired config list is
+> replaced by `test/guardrail-learned-blocklist.test.ts`. The remaining
+> baseline is the classifier flow (Phase C), `non_agent_model_prefixes`
+> (Phase D) and the non-selecting entries listed under Phase C.
+
 ### B1. `free_models` derived, shipped list removed
 - Verify first (spike, 30 min): does Pi's registry + the scan already surface
   OpenRouter `:free` models for a credentialed user without the shipped list?

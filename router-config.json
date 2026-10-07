@@ -9,31 +9,9 @@
   ],
   "best_quality_window": 0.05,
   "exclude": {
-    "models": [
-      "openrouter/thinkingmachines/inkling:free",
-      "openrouter/thinkingmachines/inkling-small:free",
-      "openrouter/liquid/lfm-2.5-2.6b:free",
-      "openrouter/nvidia/nemotron-3.5-lightning:free",
-      "openrouter/nvidia/nemotron-3.5-content-safety:free",
-      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-      "openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-      "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-      "openrouter/poolside/laguna-s-2.1:free",
-      "openrouter/poolside/laguna-xs-2.1:free",
-      "openrouter/z-ai/glm-5.2:free",
-      "openrouter/minimax/minimax-m2.7:free",
-      "openrouter/minimax/minimax-m3:free",
-      "openrouter/deepseek/deepseek-v4-flash-0731:free"
-    ]
+    "models": []
   },
-  "providers": {
-    "claude-bridge": {
-      "billing": "subscription"
-    },
-    "openrouter": {
-      "billing": "pay_per_token"
-    }
-  },
+  "providers": {},
   "model_groups": {
     "trivial": {
       "description": "Trivial tasks - free/subscription first, local Ollama as a fallback before PAYG",
