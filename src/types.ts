@@ -422,6 +422,14 @@ export interface Cache {
    * absent = probe hasn't run yet this scan cycle.
    */
   classifier_fallback_models?: string[];
+  /**
+   * Probe-verified LOCAL classifier chain (ADR-0025 C): Ollama model names in
+   * size order, written at scan time by probeLocalClassifierCandidates.
+   * [0] is the primary, [1] the fallback; absent = not probed yet (the
+   * classifier then uses the unprobed candidate order), empty = probed and
+   * nothing qualified.
+   */
+  classifier_local_models?: string[];
 }
 
 // ── Provider Discovery Types ────────────────────────────────────────────
@@ -475,6 +483,17 @@ export interface ModelCapabilities {
   contextWindow?: number;
   /** Max output tokens per request, if reported. */
   maxTokens?: number;
+  /**
+   * Local runtimes only (Ollama /api/show `capabilities`): true when the model
+   * generates text. Undefined = the runtime reported no capability list
+   * (unknown, NOT false) — the local classifier derivation (ADR-0025 C1)
+   * keeps unknown models and lets the probe decide.
+   */
+  completion?: boolean;
+  /** Local runtimes only: true for embedding-only models (never a classifier). */
+  embedding?: boolean;
+  /** Local runtimes only: parameter count in billions (Ollama `details.parameter_size`). */
+  parameterSizeB?: number;
 }
 
 /**

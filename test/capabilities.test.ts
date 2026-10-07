@@ -144,3 +144,23 @@ describe('extractCapabilities — unknown provider', () => {
     expect(extractCapabilities('totally-unknown', { id: 'x' })).toBeUndefined();
   });
 });
+
+describe('extractCapabilities — Ollama classifier-derivation fields (ADR-0025 C1)', () => {
+  it('records completion/embedding from the /api/show capabilities array', () => {
+    expect(extractCapabilities('ollama', { capabilities: ['completion', 'tools'] })).toMatchObject({ completion: true, embedding: false });
+    expect(extractCapabilities('ollama', { capabilities: ['embedding'] })).toMatchObject({ completion: false, embedding: true });
+  });
+
+  it('leaves completion/embedding undefined when no capabilities array was reported (unknown ≠ false)', () => {
+    const c = extractCapabilities('ollama', { details: { families: ['llama'] } });
+    expect(c?.completion).toBeUndefined();
+    expect(c?.embedding).toBeUndefined();
+  });
+
+  it('parses details.parameter_size into billions (B and M suffixes)', () => {
+    expect(extractCapabilities('ollama', { capabilities: ['completion'], details: { parameter_size: '12.2B' } })?.parameterSizeB).toBe(12.2);
+    expect(extractCapabilities('ollama', { details: { parameter_size: '270M' } })?.parameterSizeB).toBeCloseTo(0.27);
+    expect(extractCapabilities('ollama', { details: { parameter_size: 'unknown' } })?.parameterSizeB).toBeUndefined();
+    expect(extractCapabilities('ollama', { capabilities: ['completion'] })?.parameterSizeB).toBeUndefined();
+  });
+});

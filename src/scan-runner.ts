@@ -9,6 +9,8 @@
 
 import { extractCapabilities } from './capabilities.ts';
 import { probeAndCache } from './classifier-fallback-probe.ts';
+import { probeLocalClassifierCandidates } from './classifier-local-probe.ts';
+import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { type LocalLlmDeps, callLocalLlm } from './local-llm.ts';
 import { routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -583,7 +585,19 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       } catch (probeErr) {
         warnLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
       }
-      
+
+      // Derive + probe the LOCAL classifier chain right after the cloud probe
+      // (ADR-0025 C): candidates come from the Ollama models this scan just
+      // found, verified with the same classification cases, persisted as
+      // cache.classifier_local_models. Non-fatal — without a list the
+      // classifier uses the unprobed candidate order.
+      try {
+        await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog);
+        rt.saveCache();
+      } catch (probeErr) {
+        warnLog('[scan] local classifier probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+      }
+
       // Generate the dynamic configuration after the scan
       await rt.generateDynamicConfig(force);
     } finally {

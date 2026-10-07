@@ -121,9 +121,28 @@ registerCapabilityExtractor('ollama', (e) => {
   const ctxKey = Object.keys(modelInfo).find((k) => k.endsWith('.context_length'));
   const contextWindow =
     ctxKey && typeof modelInfo[ctxKey] === 'number' ? (modelInfo[ctxKey] as number) : undefined;
-  return caps(
+  const out = caps(
     vision ? true : false,
     reasoningFromCaps ? true : false,
     contextWindow,
   );
+  // Classifier derivation (ADR-0025 C1): which local models can generate
+  // text, and how big they are. An absent capabilities array (only
+  // /api/tags answered) leaves completion/embedding unknown, not false.
+  if (capsArr.length > 0) {
+    out.completion = capsArr.some((c) => c === 'completion');
+    out.embedding = capsArr.some((c) => c === 'embedding');
+  }
+  const sizeB = parseParameterSizeB(details?.parameter_size);
+  if (sizeB !== undefined) out.parameterSizeB = sizeB;
+  return out;
 });
+
+/** Ollama `details.parameter_size` ("12.2B", "270M") → billions, or undefined if unparseable. */
+function parseParameterSizeB(raw: unknown): number | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const m = /^\s*(\d+(?:\.\d+)?)\s*([BM])\s*$/i.exec(raw);
+  if (!m) return undefined;
+  const n = parseFloat(m[1]);
+  return m[2].toUpperCase() === 'M' ? n / 1000 : n;
+}

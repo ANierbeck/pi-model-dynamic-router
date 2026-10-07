@@ -143,7 +143,7 @@ const VALID_CATEGORY_SET: readonly string[] = VALID_CATEGORIES;
  * case accepts. hint:* is ALWAYS a fail: no probe case contains a HINT
  * request, so a hint category means the model copied the narration bait.
  */
-function judgeProbeReply(raw: string, tc: ProbeCase): { ok: true } | { ok: false; reason: string } {
+export function judgeProbeReply(raw: string, tc: ProbeCase): { ok: true } | { ok: false; reason: string } {
   const parsed = extractClassificationJson(raw);
   if (!parsed || typeof parsed.category !== 'string') {
     return { ok: false, reason: 'no parseable classification JSON' };
