@@ -161,8 +161,10 @@ describe('/router config — display', () => {
     expect(out).toMatch(/user {5}.*router-config\.user\.json.*\(unusable: /);
   });
 
-  it('states that compaction is not implemented yet', async () => {
-    expect(await setup().run('config')).toContain('compaction: not implemented yet (Phase 5b)');
+  it('shows the cache-aware compaction state (Phase 5b: implemented, opt-in)', async () => {
+    const out = await setup().run('config');
+    expect(out).toContain('Compaction (context_budget): off');
+    expect(out).not.toContain('not implemented yet');
   });
 
   it('prints usage hints and the shipped/project un-exclude limitation', async () => {
@@ -172,12 +174,18 @@ describe('/router config — display', () => {
     expect(out).toContain('Shipped and project entries cannot be removed with unexclude');
   });
 
-  it('answers "config compaction on|off" with the Phase 5b stub and writes nothing', async () => {
-    const before = fs.readFileSync(userFile, 'utf-8');
-    const { run } = setup();
-    expect(await run('config compaction on')).toContain('not implemented yet (Phase 5b)');
-    expect(await run('config compaction off')).toContain('not implemented yet (Phase 5b)');
-    expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
+  it('answers "config compaction on|off" with the real Phase 5b toggle and persists to the user layer', async () => {
+    const { run, rt } = setup();
+    const out = await run('config compaction on');
+    expect(out).toMatch(/auto-compaction enabled/i);
+    expect(out).toMatch(/soft_tokens|hard_tokens/); // honest: the flag alone arms nothing
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({ enabled: true });
+    expect(rt.cfg.context_budget?.enabled).toBe(true); // live without restart
+
+    const off = await run('config compaction off');
+    expect(off).toMatch(/auto-compaction disabled/i);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({ enabled: false });
+    expect(rt.cfg.context_budget?.enabled).toBe(false);
   });
 
   it('does not fall through to the status overview', async () => {

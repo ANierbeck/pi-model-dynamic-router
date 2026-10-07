@@ -4,8 +4,26 @@
 
 ### Added
 
+- **Budget pacing** (task-type-balancing Phase 4, optional — default off): `providers.<p>.budget` declares a spend allowance per provider and the router compares its own usage counter against the LINEAR target for the current window. A provider that runs ahead of pace is DEMOTED — ranked behind on-pace candidates in every group, never excluded, so failover still reaches it. The counter is the Phase 5a usage_log (cached context counts), the window starts at `reset_day` each month, and `unit` is either `tokens` or `usd` (estimated from the same blended $/1M price the ranking uses). Works for capped subscriptions and pay-per-token spend limits alike; absent = off (user-layer key, nothing ships):
+
+  ```json
+  {
+    "providers": {
+      "claude-bridge": { "billing": "subscription", "budget": { "amount": 50000000, "unit": "tokens", "period": "month", "reset_day": 1 } },
+      "openrouter": { "billing": "pay_per_token", "budget": { "amount": 20, "unit": "usd", "period": "month", "reset_day": 1 } }
+    }
+  }
+  ```
+
+- **Cache-aware compaction** (task-type-balancing Phase 5b, opt-in — default off): a cold cache is the cheapest moment to compact — after a miss the next step pays full input price anyway, while compacting a warm cache throws a paid cache away (cacheRead was 72% of $92 in the Phase 5 measurement). `context_budget: { enabled, soft_tokens, hard_tokens, cache_ttl_s }` (globally and per group; per-group fields win) is evaluated at every TURN boundary — never between tool steps: context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold (a miss on the last step — cacheRead below half the step's tokens; partial hits count as mostly-reprocessed — an idle gap over `cache_ttl_s`, or no step recorded yet); a warm cache is never thrown away. With `enabled` false or absent the same conditions only produce a hint ("compacting now would pay off: /compact", at most one per 30 minutes); setting thresholds without `enabled` opts into the hints, `enabled: true` additionally automates them. `/router config compaction on|off` toggles the master switch in the user layer, live without a restart:
+
+  ```json
+  {
+    "context_budget": { "enabled": true, "soft_tokens": 150000, "hard_tokens": 400000, "cache_ttl_s": 300 }
+  }
+  ```
 - **Configurable category-to-group mapping** (task-type-balancing Phase 3): users can override individual category→group assignments via `category_groups` in any config layer; unknown categories or groups are warned and dropped at load time, the rest applies.
-- **`/router config` command (Phases 1–2):** live routing configuration without a restart. Display shows config sources with origin markers (shipped/user/project), every effective `exclude` rule with its origin and how many currently discovered models it matches, and the compaction state (Phase 5b stub). Subcommands: `exclude <ref|glob>` to add a user-layer exclusion (applies live, persisted group lists regenerate at next scan cycle), `unexclude <ref|glob>` to remove user-layer entries only (shipped/project defaults remain and are reported honestly), `compaction on|off` (Phase 5b, not yet implemented). All writes go only to `router-config.user.json`.
+- **`/router config` command (Phases 1–2):** live routing configuration without a restart. Display shows config sources with origin markers (shipped/user/project), every effective `exclude` rule with its origin and how many currently discovered models it matches, and the cache-aware compaction state (Phase 5b). Subcommands: `exclude <ref|glob>` to add a user-layer exclusion (applies live, persisted group lists regenerate at next scan cycle), `unexclude <ref|glob>` to remove user-layer entries only (shipped/project defaults remain and are reported honestly), `compaction on|off` to toggle the Phase 5b auto-compaction master switch (live, persisted to the user layer; the thresholds stay hand-edited config). All writes go only to `router-config.user.json`.
 
 ### Changed
 

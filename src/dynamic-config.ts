@@ -366,6 +366,11 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // intent; without the re-sync a dynamic file generated before the key
   // existed would shadow the user's mapping for as long as it exists.
   'category_groups',
+  // Global cache-aware compaction settings (task-type-balancing Phase 5b) —
+  // user intent, same shadowing class as category_groups. Per-group overrides
+  // live inside model_groups entries and flow with the group config the scan
+  // copies (dynamicGroups[g] = { ...staticGroup, models }).
+  'context_budget',
 ] as const satisfies readonly (keyof Config)[];
 
 /**

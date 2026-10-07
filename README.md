@@ -64,7 +64,7 @@ Exclude rules:
   [shipped] models: openrouter/*  → matches 8 discovered model(s)
   [user]    models: mistral/*  → matches 3 discovered model(s)
 
-compaction: not implemented yet (Phase 5b)
+Compaction (context_budget): off (no soft_tokens/hard_tokens configured — triggers disarmed)
 
 Usage:
   /router config                          show config sources + exclude rules
@@ -102,6 +102,45 @@ The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to 
 Unknown categories or target groups are rejected with a warning at load time and ignored; the rest of the mapping still applies.
 
 When the classifier is uncertain and returns `fallback`, the classification now inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history the configured default (`fallback` → `tactical`) stands.
+
+### Budget Pacing
+
+`providers.<p>.budget` declares a spend allowance per provider (user-layer key; absent = off). The router compares its own usage counter against the **linear** target for the current window — a provider that runs ahead of pace is **demoted**: it stays a candidate (failover still reaches it) but ranks behind every on-pace candidate in every group. The counter is the persistent usage log, cached context included; the window restarts each month at `reset_day` (clamped to shorter months). `unit: "tokens"` counts tokens, `unit: "usd"` estimates spend via the router's blended $/1M price. Works for capped subscriptions and pay-per-token spend limits alike:
+
+```json
+{
+  "providers": {
+    "claude-bridge": {
+      "billing": "subscription",
+      "budget": { "amount": 50000000, "unit": "tokens", "period": "month", "reset_day": 1 }
+    },
+    "openrouter": {
+      "billing": "pay_per_token",
+      "budget": { "amount": 20, "unit": "usd", "period": "month", "reset_day": 1 }
+    }
+  }
+}
+```
+
+A malformed budget is ignored (the provider stays unpaced) — a typo never removes a provider from routing.
+
+### Cache-Aware Compaction
+
+Long agentic sessions burn most of their cost resending context — and a **cold cache is the cheapest moment to compact**: after a miss the next step pays full input price anyway, so compacting then discards nothing already paid for, while compacting a warm cache throws a paid cache away. `context_budget` makes the router act on that (opt-in; absent = off — measurement, shipped with the footer's `ctx/cache` segment, is always on):
+
+```json
+{
+  "context_budget": { "enabled": true, "soft_tokens": 150000, "hard_tokens": 400000, "cache_ttl_s": 300 }
+}
+```
+
+Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step (cacheRead below half the step's tokens; partial hits count as mostly-reprocessed), an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
+
+Heuristic caveat (honest disclosure): the "last step" is the last entry of the shared persistent `usage_log` — with concurrent sessions, or right after resuming one, the signal can come from another session, in which case the trigger can misfire in the wasteful direction (compacting a warm cache costs one full-price step — the same cost the feature already accepts on a genuinely cold start) or the conservative direction (a cheap compaction opportunity is missed). Never a wrong exclusion; opt-in only.
+
+- **Hints** (default): with `enabled` false or absent but thresholds configured, the same conditions only produce a hint — "compacting now would pay off: /compact" (at most one per 30 minutes).
+- **Automatic**: `enabled: true` additionally calls Pi's compaction at the boundary instead of hinting.
+- `/router config compaction on|off` toggles the master switch live (persisted to `router-config.user.json`; the thresholds remain hand-edited config).
 
 ## How It Works
 
@@ -730,7 +769,7 @@ discovers automatically.
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob>` | Exclude a model/pattern from routing (saved to user layer, live without restart) |
 | `/router config unexclude <ref|glob>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
-| `/router config compaction on|off` | Cache-aware auto-compaction flag (Phase 5b, not yet implemented) |
+| `/router config compaction on|off` | Cache-aware auto-compaction flag (opt-in, default off) |
 
 ### Logging
 
