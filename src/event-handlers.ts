@@ -19,6 +19,7 @@ import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
 import { fmt, fmtTime } from './utils.ts';
 import { buildUsageLogEntry, formatCacheStatus } from './cache-stats.ts';
+import { runContextCompaction, type CompactionRunState } from './context-compaction.ts';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import { fileURLToPath } from 'node:url';
@@ -228,6 +229,11 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     if (ev.source !== 'restore') rt.activeGroup = null;
     rt.curModel = `${ev.model.provider}/${ev.model.id}`;
   });
+  // Hint cooldown state for cache-aware compaction (Phase 5b): without it,
+  // a long over-soft session with a cold cache would notify on EVERY turn
+  // boundary. Owned here because it must survive the Router reloads.
+  const compactionState: CompactionRunState = { lastHintAt: 0 };
+
   rt.pi.on('turn_start', async (_ev, ctx) => {
     rt.turnStart = Date.now();
     // Mark the turn boundary on the router so the first setCurModel() of
@@ -235,6 +241,16 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // not be able to overwrite the pin — see Router.noteTurnStart).
     rt.router.noteTurnStart(rt.turnStart);
     if (ctx.model) rt.curModel = `${ctx.model.provider}/${ctx.model.id}`;
+    // Cache-aware compaction (Phase 5b): evaluated ONLY here — at the turn
+    // boundary, before the prompt is processed, never between tool steps
+    // (owner decision 2026-10-05). Fire-and-forget inside.
+    runContextCompaction({
+      ctx: ctx as any,
+      cfg: rt.cfg,
+      activeGroup: rt.activeGroup,
+      usageLog: rt.cache.usage_log,
+      state: compactionState,
+    });
   });
 
   rt.pi.on('turn_end', async (ev) => {

@@ -151,6 +151,9 @@ describe('dynamic-config-resync-keys', () => {
     // mapping is user intent and must reach the live config even when a
     // stale dynamic file predates the key.
     'category_groups',
+    // Task-type-balancing Phase 5b (2026-10-07): the global cache-aware
+    // compaction settings are user intent — same shadowing class.
+    'context_budget',
   ] as const;
 
   describe('DYNAMIC_CONFIG_RESYNC_KEYS whitelist', () => {
@@ -174,6 +177,7 @@ describe('dynamic-config-resync-keys', () => {
     best_quality_window: 0.99,
     log_level: 'debug',
     category_groups: { code_complex: 'tactical' },
+    context_budget: { enabled: true, soft_tokens: 999_999 },
   };
 
   /** Fresh value in the PROJECT config layer (what the user changed TO). */
@@ -191,6 +195,7 @@ describe('dynamic-config-resync-keys', () => {
     best_quality_window: 0.07,
     log_level: 'warn',
     category_groups: { code_complex: 'planning' },
+    context_budget: { enabled: false, soft_tokens: 123 },
   };
 
   function assertResynced(key: string, written: Record<string, any>): void {

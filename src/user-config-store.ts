@@ -22,6 +22,9 @@ const USER_CONFIG_FILE = 'router-config.user.json';
 /** What a caller may change. Arrays are SET-replaced in the user file itself. */
 export interface UserConfigDelta {
   exclude?: { models?: string[] };
+  /** Cache-aware compaction (Phase 5b): only the master switch is
+   * command-settable; the thresholds stay hand-edited config. */
+  context_budget?: { enabled?: boolean };
 }
 
 export interface UserConfigStore {
@@ -88,6 +91,13 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
           : {};
         exclude.models = delta.exclude.models;
         next.exclude = exclude;
+      }
+      if (delta.context_budget) {
+        const budget = next.context_budget && typeof next.context_budget === 'object' && !Array.isArray(next.context_budget)
+          ? { ...(next.context_budget as Record<string, unknown>) }
+          : {};
+        Object.assign(budget, delta.context_budget);
+        next.context_budget = budget;
       }
 
       const tmp = `${file}.tmp-${process.pid}`;

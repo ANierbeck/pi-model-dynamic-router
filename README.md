@@ -103,6 +103,43 @@ Unknown categories or target groups are rejected with a warning at load time and
 
 When the classifier is uncertain and returns `fallback`, the classification now inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history the configured default (`fallback` → `tactical`) stands.
 
+### Budget Pacing
+
+`providers.<p>.budget` declares a spend allowance per provider (user-layer key; absent = off). The router compares its own usage counter against the **linear** target for the current window — a provider that runs ahead of pace is **demoted**: it stays a candidate (failover still reaches it) but ranks behind every on-pace candidate in every group. The counter is the persistent usage log, cached context included; the window restarts each month at `reset_day` (clamped to shorter months). `unit: "tokens"` counts tokens, `unit: "usd"` estimates spend via the router's blended $/1M price. Works for capped subscriptions and pay-per-token spend limits alike:
+
+```json
+{
+  "providers": {
+    "claude-bridge": {
+      "billing": "subscription",
+      "budget": { "amount": 50000000, "unit": "tokens", "period": "month", "reset_day": 1 }
+    },
+    "openrouter": {
+      "billing": "pay_per_token",
+      "budget": { "amount": 20, "unit": "usd", "period": "month", "reset_day": 1 }
+    }
+  }
+}
+```
+
+A malformed budget is ignored (the provider stays unpaced) — a typo never removes a provider from routing.
+
+### Cache-Aware Compaction
+
+Long agentic sessions burn most of their cost resending context — and a **cold cache is the cheapest moment to compact**: after a miss the next step pays full input price anyway, so compacting then discards nothing already paid for, while compacting a warm cache throws a paid cache away. `context_budget` makes the router act on that (opt-in; absent = off — measurement, shipped with the footer's `ctx/cache` segment, is always on):
+
+```json
+{
+  "context_budget": { "enabled": true, "soft_tokens": 150000, "hard_tokens": 400000, "cache_ttl_s": 300 }
+}
+```
+
+Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step, an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
+
+- **Hints** (default): with `enabled` false or absent but thresholds configured, the same conditions only produce a hint — "compacting now would pay off: /compact" (at most one per 30 minutes).
+- **Automatic**: `enabled: true` additionally calls Pi's compaction at the boundary instead of hinting.
+- `/router config compaction on|off` toggles the master switch live (persisted to `router-config.user.json`; the thresholds remain hand-edited config).
+
 ## How It Works
 
 For the full runtime decision tree (classification → category → group →
