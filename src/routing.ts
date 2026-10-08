@@ -1023,10 +1023,11 @@ export class Router {
    * ranks behind everything, paced or not.
    */
   private paceDemote(refs: string[]): string[] {
+    // A stable partition; with nothing paced it is the identity order, so no
+    // fast-path guard is needed (nightly R2: both former guards were
+    // equivalent mutants — removing them changed no observable result).
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
-    if (paced.size === 0) return refs;
     const isPaced = (ref: string) => paced.has(ref.split('/')[0]);
-    if (!refs.some(isPaced)) return refs;
     return [...refs.filter((r) => !isPaced(r)), ...refs.filter(isPaced)];
   }
 
@@ -1154,6 +1155,7 @@ export class Router {
    */
   private formatGroupDecision(name: string, g: Group, ranked: string[], drops: Array<[string, string]>): string {
     const fmt = (v: number) => String(Number(v.toPrecision(4)));
+    const paced = pacedProviders(this.cfg, this.cache.usage_log);
     const candidates = ranked.map((ref, i) => {
       const gdp = lookupGdp(ref);
       const cost = effCost(ref);
@@ -1161,7 +1163,7 @@ export class Router {
       if (g.method === 'best') s += ` score=${fmt(calculateScore(ref, g.score_by ?? 'gdpval', this.cfg))}`;
       if (isUnhealthy(this.cache, ref)) s += ' [unhealthy]';
       if (this.isLimited(ref)) s += ' [limited]';
-      if (pacedProviders(this.cfg, this.cache.usage_log).has(ref.split('/')[0])) s += ' [paced]';
+      if (paced.has(ref.split('/')[0])) s += ' [paced]';
       return s;
     });
     const excluded = drops.map(([ref, gate]) => `${ref}=${gate}`);

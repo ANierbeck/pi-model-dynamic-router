@@ -19,6 +19,7 @@ import * as loggerModule from '../src/logger.js';
 import { Router, applyGroupFilters } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
 import { recordModelFailure } from '../src/model-health.js';
+import { resetBudgetPacingMemo } from '../src/budget-pacing.js';
 import type { Config, Cache, RateLimit } from '../src/types.js';
 
 const mockDebugOnce = vi.mocked(loggerModule.debugLogOnce);
@@ -241,6 +242,41 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
     const router = new Router(config, budgetCache, new Map());
     expect(() => router.resolve('wide')).not.toThrow();
     expect(mockDebugOnce).not.toHaveBeenCalled();
+  });
+
+  it('a provider ahead of its budget pace is flagged [paced] and ranked last; on-pace ones are not', () => {
+    // The live pacing effect (paceDemote) is only observable through this
+    // line. Nightly R2 (2026-10-08): the [paced] marker had no test at all —
+    // forcing it on, off, keying it on the wrong ref part or blanking it all
+    // survived (routing.ts formatGroupDecision, ids 1603-1606). The paced
+    // provider is the one that ranks FIRST without pacing, so the order
+    // assertion below fails if the demotion does not happen.
+    resetBudgetPacingMemo();
+    const pacedCache = {
+      ...cache,
+      usage_log: [{ ref: 'claude-bridge/claude-opus-5-5', tokens: 1e9, ts: Date.now() }],
+    } as Cache;
+    metricsModule.setCache(pacedCache);
+    const config = {
+      ...cfg,
+      model_groups: { open: { method: 'best', fallback_groups: [] } },
+      providers: {
+        'claude-bridge': { billing: 'pay_per_token', budget: { amount: 1000, unit: 'tokens', period: 'month', reset_day: 1 } },
+      },
+    } as Config;
+    metricsModule.setConfig(config);
+    new Router(config, pacedCache, new Map()).resolve('open');
+    const line = lineFor('open');
+    expect(line).toMatch(/claude-bridge\/claude-opus-5-5 [^|]*\[paced\]/);
+    expect(line).toMatch(/claude-bridge\/claude-sonnet-5-5 [^|]*\[paced\]/);
+    expect(line).not.toMatch(/mistral\/zai-glm-5-3 [^|]*\[paced\]/);
+    expect(line).not.toMatch(/mistral\/mistral-medium-3\.5 [^|]*\[paced\]/);
+    // Rank penalty, not exclusion: the paced provider's refs trail every
+    // on-pace candidate but stay in the list.
+    const order = [...line.matchAll(/\d+\. (\S+)/g)].map((m) => m[1].split('/')[0]);
+    expect(order).toContain('claude-bridge');
+    expect(order.indexOf('claude-bridge')).toBeGreaterThan(order.lastIndexOf('mistral'));
+    resetBudgetPacingMemo();
   });
 });
 
