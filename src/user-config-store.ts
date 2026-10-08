@@ -21,7 +21,7 @@ const USER_CONFIG_FILE = 'router-config.user.json';
 
 /** What a caller may change. Arrays are SET-replaced in the user file itself. */
 export interface UserConfigDelta {
-  exclude?: { models?: string[] };
+  exclude?: { models?: string[]; providers?: string[] };
   /** Cache-aware compaction (Phase 5b): only the master switch is
    * command-settable; the thresholds stay hand-edited config. */
   context_budget?: { enabled?: boolean };
@@ -42,6 +42,14 @@ const PATTERN_RE = /^[A-Za-z0-9._*:-]+(\/[A-Za-z0-9._*:-]+)*$/;
 export function validateExcludePattern(pattern: string): string | undefined {
   if (PATTERN_RE.test(pattern)) return undefined;
   return `"${pattern}" is not a model ref or glob (expected provider, provider/model or a * pattern, no spaces).`;
+}
+
+const PROVIDER_RE = /^[A-Za-z0-9._*:-]+$/;
+
+/** Returns an error message for an implausible provider name (one segment, no slash), or undefined when it is fine. */
+export function validateExcludeProvider(name: string): string | undefined {
+  if (PROVIDER_RE.test(name)) return undefined;
+  return `"${name}" is not a provider name (expected a single name without "/" or spaces).`;
 }
 
 function userConfigPath(agentDir: string): string {
@@ -76,6 +84,11 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
         if (problem) return { ok: false, error: problem };
       }
 
+      for (const name of delta.exclude?.providers ?? []) {
+        const problem = validateExcludeProvider(name);
+        if (problem) return { ok: false, error: problem };
+      }
+
       // Refuse when the existing file is unusable: writing a delta-only stub
       // would replace the user's other settings. Losing one edit is the
       // lesser harm (same logic as update_model_metrics, review I1).
@@ -85,11 +98,12 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
       }
 
       const next: Record<string, unknown> = { ...(existing.config ?? {}) };
-      if (delta.exclude?.models) {
+      if (delta.exclude?.models || delta.exclude?.providers) {
         const exclude = next.exclude && typeof next.exclude === 'object' && !Array.isArray(next.exclude)
           ? { ...(next.exclude as Record<string, unknown>) }
           : {};
-        exclude.models = delta.exclude.models;
+        if (delta.exclude.models) exclude.models = delta.exclude.models;
+        if (delta.exclude.providers) exclude.providers = delta.exclude.providers;
         next.exclude = exclude;
       }
       if (delta.context_budget) {
