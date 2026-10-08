@@ -321,8 +321,14 @@ describe('driveStream: bounded wait-for-short-reset', () => {
           .join('');
 
         // Wait narration from the rate-limit branch AND the collapse branch.
+        // The collapse assertion is branch-distinctive: 'All models in
+        // cooldown' alone matched BOTH the wait and the force-retry
+        // narration, so the wait guard was untested here (mutation R3:
+        // every guard mutant that flips the branch passed vacuously —
+        // closed by test/cooldown-collapse-retried-narration.test.ts).
         expect(text).toContain('waiting');
-        expect(text).toContain('All models in cooldown');
+        expect(text).toContain('All models in cooldown — waiting');
+        expect(text).not.toContain('All models in cooldown, retrying');
         // The collapse retry's content made it through.
         expect(text).toContain('served after collapse wait');
         // All four scripted streams were consumed (2× limited, 2× second).

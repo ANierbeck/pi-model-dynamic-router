@@ -1284,3 +1284,22 @@ rate-limit waits, breaker gating). Recommended strategy: write tests
 red-first around the module's public orchestration surface (`Router.run()` and
 the probe/fallback gates), not mutant-by-mutant.
 
+### B3 first slice (2026-10-09): cooldown-collapse retried narrations
+
+The two largest single-line clusters of the 735 gaps are closed:
+
+| cluster | mutants | closed by |
+|---|---|---|
+| L1204 collapse-wait guard (`waitMaxMs > 0 && bestSecs * 1000 <= waitMaxMs`) | 10 (5 killed) | branch-distinctive assertions: the wait ("All models in cooldown — waiting …") vs force-retry ("…, retrying …") narrations are now asserted separately, in both the new test file and the strengthened existing collapse test |
+| L1262-1267 retried-narration block (repetition_loop / truncated_length) | 7 (6 killed) | `test/cooldown-collapse-retried-narration.test.ts`: the collapse retry's result is driven through the REAL consumeWithDetection (scripted `done.reason 'length'` / degenerate-repetition text) and both narrations plus the non-matching-reason case are asserted |
+
+Red evidence (git-stash method, observed before landing): guard `<=` -> `>`
+(wait -> force flip), narration guard -> `if (true)`, and the emptied
+truncation string each turned the corresponding test RED against the mutated
+tree. Survivors in these two clusters are identity mutants at the tested
+boundary (`<`/`!=`/`>= 0` behave identically for `bestSecs*1000` 2000 vs
+`waitMaxMs` 4000) plus the `\n\n` trailing-newline literal — they need
+boundary scenarios (bestSecs*1000 == waitMaxMs) or duration assertions, which
+are follow-up rounds, not free fixes. Next clusters by size: the
+breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
+
