@@ -142,8 +142,12 @@ const MONTH_INDEX: Record<string, number> = {
 // trailing dot optional (de-DE: "Okt.", but "Mai").
 const MON = '([A-Za-zÀ-ÖØ-öø-ÿ]+)\\.?';
 // A zone token: an explicit GMT/UTC offset ("GMT+2", "UTC-5", "GMT+5:30" —
-// the en-US rendering outside the US) or a 2-6 letter abbreviation.
-const ZONE = '((?:GMT|UTC)[+\\-\u2212]\\d{1,2}(?::\\d{2})?|[A-Za-zÀ-ÖØ-öø-ÿ]{2,6})';
+// the en-US rendering outside the US) or a 2-6 letter abbreviation. Both
+// branches are bounded by a lookahead so a malformed offset ("GMT+199",
+// "GMT+5:3") fails the match instead of backtracking into the bare letters
+// branch and being read as plain GMT (offset 0 = a plausible but WRONG instant).
+const ZONE =
+  '((?:GMT|UTC)[+\\-\u2212]\\d{1,2}(?::\\d{2})?(?![\\d:])|[A-Za-zÀ-ÖØ-öø-ÿ]{2,6}(?![+\\-\u2212]\\d))';
 const CLOCK = '(\\d{1,2}):(\\d{2})(?::(\\d{2}))?';
 
 // de-DE / en-GB: "4. Okt. 2026, 12:37:00 MESZ", "4 Oct 2026, 12:37:00 CEST",

@@ -97,6 +97,22 @@ describe('safety pins (unchanged contract — green at birth, deliberately)', ()
     expect(parseResetAtMs('resets Oct 20, 2026, 12:37:00 PM GMT+2')).toBeUndefined();
   });
 
+  it.each(['GMT+199', 'GMT+5:3', 'UTC-123', 'GMT+2:300'])(
+    'a malformed offset token (%s) is rejected, never read as plain GMT (review Minor 1)',
+    (zone) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-04T08:00:00Z'));
+      expect(parseResetAtMs(`resets Oct 5, 2026, 12:37:00 PM ${zone}`)).toBeUndefined();
+    }
+  );
+
+  it('plain GMT / UTC / MESZ still resolve (the lookahead must not eat the named zones)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-04T08:00:00Z'));
+    expect(parseResetAtMs('resets Oct 5, 2026, 12:37:00 PM GMT')).toBe(Date.parse('2026-10-05T12:37:00Z'));
+    expect(parseResetAtMs('resets 5. Okt. 2026, 12:37:00 MESZ')).toBe(Date.parse('2026-10-05T10:37:00Z'));
+  });
+
   it('a nonsensical offset is rejected', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-04T08:00:00Z'));

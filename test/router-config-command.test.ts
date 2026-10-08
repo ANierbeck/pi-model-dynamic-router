@@ -199,8 +199,8 @@ describe('/router config — autocomplete', () => {
     const rows = setup().completions('config');
     expect(rows!.map((r) => r.label ?? r.value)).toEqual([
       'config',
-      'config exclude <ref>',
-      'config unexclude <ref>',
+      'config exclude <ref|glob|provider>',
+      'config unexclude <ref|glob|provider>',
       'config compaction on|off',
     ]);
   });
@@ -428,6 +428,23 @@ describe('/router config exclude — bare provider names', () => {
     expect(after.exclude.providers).toEqual(['keep']);
     expect(rt.cfg.exclude.providers ?? []).not.toContain('aprov');
     expect(candidates(rt)).toContain('aprov/m1:free');
+  });
+
+  it('unexclude still removes a legacy BARE name that the pre-fix command wrote into exclude.models (review Minor 3)', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov', 'keep/*'] } }));
+    const out = await setup(['aprov/m1:free']).run('config unexclude aprov');
+    expect(out).toContain('Removed "aprov"');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.log_level).toBe('debug');
+    expect(after.exclude.models).toEqual(['keep/*']);
+  });
+
+  it('a legacy bare name in exclude.models does not block a new provider exclude (other edits preserve it)', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['aprov'] } }));
+    await setup(['aprov/m1:free']).run('config exclude aprov');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.exclude.providers).toEqual(['aprov']);
+    expect(after.exclude.models).toEqual(['aprov']);
   });
 
   it('unexclude of a provider excluded only by the shipped layer answers with the layer, not "not in any list"', async () => {

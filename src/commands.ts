@@ -384,7 +384,7 @@ export function createCommands(rt: CommandDeps) {
 
   rt.pi.registerCommand('router', {
     description:
-      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref>]]',
+      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
@@ -397,8 +397,8 @@ export function createCommands(rt: CommandDeps) {
         { value: 'cooldowns', label: 'cooldowns', description: 'Show active rate-limit cooldowns (ref, remaining, hits)' },
         { value: 'cooldowns clear', label: 'cooldowns clear', description: 'Clear all cooldowns + model-health streaks (incident relief, no restart needed)' },
         { value: 'config', label: 'config', description: 'Show config sources, exclude rules (with origin) and how many models each matches' },
-        { value: 'config exclude', label: 'config exclude <ref>', description: 'Exclude a model/glob from routing (saved to the user config, live without restart)' },
-        { value: 'config unexclude', label: 'config unexclude <ref>', description: 'Remove an exclusion from the user config' },
+        { value: 'config exclude', label: 'config exclude <ref|glob|provider>', description: 'Exclude a model/glob/provider from routing (saved to the user config, live without restart)' },
+        { value: 'config unexclude', label: 'config unexclude <ref|glob|provider>', description: 'Remove an exclusion from the user config' },
         { value: 'config compaction', label: 'config compaction on|off', description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)' },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
