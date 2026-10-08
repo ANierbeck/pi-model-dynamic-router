@@ -558,8 +558,12 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   dead/redundant (removed), 0 obsolete; projected score 75.6 -> ~93.5 %
   (re-measured by the next nightly).
   Phase 2 scope: owner go 2026-10-08 ("continue with mutation Phase 2")
-  for the R1 recommendation — keep the nightly on the decision core,
-  extend ONE module at a time, next `stream-orchestrator.ts`.
+  — executed: decision core kept as the 92.33 % healthy nightly; scope
+  extended ONE module at a time to `src/stream-orchestrator.ts`
+  (Nightly R3, LOCAL first report 2026-10-08: 31.5 %, 743 undetected =
+  first-report baseline; 8/743 false survivors confirmed killed by the
+  full suite, the rest uncovered coverage gaps to be closed over time;
+  the first nightly with the extended scope produces the official artifact).
 - Nightly R2 triage DONE (2026-10-08, run 37764383801, 92.33 % measured):
   132 undetected -> 111 equivalent (carried from R1), 12 recurring false
   survivors (perTest attribution; confirmed killed again), 4 real gaps

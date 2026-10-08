@@ -3,9 +3,10 @@
 // against a repository with no Stryker config and no nightly workflow.
 //
 // The contract pinned here:
-// 1. Stryker mutates the DECISION CORE ONLY (src/metrics.ts,
-//    src/routing.ts) — the Phase 1 scope agreed with the owner. The rest
-//    of src/ stays out until Phase 1's yield justifies extension.
+// 1. Stryker mutates the DECISION CORE (metrics + routing) plus, per Phase 2
+//    (2026-10-08, owner go), ONE module at a time —
+//    src/stream-orchestrator.ts is the first extension. The rest of src/ stays
+//    out until Phase 1's yield justifies further extension.
 // 2. The nightly workflow runs on a schedule + manual dispatch, and NEVER
 //    on pull_request/push — mutation results must never gate PRs (they
 //    are report-only; findings flow through triage, not red checks).
@@ -25,13 +26,19 @@ function readJson(file: string): any {
 }
 
 describe('nightly mutation testing', () => {
-  it('stryker config mutates exactly the decision core (metrics + routing)', () => {
+  it('mutations are limited to the decision core + the single Phase 2 module', () => {
     const cfg = readJson('stryker.config.json');
     expect(cfg.testRunner).toBe('vitest');
-    expect([...cfg.mutate].sort()).toEqual(['src/metrics.ts', 'src/routing.ts']);
+    // Phase 1 decision core, Phase 2 scope extension (2026-10-08, owner go):
+    // one module at a time, no suite-wide mutation.
+    expect([...cfg.mutate].sort()).toEqual([
+      'src/metrics.ts',
+      'src/routing.ts',
+      'src/stream-orchestrator.ts',
+    ]);
 
-    // Every mutate target must actually exist — a stale glob would make
-    // the nightly run vacuously green (0 mutants "killed").
+    // Every mutate target must actually exist — a stale glob would make the
+    // nightly run vacuously green (0 mutants "killed").
     for (const target of cfg.mutate) {
       expect(fs.existsSync(path.join(repoRoot, target))).toBe(true);
     }
@@ -64,11 +71,11 @@ describe('nightly mutation testing', () => {
     expect(gitignore).toMatch(/^reports\/$/m);
   });
 
-  it('the job budget covers a full cold run (~75 min locally)', () => {
+  it('the job budget covers a full cold run (~75 min locally, ~100 min both modules)', () => {
     const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
     const m = wf.match(/timeout-minutes:\s*(\d+)/);
     expect(m).not.toBeNull();
-    expect(Number(m![1])).toBeGreaterThanOrEqual(180);
+    expect(Number(m![1])).toBeGreaterThanOrEqual(240);
   });
 
   it('is report-only: no break threshold fails the nightly run', () => {
