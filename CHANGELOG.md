@@ -227,6 +227,12 @@
   byte-identical to the first `includes(ref)` check for every ref with a
   slash, so each copy masked every mutant on the other (found in the
   Task 5 no-coverage sweep).
+- `billingTier` no longer duplicates `isFreeModelRef`'s free checks line
+  by line — it delegates, as its doc comment already claimed (Nightly R2:
+  the duplicate kept two equivalent survivors alive). `isFreeModelRef`'s
+  bare-id derivation lost a redundant `includes('/')` ternary, and
+  `paceDemote` its two fast-path guards (a stable partition with nothing
+  paced is the identity order). Behaviour-preserving.
 
 ### Test
 
@@ -246,6 +252,19 @@
   `billingTier`'s free-model paths, `loadModelMap` valid/broken YAML.
   Red-first: 13 representative mutants observed RED (one turned out to be
   unkillable — a mutually-redundant double check, removed instead).
+- Nightly R2 mutation triage (run 37764383801, 2026-10-08, 92.33 %): the
+  `[paced]` marker of the group decision debug line had no test (4
+  survivors) — `test/group-decision-log.test.ts` now pins flag, placement
+  and the pacing demotion it reports; red against all four nightly mutants
+  plus a bypassed and a reversed `paceDemote`.
+- `scripts/mutation-carryover.ts` (+ `test/mutation-carryover.test.ts`, 13
+  tests): carries triage verdicts from the ledger datasets over to a new
+  Stryker report by a source anchor (mutator, replacement, mutated text,
+  ±1 line of context) instead of report line/id, which shift with every
+  edit. R2 needed it for 112 of 132 undetected mutants; previously that
+  match required the old nightly artifact (90-day retention). The R1
+  dataset is backfilled with the anchor columns and both datasets are now
+  one row per line (`docs/mutation-data/nightly-r{1,2}.json`).
 
 ## [1.6.1] — 2026-10-04 — Tier routing, AA benchmark scoring, key boundary, nightly mutation testing
 

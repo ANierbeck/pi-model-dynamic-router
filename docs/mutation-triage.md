@@ -6,7 +6,9 @@
 > reports are triaged against THIS ledger: a survivor already carrying a
 > verdict stays parked; only new/changed entries become work items.
 > The first nightly report (run 37606222840, 435 undetected) is fully triaged
-> in "Nightly R1 (2026-10-07)" at the end of this file.
+> in "Nightly R1 (2026-10-07)", the re-measure (run 37764383801, 132
+> undetected) in "Nightly R2 (2026-10-08)" — both near the end of this file.
+> New reports start with `scripts/mutation-carryover.ts` (see the R2 Method).
 
 ## Verdicts
 
@@ -1114,3 +1116,101 @@ Verdicts: EQUIVALENT ×3, REAL-KILLED ×13
 | 1199 | 3 | SV ×3 | REAL GAP → TESTED ×3 | metrics-decision-core-r1 |
 | 1201 | 1 | NC ×1 | EQUIVALENT ×1 | `?? []` fallback holds a string; `undefined <= cutoff` is false and the cache check skips it |
 | 1202 | 8 | SV ×8 | REAL GAP → TESTED ×8 | metrics-decision-core-r1 |
+
+## Nightly R2 (2026-10-08) — first re-measure after R1, run 37764383801
+
+> Artifact `mutation-report` of "Nightly Mutation Testing" (2026-10-08T10:34Z,
+> incremental run on main @ 6c9ca6d — the report source is byte-identical to
+> that commit). Triage branch `mutation-r2-triage`. Per-mutant dataset:
+> `docs/mutation-data/nightly-r2.json`.
+
+### Numbers
+
+| | R1 nightly | R1 projection | **R2 measured** | after R2 triage (projected) |
+|---|---|---|---|---|
+| mutants | 1781 | ≤ 1723 | **1720** | ≤ 1715 (5 mutants on code removed below) |
+| killed + timeout | 1346 | ≤ 1611 | **1588** | 1604 (+12 false survivors, +4 new kills) |
+| survived / no coverage | 382 / 53 | 112 | **124 / 8** | 111 (all ledgered EQUIVALENT) |
+| score | 75.58 % | ≈ 93.5 % | **92.33 %** | ≈ 93.5 % |
+
+The gap to the R1 projection (20 undetected mutants beyond its 112) is fully
+explained: 12 recurring false survivors (below), 6 mutants on code that
+landed after R1 (budget pacing, task-type Phase 4) and 2 bare-id mutants
+(metrics.ts L790/L829) that R1 counted as killed/removed — the line existed
+in two functions with identical text, and R1's verdict belonged to the
+removed third copy. One R1 EQUIVALENT (L832) sits on code removed below.
+
+### Verdicts (132 undetected = 124 survived + 8 no coverage)
+
+| category | mutants | how it was decided |
+|---|---|---|
+| EQUIVALENT, carried from R1 | 111 | `mutation-carryover.ts`: same mutator, replacement, mutated text and ±1 line of context as an R1 EQUIVALENT row — the code is untouched, the R1 rationale applies |
+| SUITE-KILLED (recurring false survivor) | 12 | R1 had confirmed all 12 KILLED; `mutation-recheck.ts` confirms it again (killer file fails alone on the mutant, passes alone on the baseline) |
+| REAL GAP → TESTED | 4 | `[paced]` marker of the group decision line (routing.ts L1164) had no test — new case in `test/group-decision-log.test.ts` |
+| REDUNDANT → REMOVED (§7) | 5 | see below |
+| NEW, untriaged | 0 | |
+
+**Recurring false survivors (12).** `FALLBACK_GROUP_ORDER` (9 mutants,
+L350-351, a static module-level array literal), the turn-pin guards L488/L506
+and the slug-twin guard metrics.ts L298. In every case Stryker's perTest
+coverage attributes tests from the killing file but NOT the killing test
+(0/13, 11/43, 9/43, 1/15), so the nightly never runs it, and incremental mode
+re-uses the stale result night after night. They are not suite gaps — the
+full suite kills each of them — but they will reappear in every report.
+The carry-over therefore routes them to `recheck`, not to `ledgered`: a
+mutant once confirmed killed that shows up undetected again is EITHER this
+attribution noise OR a weakened test, and only a recheck tells which.
+
+**Removed (§7, 5 mutants).**
+- `billingTier` duplicated `isFreeModelRef`'s free checks (`:free` tag,
+  `free_models` list incl. the bare id, discovered `cost_per_m === 0`) line by
+  line; its own doc comment already claimed it used `isFreeModelRef`. It now
+  delegates (local providers return tier 2 before the call, so
+  `isFreeModelRef`'s local branch cannot change the tier). Mutants 437, 444.
+- `isFreeModelRef`'s bare-id ternary (`ref.includes('/') ? … : ref`) is now
+  `ref.slice(ref.indexOf('/') + 1)`: a slashless ref is its own id, and the
+  line above already checked the full ref, so the `includes('/')` test could
+  not change an outcome. Mutant 393.
+- `paceDemote`'s two fast-path guards (`paced.size === 0`,
+  `!refs.some(isPaced)`) — a stable partition with nothing paced already IS
+  the identity order. Mutants 1476, 1482. (`formatGroupDecision` now also
+  computes the paced set once per line instead of once per candidate.)
+
+Red-first evidence: the four nightly `[paced]` mutants plus two hand-made
+ones (paceDemote bypassed, partition order swapped) were applied to the
+source and the new test was observed RED for each, before and after the
+§7 changes. The removals are behaviour-preserving refactors (no red test by
+definition); the full suite stayed green across them.
+
+### Method: carry-over first, recheck second, triage last
+
+```
+gh run download 37764383801 -n mutation-report -D /tmp/r2/report
+# 1. carry verdicts over from every earlier ledger (oldest first)
+node scripts/mutation-carryover.ts /tmp/r2/report/mutation/mutation.json \
+  --ledger docs/mutation-data/nightly-r1.json --out /tmp/r2/carry.json
+#    -> 132 undetected: 112 ledgered, 12 recheck, 8 triage
+# 2. recheck everything not ledgered against the full suite
+git clone <repo> /tmp/r2/tree && git -C /tmp/r2/tree checkout --detach 6c9ca6d
+ln -s <repo>/node_modules /tmp/r2/tree/node_modules
+node scripts/mutation-recheck.ts <report filtered to the 20> --tree /tmp/r2/tree \
+  --out /tmp/r2/recheck.json --jobs 4 --max-workers 2      # ~6 min
+# 3. triage what is left (8 here) by hand
+```
+
+The pristine tree must be a git checkout (not `git archive`):
+`test/no-external-references.test.ts` runs `git ls-files`, so a plain
+extracted tree fails the recheck's baseline gate.
+
+`mutation-carryover.ts` keys a mutant by its source — file, mutator,
+replacement, mutated text and the trimmed line with both neighbours — never
+by report line or id, which shift with every edit. Any edit on or next to a
+mutant makes it NEW (conservative); conflicting verdicts for one key go to
+triage. The R1 dataset was backfilled with the `original`/`context` columns
+from its own artifact (`--backfill`), which expires 90 days after the run;
+both datasets are now one row per line, so a re-triage diff shows exactly the
+verdicts that changed.
+
+**Triage tax this round:** ~10 min of analysis on top of a ~6-min recheck,
+against ~3.7 h for R1. The scope stays report-only; this is the steady-state
+cost the R1 recommendation predicted for unchanged nights.

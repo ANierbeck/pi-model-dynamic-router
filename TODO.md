@@ -557,8 +557,14 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   killed by +152 tests), 11 false survivors (2.5 %), 112 equivalent, 58
   dead/redundant (removed), 0 obsolete; projected score 75.6 -> ~93.5 %
   (re-measured by the next nightly).
-  OPEN OWNER DECISION: Phase 2 scope (see the evidence table and the
-  recommendation at the end of that section).
+  Phase 2 scope: owner go 2026-10-08 ("mach mit Mutation Phase 2 weiter")
+  for the R1 recommendation — keep the nightly on the decision core,
+  extend ONE module at a time, next `stream-orchestrator.ts`.
+- Nightly R2 triage DONE (2026-10-08, run 37764383801, 92.33 % measured):
+  132 undetected -> 111 equivalent (carried from R1), 12 recurring false
+  survivors (perTest attribution; confirmed killed again), 4 real gaps
+  (tested), 5 redundant (removed); projected ~93.5 %. New reports start
+  with `scripts/mutation-carryover.ts`, then recheck, then triage.
 
 **vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
 UPDATE 2026-10-06: vitest is now on 4.1.11 (security round, see CHANGELOG) —
