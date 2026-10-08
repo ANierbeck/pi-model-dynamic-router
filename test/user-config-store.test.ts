@@ -131,6 +131,24 @@ describe('UserConfigStore.read', () => {
   });
 });
 
+describe('UserConfigStore.applyDelta — exclude.providers', () => {
+  it('persists provider names next to models without touching other keys', () => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-store-prov-'));
+    fs.writeFileSync(path.join(agentDir, 'router-config.user.json'), JSON.stringify({ log_level: 'debug', exclude: { models: ['m/*'] } }));
+    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { providers: ['openrouter'] } });
+    expect(res.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(path.join(agentDir, 'router-config.user.json'), 'utf-8'));
+    expect(after).toEqual({ log_level: 'debug', exclude: { models: ['m/*'], providers: ['openrouter'] } });
+  });
+
+  it.each(['', 'has space', 'a/b', '/x', 'semi;colon'])('rejects the provider name %j without writing', (name) => {
+    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-store-prov-'));
+    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { providers: [name] } });
+    expect(res.ok).toBe(false);
+    expect(fs.existsSync(path.join(agentDir, 'router-config.user.json'))).toBe(false);
+  });
+});
+
 describe('validateExcludePattern', () => {
   it.each(['openrouter', 'openrouter/*', 'mistral/model-1.2', 'openrouter/vendor/model:free', '*opus*', 'a/b*c'])(
     'accepts %s',

@@ -169,8 +169,8 @@ describe('/router config — display', () => {
 
   it('prints usage hints and the shipped/project un-exclude limitation', async () => {
     const out = await setup().run('config');
-    expect(out).toContain('/router config exclude <ref|glob>');
-    expect(out).toContain('/router config unexclude <ref|glob>');
+    expect(out).toContain('/router config exclude <ref|glob|provider>');
+    expect(out).toContain('/router config unexclude <ref|glob|provider>');
     expect(out).toContain('Shipped and project entries cannot be removed with unexclude');
   });
 
@@ -263,7 +263,7 @@ describe('/router config exclude', () => {
   it('answers a missing pattern with the usage hint', async () => {
     const out = await setup().run('config exclude');
     expect(out).toContain('Missing pattern');
-    expect(out).toContain('/router config exclude <ref|glob>');
+    expect(out).toContain('/router config exclude <ref|glob|provider>');
     expect(fs.existsSync(userFile)).toBe(false);
   });
 
@@ -355,6 +355,85 @@ describe('/router config unexclude', () => {
     writeShipped({ exclude: { providers: ['shipped-prov'] } });
     const out = await setup().run('config unexclude shipped-prov/*');
     expect(out).toMatch(/excluded by the shipped layer/);
+    expect(out).not.toMatch(/not in any exclude list/);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+});
+
+// Bare provider names (Lane C follow-up, owner decision 2026-10-08): a bare
+// name without "/" or "*" can NEVER match a model ref (exclude.models globs
+// are anchored against "provider/model"), so "config exclude openrouter"
+// used to write a dead rule. It now means the provider: a known provider
+// lands in exclude.providers, an unknown bare name is rejected loudly.
+describe('/router config exclude — bare provider names', () => {
+  beforeEach(() => {
+    writeShipped();
+  });
+  const candidates = (rt: any) => rt.resolve('trivial')?.candidates ?? [];
+
+  it('maps a known bare provider to exclude.providers (not exclude.models) and applies it live', async () => {
+    const { rt, run } = setup(['aprov/m1:free', 'aprov/m2:free', 'bprov/m3:free']);
+    const out = await run('config exclude aprov');
+
+    expect(out).toContain('provider "aprov"');
+    expect(out).toContain('matches 2 discovered model(s)');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.exclude.providers).toEqual(['aprov']);
+    expect(after.exclude.models ?? []).toEqual([]);
+    expect(rt.cfg.exclude.providers).toContain('aprov');
+    expect(candidates(rt)).not.toContain('aprov/m1:free');
+    expect(candidates(rt)).toContain('bprov/m3:free');
+  });
+
+  it('keeps every key the user file already had and appends to its provider list', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['old'], models: ['x/*'] } }));
+    await setup(['aprov/m1:free']).run('config exclude aprov');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.log_level).toBe('debug');
+    expect(after.exclude.providers).toEqual(['old', 'aprov']);
+    expect(after.exclude.models).toEqual(['x/*']);
+  });
+
+  it('rejects an unknown bare name with a pointer to the glob form and writes nothing', async () => {
+    const out = await setup(['aprov/m1:free']).run('config exclude nosuchprov');
+    expect(out).toMatch(/not a known provider/);
+    expect(out).toContain('*/nosuchprov*');
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('does not duplicate a provider the user layer already excludes', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ exclude: { providers: ['aprov'] } }));
+    const out = await setup(['aprov/m1:free']).run('config exclude aprov');
+    expect(out).toMatch(/already in the user config/);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).exclude.providers).toEqual(['aprov']);
+  });
+
+  it('keeps a bare GLOB as a model pattern (it can match a ref) — unchanged contract, green at birth', async () => {
+    await setup(['aprov/m1:free']).run('config exclude *m1*');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.exclude.models).toEqual(['*m1*']);
+    expect(after.exclude.providers).toBeUndefined();
+  });
+
+  it('unexclude removes the provider entry again and re-admits its models', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['aprov', 'keep'] } }));
+    const { rt, run } = setup(['aprov/m1:free', 'bprov/m2:free']);
+    expect(candidates(rt)).not.toContain('aprov/m1:free');
+
+    const out = await run('config unexclude aprov');
+
+    expect(out).toContain('Removed "aprov"');
+    const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+    expect(after.log_level).toBe('debug');
+    expect(after.exclude.providers).toEqual(['keep']);
+    expect(rt.cfg.exclude.providers ?? []).not.toContain('aprov');
+    expect(candidates(rt)).toContain('aprov/m1:free');
+  });
+
+  it('unexclude of a provider excluded only by the shipped layer answers with the layer, not "not in any list"', async () => {
+    writeShipped({ exclude: { providers: ['shipped-prov'] } });
+    const out = await setup().run('config unexclude shipped-prov');
+    expect(out).toMatch(/shipped layer/);
     expect(out).not.toMatch(/not in any exclude list/);
     expect(fs.existsSync(userFile)).toBe(false);
   });

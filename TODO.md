@@ -334,8 +334,7 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
 ### Locale Robustness (date/reset-time parsing)
-- [x] **Multi-locale month-name parsing — DECIDED 2026-10-07, ready to
-  implement (owner: “international, best case”)** — `src/detection.ts`
+- [x] **Multi-locale month-name parsing — DONE 2026-10-08 (owner: “international, best case”)** — `src/detection.ts`
   currently recognizes only German month names ("Okt.", "März" …), because
   we render our own reset messages with `de-DE` locale and parse them
   back. Provider messages and foreign-locale systems produce English
@@ -343,7 +342,10 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
   deliberately German-readable log AND make the parser robust — explicit
   month tables for at least en-US + en-GB + de-DE (short and full forms,
   with/without trailing dot), plus a regression test per locale. Small
-  extension, registered 2026-10-04.
+  extension, registered 2026-10-04. Implemented with en-US (12-hour clock,
+  `GMT±N` zone tokens), en-GB and de-DE in short and long form; zone-less
+  texts ("Oct 4th, 12:37 PM") deliberately stay unparsed (guessing the zone
+  is the unsafe direction), ambiguous US abbreviations too.
 
 ### Resilience & Fallback Strategies
 - [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
@@ -620,7 +622,7 @@ before any release proposal.
 **`/router config` command** — ✅ DONE (Phases 1–2):
 `docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list. Writes to `router-config.user.json` so changes survive the session but stay out of the shipped defaults.
 
-Open follow-up from the Lane C review (owner product decision): a bare provider pattern like `openrouter` passes validation but lands in `exclude.models` where it matches nothing — reject it, or map it to `exclude.providers`?
+Lane C follow-up — ✅ DONE 2026-10-08: a bare provider name now maps to `exclude.providers` (unknown bare names are rejected), see CHANGELOG.
 
 **Cloud-provider wedge circuit breaker** — ✅ **DONE (Phases 1–4)**
 (2026-10-07): core module + local parity (Phase 1), orchestrator wiring

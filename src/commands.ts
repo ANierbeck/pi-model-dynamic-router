@@ -173,8 +173,8 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
 const CONFIG_USAGE_LINES = [
   'Usage:',
   '  /router config                          show config sources + exclude rules',
-  '  /router config exclude <ref|glob>       exclude a model/pattern from routing',
-  '  /router config unexclude <ref|glob>     remove a user-layer exclusion',
+  '  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing',
+  '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
   '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
 ];
 
@@ -262,28 +262,47 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
 
 const SCAN_CYCLE_NOTE = 'The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.';
 
+/**
+ * A bare name (no "/" and no "*") can never match a model ref — exclude.models
+ * globs are anchored against "provider/model" — so it can only mean a provider.
+ */
+function isBareProviderName(pattern: string): boolean {
+  return !pattern.includes('/') && !pattern.includes('*');
+}
+
 /** `/router config exclude <pattern>` — validate, persist to the user layer, apply live. */
 function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], pattern: string): string {
   if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
   const invalid = validateExcludePattern(pattern);
   if (invalid) return invalid;
 
+  const refs = rawDiscoveredRefs(rt, ctx);
+  const bareProvider = isBareProviderName(pattern);
+  if (bareProvider && !refs.some((r) => r.split('/')[0] === pattern)) {
+    return [
+      `"${pattern}" is not a known provider, and a bare name never matches a model ref.`,
+      `Use provider/model, a glob such as */${pattern}*, or one of the known providers: ${[...new Set(refs.map((r) => r.split('/')[0]))].sort().join(', ') || '(none discovered)'}.`,
+    ].join('\n');
+  }
+
   const store = openUserConfigStore();
   // A corrupt user file reads as no config here; applyDelta then refuses to write over it.
-  const current = userExcludeModels(store.read().config);
+  const config = store.read().config;
+  const kind = bareProvider ? 'providers' : 'models';
+  const current = userExcludeList(config, kind);
   if (current.includes(pattern)) return `"${pattern}" is already in the user config's exclude list.`;
 
-  const matches = countMatches(rt, { models: [pattern] }, rawDiscoveredRefs(rt, ctx));
+  const matches = countMatches(rt, { [kind]: [pattern] }, refs);
   const next = [...current, pattern];
-  const res = store.applyDelta({ exclude: { models: next } });
+  const res = store.applyDelta({ exclude: { [kind]: next } });
   if (!res.ok) return res.error;
 
   // Immediate in-memory effect, then the authoritative re-read (same path as
   // session_start) so the running router sees exactly what the next start will.
-  rt.cfg.exclude = { ...rt.cfg.exclude, models: [...new Set([...(rt.cfg.exclude?.models ?? []), pattern])] };
+  rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: [...new Set([...(rt.cfg.exclude?.[kind] ?? []), pattern])] };
   rt.load();
   return [
-    `Excluded "${pattern}" — it matches ${matches} discovered model(s) right now.`,
+    `Excluded ${bareProvider ? `provider "${pattern}"` : `"${pattern}"`} — it matches ${matches} discovered model(s) right now.`,
     `Saved to ${res.written}. ${SCAN_CYCLE_NOTE}`,
   ].join('\n');
 }
@@ -315,31 +334,34 @@ function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: s
       (l.exclude.models?.includes(pattern) || coveringProviderRuleKind(l, pattern) !== null)
   );
 
-  const current = user.exclude.models ?? [];
+  // A bare provider name lives in exclude.providers; everything else in exclude.models.
+  const kind = isBareProviderName(pattern) && (user.exclude.providers ?? []).includes(pattern) ? 'providers' : 'models';
+  const current = user.exclude[kind] ?? [];
   if (!current.includes(pattern)) {
     if (others.length === 0) return `"${pattern}" is not in any exclude list.`;
     const first = others[0];
     if (first.exclude.models?.includes(pattern)) {
       return `"${pattern}" is part of the ${first.origin} defaults — removable only in that layer (shipped defaults empty in the ADR-0025 B3 round).`;
     }
-    const kind = coveringProviderRuleKind(first, pattern);
-    return `"${pattern}" is not in any models exclude list, but "${pattern.split('/')[0]}" models stay excluded by the ${first.origin} layer (exclude.${kind}).`;
+    const coverKind = coveringProviderRuleKind(first, pattern);
+    return `"${pattern}" is not in any models exclude list, but "${pattern.split('/')[0]}" models stay excluded by the ${first.origin} layer (exclude.${coverKind}).`;
   }
 
-  const res = openUserConfigStore().applyDelta({ exclude: { models: current.filter((p) => p !== pattern) } });
+  const res = openUserConfigStore().applyDelta({ exclude: { [kind]: current.filter((p) => p !== pattern) } });
   if (!res.ok) return res.error;
 
-  if (others.length === 0 && rt.cfg.exclude?.models) {
-    rt.cfg.exclude = { ...rt.cfg.exclude, models: rt.cfg.exclude.models.filter((p) => p !== pattern) };
+  if (others.length === 0 && rt.cfg.exclude?.[kind]) {
+    rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: rt.cfg.exclude[kind]!.filter((p) => p !== pattern) };
   }
   rt.load();
   const still = others.length ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.` : '';
   return `Removed "${pattern}" from the user config (${res.written}).${still} ${SCAN_CYCLE_NOTE}`;
 }
 
-function userExcludeModels(config: Record<string, unknown> | undefined): string[] {
-  const exclude = config?.exclude as { models?: unknown } | undefined;
-  return Array.isArray(exclude?.models) ? exclude.models.filter((p): p is string => typeof p === 'string') : [];
+function userExcludeList(config: Record<string, unknown> | undefined, kind: 'models' | 'providers'): string[] {
+  const exclude = config?.exclude as Record<string, unknown> | undefined;
+  const list = exclude?.[kind];
+  return Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : [];
 }
 
 /** `/router config ...` — returns the text to show. */

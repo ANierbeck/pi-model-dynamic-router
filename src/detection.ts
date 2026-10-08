@@ -117,6 +117,96 @@ const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
  */
 
 /**
+ * Month names, lower-cased, without a trailing dot: en-US + en-GB + de-DE in
+ * short and long form (owner decision 2026-10-07: "international, best case").
+ * Intl only abbreviates some months ("Sept" in en-GB, "Sept." in de-DE, but
+ * "März"/"Mai"/"Juni"/"Juli" are spelled out), hence both forms per language.
+ * Lookup is the only gate: an unknown name returns undefined, never a guess.
+ */
+const MONTH_INDEX: Record<string, number> = {
+  jan: 0, january: 0, januar: 0,
+  feb: 1, february: 1, februar: 1,
+  mar: 2, march: 2, 'mär': 2, 'märz': 2, maerz: 2,
+  apr: 3, april: 3,
+  may: 4, mai: 4,
+  jun: 5, june: 5, juni: 5,
+  jul: 6, july: 6, juli: 6,
+  aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8,
+  oct: 9, october: 9, okt: 9, oktober: 9,
+  nov: 10, november: 10,
+  dec: 11, december: 11, dez: 11, dezember: 11,
+};
+
+// A month token: Latin-1 letters (\w is ASCII-only and would miss "ä"), the
+// trailing dot optional (de-DE: "Okt.", but "Mai").
+const MON = '([A-Za-zÀ-ÖØ-öø-ÿ]+)\\.?';
+// A zone token: an explicit GMT/UTC offset ("GMT+2", "UTC-5", "GMT+5:30" —
+// the en-US rendering outside the US) or a 2-6 letter abbreviation.
+const ZONE = '((?:GMT|UTC)[+\\-\u2212]\\d{1,2}(?::\\d{2})?|[A-Za-zÀ-ÖØ-öø-ÿ]{2,6})';
+const CLOCK = '(\\d{1,2}):(\\d{2})(?::(\\d{2}))?';
+
+// de-DE / en-GB: "4. Okt. 2026, 12:37:00 MESZ", "4 Oct 2026, 12:37:00 CEST",
+// "4. Oktober 2026 um 12:37:00 MESZ", "4 October 2026 at 12:37:00 CET".
+const DAY_FIRST_RE = new RegExp(
+  `\\b(\\d{1,2})\\.?\\s+${MON}\\s+(\\d{4})(?:,|\\s+(?:um|at))\\s+${CLOCK}\\s+${ZONE}\\b`,
+  'i'
+);
+// en-US: "Oct 4, 2026, 12:37:00 PM GMT+2", "October 4, 2026 at 12:37:00 PM GMT+2".
+// A narrow no-break space before AM/PM (newer ICU) is covered by \s.
+const MONTH_FIRST_RE = new RegExp(
+  `\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})(?:,|\\s+at)\\s+${CLOCK}\\s*(AM|PM)\\s+${ZONE}\\b`,
+  'i'
+);
+
+interface DatedReset {
+  day: string;
+  month: number;
+  year: string;
+  hour: string;
+  minute: string;
+  second: string;
+  tz: string;
+}
+
+/** Normalizes either dated shape to 24-hour wall-clock fields plus the zone token, or undefined. */
+function parseDatedZonedReset(text: string): DatedReset | undefined {
+  const dayFirst = text.match(DAY_FIRST_RE);
+  if (dayFirst) {
+    const [, day, monRaw, year, hour, minute, second, tz] = dayFirst;
+    const month = MONTH_INDEX[monRaw.toLowerCase()];
+    if (month === undefined) return undefined;
+    return { day, month, year, hour, minute, second: second ?? '0', tz };
+  }
+  const monthFirst = text.match(MONTH_FIRST_RE);
+  if (monthFirst) {
+    const [, monRaw, day, year, hour12, minute, second, ampm, tz] = monthFirst;
+    const month = MONTH_INDEX[monRaw.toLowerCase()];
+    if (month === undefined) return undefined;
+    // 12-hour clock: 12 AM -> 0, 12 PM -> 12, 9 PM -> 21.
+    const hour = String((Number(hour12) % 12) + (ampm.toUpperCase() === 'PM' ? 12 : 0));
+    return { day, month, year, hour, minute, second: second ?? '0', tz };
+  }
+  return undefined;
+}
+
+/**
+ * Hours ahead of UTC for an explicit "GMT+2" / "UTC-5" / "GMT+5:30" token, or
+ * undefined for anything else (named abbreviations are looked up separately;
+ * ambiguous ones such as EST/CST/BST stay unmapped on purpose). Bounded to the
+ * real-world range so a garbage offset can't produce a plausible instant.
+ */
+function explicitOffsetHours(tz: string): number | undefined {
+  const m = tz.match(/^(?:GMT|UTC)([+\-\u2212])(\d{1,2})(?::(\d{2}))?$/i);
+  if (!m) return undefined;
+  const hours = Number(m[2]);
+  const minutes = m[3] ? Number(m[3]) : 0;
+  if (hours > 14 || minutes > 59) return undefined;
+  const magnitude = hours + minutes / 60;
+  return m[1] === '+' ? magnitude : -magnitude;
+}
+
+/**
  * Converts a wall-clock date/time in a given IANA zone to a Unix-ms UTC
  * instant, without a timezone library. Standard single-iteration technique:
  * treat the target fields as if they were UTC (a "guess"), format that guess
@@ -160,40 +250,12 @@ function zonedTimeToUtcMs(
 }
 
 export function parseResetAtMs(text: string): number | undefined {
-  // DD. Mon YYYY, HH:MM:SS TZ (German locale, produced by toLocaleString
-  // with the standard date/time options in claude-bridge's formatResetTimestamp)
-  // claude-bridge formats dates as "DD. Mon YYYY, HH:MM:SS TZ" (e.g. "30. Aug. 2026, 17:00:00 MESZ").
-  // Note: there are literal dots in the pattern ("DD." and e.g. "Aug.") —
-  // each must be escaped as \\. (literal dot) in the regex, not left as a
-  // bare . (wildcard)!
-  //
-  // The month token is NOT always followed by a dot, and is not always ASCII:
-  // de-DE's Intl short-month format only abbreviates SOME months ("Jan.",
-  // "Feb.", "Aug.", "Sept.", "Okt.", "Nov.", "Dez.") while spelling others out
-  // in full with no trailing dot ("März", "Mai", "Juni", "Juli") — verified
-  // against Node's actual de-DE Intl output. `\w` never matches accented
-  // letters like ä (the `u` regex flag doesn't change that; \w stays
-  // ASCII-only), and a required trailing `\.` would reject "März"/"Mai"/
-  // "Juni"/"Juli" outright — so the previous pattern silently failed to parse
-  // 4 of 12 months and (via the MONTH table below being English-only) treated
-  // several more as unparsed too. Fixed: an explicit Latin-1 letter class for
-  // the month token, and the trailing dot is now optional.
-  const mdy = text.match(
-    /\b(\d{1,2})\.\s+([A-Za-zÀ-ÖØ-öø-ÿ]+)\.?\s+(\d{4}),\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Za-zÀ-ÖØ-öø-ÿ]{2,6})\b/
-  );
-  if (!mdy) return parseInformalZonedReset(text) ?? parseTimeOnlyReset(text);
-  // Groups: [fullMatch, day, month, year, hour, minute, second, tz]
-  const [, day, monRaw, year, hour, minute, second, tz] = mdy;
-  // Both English abbreviations (in case an English-locale Pi install produces
-  // them) and German ones (de-DE Intl short-month output, the format
-  // claude-bridge actually uses today — see comment above).
-  const MONTH: Record<string, number> = {
-    Jan: 0, Feb: 1, Mar: 2, Mär: 2, März: 2, Apr: 3, May: 4, Mai: 4,
-    Jun: 5, Juni: 5, Jul: 6, Juli: 6, Aug: 7, Sep: 8, Sept: 8,
-    Oct: 9, Okt: 9, Nov: 10, Dec: 11, Dez: 11,
-  };
-  const month = MONTH[monRaw];
-  if (month === undefined) return undefined;
+  // Dated, zoned reset text in the shapes toLocaleString() produces
+  // (see parseDatedZonedReset below). The claude-bridge format is the de-DE
+  // one; en-US / en-GB and long month names are accepted too.
+  const dated = parseDatedZonedReset(text);
+  if (!dated) return parseInformalZonedReset(text) ?? parseTimeOnlyReset(text);
+  const { day, month, year, hour, minute, second, tz } = dated;
   // Maps the TZ abbreviation captured above to hours-ahead-of-UTC (roborev
   // job 351 MEDIUM/354 LOW×2). The claude-bridge text carries local
   // wall-clock digits (Anthropic's resetsAt reformatted via toLocaleString in
@@ -224,8 +286,8 @@ export function parseResetAtMs(text: string): number | undefined {
     MEZ: 1, MESZ: 2, // Germany (CET/CEST), German abbreviation — the documented case
     CET: 1, CEST: 2, // same zones, English abbreviation
   };
-  if (!(tz in TZ_OFFSET_HOURS)) return undefined;
-  const offsetHours = TZ_OFFSET_HOURS[tz];
+  const offsetHours = tz in TZ_OFFSET_HOURS ? TZ_OFFSET_HOURS[tz] : explicitOffsetHours(tz);
+  if (offsetHours === undefined) return undefined;
   try {
     // Date.UTC(...) on the raw local digits produces a timestamp numerically
     // equal to "local wall-clock time interpreted as UTC", which is exactly

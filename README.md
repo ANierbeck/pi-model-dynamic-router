@@ -68,8 +68,8 @@ Compaction (context_budget): off (no soft_tokens/hard_tokens configured — trig
 
 Usage:
   /router config                          show config sources + exclude rules
-  /router config exclude <ref|glob>       exclude a model/pattern from routing
-  /router config unexclude <ref|glob>     remove a user-layer exclusion
+  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing
+  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion
   /router config compaction on|off        cache-aware auto-compaction (Phase 5b)
 Shipped and project entries cannot be removed with unexclude — only user-layer entries can.
 ```
@@ -778,8 +778,8 @@ discovers automatically.
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 | `/router reload` | Hot-reload config and cache |
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
-| `/router config exclude <ref|glob>` | Exclude a model/pattern from routing (saved to user layer, live without restart) |
-| `/router config unexclude <ref|glob>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
+| `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
+| `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
 | `/router config compaction on|off` | Cache-aware auto-compaction flag (opt-in, default off) |
 
 ### Logging
