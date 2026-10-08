@@ -557,7 +557,7 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   killed by +152 tests), 11 false survivors (2.5 %), 112 equivalent, 58
   dead/redundant (removed), 0 obsolete; projected score 75.6 -> ~93.5 %
   (re-measured by the next nightly).
-  Phase 2 scope: owner go 2026-10-08 ("mach mit Mutation Phase 2 weiter")
+  Phase 2 scope: owner go 2026-10-08 ("continue with mutation Phase 2")
   for the R1 recommendation — keep the nightly on the decision core,
   extend ONE module at a time, next `stream-orchestrator.ts`.
 - Nightly R2 triage DONE (2026-10-08, run 37764383801, 92.33 % measured):

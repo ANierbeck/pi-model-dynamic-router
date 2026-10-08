@@ -1,8 +1,8 @@
 // Pins scripts/mutation-carryover.ts — the nightly-to-ledger verdict carry-over.
 //
-// Nightly R2 (2026-10-08): 110 of the 132 undetected mutants were mutants the
-// R1 ledger had already ruled EQUIVALENT, and 12 were mutants R1 had already
-// confirmed KILLED (recurring perTest-attribution false survivors). Finding
+// Nightly R2 (2026-10-08): 111 of the 132 undetected mutants were already
+// ruled EQUIVALENT by the R1 ledger; 12 more had been confirmed KILLED by
+// the suite — recurring perTest-attribution false survivors. Finding
 // that out needed the R1 Stryker artifact (90-day retention) because the
 // ledger dataset was keyed by report line + mutant id, both of which shift
 // with every edit. The carry-over keys a mutant by its SOURCE instead —
