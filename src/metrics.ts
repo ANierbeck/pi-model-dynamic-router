@@ -756,7 +756,7 @@ export function calculateScore(ref: string, column?: string, _config?: Config): 
 
 /**
  * PURE helper: is `ref` a free model? Takes explicit cfg/cache args so it
- * can be used both from modul-state-bound code (billingTier) AND from
+ * can be used both from module-state-bound code (billingTier) AND from
  * context-bound code (exclude.ts isExcluded) without coupling the latter to
  * global module state.
  *
@@ -787,8 +787,9 @@ export function isFreeModelRef(
   if (provCfg?.free_models) {
     const freeList = provCfg.free_models;
     if (freeList.includes(ref)) return true;
-    const bare = ref.includes('/') ? ref.split('/').slice(1).join('/') : ref;
-    if (freeList.includes(bare)) return true;
+    // The id after the provider prefix (a slashless ref is its own id, and
+    // the check above already covered it).
+    if (freeList.includes(ref.slice(ref.indexOf('/') + 1))) return true;
   }
   // Discovered with cost_per_m === 0
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
@@ -813,24 +814,16 @@ export function isFreeModelRef(
 export function billingTier(ref: string): number {
   const prov = ref.split('/')[0];
   const provDef = PROVIDER_MAP[prov];
-  const provCfg = cfg.providers?.[prov];
-  const billing = provCfg?.billing ?? provDef?.billing ?? 'pay_per_token';
+  const billing = cfg.providers?.[prov]?.billing ?? provDef?.billing ?? 'pay_per_token';
 
   // Local providers (ollama, lm-studio) — their own tier, ahead of payg
   if (provDef?.local) return 2;
   // Subscription providers
   if (billing === 'subscription') return 1;
-  // Free models (excluding local, which is already handled above):
-  //   :free tag OR free_models config list OR discovered cost_per_m === 0
-  if (ref.includes(':free')) return 0;
-  if (provCfg?.free_models) {
-    const freeList = provCfg.free_models;
-    if (freeList.includes(ref)) return 0;
-    const bare = ref.includes('/') ? ref.split('/').slice(1).join('/') : ref;
-    if (freeList.includes(bare)) return 0;
-  }
-  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-  if (discovered?.cost_per_m === 0) return 0;
+  // Free models: :free tag OR free_models config list OR discovered
+  // cost_per_m === 0. isFreeModelRef also answers true for local providers,
+  // which already returned tier 2 above.
+  if (isFreeModelRef(ref, cfg.providers, cache.available_models)) return 0;
   return 3; // pay per token
 }
 
