@@ -7,8 +7,11 @@
 > verdict stays parked; only new/changed entries become work items.
 > The first nightly report (run 37606222840, 435 undetected) is fully triaged
 > in "Nightly R1 (2026-10-07)", the re-measure (run 37764383801, 132
-> undetected) in "Nightly R2 (2026-10-08)" — both near the end of this file.
-> New reports start with `scripts/mutation-carryover.ts` (see the R2 Method).
+> undetected) in "Nightly R2 (2026-10-08)"; the Phase 2 scope extension has
+> a LOCAL first report (2026-10-08, 743 undetected) in "Nightly R3
+> (2026-10-08)" — all near the end of this file. New reports start with
+> `scripts/mutation-carryover.ts` (see the R2 Method).
+
 
 ## Verdicts
 
@@ -1214,3 +1217,70 @@ verdicts that changed.
 **Triage tax this round:** ~10 min of analysis on top of a ~6-min recheck,
 against ~3.7 h for R1. The scope stays report-only; this is the steady-state
 cost the R1 recommendation predicted for unchanged nights.
+
+## Nightly R3 (2026-10-08) — Phase 2 scope extension: stream orchestrator, LOCAL first report
+
+> First mutation report for `src/stream-orchestrator.ts` (Phase 2, 2026-10-08
+> owner go: extend the nightly ONE module at a time, next candidate the stream
+> orchestrator). Measured LOCALLY (see Method) on the 6c9ca6d source — the
+> scope change itself was not on main yet, so no nightly artifact exists;
+> the first nightly with the extended scope produces the official artifact.
+> 1085 mutants, 31.52 % (342 killed / 464 survived / 279 no
+> coverage). This is a **first-report baseline** on a large (~1340 lines),
+> still thinly tested module: only 8 of the 743 undetected mutants are killed
+> by the full suite, meaning the suite reaches very few of the mutated
+> expressions. These 743 are therefore genuine coverage gaps (not equivalents)
+> and the correct reading of the score is "not yet covered", not "poorly
+> tested".
+>
+> Mutant inventory: 353 distinct mutated lines; top survivors by mutant count
+> are the probe-selection logic (L1107, 12 mutants), the rate-limit wait pool
+> (L549), the coalescing pipeline (L465), and the decision formatting (L1204).
+> The 8 false survivors are all `LogicalOperator` / `MethodExpression` on
+> guarded expressions the existing tests do exercise (rate-limit-wait,
+> consolidated-stream-error-pins, provider-breaker-orchestration,
+> adr-0021) — Stryker's related-test selection simply never ran them.
+
+### Numbers
+
+| | first report |
+|---|---|
+| mutants | 1085 |
+| killed | 342 (31.5 %) |
+| survived / no coverage | 464 / 279 |
+| undetected | 743 (353 distinct lines) |
+| false survivors (full-suite recheck) | 8 killed by existing tests |
+
+### Verdicts
+
+| category | count | action |
+|---|---|---|
+| FALSE SURVIVOR (the related-test selection missed them; the FULL suite kills them) | 8 | ledgered; the carry-over routes them to `recheck` |
+| NEW — coverage gap | 735 | triage over time via the ledger |
+
+The ledger pattern from R2 applies from R4 onward: `scripts/mutation-carryover.ts`
+will carry each line's verdict forward (all 743 are `NEW` for this first
+report), and the incremental nightly makes unchanged nights cheap. This report
+is a measurement baseline, not a defect report.
+
+### Method
+
+```
+# Local first report (no nightly artifact exists yet for the extended scope):
+git clone <repo> /tmp/r3/tree && git -C /tmp/r3/tree checkout --detach 6c9ca6d
+ln -s <repo>/node_modules /tmp/r3/tree/node_modules
+cd /tmp/r3/tree && npx stryker run --mutate src/stream-orchestrator.ts \
+  --incremental false --concurrency 6        # ~14 min, 1085 mutants
+# R3 is a first report: every undetected mutant is NEW (no R1/R2 ledger entries
+# for this file); recheck the full suite to separate true gaps from noise:
+node scripts/mutation-recheck.ts /tmp/r3/tree/reports/mutation/mutation.json \
+  --tree <full repo checkout> --out /tmp/r3/recheck.json \
+  --jobs 4 --max-workers 2          # ~6.5 h for 743 mutants
+```
+
+The 743 survivors are almost entirely uncovered code: with only 8 kills the
+existing tests touch a tiny fraction of the mutated surface (probe selection,
+rate-limit waits, breaker gating). Recommended strategy: write tests
+red-first around the module's public orchestration surface (`Router.run()` and
+the probe/fallback gates), not mutant-by-mutant.
+

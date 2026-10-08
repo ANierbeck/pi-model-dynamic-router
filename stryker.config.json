@@ -6,7 +6,8 @@
   },
   "mutate": [
     "src/metrics.ts",
-    "src/routing.ts"
+    "src/routing.ts",
+    "src/stream-orchestrator.ts"
   ],
   "coverageAnalysis": "perTest",
   "ignoreStatic": true,
@@ -24,8 +25,14 @@
     "the decision core only (metrics + routing). Report-only: the nightly run",
     "never gates main; findings flow through triage. The contract is pinned",
     "by test/mutation-nightly-config.test.ts (red-first).",
+    "Phase 2 (2026-10-08, owner go): scope extended to ONE module at a time —",
+    "src/stream-orchestrator.ts is the first extension; its first report is",
+    "Nightly R3 (2026-10-08, 31.5 %, 743 undetected), tracked in the ledger.",
     "coverageAnalysis perTest + ignoreStatic keep runtime bounded; timeoutMS",
     "is generous because several legitimate tests take 5-10s (rate-limit",
-    "waits, cooldown collapse) and a timeout would mask survivors as killed."
+    "waits, cooldown collapse) and a timeout would mask survivors as killed.",
+    "Two full cold runs (decision core ~75 min + orchestrator) fit in the",
+    "240-min job budget; unchanged nights reuse the incremental cache.",
+    "See docs/mutation-triage.md, section Nightly R3."
   ]
 }
