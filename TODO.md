@@ -564,6 +564,15 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   first-report baseline; 8/743 false survivors confirmed killed by the
   full suite, the rest uncovered coverage gaps to be closed over time;
   the first nightly with the extended scope produces the official artifact).
+  B3 first slice DONE (2026-10-09): the cooldown-collapse retried-narration
+  cluster (L1204 wait guard + L1262-1267 retried narrations, 17 of the 735
+  gaps) is closed by test/cooldown-collapse-retried-narration.test.ts
+  (3 red-first tests, mutants sabotage-verified) plus a vacuous-assertion
+  fix in the existing rate-limit-wait collapse test. Remaining clusters
+  for future rounds: the breaker-dead-end wait guard (L1107), the dynamic
+  HINT match/start-group lines (L465/L549), and the identity mutants that
+  need boundary scenarios — orchestration-surface harness, not
+  mutant-by-mutant.
 - Nightly R2 triage DONE (2026-10-08, run 37764383801, 92.33 % measured):
   132 undetected -> 111 equivalent (carried from R1), 12 recurring false
   survivors (perTest attribution; confirmed killed again), 4 real gaps
