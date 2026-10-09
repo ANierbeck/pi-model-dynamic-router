@@ -119,6 +119,22 @@ describe('decision-log corpus', () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  it('carries the stored context texts into the corpus item (replay input parity)', () => {
+    const d = dir();
+    const f = join(d, 'decisions.jsonl');
+    writeFileSync(
+      f,
+      JSON.stringify({
+        v: 1, ts: '2026-10-08T10:00:00Z', proc: 'p/1', stage: 'llm-cloud', answered_by: null, chain: [], cache_origin: null,
+        raw: null, final: { category: 'planning', group: 'planning', hint: null, reason: null }, steps: [], ms: 1,
+        input: { chars: 9, words: 2, sha: 'x', text: { prompt: 'and then?', previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' }, context: {} },
+      }) + '\n',
+    );
+    const [item] = buildCorpus({ records: readDecisionRecords([f]) });
+    expect(item.context).toEqual({ previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' });
+    rmSync(d, { recursive: true, force: true });
+  });
+
   it('dedupes repeated prompts (subagent fan-out) keeping the first record', () => {
     const d = dir();
     const f = join(d, 'decisions.jsonl');
@@ -212,6 +228,34 @@ describe('replay against a candidate endpoint', () => {
     expect(seen.method).toBe('POST');
     expect(seen.url).toBe('/classify');
     expect(seen.body).toEqual({ prompt: 'contract probe' });
+    await new Promise<void>((r) => probe.close(r));
+  });
+
+  it('sends context only when the corpus item has one', async () => {
+    const seen: any[] = [];
+    const probe = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        seen.push(JSON.parse(body));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ category: 'simple' }));
+      });
+    });
+    await new Promise<void>((r) => probe.listen(0, r));
+    const u = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
+    const base = { knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: 't', hasAttachment: false, duplicates: 0 };
+    await replayAgainstEndpoint(
+      [
+        { ...base, prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+        { ...base, prompt: 'without ctx' },
+      ],
+      { endpoint: u, concurrency: 1 },
+    );
+    expect(seen).toEqual([
+      { prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+      { prompt: 'without ctx' },
+    ]);
     await new Promise<void>((r) => probe.close(r));
   });
 });
