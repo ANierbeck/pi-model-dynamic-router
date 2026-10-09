@@ -272,6 +272,7 @@ function classifyCacheGet(prompt: string): FullClassificationResult | null {
 }
 
 function classifyCacheSet(prompt: string, result: FullClassificationResult): void {
+  if (contextDerived.has(result)) return;
   if (classifyCache.size >= MAX_CLASSIFY_CACHE) {
     // Evict the oldest entry (first in iteration order).
     const oldest = classifyCache.keys().next().value;
@@ -289,6 +290,37 @@ const FALLBACK_TIMEOUT = 10_000;
 // 6efa6d2, LOW); the per-call cloudTimeoutMs override stays available.
 const CLASSIFIER_CLOUD_TIMEOUT_MS = PROBE_TIMEOUT_MS;
 const MIN_CONFIDENCE = 0.5;
+
+/**
+ * Results whose category came from the CALLER's context (the previous turn's
+ * category) rather than from the prompt alone. They must never enter the
+ * classification cache: the cache key is the prompt, so a result derived from
+ * one conversation's lastCategory would be served to another conversation
+ * that sends the same words (subagent fan-out, re-asks).
+ */
+const contextDerived = new WeakSet<object>();
+
+/**
+ * Confidence gate shared by the local and the cloud path (decision-log plan
+ * D1, 2026-10-08: it used to guard only the local Ollama path, while the
+ * cloud chain — the path that actually runs — trusted any confidence). A
+ * reply below MIN_CONFIDENCE is a guess: it inherits the previous turn's
+ * category, or falls back when there is none. A missing confidence field is
+ * trusted — it is optional in the reply schema.
+ */
+function applyConfidenceGate(
+  parsed: ClassificationResult,
+  lastCategory: ClassificationResult['category'] | undefined,
+): ClassificationResult {
+  if (parsed.confidence === undefined || parsed.confidence >= MIN_CONFIDENCE) return parsed;
+  const gated: ClassificationResult = {
+    category: lastCategory ?? 'fallback',
+    reason: `Low confidence (${parsed.confidence}) — ${lastCategory ? 'using prior context' : 'falling back'}`,
+    confidence: parsed.confidence,
+  };
+  contextDerived.add(gated);
+  return gated;
+}
 const CONTINUATION_MAX_WORDS = 4;
 
 // ── Classification Prompt ────────────────────────────────────────────────
@@ -627,15 +659,7 @@ async function classifyPromptUncounted(
       return hint;
     }
     
-    if (parsed.confidence !== undefined && parsed.confidence < MIN_CONFIDENCE) {
-      const inherited = context.lastCategory ?? 'fallback';
-      return {
-        category: inherited,
-        reason: `Low confidence (${parsed.confidence}) — ${context.lastCategory ? 'using prior context' : 'falling back'}`,
-        confidence: parsed.confidence,
-      };
-    }
-    return parsed;
+    return applyConfidenceGate(parsed, context.lastCategory);
   };
 
   // Local leg. The primary/fallback come from the derived chain (user pin >
@@ -849,8 +873,13 @@ async function classifyPromptUncounted(
             }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
             noteSource(`cloud:${modelRef}`);
-            return parsed;
+            return applyConfidenceGate(parsed as ClassificationResult, context.lastCategory);
           }
+          // Structurally parseable but not a valid classification (unknown
+          // category, missing reason). Used to be skipped without a trace;
+          // the chain still moves on to the next candidate — a model that
+          // answers with a made-up category is better replaced than trusted.
+          warnLog(`[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String((extracted as any).category)}") — trying the next candidate`);
         } catch (cloudError) {
           warnLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
         } finally {
@@ -871,7 +900,10 @@ async function classifyPromptUncounted(
   // behavior is unchanged (Ollama only, no cloud attempt).
   if (allowCloudFallback) {
     const cloudResult = await tryCloud();
-    if (cloudResult) return cloudResult;
+    if (cloudResult) {
+      if (!contextBlock) classifyCacheSet(prompt, cloudResult);
+      return cloudResult;
+    }
     await tryOllama();
   } else {
     await tryOllama();
