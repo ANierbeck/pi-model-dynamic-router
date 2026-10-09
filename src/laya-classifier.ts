@@ -24,12 +24,41 @@
 import { warnLog } from './logger.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
 import type { Config } from './types.ts';
-import { buildClassifierLayaQuestion, VALID_CATEGORIES } from './classification-prompt.ts';
+import { buildClassifierLayaQuestion, VALID_CATEGORIES, buildContextBlock } from './classification-prompt.ts';
 
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
+/** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
+export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 
 let _availability: { ok: boolean; until: number } | null = null;
 let _lastProbeError: string | null = null;
+
+/**
+ * Truncate prompt (+ context) to fit the model context budget.
+ *
+ * The router has no tokenizer, so this applies a conservative character cap
+ * (`budgetTokens * 3`) as a safety bound; the wrapper tightens to the token
+ * budget token-exactly (it owns the tokenizer and can count precisely).
+ *
+ * Strategy mirrors the router's compaction style: keep the HEAD (with HINT
+ * markers and whitespace intact) and the TAIL, drop only the middle. The
+ * context block (previousUserMessage / lastAssistantSnippet) is removed FIRST,
+ * then the prompt body is trimmed if needed.
+ */
+export function truncateState(prompt: string, context: ClassificationContext | undefined, budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS): string {
+  const budgetChars = budgetTokens * 3;
+  const contextPart = buildContextBlock(context?.previousUserMessage, context?.lastAssistantSnippet);
+  const combined = contextPart + prompt;
+  if (combined.length <= budgetChars) {
+    return combined;
+  }
+  // context block dropped first (it costs the most tokens with least value),
+  // then keep head + tail of the prompt.
+  const maxChunk = Math.min(256, Math.floor((budgetChars - 4) / 2));
+  const head = prompt.slice(0, maxChunk);
+  const tail = prompt.slice(-maxChunk);
+  return head + '\n[... TRUNCATED ...]\n' + tail;
+}
 
 function markUnavailable(error?: string): void {
   _availability = { ok: false, until: Date.now() + UNAVAILABLE_TTL_MS };
@@ -85,7 +114,7 @@ export async function classifyWithLayaRaw(
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const body: Record<string, unknown> = { prompt };
+    const body: Record<string, unknown> = { prompt: truncateState(prompt, context, LAYA_CONTEXT_BUDGET_TOKENS) };
     if (context?.previousUserMessage) body.previousUserMessage = context.previousUserMessage;
     if (context?.lastAssistantSnippet) body.lastAssistantSnippet = context.lastAssistantSnippet;
     const t0 = performance.now();
