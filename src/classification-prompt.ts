@@ -121,6 +121,35 @@ export function buildClassificationPrompt(userPrompt: string, contextBlock: stri
 }
 
 /**
+ * Build the typed-decision question that Laya (a `choice`-question model) receives.
+ * Read directly from `CLASSIFICATION_PROMPT` so the Laya question surface is
+ * identical to the production classifier's — no duplicated category text.
+ * HINT handling is ignored (deterministic, runs before any classifier); only
+ * the category definitions and the instruction body are taken.
+ */
+export function buildClassifierLayaQuestion(): { instructions: string; criteria: string[] } {
+  const prompt = CLASSIFICATION_PROMPT;
+  const start = prompt.indexOf('If NO HINT is present, classify normally');
+  const end = prompt.indexOf('{{context_block}}');
+  if (start < 0 || end < 0 || start >= end) {
+    throw new Error('classification prompt surface changed unexpectedly');
+  }
+  const body = prompt.slice(start, end).trim();
+  const instructions = 'Classify the user\'s request into exactly one of these categories:\n\n' + body.replace(/^If NO HINT is present, classify normally into one of these categories:\n?/, '');
+  const criteria: string[] = [];
+  for (const line of body.split('\n')) {
+    const m = /^-\s+(\w+):\s*(.*)$/.exec(line);
+    if (m) {
+      criteria.push(m[1]);
+    }
+  }
+  if (criteria.length !== VALID_CATEGORIES.length) {
+    throw new Error(`classification prompt category list changed: ${criteria.length} found, expected ${VALID_CATEGORIES.length}`);
+  }
+  return { instructions, criteria };
+}
+
+/**
  * Extracts the classification JSON from a raw model response.
  * Strips <think> reasoning blocks, takes the first {...} object, parses it.
  * Returns null when no parseable JSON object is present.
