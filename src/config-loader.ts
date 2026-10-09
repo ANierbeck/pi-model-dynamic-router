@@ -115,8 +115,41 @@ export function loadLayeredConfig(
   }
 
   validateCategoryGroups(config);
+  validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Validate the opt-in Laya classifier stage (src/types.ts, ClassifierLayaConfig).
+ *
+ * Rules:
+ * - `enabled: true` REQUIRES a pinned checkpoint reference (ADR-0025: the router
+ *   never ships or infers a concrete model name).
+ * - On `enabled: true` the remaining fields are filled with defaults so callers
+ *   can read them without guards (endpoint, timeout_ms, confidence_threshold, mode).
+ * - Validation is strict (throws) because an improperly configured classifier
+ *   could change routing behavior; a typo in the user layer must fail loudly.
+ *
+ * Throws an Error on violation; otherwise mutates the config object in place by
+ * inserting defaults. Exported for test access (called once during config load).
+ */
+export function validateClassifierLaya(config: Config): void {
+  const c = config.classifier_laya;
+  if (!c) return;
+  if (c.enabled && !c.checkpoint) {
+    throw new Error(
+      `[router] classifier_laya: 'checkpoint' is required when enabled:true ` +
+        `(e.g. aac6fef/laya-multilingual-mlx:f2b4faf5...). The router never downloads ` +
+        `weights — fetch the pinned laya-mlx checkpoint manually before enabling, then re-run.`
+    );
+  }
+  if (c.enabled) {
+    if (c.endpoint == null) c.endpoint = 'http://127.0.0.1:8089';
+    if (c.timeout_ms == null) c.timeout_ms = 1500;
+    if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
+    if (!c.mode) c.mode = 'shadow';
+  }
 }
 
 /**
