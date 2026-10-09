@@ -60,7 +60,7 @@ export interface DecisionRecord {
   v: number;
   ts: string;
   proc: string;
-  /** hint | compaction | momentum | cache | llm-local | llm-cloud | static | fallback */
+  /** hint | compaction | momentum | cache | laya | llm-local | llm-cloud | static | fallback */
   stage: string;
   /** Model ref that produced the final classification (null for static/fallback). */
   answered_by: string | null;
@@ -81,7 +81,28 @@ export interface DecisionRecord {
   steps: string[];
   /** Total classifyPrompt time in ms. */
   ms: number;
+  /**
+   * What the Laya stage said about this input - present whenever the stage
+   * answered, in ANY mode (omitted otherwise, so older records and runs
+   * without the stage are unchanged). `acted: false` is the shadow-mode
+   * comparison data (ADR-0027 Phase 4): same input, what Laya would have said
+   * next to what the chain actually decided in `final`. Also logged when the
+   * answer fell through (low confidence / `fallback`) - calibration needs
+   * those cases most.
+   */
+  laya?: LayaObservation;
   input: DecisionInput;
+}
+
+export interface LayaObservation {
+  /** `laya:<checkpoint>` */
+  ref: string;
+  category: string;
+  confidence: number;
+  /** True only when this answer became the classification (active mode, vetted). */
+  acted: boolean;
+  /** Wall time of the whole stage (probe included when it ran). */
+  ms: number;
 }
 
 /** Mutable per-call trace threaded through the classifier via AsyncLocalStorage. */
@@ -92,6 +113,8 @@ export interface ClassificationTrace {
   cacheOrigin: string | null;
   /** Ref of the model that answered (updated by noteSource). */
   answeredBy: string | null;
+  /** Laya stage observation, set by the chain when the stage answered. */
+  laya?: LayaObservation;
 }
 
 export function newTrace(): ClassificationTrace {
@@ -181,6 +204,7 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
     },
     steps: p.trace.steps,
     ms: p.ms,
+    ...(p.trace.laya ? { laya: p.trace.laya } : {}),
     input: {
       chars: p.prompt.length,
       words: p.prompt.trim() ? p.prompt.trim().split(/\s+/).length : 0,
