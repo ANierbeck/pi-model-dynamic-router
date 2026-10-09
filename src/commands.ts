@@ -21,6 +21,7 @@ import {
   type ClassificationSourceInfo,
   type ClassificationCounts,
 } from './content-classifier.ts';
+import { LAYA_DEFAULT_ENDPOINT, getLastProbeError, layaAvailabilityState, type LayaAvailabilityState } from './laya-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
 import { localClassifierPins, resolveLocalClassifierChain, type LocalClassifierChain } from './classifier-local-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
@@ -124,6 +125,17 @@ export interface ClassifierStatusInput {
   localProbed?: boolean;
   /** Today's classification mix; omitted or empty → no counter lines. */
   counts?: ClassificationCounts;
+  /** Laya stage, present when `classifier_laya.enabled` is true. */
+  laya?: {
+    checkpoint: string;
+    endpoint: string;
+    confidence_threshold: number;
+    /** `active` decides; `shadow` only observes (and is therefore not part of the Chain line). */
+    mode: 'active' | 'shadow';
+    state: LayaAvailabilityState;
+    /** Why the sidecar is down (state `down` only). */
+    probeError?: string | undefined;
+  };
 }
 
 /**
@@ -138,6 +150,7 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   const lines: string[] = [];
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
+  if (input.laya?.mode === 'active') legs.push('Laya');
   if (g.classifier_cloud_fallback) {
     legs.push(
       g.classifier_cloud_model
@@ -158,6 +171,18 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
+  const laya = input.laya;
+  if (laya) {
+    const stateText =
+      laya.state === 'ok'
+        ? 'reachable'
+        : laya.state === 'down'
+          ? `unreachable${laya.probeError ? ` (${laya.probeError})` : ''}`
+          : 'not probed yet (probes on first use)';
+    lines.push(
+      `│ Laya (${laya.mode}): laya:${laya.checkpoint} @ ${laya.endpoint} — ${stateText} · threshold ${laya.confidence_threshold}`
+    );
+  }
   // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
   // digging through the router log.
   const counts = input.counts;
@@ -631,6 +656,19 @@ export function createCommands(rt: CommandDeps) {
               localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
               localProbed: Array.isArray(rt.cache.classifier_local_models),
               counts: getClassificationCounts(),
+              ...(rt.cfg.classifier_laya?.enabled
+                ? {
+                    laya: {
+                      checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
+                      endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
+                      confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
+                      // same safe reading as the chain: only an explicit 'active' decides
+                      mode: rt.cfg.classifier_laya.mode === 'active' ? ('active' as const) : ('shadow' as const),
+                      state: layaAvailabilityState(),
+                      probeError: getLastProbeError() ?? undefined,
+                    },
+                  }
+                : {}),
             })
           );
         } else if (topModels.length === 0) {

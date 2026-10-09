@@ -24,6 +24,7 @@ import { homedir } from 'node:os';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
+import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -145,7 +146,7 @@ export function validateClassifierLaya(config: Config): void {
     );
   }
   if (c.enabled) {
-    if (c.endpoint == null) c.endpoint = 'http://127.0.0.1:8089';
+    if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
     if (c.timeout_ms == null) c.timeout_ms = 1500;
     if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
     if (!c.mode) c.mode = 'shadow';
