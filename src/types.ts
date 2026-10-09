@@ -200,6 +200,42 @@ export interface ClassifierLogConfig {
   keep?: number;
 }
 
+/**
+ * Opt-in local classifier stage: Laya, a typed decision model (Apache 2.0).
+ * Local on Apple Silicon, no prompt content leaves the machine, but quality
+ * (zero-shot ~0.36 on typed decisions) is insufficient for active routing —
+ * the stage ships disabled (see docs/research/2026-10-09-laya-spike.md and
+ * docs/plans/2026-10-09-laya-tasks1-5.md).
+ */
+export interface ClassifierLayaConfig {
+  /** Enable the local Laya classifier stage. Default false — active use is gated
+   * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
+  enabled?: boolean;
+  /** Confidence threshold for forwarding a Laya result into the chain (default 0.8).
+   * The shipped confidence scale is uncalibrated (ECE 0.466); the gate is the
+   * first line of defense until the benchmark says otherwise. */
+  confidence_threshold?: number;
+  /** Endpoint of the local Laya wrapper/sidecar (default http://127.0.0.1:8089).
+   * The wrapper speaks POST /classify {prompt, context?} ->
+   * {category, confidence, probabilities, ms}. */
+  endpoint?: string;
+  /** Pinned Laya model checkpoint: the HF repo path of the laya-mlx weights,
+   * ideally with a revision hash (e.g. aac6fef/laya-multilingual-mlx:f2b4faf5...).
+   * REQUIRED when enabled. The router never downloads weights — fetching is a
+   * manual step (pip install laya-mlx + huggingface_hub.snapshot_download).
+   * Shipped config must NOT name a checkpoint (ADR-0025).
+   */
+  checkpoint?: string;
+  /** Milliseconds to wait for a classify request before falling through to the
+   * next stage (default 1500). Laya is local and fast; a short timeout prevents
+   * the chain from stalling on a broken sidecar. */
+  timeout_ms?: number;
+  /** Mode: "shadow" writes Laya's decision into the decision log (ADR-0027 Phase 4)
+   * without affecting the routed answer; "active" lets a confident result take the
+   * route. Default "shadow" when enabled. */
+  mode?: 'active' | 'shadow';
+}
+
 export interface Config {
   providers?: Record<string, ProviderConfig>;
   model_groups: Record<string, Group>;
@@ -220,6 +256,13 @@ export interface Config {
    * replay needs; stays local, file mode 0600).
    */
   classifier_log?: ClassifierLogConfig;
+  /**
+   * Opt-in local Laya typed-decision classifier stage (Apache 2.0; spike at
+   * docs/research/2026-10-09-laya-spike.md, plan at
+   * docs/plans/2026-10-09-laya-tasks1-5.md). Disabled by default; requires a
+   * pinned HF checkpoint ref when enabled — the router never downloads weights.
+   */
+  classifier_laya?: ClassifierLayaConfig;
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the
