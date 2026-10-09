@@ -375,6 +375,9 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // classification decision log runs is user intent (privacy + retention) —
   // a stale dynamic file must not silently switch it off.
   'classifier_log',
+  // Opt-in local Laya classifier stage (2026-10-09 plan): enable/configure is
+  // user intent; a stale dynamic file must not leave it stuck on or off.
+  'classifier_laya',
 ] as const satisfies readonly (keyof Config)[];
 
 /**
