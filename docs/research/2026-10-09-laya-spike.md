@@ -61,6 +61,9 @@ no ground truth yet (see "What the replay can and cannot say").
 | Round-trip via the HTTP wrapper, 120 real prompts | p50 12.2 ms, p95 49.8 ms, max 79.8 ms |
 | Server-side predict | p50 11.5 ms, p95 49.0 ms (long prompts dominate p95) |
 | Resident memory of the wrapper process | ~1.1 GiB RSS |
+| Token budget | prompt head (instructions + 9 criteria) = 408 tokens; the model accepts inputs well past
+  ~899 total tokens (architectural ceiling 8192 per encoder/config.json); the brief's
+  1,024-token figure stands as a conservative truncation budget |
 | Replay of the 383 unique router-era prompts, 4 workers | 9 s total, 0 endpoint errors |
 
 The corpus is the router-fork project's session store since 2026-09-27
@@ -171,6 +174,34 @@ result. Quality numbers need either (a) decision-log records with
    handle roughly a tenth of the traffic; whether those answers are correct
    is unmeasured. The 9 `fallback` answers at >= 0.8 deserve an eyeball
    (long inputs?).
+
+## Context window / truncation budget (measured 2026-10-09)
+
+**The model has a context window — this is a hard limit, not our choice.**
+Truncation exists only so the combined input (instructions + 9 option labels +
+context block + current request) never exceeds it. In practice the budget is
+seldom hit: the prompt head consumes 408 tokens, and a 1,500-character real
+prompt adds roughly 250–400 tokens.
+
+**What we measured** (multilingual checkpoint, revision
+`f2b4faf51023039425946074e2cf1361d2db11d5`):
+
+- `encoder/config.json`: `model_type = ModernBertForMaskedLM`,
+  `max_position_embeddings = 8192`, `local_attention (sliding window) = 128`,
+  768 hidden size / 22 layers / 12 heads. The brief's "mmBERT-base, 322M,
+  context 1024" is therefore only an approximation — the multilingual checkpoint
+  is ModernBERT.
+- `mlx_config.json` + `manifest.json`: HF revision `052592a15d...` of
+  `convaiinnovations/laya-multilingual`, 643,835,426 bytes, weight SHA256
+  `7fc5834af4d8fdfb268d272a9d1a66e5819a0daac98241651c4c888cc43adff1` (pinned).
+- Empirical: inputs up to **~899 total tokens (head included) still answer**;
+  architectural ceiling 8192.
+
+**Conclusion for Task 3:** truncation budget = **1,024 tokens** (brief figure,
+conservative; our head is 408, so we have ~600 tokens for prompt + context at
+the median long-prompt length). The wrapper tokenizes exactly (it owns the
+tokenizer), so truncation there is the single source of truth; the router
+keeps a coarse character cap as an additional safety bound.
 
 ## Next measurements (need data, not code)
 
