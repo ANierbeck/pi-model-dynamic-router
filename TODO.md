@@ -672,11 +672,27 @@ bulk_read threshold review).
 **Laya classifier integration** — full 9-task plan already committed:
 `docs/plans/2026-10-05-laya-classifier-integration.md`. Ships disabled by
 default; Task 0 (the spike: pinned checkpoint, ~1.7 GB local install)
-needs the owner's explicit go before any of it starts.
+needs the owner's explicit go before any of it starts. **Unblocked
+2026-10-08**: the decision log (ADR-0027, Phases 0+1+3) and the replay
+harness are merged, so the spike can be verified against real session data
+and recorded known decisions (`docs/plans/2026-10-08-laya-spike-brief.md`);
+evening spike on branch `laya-spike`.
+
+**Classifier decision log — remaining phases** (ADR-0027, plan
+`docs/plans/2026-10-08-classifier-decision-log.md`): Phase 2 (turn id +
+outcome join + correction signals — real accuracy proxies), Phase 4
+(shadow-classifier hook — live known-vs-candidate comparison, fire and
+forget, cannot change routing), Phase 5 (`/router classifier` summary).
+None blocks the Laya spike.
 
 ---
 
-*Last updated: 2026-10-07 (evening round: PR #51 auto-prune of dynamic
+*Last updated: 2026-10-08 (classifier decision log ADR-0027 Phases 0+1+3:
+confidence gate on the cloud path + invalid-category warning + working
+classification cache, JSONL decision records with store_text privacy gate,
+replay harness + session backfill; Laya spike unblocked and briefed. Suite
+2004 passed / 3 skipped. Earlier:*
+ PR #51 auto-prune of dynamic
 merge keys, PR #52 routing-flow decision-tree doc, PR #53 Nightly R1
 mutation triage — 435 mutants triaged, +152 tests, dead code removed;
 `model-map.yaml` classified class B with canary pin, owner decision;

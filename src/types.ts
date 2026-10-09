@@ -191,6 +191,15 @@ export interface BreakerConfig {
   cooldown_s?: number[];
 }
 
+export interface ClassifierLogConfig {
+  enabled?: boolean;
+  store_text?: 'none' | 'snippet' | 'full';
+  /** Rotation size of the decision log file (default 20 MiB). */
+  max_bytes?: number;
+  /** Files kept including the live one (default 3). */
+  keep?: number;
+}
+
 export interface Config {
   providers?: Record<string, ProviderConfig>;
   model_groups: Record<string, Group>;
@@ -199,6 +208,18 @@ export interface Config {
   /** Router log level: error < warn < info < debug (ROUTER_LOG_LEVEL overrides
    * it). Release builds ship at "warn" or "error" (AGENTS.md §1). */
   log_level?: 'error' | 'warn' | 'info' | 'debug';
+  /**
+   * Classifier decision log (docs/plans/2026-10-08-classifier-decision-log.md):
+   * one JSONL record per classification in ~/.pi/logs/classifier-decisions.jsonl
+   * — stage, the candidate chain with outcomes, raw vs final category, the
+   * routed group, latency. Absent block = off (the shipped router-config.json
+   * enables it with `store_text: "none"`). `store_text` decides how much
+   * prompt-derived text a record may contain: "none" (default; hash and
+   * lengths only), "snippet" (first 120 chars of the prompt + the model's
+   * reasons) or "full" (prompt and both context texts — what an offline
+   * replay needs; stays local, file mode 0600).
+   */
+  classifier_log?: ClassifierLogConfig;
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the

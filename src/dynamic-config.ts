@@ -371,6 +371,10 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // live inside model_groups entries and flow with the group config the scan
   // copies (dynamicGroups[g] = { ...staticGroup, models }).
   'context_budget',
+  // Classifier decision log (2026-10-08 plan, Phase 1): whether/how the
+  // classification decision log runs is user intent (privacy + retention) —
+  // a stale dynamic file must not silently switch it off.
+  'classifier_log',
 ] as const satisfies readonly (keyof Config)[];
 
 /**
