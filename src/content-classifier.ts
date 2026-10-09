@@ -14,6 +14,15 @@ import {
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { homedir } from 'node:os';
+import {
+  buildDecisionRecord,
+  classifyError,
+  newTrace,
+  resolveClassifierLogConfig,
+  writeDecisionRecord,
+  type ClassificationTrace,
+} from './classifier-decision-log.ts';
 import {
   buildContextBlock,
   buildClassificationPrompt,
@@ -171,6 +180,8 @@ const CLASSIFY_CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 interface ClassifyCacheEntry {
   result: FullClassificationResult;
   ts: number;
+  /** Decision log (D4): source that produced the entry ('cloud:<ref>' …). */
+  origin: string | null;
 }
 const classifyCache = new Map<string, ClassifyCacheEntry>();
 
@@ -200,12 +211,18 @@ export function getLastClassificationSource(): ClassificationSourceInfo | null {
 // Per-call source holder. `lastClassificationSource` is process-global, so a
 // counter reading it after an await could credit an overlapping call's source
 // (subagent fan-out); each classifyPrompt call runs inside its own holder.
-const callSource = new AsyncLocalStorage<{ source: string | null }>();
+const callSource = new AsyncLocalStorage<{ source: string | null; trace: ClassificationTrace }>();
 
 function noteSource(source: string): void {
   lastClassificationSource = { source, at: Date.now() };
   const holder = callSource.getStore();
-  if (holder) holder.source = source;
+  if (holder) {
+    holder.source = source;
+    // Decision log: which candidate produced the final classification.
+    // The deterministic stages have no model behind them.
+    holder.trace.answeredBy =
+      source.startsWith('ollama:') || source.startsWith('cloud:') ? source : null;
+  }
 }
 
 /**
@@ -258,7 +275,7 @@ export function resetClassificationCounts(): void {
   classificationCounts = { day: localDay(), total: 0, bySource: {}, byCategory: {} };
 }
 
-function classifyCacheGet(prompt: string): FullClassificationResult | null {
+function classifyCacheGet(prompt: string): { result: FullClassificationResult; origin: string | null } | null {
   const entry = classifyCache.get(prompt);
   if (!entry) return null;
   if (Date.now() - entry.ts > CLASSIFY_CACHE_TTL_MS) {
@@ -268,7 +285,7 @@ function classifyCacheGet(prompt: string): FullClassificationResult | null {
   // LRU: move to end (most-recently-used) by re-inserting.
   classifyCache.delete(prompt);
   classifyCache.set(prompt, entry);
-  return entry.result;
+  return entry;
 }
 
 function classifyCacheSet(prompt: string, result: FullClassificationResult): void {
@@ -278,7 +295,9 @@ function classifyCacheSet(prompt: string, result: FullClassificationResult): voi
     const oldest = classifyCache.keys().next().value;
     if (oldest !== undefined) classifyCache.delete(oldest);
   }
-  classifyCache.set(prompt, { result, ts: Date.now() });
+  // Decision log (D4): keep where a cached classification came from, so a
+  // cache hit can report its origin instead of an anonymous 'cache'.
+  classifyCache.set(prompt, { result, ts: Date.now(), origin: callSource.getStore()?.source ?? null });
 }
 const FALLBACK_TIMEOUT = 10_000;
 // Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
@@ -319,6 +338,8 @@ function applyConfidenceGate(
     confidence: parsed.confidence,
   };
   contextDerived.add(gated);
+  // Decision log: raw vs final diverge here — record the step.
+  callSource.getStore()?.trace.steps.push('low-confidence-inherit');
   return gated;
 }
 const CONTINUATION_MAX_WORDS = 4;
@@ -479,11 +500,58 @@ export async function classifyPrompt(
   prompt: string,
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
-  const holder: { source: string | null } = { source: null };
+  const started = Date.now();
+  const holder: { source: string | null; trace: ClassificationTrace } = { source: null, trace: newTrace() };
   const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
   const result = inheritPreviousCategory(raw, options.context?.lastCategory);
   countClassification(result, holder.source);
+  writeDecisionLog(prompt, options, holder, raw, result, started);
   return result;
+}
+
+/**
+ * Classifier decision log (docs/plans/2026-10-08-classifier-decision-log.md):
+ * append one JSONL record for this classification — fail-open, so logging
+ * can never change routing. Off unless the resolved config enables it; a
+ * missing `options.cfg` (direct unit tests) means no logging at all.
+ */
+function writeDecisionLog(
+  prompt: string,
+  options: ClassificationOptions,
+  holder: { source: string | null; trace: ClassificationTrace },
+  raw: FullClassificationResult,
+  result: FullClassificationResult,
+  started: number,
+): void {
+  const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+  if (!log) return;
+  const rawCategory = 'category' in raw ? raw.category : undefined;
+  const inherited = result !== raw && rawCategory === 'fallback';
+  if (inherited) holder.trace.steps.push('fallback-inherit');
+  const stage = holder.source?.startsWith('ollama:')
+    ? 'llm-local'
+    : holder.source?.startsWith('cloud:')
+      ? 'llm-cloud'
+      : (holder.source ?? 'fallback');
+  const record = buildDecisionRecord({
+    prompt,
+    stage,
+    trace: holder.trace,
+    final: {
+      category: 'category' in result ? result.category : null,
+      group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+      hint:
+        'hintType' in result
+          ? { type: (result as HintClassificationResult).hintType, target: (result as HintClassificationResult).hintTarget }
+          : null,
+      reason: result.reason ?? null,
+    },
+    context: options.context,
+    ms: Date.now() - started,
+    cfgBlock: options.cfg?.classifier_log,
+    home: homedir(),
+  });
+  writeDecisionRecord(record, homedir(), log);
 }
 
 /**
@@ -601,7 +669,9 @@ async function classifyPromptUncounted(
     const cached = classifyCacheGet(prompt);
     if (cached) {
       noteSource('cache');
-      return cached;
+      const holder = callSource.getStore();
+      if (holder) holder.trace.cacheOrigin = cached.origin;
+      return cached.result;
     }
   }
 
@@ -627,6 +697,15 @@ async function classifyPromptUncounted(
     const extracted = extractClassificationJson(response);
     if (!extracted) {
       throw new Error(`Invalid format: ${response}`);
+    }
+    // Decision log: what the model said before post-processing.
+    const trace = callSource.getStore()?.trace;
+    if (trace) {
+      trace.raw = {
+        category: (extracted as any).category ?? null,
+        confidence: (extracted as any).confidence ?? null,
+        reason: (extracted as any).reason ?? null,
+      };
     }
     // The model answered — record it so /router status shows the classifier
     // that actually produced this classification.
@@ -689,10 +768,30 @@ async function classifyPromptUncounted(
       return;
     }
     const retryTarget = fallback && fallback !== primary ? fallback : undefined;
+    // Decision log: time and classify every real attempt (ok/failed + why).
+    const tracedLocalAttempt = async (m: string, t: number, attempt: () => Promise<FullClassificationResult>) => {
+      const t0 = Date.now();
+      const trace = callSource.getStore()?.trace;
+      try {
+        const r = await attempt();
+        trace?.chain.push({ ref: `ollama:${m}`, outcome: 'ok', ms: Date.now() - t0 });
+        return r;
+      } catch (err) {
+        trace?.chain.push({
+          ref: `ollama:${m}`,
+          outcome: 'failed',
+          why: classifyError(String((err as Error)?.message ?? err)) ?? 'unparseable',
+          ms: Date.now() - t0,
+        });
+        throw err;
+      }
+    };
     const tryFallback = async (): Promise<void> => {
       if (!retryTarget) return;
       try {
-        classificationResult = await tryClassify(retryTarget, fallbackTimeoutMs);
+        classificationResult = await tracedLocalAttempt(retryTarget, fallbackTimeoutMs, () =>
+          tryClassify(retryTarget, fallbackTimeoutMs)
+        );
       } catch (fallbackError) {
         warnLog(`[classifier] Fallback model also failed`, (fallbackError as Error).message);
       }
@@ -710,7 +809,7 @@ async function classifyPromptUncounted(
       return;
     }
     try {
-      classificationResult = await tryClassify(primary, timeoutMs);
+      classificationResult = await tracedLocalAttempt(primary, timeoutMs, () => tryClassify(primary, timeoutMs));
     } catch (primaryError) {
       const primaryMsg = String((primaryError as Error)?.message ?? '');
       if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
@@ -797,9 +896,12 @@ async function classifyPromptUncounted(
         // S3 timeout timer, hoisted so the finally can clear it on every
         // exit path (success, parse-throw, timeout-throw).
         let candidateTimer: ReturnType<typeof setTimeout> | null = null;
+        const t0 = Date.now();
+        const trace = callSource.getStore()?.trace;
         try {
           const model = findModel(modelRef);
           if (!model) {
+            trace?.chain.push({ ref: modelRef, outcome: 'skipped', why: 'not-in-registry', ms: Date.now() - t0 });
             routerLog(`[classifier] Cloud model ${modelRef} not in pi registry — skipping`);
             continue;
           }
@@ -807,6 +909,7 @@ async function classifyPromptUncounted(
           // not that the provider has credentials (bug 2026-10-06) — skip
           // before completeSimple would fail one level deeper.
           if (hasConfiguredAuth && !hasConfiguredAuth(model)) {
+            trace?.chain.push({ ref: modelRef, outcome: 'skipped', why: 'no-credentials', ms: Date.now() - t0 });
             routerLog(`[classifier] Cloud model ${modelRef} skipped — provider not configured (no credentials)`);
             continue;
           }
@@ -828,6 +931,12 @@ async function classifyPromptUncounted(
             }),
           ]);
           if (result.errorMessage || result.stopReason === 'error') {
+            trace?.chain.push({
+              ref: modelRef,
+              outcome: 'failed',
+              why: classifyError(result.errorMessage ?? 'error') ?? 'unparseable',
+              ms: Date.now() - t0,
+            });
             warnLog(`[classifier] Cloud model ${modelRef} failed`, result.errorMessage ?? 'error');
             continue;
           }
@@ -842,7 +951,22 @@ async function classifyPromptUncounted(
           // like the old thrown SyntaxError — catch skips to next model).
           const extracted = extractClassificationJson(raw);
           if (!extracted) {
+            // No JSON at all — distinguish "answered nothing" from "answered
+            // something unparseable" (the breaker watches the former).
+            if (!raw.trim()) {
+              trace?.chain.push({ ref: modelRef, outcome: 'failed', why: 'empty-reply', ms: Date.now() - t0 });
+              warnLog(`[classifier] Cloud model ${modelRef} returned an empty reply`);
+              continue;
+            }
             throw new Error(`Invalid format from cloud model ${modelRef}`);
+          }
+          // Decision log: what the model said before post-processing.
+          if (trace) {
+            trace.raw = {
+              category: (extracted as any).category ?? null,
+              confidence: (extracted as any).confidence ?? null,
+              reason: (extracted as any).reason ?? null,
+            };
           }
           const parsed = extracted as FullClassificationResult;
           if (isValidFullClassification(parsed)) {
@@ -868,10 +992,12 @@ async function classifyPromptUncounted(
                 throw new Error(`Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`);
               }
               routerLog(`[classifier] Cloud model ${modelRef} succeeded (HINT conversion via pi completeSimple)`);
+              trace?.chain.push({ ref: modelRef, outcome: 'ok', ms: Date.now() - t0 });
               noteSource(`cloud:${modelRef}`);
               return hint;
             }
             routerLog(`[classifier] Cloud model ${modelRef} succeeded (via pi completeSimple)`);
+            trace?.chain.push({ ref: modelRef, outcome: 'ok', ms: Date.now() - t0 });
             noteSource(`cloud:${modelRef}`);
             return applyConfidenceGate(parsed as ClassificationResult, context.lastCategory);
           }
@@ -880,7 +1006,17 @@ async function classifyPromptUncounted(
           // the chain still moves on to the next candidate — a model that
           // answers with a made-up category is better replaced than trusted.
           warnLog(`[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String((extracted as any).category)}") — trying the next candidate`);
+          trace?.chain.push({ ref: modelRef, outcome: 'failed', why: 'invalid-category', ms: Date.now() - t0 });
         } catch (cloudError) {
+          // Spurious-HINT / unusable-HINT / invalid-format throws land here
+          // too; classifyError never stores the raw body (it can echo
+          // secrets from the provider's error response).
+          trace?.chain.push({
+            ref: modelRef,
+            outcome: 'failed',
+            why: classifyError(String((cloudError as Error)?.message ?? cloudError)) ?? 'unparseable',
+            ms: Date.now() - t0,
+          });
           warnLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
         } finally {
           if (candidateTimer) clearTimeout(candidateTimer);

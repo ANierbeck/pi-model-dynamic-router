@@ -1,5 +1,9 @@
 {
   "log_level": "warn",
+  "classifier_log": {
+    "enabled": true,
+    "store_text": "none"
+  },
   "best_quality_window": 0.05,
   "exclude": {
     "models": []

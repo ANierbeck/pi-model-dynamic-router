@@ -154,6 +154,9 @@ describe('dynamic-config-resync-keys', () => {
     // Task-type-balancing Phase 5b (2026-10-07): the global cache-aware
     // compaction settings are user intent — same shadowing class.
     'context_budget',
+    // Classifier decision log (2026-10-08): privacy + retention are user
+    // intent — the dynamic copy must not silently disable the log.
+    'classifier_log',
   ] as const;
 
   describe('DYNAMIC_CONFIG_RESYNC_KEYS whitelist', () => {
@@ -178,6 +181,7 @@ describe('dynamic-config-resync-keys', () => {
     log_level: 'debug',
     category_groups: { code_complex: 'tactical' },
     context_budget: { enabled: true, soft_tokens: 999_999 },
+    classifier_log: { enabled: false, store_text: 'stale' },
   };
 
   /** Fresh value in the PROJECT config layer (what the user changed TO). */
@@ -196,6 +200,7 @@ describe('dynamic-config-resync-keys', () => {
     log_level: 'warn',
     category_groups: { code_complex: 'planning' },
     context_budget: { enabled: false, soft_tokens: 123 },
+    classifier_log: { enabled: true, store_text: 'full', max_bytes: 999_888, keep: 9 },
   };
 
   function assertResynced(key: string, written: Record<string, any>): void {

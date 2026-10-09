@@ -67,26 +67,31 @@ function ensureLogDirFor(logPath: string): void {
   ensuredDirs.add(dir);
 }
 
-function rotate(logPath: string): void {
-  const last = `${logPath}.${rotation.keep - 1}`;
+function rotate(logPath: string, rot: { maxBytes: number; keep: number } = rotation): void {
+  const last = `${logPath}.${rot.keep - 1}`;
   if (fs.existsSync(last)) fs.rmSync(last);
-  for (let i = rotation.keep - 2; i >= 1; i--) {
+  for (let i = rot.keep - 2; i >= 1; i--) {
     if (fs.existsSync(`${logPath}.${i}`)) fs.renameSync(`${logPath}.${i}`, `${logPath}.${i + 1}`);
   }
-  if (rotation.keep > 1) fs.renameSync(logPath, `${logPath}.1`);
+  if (rot.keep > 1) fs.renameSync(logPath, `${logPath}.1`);
   else fs.rmSync(logPath);
 }
 
 // The size is read from disk on every write rather than counted per process:
 // several Pi sessions append to the same file, and a per-process counter
 // rotated too late and then rotated a fresh file again (review 2026-09-27).
-function append(logPath: string, line: string): void {
+function append(
+  logPath: string,
+  line: string,
+  rot: { maxBytes: number; keep: number } = rotation,
+  mode?: number,
+): void {
   ensureLogDirFor(logPath);
   const size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
   const retryAt = rotationRetryAt.get(logPath) ?? 0;
-  if (size > 0 && size + Buffer.byteLength(line) + 1 > rotation.maxBytes && Date.now() >= retryAt) {
+  if (size > 0 && size + Buffer.byteLength(line) + 1 > rot.maxBytes && Date.now() >= retryAt) {
     try {
-      rotate(logPath);
+      rotate(logPath, rot);
       rotationRetryAt.delete(logPath);
     } catch (err) {
       // Another process rotated in between (ENOENT) or a slot is blocked:
@@ -97,7 +102,28 @@ function append(logPath: string, line: string): void {
       fs.appendFileSync(logPath, `${new Date().toISOString()}  [router] log rotation failed, retrying in ${ROTATION_RETRY_MS / 1000}s: ${reason}\n`);
     }
   }
-  fs.appendFileSync(logPath, line + '\n');
+  // `mode` applies when the file is created (private data files, e.g. the
+  // classifier decision log); an existing file keeps its mode.
+  fs.appendFileSync(logPath, line + '\n', mode === undefined ? undefined : { mode });
+}
+
+/**
+ * Append one line to a data file with its own size rotation (the file's own
+ * `maxBytes`/`keep`, independent of router.log's). Throws on I/O failure —
+ * callers that must not fail wrap it (the classifier decision log does).
+ */
+export function appendRotating(
+  logPath: string,
+  line: string,
+  rot: { maxBytes: number; keep: number },
+  mode?: number,
+): void {
+  append(logPath, line, { maxBytes: rot.maxBytes, keep: Math.max(1, rot.keep) }, mode);
+}
+
+/** `<project>/<pid>` — the provenance tag router.log puts on global lines. */
+export function procTag(): string {
+  return `${projectTag}/${process.pid}`;
 }
 
 /** Tag a fully formatted line: insert " [<tag>] " right after the ISO timestamp. */
