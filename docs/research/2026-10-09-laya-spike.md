@@ -5,6 +5,45 @@ MLX variant only (steps 0 and the measurement part of 3). Nothing here touches
 router code; the wrapper lives in `spikes/laya-http/server.py` and speaks the
 replay contract (`POST /classify {prompt} -> {category, confidence, ...}`).
 
+## Start here (for a session that begins from scratch)
+
+**What this is.** Laya is a small local "typed decision" model (no text
+generation; it returns probabilities over fixed options in one forward pass).
+The goal of the parent plan (`docs/plans/2026-10-05-laya-classifier-integration.md`)
+is an opt-in, local classifier stage in front of the cloud chain. This
+document records what the spike measured and decided so far. Nothing on this
+branch (`laya-spike`, local only, not pushed) changes router behavior.
+
+**State of the plan (2026-10-09).** Task 0 (spike) is partly done: MLX
+variant measured, upstream `laya` / `laya-serve` / ONNX / process-management
+comparison still open. Tasks 1-8 are not started. Quality is UNKNOWN: there is
+no ground truth yet (see "What the replay can and cannot say").
+
+**Files.**
+
+| Path | Role |
+|---|---|
+| `spikes/laya-http/server.py` | Throwaway HTTP wrapper: `POST /classify {prompt, context?}` -> `{category, confidence, probabilities, ms}`. Reads category definitions from `src/classification-prompt.ts` at start-up (no copy). |
+| `scripts/classifier-replay.ts` | Replays a corpus (session prompts and/or decision-log records) against any endpoint speaking that contract; reports agreement and disagreements. Context from full-text decision records is forwarded. |
+| `src/classifier-decision-log.ts`, ADR-0027 | The decision log that produces the known-classifier labels (`~/.pi/logs/classifier-decisions.jsonl`, `store_text: "full"` needed for replay inputs). |
+| `/tmp/laya-spike/` | Venv, server log and replay reports of the first run. Not versioned (reports contain prompt text). Recreate as below. |
+
+**Reproduce.**
+
+1. `uv venv --python 3.12 /tmp/laya-spike/.venv && source /tmp/laya-spike/.venv/bin/activate && uv pip install laya-mlx` (0.3.0 at the time; Apple Silicon only).
+2. `python spikes/laya-http/server.py --port 8089` (downloads the pinned checkpoint, ~614 MB, on first start).
+3. `npx tsx scripts/classifier-replay.ts --sessions ~/.pi/agent/sessions/<project-dir> --since 2026-09-27 --endpoint http://127.0.0.1:8089 --report /tmp/laya-spike/replay.json`
+   (add `--records ~/.pi/logs/classifier-decisions.jsonl` once the decision log has data).
+
+**Gotchas already paid for.**
+
+- The model sees only `criteria` (labels) and ONE `instructions` string.
+  Descriptions kept elsewhere never reach it.
+- Never commit replay reports or `/tmp/laya-spike` content: they contain real
+  prompts (pasted logs, diffs). Also never `git add -A` the `spikes/` dir
+  without checking for `__pycache__` (it happened once; now ignored).
+- The repo is public; every push is a publication (AGENTS.md §8).
+
 ## Pinned setup
 
 | What | Value |
@@ -63,6 +102,41 @@ exploration). Only "Design the new plugin API surface" was stable across all
 shapes (0.97-0.99). The instruction string changes confidence strongly but
 not toward the production rules, so the complexity axis cannot be steered by
 prompt wording — it has to be learned from labeled data.
+
+## Training data language: German or English? (measured 2026-10-09)
+
+Question from the owner: if Laya is fine-tuned, in which language should the
+labeled data be? Measured instead of guessed, on the 385 unique prompts of the
+replay corpus (router-fork project sessions since 2026-09-27) with a
+stop-word heuristic (German vs English function words in the first 600
+characters; crude, but the split is not close):
+
+| Slice | German | English | Other (too short / unclear / mixed) |
+|---|---|---|---|
+| All 385 prompts | 236 (61 %) | 133 (35 %) | 16 |
+| Short prompts (< 200 chars), 180 | 163 | 3 | 14 |
+| Long prompts (>= 1,500 chars), 119 | 5 | 113 | 1 |
+
+**Recommendation: keep both languages, original wording, no translation.**
+
+1. The production classifier prompt says "The request may be in any language";
+   training must match the deployment distribution (about 60 % German).
+2. The multilingual checkpoint (`laya-multilingual-mlx`) exists for exactly this.
+3. Translating would destroy the cues that separate categories: a short
+   colloquial continuation ("ok mach weiter") is `fallback` by production
+   rule; its English rendering loses the register that makes it recognizable.
+
+**Pitfall: language, length and category are confounded in our data.** Short
+prompts are German and mostly trivial/simple/fallback; long prompts are
+English pastes (reviewer prompts, logs, diffs) and mostly code_complex. A
+model trained on this as-is can learn "German = cheap, English = expensive"
+instead of the real signal. Rule for building the training / golden set:
+balance per category AND per language, deliberately including English short
+prompts and German long prompts even though sessions contain few; do not
+draw the set purely from session history (curate it). Keep the ~60/40 mix as
+the overall ratio so the set still mirrors real traffic. Caveats: one project's
+sessions, one heuristic, prompts deduplicated (so frequent short German
+continuations are under-represented relative to traffic).
 
 ## What the replay can and cannot say
 
