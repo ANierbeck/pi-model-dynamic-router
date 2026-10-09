@@ -106,6 +106,23 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
   }
 }
 
+let _probeInFlight: Promise<boolean> | null = null;
+
+/**
+ * Availability for the next request. A fresh state (healthy OR down) is
+ * trusted for its TTL — a down sidecar must not be hammered. An unknown or
+ * expired state triggers ONE probe (concurrent callers share it), so the
+ * stage needs no startup hook and recovers on its own after a restart of the
+ * sidecar; nothing else in the router calls probeLaya().
+ */
+async function ensureLayaAvailable(endpoint: string, timeoutMs: number): Promise<boolean> {
+  if (_availability && Date.now() <= _availability.until) return _availability.ok;
+  _probeInFlight ??= probeLaya(endpoint, timeoutMs).finally(() => {
+    _probeInFlight = null;
+  });
+  return _probeInFlight;
+}
+
 /** True when the wrapper answered healthily and a recent probe succeeded. */
 export function isLayaAvailable(): boolean {
   if (!_availability) return false;
@@ -172,22 +189,46 @@ export async function classifyWithLayaRaw(
   }
 }
 
+export interface LayaAnswer {
+  category: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  ms: number;
+}
+
 /**
- * Classify with the Laya stage. Returns null when disabled/unavailable or below
- * confidence_threshold (the chain falls through). `checkpoint` is needed for the
- * chain source string `laya:<checkpoint>`.
+ * Apply the stage's veto rules to a raw answer; null = the chain must go on.
+ * - below `confidence_threshold` (written so that NaN also fails);
+ * - `fallback`: it means "could not tell", and in the spike it was the most
+ *   frequent confident answer (51 of 85) — returning it would shadow every
+ *   better classifier behind this stage;
+ * - anything outside the production taxonomy.
  */
-export async function classifyWithLaya(
+function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult | null {
+  if (!(answer.confidence >= threshold)) return null;
+  if (answer.category === 'fallback' || !VALID_CATEGORIES.includes(answer.category as never)) return null;
+  const top = Object.entries(answer.probabilities)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
+  const reason = top.map(([c, p]) => `${c} (${(p * 100).toFixed(0)}%)`).join('; ');
+  return { category: answer.category as ClassificationResult['category'], reason, confidence: answer.confidence };
+}
+
+/**
+ * Like {@link classifyWithLaya} but also exposes the raw answer when the stage
+ * falls through (low confidence, `fallback`) — shadow mode logs exactly that.
+ * Null = disabled, sidecar unavailable, or the request failed.
+ */
+export async function classifyWithLayaDetailed(
   prompt: string,
   context: ClassificationContext | undefined,
-  options: { cfg?: Config; checkpoint: string }
-): Promise<ClassificationResult | null> {
+  options: { cfg?: Config; checkpoint: string },
+): Promise<{ answer: LayaAnswer; result: ClassificationResult | null } | null> {
   const cfg = options.cfg?.classifier_laya;
   if (!cfg || !cfg.enabled) return null;
-  if (!isLayaAvailable()) return null;
+  if (!(await ensureLayaAvailable(cfg.endpoint!, cfg.timeout_ms!))) return null;
 
-  const { instructions, criteria } = buildClassifierLayaQuestion();
-  let answer;
+  let answer: LayaAnswer;
   try {
     answer = await classifyWithLayaRaw(prompt, context, cfg.endpoint!, cfg.timeout_ms!);
   } catch (err) {
@@ -195,13 +236,18 @@ export async function classifyWithLaya(
     warnLog(`[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : String(err)}; stage disabled`);
     return null;
   }
+  return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };
+}
 
-  if (answer.confidence < (cfg.confidence_threshold ?? 0.8)) return null;
-
-  const top = Object.entries(answer.probabilities).sort((a, b) => b[1] - a[1]).slice(0, 2);
-  const reason = top.map(([c, p]) => `${c} (${(p * 100).toFixed(0)}%)`).join('; ');
-  // The Laya question only offers the 9 VALID_CATEGORIES, so any returned
-  // value is acceptable — cast with fallback as safety net.
-  const category = answer.category as ClassificationResult['category'];
-  return { category, reason, confidence: answer.confidence };
+/**
+ * Classify with the Laya stage. Returns null when disabled/unavailable, below
+ * confidence_threshold, or vetoed (see vetAnswer) — the chain falls through.
+ * `checkpoint` names the chain source `laya:<checkpoint>` for the caller.
+ */
+export async function classifyWithLaya(
+  prompt: string,
+  context: ClassificationContext | undefined,
+  options: { cfg?: Config; checkpoint: string },
+): Promise<ClassificationResult | null> {
+  return (await classifyWithLayaDetailed(prompt, context, options))?.result ?? null;
 }

@@ -132,13 +132,6 @@ describe('laya-classifier', () => {
     expect(res).toEqual({ category: 'simple', confidence: 0.5, reason: expect.stringContaining('simple') });
   });
 
-  it('falls through when the stage is not probing / unavailable', async () => {
-    classifier.resetLayaAvailability();
-    const p = await startServer('ok');
-    const res = await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), confidence_threshold: 0.4 } } as any, checkpoint: 'x/y' });
-    expect(res).toBeNull();
-  });
-
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
     classifier.resetLayaAvailability();
     const probeResult = await classifier.probeLaya('http://127.0.0.1:9999', 500);
