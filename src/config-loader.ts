@@ -140,8 +140,8 @@ export function validateClassifierLaya(config: Config): void {
   if (c.enabled && !c.checkpoint) {
     throw new Error(
       `[router] classifier_laya: 'checkpoint' is required when enabled:true ` +
-        `(e.g. aac6fef/laya-multilingual-mlx:f2b4faf5...). The router never downloads ` +
-        `weights — fetch the pinned laya-mlx checkpoint manually before enabling, then re-run.`
+        `(set a pinned HF checkpoint ref — repo:revision — before enabling). The router ` +
+        `never downloads weights and never ships a model name (ADR-0025).`
     );
   }
   if (c.enabled) {
