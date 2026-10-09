@@ -13,6 +13,7 @@ import {
   markNoSchema,
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
+import { classifyWithLaya } from './laya-classifier.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { homedir } from 'node:os';
 import {
@@ -1033,6 +1034,32 @@ async function classifyPromptUncounted(
     }
     return null;
   };
+
+  // Laya: local typed-decision classifier (opt-in, disabled by default).
+  // Inserted between the deterministic early-return / cache path and the
+  // cloud/ollama legs: a confident Laya answer short-circuits the chain and
+  // saves cloud + local tokens; a failed, unavailable or low-confidence Laya
+  // falls through to the next leg (fail-open). Stage source: `laya` (see
+  // decision-log stage mapping), model id `laya:<checkpoint>`.
+  if (options.cfg?.classifier_laya?.enabled) {
+    const layaConfig = options.cfg.classifier_laya;
+    let layaResult: ClassificationResult | null = null;
+    await callSource.run(callSource.getStore()!, async () => {
+      layaResult = await classifyWithLaya(prompt, context, {
+        checkpoint: layaConfig.checkpoint!,
+        ...(options.cfg ? { cfg: options.cfg } : {}),
+      });
+      if (layaResult) {
+        noteSource('laya');
+        callSource.getStore()?.trace?.chain.push({ ref: `laya:${layaConfig.checkpoint}`, outcome: 'ok' });
+      }
+    });
+    if (layaResult) {
+      if (!contextBlock) classifyCacheSet(prompt, layaResult);
+      return layaResult;
+    }
+    // null → disabled / unavailable / below confidence_threshold → fall through to the cloud/ollama legs
+  }
 
   // Cloud-first (2026-09-27): the local Ollama daemon is a last resort, not
   // the default path — repeated MLX wedge incidents (2026-09-25/26) pinned
