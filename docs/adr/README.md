@@ -55,3 +55,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0024 — Task-type balancing: continuations inherit, category mapping configurable (proposed)](0024-task-type-balancing.md)
 - [0025 — No hardcoded models: everything derives from the models Pi uses](0025-no-hardcoded-models.md)
 - [0026 — One provider circuit breaker for local and cloud providers](0026-provider-circuit-breaker.md)
+- [0027 — Classifier decision log: one record per classification, replay over re-simulation](0027-classifier-decision-log.md)

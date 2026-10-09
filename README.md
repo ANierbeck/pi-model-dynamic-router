@@ -87,6 +87,23 @@ To undo:
 Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json). The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.
 ```
 
+### Classifier Decision Log
+
+Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
+
+```jsonc
+{
+  "classifier_log": {
+    "enabled": true,        // shipped default; absent block = off
+    "store_text": "none",   // "none" | "snippet" (prompt prefix) | "full" (prompt + context, replay mode)
+    "max_bytes": 20971520,  // rotation size, default 20 MiB
+    "keep": 3               // files kept including the live one
+  }
+}
+```
+
+`store_text` is the privacy gate: `"none"` (shipped) stores lengths and a 12-hex sha prefix only — the model's reasons count as prompt-derived text and are nulled too; `"full"` additionally stores the prompt and both context texts, which is what `scripts/classifier-replay.ts` needs to replay a corpus against a candidate classifier endpoint (`POST /classify {prompt} → {category, confidence?}`).
+
 ### Category-to-Group Mapping
 
 The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to a model group (e.g., `code_complex` → `tactical`). Users can override individual mappings via the `category_groups` config key:
