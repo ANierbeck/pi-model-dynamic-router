@@ -26,6 +26,8 @@ import type { ClassificationContext, ClassificationResult } from './content-clas
 import type { Config } from './types.ts';
 import { buildClassifierLayaQuestion, VALID_CATEGORIES, buildContextBlock } from './classification-prompt.ts';
 
+/** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
+export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
 /** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
 export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
@@ -133,9 +135,21 @@ export function isLayaAvailable(): boolean {
   return _availability.ok;
 }
 
-/** Last probe error (last 5 min), or null when the stage is considered healthy. */
+/**
+ * Three states, because "not probed yet" is neither up nor down: the stage
+ * probes lazily on first use, and an expired state is re-probed on the next
+ * request. Status output must not report `unknown` as a failure.
+ */
+export type LayaAvailabilityState = 'ok' | 'down' | 'unknown';
+
+export function layaAvailabilityState(): LayaAvailabilityState {
+  if (!_availability || Date.now() > _availability.until) return 'unknown';
+  return _availability.ok ? 'ok' : 'down';
+}
+
+/** Why the sidecar is considered down; null unless the state is `down`. */
 export function getLastProbeError(): string | null {
-  return isLayaAvailable() ? null : _lastProbeError;
+  return layaAvailabilityState() === 'down' ? _lastProbeError : null;
 }
 
 /** Low-level HTTP call to the wrapper (`endpoint` is the base URL; `/classify` is appended). */
