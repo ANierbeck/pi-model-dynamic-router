@@ -254,6 +254,20 @@ describe('switches and robustness', () => {
     expect(result).toMatchObject({ category: 'planning' });
   });
 
+  it('fail-open covers record construction too, not only the file write', async () => {
+    const hostile = {
+      enabled: true,
+      get max_bytes(): number {
+        throw new Error('config getter exploded');
+      },
+    };
+    const result = await classifyPrompt(
+      'dl fail open during record construction unique prompt',
+      { ...cloud(['p/m1'], [ok('planning')]), cfg: cfgWith(hostile as any) },
+    );
+    expect(result).toMatchObject({ category: 'planning' });
+  });
+
   it('overlapping calls keep separate chains (subagent fan-out)', async () => {
     const slow = cloud(['slow/a'], [ok('simple')]);
     slow.completeSimple.mockImplementation(async () => {

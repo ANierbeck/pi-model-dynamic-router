@@ -505,7 +505,13 @@ export async function classifyPrompt(
   const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
   const result = inheritPreviousCategory(raw, options.context?.lastCategory);
   countClassification(result, holder.source);
-  writeDecisionLog(prompt, options, holder, raw, result, started);
+  // Fail-open for the WHOLE log step (record construction included, not just
+  // the file write): logging must never change or break a classification.
+  try {
+    writeDecisionLog(prompt, options, holder, raw, result, started);
+  } catch {
+    // swallowed on purpose
+  }
   return result;
 }
 

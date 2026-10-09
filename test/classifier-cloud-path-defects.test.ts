@@ -143,6 +143,15 @@ describe('D5 — classification cache', () => {
     expect(b.completeSimple).toHaveBeenCalledTimes(1);
   });
 
+  it('a gated cloud result that fell back (no previous category) is NOT cached either', async () => {
+    const prompt = 'd5 gated fallback must not poison a later conversation that has context';
+    const a = cloudOpts(['p/m1'], [{ category: 'design', reason: 'unsure', confidence: 0.2 }]);
+    expect(await classifyPrompt(prompt, a.opts)).toMatchObject({ category: 'fallback' });
+    const b = cloudOpts(['p/m1'], [{ category: 'design', reason: 'now sure', confidence: 0.9 }]);
+    expect(await classifyPrompt(prompt, b.opts)).toMatchObject({ category: 'design' });
+    expect(b.completeSimple).toHaveBeenCalledTimes(1);
+  });
+
   it('a local result derived from the previous category is NOT cached either', async () => {
     const prompt = 'd5 gated local result must not leak across contexts either';
     vi.mocked(callOllama).mockResolvedValue(JSON.stringify({ category: 'design', reason: 'unsure', confidence: 0.2 }));
