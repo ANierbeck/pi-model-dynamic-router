@@ -13,7 +13,7 @@ import {
   markNoSchema,
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
-import { classifyWithLaya } from './laya-classifier.ts';
+import { classifyWithLayaDetailed } from './laya-classifier.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { homedir } from 'node:os';
 import {
@@ -189,7 +189,7 @@ const classifyCache = new Map<string, ClassifyCacheEntry>();
 /** Which backend produced a classification (for /router status honesty). */
 export interface ClassificationSourceInfo {
   /** 'hint' | 'compaction' | 'momentum' | 'cache' | 'static' | 'fallback'
-   *  (deterministic paths) or 'ollama:<id>' | 'cloud:<provider/id>' (LLM). */
+   *  (deterministic paths) or 'laya:<checkpoint>' | 'ollama:<id>' | 'cloud:<provider/id>'. */
   source: string;
   at: number;
 }
@@ -222,7 +222,7 @@ function noteSource(source: string): void {
     // Decision log: which candidate produced the final classification.
     // The deterministic stages have no model behind them.
     holder.trace.answeredBy =
-      source.startsWith('ollama:') || source.startsWith('cloud:') ? source : null;
+      source.startsWith('ollama:') || source.startsWith('cloud:') || source.startsWith('laya:') ? source : null;
   }
 }
 
@@ -535,11 +535,13 @@ function writeDecisionLog(
   const rawCategory = 'category' in raw ? raw.category : undefined;
   const inherited = result !== raw && rawCategory === 'fallback';
   if (inherited) holder.trace.steps.push('fallback-inherit');
-  const stage = holder.source?.startsWith('ollama:')
-    ? 'llm-local'
-    : holder.source?.startsWith('cloud:')
-      ? 'llm-cloud'
-      : (holder.source ?? 'fallback');
+  const stage = holder.source?.startsWith('laya:')
+    ? 'laya'
+    : holder.source?.startsWith('ollama:')
+      ? 'llm-local'
+      : holder.source?.startsWith('cloud:')
+        ? 'llm-cloud'
+        : (holder.source ?? 'fallback');
   const record = buildDecisionRecord({
     prompt,
     stage,
@@ -1036,29 +1038,39 @@ async function classifyPromptUncounted(
   };
 
   // Laya: local typed-decision classifier (opt-in, disabled by default).
-  // Inserted between the deterministic early-return / cache path and the
-  // cloud/ollama legs: a confident Laya answer short-circuits the chain and
-  // saves cloud + local tokens; a failed, unavailable or low-confidence Laya
-  // falls through to the next leg (fail-open). Stage source: `laya` (see
-  // decision-log stage mapping), model id `laya:<checkpoint>`.
-  if (options.cfg?.classifier_laya?.enabled) {
-    const layaConfig = options.cfg.classifier_laya;
-    let layaResult: ClassificationResult | null = null;
-    await callSource.run(callSource.getStore()!, async () => {
-      layaResult = await classifyWithLaya(prompt, context, {
-        checkpoint: layaConfig.checkpoint!,
-        ...(options.cfg ? { cfg: options.cfg } : {}),
-      });
-      if (layaResult) {
-        noteSource('laya');
-        callSource.getStore()?.trace?.chain.push({ ref: `laya:${layaConfig.checkpoint}`, outcome: 'ok' });
-      }
+  // After the deterministic early-returns and the cache, before the cloud and
+  // local-LLM legs. `mode: 'active'` lets a confident, vetted answer decide
+  // and short-circuit the chain; anything else - `shadow` (the validated
+  // default) or an unset mode - runs the stage only to LOG what it would have
+  // said next to the real decision (ADR-0027 Phase 4) and never changes the
+  // route. A stage that is unavailable, errors, or falls through (low
+  // confidence, `fallback`) leaves the chain exactly as it is without Laya.
+  const layaCfg = options.cfg?.classifier_laya;
+  if (layaCfg?.enabled) {
+    const ref = `laya:${layaCfg.checkpoint}`;
+    const t0 = Date.now();
+    const out = await classifyWithLayaDetailed(prompt, context, {
+      checkpoint: layaCfg.checkpoint!,
+      ...(options.cfg ? { cfg: options.cfg } : {}),
     });
-    if (layaResult) {
-      if (!contextBlock) classifyCacheSet(prompt, layaResult);
-      return layaResult;
+    const trace = callSource.getStore()?.trace;
+    if (out) {
+      const ms = Date.now() - t0;
+      const acts = layaCfg.mode === 'active' && out.result !== null;
+      if (trace) {
+        trace.laya = { ref, category: out.answer.category, confidence: out.answer.confidence, acted: acts, ms };
+      }
+      if (acts && out.result) {
+        noteSource(ref);
+        if (trace) {
+          trace.chain.push({ ref, outcome: 'ok', ms });
+          // Decision log: what the stage said before post-processing.
+          trace.raw = { category: out.answer.category, confidence: out.answer.confidence, reason: out.result.reason ?? null };
+        }
+        if (!contextBlock) classifyCacheSet(prompt, out.result);
+        return out.result;
+      }
     }
-    // null → disabled / unavailable / below confidence_threshold → fall through to the cloud/ollama legs
   }
 
   // Cloud-first (2026-09-27): the local Ollama daemon is a last resort, not

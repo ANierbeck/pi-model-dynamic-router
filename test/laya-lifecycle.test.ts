@@ -135,6 +135,18 @@ describe('availability lifecycle', () => {
   });
 });
 
+describe('failure after a healthy probe', () => {
+  it('is swallowed, switches the stage off for the TTL, and is not retried per request', async () => {
+    expect(await probeLaya(`http://127.0.0.1:${port}`, 800)).toBe(true);
+    mode = 'http500';
+    await expect(run('sidecar dies mid-session')).resolves.toBeNull(); // must not throw into the chain
+    expect(isLayaAvailable()).toBe(false);
+    const seen = requests.length;
+    await expect(run('and again')).resolves.toBeNull();
+    expect(requests.length).toBe(seen); // no hammering while the TTL holds
+  });
+});
+
 describe('answer vetting', () => {
   it('never lets a confident `fallback` shadow the better stages behind it', async () => {
     // Spike: `fallback` was the most frequent confident answer (51 of 85) —
