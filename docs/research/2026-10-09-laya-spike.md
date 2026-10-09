@@ -29,6 +29,41 @@ The corpus is the router-fork project's session store since 2026-09-27
 prompts exceed 1,500 characters (reviewer prompts, pasted logs); the
 State-truncation boundary at 512 tokens was NOT characterized yet.
 
+## Comparability: Laya does NOT get the production prompt by itself
+
+The production classifier is a generative LLM that receives
+`CLASSIFICATION_PROMPT` (`src/classification-prompt.ts`): detailed category
+definitions with examples and rules (e.g. "Analyze / review / explain the code
+-> code_complex, NOT exploration"), plus a background-context block (previous
+user message, last assistant excerpt). Laya is a typed-decision model: it gets
+`(text, question)` and returns probabilities over fixed options. Variants A
+and B used category wording I invented, and no context. The wrapper (variant
+C) now reads the definitions from the production prompt file at start-up
+(single source, no copy) and the replay forwards the stored context texts
+(`context` field of the contract) when a decision record has them. HINT
+sections and the JSON answer format are dropped (HINTs are detected
+deterministically before any classifier runs).
+
+Results with variant C on the same corpus (385 unique prompts):
+
+- categories: fallback 121, code_simple 74, simple 74, exploration 63,
+  trivial 35, planning 7, design 5, code_complex 5, standard 1;
+- confidence >= 0.8 for 85 prompts (22.1 %), but 51 of those are `fallback`
+  and 39 of the 85 are prompts >= 1,500 characters — a confident `fallback`
+  on a long paste is more likely a truncation artifact (instruction text
+  and context compete for the 512-token window) than a decision;
+- median confidence 0.46.
+
+**Laya does not follow instruction text.** Same probes, three input shapes
+(production instructions / one-line instruction / raw prompt, 8 probes,
+anecdotal): "Debug why the retry loop deadlocks" -> `exploration` 0.87 with
+the production instructions (production rule: `code_complex`); "Review this
+diff ..." -> `exploration` 0.98 (production rule says explicitly NOT
+exploration). Only "Design the new plugin API surface" was stable across all
+shapes (0.97-0.99). The instruction string changes confidence strongly but
+not toward the production rules, so the complexity axis cannot be steered by
+prompt wording — it has to be learned from labeled data.
+
 ## What the replay can and cannot say
 
 **There is no ground truth yet.** The session backfill has no recorded
@@ -65,6 +100,12 @@ result. Quality numbers need either (a) decision-log records with
 
 ## Next measurements (need data, not code)
 
+0. **Fine-tuning question (owner, 2026-10-09):** the upstream research brief
+   (zero-shot ~0.36 vs 0.32 random, ECE 0.466 uncalibrated, fine-tuned ~0.767)
+   and the observations above point the same way: the complexity axis
+   needs training on our own labeled prompts. Not a decision yet — the
+   integration plan defers fine-tuning until the golden-set benchmark gives
+   numbers on our data. Prerequisite for either path: labeled prompts.
 1. Let the decision log collect `store_text: "full"` records for a few days,
    then re-run `scripts/classifier-replay.ts --records ... --endpoint ...`:
    first real agreement rate, per-category confusion, agreement among the
