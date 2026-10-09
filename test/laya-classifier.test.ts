@@ -51,7 +51,7 @@ async function stopGlobalServer(): Promise<void> {
 }
 
 describe('laya-classifier', () => {
-  const ENDPOINT = (p: number) => `http://127.0.0.1:${p}/classify`;
+  const ENDPOINT = (p: number) => `http://127.0.0.1:${p}`; // base URL, like the shipped default
   const okResponse = { category: 'simple', confidence: 0.5, probabilities: { trivial: 0.05, simple: 0.5, standard: 0.3, code_complex: 0.1, fallback: 0.05 }, ms: 10 };
 
   async function startServer(mode: 'ok' | 'refused' | 'timeout' | 'http500' | 'malformed'): Promise<number> {
@@ -60,6 +60,12 @@ describe('laya-classifier', () => {
         let body = '';
         req.on('data', chunk => (body += chunk));
         req.on('end', () => {
+          // Strict like the real wrapper: anything but POST /classify is a 404.
+          if (req.method !== 'POST' || req.url !== '/classify') {
+            res.writeHead(404);
+            res.end('not found');
+            return;
+          }
           try { JSON.parse(body); } catch {}
           if (mode === 'timeout') {
             // never respond -> client AbortError
@@ -135,7 +141,7 @@ describe('laya-classifier', () => {
 
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
     classifier.resetLayaAvailability();
-    const probeResult = await classifier.probeLaya('http://127.0.0.1:9999/classify', 500);
+    const probeResult = await classifier.probeLaya('http://127.0.0.1:9999', 500);
     expect(probeResult).toBe(false);
     expect(classifier.isLayaAvailable()).toBe(false);
     expect(classifier.getLastProbeError()).toBeTruthy();

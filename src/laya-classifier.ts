@@ -33,31 +33,48 @@ export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 let _availability: { ok: boolean; until: number } | null = null;
 let _lastProbeError: string | null = null;
 
+/** Conservative chars-per-token ratio for the router's coarse cap (EN ≈ 4, DE ≈ 3.5, code/logs lower). */
+const CHARS_PER_TOKEN = 3;
+const TRUNCATION_MARKER = '\n[... TRUNCATED ...]\n';
+
 /**
- * Truncate prompt (+ context) to fit the model context budget.
- *
- * The router has no tokenizer, so this applies a conservative character cap
- * (`budgetTokens * 3`) as a safety bound; the wrapper tightens to the token
- * budget token-exactly (it owns the tokenizer and can count precisely).
- *
- * Strategy mirrors the router's compaction style: keep the HEAD (with HINT
- * markers and whitespace intact) and the TAIL, drop only the middle. The
- * context block (previousUserMessage / lastAssistantSnippet) is removed FIRST,
- * then the prompt body is trimmed if needed.
+ * Characters available for prompt + context block. Every model input starts
+ * with the question head (instructions + the 9 criteria — 408 tokens measured
+ * in the spike), so the window is not fully ours. The head size is derived
+ * from the production prompt surface instead of being hardcoded, so it follows
+ * edits to the category definitions.
  */
-export function truncateState(prompt: string, context: ClassificationContext | undefined, budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS): string {
-  const budgetChars = budgetTokens * 3;
-  const contextPart = buildContextBlock(context?.previousUserMessage, context?.lastAssistantSnippet);
-  const combined = contextPart + prompt;
-  if (combined.length <= budgetChars) {
-    return combined;
-  }
-  // context block dropped first (it costs the most tokens with least value),
-  // then keep head + tail of the prompt.
-  const maxChunk = Math.min(256, Math.floor((budgetChars - 4) / 2));
-  const head = prompt.slice(0, maxChunk);
-  const tail = prompt.slice(-maxChunk);
-  return head + '\n[... TRUNCATED ...]\n' + tail;
+export function layaPromptBudgetChars(budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS): number {
+  const { instructions, criteria } = buildClassifierLayaQuestion();
+  const headChars = instructions.length + criteria.join(', ').length;
+  return Math.max(0, budgetTokens * CHARS_PER_TOKEN - headChars);
+}
+
+/**
+ * Emergency brake: shrink the prompt so that prompt + the context block the
+ * wrapper prepends fit the model window. The router has no tokenizer, so this
+ * is a coarse character bound; the wrapper owns the token-exact cut. The
+ * prompt is sent whole whenever it fits — the window is a hard model
+ * constraint, not a cost lever. When it does not fit, HEAD and TAIL are kept
+ * and only the middle is dropped (the ask is usually at the start, the
+ * pasted material's conclusion at the end).
+ *
+ * Returns the prompt part only; the context travels separately (see
+ * classifyWithLayaRaw) because the wrapper builds the context block itself.
+ */
+export function truncatePromptForLaya(
+  prompt: string,
+  context: ClassificationContext | undefined,
+  budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS,
+): string {
+  const contextChars = buildContextBlock(context?.previousUserMessage, context?.lastAssistantSnippet).length;
+  const allowed = Math.max(0, layaPromptBudgetChars(budgetTokens) - contextChars);
+  if (prompt.length <= allowed) return prompt;
+  const chunk = Math.floor((allowed - TRUNCATION_MARKER.length) / 2);
+  // Degenerate budget (no room for head + marker + tail): a plain prefix is the
+  // only honest cut. Also guards slice(-0), which would return the whole string.
+  if (chunk < 1) return prompt.slice(0, allowed);
+  return prompt.slice(0, chunk) + TRUNCATION_MARKER + prompt.slice(prompt.length - chunk);
 }
 
 function markUnavailable(error?: string): void {
@@ -104,7 +121,7 @@ export function getLastProbeError(): string | null {
   return isLayaAvailable() ? null : _lastProbeError;
 }
 
-/** Low-level HTTP call to the wrapper — exported so tests can stub it. */
+/** Low-level HTTP call to the wrapper (`endpoint` is the base URL; `/classify` is appended). */
 export async function classifyWithLayaRaw(
   prompt: string,
   context: ClassificationContext | undefined,
@@ -114,11 +131,15 @@ export async function classifyWithLayaRaw(
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const body: Record<string, unknown> = { prompt: truncateState(prompt, context, LAYA_CONTEXT_BUDGET_TOKENS) };
-    if (context?.previousUserMessage) body.previousUserMessage = context.previousUserMessage;
-    if (context?.lastAssistantSnippet) body.lastAssistantSnippet = context.lastAssistantSnippet;
+    const body: Record<string, unknown> = { prompt: truncatePromptForLaya(prompt, context) };
+    // Nested, and only the fields that exist — the wrapper reads `context` and
+    // builds the context block itself.
+    const ctx: Record<string, string> = {};
+    if (context?.previousUserMessage) ctx.previousUserMessage = context.previousUserMessage;
+    if (context?.lastAssistantSnippet) ctx.lastAssistantSnippet = context.lastAssistantSnippet;
+    if (Object.keys(ctx).length > 0) body.context = ctx;
     const t0 = performance.now();
-    const res = await fetch(endpoint, {
+    const res = await fetch(`${endpoint.replace(/\/+$/, '')}/classify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
