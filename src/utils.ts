@@ -80,6 +80,43 @@ export function stripRouterNarration(text: string): string {
     .trim();
 }
 
+/**
+ * Whether `text` is exactly one memory-extension context block
+ * (`<memory>\n…\n</memory>`, customType "pi-memory-context").
+ *
+ * The memory extension injects that block as its own message directly before
+ * every real user prompt, and Pi hands it to providers as `role: 'user'`.
+ * It is background context, never something the user said — so it must not
+ * count as the "previous user message" (live: 112 of 131 classifier-decision
+ * records, 85 %, carried the block there) nor as the request itself.
+ * Deliberately strict: a real message that merely mentions the tag, or that
+ * carries text around a block, is a user message. Pi's convertToLlm drops the
+ * customType, so this shape is the only signal available to the router — use
+ * it only where a false positive is harmless (the "previous message" context
+ * line), never to discard the current request.
+ */
+export function isMemoryContextText(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith('<memory>') && t.endsWith('</memory>');
+}
+
+/** Plain text of a message `content` (string, or the text blocks of a block array). */
+export function messageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: any) => b?.type === 'text')
+      .map((b: any) => b.text as string)
+      .join('');
+  }
+  return '';
+}
+
+/** The `role: 'user'` messages that are real user turns (memory-extension blocks excluded). */
+export function realUserMessages<T extends { role?: string; content?: unknown }>(messages: readonly T[]): T[] {
+  return messages.filter((m) => m.role === 'user' && !isMemoryContextText(messageText(m.content)));
+}
+
 // ── Model Token Utilities ─────────────────────────────────────────────────
 
 /**

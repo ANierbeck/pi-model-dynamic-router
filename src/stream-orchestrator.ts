@@ -101,7 +101,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 import { type ClassificationResult } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName } from './utils.ts';
+import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -1320,19 +1320,17 @@ export class StreamOrchestrator {
     // prompt already instructs the classifier to never read a HINT from, but a
     // weak/local classifier model can still misread "HINT: <model>" wherever
     // it appears in the combined prompt text.
+    // Memory-extension blocks are not user turns (see isMemoryContextText):
+    // they sit right before every real prompt and used to BE the "previous"
+    // message for most of the live traffic.
     try {
-      const userMsgs = context.messages.filter((m: any) => m.role === 'user');
-      const prev = userMsgs[userMsgs.length - 2];
+      const userMsgs = (context.messages as any[]).filter((m) => m.role === 'user');
+      // The last user message is the current prompt (by position); the
+      // previous one is the last REAL user turn before it.
+      const earlier = realUserMessages(userMsgs.slice(0, -1));
+      const prev = earlier[earlier.length - 1];
       if (!prev) return undefined;
-      const c = prev.content;
-      if (typeof c === 'string') return stripRouterNarration(c).slice(0, 150);
-      if (Array.isArray(c)) {
-        const textContent = (c as any[])
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text as string)
-          .join('');
-        return stripRouterNarration(textContent).slice(0, 150);
-      }
+      return stripRouterNarration(messageText(prev.content)).slice(0, 150);
     } catch { /* context shape unknown */ }
     return undefined;
   }
