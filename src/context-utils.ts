@@ -4,7 +4,7 @@
  * function bodies are unchanged; closure state is reached through `d`.
  */
 
-import { stripRouterNarration, splitRef } from './utils.ts';
+import { stripRouterNarration, splitRef, realUserMessages, messageText } from './utils.ts';
 import type { Context } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 
@@ -35,19 +35,13 @@ export function createContextUtils(d: ContextUtilsDeps) {
     // otherwise misread it as a fresh instruction (2026-09-18 lock-in loop,
     // reproduced live even after the narration-leak fix in 1b69beb because
     // that fix only covered extractLastAssistantSnippet(), not this path).
+    // Memory-extension blocks are skipped (see isMemoryContextText): a block
+    // is background context, never the request.
     try {
-      const userMsgs = context.messages.filter((m) => m.role === 'user');
+      const userMsgs = realUserMessages(context.messages as any[]);
       const last = userMsgs[userMsgs.length - 1];
       if (!last) return '';
-      const c = last.content;
-      if (typeof c === 'string') return stripRouterNarration(c);
-      if (Array.isArray(c))
-        return stripRouterNarration(
-          c
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text)
-            .join('')
-        );
+      return stripRouterNarration(messageText(last.content));
     } catch {
       /* context shape unknown */
     }
