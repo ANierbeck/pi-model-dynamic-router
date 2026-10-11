@@ -1324,8 +1324,11 @@ export class StreamOrchestrator {
     // they sit right before every real prompt and used to BE the "previous"
     // message for most of the live traffic.
     try {
-      const userMsgs = realUserMessages(context.messages as any[]);
-      const prev = userMsgs[userMsgs.length - 2];
+      const userMsgs = (context.messages as any[]).filter((m) => m.role === 'user');
+      // The last user message is the current prompt (by position); the
+      // previous one is the last REAL user turn before it.
+      const earlier = realUserMessages(userMsgs.slice(0, -1));
+      const prev = earlier[earlier.length - 1];
       if (!prev) return undefined;
       return stripRouterNarration(messageText(prev.content)).slice(0, 150);
     } catch { /* context shape unknown */ }

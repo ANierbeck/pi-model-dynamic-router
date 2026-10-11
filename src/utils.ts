@@ -90,7 +90,10 @@ export function stripRouterNarration(text: string): string {
  * count as the "previous user message" (live: 112 of 131 classifier-decision
  * records, 85 %, carried the block there) nor as the request itself.
  * Deliberately strict: a real message that merely mentions the tag, or that
- * carries text around a block, is a user message.
+ * carries text around a block, is a user message. Pi's convertToLlm drops the
+ * customType, so this shape is the only signal available to the router — use
+ * it only where a false positive is harmless (the "previous message" context
+ * line), never to discard the current request.
  */
 export function isMemoryContextText(text: string): boolean {
   const t = text.trim();

@@ -13,8 +13,10 @@
 // ("Soll ich nochmal neu starten?") was judged without its conversation.
 //
 // Contract pinned here: a message that is exactly one `<memory>…</memory>`
-// block is not a user message, for both the previous-message and the
-// current-prompt extractor. A real message that merely mentions the tag
+// block is not a user message for the "previous user message" line. The
+// current prompt is never filtered (position decides: the block always
+// precedes it, and Pi's convertToLlm drops the customType, so provenance is
+// not available to the router). A real message that merely mentions the tag
 // stays a user message.
 
 import { describe, it, expect, vi } from 'vitest';
@@ -149,15 +151,21 @@ describe('classifier context: the memory extension block is not a user message',
     expect(seen).not.toContain('<memory>');
   }, 30000);
 
-  it('a block that is the LAST user entry is never classified as the request', async () => {
+  it('the CURRENT prompt is never filtered, even if it is itself wrapped in memory tags', async () => {
+    // Pi's convertToLlm drops the customType, so the router cannot tell an
+    // injected block from user text that happens to look like one. The block
+    // always PRECEDES the real prompt (97/97 observed), so the last user
+    // message is the request by position; dropping it would route an earlier
+    // or empty prompt instead of what the user asked.
+    const pasted = '<memory>\nBitte fasse diesen eingefuegten Notizblock zusammen und sage was fehlt.\n</memory>';
     const seen = await classifierSees([
       { role: 'user', content: 'Frueher gestellte Frage zum Thema Logging im Router.' },
       { role: 'assistant', content: 'Antwort.' },
-      { role: 'user', content: 'Aktuelle Anfrage: fasse den Diff zusammen.' },
       { role: 'user', content: memoryBlock },
+      { role: 'user', content: pasted },
     ]);
-    expect(seen).toContain('Aktuelle Anfrage: fasse den Diff zusammen.');
-    expect(seen).not.toContain(MEMORY_BODY.slice(0, 30));
+    expect(seen).toContain('Bitte fasse diesen eingefuegten Notizblock zusammen');
+    expect(seen).toContain('Previous user message: "Frueher gestellte Frage');
   }, 30000);
 
   it('a real message that merely mentions the tag stays a user message', async () => {
