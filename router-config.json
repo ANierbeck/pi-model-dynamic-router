@@ -73,7 +73,7 @@
     "tactical": {
       "description": "High-end models for demanding tasks (best GDPval)",
       "method": "best",
-      "min_gdpval": 600,
+      "min_gdpval": 1630,
       "fallback_groups": [
         "strategic",
         "complex",
