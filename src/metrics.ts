@@ -552,6 +552,11 @@ export function setCache(newCache: Cache): void {
   if (cache.capability_profiles) {
     capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
   }
+  // Task-0 identity audit (2026-10-12): same additive-merge pattern for
+  // the scrape's per-slug provenance (creator + displayName).
+  if (cache.gdpval_provenance) {
+    gdpvalProvenance = { ...gdpvalProvenance, ...cache.gdpval_provenance };
+  }
   if (cache.gdpval_scores) {
     // Additive merge: add scraped scores to EXISTING gdpval (which may have
     // builtins from setConfig). Builtins take precedence (manual overrides
@@ -597,6 +602,29 @@ export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): n
 /** Test/inspection accessor for the merged capability profiles. */
 export function getCapabilityProfiles(): NonNullable<Cache['capability_profiles']> {
   return capabilityProfiles;
+}
+
+// ── GDPval Provenance (Task-0 identity audit 2026-10-12) ────────────────
+
+// In-memory mirror of cache.gdpval_provenance, merged in setCache like
+// capabilityProfiles. Read through lookupProvenance for identity audits.
+let gdpvalProvenance: NonNullable<Cache['gdpval_provenance']> = {};
+
+/**
+ * Resolves a model ref to the scrape PROVENANCE (creator + raw displayName)
+ * of the AA row behind its score, via the same slug pipeline as
+ * lookupGdp. Returns null when the ref or the provenance is absent.
+ * Never gates routing — this is audit/inspection data.
+ */
+export function lookupProvenance(ref: string): { creator?: string; displayName?: string } | null {
+  const slug = resolveSlug(ref);
+  if (!slug) return null;
+  return gdpvalProvenance[slug] ?? null;
+}
+
+/** Test/inspection accessor for the merged gdpval provenance. */
+export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
+  return gdpvalProvenance;
 }
 
 // ── Cost Resolution Helpers ────────────────────────────────────────────

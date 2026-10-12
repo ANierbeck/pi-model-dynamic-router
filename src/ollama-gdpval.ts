@@ -251,9 +251,18 @@ export function ollamaModelSlug(modelName: string): string {
  * This is the only batch estimator — always wire scores into the cache as
  * slugs, never as raw model names.
  */
-export function estimateOllamaModelsGdpvalAsSlugs(ollamaModels: string[]): Record<string, number> {
+export function estimateOllamaModelsGdpvalAsSlugs(
+  ollamaModels: string[],
+  hasScore?: (ref: string) => boolean
+): Record<string, number> {
   const estimates: Record<string, number> = {};
   for (const model of ollamaModels) {
+    // Task-0 identity audit (2026-10-12): a model that already resolves to
+    // a score (AA scrape, model-map, builtins) must NOT be re-estimated —
+    // the estimate fills the dotted slug key and SHADOWS the real row via
+    // exact-normalized matching (qwen3.8:27b-mlx → estimate qwen3-8-27b:
+    // 812 shadowed the AA rows at 1071-1381).
+    if (hasScore && hasScore(`ollama/${model}`)) continue;
     const score = estimateOllamaGdpval(model);
     if (score !== null) {
       const slug = ollamaModelSlug(model);

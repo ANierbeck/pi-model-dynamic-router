@@ -237,6 +237,21 @@ export function shouldExclude(ref: string): boolean {
   return false;
 }
 
+// Variant tokens that denote a DISTINCT model when they appear in a ref
+// but not on the slug (the reverse direction is already covered by Rule 1:
+// every SLUG token must be in the ref). Task-0 identity audit 2026-10-12:
+// apodex-1.1-mini inherited the FULL apodex-1-1 score (1190.82) because the
+// fuzzy score only measures how many slug tokens the ref contains — extra
+// ref tokens were invisible, so the Mini was routed as a 1190-level model
+// (behavioural evidence: 7 consecutive 2-char toolUse turns).
+// 'it' is deliberately NOT here: instruct-tuning is documented same-model
+// noise (gemma-4-26b-a4b-it ≡ gemma-4-26b-a4b). Mirrors KNOWN_DISCRIMINATING
+// from the OD7 model-identity work (quality-cascade worktree).
+const KNOWN_DISCRIMINATING = new Set([
+  'mini', 'flash', 'small', 'pro', 'nano', 'lite', 'preview', 'turbo',
+  'medium', 'plus', 'instruct', 'reasoning',
+]);
+
 // ── Stage 3+4: Matching against GDPval slugs ──────────────────────────────
 
 /**
@@ -315,6 +330,20 @@ export function matchSlug(
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
 
+    // Rule 1b: a discriminating variant token in the ref that the slug
+    // lacks means the ref names a VARIANT of a different (usually weaker)
+    // model (apodex-1.1-mini vs apodex-1-1) — reject instead of scoring the
+    // parent model's benchmark row. Scoped to candidates whose version
+    // tuple EXACTLY equals the ref's (both name the same model version):
+    // a version-less family slug keeps the 2026-09-20 design decision that
+    // dated size-variant refs approximate to the family base
+    // (devstral-small-2505 → devstral) when no variant row exists.
+    const refHasVariantSlugLacks =
+      slugNumbers.length > 0 &&
+      isExactTuple(slugNumbers, refNumbers) &&
+      [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
+    if (refHasVariantSlugLacks) continue;
+
     // Rule 2: If both have version numbers, major version must match
     // e.g. slug "glm-5-2" (major 5) must not match ref "glm-4" (major 4)
     if (slugNumbers.length > 0 && refNumbers.length > 0) {
@@ -371,6 +400,14 @@ export function candidateSlugs(
     // Rule 1: All slug letter-tokens must be in ref
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
+
+    // Rule 1b: same scoped variant-token veto as matchSlug — the LLM
+    // pre-filter must be presented candidates the matcher would accept.
+    const refHasVariantSlugLacks =
+      slugNumbers.length > 0 &&
+      isExactTuple(slugNumbers, refNumbers) &&
+      [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
+    if (refHasVariantSlugLacks) continue;
 
     // Rule 2: If both have version numbers, major version must match
     if (slugNumbers.length > 0 && refNumbers.length > 0) {

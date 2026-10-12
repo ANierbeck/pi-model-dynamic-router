@@ -46,6 +46,23 @@ interface ScanRunnerDeps {
 export function extractGdpvalScores(html: string): Record<string, number> {
   const scores: Record<string, number> = {};
 
+  // labelKey write discipline (Task-0 identity audit 2026-10-12): a
+  // paren-stripped labelKey is a WEAK identity — for dot-less family names
+  // ("GPT-6 Astra (low)" → gpt-6-astra) it EQUALS the bare slug of a
+  // different row. The leaderboard is processed in descending Elo, so an
+  // unconditional labelKey write put the LOWEST variant's score on the
+  // family key (live cache: gpt-6-astra = low, claude-opus-55 = low,
+  // mistral-large-4 = Preview lower bound). Rules:
+  //   - SLUG writes are authoritative and unconditional (they overwrite
+  //     any labelKey that claimed the key earlier),
+  //   - labelKey writes only fill ABSENT keys and never overwrite a key
+  //     any slug row owns (slugWritten),
+  //   - within Format B (the authoritative full leaderboard, descending
+  //     Elo) each labelKey is claimed at most once — the highest variant
+  //     wins (bLabelWritten).
+  const slugWritten = new Set<string>();
+  const bLabelWritten = new Set<string>();
+
   // Stage 1 (Format A, 2025+): RSC payload uses {"label":"Model Name",
   // "gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":N},...],
   // "detailsUrl":"/models/slug"}.  detailsUrl gives the slug directly.
@@ -56,8 +73,9 @@ export function extractGdpvalScores(html: string): Record<string, number> {
     const score = parseFloat(em[2]);
     const slug = em[3];
     scores[slug] = score;
+    slugWritten.add(slug);
     const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    if (labelKey && labelKey !== slug) scores[labelKey] = score;
+    if (labelKey && labelKey !== slug && !slugWritten.has(labelKey) && scores[labelKey] === undefined) scores[labelKey] = score;
   }
 
   // Stage 2 (Format B): AA also embeds the full sorted leaderboard as
@@ -95,8 +113,15 @@ export function extractGdpvalScores(html: string): Record<string, number> {
     }
     if (slug) {
       scores[slug] = score; // Format B is authoritative for the full leaderboard
+      slugWritten.add(slug);
       const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      if (labelKey && labelKey !== slug) scores[labelKey] = score;
+      // B may refresh a key Format A's labelKey filled (B is authoritative),
+      // but never a slug-owned key and never twice (descending Elo → the
+      // highest variant claims the labelKey first).
+      if (labelKey && labelKey !== slug && !slugWritten.has(labelKey) && !bLabelWritten.has(labelKey)) {
+        scores[labelKey] = score;
+        bLabelWritten.add(labelKey);
+      }
     }
   }
 
@@ -109,10 +134,11 @@ export function extractGdpvalScores(html: string): Record<string, number> {
         const m = model as { gdpval?: number; shortName?: string; name?: string };
         if (m.gdpval !== undefined) {
           scores[slug] = m.gdpval;
-          if (m.shortName) scores[m.shortName] = m.gdpval;
+          slugWritten.add(slug);
+          if (m.shortName && scores[m.shortName] === undefined) scores[m.shortName] = m.gdpval;
           if (m.name) {
             const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-            scores[nameKey] = m.gdpval;
+            if (scores[nameKey] === undefined) scores[nameKey] = m.gdpval;
           }
         }
       }
@@ -121,6 +147,61 @@ export function extractGdpvalScores(html: string): Record<string, number> {
   }
 
   return scores;
+}
+
+/**
+ * Extract per-slug PROVENANCE (creator + raw displayName) from the same
+ * Artificial Analysis payload the score parser reads. Task-0 identity
+ * audit (2026-10-12): the scraper discarded AA's creator field, so score
+ * rows could not be attributed to a vendor offline — the apodex-1.1-mini
+ * (inherited parent score) and qwen3-8-27b (stale curated estimate)
+ * defects were only findable by name archaeology. Provenance never gates
+ * routing; it exists so identity audits can check that a score belongs to
+ * the model it claims.
+ *
+ * Source: Format B leaderboard rows carry creator inline directly after
+ * displayName (no nested objects in between, so a bounded regex is safe),
+ * joined to slugs via the same displayName→slug table the score pipeline
+ * uses. Keyed by SLUG (the authoritative spelling); fill-if-absent —
+ * rows are processed in descending Elo and re-encounters of a slug carry
+ * the same model's data anyway. Fail-closed: unrecognized payloads yield
+ * {}.
+ */
+export function extractGdpvalProvenance(html: string): Record<string, { creator?: string; displayName?: string }> {
+  const provenance: Record<string, { creator?: string; displayName?: string }> = {};
+
+  // The HTML embeds JSON with HTML-escaped quotes (\" → "), same as the
+  // score extraction.
+  const normalized = html.replace(/\\"/g, '"');
+
+  // displayName → slug table (identical join to the score pipeline).
+  const slugByDisplayName = new Map<string, string>();
+  const slugRe = /"slug":"([^"]+)","name":"([^"]+)"/g;
+  let s;
+  while ((s = slugRe.exec(normalized))) slugByDisplayName.set(s[2], s[1]);
+
+  const labelKeyOf = (dn: string) =>
+    dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // Format B: {"id":"...","displayName":"...","creator":{"name":...},"elo":N,...}
+  const provRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]*?"name":"([^"]+)"[^}]*\},"elo":[0-9.]+/g;
+  let em;
+  while ((em = provRe.exec(normalized))) {
+    const displayName = em[1];
+    const creator = em[2];
+    let slug = slugByDisplayName.get(displayName);
+    if (!slug) {
+      const labelKey = labelKeyOf(displayName);
+      for (const [dn, sv] of slugByDisplayName) {
+        if (labelKeyOf(dn) === labelKey) { slug = sv; break; }
+      }
+    }
+    if (slug && provenance[slug] === undefined) {
+      provenance[slug] = { creator, displayName };
+    }
+  }
+
+  return provenance;
 }
 
 /**
@@ -407,6 +488,23 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             // scrape — routing falls back to gdpval ordering.
           }
 
+          // Task-0 identity audit (2026-10-12): persist the scrape's
+          // provenance (creator + displayName per slug) so identity audits
+          // can attribute score rows to vendors offline. Additive merge,
+          // same lifecycle as capability_profiles; never gates routing.
+          try {
+            const provenance = extractGdpvalProvenance(html);
+            if (Object.keys(provenance).length) {
+              rt.cache.gdpval_provenance = { ...rt.cache.gdpval_provenance, ...provenance };
+              metricsModule.setCache(rt.cache);
+            } else {
+              routerLog('[scan] No gdpval provenance extracted - AA payload shape may have drifted');
+            }
+          } catch {
+            // Fail-closed: provenance extraction must never break the
+            // gdpval scrape either.
+          }
+
           if (Object.keys(scores).length) {
             metricsModule.setGdpval(scores);
             rt.cache.gdpval_scores = metricsModule.getGdpval();
@@ -458,7 +556,15 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           // keys — NOT raw "ollama/<id>" refs). These are FALLBACK scores only;
           // explicit model-map.yaml + gdpval_builtin entries take precedence
           // (setCache merges builtins on top of scraped/estimated scores).
-          const ollamaGdpvalEstimates = estimateOllamaModelsGdpvalAsSlugs(ollamaModelNames);
+          // hasScore guard (Task-0 audit 2026-10-12): a model that already
+          // resolves to a scraped/curated score must NOT be re-estimated —
+          // the estimate fills the dotted slug key and shadows the real AA
+          // row via exact-normalized matching (qwen3.8:27b-mlx → estimate
+          // qwen3-8-27b: 812 shadowed AA rows at 1071-1381).
+          const ollamaGdpvalEstimates = estimateOllamaModelsGdpvalAsSlugs(
+            ollamaModelNames,
+            (ref) => metricsModule.lookupGdp(ref) !== null
+          );
 
           // B1 (setup-independent Ollama capabilities): for each Ollama model,
           // fetch /api/show to get the REAL context length (model_info.*.context_length)
