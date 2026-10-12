@@ -30,10 +30,11 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { extractGdpvalScores, extractGdpvalProvenance } from '../src/scan-runner.js';
+import { extractGdpvalScores, extractGdpvalProvenance, needsGdpvalScrape, SCRAPE_VERSION } from '../src/scan-runner.js';
 import { matchSlug } from '../src/slug-matcher.js';
 import { estimateOllamaModelsGdpvalAsSlugs } from '../src/ollama-gdpval.js';
-import { setConfig, setGdpval, setModelMap, lookupGdp, loadModelMap, setCache, lookupProvenance, resolveSlug } from '../src/metrics.js';
+import { setConfig, setGdpval, setModelMap, lookupGdp, loadModelMap, setCache, lookupProvenance, resolveSlug, getGdpvalProvenance } from '../src/metrics.js';
+import type { Cache } from '../src/types.js';
 
 // ── (a) labelKey overwrite ───────────────────────────────────────────────
 
@@ -222,5 +223,84 @@ describe('gdpval identity defects: qwen3-8-27b builtin', () => {
       () => false // nothing resolvable → estimate as before
     );
     expect(estimates['qwen3-8-27b']).toBe(812);
+  });
+});
+
+// ── Sourcery round (PR #66 review) ───────────────────────────────────────
+
+describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery round)', () => {
+  it('an old cache (gdpval_scraped, no scrape_version) forces a re-scrape', () => {
+    // The live scan caches of existing installs carry the pre-fix extraction:
+    // the stale qwen3-8-27b: 580, the low-variant labelKeys, and no
+    // provenance. The scrape-version gate must force ONE fresh scrape so the
+    // fixed extractor rewrites cache.gdpval_scores wholesale.
+    expect(needsGdpvalScrape({ gdpval_scraped: true } as Cache, false)).toBe(true);
+  });
+
+  it('a cache scraped with the current version does not re-scrape', () => {
+    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, false)).toBe(false);
+  });
+
+  it('force always re-scrapes', () => {
+    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, true)).toBe(true);
+  });
+
+  it('a cached LLM match that violates the variant veto is ignored', () => {
+    // Pre-veto LLM matches (persisted in cache.model_score_cache) may map a
+    // variant ref to its parent slug; resolveSlug Stage 1 returned them
+    // before the algorithmic matcher could veto. Score path must ignore
+    // such cached matches.
+    setConfig({ model_groups: {}, model_metrics: {} });
+    setModelMap({}, []);
+    setGdpval({ 'apodex-1-1': 1190.82 });
+    setCache({ model_score_cache: { 'openrouter/apodex/apodex-1.1-mini:free': 'apodex-1-1' } } as any);
+    expect(lookupGdp('openrouter/apodex/apodex-1.1-mini:free')).toBeNull();
+  });
+
+  it('a legit cached LLM match survives the veto (positive control)', () => {
+    setConfig({ model_groups: {}, model_metrics: {} });
+    setModelMap({}, []);
+    setGdpval({ 'mistral-medium-3-5': 933 });
+    setCache({ model_score_cache: { 'mistral/mistral-medium-2604': 'mistral-medium-3-5' } } as any);
+    expect(lookupGdp('mistral/mistral-medium-2604')).toBe(933);
+  });
+
+  it('provenance is also stored under dot-less labelKey twins', () => {
+    const html = [
+      '\\"models\":[{',
+      '\\"id\\":\\"a\\",\\"displayName\\":\\"Claude Opus 5.5 (high)\\",\\"creator\\":{\\"name\\":\\"Anthropic\\"},\\"elo\\":1251.2,\\"confidenceInterval\\":\\"-1 / +1\\"',
+      '},{',
+      '\\"id\\":\\"b\\",\\"displayName\\":\\"Claude Opus 5.5 (low)\\",\\"creator\\":{\\"name\\":\\"Anthropic\\"},\\"elo\\":1233.7,\\"confidenceInterval\\":\\"-1 / +1\\"',
+      '}]',
+      '{\\"slug\\":\\"claude-opus-5-5-high\\",\\"name\\":\\"Claude Opus 5.5 (high)\\"}',
+      '{\\"slug\\":\\"claude-opus-5-5-low\\",\\"name\\":\\"Claude Opus 5.5 (low)\\"}',
+    ].join('');
+    const provenance = extractGdpvalProvenance(html);
+    // The score pipeline serves refs that resolve to the labelKey twin —
+    // provenance must be there too (highest variant's row, fill-if-absent).
+    expect(provenance['claude-opus-55']).toBeDefined();
+    expect(provenance['claude-opus-55'].displayName).toBe('Claude Opus 5.5 (high)');
+  });
+
+  it('rows without a creator name still get displayName provenance', () => {
+    const html = [
+      '\\"models\\":[{',
+      '\\"id\\":\\"a\\",\\"displayName\\":\\"X Model\\",\\"creator\\":{},\\"elo\\":1000,\\"confidenceInterval\\":\\"-1 / +1\\"',
+      '}]',
+      '{\\"slug\\":\\"x-model\\",\\"name\\":\\"X Model\\"}',
+    ].join('');
+    const provenance = extractGdpvalProvenance(html);
+    expect(provenance['x-model']).toEqual({ displayName: 'X Model' });
+  });
+
+  it('a fresh provenance map REPLACES the previous one (no stale audit rows)', () => {
+    setConfig({ model_groups: {}, model_metrics: {} });
+    setModelMap({}, []);
+    setGdpval({ 'apodex-1-1': 1190.82 });
+    setCache({ gdpval_provenance: { 'apodex-1-1': { creator: 'Apodex', displayName: 'Apodex 1.1' } } });
+    setCache({ gdpval_provenance: { 'zai-glm-5-3': { creator: 'Z AI', displayName: 'GLM-5.3' } } });
+    // A later scrape that dropped a row must not leave its provenance behind.
+    expect(getGdpvalProvenance()['apodex-1-1']).toBeUndefined();
+    expect(getGdpvalProvenance()['zai-glm-5-3']).toBeDefined();
   });
 });

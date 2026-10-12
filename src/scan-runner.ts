@@ -40,6 +40,29 @@ interface ScanRunnerDeps {
 }
 
 /**
+ * Extraction version of the AA scraper. Bumped whenever extractGdpvalScores /
+ * extractGdpvalProvenance semantics change; a cache scraped under an older
+ * version forces ONE fresh scrape (needsGdpvalScrape) so the fixed extractor
+ * rewrites cache.gdpval_scores WHOLESALE — existing installs otherwise keep
+ * pre-fix junk keys forever (Sourcery PR #66 round: stale qwen3-8-27b: 580,
+ * low-variant labelKeys, missing provenance).
+ *
+ *   2 — labelKey write discipline, provenance extraction, variant-token
+ *       veto, qwen3-8-27b builtin removal (Task-0 identity audit 2026-10-12)
+ *   1 — original extraction (implicit for pre-version caches)
+ */
+export const SCRAPE_VERSION = 2;
+
+/**
+ * Whether the AA scrape must (re-)run for this cache. force bypasses all
+ * gates; otherwise the scrape runs once per cache, and again whenever the
+ * cache was scraped under a different SCRAPE_VERSION.
+ */
+export function needsGdpvalScrape(c: Cache, force = false): boolean {
+  return force || !c.gdpval_scraped || c.scrape_version !== SCRAPE_VERSION;
+}
+
+/**
  * Extract GDPval scores from Artificial Analysis HTML
  * Tries JSON data first (modern), falls back to HTML table parsing
  */
@@ -183,12 +206,16 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
   const labelKeyOf = (dn: string) =>
     dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-  // Format B: {"id":"...","displayName":"...","creator":{"name":...},"elo":N,...}
-  const provRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]*?"name":"([^"]+)"[^}]*\},"elo":[0-9.]+/g;
+  // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
+  // creator.name is OPTIONAL (Sourcery PR #66 round: a row without a named
+  // creator still gets its displayName stored — audits see partial
+  // provenance rather than none).
+  const provRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":(\{[^}]*\}),"elo":[0-9.]+/g;
   let em;
   while ((em = provRe.exec(normalized))) {
     const displayName = em[1];
-    const creator = em[2];
+    const nameMatch = /"name":"([^"]+)"/.exec(em[2]);
+    const creator = nameMatch ? nameMatch[1] : undefined;
     let slug = slugByDisplayName.get(displayName);
     if (!slug) {
       const labelKey = labelKeyOf(displayName);
@@ -196,8 +223,21 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
         if (labelKeyOf(dn) === labelKey) { slug = sv; break; }
       }
     }
-    if (slug && provenance[slug] === undefined) {
-      provenance[slug] = { creator, displayName };
+    if (slug) {
+      // Unconditional slug write — the slug IS this row, and it must be able
+      // to reclaim a key an earlier variant's labelKey claimed (same
+      // discipline as the score pipeline's slugWritten set).
+      provenance[slug] = creator !== undefined ? { creator, displayName } : { displayName };
+      // Also cover the dot-less labelKey twin (Sourcery PR #66 round): the
+      // score pipeline serves refs that resolve to the labelKey spelling
+      // (claude-opus-55), so provenance must exist under it too.
+      // Fill-if-absent over descending-Elo rows keeps the labelKey pointing
+      // at the HIGHEST variant — the same row whose score the labelKey
+      // carries under the fixed labelKey write discipline.
+      const labelKey = labelKeyOf(displayName);
+      if (labelKey && labelKey !== slug && provenance[labelKey] === undefined) {
+        provenance[labelKey] = creator !== undefined ? { creator, displayName } : { displayName };
+      }
     }
   }
 
@@ -458,7 +498,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
     if (rt.scanning) return;
     rt.scanning = true;
     try {
-      if (!rt.cache.gdpval_scraped || force) {
+      if (needsGdpvalScrape(rt.cache, force)) {
         try {
           const res = await fetch(rt.GDPVAL_URL, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -495,7 +535,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           try {
             const provenance = extractGdpvalProvenance(html);
             if (Object.keys(provenance).length) {
-              rt.cache.gdpval_provenance = { ...rt.cache.gdpval_provenance, ...provenance };
+              // REPLACE, not merge: rows the latest scrape dropped must
+              // not linger as stale audit data (Sourcery PR #66 round).
+              rt.cache.gdpval_provenance = provenance;
               metricsModule.setCache(rt.cache);
             } else {
               routerLog('[scan] No gdpval provenance extracted - AA payload shape may have drifted');
@@ -509,6 +551,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             metricsModule.setGdpval(scores);
             rt.cache.gdpval_scores = metricsModule.getGdpval();
             rt.cache.gdpval_scraped = true;
+            rt.cache.scrape_version = SCRAPE_VERSION;
           } else {
             routerLog('[scan] No GDPval scores extracted - table regex may be outdated');
           }

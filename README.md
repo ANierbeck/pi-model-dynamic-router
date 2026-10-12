@@ -552,8 +552,7 @@ router derives candidates, free-tier models and subscription cost ordering from 
   },
   "gdpval_builtin": {
     "mistral-medium-3-5": 933,
-    "claude-sonnet-5": 1603,
-    "qwen3-8-27b": 580
+    "claude-sonnet-5": 1603
   }
 }
 ```
@@ -710,7 +709,7 @@ The expensive-model pre-call block judges the caller by the **driving** model of
 | **`fallback_groups`** | Define cascade chain for fallback | `["tactical", "operational", "scout"]` |
 | **`cost_per_m`** | Cost per million tokens (for estimates) | `0.0000015` |
 | **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
-| **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933, "qwen3-8-27b": 580 }` |
+| **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933 }` |
 | **`billing_preference`** | Per-group tier ordering override (`"local_first"` / `"strict_local"` rank local models ahead of subscription) | `"local_first"` |
 | **`modelFilter`** (PROVIDER_MAP) | Regex to constrain scanned model ids per provider | `"^(zai-)?glm"` |
 

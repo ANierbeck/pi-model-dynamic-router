@@ -411,6 +411,13 @@ export interface SessionError {
 export interface Cache {
   gdpval_scores?: Record<string, number>;
   gdpval_scraped?: boolean;
+  /**
+   * Extraction version of the AA scrape that wrote gdpval_scores
+   * (scan-runner SCRAPE_VERSION). A mismatch forces one fresh scrape so
+   * fixed extractors rewrite stale caches wholesale (Task-0 identity audit
+   * 2026-10-12 + Sourcery PR #66 round).
+   */
+  scrape_version?: number;
 
   /**
    * Per-slug capability profile from the Artificial Analysis scrape

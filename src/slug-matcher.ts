@@ -252,6 +252,31 @@ const KNOWN_DISCRIMINATING = new Set([
   'medium', 'plus', 'instruct', 'reasoning',
 ]);
 
+/**
+ * The variant-token veto, shared by the fuzzy loops and by resolveSlug's
+ * cached-match validation (Sourcery PR #66 round: pre-veto LLM matches
+ * persisted in cache.model_score_cache still mapped variant refs to their
+ * parent slug). Scoped to candidates whose version tuple EXACTLY equals
+ * the ref's — a version-less family slug keeps the 2026-09-20 design
+ * decision that dated size-variant refs approximate to the family base
+ * (devstral-small-2505 → devstral) when no variant row exists.
+ */
+function variantVetoTokens(
+  refLetters: Set<string>, refNumbers: number[],
+  slugLetters: Set<string>, slugNumbers: number[]
+): boolean {
+  if (slugNumbers.length === 0) return false;
+  if (!isExactTuple(slugNumbers, refNumbers)) return false;
+  return [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
+}
+
+/** True when `slug` names a variant-different model than `ref` (veto). */
+export function variantVeto(ref: string, slug: string): boolean {
+  const r = extractTokens(normalizeSpacedId(ref));
+  const s = extractTokens(normalizeSpacedId(slug));
+  return variantVetoTokens(r.letters, r.numbers, s.letters, s.numbers);
+}
+
 // ── Stage 3+4: Matching against GDPval slugs ──────────────────────────────
 
 /**
@@ -330,19 +355,8 @@ export function matchSlug(
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
 
-    // Rule 1b: a discriminating variant token in the ref that the slug
-    // lacks means the ref names a VARIANT of a different (usually weaker)
-    // model (apodex-1.1-mini vs apodex-1-1) — reject instead of scoring the
-    // parent model's benchmark row. Scoped to candidates whose version
-    // tuple EXACTLY equals the ref's (both name the same model version):
-    // a version-less family slug keeps the 2026-09-20 design decision that
-    // dated size-variant refs approximate to the family base
-    // (devstral-small-2505 → devstral) when no variant row exists.
-    const refHasVariantSlugLacks =
-      slugNumbers.length > 0 &&
-      isExactTuple(slugNumbers, refNumbers) &&
-      [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
-    if (refHasVariantSlugLacks) continue;
+    // Rule 1b: the variant-token veto (apodex-1.1-mini vs apodex-1-1).
+    if (variantVetoTokens(refLetters, refNumbers, slugLetters, slugNumbers)) continue;
 
     // Rule 2: If both have version numbers, major version must match
     // e.g. slug "glm-5-2" (major 5) must not match ref "glm-4" (major 4)
@@ -401,13 +415,9 @@ export function candidateSlugs(
     const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
 
-    // Rule 1b: same scoped variant-token veto as matchSlug — the LLM
-    // pre-filter must be presented candidates the matcher would accept.
-    const refHasVariantSlugLacks =
-      slugNumbers.length > 0 &&
-      isExactTuple(slugNumbers, refNumbers) &&
-      [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
-    if (refHasVariantSlugLacks) continue;
+    // Rule 1b: same variant-token veto as matchSlug — the LLM pre-filter
+    // must be presented candidates the matcher would accept.
+    if (variantVetoTokens(refLetters, refNumbers, slugLetters, slugNumbers)) continue;
 
     // Rule 2: If both have version numbers, major version must match
     if (slugNumbers.length > 0 && refNumbers.length > 0) {
