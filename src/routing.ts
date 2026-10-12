@@ -844,9 +844,16 @@ export class Router {
    * mutual references are common — resolved by the `visited` set in
    * driveStream, NOT here).
    *
-   * OUTPUT CONTRACT: returns `{ selected, candidates }` for the FIRST group
-   * (primary or fallback) that yields a non-empty candidate list, or `null` if
-   * every group in the cascade is empty. `selected` is `candidates[0]`.
+   * OUTPUT CONTRACT: returns `{ selected, candidates }` for the first
+   * group (primary or fallback) that yields a usable candidate list, or
+   * `null` if every group in the cascade is empty. `selected` is
+   * `candidates[0]`. "Usable" (health-aware cascade, Sourcery PR #67
+   * round): if the primary group's best candidate is UNHEALTHY (model-health
+   * failure streak), the fallback chain is searched for the first group
+   * with a HEALTHY best candidate; the unhealthy primary is kept only when
+   * no group in the chain offers one (fail-open — better a failing model
+   * than none; health self-decays after HEALTH_DECAY_MS, 15 min, so the
+   * primary returns to duty on its own).
    *
    * SIDE EFFECTS: none directly. {@link resolveGroup} reads/writes rate-limit
    * state, budget cache, and model-health state via the shared modules.
@@ -854,8 +861,9 @@ export class Router {
    * INVARIANTS:
    *   - `method: 'dynamic'` groups always return `null` here (never selected
    *     via this path).
-   *   - A non-null result is always the primary group's result if the primary
-   *     group had candidates; fallback groups are only consulted on empty.
+   *   - A non-null result is the primary group's result if the primary group
+   *     had candidates AND its best candidate is healthy; fallback groups
+   *     are otherwise consulted (empty pool, or unhealthy best candidate).
    *
    * Uses multi-metric scoring for 'best' method (via resolveGroup).
    */
@@ -866,19 +874,32 @@ export class Router {
     // Dynamic group is handled by the hook, not here
     if (g.method === 'dynamic') return null;
 
-    // Try primary group first
-    let result = this.resolveGroup(g, name);
-    if (result) return result;
+    // Try primary group first.
+    const result = this.resolveGroup(g, name);
 
-    // Cascading fallback to fallback_groups
+    // Health-aware cascade (Sourcery PR #67 round): demoteUnhealthy keeps
+    // unhealthy models in the pool, so a pool whose only candidate is
+    // unhealthy used to be served as-is — with the Phase 1.4 tactical floor
+    // the pool is a singleton (the subscription tank), and an unhealthy
+    // tank kept receiving every code_complex request while callers only
+    // escaped via in-turn failover. The owner-approved rule is chain-first:
+    // prefer the first HEALTHY selection across the fallback chain; keep
+    // the unhealthy primary only when nothing healthy exists anywhere
+    // (fail-open). Health self-decays (HEALTH_DECAY_MS, 15 min) — no death
+    // spiral, the tank returns to duty automatically.
+    if (result && !isUnhealthy(this.cache, result.selected)) return result;
+
+    // Cascading fallback to fallback_groups (empty pool OR unhealthy best)
     for (const fbGroupName of g.fallback_groups ?? []) {
       const fbGroup = this.cfg.model_groups[fbGroupName];
       if (!fbGroup) continue;
       const fbResult = this.resolveGroup(fbGroup, fbGroupName);
-      if (fbResult) return fbResult;
+      if (!fbResult) continue;
+      if (!result) return fbResult; // primary empty — old behavior, first non-empty wins
+      if (!isUnhealthy(this.cache, fbResult.selected)) return fbResult; // primary unhealthy — first HEALTHY fallback wins
     }
 
-    return null;
+    return result; // unhealthy primary kept when no healthy alternative exists (fail-open)
   }
 
   /**
