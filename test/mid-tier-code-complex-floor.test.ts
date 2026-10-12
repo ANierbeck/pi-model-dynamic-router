@@ -80,14 +80,57 @@ describe('mid-tier floor (Phase 1.4, owner decision 2026-10-12)', () => {
   });
 
   it('the subscription tank wins tactical even under the 5% window (sortBy best)', () => {
-    // Before the floor: both in the window of 1650.73 (floor 1568.19),
-    // cost ties at 0 → the least-overkill tiebreak picked the LOWER score
-    // (ling) — the free tail won the mid tier. With the floor, ling is
-    // filtered before sorting and glm is the pool.
+    // NON-VACUOUS pool (Sourcery PR #67 round): two candidates survive the
+    // floor (glm 1650.73 and a hypothetical free 1655). Window floor =
+    // 1655 * 0.95 = 1572.25 → both in; costs tie at 0 → the least-overkill
+    // tiebreak picks the LOWER score → glm. A broken sortBy that ignores
+    // 'best' would rank the 1655 model first, so this actually exercises
+    // the window semantics.
     const router = new Router(testConfig, cache, new Map());
-    const filtered = applyGroupFilters(POOL, SHIPPED_CONFIG.model_groups!.tactical, testConfig);
+    const pool = [...POOL, 'openrouter/hypothetical/future-free-1655'];
+    const filtered = applyGroupFilters(pool, SHIPPED_CONFIG.model_groups!.tactical, testConfig);
+    expect(filtered).toHaveLength(2); // ling excluded, both above-floor models kept
     const sorted = router.sortBy(filtered, 'best');
     expect(sorted[0]).toBe('mistral/zai-glm-5-3');
+  });
+
+  it('an unhealthy primary falls through the chain to a healthy candidate (owner-approved promise)', () => {
+    // The owner-approved Phase 1.4 rule: "when the tank is capped/krank,
+    // code_complex falls through the chain" — NOT to the failing tank.
+    // demoteUnhealthy keeps unhealthy models in the pool, so a singleton
+    // tactical pool would keep serving the broken tank; resolve() must
+    // prefer the first HEALTHY selection across the fallback chain. Health
+    // self-decays (HEALTH_DECAY_MS 15 min), so the tank returns to duty on
+    // its own — no death spiral.
+    const unhealthyCache = {
+      available_models: [
+        { id: 'inclusionai/ling-3.1-flash', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'zai-glm-5-3', provider: 'mistral', cost_per_m: 0 },
+      ],
+      model_health: { 'mistral/zai-glm-5-3': { fails: 3, last_fail: Date.now() } },
+    } as any;
+    const router = new Router(testConfig, unhealthyCache, new Map());
+    const res = router.resolve('tactical');
+    expect(res).not.toBeNull();
+    expect(res!.selected).not.toBe('mistral/zai-glm-5-3');
+  });
+
+  it('with no healthy alternative anywhere, the unhealthy primary is still served (fail-open)', () => {
+    const unhealthyCache = {
+      available_models: [
+        { id: 'inclusionai/ling-3.1-flash', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'zai-glm-5-3', provider: 'mistral', cost_per_m: 0 },
+      ],
+      model_health: {
+        'mistral/zai-glm-5-3': { fails: 3, last_fail: Date.now() },
+        'openrouter/inclusionai/ling-3.1-flash': { fails: 3, last_fail: Date.now() },
+      },
+    } as any;
+    const router = new Router(testConfig, unhealthyCache, new Map());
+    const res = router.resolve('tactical');
+    // Everything is broken → better a failing model than none (in-turn
+    // failover still handles the rest).
+    expect(res?.selected).toBe('mistral/zai-glm-5-3');
   });
 
   it('a model that beats the floor on merit stays admissible (no free-tail-only rule)', () => {
