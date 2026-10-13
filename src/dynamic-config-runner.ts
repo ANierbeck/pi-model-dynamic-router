@@ -88,6 +88,10 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
    * static config (layered: embedded defaults → user override → project), and
    * the model-map. `force` bypasses the cache-freshness check; otherwise the
    * scan cache must be invalid (older than 30 days / never run) to regenerate.
+   * A static-groups fingerprint drift (`_dynamic.groups_fingerprint` in the
+   * stored snapshot vs the current static `model_groups`) ALSO regenerates —
+   * static group settings (floors, fallback chains) must never stay frozen in
+   * a stale snapshot while the scan cache is still fresh (PR #68).
    *
    * OUTPUT CONTRACT: writes `router-config.dynamic.json` next to the static
    * config and reassigns the in-memory `cfg` to it. Returns early WITHOUT
