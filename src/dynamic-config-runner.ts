@@ -9,7 +9,7 @@
  */
 
 import { DiscoveryManager } from './discovery.ts';
-import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic, registerRegistryProviderStubs, type StaticContributions } from './dynamic-config.ts';
+import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic, registerRegistryProviderStubs, staticGroupsFingerprint, type StaticContributions } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -50,6 +50,22 @@ interface DynamicConfigRunnerDeps {
   /** Clean-by-construction contribution snapshot; taken in load() after loadLayeredConfig. */
   readonly staticContributions: StaticContributions;
   readonly turnStart: number;
+}
+
+/**
+ * The groups fingerprint recorded in the dynamic snapshot on disk. `null` when
+ * no snapshot exists (the missing-file case is handled by dynamicConfigMissing);
+ * `undefined` when the file predates the fingerprint.
+ */
+function readStoredGroupsFingerprint(stateDir: string): string | null | undefined {
+  const file = path.join(stateDir, 'router-config.dynamic.json');
+  if (!fs.existsSync(file)) return null;
+  try {
+    const fp = JSON.parse(fs.readFileSync(file, 'utf-8'))?._dynamic?.groups_fingerprint;
+    return typeof fp === 'string' ? fp : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
@@ -137,12 +153,25 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       const dynamicConfigMissing =
         !fs.existsSync(path.join(rt.stateDir, 'router-config.dynamic.json')) &&
         rt.cache.dynamic_config_expected !== false;
-      if (!force && !hasNewRegistryRefs && rt.cacheManager.isScanCacheValid(rt.cache) && !dynamicConfigMissing) {
+      // Static group settings are copied into the snapshot at generation time
+      // and never re-synced, so a changed static group makes the snapshot stale
+      // even when the scan cache is still valid. A snapshot without the
+      // fingerprint predates this check and is regenerated once (self-healing).
+      const groupsFingerprint = staticGroupsFingerprint(rt.staticCfg.model_groups);
+      const storedGroupsFingerprint = readStoredGroupsFingerprint(rt.stateDir);
+      // Fixture caches (dynamic_config_expected: false) own no snapshot and must
+      // never be regenerated underneath, same as the missing-file rule above.
+      const groupsDrifted = rt.cache.dynamic_config_expected !== false
+        && storedGroupsFingerprint !== null
+        && storedGroupsFingerprint !== groupsFingerprint;
+      if (!force && !hasNewRegistryRefs && rt.cacheManager.isScanCacheValid(rt.cache) && !dynamicConfigMissing && !groupsDrifted) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }
       if (!force && dynamicConfigMissing && rt.cacheManager.isScanCacheValid(rt.cache)) {
         routerLog('[router] Scan cache is valid but router-config.dynamic.json is missing — regenerating it');
+      } else if (!force && groupsDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
+        routerLog('[router] Static group settings changed since router-config.dynamic.json was built — regenerating it');
       }
       
       // 1. Get all available models (from cache)
@@ -429,6 +458,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           free_models_count: staticFreeModels.length,
           scanned_models_count: scannedModels.length,
           config_fingerprint: configFingerprint,
+          groups_fingerprint: groupsFingerprint,
           // static_contributions is recorded by resyncDynamicFromStatic below
           // (load() already pruned rt.cfg against the previous one).
         }
