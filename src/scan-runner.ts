@@ -51,7 +51,7 @@ interface ScanRunnerDeps {
  *       veto, qwen3-8-27b builtin removal (Task-0 identity audit 2026-10-12)
  *   1 — original extraction (implicit for pre-version caches)
  */
-export const SCRAPE_VERSION = 2;
+export const SCRAPE_VERSION = 3;
 
 /**
  * Whether the AA scrape must (re-)run for this cache. force bypasses all
@@ -269,6 +269,15 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
  * EXPORTED at module level (unlike the closure-bound extractGdpvalScores,
  * which is mirrored in test/aa-gdpval-scrape.test.ts and can drift) — the
  * tests import this real implementation.
+ *
+ * Two payload stages (the page ships both shapes depending on route/era):
+ *   - legacy: displayName-keyed leaderboard chunks (id/displayName/creator),
+ *     slug resolved via the displayName→slug table,
+ *   - 2026-10-13+: `initialModels` records that carry their own slug
+ *     (id/slug/name/creator — the capability columns moved here; the
+ *     legacy stage matches nothing on the live page).
+ * Provider/creator objects share the {"id","slug","name"} prefix with model
+ * records and are excluded by the field that follows "name".
  */
 export function extractCapabilityProfiles(html: string): NonNullable<Cache['capability_profiles']> {
   const profiles: NonNullable<Cache['capability_profiles']> = {};
@@ -314,6 +323,52 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
       // Round to 2 decimals — 3000 * 0.55 is 1650.0000000000002 in IEEE754;
       // determinism matters because these values cross process boundaries
       // (cache JSON) and are compared in tests.
+      if (best > 0) profile.coding = Math.round(3000 * best * 100) / 100;
+    }
+
+    if (Object.keys(profile).length) profiles[slug] = profile;
+  }
+
+  // Stage 2 (2026-10-13 shape): the live page moved the capability columns
+  // out of the displayName-keyed leaderboard into an `initialModels` array
+  // whose records carry their own slug — better identity than the legacy
+  // displayName table. Records must be discriminated from nested
+  // creator/provider objects, which share the {"id","slug","name"} prefix:
+  // model records continue with shortName/suffix/release/… after "name",
+  // providers with "color". The old entryRe matches nothing on the live
+  // page (0 profiles, scan log 'AA payload shape may have drifted'), so this
+  // stage is the one that matters; the legacy stage above stays for older
+  // payload variants. Stage 2 writes last, so its values win on conflicts.
+  const MODEL_REC_AFTER_NAME = '(?:shortName|suffix|release|chartDefaultSelected|mitigationStatus|deprecated|releaseDate)';
+  const modelRecRe = new RegExp(
+    String.raw`\{"id":"[0-9a-f-]{36}","slug":"([^"]+)","name":"[^"]+","${MODEL_REC_AFTER_NAME}"([\s\S]*?)` +
+    String.raw`(?=\{"id":"[0-9a-f-]{36}","slug":"[^"]+","name":"[^"]+","${MODEL_REC_AFTER_NAME}"|$)`,
+    'g'
+  );
+  let mr: RegExpExecArray | null;
+  while ((mr = modelRecRe.exec(html))) {
+    const slug = mr[1];
+    const chunk = mr[2];
+    const profile: { briefcase?: number; coding?: number } = {};
+
+    const bc = /"briefcaseElo":([0-9.]+)/.exec(chunk);
+    if (bc) {
+      const briefcase = parseFloat(bc[1]);
+      if (Number.isFinite(briefcase)) profile.briefcase = briefcase;
+    }
+
+    const pct = (field: string): number | null => {
+      const m = new RegExp(`"${field}":(null|[0-9.]+)`).exec(chunk);
+      if (!m || m[1] === 'null') return null;
+      const v = parseFloat(m[1]);
+      return Number.isFinite(v) ? v : null;
+    };
+    const scicode = pct('scicode');
+    const terminalBench40 = pct('terminalBench40');
+    if (scicode !== null || terminalBench40 !== null) {
+      const best = Math.max(scicode ?? 0, terminalBench40 ?? 0);
+      // Same 2-decimal rounding as the legacy stage — determinism across
+      // process boundaries (cache JSON, tests).
       if (best > 0) profile.coding = Math.round(3000 * best * 100) / 100;
     }
 
