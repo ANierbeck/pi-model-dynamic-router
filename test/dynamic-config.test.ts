@@ -21,6 +21,7 @@ import {
   sortModelsForGroup,
   collectGroupModels,
   computeFallbackGroups,
+  staticGroupsFingerprint,
   type ModelWithMetadata,
 } from '../src/dynamic-config.ts';
 import { setConfig, setCache, setGdpval, setModelMap, setMetrics, calculateScore } from '../src/metrics.ts';
@@ -433,5 +434,25 @@ describe('computeFallbackGroups', () => {
     computeFallbackGroups(groups);
     expect(groups.unconstrained.fallback_groups).toEqual(['free']);
     expect(groups.free.fallback_groups).toEqual(['unconstrained']);
+  });
+});
+
+describe('staticGroupsFingerprint', () => {
+  // Live 2026-10-13: tactical min_gdpval 600 -> 1630 must change the fingerprint,
+  // otherwise the snapshot keeps the old floor (see dynamic-config-missing-regen).
+  it('changes when a group threshold changes', () => {
+    const before = { tactical: { method: 'best', min_gdpval: 600 } } as Record<string, Group>;
+    const after = { tactical: { method: 'best', min_gdpval: 1630 } } as Record<string, Group>;
+    expect(staticGroupsFingerprint(after)).not.toBe(staticGroupsFingerprint(before));
+  });
+
+  it('ignores key order (values only)', () => {
+    const a = { tactical: { method: 'best', min_gdpval: 1630 } } as Record<string, Group>;
+    const b = { tactical: { min_gdpval: 1630, method: 'best' } } as Record<string, Group>;
+    expect(staticGroupsFingerprint(a)).toBe(staticGroupsFingerprint(b));
+  });
+
+  it('is stable for an absent group map', () => {
+    expect(staticGroupsFingerprint(undefined)).toBe(staticGroupsFingerprint({}));
   });
 });
