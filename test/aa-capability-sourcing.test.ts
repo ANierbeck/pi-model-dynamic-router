@@ -82,6 +82,52 @@ describe('extractCapabilityProfiles (AA payload parsing)', () => {
 
 // ── Task 3: persist + lookup ──────────────────────────────────────────────
 
+// ── 2026-10-13 payload shape (live regression) ────────────────────────────
+// The AA page moved the capability columns OUT of the displayName-keyed
+// leaderboard entries into an `initialModels` array: each record carries its
+// own slug ("identity for free", no displayName table) plus creator and the
+// benchmark fields. The old entryRe (id/displayName/creator) matches NOTHING
+// on the live page anymore — the scan logged 'No capability profiles
+// extracted - AA payload shape may have drifted' and the cache ended up with
+// 0 profiles, so score_by groups silently fell back to gdpval.
+// Realistic fragment, field order and values from the live payload
+// (https://artificialanalysis.ai/evaluations/gdpval-aa, captured 2026-10-13).
+const NEW_SHAPE_FIXTURE = String.raw`
+{"slug":"gdpval-aa","initialModels":[
+{"id":"2f3c4dc9-a450-4303-8697-0237257cf08f","slug":"claude-opus-5-5","name":"Claude Opus 5.5 (Max, Default Fallback)","shortName":"Claude Opus 5.5 (max with fallback)","suffix":"Max, Default Fallback","release":{"slug":"claude-opus-5-5","name":"Claude Opus 5.5"},"chartDefaultSelected":true,"mitigationStatus":"standard","releaseDate":"2026-09-22","deprecated":false,"isReasoning":true,"isOpenWeights":false,"sizeClass":"large","inputModalityImage":true,"creator":{"id":"f0aa413f-e8ae-4fcd-9c48-0e049f4f3128","slug":"anthropic","name":"Anthropic","color":"#cc785c","logo":"/img/logos/anthropic.svg"},"intelligenceIndex":57.62,"elo":1900.1,"gdpval":1900.1,"mmluPro":null,"enterpriseOpsGym":null,"enterpriseOpsGymAvgConversationTurns":null,"briefcaseElo":1807.05,"briefcaseBreakdown":{"elo":1807.05,"lower95ci":1796.5,"upper95ci":1819.61},"opennessIndex":null,"scicode":0.66898,"tau2":null,"tauBanking":null,"terminalbenchHard":null,"terminalBench21":null,"terminalBench40":0.5924,"confidenceInterval":1},
+{"id":"b171d979-5ec1-45de-b8b9-db1ee65e77ec","slug":"qwen3-8-27b","name":"Qwen3.8 27B","shortName":"Qwen3.8 27B","release":{"slug":"qwen3-8-27b","name":"Qwen3.8 27B"},"chartDefaultSelected":false,"mitigationStatus":"standard","releaseDate":"2026-09-05","deprecated":false,"isReasoning":false,"isOpenWeights":true,"sizeClass":"small","inputModalityImage":false,"creator":{"id":"c31f6f6d-1c5d-4f2f-8e9c-3e4b3b6f1a11","slug":"qwen","name":"Qwen","color":"#6f42c1","logo":"/img/logos/qwen.svg"},"intelligenceIndex":34.1,"elo":1419.13,"gdpval":1419.13,"mmluPro":null,"enterpriseOpsGym":null,"enterpriseOpsGymAvgConversationTurns":null,"briefcaseElo":1397.08,"briefcaseBreakdown":{"elo":1397.08},"opennessIndex":0.7,"scicode":0.46644,"tau2":null,"tauBanking":null,"terminalbenchHard":null,"terminalBench21":null,"terminalBench40":null,"confidenceInterval":1},
+{"id":"d4e5f6a7-b8c9-4d2f-8a9c-3e4b3b6f1a22","slug":"no-capability-model","name":"No Capability Model","shortName":"No Capability Model","release":{"slug":"no-capability-model","name":"No Capability Model"},"creator":{"id":"c31f6f6d-1c5d-4f2f-8e9c-3e4b3b6f1a11","slug":"qwen","name":"Qwen","color":"#6f42c1","logo":"/img/logos/qwen.svg"},"elo":800,"gdpval":800,"scicode":null,"terminalBench40":null}
+]}
+{"creators":[{"id":"f0aa413f-e8ae-4fcd-9c48-0e049f4f3128","slug":"anthropic","name":"Anthropic","color":"#cc785c","logo":"/img/logos/anthropic.svg"},{"id":"c31f6f6d-1c5d-4f2f-8e9c-3e4b3b6f1a11","slug":"qwen","name":"Qwen","color":"#6f42c1","logo":"/img/logos/qwen.svg"}]}
+`.replace(/\\/g, '"');
+
+describe('extractCapabilityProfiles (2026-10-13 initialModels shape)', () => {
+  const profiles = extractCapabilityProfiles(NEW_SHAPE_FIXTURE);
+
+  it('extracts briefcase and coding from records that carry their own slug', () => {
+    expect(profiles['claude-opus-5-5']).toEqual({
+      briefcase: 1807.05,
+      coding: Math.round(3000 * 0.66898 * 100) / 100, // scicode 0.66898 > terminalBench40 0.5924
+    });
+    expect(profiles['qwen3-8-27b']).toEqual({
+      briefcase: 1397.08,
+      coding: Math.round(3000 * 0.46644 * 100) / 100, // terminalBench40 null → scicode alone
+    });
+  });
+
+  it('provider objects (creators array) never produce profiles or swallow records', () => {
+    expect(profiles['anthropic']).toBeUndefined();
+    expect(profiles['qwen']).toBeUndefined();
+    expect(profiles['no-capability-model']).toBeUndefined(); // no capability fields → no profile
+  });
+
+  it('the legacy displayName shape still parses (backward compatibility)', () => {
+    // The old stage must keep working — some AA routes still embed it.
+    const legacy = extractCapabilityProfiles(FIXTURE_HTML);
+    expect(legacy['claude-opus-5-5']).toBeTruthy();
+  });
+});
+
 describe('lookupCapability (metrics.ts)', () => {
   beforeEach(() => {
     metricsModule.setConfig({
