@@ -128,6 +128,53 @@ describe('extractCapabilityProfiles (2026-10-13 initialModels shape)', () => {
   });
 });
 
+// ── Sourcery PR #69 round: stage-2 robustness guards ───────────────────────
+// Verified findings from the PR #69 review (2026-10-13), each red-first:
+//   1. Stage 2 REPLACED the whole legacy profile for a shared slug, losing
+//      valid legacy fields the Stage-2 record did not carry (per-field merge
+//      instead — Stage 2 wins per field, legacy fields survive).
+//   2. A model record whose first field after "name" is unknown (future AA
+//      field) was not recognized as a record head, so its capability values
+//      were absorbed into the PREVIOUS record's chunk — silent
+//      misattribution of benchmark scores to the wrong slug. Unknown-field
+//      records must BOUND chunks (missing data beats wrong data).
+//   3. A measured coding score of exactly 0 was dropped by the `best > 0`
+//      filter — a 0% benchmark result is data (rank last on the column), not
+//      absence (gdpval proxy fallback).
+describe('extractCapabilityProfiles (PR #69 round: merge/boundary/zero guards)', () => {
+  it('merges Stage-2 fields per-field over the legacy profile instead of replacing it', () => {
+    const html = [
+      '{"slug":"merged-model","name":"Merged Model"}',
+      // Legacy stage: briefcaseElo only, no coding columns.
+      '{"id":"a","displayName":"Merged Model","creator":{"name":"X"},"briefcaseElo":1700.5,"confidenceInterval":1}',
+      // Stage 2: coding columns only, no briefcaseElo.
+      '{"id":"11111111-1111-1111-1111-111111111111","slug":"merged-model","name":"Merged Model","shortName":"MM","scicode":0.5}',
+    ].join('\n');
+    const profiles = extractCapabilityProfiles(html);
+    expect(profiles['merged-model']).toEqual({ briefcase: 1700.5, coding: 1500 });
+  });
+
+  it('a record with an UNKNOWN field after "name" still bounds its chunk (no score misattribution)', () => {
+    const html = [
+      // rec-a carries NO capabilities. rec-b's head field is unknown to the
+      // discriminator — before the fix, rec-a's chunk absorbed rec-b's
+      // briefcaseElo and rec-a got a briefcase it does not have.
+      '{"id":"11111111-1111-1111-1111-111111111111","slug":"rec-a","name":"A","shortName":"A","release":"2026"}',
+      '{"id":"22222222-2222-2222-2222-222222222222","slug":"rec-b","name":"B","brandNewField":"x","briefcaseElo":1500}',
+    ].join('\n');
+    const profiles = extractCapabilityProfiles(html);
+    expect(profiles['rec-a']).toBeUndefined();
+    expect(profiles['rec-b']?.briefcase).toBe(1500);
+  });
+
+  it('a measured coding score of exactly 0 is recorded (0 is data, not absence)', () => {
+    const html =
+      '{"id":"33333333-3333-3333-3333-333333333333","slug":"zero-bench","name":"Z","shortName":"Z","scicode":0,"terminalBench40":0}';
+    const profiles = extractCapabilityProfiles(html);
+    expect(profiles['zero-bench']?.coding).toBe(0);
+  });
+});
+
 describe('lookupCapability (metrics.ts)', () => {
   beforeEach(() => {
     metricsModule.setConfig({
