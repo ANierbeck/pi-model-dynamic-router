@@ -243,6 +243,11 @@ describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery
 
   it('force always re-scrapes', () => {
     expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, true)).toBe(true);
+    // 2026-10-13: the AA payload moved the capability columns into the
+    // initialModels records. Caches scraped by the pre-fix extractor have
+    // capability_profiles stuck at 0 (the old entryRe matches nothing on the
+    // live page) — they must re-scrape once so the profiles fill.
+    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: 2, capability_profiles: {} } as Cache, false)).toBe(true);
   });
 
   it('a cached LLM match that violates the variant veto is ignored', () => {
