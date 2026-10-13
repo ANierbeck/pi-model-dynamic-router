@@ -51,7 +51,7 @@ interface ScanRunnerDeps {
  *       veto, qwen3-8-27b builtin removal (Task-0 identity audit 2026-10-12)
  *   1 — original extraction (implicit for pre-version caches)
  */
-export const SCRAPE_VERSION = 2;
+export const SCRAPE_VERSION = 3;
 
 /**
  * Whether the AA scrape must (re-)run for this cache. force bypasses all
@@ -269,6 +269,15 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
  * EXPORTED at module level (unlike the closure-bound extractGdpvalScores,
  * which is mirrored in test/aa-gdpval-scrape.test.ts and can drift) — the
  * tests import this real implementation.
+ *
+ * Two payload stages (the page ships both shapes depending on route/era):
+ *   - legacy: displayName-keyed leaderboard chunks (id/displayName/creator),
+ *     slug resolved via the displayName→slug table,
+ *   - 2026-10-13+: `initialModels` records that carry their own slug
+ *     (id/slug/name/creator — the capability columns moved here; the
+ *     legacy stage matches nothing on the live page).
+ * Provider/creator objects share the {"id","slug","name"} prefix with model
+ * records and are excluded by the field that follows "name".
  */
 export function extractCapabilityProfiles(html: string): NonNullable<Cache['capability_profiles']> {
   const profiles: NonNullable<Cache['capability_profiles']> = {};
@@ -318,6 +327,67 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
     }
 
     if (Object.keys(profile).length) profiles[slug] = profile;
+  }
+
+  // Stage 2 (2026-10-13 shape): the live page moved the capability columns
+  // out of the displayName-keyed leaderboard into an `initialModels` array
+  // whose records carry their own slug — better identity than the legacy
+  // displayName table. The old entryRe matches nothing on the live
+  // page (0 profiles, scan log 'AA payload shape may have drifted'), so this
+  // stage is the one that matters; the legacy stage above stays for older
+  // payload variants. Stage 2 writes last, so its values win on conflicts.
+  //
+  // Record heads vs nested creator/provider objects (both share the
+  // {"id","slug","name"} prefix): providers/creators continue with
+  // "color" after "name" — they are NOT record heads and are absorbed
+  // harmlessly (no capability fields there). ANY OTHER field after "name" —
+  // including identifiers this code does not know yet — IS a record head
+  // and bounds the chunk: a future AA field must not let one record's
+  // capabilities leak into the PREVIOUS record's chunk (silent score
+  // misattribution, Sourcery PR #69; missing data → gdpval fallback beats
+  // wrong data). Chunks therefore never run past a model-shaped record.
+  const modelRecRe = new RegExp(
+    String.raw`\{"id":"[0-9a-f-]{36}","slug":"([^"]+)","name":"[^"]+","(?!color")([a-zA-Z]+)"([\s\S]*?)` +
+    String.raw`(?=\{"id":"[0-9a-f-]{36}","slug":"[^"]+","name":"[^"]+","(?!color")[a-zA-Z]+"|$)`,
+    'g'
+  );
+  let mr: RegExpExecArray | null;
+  while ((mr = modelRecRe.exec(html))) {
+    const slug = mr[1];
+    const chunk = mr[3];
+    const profile: { briefcase?: number; coding?: number } = {};
+
+    const bc = /"briefcaseElo":([0-9.]+)/.exec(chunk);
+    if (bc) {
+      const briefcase = parseFloat(bc[1]);
+      if (Number.isFinite(briefcase)) profile.briefcase = briefcase;
+    }
+
+    const pct = (field: string): number | null => {
+      const m = new RegExp(`"${field}":(null|[0-9.]+)`).exec(chunk);
+      if (!m || m[1] === 'null') return null;
+      const v = parseFloat(m[1]);
+      return Number.isFinite(v) ? v : null;
+    };
+    const scicode = pct('scicode');
+    const terminalBench40 = pct('terminalBench40');
+    if (scicode !== null || terminalBench40 !== null) {
+      const best = Math.max(scicode ?? 0, terminalBench40 ?? 0);
+      // A measured 0 is DATA, not absence (Sourcery PR #69): coding 0 ranks
+      // the model last on the column; dropping it would silently fall back
+      // to the gdpval proxy and rank a 0% bench model ABOVE measured peers.
+      // Same 2-decimal rounding as the legacy stage — determinism across
+      // process boundaries (cache JSON, tests).
+      profile.coding = Math.round(3000 * best * 100) / 100;
+    }
+
+    // Per-field merge over the legacy profile (Sourcery PR #69): Stage 2's
+    // identity (own slug) wins per field, but fields the Stage-2 record does
+    // not carry survive from the legacy stage — both read the SAME payload,
+    // so a merge can never retain fields the current payload dropped.
+    if (Object.keys(profile).length) {
+      profiles[slug] = { ...profiles[slug], ...profile };
+    }
   }
   return profiles;
 }
@@ -515,11 +585,17 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           // had; the profiles never gate anything on their own (missing
           // column = gdpval fallback). No new fetch, no new TTL — the
           // existing gdpval_scraped flag covers this fetch.
+          let capabilityScrapeFresh = false;
           try {
             const profiles = extractCapabilityProfiles(html);
             if (Object.keys(profiles).length) {
-              rt.cache.capability_profiles = { ...rt.cache.capability_profiles, ...profiles };
+              // REPLACE, not merge (Sourcery PR #69): models the latest
+              // scrape dropped must not linger with stale capability scores
+              // in the cache or the in-memory mirror — same rationale as
+              // gdpval_provenance in the PR #66 round.
+              rt.cache.capability_profiles = profiles;
               metricsModule.setCache(rt.cache);
+              capabilityScrapeFresh = true;
             } else {
               routerLog('[scan] No capability profiles extracted - AA payload shape may have drifted');
             }
@@ -551,7 +627,14 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             metricsModule.setGdpval(scores);
             rt.cache.gdpval_scores = metricsModule.getGdpval();
             rt.cache.gdpval_scraped = true;
-            rt.cache.scrape_version = SCRAPE_VERSION;
+            // Stamp the version only when the capability extraction produced
+            // profiles (Sourcery PR #69): scores parsing while capabilities
+            // come back empty must not pin empty capability data for the
+            // cache TTL — unstamped, needsGdpvalScrape retries the whole
+            // scrape on the next scan instead.
+            if (capabilityScrapeFresh) {
+              rt.cache.scrape_version = SCRAPE_VERSION;
+            }
           } else {
             routerLog('[scan] No GDPval scores extracted - table regex may be outdated');
           }
