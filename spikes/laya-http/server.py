@@ -33,8 +33,19 @@ def production_task_text() -> tuple[str, list[str]]:
     return body, cats
 
 
-INSTRUCTIONS, CATEGORIES = production_task_text()
-assert len(CATEGORIES) == 9, CATEGORIES
+# --head-json <file>: serve a fine-tuned model with EXACTLY the head it was trained on
+# ({"instructions": str, "categories": [str]}, written by ~/.laya-ft/to_laya_jsonl_v2.py).
+# Train/serve parity is the hard rule: a different head measures prompt drift, not the model.
+# Without the flag the head is the production prompt (zero-shot spike behaviour, 9 categories).
+_early = argparse.ArgumentParser(add_help=False)
+_early.add_argument("--head-json")
+_head_path = _early.parse_known_args()[0].head_json
+if _head_path:
+    _h = json.loads(pathlib.Path(_head_path).read_text())
+    INSTRUCTIONS, CATEGORIES = _h["instructions"], list(_h["categories"])
+else:
+    INSTRUCTIONS, CATEGORIES = production_task_text()
+    assert len(CATEGORIES) == 9, CATEGORIES
 QUESTION = {"category": {"type": "choice", "instructions": INSTRUCTIONS, "criteria": CATEGORIES}}
 
 
@@ -78,5 +89,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8089)
+    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8089); ap.add_argument("--head-json")
     ThreadingHTTPServer(("127.0.0.1", ap.parse_args().port), Handler).serve_forever()
