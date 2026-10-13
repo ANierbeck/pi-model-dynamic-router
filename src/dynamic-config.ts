@@ -10,6 +10,7 @@
 // no semantic changes — only code motion + parameterizing what used to be
 // closures over `cfg`/`cache`).
 
+import { createHash } from 'node:crypto';
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
 import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug } from './metrics.ts';
@@ -340,6 +341,29 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
  * hand-maintained, drifted assignment blocks (ollama_max_concurrent_streams
  * had already been forgotten in both).
  */
+/**
+ * Fingerprint of the STATIC group settings (thresholds, methods, fallback
+ * chains, model lists) a dynamic snapshot was built from. `model_groups` are
+ * copied into the snapshot at generation time and never re-synced, so a changed
+ * static group must be detected from the snapshot side — otherwise a valid scan
+ * cache keeps the old copy for up to 30 days (live 2026-10-13: tactical floor
+ * 600 kept after the static change to 1630). Key order is normalised so the
+ * fingerprint depends on values only.
+ */
+export function staticGroupsFingerprint(groups: Record<string, Group> | undefined): string {
+  return createHash('sha1').update(canonicalJson(groups ?? {})).digest('hex').slice(0, 12);
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // Safety property: exclude rules from the static layers are enforced even
   // when a stale dynamic file exists (ADR-0009 union semantics apply within

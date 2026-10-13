@@ -201,3 +201,64 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
     }
   });
 });
+
+describe('static group settings changed since the snapshot was built', () => {
+  // Live 2026-10-13: tactical min_gdpval 600 -> 1630 was merged into the static
+  // config, but the scan regenerated nothing: a valid scan cache skipped the
+  // regeneration, so router-config.dynamic.json kept the 600 floor copied at
+  // generation time (ling 1617.9 and haiku 1618.07 stayed tactical candidates
+  // below the 1630 floor). model_groups are copied, never re-synced, so the
+  // skip decision must also compare the static group settings.
+
+  it('regenerates a snapshot that predates the group-settings fingerprint', async () => {
+    // The real stale file has no groups_fingerprint, exactly like this one.
+    const legacy = {
+      model_groups: { tactical: { method: 'best', min_gdpval: 600 } },
+      _dynamic: { generated_at: 'LEGACY' },
+    };
+    const { dynamicPath, cleanup } = await startRouterWithCache({}, legacy);
+    try {
+      const regenerated = await waitFor(() =>
+        JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic?.generated_at !== 'LEGACY'
+      );
+      expect(regenerated).toBe(true);
+      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.groups_fingerprint).toBeTruthy();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('leaves a fixture cache marked dynamic_config_expected: false alone, even with a stale fingerprint', async () => {
+    // Fixture caches never own a snapshot (see test/helpers/noop-scan-cache.ts):
+    // the groups-drift check must not regenerate underneath them.
+    const legacy = { model_groups: { tactical: { method: 'best', min_gdpval: 600 } }, _dynamic: { generated_at: 'LEGACY' } };
+    const { dynamicPath, cleanup } = await startRouterWithCache({ dynamic_config_expected: false }, legacy);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.generated_at).toBe('LEGACY');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps a snapshot whose group fingerprint matches (guard: no regeneration storm)', async () => {
+    // Guard test: green before and after the fix. It pins that a matching
+    // snapshot is NOT regenerated on every start.
+    const first = await startRouterWithCache({});
+    let fresh: any;
+    try {
+      expect(await waitFor(() => fs.existsSync(first.dynamicPath))).toBe(true);
+      fresh = JSON.parse(fs.readFileSync(first.dynamicPath, 'utf-8'));
+    } finally {
+      first.cleanup();
+    }
+    fresh._dynamic.generated_at = 'SENTINEL';
+    const second = await startRouterWithCache({}, fresh);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      expect(JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic.generated_at).toBe('SENTINEL');
+    } finally {
+      second.cleanup();
+    }
+  });
+});
