@@ -162,7 +162,6 @@ gemma2:2b:                               gemma-2-2b
 llama3.1:latest:                         llama-3-1-8b
 qwen3.5:latest:                          qwen3-5-7b
 qwen3.6:35b-mlx:                         qwen3-6-35b
-qwen3.8:27b-mlx:                         qwen3-8-27b
 mistral-nemo:latest:                     mistral-nemo
 ornith:9b:                               ornith-9b
 glm-4.6:cloud:                           glm-4-6

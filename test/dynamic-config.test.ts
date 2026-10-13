@@ -380,6 +380,31 @@ describe('collectGroupModels', () => {
 });
 
 describe('computeFallbackGroups', () => {
+  it('respects explicitly configured fallback_groups; auto-generation only fills absent chains', () => {
+    // Sourcery PR #67 round: the shipped config's tactical chain
+    // (['strategic', 'complex', 'operational', 'scout', 'fallback']) encodes
+    // the owner-approved Phase 1.4 promise — GLM exhausted → sonnet, never
+    // opus. The quality-derived chain would put planning first once the
+    // tactical floor rose to 1630 (tactical's quality 1630 sorts directly
+    // below planning 1700), silently burning the Claude 5h window.
+    // Explicit chains (including explicit empty arrays) are authoritative;
+    // only groups without a fallback_groups field are auto-generated.
+    const groups: Record<string, Group> = {
+      free: { method: 'tiered', max_cost: 0 },
+      mid: { method: 'tiered', min_gdpval: 400, fallback_groups: ['free'] },
+      top: { method: 'best', min_gdpval: 800 },
+      sink: { method: 'tiered', max_cost: 0, fallback_groups: [] },
+    };
+    computeFallbackGroups(groups);
+    // Explicit chain untouched (NOT replaced with the derived ['top', 'free']).
+    expect(groups.mid.fallback_groups).toEqual(['free']);
+    // Explicit empty array stays empty (authoritative "no fallbacks").
+    expect(groups.sink.fallback_groups).toEqual([]);
+    // Groups without explicit chains are still auto-generated.
+    expect(groups.top.fallback_groups).toEqual(['mid', 'sink', 'free']);
+    expect(groups.free.fallback_groups).toEqual(['sink', 'mid', 'top']);
+  });
+
   it('orders fallback groups nearest-higher-quality first, then lower, and skips dynamic groups', () => {
     const groups: Record<string, Group> = {
       dynamic: { method: 'dynamic' },

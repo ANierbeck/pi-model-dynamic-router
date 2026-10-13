@@ -287,8 +287,10 @@ export function collectGroupModels(
 /**
  * Auto-generates fallback_groups for each non-dynamic group based on quality
  * ordering (nearest higher quality first, then lower), so a failing group
- * escalates before it degrades. Mutates each group's `fallback_groups`
- * in place, matching the original inline behavior exactly.
+ * escalates before it degrades. Mutates the `fallback_groups` of groups
+ * that do not declare their own chain; explicitly configured chains
+ * (including explicit empty arrays) are authoritative and left untouched
+ * (Sourcery PR #67 round — see the loop body for the tactical case).
  */
 export function computeFallbackGroups(dynamicGroups: Record<string, Group>): void {
   const qualityOf = (g: Group): number => {
@@ -301,7 +303,16 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
     .filter(([, g]) => g.method !== 'dynamic')
     .sort(([, a], [, b]) => qualityOf(a) - qualityOf(b));
 
-  for (const [myIdx, [name]] of eligibleGroups.entries()) {
+  for (const [myIdx, [name, g]] of eligibleGroups.entries()) {
+    // Explicit chains are AUTHORITATIVE (Sourcery PR #67 round): the
+    // shipped config's tactical chain (strategic first, planning absent)
+    // encodes the owner-approved Phase 1.4 promise — tank exhausted →
+    // sonnet, never opus. The quality-derived chain would put planning
+    // first once the tactical floor rose to 1630 (its quality sorts
+    // directly below planning), silently burning the Claude 5h window.
+    // Only groups WITHOUT a fallback_groups field are auto-generated;
+    // an explicit empty array means authoritative "no fallbacks".
+    if (g.fallback_groups !== undefined) continue;
     const above = eligibleGroups.slice(myIdx + 1).map(([n]) => n);
     const below = eligibleGroups.slice(0, myIdx).reverse().map(([n]) => n);
     dynamicGroups[name].fallback_groups = [...above, ...below];

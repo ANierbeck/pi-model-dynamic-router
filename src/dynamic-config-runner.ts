@@ -400,10 +400,12 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         };
       }
       
-      // 9. Auto-generate fallback_groups for each group based on quality ordering.
+      // 9. Auto-generate fallback_groups for groups that do not declare
+      // their own chain, based on quality ordering.
       // Quality level: max_cost=0 → 0, min_gdpval=N → N, no constraint → 750 (highest).
       // Fallback order: nearest higher quality first, then lower — so a failing group
-      // escalates before it degrades. Groups with no models are skipped.
+      // escalates before it degrades. Explicitly configured chains are
+      // authoritative and left untouched (Sourcery PR #67 round).
       computeFallbackGroups(dynamicGroups);
 
       // 10. Persist the dynamic configuration.

@@ -454,6 +454,13 @@ export interface SessionError {
 export interface Cache {
   gdpval_scores?: Record<string, number>;
   gdpval_scraped?: boolean;
+  /**
+   * Extraction version of the AA scrape that wrote gdpval_scores
+   * (scan-runner SCRAPE_VERSION). A mismatch forces one fresh scrape so
+   * fixed extractors rewrite stale caches wholesale (Task-0 identity audit
+   * 2026-10-12 + Sourcery PR #66 round).
+   */
+  scrape_version?: number;
 
   /**
    * Per-slug capability profile from the Artificial Analysis scrape
@@ -462,6 +469,17 @@ export interface Cache {
    * absent column = null (gdpval fallback), never 0.
    */
   capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number }>;
+
+  /**
+   * Per-slug PROVENANCE from the Artificial Analysis scrape (Task-0
+   * identity audit 2026-10-12): the creator (vendor) and raw displayName
+   * of the leaderboard row behind each score key. Additive-merge lifecycle
+   * like gdpval_scores / capability_profiles; never gates routing — it
+   * exists so identity audits can verify a score belongs to the model it
+   * claims (the apodex-1.1-mini and qwen3-8-27b defects were invisible
+   * offline because the scraper discarded the creator field).
+   */
+  gdpval_provenance?: Record<string, { creator?: string; displayName?: string }>;
   models_cached?: string;
   available_models?: AvailableModel[];
   benchmarks?: Record<string, number>;

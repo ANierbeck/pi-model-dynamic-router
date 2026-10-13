@@ -39,7 +39,7 @@ import { routerLog, errorLog } from './logger.ts';
 import type { Metrics, Config, Cache } from './types.ts';
 import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { matchSlug } from './slug-matcher.ts';
+import { matchSlug, variantVeto } from './slug-matcher.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -354,13 +354,19 @@ export function resolveSlug(ref: string): string | null | undefined {
   // Stage 1: LLM-assisted match (semantically understands versions)
   // The LLM can distinguish glm-5-2 from glm-5-3, and knows that
   // mistral-medium-2604 = mistral-medium-3-5 (date-versioned).
-  if (llmModelMatches[ref]) return canon.get(llmModelMatches[ref]) ?? llmModelMatches[ref];
+  // Variant veto (Sourcery PR #66 round): matches persisted BEFORE the
+  // veto existed (in-memory or in cache.model_score_cache) may map a
+  // variant ref to its parent slug (apodex-1.1-mini → apodex-1-1) — ignore
+  // those and fall through to the algorithmic stages instead of letting
+  // the stale match keep scoring the Mini as its parent.
+  const llmMatch = llmModelMatches[ref];
+  if (llmMatch && !variantVeto(ref, llmMatch)) return canon.get(llmMatch) ?? llmMatch;
   // Cached LLM matches (from cache.model_score_cache). Needed because esbuild
   // may bundle two instances of this module, and the routing.ts instance
   // doesn't share in-memory state with index.ts. A cached match may point at
   // a duplicate spelling — canonicalize like a fresh match.
   const cached = (cache as any)?.model_score_cache?.[ref];
-  if (cached && typeof cached === 'string') return canon.get(cached) ?? cached;
+  if (cached && typeof cached === 'string' && !variantVeto(ref, cached)) return canon.get(cached) ?? cached;
 
   // Stage 2: algorithmic slug-matcher (FALLBACK — only if LLM didn't match).
   // Duplicate-spelling keys are collapsed to their canonical twin BEFORE
@@ -552,6 +558,13 @@ export function setCache(newCache: Cache): void {
   if (cache.capability_profiles) {
     capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
   }
+  // Task-0 identity audit (2026-10-12): per-slug provenance. REPLACE when
+  // the cache carries the field (scan passes the map of the LATEST scrape —
+  // rows it dropped must not linger as stale audit data; Sourcery PR #66
+  // round), leave the mirror untouched when the field is absent.
+  if (cache.gdpval_provenance) {
+    gdpvalProvenance = { ...cache.gdpval_provenance };
+  }
   if (cache.gdpval_scores) {
     // Additive merge: add scraped scores to EXISTING gdpval (which may have
     // builtins from setConfig). Builtins take precedence (manual overrides
@@ -597,6 +610,29 @@ export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): n
 /** Test/inspection accessor for the merged capability profiles. */
 export function getCapabilityProfiles(): NonNullable<Cache['capability_profiles']> {
   return capabilityProfiles;
+}
+
+// ── GDPval Provenance (Task-0 identity audit 2026-10-12) ────────────────
+
+// In-memory mirror of cache.gdpval_provenance, merged in setCache like
+// capabilityProfiles. Read through lookupProvenance for identity audits.
+let gdpvalProvenance: NonNullable<Cache['gdpval_provenance']> = {};
+
+/**
+ * Resolves a model ref to the scrape PROVENANCE (creator + raw displayName)
+ * of the AA row behind its score, via the same slug pipeline as
+ * lookupGdp. Returns null when the ref or the provenance is absent.
+ * Never gates routing — this is audit/inspection data.
+ */
+export function lookupProvenance(ref: string): { creator?: string; displayName?: string } | null {
+  const slug = resolveSlug(ref);
+  if (!slug) return null;
+  return gdpvalProvenance[slug] ?? null;
+}
+
+/** Test/inspection accessor for the merged gdpval provenance. */
+export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
+  return gdpvalProvenance;
 }
 
 // ── Cost Resolution Helpers ────────────────────────────────────────────
