@@ -48,7 +48,7 @@ describe('classifyPrompt cloud fallback opt-in', () => {
     });
 
     expect(fetch).not.toHaveBeenCalled();
-    expect(result.category).toBe('fallback');
+    expect(result.category).toBe('continue');
   });
 
   it('does not call any cloud model when allowCloudFallback is explicitly false', async () => {

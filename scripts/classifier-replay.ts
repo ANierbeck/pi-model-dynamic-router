@@ -22,6 +22,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getGroupForCategory } from '../src/content-classifier.ts';
+import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
 
 export interface SessionPrompt {
   text: string;
@@ -185,10 +186,9 @@ function sessionFilesUnder(dir: string): string[] {
 
 // ── candidate endpoint ────────────────────────────────────────────────────
 
-const KNOWN_CATEGORIES = new Set([
-  'trivial', 'simple', 'code_simple', 'standard', 'code_complex',
-  'design', 'planning', 'exploration', 'fallback',
-]);
+// Derived from the production category list — a hand-maintained duplicate
+// would silently drift on the next taxonomy change (PR #70 review).
+const KNOWN_CATEGORIES = new Set(VALID_CATEGORIES);
 
 async function classifyViaEndpoint(
   endpoint: string,
@@ -236,7 +236,10 @@ export async function replayAgainstEndpoint(
       const candidateGroup = getGroupForCategory(category!);
       const sameGroup = item.knownGroup ? candidateGroup === item.knownGroup : null;
       const sameCategory = item.knownCategory ? category === item.knownCategory : null;
-      if (item.knownCategory !== null && sameCategory) {
+      // A reply matching a legacy label is NOT agreement — the label is not
+      // in the current taxonomy, so both sides being stale is a defect, not a
+      // match (PR #70 review: invalid labels counted as agreement).
+      if (item.knownCategory !== null && sameCategory && !invalid) {
         result.agree++;
         continue;
       }

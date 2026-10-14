@@ -6,6 +6,7 @@
 // called.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
@@ -19,7 +20,7 @@ import { formatClassifierStatus } from '../src/commands.ts';
 import type { Cache, Group } from '../src/types.ts';
 
 const OLD_DEFAULTS = ['mistral-nemo:latest', 'gemma2:2b'];
-const VALID = JSON.stringify({ category: 'trivial', reason: 'test', confidence: 0.9 });
+const VALID = JSON.stringify({ category: 'simple', reason: 'test', confidence: 0.9 });
 const NO_SCHEMA_501 = 'Ollama HTTP 501: {"error":"structured output is unavailable"}';
 
 // capabilities.completion: the provisional (pre-probe) path only admits
@@ -41,7 +42,7 @@ describe('classifyPrompt — local models come from the derived chain', () => {
   it('a machine whose only local model is foo:3b classifies with foo:3b, never the old defaults', async () => {
     vi.mocked(callOllama).mockResolvedValue(VALID);
     const r = await classifyPrompt(prompt('only-foo'), { cache: cacheWith('foo:3b') });
-    expect(r.category).toBe('trivial');
+    expect(r.category).toBe('simple');
     expect(calledModels()).toEqual(['foo:3b']);
     for (const old of OLD_DEFAULTS) expect(calledModels()).not.toContain(old);
     expect(getLastClassificationSource()?.source).toBe('ollama:foo:3b');
@@ -80,11 +81,11 @@ describe('classifyPrompt — local models come from the derived chain', () => {
     const r = await classifyPrompt(prompt('no-local-cloud'), {
       allowCloudFallback: true,
       cfg: { model_groups: {} } as any,
-      cache: { classifier_fallback_models: ['acme/judge-1'] } as Cache,
+      cache: { classifier_fallback_models: ['acme/judge-1'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as Cache,
       completeSimple,
       findModel: () => ({}),
     });
-    expect(r.category).toBe('trivial');
+    expect(r.category).toBe('simple');
     expect(completeSimple).toHaveBeenCalledTimes(1);
     expect(isOllamaAvailable).not.toHaveBeenCalled();
     expect(callOllama).not.toHaveBeenCalled();

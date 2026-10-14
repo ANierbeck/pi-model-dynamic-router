@@ -13,6 +13,7 @@
 // BEFORE completeSimple is ever called, with a distinct log reason.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
@@ -46,6 +47,7 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
       cfg: {} as any,
       cache: {
         classifier_fallback_models: ['openrouter/free-model-a'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,
@@ -71,6 +73,7 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
       cfg: {} as any,
       cache: {
         classifier_fallback_models: ['openrouter/free-model-a'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,
@@ -93,6 +96,7 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
       cfg: {} as any,
       cache: {
         classifier_fallback_models: ['openrouter/free-model-a'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,

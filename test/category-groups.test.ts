@@ -54,7 +54,7 @@ describe('getGroupForCategory with category_groups overrides', () => {
   it('built-in mapping applies when no override is configured', () => {
     expect(getGroupForCategory('code_complex')).toBe('tactical');
     expect(getGroupForCategory('design')).toBe('planning');
-    expect(getGroupForCategory('fallback')).toBe('tactical');
+    expect(getGroupForCategory('continue')).toBe('tactical');
     expect(getGroupForCategory('does-not-exist')).toBe('fallback');
   });
 
@@ -66,7 +66,7 @@ describe('getGroupForCategory with category_groups overrides', () => {
     expect(getGroupForCategory('code_complex', cfg)).toBe('planning');
     // Sibling categories keep their built-in mapping.
     expect(getGroupForCategory('standard', cfg)).toBe('operational');
-    expect(getGroupForCategory('fallback', cfg)).toBe('tactical');
+    expect(getGroupForCategory('continue', cfg)).toBe('tactical');
   });
 
   it('the module-level install (setCategoryGroupMapping) applies without a cfg argument', () => {
@@ -82,9 +82,9 @@ describe('getGroupForCategory with category_groups overrides', () => {
   });
 
   it('an override for one category never leaks into another category', () => {
-    const cfg: Config = { ...BASE_CONFIG, category_groups: { trivial: 'planning' } };
-    expect(getGroupForCategory('trivial', cfg)).toBe('planning');
-    expect(getGroupForCategory('exploration', cfg)).toBe('scout');
+    const cfg: Config = { ...BASE_CONFIG, category_groups: { simple: 'planning' } };
+    expect(getGroupForCategory('simple', cfg)).toBe('planning');
+    expect(getGroupForCategory('standard', cfg)).toBe('operational');
   });
 });
 
@@ -164,12 +164,12 @@ describe('loadLayeredConfig validates category_groups (warn, never throw)', () =
     fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
     fs.writeFileSync(
       path.join(cwdDir, '.pi', 'router-config.json'),
-      JSON.stringify({ category_groups: { design: 'no_such_group', trivial: 'scout' } })
+      JSON.stringify({ category_groups: { design: 'no_such_group', simple: 'scout' } })
     );
     const { config } = loadLayeredConfig(extDir, cwdDir);
-    expect(config.category_groups).toEqual({ trivial: 'scout' });
+    expect(config.category_groups).toEqual({ simple: 'scout' });
     expect(getGroupForCategory('design', config)).toBe('planning'); // built-in stands
-    expect(getGroupForCategory('trivial', config)).toBe('scout');
+    expect(getGroupForCategory('simple', config)).toBe('scout');
     expect(mockWarnLog).toHaveBeenCalledTimes(1);
     const msg = String(mockWarnLog.mock.calls[0][0]);
     expect(msg).toContain('category_groups');
@@ -227,17 +227,15 @@ describe('category_groups survives the dynamic-config resync (user intent)', () 
 });
 
 describe('built-in mapping is unchanged (defaults for everyone)', () => {
-  it('CATEGORY_TO_GROUP still maps all nine categories to their groups', () => {
+  it('CATEGORY_TO_GROUP maps the seven v2 categories to their groups', () => {
     expect(CATEGORY_TO_GROUP).toEqual({
-      trivial: 'scout',
-      simple: 'operational',
+      simple: 'scout',
       code_simple: 'simple',
       standard: 'operational',
       code_complex: 'tactical',
       design: 'planning',
       planning: 'planning',
-      exploration: 'scout',
-      fallback: 'tactical',
+      continue: 'tactical',
     });
   });
 

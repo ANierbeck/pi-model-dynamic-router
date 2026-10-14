@@ -546,6 +546,8 @@ export interface Cache {
    * absent = probe hasn't run yet this scan cycle.
    */
   classifier_fallback_models?: string[];
+  /** Probe-surface signature the cached list was recorded under (see classifier-fallback-probe.ts). */
+  classifier_fallback_probe_sig?: string;
   /**
    * Probe-verified LOCAL classifier chain (ADR-0025 C): Ollama model names in
    * size order, written at scan time by probeLocalClassifierCandidates.

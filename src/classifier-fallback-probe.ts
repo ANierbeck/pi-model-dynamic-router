@@ -109,9 +109,9 @@ interface ProbeCase {
 
 export const PROBE_CASES: readonly ProbeCase[] = [
   {
-    name: 'trivial-read',
+    name: 'simple-read',
     prompt: 'What is in this file?',
-    accept: ['trivial', 'simple', 'standard'],
+    accept: ['simple', 'standard'],
   },
   {
     name: 'code-fix',
@@ -136,6 +136,24 @@ export const PROBE_CASES: readonly ProbeCase[] = [
 
 /** VALID_CATEGORIES as a plain readonly string[] (ergonomic .includes). */
 const VALID_CATEGORY_SET: readonly string[] = VALID_CATEGORIES;
+
+/**
+ * Signature of the probe surface: cases (prompts + accept lists + context
+ * traps) plus the valid category set. Persisted next to the cached model
+ * list; a cache without a matching signature belongs to a PREVIOUS prompt/
+ * taxonomy version and is treated as "not probed" so the next scan re-probes
+ * (PR #70 review: cached models from an obsolete taxonomy must never be
+ * reused). Not cryptographic — it only has to change when the surface does.
+ */
+export const PROBE_SIGNATURE: string = (() => {
+  const surface = [
+    ...PROBE_CASES.map((c) => `${c.name}|${c.prompt}|${c.accept.join(',')}`),
+    VALID_CATEGORIES.join(','),
+  ].join(';');
+  let h = 5381;
+  for (let i = 0; i < surface.length; i++) h = ((h * 33) ^ surface.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+})();
 
 /**
  * Judges a raw model reply against a probe case. Passes when the reply is
@@ -307,6 +325,7 @@ export function selectClassifierCandidates(
  * + the existing try-each-model loop in that case.
  */
 export function getCachedFallbackModels(cache: Cache): string[] {
+  if (cache.classifier_fallback_probe_sig !== PROBE_SIGNATURE) return [];
   return cache.classifier_fallback_models ?? [];
 }
 
@@ -414,6 +433,7 @@ export async function probeAndCache(
   }
 
   cache.classifier_fallback_models = working;
+  cache.classifier_fallback_probe_sig = PROBE_SIGNATURE;
   log(`[classifier-probe] ${working.length} working model(s) cached: ${working.join(', ') || '(none)'}`);
   return working;
 }
@@ -425,5 +445,8 @@ export async function probeAndCache(
  * try-each loop. This function only reports presence, not usability.
  */
 export function hasProbedFallback(cache: Cache): boolean {
-  return Array.isArray(cache.classifier_fallback_models);
+  return (
+    Array.isArray(cache.classifier_fallback_models) &&
+    cache.classifier_fallback_probe_sig === PROBE_SIGNATURE
+  );
 }

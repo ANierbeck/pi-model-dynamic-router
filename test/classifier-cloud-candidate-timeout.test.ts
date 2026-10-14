@@ -12,6 +12,7 @@
 // (the hang IS the bug).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
@@ -49,6 +50,7 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
       cfg: {} as any,
       cache: {
         classifier_fallback_models: ['prov/hang-model', 'prov/good-model'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,
@@ -73,6 +75,7 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
       cfg: {} as any,
       cache: {
         classifier_fallback_models: ['prov/hang-a', 'prov/hang-b'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,

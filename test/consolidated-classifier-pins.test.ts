@@ -18,30 +18,26 @@ describe('classifier-mapping-hints', () => {
 
 
   describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
-    it('maps all nine categories to their router groups', () => {
+    it('maps the seven v2 categories to their router groups', () => {
       expect(CATEGORY_TO_GROUP).toEqual({
-        trivial: 'scout',
-        simple: 'operational',
+        simple: 'scout',
         code_simple: 'simple',
         standard: 'operational',
         code_complex: 'tactical',
         design: 'planning',
         planning: 'planning',
-        exploration: 'scout',
-        fallback: 'tactical',
+        continue: 'tactical',
       });
     });
 
     it('resolves every known category', () => {
-      expect(getGroupForCategory('trivial')).toBe('scout');
-      expect(getGroupForCategory('simple')).toBe('operational');
+      expect(getGroupForCategory('simple')).toBe('scout');
       expect(getGroupForCategory('code_simple')).toBe('simple');
       expect(getGroupForCategory('standard')).toBe('operational');
       expect(getGroupForCategory('code_complex')).toBe('tactical');
       expect(getGroupForCategory('design')).toBe('planning');
       expect(getGroupForCategory('planning')).toBe('planning');
-      expect(getGroupForCategory('exploration')).toBe('scout');
-      expect(getGroupForCategory('fallback')).toBe('tactical');
+      expect(getGroupForCategory('continue')).toBe('tactical');
     });
 
     it('routes unknown categories to the fallback group', () => {
@@ -67,19 +63,19 @@ describe('classifier.integration', () => {
     it("classifies simple prompts with Ollama", async () => {
       const result = await classifyPrompt("Replace 'x' with 'y'");
       console.log("Simple prompt classified as:", result);
-      expect(["code_simple", "fallback"]).toContain(result.category);
+      expect(["code_simple", "continue"]).toContain(result.category);
     }, OLLAMA_TIMEOUT);
 
     it("classifies complex prompts with Ollama", async () => {
       const result = await classifyPrompt("Debug this recursive function");
       console.log("Complex prompt classified as:", result);
-      expect(["code_complex", "code_simple", "fallback"]).toContain(result.category);
+      expect(["code_complex", "code_simple", "continue"]).toContain(result.category);
     }, OLLAMA_TIMEOUT);
 
     it("classifies design prompts with Ollama", async () => {
       const result = await classifyPrompt("Design an event-sourcing architecture");
       console.log("Design prompt classified as:", result);
-      expect(["design", "fallback"]).toContain(result.category);
+      expect(["design", "continue"]).toContain(result.category);
     }, OLLAMA_TIMEOUT);
   });
 });

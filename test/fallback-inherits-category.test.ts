@@ -1,6 +1,6 @@
 /**
  * Task-type-balancing Phase 2: a classification that comes out as the
- * 'fallback' category ("could not tell" — typically a long continuation like
+ * 'continue' category ("could not tell" — typically a long continuation like
  * "ok, then please carry on with the remaining items") inherits the previous
  * turn's category instead of dropping to the default fallback→tactical group.
  * Mirrors the low-confidence and short-prompt momentum inheritance.
@@ -39,21 +39,21 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     resetClassificationCounts();
   });
 
-  it('design turn, then a confident LLM "fallback" → routes to the design group, not tactical', async () => {
-    llmSays('fallback');
+  it('design turn, then a confident LLM "continue" → routes to the design group, not tactical', async () => {
+    llmSays('continue');
     const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     expect('category' in result && result.category).toBe('design');
     expect(getGroupForCategory((result as { category: string }).category)).toBe(getGroupForCategory('design'));
-    expect(getGroupForCategory('design')).not.toBe(getGroupForCategory('fallback'));
+    expect(getGroupForCategory('design')).not.toBe(getGroupForCategory('continue'));
     expect(result.reason).toContain('inherit');
   });
 
   it('counts the inherited category, not the raw fallback', async () => {
-    llmSays('fallback');
+    llmSays('continue');
     await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     const counts = getClassificationCounts();
     expect(counts.byCategory.design).toBe(1);
-    expect(counts.byCategory.fallback).toBeUndefined();
+    expect(counts.byCategory.continue).toBeUndefined();
   });
 
   it('inherits on the static path too (LLM unavailable, static classifier says fallback)', async () => {
@@ -71,17 +71,17 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     expect('category' in result && result.category).toBe('design');
   });
 
-  it('without a previous category, fallback stays fallback and maps to the default group', async () => {
-    llmSays('fallback');
+  it('without a previous category, continue stays continue and maps to the default group', async () => {
+    llmSays('continue');
     const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: {} });
-    expect('category' in result && result.category).toBe('fallback');
-    expect(getGroupForCategory('fallback')).toBe('tactical');
+    expect('category' in result && result.category).toBe('continue');
+    expect(getGroupForCategory('continue')).toBe('tactical');
   });
 
   it('a concrete (non-fallback) classification is never replaced by the previous category', async () => {
-    llmSays('trivial');
+    llmSays('simple');
     const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
-    expect('category' in result && result.category).toBe('trivial');
+    expect('category' in result && result.category).toBe('simple');
   });
 
   it('a HINT turn is never overridden by inheritance', async () => {

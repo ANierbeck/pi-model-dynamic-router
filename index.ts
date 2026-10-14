@@ -684,6 +684,9 @@ let previousTokenCount = 0;
   pi.on('session_shutdown', () => {
     sessionCtx = null;
     router.setSessionCtx(null);
+    // The previous category is conversation state — it must not leak into
+    // the next session's first 'continue' classification (PR #70 review).
+    streamOrchestrator.resetLastCategory();
   });
 
   // Cleanup CostTracker on process exit. Registered inside the dedupe

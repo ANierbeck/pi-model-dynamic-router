@@ -35,7 +35,7 @@ function fakeOllama(models: Record<string, { size: string; generate: (prompt: st
 }
 
 const classifyReply = (prompt: string) => {
-  const category = prompt.includes('What is in this file?') ? 'trivial' : prompt.includes('Fix the typo') ? 'code_simple' : 'simple';
+  const category = prompt.includes('What is in this file?') ? 'simple' : prompt.includes('Fix the typo') ? 'code_simple' : 'simple';
   return jsonRes({ response: JSON.stringify({ category, reason: 'r', confidence: 0.9 }) });
 };
 
