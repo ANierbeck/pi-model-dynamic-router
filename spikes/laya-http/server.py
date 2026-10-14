@@ -60,7 +60,13 @@ def build_state(prompt: str, context: dict | None) -> str:
     return f'{head}Current request: "{prompt}"'
 
 
-agent = laya.load(snapshot_download(REPO, revision=REVISION))
+# --model-dir <path>: serve a fine-tuned local checkpoint instead of the pinned
+# HF snapshot (laya_mlx maps upstream PyTorch parameter names itself, so a
+# laya-train output directory loads directly - no separate conversion step).
+_early2 = argparse.ArgumentParser(add_help=False)
+_early2.add_argument("--model-dir")
+_model_dir = _early2.parse_known_args()[0].model_dir
+agent = laya.load(_model_dir if _model_dir else snapshot_download(REPO, revision=REVISION))
 agent.predict(build_state("warmup", None), QUESTION)
 
 
@@ -89,5 +95,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8089); ap.add_argument("--head-json")
+    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8089); ap.add_argument("--head-json"); ap.add_argument("--model-dir")
     ThreadingHTTPServer(("127.0.0.1", ap.parse_args().port), Handler).serve_forever()
