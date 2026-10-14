@@ -11,6 +11,7 @@
 // across tests would hit that cache and skip the code under test.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 import type { FullClassificationResult } from '../src/content-classifier.ts';
@@ -120,7 +121,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Probe reports down so use the cloud classifiers', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -154,7 +155,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Please add a small import statement to that file', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -183,7 +184,7 @@ describe('classifyPrompt fallback chain', () => {
       await classifyPrompt('Rename this helper so the excluded stealth model never sees it', {
         allowCloudFallback: true,
         cfg: { exclude: { models: ['openrouter/stealth/*'] } } as any,
-        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -207,7 +208,7 @@ describe('classifyPrompt fallback chain', () => {
         fallbackModel: 'gemma-backup',
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -233,7 +234,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Design a database schema for user settings', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -250,7 +251,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Compare the two sorting algorithms for me now', {
         allowCloudFallback: false,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
         allowStaticFallback: false,
@@ -282,7 +283,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
         context: {
@@ -322,7 +323,7 @@ describe('classifyPrompt fallback chain', () => {
         {
           allowCloudFallback: true,
           cfg: {} as any,
-          cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+          cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
           completeSimple,
           findModel,
         }
@@ -346,7 +347,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Explain what a closure is briefly to me', {
         allowCloudFallback: true,
         cfg: { providers: {} } as any,
-        cache: { classifier_fallback_models: [], available_models: [] } as any,
+        cache: { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE, available_models: [] } as any,
         completeSimple: vi.fn(),
         findModel: vi.fn(),
         allowStaticFallback: true,
@@ -370,7 +371,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -397,7 +398,7 @@ describe('classifyPrompt fallback chain', () => {
         // it must still be tried FIRST, deduplicated, not skipped in place.
         pinnedCloudModel: 'prov/cached-b',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -418,7 +419,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });

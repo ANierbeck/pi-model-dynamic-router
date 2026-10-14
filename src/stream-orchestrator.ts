@@ -287,6 +287,16 @@ export interface StreamOrchestratorContext {
 export class StreamOrchestrator {
   constructor(public ctx: StreamOrchestratorContext) {}
 
+  /**
+   * Session boundary (session_shutdown in index.ts): the inheritable
+   * previous category must NOT survive into the next session — a 'continue'
+   * classification in a fresh session would otherwise inherit the previous
+   * session's category (cross-session context leak, PR #70 review).
+   */
+  resetLastCategory(): void {
+    this.ctx.lastClassifiedCategory = undefined;
+  }
+
   // ── groupStream ─────────────────────────────────────────────────────────
 
   groupStream(

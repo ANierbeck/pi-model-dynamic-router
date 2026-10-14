@@ -6,6 +6,7 @@
 // classification cache).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +34,7 @@ const reply = (obj: Record<string, unknown>) => ({
   stopReason: 'stop',
 });
 const modelFor = (ref: string) => ({ provider: ref.split('/')[0], id: ref.split('/').slice(1).join('/') });
-const cloudCache = (...refs: string[]): Cache => ({ classifier_fallback_models: refs }) as Cache;
+const cloudCache = (...refs: string[]): Cache => ({ classifier_fallback_models: refs, classifier_fallback_probe_sig: PROBE_SIGNATURE }) as Cache;
 
 function cloud(refs: string[], answers: Array<(ref: string) => unknown>, extra: Record<string, unknown> = {}) {
   let i = 0;

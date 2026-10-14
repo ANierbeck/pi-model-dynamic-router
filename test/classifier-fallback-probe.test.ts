@@ -7,6 +7,7 @@
 // provider setup, not just one user with mistral-zai/mistral-small-latest.
 
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import {
   selectClassifierCandidates,
   getCachedFallbackModels,
@@ -538,7 +539,7 @@ describe('getCachedFallbackModels + hasProbedFallback', () => {
   });
 
   it('returns the cached list when probe has run (even if empty)', () => {
-    const cache: Cache = { classifier_fallback_models: ['openrouter/model-a'] };
+    const cache: Cache = { classifier_fallback_models: ['openrouter/model-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE };
     expect(getCachedFallbackModels(cache)).toEqual(['openrouter/model-a']);
     expect(hasProbedFallback(cache)).toBe(true);
   });
@@ -546,7 +547,7 @@ describe('getCachedFallbackModels + hasProbedFallback', () => {
   it('hasProbedFallback is true even when the probe found nothing (empty array = probe ran)', () => {
     // An empty array is a valid result — means the probe ran but all failed.
     // The classifier should then fall back to selectClassifierCandidates.
-    const cache: Cache = { classifier_fallback_models: [] };
+    const cache: Cache = { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE };
     expect(getCachedFallbackModels(cache)).toEqual([]);
     expect(hasProbedFallback(cache)).toBe(true);
   });
