@@ -11,6 +11,7 @@
 // across tests would hit that cache and skip the code under test.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 import type { FullClassificationResult } from '../src/content-classifier.ts';
@@ -85,7 +86,7 @@ describe('classifyPrompt fallback chain', () => {
       });
 
       expect(callOllama).toHaveBeenCalledTimes(1);
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
       expect(result.reason).toContain('Ollama unavailable');
     });
 
@@ -101,7 +102,7 @@ describe('classifyPrompt fallback chain', () => {
 
       // classifyPrompt must NOT throw — it degrades to a routed fallback so
       // the stream can continue via the fallback group.
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
       expect(result.reason).toContain('Ollama unavailable');
     });
   });
@@ -110,7 +111,7 @@ describe('classifyPrompt fallback chain', () => {
     it('skips both Ollama attempts and uses the cloud fallback when the daemon is unreachable', async () => {
       vi.mocked(isOllamaAvailable).mockResolvedValue(false);
       vi.mocked(callOllama).mockResolvedValue(
-        ollamaReply({ category: 'trivial', reason: 'must not be used', confidence: 1 })
+        ollamaReply({ category: 'simple', reason: 'must not be used', confidence: 1 })
       );
       const completeSimple = vi.fn().mockResolvedValue(
         cloudReply({ category: 'simple', reason: 'from cloud', confidence: 0.9 })
@@ -120,7 +121,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Probe reports down so use the cloud classifiers', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -154,7 +155,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Please add a small import statement to that file', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -183,7 +184,7 @@ describe('classifyPrompt fallback chain', () => {
       await classifyPrompt('Rename this helper so the excluded stealth model never sees it', {
         allowCloudFallback: true,
         cfg: { exclude: { models: ['openrouter/stealth/*'] } } as any,
-        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -207,7 +208,7 @@ describe('classifyPrompt fallback chain', () => {
         fallbackModel: 'gemma-backup',
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -233,7 +234,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Design a database schema for user settings', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -250,14 +251,14 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Compare the two sorting algorithms for me now', {
         allowCloudFallback: false,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
         allowStaticFallback: false,
       });
 
       expect(completeSimple).not.toHaveBeenCalled();
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
     });
 
     it('rejects a spurious hint:* echo from a cloud model and tries the next one (voxtral regression, review 2026-09-26 Important #1)', async () => {
@@ -267,7 +268,7 @@ describe('classifyPrompt fallback chain', () => {
       // itself contains NO HINT, so the reply is spurious and must be skipped
       // like any other bad reply instead of being returned raw (which
       // polluted lastClassifiedCategory and misrouted via CATEGORY_TO_GROUP
-      // miss → 'fallback' → tactical).
+      // miss → 'continue' → tactical).
       const completeSimple = vi
         .fn()
         .mockResolvedValueOnce(
@@ -282,7 +283,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
         context: {
@@ -322,7 +323,7 @@ describe('classifyPrompt fallback chain', () => {
         {
           allowCloudFallback: true,
           cfg: {} as any,
-          cache: { classifier_fallback_models: ['prov/cloud-a'] } as any,
+          cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
           completeSimple,
           findModel,
         }
@@ -346,7 +347,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Explain what a closure is briefly to me', {
         allowCloudFallback: true,
         cfg: { providers: {} } as any,
-        cache: { classifier_fallback_models: [], available_models: [] } as any,
+        cache: { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE, available_models: [] } as any,
         completeSimple: vi.fn(),
         findModel: vi.fn(),
         allowStaticFallback: true,
@@ -370,7 +371,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -386,7 +387,7 @@ describe('classifyPrompt fallback chain', () => {
     it('moves a pinned model that is already in the cached list to position 0 — no duplicate tries (review 2026-09-26, Minor #3)', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'exploration', reason: 'from pinned', confidence: 0.9 })
+        cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 })
       );
       // findModel resolves refs in call order: the pinned ref must be FIRST.
       const findModel = vi.fn((ref: string) => (ref === 'prov/cached-b' || ref === 'prov/cached-a' ? mockModel : undefined));
@@ -397,14 +398,14 @@ describe('classifyPrompt fallback chain', () => {
         // it must still be tried FIRST, deduplicated, not skipped in place.
         pinnedCloudModel: 'prov/cached-b',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
 
       expect(findModel.mock.calls[0]?.[0]).toBe('prov/cached-b');
       expect(completeSimple).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ category: 'exploration', reason: 'from pinned', confidence: 0.9 });
+      expect(result).toEqual({ category: 'standard', reason: 'from pinned', confidence: 0.9 });
     });
 
     it('skips an unresolvable pinned model and continues with the cached list', async () => {
@@ -418,7 +419,7 @@ describe('classifyPrompt fallback chain', () => {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'] } as any,
+        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
         completeSimple,
         findModel,
       });
@@ -474,7 +475,7 @@ describe('classifyPrompt fallback chain', () => {
 
     it('returns a plain classification for a trivial task', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
-        ollamaReply({ category: 'trivial', reason: 'trivial task', confidence: 0.9 })
+        ollamaReply({ category: 'simple', reason: 'trivial task', confidence: 0.9 })
       );
 
       const result = await classifyPrompt('Show me the todo list in this repository now', {
@@ -483,7 +484,7 @@ describe('classifyPrompt fallback chain', () => {
       });
 
       expect('hintType' in result).toBe(false);
-      expect(result.category).toBe('trivial');
+      expect(result.category).toBe('simple');
     });
   });
 
@@ -500,17 +501,17 @@ describe('classifyPrompt fallback chain', () => {
 
       // Both attempts return invalid JSON → both throw → fallback result.
       expect(callOllama).toHaveBeenCalledTimes(2);
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
     });
 
     it('handles an empty prompt without throwing', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
-        ollamaReply({ category: 'trivial', reason: 'empty prompt', confidence: 0.8 })
+        ollamaReply({ category: 'simple', reason: 'empty prompt', confidence: 0.8 })
       );
 
       const result = await classifyPrompt('', { cache: localModelCache() });
 
-      expect(result.category).toBe('trivial');
+      expect(result.category).toBe('simple');
     });
   });
 });

@@ -19,15 +19,13 @@
  * started with a HINT marker — see the prompt's HINT RULE.
  */
 export const VALID_CATEGORIES = [
-  'trivial',
   'simple',
   'code_simple',
   'standard',
   'code_complex',
   'design',
   'planning',
-  'exploration',
-  'fallback',
+  'continue',
 ] as const;
 
 export const CLASSIFICATION_PROMPT = `Classify the following user request into exactly one category:
@@ -57,27 +55,55 @@ If the CURRENT REQUEST (not the Context block) contains a HINT instruction
 - For models: {"category": "hint:example-model-1", "reason": "User specified model via HINT", "confidence": 1.0}
 - For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
 
-If NO HINT is present, classify normally into one of these categories:
+If NO HINT is present, first apply this DECISION PROCEDURE:
 
-- trivial:      Very simple requests ("list files", "show TODOs", "what's in this file?", "read this file")
-- simple:       Simple questions ("explain briefly", "summarize", "what does this do?", "tell me about")
-- code_simple:   Small code changes (1–10 lines, syntax fixes, renames, typos)
-- standard:      Standard requests (general questions, moderate complexity, "explain this concept")
-- code_complex:  Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation.
-- design:       Architecture, system design, API design, database schema
-- planning:     Task breakdown, roadmaps, prioritization, project planning
-- exploration:  Vague or open-ended questions with no clear deliverable ("what could we do about X?", brainstorming, unclear requirements). NOT code analysis.
-- fallback:     Ambiguous, or a short continuation/confirmation of previous work
+Step 1 - Does the request open a NEW act with new work content? Does it ask
+or instruct the assistant to analyze, review, design, draft, explain, solve,
+research, change code, or run a NEW specific operation - opening a work item
+of its own, even if it builds on previous context ("ok ...", "yes, but ...")?
+Then it is a TASK: classify by task type below. Referencing earlier context
+does NOT make a request a continuation.
+
+Step 2 - If instead the request only keeps the CURRENT act moving, classify
+as continue:
+  - bare go-aheads and approvals ("do it", "go ahead", "yes", "Machen!",
+    "weiter", "ok", "Und? fertig?")
+  - short directives that mechanically EXECUTE or conclude the current act:
+    commit, build, push, rebase, run the tests, prepare it ("Bitte
+    committen", "bitte neu bauen", "yes, please rebase on main", "ja, mache
+    erst die Tests", "Dann bereite alles dafuer vor.") - including approval +
+    directive ("Ok, sieht gut aus. Bitte committen")
+  - corrections of the action the assistant is CURRENTLY performing ("stop,
+    you don't need to figure out the 503" while it is doing exactly that)
+  - mid-task status reports feeding results of the current task back
+    ("done, and I see: ...") and status checks on the ongoing work
+    ("hast du das committet und gepusht?")
+
+Boundary: mechanical execution/conclusion of the CURRENT act -> continue;
+new intellectual work content (a new problem, review, design, analysis,
+question, or instruction with its own goal) -> task category. When in doubt
+-> task category.
+
+Task categories:
+
+- simple:       Simple requests with clear, short answers ("list files", "show TODOs", "what's in this file?", "read this file", "summarize", "explain briefly", "run this command")
+- code_simple:  Small code changes (1-10 lines, syntax fixes, renames, typos)
+- standard:     Standard requests (general questions, moderate complexity, look something up and report, "explain this concept")
+- code_complex: Substantial changes (refactoring, debugging, new features, >50 lines). Also: analyzing, reviewing, or explaining existing code/documentation, checking a plan before an action ("before we commit, make sure ...").
+- design:       Architecture, system design, API design, database schema, weighing options and arguing a design position.
+- planning:     Task breakdown, roadmaps, prioritization, project planning, synchronization questions ("did we sync that on GH?").
+- continue:     NOT a self-contained task - see Step 2.
 
 The request may be in any language. Classify by complexity and required model capability.
-Short requests with clear, simple answers → trivial or simple.
-"List TODOs", "Show me the file" → trivial.
-"Explain this code" (simple code) → simple.
-"Explain this concept" → standard.
-"Design an architecture" → design.
-Short imperatives that continue prior work ("do it", "go ahead", "yes", "Machen!", "weiter") → fallback.
-"Analyze / review / explain the code / docs" → code_complex (not exploration).
-
+Short requests with clear, simple answers -> simple.
+"List TODOs", "Show me the file", "run the whoami command" -> simple.
+"Explain this code" (simple code) -> simple.
+"Explain this concept" -> standard.
+"Design an architecture" -> design.
+Short imperatives that continue prior work ("do it", "go ahead", "yes", "Machen!", "weiter") -> continue.
+"Analyze / review / explain the code / docs" -> code_complex.
+A correction or question that opens a new act ("stop, that wasn't an instruction - are they really deleted?", "save that in your memory") -> the matching task category, NOT continue.
+Conversational follow-ups that contain new work are TASKS: "schau mal, meine Antwort sollte angekommen sein, oder?" -> standard; "Dann löse noch das letzte Problem" -> code_complex; "mach es zu einer allgemeinen Aussage" -> standard; "yes I want to focus on the spec part, please ..." -> design.
 {{context_block}}Current request: "{{prompt}}"
 
 Respond with JSON only, no extra text:

@@ -221,7 +221,7 @@ describe('HINT Classification', () => {
     it('falls through to LLM for "HINT: " with empty payload', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
       vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({ category: 'fallback', reason: 'Empty HINT', confidence: 0.5 })
+        JSON.stringify({ category: 'continue', reason: 'Empty HINT', confidence: 0.5 })
       );
       const result = await classifyPrompt('HINT: ', { cache: localModelCache() });
       // detectHintDirectly returns null → classifyPrompt calls LLM
@@ -231,12 +231,12 @@ describe('HINT Classification', () => {
     it('falls through to LLM for incomplete group hint "HINT: use group"', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
       vi.mocked(callOllama).mockResolvedValue(
-        JSON.stringify({ category: 'fallback', reason: 'Incomplete group hint', confidence: 0.5 })
+        JSON.stringify({ category: 'continue', reason: 'Incomplete group hint', confidence: 0.5 })
       );
       const result = await classifyPrompt('HINT: use group', { cache: localModelCache() });
       // detectHintDirectly returns null → classifyPrompt calls LLM
       expect(vi.mocked(callOllama)).toHaveBeenCalled();
-      expect(result).toHaveProperty('category', 'fallback');
+      expect(result).toHaveProperty('category', 'continue');
     });
   });
 

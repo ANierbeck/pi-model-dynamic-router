@@ -10,6 +10,7 @@
 // state — no hardcoded model claims.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 
 vi.mock('../src/ollama-utils', () => {
   const ollamaUtils = {
@@ -27,7 +28,7 @@ import type { Group } from '../src/types.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
 
 const VALID_JSON = JSON.stringify({
-  category: 'trivial',
+  category: 'simple',
   reason: 'test',
   confidence: 0.9,
 });
@@ -60,14 +61,14 @@ describe('getLastClassificationSource — who actually classified', () => {
     const result = await classifyPrompt('please structure the module list carefully for us', {
       allowCloudFallback: true,
       cfg: { model_groups: {} } as any,
-      cache: { classifier_fallback_models: ['mistral/ministral-3b-latest'] } as any,
+      cache: { classifier_fallback_models: ['mistral/ministral-3b-latest'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
       completeSimple: vi.fn(async () => ({
         content: [{ type: 'text', text: VALID_JSON }],
         stopReason: 'stop',
       })),
       findModel: vi.fn(() => ({})),
     });
-    expect(result.category).toBe('trivial');
+    expect(result.category).toBe('simple');
     expect(getLastClassificationSource()?.source).toBe('cloud:mistral/ministral-3b-latest');
   });
 

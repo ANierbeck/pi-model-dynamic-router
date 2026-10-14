@@ -34,7 +34,7 @@ vi.mock("../src/ollama-utils", () => ({
 }));
 
 const NO_SCHEMA_501 = 'Ollama HTTP 501: {"error":"structured output is unavailable"}';
-const VALID = '{"category": "trivial", "reason": "test", "confidence": 0.9}';
+const VALID = '{"category": "simple", "reason": "test", "confidence": 0.9}';
 
 // Prompts must be unique across the whole suite: classifyPrompt caches
 // successful results in a module-level LRU (5 min TTL) keyed by raw prompt.
@@ -51,7 +51,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     callOllama.mockResolvedValueOnce(VALID);
     const cache: Record<string, any> = localModelCache();
     const r1 = await classifyPrompt("no-schema marking: first turn prompt", { cache });
-    expect(r1?.category).toBe("trivial");
+    expect(r1?.category).toBe("simple");
     // The failing primary must now be marked.
     expect(cache.classifier_no_schema).toBeTruthy();
     const marked = Object.keys(cache.classifier_no_schema);
@@ -62,7 +62,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     callOllama.mockClear();
     callOllama.mockResolvedValue(VALID);
     const r2 = await classifyPrompt("no-schema marking: second turn prompt", { cache });
-    expect(r2?.category).toBe("trivial");
+    expect(r2?.category).toBe("simple");
     expect(callOllama).toHaveBeenCalledTimes(1);
     expect(String(callOllama.mock.calls[0][0])).not.toBe(marked[0]);
   });
@@ -74,7 +74,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     callOllama.mockResolvedValueOnce(VALID);
     const cache: Record<string, any> = localModelCache();
     const r1 = await classifyPrompt("timeout marking: first turn prompt", { cache });
-    expect(r1?.category).toBe("trivial");
+    expect(r1?.category).toBe("simple");
     expect(cache.classifier_no_schema).toBeUndefined();
 
     // Second call: the primary is tried again — two invocations
@@ -83,7 +83,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     callOllama.mockRejectedValueOnce(new Error("no response within timeout"));
     callOllama.mockResolvedValueOnce(VALID);
     const r2 = await classifyPrompt("timeout marking: second turn prompt", { cache });
-    expect(r2?.category).toBe("trivial");
+    expect(r2?.category).toBe("simple");
     expect(callOllama).toHaveBeenCalledTimes(2);
   });
 
@@ -105,7 +105,7 @@ describe("classifier no-structured-output self-healing (live incident 2026-09-26
     callOllama.mockClear();
     callOllama.mockResolvedValue(VALID);
     const r = await classifyPrompt("aged mark: second turn prompt", { cache });
-    expect(r?.category).toBe("trivial");
+    expect(r?.category).toBe("simple");
     expect(callOllama).toHaveBeenCalledTimes(1);
     expect(String(callOllama.mock.calls[0][0])).toBe(markedName);
   });

@@ -29,21 +29,20 @@ import {
   buildClassificationPrompt,
   extractClassificationJson,
   isHintCategory,
+  VALID_CATEGORIES,
 } from './classification-prompt.ts';
 
 // ── Types ────────────────────────────────────────────────────────────────
 
 export interface ClassificationResult {
   category: 
-    | 'trivial'
-    | 'simple' 
+    | 'simple'
     | 'code_simple'
     | 'standard'
-    | 'code_complex' 
+    | 'code_complex'
     | 'design'
     | 'planning'
-    | 'exploration'
-    | 'fallback';
+    | 'continue';
   reason: string;
   confidence?: number;
 }
@@ -334,7 +333,7 @@ function applyConfidenceGate(
 ): ClassificationResult {
   if (parsed.confidence === undefined || parsed.confidence >= MIN_CONFIDENCE) return parsed;
   const gated: ClassificationResult = {
-    category: lastCategory ?? 'fallback',
+    category: lastCategory ?? 'continue',
     reason: `Low confidence (${parsed.confidence}) — ${lastCategory ? 'using prior context' : 'falling back'}`,
     confidence: parsed.confidence,
   };
@@ -533,7 +532,7 @@ function writeDecisionLog(
   const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
   if (!log) return;
   const rawCategory = 'category' in raw ? raw.category : undefined;
-  const inherited = result !== raw && rawCategory === 'fallback';
+  const inherited = result !== raw && rawCategory === 'continue';
   if (inherited) holder.trace.steps.push('fallback-inherit');
   const stage = holder.source?.startsWith('laya:')
     ? 'laya'
@@ -564,26 +563,26 @@ function writeDecisionLog(
 }
 
 /**
- * Phase 2 of the task-type-balancing plan: a 'fallback' classification ("could
+ * Phase 2 of the task-type-balancing plan: a 'continue' classification ("could
  * not tell", e.g. a long continuation like "ok, then carry on with the rest")
  * inherits the previous turn's category — the same idea as the low-confidence
  * and short-prompt momentum paths — instead of dropping to the default
- * fallback→tactical group. Applied at the single exit of classifyPrompt so
- * every producer of 'fallback' (LLM, cache, static, classifier-unavailable) is
+ * continue→tactical group. Applied at the single exit of classifyPrompt so
+ * every producer of 'continue' (LLM, cache, static, classifier-unavailable) is
  * covered and the classification cache never stores an inherited result.
- * HINT and compaction results carry no 'fallback' category and pass through;
+ * HINT and compaction results carry no 'continue' category and pass through;
  * without a previous category (fresh session) the default stands.
  */
 function inheritPreviousCategory(
   result: FullClassificationResult,
   lastCategory: ClassificationResult['category'] | undefined,
 ): FullClassificationResult {
-  if (!('category' in result) || result.category !== 'fallback') return result;
-  if (!lastCategory || lastCategory === 'fallback') return result;
+  if (!('category' in result) || result.category !== 'continue') return result;
+  if (!lastCategory || lastCategory === 'continue') return result;
   return {
     ...result,
     category: lastCategory,
-    reason: `Fallback classification — inheriting previous task category (${lastCategory})`,
+    reason: `Continue classification — inheriting previous task category (${lastCategory})`,
   };
 }
 
@@ -724,8 +723,8 @@ async function classifyPromptUncounted(
       // If category is invalid but structure is valid, map to fallback
       const rawParsed = parsed as any;
       if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
-        warnLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'fallback'`);
-        return { category: 'fallback', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
+        warnLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'continue'`);
+        return { category: 'continue', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
       }
       throw new Error(`Invalid format: ${response}`);
     }
@@ -739,7 +738,7 @@ async function classifyPromptUncounted(
       if (!hint) {
         routerLog(`[classifier] Unusable HINT target received from LLM: ${parsed.category}`);
         return {
-          category: 'fallback',
+          category: 'continue',
           reason: 'Empty or malformed HINT target from LLM',
           confidence: 0.5,
         };
@@ -1100,12 +1099,12 @@ async function classifyPromptUncounted(
   // Static fallback
   if (!allowStaticFallback) {
     errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    // The 'fallback' category routes via CATEGORY_TO_GROUP (fallback→tactical)
+    // The 'continue' category routes via CATEGORY_TO_GROUP (continue→tactical)
     // — a capable model, exactly what the F5 fix (2026-09-02) wanted; no
     // escalation synthesis is needed (see the module-level note above).
     noteSource('fallback');
     return {
-      category: 'fallback',
+      category: 'continue',
       reason: 'Ollama unavailable, static classifier disabled',
       confidence: 0,
     };
@@ -1123,7 +1122,7 @@ function isValidClassification(obj: any): obj is ClassificationResult {
   return (
     obj &&
     typeof obj.category === 'string' &&
-    ['trivial', 'simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'exploration', 'fallback'].includes(
+    (VALID_CATEGORIES as readonly string[]).includes(
       obj.category
     ) &&
     typeof obj.reason === 'string'
@@ -1163,8 +1162,7 @@ function isValidFullClassification(obj: any): obj is FullClassificationResult {
 // ── Mapping ──────────────────────────────────────────────────────────────
 
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
-  trivial:      'scout',       // any free model
-  simple:       'operational', // GDPval ≥ 300
+  simple:       'scout',       // v2 (owner decision 2026-10-13): short real tasks stay cheap
   code_simple:  'simple',      // GDPval ≥ 300, max_cost=0 (free models only)
   standard:     'operational', // GDPval ≥ 300
   code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
@@ -1177,8 +1175,7 @@ export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string>
   // chain: strategic → tactical (glm free tank, emergency only).
   design:       'planning',  // top tier only (min_gdpval 1700)
   planning:     'planning',  // top tier only (min_gdpval 1700)
-  exploration:  'scout',       // any model, cheap
-  fallback:     'tactical',   // uncertain → use a decent model, not a free one
+  continue:     'tactical',   // was fallback: continuation / uncertain → a decent model, not a free one
 };
 
 /**
@@ -1235,8 +1232,8 @@ export function classifyStatically(prompt: string): ClassificationResult {
       (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
        lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
     return {
-      category: 'trivial',
-      reason: 'Simple request - trivial classification',
+      category: 'simple',
+      reason: 'Simple lookup request - simple classification',
       confidence: 0.9,
     };
   }
@@ -1341,16 +1338,16 @@ export function classifyStatically(prompt: string): ClassificationResult {
   
   if (explorationKeywords.some(kw => lowerPrompt.includes(kw))) {
     return {
-      category: 'exploration',
-      reason: 'Exploration task - exploration classification',
+      category: 'standard',
+      reason: 'Open-ended request - standard classification',
       confidence: 0.75,
     };
   }
 
-  // Fallback
+  // Could not classify: continue inherits the previous category (see inheritPreviousCategory)
   return {
-    category: 'fallback',
-    reason: 'Could not classify - fallback',
+    category: 'continue',
+    reason: 'Could not classify - continue',
     confidence: 0.5,
   };
 }
