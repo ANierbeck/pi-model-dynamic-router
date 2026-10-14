@@ -23,20 +23,24 @@ PROMPT_TS = pathlib.Path(__file__).resolve().parents[2] / "src" / "classificatio
 
 
 def production_task_text() -> tuple[str, list[str]]:
+    """The FROZEN v2-r3 short head (Laya's window is ~1024 tokens; the full
+    production prompt body alone would fill it). Byte-identical to
+    LAYA_HEAD_V2_INSTRUCTIONS in src/classification-prompt.ts and to the
+    training/serving head ~/.laya-ft/data/laya_head_v2.json (written by
+    to_laya_jsonl_v2.py). --head-json overrides this with the artifact copy."""
     src = PROMPT_TS.read_text()
-    prompt = src[src.index("export const CLASSIFICATION_PROMPT = `") + len("export const CLASSIFICATION_PROMPT = `"):]
-    prompt = prompt[: prompt.index("`;")]
-    body = prompt[prompt.index("If NO HINT is present, classify normally"):prompt.index("{{context_block}}")]
-    body = body.replace("If NO HINT is present, classify normally into one of these categories:",
-                        "Classify the user's request into exactly one of these categories:").strip()
-    cats = re.findall(r"^- (\w+):", body, flags=re.M)
-    return body, cats
+    seg = src[src.index("export const LAYA_HEAD_V2_INSTRUCTIONS ="):]
+    seg = seg[: seg.index(";")]
+    instructions = "".join(p.replace("\\'", "'") for p in re.findall(r"'((?:\\.|[^'\\])*)'", seg))
+    catseg = src[src.index("export const VALID_CATEGORIES = ["):]
+    cats = re.findall(r"'([a-z_]+)'", catseg[: catseg.index("]")])
+    return instructions, cats
 
 
 # --head-json <file>: serve a fine-tuned model with EXACTLY the head it was trained on
 # ({"instructions": str, "categories": [str]}, written by ~/.laya-ft/to_laya_jsonl_v2.py).
 # Train/serve parity is the hard rule: a different head measures prompt drift, not the model.
-# Without the flag the head is the production prompt (zero-shot spike behaviour, 9 categories).
+# Without the flag the head is the production prompt (zero-shot, v2-r3: 7 categories).
 _early = argparse.ArgumentParser(add_help=False)
 _early.add_argument("--head-json")
 _head_path = _early.parse_known_args()[0].head_json
@@ -45,7 +49,7 @@ if _head_path:
     INSTRUCTIONS, CATEGORIES = _h["instructions"], list(_h["categories"])
 else:
     INSTRUCTIONS, CATEGORIES = production_task_text()
-    assert len(CATEGORIES) == 9, CATEGORIES
+    assert len(CATEGORIES) == 7, CATEGORIES
 QUESTION = {"category": {"type": "choice", "instructions": INSTRUCTIONS, "criteria": CATEGORIES}}
 
 

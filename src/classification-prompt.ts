@@ -147,32 +147,38 @@ export function buildClassificationPrompt(userPrompt: string, contextBlock: stri
 }
 
 /**
- * Build the typed-decision question that Laya (a `choice`-question model) receives.
- * Read directly from `CLASSIFICATION_PROMPT` so the Laya question surface is
- * identical to the production classifier's — no duplicated category text.
- * HINT handling is ignored (deterministic, runs before any classifier); only
- * the category definitions and the instruction body are taken.
+ * The FROZEN short instruction head the fine-tuned Laya classifier was
+ * trained on (v2-r3 taxonomy, frozen 2026-10-13). Byte-identical to
+ * SHORT_INSTRUCTIONS in ~/.laya-ft/to_laya_jsonl_v2.py, which writes it to
+ * laya_head_v2.json; the sidecar serves exactly this head via --head-json
+ * (train/serve parity is the hard rule). Laya's window is ~1024 tokens and
+ * the full v2-r3 production prompt body alone is ~1000+ tokens, so the head
+ * is deliberately condensed — the long-form rules are distilled through the
+ * training LABELS, not the question text. DO NOT edit this text without
+ * retraining and re-validating; the criteria order below is the choice-head
+ * order (choice index -> category by position).
+ */
+export const LAYA_HEAD_V2_INSTRUCTIONS =
+  'Classify the user\'s request into exactly one category. ' +
+  'simple: short factual question, lookup, read or run something. ' +
+  'code_simple: small clear code change. ' +
+  'standard: general or multi-step request with a clear procedure. ' +
+  'code_complex: substantial coding, debugging, review or analysis of existing code or docs. ' +
+  'design: architecture, API or system design, weighing options. ' +
+  'planning: task breakdown, roadmap, prioritization. ' +
+  'continue: NOT a self-contained task - a go-ahead, a mechanical step of the current act ' +
+  '(commit, build, rebase), a status check or a correction of what the assistant is doing right now. ' +
+  'A request that opens a new act (new question or instruction) is never continue.';
+
+/**
+ * The typed-decision question Laya receives. The head is the frozen
+ * LAYA_HEAD_V2_INSTRUCTIONS (not derived from CLASSIFICATION_PROMPT — see
+ * its doc comment), criteria in the trained choice-head order. Used for the
+ * prompt-window budget (the client sends only prompt + context; the sidecar
+ * owns the question head and must serve the same one via --head-json).
  */
 export function buildClassifierLayaQuestion(): { instructions: string; criteria: string[] } {
-  const prompt = CLASSIFICATION_PROMPT;
-  const start = prompt.indexOf('If NO HINT is present, classify normally');
-  const end = prompt.indexOf('{{context_block}}');
-  if (start < 0 || end < 0 || start >= end) {
-    throw new Error('classification prompt surface changed unexpectedly');
-  }
-  const body = prompt.slice(start, end).trim();
-  const instructions = 'Classify the user\'s request into exactly one of these categories:\n\n' + body.replace(/^If NO HINT is present, classify normally into one of these categories:\n?/, '');
-  const criteria: string[] = [];
-  for (const line of body.split('\n')) {
-    const m = /^-\s+(\w+):\s*(.*)$/.exec(line);
-    if (m) {
-      criteria.push(m[1]);
-    }
-  }
-  if (criteria.length !== VALID_CATEGORIES.length) {
-    throw new Error(`classification prompt category list changed: ${criteria.length} found, expected ${VALID_CATEGORIES.length}`);
-  }
-  return { instructions, criteria };
+  return { instructions: LAYA_HEAD_V2_INSTRUCTIONS, criteria: [...VALID_CATEGORIES] };
 }
 
 /**

@@ -52,7 +52,7 @@ async function stopGlobalServer(): Promise<void> {
 
 describe('laya-classifier', () => {
   const ENDPOINT = (p: number) => `http://127.0.0.1:${p}`; // base URL, like the shipped default
-  const okResponse = { category: 'simple', confidence: 0.5, probabilities: { trivial: 0.05, simple: 0.5, standard: 0.3, code_complex: 0.1, fallback: 0.05 }, ms: 10 };
+  const okResponse = { category: 'simple', confidence: 0.5, probabilities: { simple: 0.5, standard: 0.3, code_complex: 0.1, code_simple: 0.05, continue: 0.05 }, ms: 10 };
 
   async function startServer(mode: 'ok' | 'refused' | 'timeout' | 'http500' | 'malformed'): Promise<number> {
     return withMutex(async () => {
@@ -109,11 +109,11 @@ describe('laya-classifier', () => {
 
   it('builds the question from the production prompt surface (parity with the wrapper)', () => {
     const { instructions, criteria } = buildClassifierLayaQuestion();
-    // The wrapper derives the same 9 criteria from the same source; parity is
-    // asserted by the classification tests below — here we confirm it is
-    // constructible and non-empty.
+    // The wrapper derives the same 7 criteria (v2-r3 taxonomy) from the same
+    // source; parity is asserted by the classification tests below — here we
+    // confirm it is constructible, non-empty, and in head order.
     expect(instructions).toContain("Classify the user's request");
-    expect(criteria.length).toBe(9);
+    expect(criteria).toEqual(['simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'continue']);
   });
 
   it('probes successfully and marks the stage available', async () => {

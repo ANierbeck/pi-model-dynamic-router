@@ -7,7 +7,7 @@
 //   -> { category: string, confidence: number, probabilities: Record<string, number>, ms: number }
 //
 // Behavior:
-// - One forward pass, a single `choice` question over the 9 VALID_CATEGORIES
+// - One forward pass, a single `choice` question over the 7 VALID_CATEGORIES
 //   plus the production classifier's own category definitions
 //   (buildClassifierLayaQuestion) — a single source of truth.
 // - On connection refused / timeout / HTTP error / malformed JSON the stage is
@@ -41,8 +41,9 @@ const TRUNCATION_MARKER = '\n[... TRUNCATED ...]\n';
 
 /**
  * Characters available for prompt + context block. Every model input starts
- * with the question head (instructions + the 9 criteria — 408 tokens measured
- * in the spike), so the window is not fully ours. The head size is derived
+ * with the question head (instructions + the 7 criteria — 161 tokens
+ * measured for the v2-r3 head), so the window is not fully ours. The head
+ * size is derived
  * from the production prompt surface instead of being hardcoded, so it follows
  * edits to the category definitions.
  */
@@ -213,14 +214,14 @@ export interface LayaAnswer {
 /**
  * Apply the stage's veto rules to a raw answer; null = the chain must go on.
  * - below `confidence_threshold` (written so that NaN also fails);
- * - `fallback`: it means "could not tell", and in the spike it was the most
- *   frequent confident answer (51 of 85) — returning it would shadow every
- *   better classifier behind this stage;
- * - anything outside the production taxonomy.
+ * - anything outside the production taxonomy. The legacy 9-category spike
+ *   answered `fallback` = "could not tell" — under the v2 taxonomy that
+ *   label is simply invalid, and an invalid answer must not shadow the
+ *   better classifier stages behind this one.
  */
 function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult | null {
   if (!(answer.confidence >= threshold)) return null;
-  if (answer.category === 'fallback' || !VALID_CATEGORIES.includes(answer.category as never)) return null;
+  if (!VALID_CATEGORIES.includes(answer.category as never)) return null;
   const top = Object.entries(answer.probabilities)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2);
@@ -230,7 +231,7 @@ function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult 
 
 /**
  * Like {@link classifyWithLaya} but also exposes the raw answer when the stage
- * falls through (low confidence, `fallback`) — shadow mode logs exactly that.
+ * falls through (low confidence, invalid category) — shadow mode logs exactly that.
  * Null = disabled, sidecar unavailable, or the request failed.
  */
 export async function classifyWithLayaDetailed(

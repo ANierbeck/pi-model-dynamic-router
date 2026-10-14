@@ -93,7 +93,7 @@ describe('laya prompt truncation (emergency brake, wrapper is exact)', () => {
   const budget = () => layaPromptBudgetChars();
 
   it('derives the budget from the question head — the head eats part of the window', () => {
-    // 1,024 tokens * 3 chars minus the instructions + 9 criteria that are part of every input.
+    // 1,024 tokens * 3 chars minus the instructions + 7 criteria that are part of every input.
     expect(budget()).toBeGreaterThan(500);
     expect(budget()).toBeLessThan(1024 * 3);
   });
