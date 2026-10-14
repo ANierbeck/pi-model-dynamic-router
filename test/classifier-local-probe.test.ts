@@ -33,7 +33,7 @@ function cacheWith(...models: ReturnType<typeof ollama>[]): Cache {
 
 /** Answers every probe case with an accepted category (case-aware, like the cloud probe test). */
 function goodReply(prompt: string): string {
-  if (prompt.includes('What is in this file?')) return JSON.stringify({ category: 'trivial', reason: 'r', confidence: 0.9 });
+  if (prompt.includes('What is in this file?')) return JSON.stringify({ category: 'simple', reason: 'r', confidence: 0.9 });
   if (prompt.includes('Fix the typo in line 3')) return JSON.stringify({ category: 'code_simple', reason: 'r', confidence: 0.9 });
   return JSON.stringify({ category: 'simple', reason: 'r', confidence: 0.9 });
 }

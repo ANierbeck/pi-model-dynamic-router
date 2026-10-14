@@ -109,9 +109,9 @@ interface ProbeCase {
 
 export const PROBE_CASES: readonly ProbeCase[] = [
   {
-    name: 'trivial-read',
+    name: 'simple-read',
     prompt: 'What is in this file?',
-    accept: ['trivial', 'simple', 'standard'],
+    accept: ['simple', 'standard'],
   },
   {
     name: 'code-fix',

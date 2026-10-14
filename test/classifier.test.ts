@@ -52,13 +52,13 @@ describe("classifyPrompt (Unit Tests)", () => {
     expect(CATEGORY_TO_GROUP[result.category]).toBe("planning");
   });
 
-  it("classifies unclear requests as 'fallback'", async () => {
+  it("classifies unclear requests as 'continue'", async () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
-      '{"category": "fallback", "reason": "Unclear request", "confidence": 0.3}'
+      '{"category": "continue", "reason": "Unclear request", "confidence": 0.3}'
     );
     
     const result = await classifyPrompt("Make this better", { cache: localModelCache() });
-    expect(result.category).toBe("fallback");
+    expect(result.category).toBe("continue");
     expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical"); // Default fallback
   });
 
@@ -66,7 +66,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
     
     const result = await classifyPrompt("Some request", { cache: localModelCache() });
-    expect(result.category).toBe("fallback");
+    expect(result.category).toBe("continue");
     expect(result.reason).toBe("Ollama unavailable, static classifier disabled");
   });
 
@@ -85,7 +85,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     // Should fall back to fallback, since "invalid_category" is not allowed
     const result = await classifyPrompt("Test", { cache: localModelCache() });
-    expect(result.category).toBe("fallback");
+    expect(result.category).toBe("continue");
   });
 
   it("inherits category for short prompts with context", async () => {
@@ -99,19 +99,19 @@ describe("classifyPrompt (Unit Tests)", () => {
   // ── Static Classification Tests ────────────────────────────────────────────
 
   describe("classifyStatically", () => {
-    it("classifies 'List TODOs' as 'fallback'", () => {
+    it("classifies 'List TODOs' as 'continue'", () => {
       const result = classifyStatically("List TODOs");
-      expect(result.category).toBe("fallback");
+      expect(result.category).toBe("continue");
     });
 
-    it("classifies 'Show me the file' as 'fallback'", () => {
+    it("classifies 'Show me the file' as 'continue'", () => {
       const result = classifyStatically("Show me the file");
-      expect(result.category).toBe("fallback");
+      expect(result.category).toBe("continue");
     });
 
-    it("classifies 'List files' as 'fallback'", () => {
+    it("classifies 'List files' as 'continue'", () => {
       const result = classifyStatically("List files");
-      expect(result.category).toBe("fallback");
+      expect(result.category).toBe("continue");
     });
 
     // Restored design intent (regression 2026-09-26): a literal backspace
@@ -120,9 +120,9 @@ describe("classifyPrompt (Unit Tests)", () => {
     // 'simple'. Commit 4ebf6e4 codified that symptom as expected behavior;
     // the 0x08 is fixed, so the original trivial expectation (3bcd99f)
     // applies again.
-    it("classifies 'What is in this file?' as 'trivial'", () => {
+    it("classifies 'What is in this file?' as 'simple'", () => {
       const result = classifyStatically("What is in this file?");
-      expect(result.category).toBe("trivial");
+      expect(result.category).toBe("simple");
     });
 
 
@@ -172,26 +172,26 @@ describe("classifyPrompt (Unit Tests)", () => {
       expect(result.reason).toContain("planning classification");
     });
 
-    it("classifies 'What could we do about X?' as 'exploration'", () => {
+    it("classifies 'What could we do about X?' as 'standard'", () => {
       const result = classifyStatically("What could we do about this problem?");
-      expect(result.category).toBe("exploration");
-      expect(result.reason).toContain("exploration classification");
+      expect(result.category).toBe("standard");
+      expect(result.reason).toContain("standard classification");
     });
 
-    it("classifies unknown requests as 'fallback'", () => {
+    it("classifies unknown requests as 'continue'", () => {
       const result = classifyStatically("Some completely unknown request with no keywords");
-      expect(result.category).toBe("fallback");
+      expect(result.category).toBe("continue");
       expect(result.reason).toContain("Could not classify");
     });
 
     it.each([
-      ["what is in this file?", "trivial", "trivial"],
+      ["what is in this file?", "simple", "Simple lookup"],
       ["please explain this briefly", "simple", "Simple question"],
       ["fix the typo in the import line of that code file", "code_simple", ""],
       ["refactor the whole parser for edge cases", "code_complex", "Complex code task"],
       ["plan the roadmap for next quarter", "planning", ""],
-      ["brainstorm some ideas for the launch", "exploration", ""],
-      ["xqzwk unrelated gibberish", "fallback", "Could not classify"],
+      ["brainstorm some ideas for the launch", "standard", "Open-ended"],
+      ["xqzwk unrelated gibberish", "continue", "Could not classify"],
     ])("alternate phrasing %j → %s", (prompt, category, reason) => {
       const result = classifyStatically(prompt);
       expect(result.category).toBe(category);

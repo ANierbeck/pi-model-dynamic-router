@@ -111,7 +111,7 @@ describe('record per stage', () => {
     const opts = cloud(['p/a', 'p/b'], [() => ({ errorMessage: '503: upstream gone', stopReason: 'error', content: [] })]);
     const result = await classifyPrompt('dl all attempts fail unique prompt three', opts);
     const [r] = records();
-    expect(result).toMatchObject({ category: 'fallback' });
+    expect(result).toMatchObject({ category: 'continue' });
     expect(r.stage).toBe('fallback');
     expect(r.chain.map((a: any) => [a.ref, a.outcome, a.why])).toEqual([
       ['p/a', 'failed', 'http-5xx'],
@@ -147,10 +147,10 @@ describe('raw vs final and steps', () => {
   it('fallback-inherit: raw says fallback, final is the previous category', async () => {
     await classifyPrompt(
       'dl fallback inherit unique prompt number six here',
-      cloud(['p/m1'], [ok('fallback', 0.9)], { context: { lastCategory: 'design' } }),
+      cloud(['p/m1'], [ok('continue', 0.9)], { context: { lastCategory: 'design' } }),
     );
     const [r] = records();
-    expect(r.raw.category).toBe('fallback');
+    expect(r.raw.category).toBe('continue');
     expect(r.final.category).toBe('design');
     expect(r.steps).toEqual(['fallback-inherit']);
   });

@@ -68,7 +68,7 @@ describe('D1 — confidence gate on the cloud path', () => {
   it('a low-confidence cloud reply without a previous category falls back', async () => {
     const { opts } = cloudOpts(['p/m1'], [{ category: 'design', reason: 'unsure', confidence: 0.1 }]);
     const r = await classifyPrompt('d1 low confidence without any prior context at all', opts);
-    expect(r).toMatchObject({ category: 'fallback', confidence: 0.1 });
+    expect(r).toMatchObject({ category: 'continue', confidence: 0.1 });
     expect((r as any).reason).toContain('falling back');
   });
 
@@ -136,17 +136,17 @@ describe('D5 — classification cache', () => {
     const first = await classifyPrompt(prompt, a.opts);
     expect(first).toMatchObject({ category: 'code_complex' });
     const b = cloudOpts(['p/m1'], [{ category: 'design', reason: 'unsure', confidence: 0.2 }], {
-      context: { lastCategory: 'exploration' },
+      context: { lastCategory: 'standard' },
     });
     const second = await classifyPrompt(prompt, b.opts);
-    expect(second).toMatchObject({ category: 'exploration' });
+    expect(second).toMatchObject({ category: 'standard' });
     expect(b.completeSimple).toHaveBeenCalledTimes(1);
   });
 
   it('a gated cloud result that fell back (no previous category) is NOT cached either', async () => {
     const prompt = 'd5 gated fallback must not poison a later conversation that has context';
     const a = cloudOpts(['p/m1'], [{ category: 'design', reason: 'unsure', confidence: 0.2 }]);
-    expect(await classifyPrompt(prompt, a.opts)).toMatchObject({ category: 'fallback' });
+    expect(await classifyPrompt(prompt, a.opts)).toMatchObject({ category: 'continue' });
     const b = cloudOpts(['p/m1'], [{ category: 'design', reason: 'now sure', confidence: 0.9 }]);
     expect(await classifyPrompt(prompt, b.opts)).toMatchObject({ category: 'design' });
     expect(b.completeSimple).toHaveBeenCalledTimes(1);
@@ -158,7 +158,7 @@ describe('D5 — classification cache', () => {
     const base = { cache: localModelCache('foo:3b'), cfg };
     const first = await classifyPrompt(prompt, { ...base, context: { lastCategory: 'code_complex' } });
     expect(first).toMatchObject({ category: 'code_complex' });
-    const second = await classifyPrompt(prompt, { ...base, context: { lastCategory: 'exploration' } });
-    expect(second).toMatchObject({ category: 'exploration' });
+    const second = await classifyPrompt(prompt, { ...base, context: { lastCategory: 'standard' } });
+    expect(second).toMatchObject({ category: 'standard' });
   });
 });

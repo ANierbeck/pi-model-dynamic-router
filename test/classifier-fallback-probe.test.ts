@@ -53,7 +53,7 @@ function okReply(category: string) {
 function goodClassifierMock() {
   return vi.fn(async (_model: any, prompt: any) => {
     const content: string = prompt?.messages?.[0]?.content ?? '';
-    if (content.includes('What is in this file?')) return okReply('trivial');
+    if (content.includes('What is in this file?')) return okReply('simple');
     if (content.includes('Fix the typo in line 3 of the parse function')) return okReply('code_simple');
     if (content.includes('Explain what a closure is briefly')) return okReply('simple');
     return okReply('standard');
@@ -283,7 +283,7 @@ describe('probeAndCache', () => {
           return { errorMessage: '422', stopReason: 'error', content: [] };
         }
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         if (content.includes('Explain what a closure is briefly')) return okReply('simple');
         return okReply('standard');
@@ -365,7 +365,7 @@ describe('probeAndCache', () => {
           return { errorMessage: '429 status code (no body)', stopReason: 'error', content: [] };
         }
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         if (content.includes('Explain what a closure is briefly')) return okReply('simple');
         return okReply('standard');
@@ -465,7 +465,7 @@ describe('probeAndCache', () => {
       completeSimple: vi.fn(async (model: any, prompt: any) => {
         if (model.id === 'throwing-model') throw new Error('network error');
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         if (content.includes('Explain what a closure is briefly')) return okReply('simple');
         return okReply('standard');
@@ -497,7 +497,7 @@ describe('probeAndCache', () => {
       completeSimple: vi.fn(async (model: any, prompt: any) => {
         if (model.id === 'broken') throw new Error('422');
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         if (content.includes('Explain what a closure is briefly')) return okReply('simple');
         return okReply('standard');
@@ -604,7 +604,7 @@ describe('probeAndCache — quality validation', () => {
         if (content.includes('Explain what a closure is briefly')) {
           return okReply('hint:group:tactical');
         }
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         return okReply('standard');
       }),
@@ -678,7 +678,7 @@ describe('probeAndCache — quality validation', () => {
   });
 
   it('REJECTS a category outside the case accept list (misclassification)', async () => {
-    // The read-file case accepts trivial|simple|standard — 'planning' shows the
+    // The read-file case accepts simple|standard — 'planning' shows the
     // model did not understand the classification task.
     const cache = makeCache();
     seedMetrics(baseCfg, cache);
@@ -712,7 +712,7 @@ describe('probeAndCache — quality validation', () => {
       findModel: (ref) => ({ provider: ref.split('/')[0], id: ref.split('/')[1] }),
       completeSimple: vi.fn(async (_m: any, prompt: any) => {
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         if (content.includes('Explain what a closure is briefly')) return okReply('standard');
         return okReply('simple');
@@ -734,7 +734,7 @@ describe('probeAndCache — quality validation', () => {
       completeSimple: vi.fn(async (_m: any, prompt: any) => {
         seenPrompts.push(prompt?.messages?.[0]?.content ?? '');
         const content: string = prompt?.messages?.[0]?.content ?? '';
-        if (content.includes('What is in this file?')) return okReply('trivial');
+        if (content.includes('What is in this file?')) return okReply('simple');
         if (content.includes('Fix the typo')) return okReply('code_simple');
         return okReply('simple');
       }),

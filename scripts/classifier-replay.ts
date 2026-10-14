@@ -186,8 +186,8 @@ function sessionFilesUnder(dir: string): string[] {
 // ── candidate endpoint ────────────────────────────────────────────────────
 
 const KNOWN_CATEGORIES = new Set([
-  'trivial', 'simple', 'code_simple', 'standard', 'code_complex',
-  'design', 'planning', 'exploration', 'fallback',
+  'simple', 'code_simple', 'standard', 'code_complex',
+  'design', 'planning', 'continue',
 ]);
 
 async function classifyViaEndpoint(

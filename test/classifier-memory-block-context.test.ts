@@ -31,7 +31,7 @@ import {
 
 vi.mock('../src/ollama-utils.ts', () => ({
   callOllama: vi.fn(async () =>
-    JSON.stringify({ category: 'trivial', reason: 'test', confidence: 0.9 })
+    JSON.stringify({ category: 'simple', reason: 'test', confidence: 0.9 })
   ),
   isOllamaAvailable: vi.fn(async () => true),
 }));

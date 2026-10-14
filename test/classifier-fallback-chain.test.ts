@@ -85,7 +85,7 @@ describe('classifyPrompt fallback chain', () => {
       });
 
       expect(callOllama).toHaveBeenCalledTimes(1);
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
       expect(result.reason).toContain('Ollama unavailable');
     });
 
@@ -101,7 +101,7 @@ describe('classifyPrompt fallback chain', () => {
 
       // classifyPrompt must NOT throw — it degrades to a routed fallback so
       // the stream can continue via the fallback group.
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
       expect(result.reason).toContain('Ollama unavailable');
     });
   });
@@ -110,7 +110,7 @@ describe('classifyPrompt fallback chain', () => {
     it('skips both Ollama attempts and uses the cloud fallback when the daemon is unreachable', async () => {
       vi.mocked(isOllamaAvailable).mockResolvedValue(false);
       vi.mocked(callOllama).mockResolvedValue(
-        ollamaReply({ category: 'trivial', reason: 'must not be used', confidence: 1 })
+        ollamaReply({ category: 'simple', reason: 'must not be used', confidence: 1 })
       );
       const completeSimple = vi.fn().mockResolvedValue(
         cloudReply({ category: 'simple', reason: 'from cloud', confidence: 0.9 })
@@ -257,7 +257,7 @@ describe('classifyPrompt fallback chain', () => {
       });
 
       expect(completeSimple).not.toHaveBeenCalled();
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
     });
 
     it('rejects a spurious hint:* echo from a cloud model and tries the next one (voxtral regression, review 2026-09-26 Important #1)', async () => {
@@ -267,7 +267,7 @@ describe('classifyPrompt fallback chain', () => {
       // itself contains NO HINT, so the reply is spurious and must be skipped
       // like any other bad reply instead of being returned raw (which
       // polluted lastClassifiedCategory and misrouted via CATEGORY_TO_GROUP
-      // miss → 'fallback' → tactical).
+      // miss → 'continue' → tactical).
       const completeSimple = vi
         .fn()
         .mockResolvedValueOnce(
@@ -386,7 +386,7 @@ describe('classifyPrompt fallback chain', () => {
     it('moves a pinned model that is already in the cached list to position 0 — no duplicate tries (review 2026-09-26, Minor #3)', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'exploration', reason: 'from pinned', confidence: 0.9 })
+        cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 })
       );
       // findModel resolves refs in call order: the pinned ref must be FIRST.
       const findModel = vi.fn((ref: string) => (ref === 'prov/cached-b' || ref === 'prov/cached-a' ? mockModel : undefined));
@@ -404,7 +404,7 @@ describe('classifyPrompt fallback chain', () => {
 
       expect(findModel.mock.calls[0]?.[0]).toBe('prov/cached-b');
       expect(completeSimple).toHaveBeenCalledTimes(1);
-      expect(result).toEqual({ category: 'exploration', reason: 'from pinned', confidence: 0.9 });
+      expect(result).toEqual({ category: 'standard', reason: 'from pinned', confidence: 0.9 });
     });
 
     it('skips an unresolvable pinned model and continues with the cached list', async () => {
@@ -474,7 +474,7 @@ describe('classifyPrompt fallback chain', () => {
 
     it('returns a plain classification for a trivial task', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
-        ollamaReply({ category: 'trivial', reason: 'trivial task', confidence: 0.9 })
+        ollamaReply({ category: 'simple', reason: 'trivial task', confidence: 0.9 })
       );
 
       const result = await classifyPrompt('Show me the todo list in this repository now', {
@@ -483,7 +483,7 @@ describe('classifyPrompt fallback chain', () => {
       });
 
       expect('hintType' in result).toBe(false);
-      expect(result.category).toBe('trivial');
+      expect(result.category).toBe('simple');
     });
   });
 
@@ -500,17 +500,17 @@ describe('classifyPrompt fallback chain', () => {
 
       // Both attempts return invalid JSON → both throw → fallback result.
       expect(callOllama).toHaveBeenCalledTimes(2);
-      expect(result.category).toBe('fallback');
+      expect(result.category).toBe('continue');
     });
 
     it('handles an empty prompt without throwing', async () => {
       vi.mocked(callOllama).mockResolvedValueOnce(
-        ollamaReply({ category: 'trivial', reason: 'empty prompt', confidence: 0.8 })
+        ollamaReply({ category: 'simple', reason: 'empty prompt', confidence: 0.8 })
       );
 
       const result = await classifyPrompt('', { cache: localModelCache() });
 
-      expect(result.category).toBe('trivial');
+      expect(result.category).toBe('simple');
     });
   });
 });
