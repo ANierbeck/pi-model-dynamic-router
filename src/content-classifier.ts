@@ -545,6 +545,12 @@ function writeDecisionLog(
     prompt,
     stage,
     trace: holder.trace,
+    prev: options.context?.lastCategory
+      ? {
+          category: options.context.lastCategory,
+          group: getGroupForCategory(options.context.lastCategory, options.cfg),
+        }
+      : null,
     final: {
       category: 'category' in result ? result.category : null,
       group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,

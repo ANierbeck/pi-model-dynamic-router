@@ -70,6 +70,10 @@ export interface DecisionRecord {
   cache_origin: string | null;
   /** The classification as the model returned it, before post-processing. */
   raw: null | { category: string | null; confidence: number | null; reason: null | string };
+  /** The session's previous category before this classification — sticky
+   * context, needed to evaluate 'continue' answers against the group they
+   * would have kept (shadow monitoring, plan 2026-10-15). */
+  prev: null | { category: string | null; group: string | null };
   /** The classification actually applied, with the routed group. */
   final: {
     category: string | null;
@@ -160,6 +164,7 @@ export interface RecordParams {
   prompt: string;
   stage: string;
   trace: ClassificationTrace;
+  prev?: { category: string | null; group: string | null } | null;
   final: {
     category: string | null;
     group: string | null;
@@ -196,6 +201,9 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
       confidence: p.trace.raw.confidence ?? null,
       reason: reasonsAllowed ? p.trace.raw.reason : null,
     },
+    prev: p.prev
+      ? { category: p.prev.category ?? null, group: p.prev.group ?? null }
+      : null,
     final: {
       category: p.final.category,
       group: p.final.group,

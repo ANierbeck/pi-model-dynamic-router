@@ -85,6 +85,18 @@ describe('record per stage', () => {
     expect(r.input.words).toBe(2);
   });
 
+  it('records the previous session category as prev (sticky context, shadow monitoring)', async () => {
+    await classifyPrompt('mach weiter', { cfg: cfgWith(), context: { lastCategory: 'design' } });
+    const [r] = records();
+    expect(r.prev).toEqual({ category: 'design', group: getGroupForCategory('design') });
+  });
+
+  it('records prev null when the session has no previous category', async () => {
+    await classifyPrompt('dl prev-null unique prompt number two here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
+    const [r] = records();
+    expect(r.prev).toBeNull();
+  });
+
   it('llm-cloud: chain, raw, answered_by, group', async () => {
     await classifyPrompt('dl cloud stage unique prompt number one here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
     const [r] = records();
