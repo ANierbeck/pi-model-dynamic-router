@@ -6,7 +6,10 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  estimateInputTokens,
+  estimateMessageTokens,
   estimateToolTokens,
+  IMAGE_BLOCK_TOKENS,
   MIN_OUTPUT_TOKENS,
   planOutputBudget,
   safetyTokens,
@@ -54,6 +57,40 @@ describe('planOutputBudget', () => {
     const capped = (plan as { maxTokens: number }).maxTokens;
     expect(inputTokens + capped + safetyTokens(WINDOW)).toBeLessThanOrEqual(WINDOW);
     expect(capped).toBeGreaterThanOrEqual(MIN_OUTPUT_TOKENS);
+  });
+
+  it('counts nested tool-result content blocks (not "[object Object]")', () => {
+    // Sourcery HIGH: a tool_result block whose content is an array of
+    // text-block objects must contribute its real text size.
+    const messages = [
+      {
+        role: 'tool_result',
+        content: [{ type: 'tool_result', content: [{ type: 'text', text: 'x'.repeat(4000) }] }],
+      },
+    ];
+    expect(estimateMessageTokens(messages as any)).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('counts CJK text at ~1 token per character, not chars/4', () => {
+    const messages = [{ role: 'user', content: '中'.repeat(10_000) }];
+    expect(estimateMessageTokens(messages as any)).toBeGreaterThanOrEqual(10_000);
+  });
+
+  it('counts image blocks as a fixed image-token cost, not their base64 payload', () => {
+    const messages = [
+      { role: 'user', content: [{ type: 'image', source: { type: 'base64', data: 'a'.repeat(400_000) } }] },
+    ];
+    expect(estimateMessageTokens(messages as any)).toBe(IMAGE_BLOCK_TOKENS);
+  });
+
+  it('estimateInputTokens includes the system prompt and tool schemas', () => {
+    const context = { systemPrompt: 's'.repeat(20_000), messages: [{ role: 'user', content: 'hello' }] };
+    const tools = [{ name: 'read', parameters: { type: 'object' } }];
+    const got = estimateInputTokens(context as any, tools);
+    expect(got).toBeGreaterThanOrEqual(5_000); // 20k/4 system prompt alone
+    expect(got).toBe(
+      estimateMessageTokens(context.messages) + 20_000 / 4 + estimateToolTokens(tools)
+    );
   });
 
   it('skips when even the minimum output does not fit', () => {

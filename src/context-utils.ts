@@ -5,7 +5,7 @@
  */
 
 import { stripRouterNarration, splitRef, messageText } from './utils.ts';
-import { estimateMessageTokens } from './context-budget.ts';
+import { estimateInputTokens } from './context-budget.ts';
 import type { Context } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 
@@ -51,7 +51,9 @@ export function createContextUtils(d: ContextUtilsDeps) {
   }
 
   function estimateContextTokens(context: Context): number {
-    return estimateMessageTokens(context.messages);
+    // Includes context.systemPrompt: the system prompt occupies the window
+    // just like message text (Sourcery finding — was previously omitted).
+    return estimateInputTokens(context, undefined);
   }
 
   /**

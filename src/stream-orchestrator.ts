@@ -110,7 +110,7 @@ import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
 import { breakerState, breakerEvidenceSummary, isLocalProviderName, resolveBreakerTuning } from './provider-breaker.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
-import { estimateToolTokens, planOutputBudget } from './context-budget.ts';
+import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
@@ -663,8 +663,9 @@ export class StreamOrchestrator {
     let rateLimitWaitUsed = false;
     let cooldownSkips = 0;
     const contextTokens = ctx.estimateContextTokens(context);
-    // Planning input = message text + tool schemas (the provider counts both).
-    const planningTokens = contextTokens + estimateToolTokens((context as any).tools);
+    // Planning input = message text + system prompt + tool schemas (the
+    // provider counts all three against the window).
+    const planningTokens = estimateInputTokens(context, (context as any).tools);
 
     // Narration lookahead (live finding 2026-10-03): the ", trying X …"
     // suffix previously picked the first candidate not in a cooldown — but

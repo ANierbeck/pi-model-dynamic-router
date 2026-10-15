@@ -23,28 +23,66 @@ export function safetyTokens(windowTokens: number): number {
   return Math.max(2048, Math.ceil(windowTokens * 0.05));
 }
 
-/** Rough message-text size: chars / 4 (text blocks of arrays are summed). */
+/**
+ * Fixed per-image window cost. Providers account for images by resolution,
+ * not encoded bytes (a 400k-char base64 payload is ~1-2k window tokens, not
+ * 100k). 1600 is a conservative approximation of a typical screenshot at
+ * high detail across current vision APIs.
+ */
+export const IMAGE_BLOCK_TOKENS = 1600;
+
+// Hiragana, Katakana, CJK unified + compatibility ideographs, Hangul.
+const CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7a3]/g;
+
+/** Rough text size: ~4 chars per token, except CJK (~1 token per character —
+ * chars/4 underestimates CJK roughly 4x). Conservative on purpose: a slight
+ * overestimate only shrinks the output budget; an underestimate rejects. */
+export function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+  const cjk = (text.match(CJK_RE) ?? []).length;
+  return Math.ceil((text.length - cjk) / 4) + cjk;
+}
+
+/** Recursively extract the text of one content block (tool_result content
+ * can be an array of text-block objects; joining without recursion produced
+ * "[object Object]" and a near-zero estimate — Sourcery HIGH finding). */
+function blockText(b: unknown): string {
+  if (typeof b === 'string') return b;
+  if (b == null || typeof b !== 'object') return '';
+  const block = b as Record<string, unknown>;
+  if (typeof block.text === 'string') return block.text;
+  if (Array.isArray(block.content)) return (block.content as unknown[]).map(blockText).join('');
+  if (typeof block.content === 'string') return block.content;
+  return '';
+}
+
+function isImageBlock(b: unknown): boolean {
+  return (
+    typeof b === 'object' &&
+    b != null &&
+    ((b as Record<string, unknown>).type === 'image' || 'source' in (b as Record<string, unknown>))
+  );
+}
+
+/** Rough message size. Image blocks count as IMAGE_BLOCK_TOKENS, never as
+ * their base64 payload (Sourcery finding: base64-as-text wasted the budget). */
 export function estimateMessageTokens(messages: readonly { content?: unknown }[]): number {
   let total = 0;
   for (const msg of messages) {
-    // Content may be a string OR an array of content blocks (text, tool_use,
-    // tool_result, image, etc.). For arrays, sum the text representation of
-    // every block — a tool_result block can easily carry tens of thousands of
-    // tokens. Treating arrays as '' silently produced a 0-token estimate.
     const c = msg.content;
-    let text: string;
     if (typeof c === 'string') {
-      text = c;
+      total += estimateTextTokens(c);
     } else if (Array.isArray(c)) {
-      text = c
-        .map((b: any) =>
-          typeof b === 'string' ? b : b?.text ?? b?.content ?? (b != null ? JSON.stringify(b) : '')
-        )
-        .join('');
-    } else {
-      text = c != null ? String(c) : '';
+      for (const b of c as unknown[]) {
+        if (isImageBlock(b)) {
+          total += IMAGE_BLOCK_TOKENS;
+        } else {
+          total += estimateTextTokens(blockText(b));
+        }
+      }
+    } else if (c != null) {
+      total += estimateTextTokens(String(c));
     }
-    total += Math.ceil(text.length / 4); // Rough estimate: 4 chars ≈ 1 token
   }
   return total;
 }
@@ -52,7 +90,23 @@ export function estimateMessageTokens(messages: readonly { content?: unknown }[]
 /** Rough tool-schema size: serialized JSON characters / 4 (same rule as messages). */
 export function estimateToolTokens(tools: unknown): number {
   if (!Array.isArray(tools) || tools.length === 0) return 0;
-  return Math.ceil(JSON.stringify(tools).length / 4);
+  return estimateTextTokens(JSON.stringify(tools));
+}
+
+/**
+ * The full planning input: messages + system prompt + tool schemas. The
+ * provider counts all three against the window (Context.systemPrompt was
+ * previously missing — Sourcery finding).
+ */
+export function estimateInputTokens(
+  context: { systemPrompt?: string; messages: readonly { content?: unknown }[] },
+  tools: unknown
+): number {
+  return (
+    estimateMessageTokens(context.messages) +
+    (context.systemPrompt ? estimateTextTokens(context.systemPrompt) : 0) +
+    estimateToolTokens(tools)
+  );
 }
 
 export type OutputBudget =
