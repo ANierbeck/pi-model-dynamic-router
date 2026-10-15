@@ -110,6 +110,7 @@ import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
 import { breakerState, breakerEvidenceSummary, isLocalProviderName, resolveBreakerTuning } from './provider-breaker.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
+import { estimateToolTokens, planOutputBudget } from './context-budget.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
@@ -662,6 +663,8 @@ export class StreamOrchestrator {
     let rateLimitWaitUsed = false;
     let cooldownSkips = 0;
     const contextTokens = ctx.estimateContextTokens(context);
+    // Planning input = message text + tool schemas (the provider counts both).
+    const planningTokens = contextTokens + estimateToolTokens((context as any).tools);
 
     // Narration lookahead (live finding 2026-10-03): the ", trying X …"
     // suffix previously picked the first candidate not in a cooldown — but
@@ -681,7 +684,7 @@ export class StreamOrchestrator {
         if (ctx.isBreakerOpen(r)) continue;
         if (r.startsWith('ollama/') && isOllamaProbablyDown()) continue;
         const w = ctx.getModelContextWindow(r);
-        if (w && contextTokens > w) continue;
+        if (planOutputBudget({ windowTokens: w, inputTokens: planningTokens, requestedOutput: undefined }).kind === 'skip') continue;
         return r;
       }
       return undefined;
@@ -720,8 +723,9 @@ export class StreamOrchestrator {
         continue;
       }
       const ctxWindow = ctx.getModelContextWindow(ref);
-      if (ctxWindow && contextTokens > ctxWindow) {
-        pushError(ref, `skipped, context window ${ctxWindow} < ${contextTokens} tokens needed`);
+      const preflight = planOutputBudget({ windowTokens: ctxWindow, inputTokens: planningTokens, requestedOutput: undefined });
+      if (preflight.kind === 'skip') {
+        pushError(ref, `skipped, context window ${ctxWindow} < ${preflight.neededTokens} tokens needed`);
         contextOverflowSkips++;
         continue;
       }
