@@ -502,13 +502,19 @@ export async function classifyPrompt(
 ): Promise<FullClassificationResult> {
   const started = Date.now();
   const holder: { source: string | null; trace: ClassificationTrace } = { source: null, trace: newTrace() };
+  // Snapshot the sticky context BEFORE the (awaited) classification: the log's
+  // `prev` must describe the context the decision was made in, not a newer
+  // category a caller might write into a shared context object while the
+  // provider request is pending (Sourcery finding). Inherit uses the same
+  // snapshot so the logged prev can never disagree with what inherit applied.
+  const prevCategory = options.context?.lastCategory;
   const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
-  const result = inheritPreviousCategory(raw, options.context?.lastCategory);
+  const result = inheritPreviousCategory(raw, prevCategory);
   countClassification(result, holder.source);
   // Fail-open for the WHOLE log step (record construction included, not just
   // the file write): logging must never change or break a classification.
   try {
-    writeDecisionLog(prompt, options, holder, raw, result, started);
+    writeDecisionLog(prompt, options, holder, raw, result, started, prevCategory);
   } catch {
     // swallowed on purpose
   }
@@ -528,6 +534,7 @@ function writeDecisionLog(
   raw: FullClassificationResult,
   result: FullClassificationResult,
   started: number,
+  prevCategory: ClassificationContext['lastCategory'],
 ): void {
   const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
   if (!log) return;
@@ -545,6 +552,12 @@ function writeDecisionLog(
     prompt,
     stage,
     trace: holder.trace,
+    prev: prevCategory
+      ? {
+          category: prevCategory,
+          group: getGroupForCategory(prevCategory, options.cfg),
+        }
+      : null,
     final: {
       category: 'category' in result ? result.category : null,
       group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,

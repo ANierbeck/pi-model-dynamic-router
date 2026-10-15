@@ -92,3 +92,32 @@ note in this document, not a silent edit.
     python3 label_shadow.py       # blinded rating; q to quit, resumable
     python3 label_shadow.py --stats
     python3 evaluate_shadow.py    # metrics + verdict
+
+
+## Result and revision (owner decision, 2026-10-15)
+
+R1 passed (151 valid owner labels; 5 skipped `[Assistant]` items, 2 unsure).
+Observed: Laya group accuracy 41.7 %, continue recall 12.5 %, accepted
+precision 58.3 % at 7.9 % coverage.
+
+**R3 is withdrawn by the owner after seeing the R1 results.** 'continue' means
+"keep going with the same" — sticky routing. A real classification on a
+continuation turn is acceptable or better, so continue *recall* does not measure
+harm. The harmful direction would be a 'continue' answer on a new task whose
+group diverges from the sticky target; that cannot be scored on this queue
+because the queue did not capture the session's previous category (110/151
+items). The owner likewise does not treat the 34 'continue' answers on
+labeled-category items as failures while the sticky target matches ("if the
+previous turn was already a 3/4/5 call, staying there is ok enough").
+
+**Verdict on r2: NO-GO** — resting on the scoreable core (32.3 % group accuracy
+on the 93 items where both truth and Laya gave a real category) and R4
+(7.9 % accepted coverage, 58.3 % accepted precision). The comparator run (R2)
+is parked: without the owner's go for Mistral API calls, and with R3 withdrawn,
+its diagnostic value is secondary.
+
+**Next step: live monitoring.** The classifier decision log now records
+`prev` (the session's previous category and group at classification time), so
+the next evaluation round can score sticky outcomes properly. Shadow sidecars
+keep running; a later round rebuilds the queue (now with `prev`), re-labels,
+and re-evaluates.

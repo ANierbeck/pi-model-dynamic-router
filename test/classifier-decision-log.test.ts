@@ -85,6 +85,31 @@ describe('record per stage', () => {
     expect(r.input.words).toBe(2);
   });
 
+  it('records the previous session category as prev (sticky context, shadow monitoring)', async () => {
+    await classifyPrompt('mach weiter', { cfg: cfgWith(), context: { lastCategory: 'design' } });
+    const [r] = records();
+    expect(r.prev).toEqual({ category: 'design', group: getGroupForCategory('design') });
+  });
+
+  it('keeps prev when the classification returns a different category', async () => {
+    // Sourcery finding: the momentum test uses prev == final, so it would
+    // pass even if prev copied the final category. Pin the discriminating
+    // case: lastCategory design, cloud answers code_complex.
+    await classifyPrompt(
+      'dl prev-differs unique prompt number three here',
+      cloud(['p/m1'], [ok('code_complex', 0.8)], { context: { lastCategory: 'design' } })
+    );
+    const [r] = records();
+    expect(r.prev).toEqual({ category: 'design', group: getGroupForCategory('design') });
+    expect(r.final).toMatchObject({ category: 'code_complex' });
+  });
+
+  it('records prev null when the session has no previous category', async () => {
+    await classifyPrompt('dl prev-null unique prompt number two here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
+    const [r] = records();
+    expect(r.prev).toBeNull();
+  });
+
   it('llm-cloud: chain, raw, answered_by, group', async () => {
     await classifyPrompt('dl cloud stage unique prompt number one here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
     const [r] = records();
