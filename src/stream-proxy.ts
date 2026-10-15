@@ -13,6 +13,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
 import type { SourceModelInfo } from './stream-driver.ts';
 import { splitRef } from './utils.ts';
+import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 import type { StreamOrchestrator } from './stream-orchestrator.ts';
@@ -167,8 +168,27 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       if (reservedLocalSlot && rt.localStreamsInFlight > 0) rt.localStreamsInFlight--;
       return skip(`no API key for provider "${realModel.provider}"`);
     }
+    // Output-aware window guard (src/context-budget.ts). The provider counts the
+    // requested output budget against the window as well as the input: cap an
+    // explicit output budget to what the window leaves, skip only when even the
+    // minimum output does not fit. Without this the reservation is unbounded.
+    const window = (realModel as any).contextWindow as number | undefined;
+    const budget = planOutputBudget({
+      windowTokens: window,
+      inputTokens: estimateInputTokens(context, (context as any).tools),
+      requestedOutput: options?.maxTokens,
+    });
+    if (budget.kind === 'skip') {
+      if (reservedLocalSlot && rt.localStreamsInFlight > 0) rt.localStreamsInFlight--;
+      return skip(`context window ${window} < ${budget.neededTokens} tokens needed (prompt + tools + minimum output)`);
+    }
+    if (budget.kind === 'capped') {
+      debugLog(`[router] ${ref} output budget capped ${options?.maxTokens} → ${budget.maxTokens} (window ${window})`);
+    }
+    const sendOptions = budget.kind === 'capped' ? { ...(options ?? {}), maxTokens: budget.maxTokens } : options;
+
     // Strip the group's virtual apiKey from options — it must not reach the real provider
-    const { apiKey: _drop, ...baseOpts } = options ?? {};
+    const { apiKey: _drop, ...baseOpts } = sendOptions ?? {};
     const streamOpts = apiKey ? { ...baseOpts, apiKey } : baseOpts;
     // MEDIUM finding (roborev job 302): if hostStreamSimple throws
     // synchronously (instead of returning null), the thrown error would
