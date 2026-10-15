@@ -82,7 +82,7 @@
   report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
 - `npx vitest run` must be green (the exact count ratchets with every
-  round — as of the v2-r3 taxonomy migration + Laya spike alignment + decision-log prev: 2150 passing / 3 skipped; do not
+  round — as of the v2-r3 taxonomy migration + decision-log prev + review hardening: 2151 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
