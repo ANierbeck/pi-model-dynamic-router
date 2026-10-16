@@ -522,6 +522,46 @@ judged sufficient.
 
 ## 🔭 **Future Tasks (registered)**
 
+### Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator (OWNER-MANDATED 2026-10-15 — do this first after laya-spike merges to main)
+
+Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
+the first nightly with the v2-r3 taxonomy): 3-file scope (stream-orchestrator,
+metrics, routing), 2784 mutants, score **69.94 %** — 1947 killed / 573
+survived / 264 no-coverage. Two consecutive nightlies are identical (+1 kill),
+so the picture is stable.
+
+**85 % of all undetected mutants sit in `src/stream-orchestrator.ts` (710)**,
+concentrated in the classification/HINT region that v2-r3 rewrote
+(line numbers for main @ 6f4ac08 — re-locate against the fresh report):
+
+- classifyOpts context build (L401 region, 17 survived): lastCategory,
+  lastModel, isCompaction, lastModelLimited wiring
+- HINT alias matching, `namesMatch` over `allDiscoveredRefs()` (L476, 26
+  survived) and the documented B3 follow-up clusters L465/L549
+  (dynamic-HINT match)
+- hint-not-found fallback cascade, including explicit-hint `clearLimit` and
+  registry/provider lookups (L520–570, ~120 no-coverage)
+- escalation gate after normal classification (L576+, ~32 undetected)
+- plus B3 follow-up: breaker-dead-end wait guard (L1107)
+
+The v2-r3 pin tests cover the classifier itself, but **no test drives the
+orchestrator wiring mutation-lethally** — the most consequential selection
+code in the router has the weakest mutation coverage. Round shape: red-first
+tests around the orchestrator integration surface (classifyOpts context,
+HINT resolution, hint-not-found cascade), mutant-by-mutant verification via
+`scripts/mutation-recheck.ts`, verdicts ledgered in `docs/mutation-triage.md`.
+
+**Why after the spike merge:** the laya-spike branch (prev logging,
+output-budget guard) shifts stream-orchestrator line numbers, so today's
+mutant references go stale. Re-run the nightly on merged main first, triage
+against the fresh report, use the regions above as orientation.
+
+metrics.ts (73) and routing.ts (54) remainders are low priority — after
+batches 1–4 these look mostly like equivalents (slug/GDPval matching, group
+constant lists, round-robin fields); confirm before spending a round.
+
+---
+
 ### Periodic mutation-testing audit of the suite
 A vacuous test (assert-true equivalent) is invisible to green runs — only
 breaking the code it claims to cover reveals it. Hand-rolled spot campaign
