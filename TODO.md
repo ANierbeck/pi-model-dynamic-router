@@ -556,6 +556,13 @@ output-budget guard) shifts stream-orchestrator line numbers, so today's
 mutant references go stale. Re-run the nightly on merged main first, triage
 against the fresh report, use the regions above as orientation.
 
+**Owner decision 2026-10-15 (exit-cost rule):** laya-spike does NOT merge to
+main while the Laya verdict is open — if Laya fails, it gets removed entirely
+rather than un-merged later. So this round triggers in EITHER ending:
+(a) Laya succeeds -> spike merge, or (b) Laya is dropped -> the non-Laya
+orchestrator changes (output-budget guard, prev logging) are cherry-picked
+to main first. In both cases: fresh nightly on the updated main, then triage.
+
 metrics.ts (73) and routing.ts (54) remainders are low priority — after
 batches 1–4 these look mostly like equivalents (slug/GDPval matching, group
 constant lists, round-robin fields); confirm before spending a round.
