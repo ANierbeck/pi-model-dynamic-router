@@ -197,6 +197,15 @@ describe('decision log', () => {
     expect(rec.laya).toMatchObject({ category: 'design', acted: true });
   });
 
+  // Calibration needs the whole distribution, not only the winning label's
+  // confidence: temperature / bias fits on owner labels are impossible without it.
+  it('logs the full Laya probability distribution alongside the answer', async () => {
+    stubAnswer = { category: 'design', confidence: 0.6, probabilities: { design: 0.6, planning: 0.3, continue: 0.1 }, ms: 4 };
+    await run('Draft the module boundaries for the billing service lambda', cfg({ mode: 'shadow' }));
+    const [rec] = records();
+    expect(rec.laya.probabilities).toEqual({ design: 0.6, planning: 0.3, continue: 0.1 });
+  });
+
   it('records without a Laya stage carry no `laya` field', async () => {
     await run('Draft the module boundaries for the billing service lambda', cfg(null));
     expect(records()[0]).not.toHaveProperty('laya');

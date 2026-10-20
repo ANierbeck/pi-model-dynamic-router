@@ -1070,7 +1070,14 @@ async function classifyPromptUncounted(
       const ms = Date.now() - t0;
       const acts = layaCfg.mode === 'active' && out.result !== null;
       if (trace) {
-        trace.laya = { ref, category: out.answer.category, confidence: out.answer.confidence, acted: acts, ms };
+        trace.laya = {
+          ref,
+          category: out.answer.category,
+          confidence: out.answer.confidence,
+          ...(out.answer.probabilities ? { probabilities: out.answer.probabilities } : {}),
+          acted: acts,
+          ms,
+        };
       }
       if (acts && out.result) {
         noteSource(ref);
