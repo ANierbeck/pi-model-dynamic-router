@@ -13,7 +13,7 @@ import {
   markNoSchema,
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
-import { classifyWithLayaDetailed } from './laya-classifier.ts';
+import { classifyWithLayaDetailed, validLayaDistribution } from './laya-classifier.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { homedir } from 'node:os';
 import {
@@ -1070,7 +1070,14 @@ async function classifyPromptUncounted(
       const ms = Date.now() - t0;
       const acts = layaCfg.mode === 'active' && out.result !== null;
       if (trace) {
-        trace.laya = { ref, category: out.answer.category, confidence: out.answer.confidence, acted: acts, ms };
+        trace.laya = {
+          ref,
+          category: out.answer.category,
+          confidence: out.answer.confidence,
+          ...(validLayaDistribution(out.answer.probabilities) ? { probabilities: out.answer.probabilities } : {}),
+          acted: acts,
+          ms,
+        };
       }
       if (acts && out.result) {
         noteSource(ref);
