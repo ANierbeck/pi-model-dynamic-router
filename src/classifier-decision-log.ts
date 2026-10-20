@@ -107,7 +107,10 @@ export interface LayaObservation {
    * Full class distribution of the answer (label -> probability, as the
    * sidecar reports it). The winning label's confidence alone cannot be
    * calibrated against owner labels; the distribution can (temperature /
-   * class-bias fits, per-class precision). Absent on sidecars that do not send it.
+   * class-bias fits, per-class precision). The sidecar contract requires it
+   * (`classifyWithLayaRaw` rejects answers without it); absent only on records
+   * written before the field existed, and when the distribution is malformed
+   * (see `validLayaDistribution`).
    */
   probabilities?: Record<string, number>;
   /** True only when this answer became the classification (active mode, vetted). */

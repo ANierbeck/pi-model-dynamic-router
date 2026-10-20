@@ -200,10 +200,21 @@ describe('decision log', () => {
   // Calibration needs the whole distribution, not only the winning label's
   // confidence: temperature / bias fits on owner labels are impossible without it.
   it('logs the full Laya probability distribution alongside the answer', async () => {
-    stubAnswer = { category: 'design', confidence: 0.6, probabilities: { design: 0.6, planning: 0.3, continue: 0.1 }, ms: 4 };
-    await run('Draft the module boundaries for the billing service lambda', cfg({ mode: 'shadow' }));
+    const dist = { simple: 0.02, code_simple: 0.01, standard: 0.05, code_complex: 0.06, design: 0.6, planning: 0.2, continue: 0.06 };
+    stubAnswer = { category: 'design', confidence: 0.6, probabilities: dist, ms: 4 };
+    await run('Draft the module boundaries for the billing service mu', cfg({ mode: 'shadow' }));
     const [rec] = records();
-    expect(rec.laya.probabilities).toEqual({ design: 0.6, planning: 0.3, continue: 0.1 });
+    expect(rec.laya.probabilities).toEqual(dist);
+  });
+
+  // The distribution feeds calibration fits: a malformed one must not reach the
+  // log, while the answer itself is still recorded.
+  it('drops a malformed distribution (incomplete labels, value out of range) but keeps the answer', async () => {
+    stubAnswer = { category: 'design', confidence: 0.6, probabilities: { design: 1.7, planning: 0.3 }, ms: 4 };
+    await run('Draft the module boundaries for the billing service nu', cfg({ mode: 'shadow' }));
+    const [rec] = records();
+    expect(rec.laya).toMatchObject({ category: 'design', confidence: 0.6 });
+    expect(rec.laya.probabilities).toBeUndefined();
   });
 
   it('records without a Laya stage carry no `laya` field', async () => {

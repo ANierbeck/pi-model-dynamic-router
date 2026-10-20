@@ -204,6 +204,23 @@ export async function classifyWithLayaRaw(
   }
 }
 
+/**
+ * The sidecar's class distribution, or undefined when it is not a usable
+ * distribution: it must cover exactly the production taxonomy, with finite
+ * probabilities in [0, 1]. Calibration fits on the decision log read these
+ * values as samples, so a malformed distribution is dropped, never logged.
+ */
+export function validLayaDistribution(p: unknown): Record<string, number> | undefined {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) return undefined;
+  const entries = Object.entries(p as Record<string, unknown>);
+  if (entries.length !== VALID_CATEGORIES.length) return undefined;
+  for (const [label, prob] of entries) {
+    if (!VALID_CATEGORIES.includes(label as never)) return undefined;
+    if (typeof prob !== 'number' || !Number.isFinite(prob) || prob < 0 || prob > 1) return undefined;
+  }
+  return p as Record<string, number>;
+}
+
 export interface LayaAnswer {
   category: string;
   confidence: number;
