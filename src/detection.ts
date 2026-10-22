@@ -417,6 +417,23 @@ export function isFreeTierDailyCapText(text: string): boolean {
 }
 
 /**
+ * One-line, bounded, credential-free rendering of a 429 body for the router
+ * log. The body is the only evidence that tells an account-wide daily cap from
+ * a shared upstream pool, and the narration alone does not carry it (the
+ * 2026-10-22 failures could not be told apart from the log). Keys and bearer
+ * tokens are redacted before anything is written.
+ */
+export function formatRateLimitBodyForLog(body: string | undefined): string {
+  if (!body) return '';
+  const flat = body
+    .replace(/\s+/g, ' ')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/sk-[A-Za-z0-9_-]{6,}/g, '[redacted]')
+    .trim();
+  return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
+}
+
+/**
  * The next 00:00 UTC strictly after `now` — the documented reset of the
  * free-models-per-day cap. At exactly midnight the cap just cleared, so
  * the NEXT midnight (+24h) is returned.

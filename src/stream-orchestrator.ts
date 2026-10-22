@@ -126,6 +126,7 @@ import {
   parseResetAtMs,
   isPaidCloudRateLimitFailure,
   isFreeTierDailyCapText,
+  formatRateLimitBodyForLog,
   nextUtcMidnightMs,
 } from './detection.ts';
 import { isOllamaProbablyDown } from './ollama-utils.ts';
@@ -796,6 +797,9 @@ export class StreamOrchestrator {
 
         if (result.reason === 'rate_limit_exceeded') {
           const freeDayCap = isFreeTierDailyCapText(String(result.detail ?? ''));
+          // Keep the provider's own words in the log: a daily account cap and a
+          // shared upstream pool need different handling and look alike otherwise.
+          routerLog(`[router] ${ref} 429 body: ${formatRateLimitBodyForLog(String(result.detail ?? ''))}`);
           ctx.recordStreamFailure(ref, String(result.reason), freeDayCap ? undefined : result.resetAtMs, result.detail);
           pushError(ref, 'rate_limit_exceeded');
 

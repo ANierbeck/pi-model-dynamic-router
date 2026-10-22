@@ -171,6 +171,27 @@ describe('selectClassifierCandidates', () => {
     expect(result).not.toContain('openrouter/stealth/space-bunny-alpha');
   });
 
+  it('never admits a paid_models_from provider model without the :free tag, even when its catalog price reads 0 (owner decision 2026-10-22)', () => {
+    // A catalog price of 0 is not proof of free: the scan turns it into
+    // cost_per_m 0, and OpenRouter prices can change under us. The paid guard
+    // for the classifier therefore requires the explicit :free tag.
+    const cache: Cache = {
+      available_models: [
+        { id: 'vendor/priced-later-model', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'google/gemma-x:free', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/vendor/priced-later-model': { input: 0, output: 0 },
+        'openrouter/google/gemma-x:free': { input: 0, output: 0 },
+      },
+    };
+    const cfg: Config = { ...baseCfg, exclude: { paid_models_from: ['openrouter'] } };
+    seedMetrics(cfg, cache);
+    const result = selectClassifierCandidates(cfg, cache);
+    expect(result).not.toContain('openrouter/vendor/priced-later-model');
+    expect(result).toContain('openrouter/google/gemma-x:free');
+  });
+
   it('excludes models currently marked unhealthy (failed >=2x recently)', () => {
     const cache: Cache = {
       available_models: [

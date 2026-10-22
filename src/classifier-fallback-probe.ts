@@ -47,7 +47,7 @@
 
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
-import { isExcluded } from './exclude.ts';
+import { isExcluded, isPaidForClassifier } from './exclude.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
 import { formatBlockLogLine, isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
 import {
@@ -238,6 +238,9 @@ export function selectClassifierCandidates(
     // classification included (owner decision 2026-10-03 — a stealth model
     // was classifying prompts despite the user excluding it from routing).
     if (cfg.exclude && isExcluded(ref, { rules: cfg.exclude, cfg, cache })) continue;
+    // Classifier-only paid guard (see isPaidForClassifier): a price of 0 in
+    // the catalog does not make a paid_models_from model free for classification.
+    if (isPaidForClassifier(ref, cfg.exclude)) continue;
 
     const price = lookupPrice(ref);
     // gdpval lookup: model_score_cache maps ref → slug; gdpval_scores maps slug → score.
