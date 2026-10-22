@@ -358,6 +358,26 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 
 ### Extended Classification
 - [ ] **Add more categories** - More specific distinction
+- [ ] **Pinned continuation does not update the category memory** (found 2026-10-22,
+  code read, not yet reproduced live). A `HINT:` model pin bypasses the
+  classifier, so the turn returns no `category`, and
+  `lastClassifiedCategory` (`src/stream-orchestrator.ts:419`) keeps the value
+  from before the pin. A following unpinned "weiter" then inherits a stale
+  category. Routing of the pinned turn itself is unaffected (the pin decides
+  the model); only the next turn's category and the calibration label are
+  wrong. Planned fix: a pinned turn classifies its content, but keeps the
+  model pin, and writes its category to the memory. Needs a red-first test.
+  Background: `docs/research/2026-10-22-hint-category-signal.md`.
+- [ ] **Use explicit HINT pins as owner category labels** (research, 2026-10-22).
+  Hand-labelled, 96 unique pinned prompts in the local session logs: code_complex 67,
+  planning 11, continue 9, design 5, simple 2, standard 2. A Sonnet pin mostly
+  means code_complex, but not always (4 of 33 are continuations). An Opus pin
+  is planning in 5 of 12 cases, code_complex in 7 (plan checks count as
+  code_complex under the taxonomy). The 4 Haiku pins are not enough to
+  support "Haiku = simple". Pins are NOT a routing rule; they are a
+  label source for calibration. Open: keep labels separate from model
+  predictions (`owner_label` field) and decide the category handling of
+  "plan check" (taxonomy says code_complex).
 - [ ] **Multi-label classification** - Multiple categories per prompt (needs an ADR before implementation, see below)
 - [x] **Context-based classification (partially done, 2026-08-29)** — the
   classifier already accepted `lastCategory` (short-prompt momentum: "yes",
