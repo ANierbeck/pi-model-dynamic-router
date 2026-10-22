@@ -82,6 +82,21 @@ export function isExcluded(ref: string, ctx: ExcludeContext): boolean {
 }
 
 /**
+ * Classifier-only paid guard (owner decision 2026-10-22). A provider listed in
+ * `exclude.paid_models_from` may serve classification only through models
+ * carrying the explicit `:free` tag. A catalog price of 0 is NOT enough: the
+ * scan turns it into `cost_per_m: 0`, and the provider can change the price
+ * afterwards. Routing keeps the price-based free rule; this guard only narrows
+ * the classifier's cloud fallback, which had been spending on a paid model.
+ */
+export function isPaidForClassifier(ref: string, rules: ExcludeRules | undefined): boolean {
+  const paidFrom = rules?.paid_models_from;
+  if (!paidFrom?.length) return false;
+  const prov = ref.split('/')[0];
+  return paidFrom.includes(prov) && !ref.includes(':free');
+}
+
+/**
  * Filter a list of model refs, removing all excluded ones.
  * Convenience wrapper around isExcluded.
  */
