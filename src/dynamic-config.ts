@@ -85,7 +85,7 @@ export function buildModelsWithMetadata(
       const isFreeModel =
         staticFreeModelsLookup.has(ref) ||
         (price !== null && price.input === 0 && price.output === 0) ||
-        ref.includes(':free') ||
+        ref.endsWith(':free') || // terminal tag only (Sourcery PR #74)
         (cost === 0 && isTokenBased);
 
       const contextWindow = lookupContextWindow(ref);

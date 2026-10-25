@@ -260,6 +260,9 @@ describe('isPaidCloudRateLimitFailure — single source of truth for the hard-co
     // wording ARE rate-limit-shaped.
     expect(isPaidCloudRateLimitFailure('mistral/small', 'provider_error', '429 too many requests')).toBe(true);
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', '402 payment required')).toBe(true);
+    // A mid-string :free (Sourcery PR #74) is NOT free: the paid hard-cooldown
+    // path must recognize a 429 on such a ref instead of skipping it.
+    expect(isPaidCloudRateLimitFailure('openrouter/vendor/x:free-v2', 'provider_error', '429 too many requests')).toBe(true);
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'rate limit reached')).toBe(true);
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'context 14293 tokens billed')).toBe(false);
   });

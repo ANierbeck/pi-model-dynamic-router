@@ -171,6 +171,48 @@ describe('selectClassifierCandidates', () => {
     expect(result).not.toContain('openrouter/stealth/space-bunny-alpha');
   });
 
+  it('never admits a paid_models_from provider model without the :free tag, even when its catalog price reads 0 (owner decision 2026-10-22)', () => {
+    // A catalog price of 0 is not proof of free: the scan turns it into
+    // cost_per_m 0, and OpenRouter prices can change under us. The paid guard
+    // for the classifier therefore requires the explicit :free tag.
+    const cache: Cache = {
+      available_models: [
+        { id: 'vendor/priced-later-model', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'google/gemma-x:free', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/vendor/priced-later-model': { input: 0, output: 0 },
+        'openrouter/google/gemma-x:free': { input: 0, output: 0 },
+      },
+    };
+    const cfg: Config = { ...baseCfg, exclude: { paid_models_from: ['openrouter'] } };
+    seedMetrics(cfg, cache);
+    const result = selectClassifierCandidates(cfg, cache);
+    expect(result).not.toContain('openrouter/vendor/priced-later-model');
+    expect(result).toContain('openrouter/google/gemma-x:free');
+  });
+
+  it('requires :free as the TERMINAL tag — a mid-string :free does not make a model free (Sourcery PR #74)', () => {
+    // `ref.includes(':free')` also matched refs like vendor/x:free-v2 or
+    // vendor/x:free:extended, treating a paid variant as free. The tag must
+    // be the exact terminal suffix.
+    const cache: Cache = {
+      available_models: [
+        { id: 'vendor/ling-x:free-v2', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'vendor/genuine-free:free', provider: 'openrouter', cost_per_m: 0 },
+      ],
+      openrouter_pricing: {
+        'openrouter/vendor/ling-x:free-v2': { input: 0, output: 0 },
+        'openrouter/vendor/genuine-free:free': { input: 0, output: 0 },
+      },
+    };
+    const cfg: Config = { ...baseCfg, exclude: { paid_models_from: ['openrouter'] } };
+    seedMetrics(cfg, cache);
+    const result = selectClassifierCandidates(cfg, cache);
+    expect(result).not.toContain('openrouter/vendor/ling-x:free-v2');
+    expect(result).toContain('openrouter/vendor/genuine-free:free');
+  });
+
   it('excludes models currently marked unhealthy (failed >=2x recently)', () => {
     const cache: Cache = {
       available_models: [

@@ -28,6 +28,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { RateLimitManager } from '../src/rate-limit.ts';
+import { routerLog } from '../src/logger.ts';
+
+// The 429-body assertions below need the log call, not the log file.
+vi.mock('../src/logger.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/logger.ts')>();
+  return {
+    ...actual,
+    routerLog: vi.fn(),
+    warnLog: vi.fn(actual.warnLog),
+    errorLog: vi.fn(actual.errorLog),
+    appendRawLog: vi.fn(),
+  };
+});
 
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
@@ -120,6 +133,19 @@ function rateLimitErrorEvents(resetAtMs: number): AssistantMessageEvent[] {
       type: 'error',
       reason: 'error',
       error: { message: `Warning: rate limit exceeded (tpm) — resets at ${resetStr}` },
+    } as any,
+  ];
+}
+
+/** An ORDINARY per-minute rate limit — NOT the free-tier daily cap.
+ * Must match isRateLimitText but not isFreeTierDailyCapText. */
+function ordinaryRateLimitEvents(resetAtMs: number, cause: string): AssistantMessageEvent[] {
+  const resetStr = formatResetAt(resetAtMs);
+  return [
+    {
+      type: 'error',
+      reason: 'error',
+      error: { message: `Warning: rate limit exceeded (tpm) — ${cause}, resets at ${resetStr}` },
     } as any,
   ];
 }
@@ -258,6 +284,65 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         expect(text).toContain('served by the healthy fallback');
         expect(mock.calls.filter((c) => c === 'lim-provider/limited-model')).toHaveLength(1);
         expect(mock.calls.filter((c) => c === 'ok-provider/healthy-model')).toHaveLength(1);
+      }
+    );
+  }, 30_000);
+
+  it('logs the 429 body for an ORDINARY rate limit, not only the free-tier daily cap (Sourcery PR #74)', async () => {
+    // stream-proxy used to keep the raw error text only for the daily-cap
+    // variant, so driveStream's `429 body:` line was EMPTY for ordinary
+    // per-minute 429s — the very case it was built to tell apart from the
+    // account-wide cap.
+    await withIsolatedRouter(
+      {
+        ...baseCfg,
+        gdpval_builtin: { 'limited-model': 1000, 'healthy-model': 900 },
+        rate_limit_wait_max_ms: 4_000,
+      },
+      async (defaultExport) => {
+        vi.mocked(routerLog).mockClear();
+        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
+        const pi: any = {
+          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
+          setModel: vi.fn(async () => true),
+          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
+        };
+        defaultExport(pi);
+
+        const limited = {
+          provider: 'lim-provider', id: 'limited-model', api: 'lim-api',
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+        };
+        const healthy = {
+          provider: 'ok-provider', id: 'healthy-model', api: 'ok-api',
+          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+        };
+        const mock = makeRegistry({
+          'lim-provider/limited-model': limited,
+          'ok-provider/healthy-model': healthy,
+        });
+        mock.scripts['lim-provider/limited-model'] = [
+          ordinaryRateLimitEvents(Date.now() + 60 * 60 * 1000, 'shared upstream pool'),
+        ];
+        mock.scripts['ok-provider/healthy-model'] = [healthyEvents('served by the healthy fallback')];
+
+        const ctx: any = { modelRegistry: mock.registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'do work' }] };
+
+        await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+        const bodyLines = vi.mocked(routerLog).mock.calls
+          .map((c) => String(c[0]))
+          .filter((l) => l.includes('429 body:'));
+        expect(bodyLines.length).toBeGreaterThanOrEqual(1);
+        // The provider's own words must survive — an EMPTY body was the
+        // defect (the line printed, but with nothing after the colon).
+        expect(bodyLines.join('\n')).toContain('shared upstream pool');
+        expect(bodyLines.join('\n')).toContain('lim-provider/limited-model');
       }
     );
   }, 30_000);

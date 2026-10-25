@@ -2,7 +2,7 @@
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, wedgeCooldownText } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
-import { isExcluded } from './exclude.ts';
+import { isExcluded, isPaidForClassifier } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
@@ -883,7 +883,7 @@ async function classifyPromptUncounted(
       // and the static free list / a pin never passed the probe filter.
       if (cfg.exclude) {
         const exCtx = { rules: cfg.exclude, cfg, cache };
-        modelsToTry = modelsToTry.filter((ref) => !isExcluded(ref, exCtx));
+        modelsToTry = modelsToTry.filter((ref) => !isExcluded(ref, exCtx) && !isPaidForClassifier(ref, cfg.exclude));
       }
       routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
       // Distinguish "probe ran but all candidates failed" from "probe hasn't

@@ -52,6 +52,16 @@ describe('live isFree — free_models membership', () => {
     expect(applyGroupFilters(refs, zeroCostGroup, cfg)).toEqual(['fp/prefixed', 'fp/bare-one', 'fp/tagged:free']);
   });
 
+  it('a mid-string :free (not the terminal tag) does not make a ref free (Sourcery PR #74)', () => {
+    const cfg = useWorld({
+      model_metrics: { ...baseMetrics, 'fp/mid:free-v2': { gdpval: 500, cost_per_m: 5 } },
+      providers: { fp: { billing: 'pay_per_token', free_models: [] } },
+    });
+    // `fp/mid:free-v2` contains ':free' but the tag is not the suffix — a
+    // paid variant must not enter a max_cost 0 group.
+    expect(applyGroupFilters(['fp/mid:free-v2'], zeroCostGroup, cfg)).toEqual([]);
+  });
+
   it('only a prefixed entry matches when the bare id is not listed (and vice versa)', () => {
     const prefixedOnly = useWorld({ providers: { fp: { billing: 'pay_per_token', free_models: ['fp/prefixed'] } } });
     expect(applyGroupFilters(['fp/prefixed', 'fp/bare-one'], zeroCostGroup, prefixedOnly)).toEqual(['fp/prefixed']);

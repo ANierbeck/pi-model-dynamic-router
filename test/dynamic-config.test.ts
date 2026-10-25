@@ -115,6 +115,20 @@ describe('buildModelsWithMetadata', () => {
     expect(result[0].isFreeModel).toBe(true);
   });
 
+  it('does NOT flag isFreeModel for a mid-string :free (Sourcery PR #74)', () => {
+    // ':free' must be the terminal tag — `m:free-v2` contains the substring
+    // but is a paid variant. No zero price, no free_models entry, so the
+    // tag is the only thing that could misclassify it.
+    setGdpval({ 'm:free-v2': 100 });
+    const result = buildModelsWithMetadata(
+      ['payg/m:free-v2'],
+      { ...baseCfg, model_metrics: { 'payg/m:free-v2': { cost_per_m: 5 } } },
+      new Set(),
+      new Set()
+    );
+    expect(result[0].isFreeModel).toBe(false);
+  });
+
   it('flags isFreeModel via a zero effective cost on a token-based provider', () => {
     setGdpval({ m: 100 });
     const cfg = { ...baseCfg, model_metrics: { 'payg/m': { cost_per_m: 0 } } };
