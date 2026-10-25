@@ -1,7 +1,9 @@
 # Laya as the sole classifier, chain as background comparator
 
 Status: owner decisions recorded 2026-10-25; implementation partly done (see
-"State"). Branch: `feat/laya-active-snapshot`.
+"State"). Branch: `laya-spike` (the former feat/laya-active-snapshot was
+folded into it in the 2026-10-25 branch cleanup; the live build runs from this
+branch).
 
 ## Owner decisions (2026-10-25)
 
