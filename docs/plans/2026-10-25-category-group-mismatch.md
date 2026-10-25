@@ -1,8 +1,7 @@
 # Categories and groups do not line up
 
-**Status:** D1 and D3 decided 2026-10-25; D2 decided in principle, with one
-open consequence (see "Open decisions"). No code until the consequence is
-decided and the behaviour-change list is approved (Steps 2–3).
+**Status:** all owner decisions recorded (D1–D3, 2026-10-25). No code
+before the behaviour-change list from Step 2 is approved.
 
 **Verified against:** `origin/main` 6f4ac08 (`router-config.json`,
 `src/content-classifier.ts` `CATEGORY_TO_GROUP`, `src/stream-orchestrator.ts`,
@@ -106,27 +105,32 @@ owner decisions of 2026-10-04 and 2026-10-13 and stay as they are.
 ## Open decisions (owner)
 
 - **D1 — decided 2026-10-25: B** (reduce, then rename).
-- **D2 — decided 2026-10-25: remove the unreached groups.** Hints target
-  models, not categories or groups: all 35 hint records since 2026-10-15
-  name a model. Removal set: `trivial`, `standard`, `complex`, `strategic`.
-  **Consequence to decide before Step 2:** `strategic` is not hint-only.
-  It is used in four places that removing it breaks:
-  - the start group for a model hint whose model scores ≥ 700
-    (`src/stream-orchestrator.ts:561`);
-  - the failover target of `complex`, `tactical` and `planning`
-    (`router-config.json`);
-  - `delegation.expensive_groups` (`src/delegation.ts:75`, the read block);
-  - the escalation levels in `src/escalation.ts:10`.
-  Options: (a) keep `strategic` as the single top-tier group and remove
-  only `trivial`, `standard`, `complex`; (b) remove it and point the four
-  uses at `planning` / `tactical`, which changes top-tier behaviour and
-  needs the replay in Step 2. The owner's D2 answer does not say which.
-- **D3 — decided 2026-10-25:** clean up; the next version is 2.0 and
-  breaking config changes are allowed there. Not yet decided: whether the
-  old names get a warning-only alias in the 1.x line (the owner's answer
-  reads as "no aliases"; to confirm).
+- **D2 — decided 2026-10-25: remove the unreached groups, INCLUDING
+  `strategic`** (owner: hints target models, not categories or groups —
+  all 35 hint records since 2026-10-15 name a model). The four code uses
+  of `strategic` are re-pointed, not kept:
+  - hint start group for a model scoring ≥ 700 (`stream-orchestrator.ts:561`)
+    → `planning`;
+  - failover target of `complex`, `tactical`, `planning` → `planning` /
+    `tactical` (exact chains decided in the replay, Step 2);
+  - `delegation.expensive_groups` (`delegation.ts:75`) → `planning`,
+    `tactical` (and the TODO entry about the missing `planning` is
+    resolved by the same change);
+  - escalation levels (`escalation.ts:10`: operational, tactical,
+    strategic) → top level becomes `planning`.
+  This changes top-tier behavior; the Step 2 replay must quantify it
+  before code.
+- **D3 — decided 2026-10-25: clean up, breaking changes allowed.** `main`
+  is 1.6.1 and STAYS on 1.x (verified against `origin/main` 2026-10-25);
+  the reduction/rename lands in 2.0. No read-aliases: the owner's answer
+  reads as rename without an alias period in 2.0.
+- Out of scope here: the names `fallback` and `fallback_groups` — decided
+  in `docs/plans/2026-10-25-fallback-naming.md`.
 
-## Steps (after D2 consequence and D3 confirmation)
+## Steps
+
+0. Pin the CURRENT main (post PR #74) as the 1.x end state: no group
+   changes ship before 2.0 is deliberately opened.
 
 1. Characterization tests that pin today's mapping and failover chains.
    They pass on today's code — no red expected, stated per AGENTS.md §4.
