@@ -211,11 +211,20 @@ export function getLastClassificationSource(): ClassificationSourceInfo | null {
 // Per-call source holder. `lastClassificationSource` is process-global, so a
 // counter reading it after an await could credit an overlapping call's source
 // (subagent fan-out); each classifyPrompt call runs inside its own holder.
-const callSource = new AsyncLocalStorage<{ source: string | null; trace: ClassificationTrace }>();
+// `comparator: true` marks the DETACHED background chain of the live A/B
+// snapshot (see spawnBackgroundComparator): it fills its own trace for its
+// own decision-log record, but must never touch the process-global source
+// or the classification cache — those belong to the classification that
+// actually routed.
+const callSource = new AsyncLocalStorage<{
+  source: string | null;
+  trace: ClassificationTrace;
+  comparator?: boolean;
+}>();
 
 function noteSource(source: string): void {
-  lastClassificationSource = { source, at: Date.now() };
   const holder = callSource.getStore();
+  if (!holder?.comparator) lastClassificationSource = { source, at: Date.now() };
   if (holder) {
     holder.source = source;
     // Decision log: which candidate produced the final classification.
@@ -290,6 +299,10 @@ function classifyCacheGet(prompt: string): { result: FullClassificationResult; o
 
 function classifyCacheSet(prompt: string, result: FullClassificationResult): void {
   if (contextDerived.has(result)) return;
+  // The detached comparator chain must not (over)write the cache: it runs
+  // AFTER the real classification was cached, so its write would silently
+  // replace the routed answer with the comparator's (shadow, never routed).
+  if (callSource.getStore()?.comparator) return;
   if (classifyCache.size >= MAX_CLASSIFY_CACHE) {
     // Evict the oldest entry (first in iteration order).
     const oldest = classifyCache.keys().next().value;
@@ -1057,6 +1070,102 @@ async function classifyPromptUncounted(
   // said next to the real decision (ADR-0027 Phase 4) and never changes the
   // route. A stage that is unavailable, errors, or falls through (low
   // confidence, `fallback`) leaves the chain exactly as it is without Laya.
+  // The cloud/ollama chain after Laya — shared by the main path and the
+  // detached background comparator (live A/B snapshot), so both run EXACTLY
+  // the same chain. Cache writes inside are suppressed per-holder for the
+  // comparator (see classifyCacheSet).
+  const classifyViaLlmChain = async (): Promise<FullClassificationResult> => {
+    if (allowCloudFallback) {
+      const cloudResult = await tryCloud();
+      if (cloudResult) {
+        if (!contextBlock) classifyCacheSet(prompt, cloudResult);
+        return cloudResult;
+      }
+      await tryOllama();
+    } else {
+      await tryOllama();
+    }
+
+    if (classificationResult) {
+      if (!contextBlock) classifyCacheSet(prompt, classificationResult);
+      return classificationResult;
+    }
+
+    // Static fallback
+    if (!allowStaticFallback) {
+      errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+      noteSource('fallback');
+      return {
+        category: 'continue',
+        reason: 'Ollama unavailable, static classifier disabled',
+        confidence: 0,
+      };
+    }
+
+    errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
+    noteSource('static');
+
+    // Static result routes via its category — no escalation synthesis
+    // (see the module-level note above).
+    return classifyStatically(prompt);
+  };
+
+  // Live A/B snapshot (owner decision 2026-10-25): when a confident Laya
+  // answer takes the route in active mode and `compare_in_background` is
+  // set, run the chain it replaced DETACHED and log its answer as a
+  // `comparator` decision-log record for the same input. Logging only: the
+  // route stays Laya's, the cache stays Laya's, the global source stays
+  // Laya's (comparator holder flag). Best-effort — if the process exits
+  // before the detached run finishes, the log simply lacks the record.
+  const spawnBackgroundComparator = (): void => {
+    const prevCategory = context.lastCategory ?? null;
+    void (async () => {
+      const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean } = {
+        source: null,
+        trace: newTrace(),
+        comparator: true,
+      };
+      try {
+        await callSource.run(holder, async () => {
+          const started = Date.now();
+          const result = await classifyViaLlmChain();
+          // Fail-open like the main log step: the comparator must never
+          // break the process, and a logging failure is not a routing event.
+          try {
+            const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+            if (!log) return;
+            writeDecisionRecord(
+              buildDecisionRecord({
+                prompt,
+                stage: 'comparator',
+                trace: holder.trace,
+                prev: prevCategory
+                  ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }
+                  : null,
+                final: {
+                  category: 'category' in result ? result.category : null,
+                  group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                  hint: null,
+                  reason: result.reason ?? null,
+                },
+                context,
+                ms: Date.now() - started,
+                cfgBlock: options.cfg?.classifier_log,
+                home: homedir(),
+              }),
+              homedir(),
+              log
+            );
+          } catch {
+            // swallowed on purpose
+          }
+        });
+      } catch {
+        // swallowed on purpose — a broken sidecar/chain must not surface here
+      }
+    })();
+  };
+
   const layaCfg = options.cfg?.classifier_laya;
   if (layaCfg?.enabled) {
     const ref = `laya:${layaCfg.checkpoint}`;
@@ -1081,6 +1190,7 @@ async function classifyPromptUncounted(
       }
       if (acts && out.result) {
         noteSource(ref);
+        if (layaCfg.compare_in_background) spawnBackgroundComparator();
         if (trace) {
           trace.chain.push({ ref, outcome: 'ok', ms });
           // Decision log: what the stage said before post-processing.
@@ -1092,50 +1202,11 @@ async function classifyPromptUncounted(
     }
   }
 
-  // Cloud-first (2026-09-27): the local Ollama daemon is a last resort, not
-  // the default path — repeated MLX wedge incidents (2026-09-25/26) pinned
-  // the GPU at 100% when it was hit on every turn. When allowCloudFallback
-  // is enabled, try the cloud chain first; only fall through to Ollama if
-  // every cloud candidate failed. When allowCloudFallback is disabled, the
-  // behavior is unchanged (Ollama only, no cloud attempt).
-  if (allowCloudFallback) {
-    const cloudResult = await tryCloud();
-    if (cloudResult) {
-      if (!contextBlock) classifyCacheSet(prompt, cloudResult);
-      return cloudResult;
-    }
-    await tryOllama();
-  } else {
-    await tryOllama();
-  }
-
-  if (classificationResult) {
-    // Cache the LLM classification result for repeated identical prompts
-    // (only when there was no conversation context — see cache check above).
-    if (!contextBlock) classifyCacheSet(prompt, classificationResult);
-    return classificationResult;
-  }
-
-  // Static fallback
-  if (!allowStaticFallback) {
-    errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    // The 'continue' category routes via CATEGORY_TO_GROUP (continue→tactical)
-    // — a capable model, exactly what the F5 fix (2026-09-02) wanted; no
-    // escalation synthesis is needed (see the module-level note above).
-    noteSource('fallback');
-    return {
-      category: 'continue',
-      reason: 'Ollama unavailable, static classifier disabled',
-      confidence: 0,
-    };
-  }
-
-  errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
-  noteSource('static');
-
-  // Static result routes via its category — no escalation synthesis
-  // (see the module-level note above).
-  return classifyStatically(prompt);
+  // Cloud-first chain (2026-09-27 rationale: Ollama is a last resort — repeated
+  // MLX wedge incidents pinned the GPU at 100%), then the static fallback. The
+  // whole tail lives in classifyViaLlmChain so the detached background
+  // comparator (live A/B snapshot) runs EXACTLY the chain the main path runs.
+  return classifyViaLlmChain();
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {

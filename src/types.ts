@@ -234,6 +234,13 @@ export interface ClassifierLayaConfig {
    * without affecting the routed answer; "active" lets a confident result take the
    * route. Default "shadow" when enabled. */
   mode?: 'active' | 'shadow';
+  /** Live A/B snapshot (owner decision 2026-10-25): in active mode, when a
+   * confident Laya answer takes the route, still run the cloud/ollama chain it
+   * replaced DETACHED and log its answer as a `comparator` decision-log record
+   * for the same input. Logging only — it never changes the route, the
+   * classification cache, or the process-global classification source. Default
+   * false; meaningless in shadow mode (the chain runs anyway and is logged). */
+  compare_in_background?: boolean;
 }
 
 export interface Config {

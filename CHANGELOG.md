@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Live A/B snapshot: Laya at the wheel, the chain logged in the background** (owner decision 2026-10-25). In `active` mode with `classifier_laya.compare_in_background: true`, a confident Laya answer takes the route as before, and the cloud/ollama chain it replaced still runs DETACHED, writing its answer as a `comparator` decision-log record with the same `input.sha` — the pairing key for evaluation on live traffic. Logging only: the route, the classification cache and the process-global classification source all stay Laya's (per-holder `comparator` flag in `noteSource`/`classifyCacheSet`), the run is fail-open and best-effort (a process exit before it finishes simply leaves the record absent). The cloud-first tail of `classifyPromptUncounted` moved into a shared `classifyViaLlmChain` closure so the comparator runs EXACTLY the chain the main path runs. Zero added latency on the hot path. Default off; meaningless in shadow mode (the chain runs and is logged anyway).
+
 ### Fixed
 
 - **The classifier no longer spends on paid OpenRouter models.** `exclude.paid_models_from` only checked the scan's `cost_per_m`, and a catalog price of 0 counted as free. A model the provider later prices (or lists at 0 without a `:free` tag) was therefore still admitted to the classifier's cloud fallback. The classifier now requires the explicit `:free` tag for every `paid_models_from` provider (`isPaidForClassifier`); routing keeps its price-based rule.

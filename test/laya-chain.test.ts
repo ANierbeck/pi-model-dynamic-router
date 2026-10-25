@@ -187,6 +187,63 @@ describe('shadow mode — observe, never decide', () => {
   });
 });
 
+// Live A/B snapshot (owner decision 2026-10-25): Laya at the wheel in active
+// mode, and — when `compare_in_background` is set — the cloud/ollama chain it
+// replaced still runs detached, writing its own `comparator` decision-log
+// record for the same input. Same live traffic, both answers, zero added
+// latency on the hot path (the record is best-effort: if the process exits
+// first, the log simply lacks that record).
+describe('active mode + background comparator (compare_in_background)', () => {
+  const waitFor = async (cond: () => boolean, ms = 2000): Promise<void> => {
+    const deadline = Date.now() + ms;
+    while (!cond()) {
+      if (Date.now() > deadline) throw new Error('timeout waiting for the comparator record');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  it('Laya decides; the chain answer arrives as a separate `comparator` record', async () => {
+    const r = await run('Draft the module boundaries for the billing service xi', cfg({ compare_in_background: true }));
+    expect(r).toMatchObject({ category: 'design' });
+    await waitFor(() => records().some((rec) => rec.stage === 'comparator'));
+    const recs = records();
+    expect(recs).toHaveLength(2);
+    const main = recs.find((rec) => rec.stage === 'laya');
+    const cmp = recs.find((rec) => rec.stage === 'comparator');
+    expect(main.final.category).toBe('design'); // Laya at the wheel
+    expect(main.answered_by).toBe(`laya:${CKPT}`);
+    // The chain it replaced said `simple` — logged, never routed.
+    expect(cmp.final.category).toBe('simple');
+    expect(cmp.answered_by).toBe('ollama:gemma-primary');
+    expect(typeof cmp.ms).toBe('number');
+    expect(cmp.chain.map((a: any) => a.outcome)).toContain('ok');
+    // Same input on both records — that is the pairing key for evaluation.
+    expect(cmp.input.sha).toBe(main.input.sha);
+    // The detached run must not flip the process-global classification source.
+    expect(getLastClassificationSource()?.source).toBe(`laya:${CKPT}`);
+  });
+
+  it('the comparator never overwrites the classification cache', async () => {
+    const p = 'Draft the module boundaries for the billing service rho';
+    await run(p, cfg({ compare_in_background: true }));
+    await waitFor(() => records().some((rec) => rec.stage === 'comparator'));
+    const r2 = await run(p, cfg({ compare_in_background: true }));
+    // Re-run must hit Laya's cached answer, NOT the comparator's cloud/ollama result.
+    expect(r2).toMatchObject({ category: 'design' });
+    const recs = records().filter((rec) => rec.input.sha === records()[0].input.sha);
+    const cacheRec = recs.find((rec) => rec.stage === 'cache');
+    expect(cacheRec?.cache_origin).toBe(`laya:${CKPT}`);
+    expect(cacheRec?.final.category).toBe('design');
+  });
+
+  it('no comparator unless compare_in_background is set', async () => {
+    await run('Draft the module boundaries for the billing service sigma', cfg());
+    expect(callOllama).not.toHaveBeenCalled();
+    expect(records()).toHaveLength(1);
+    expect(records()[0].stage).toBe('laya');
+  });
+});
+
 describe('decision log', () => {
   it('an active answer is stage `laya` with the checkpoint as answered_by', async () => {
     await run('Draft the module boundaries for the billing service kappa', cfg());
