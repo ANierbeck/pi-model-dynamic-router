@@ -186,6 +186,30 @@ D1–D3: `docs/plans/2026-10-25-category-group-mismatch.md`.
 candidates, decision-log stage, retired category, stream retry). Plan:
 `docs/plans/2026-10-25-fallback-naming.md`.
 
+### 🐛 **Open (2026-10-25): compaction reason text names the wrong group**
+
+`classifyPromptUncounted` (`src/content-classifier.ts`, compaction branch)
+returns `category: 'code_complex'` — routed to `tactical` — with the reason
+"routing to strategic" (comment says the same). Seen once in 62 compaction
+decisions (the other 61 reuse the last model). Decide which is intended
+(strategic or tactical), then fix code or text red-first.
+
+### 🔍 **Open (2026-10-25): tool follow-up steps fail over into the free pool**
+
+A tool follow-up step (`src/stream-orchestrator.ts`, `isToolFollowUp`) puts
+the last model first and the `fallback` group (free, cheapest first)
+behind it — whatever group the turn started in. A planning turn whose model
+fails mid-loop would continue on a free model. Found by code reading; the
+impact is not measured yet — measure in the log first, then decide.
+
+### 🔍 **Open (2026-10-25): `delegation.expensive_groups` omits `planning`**
+
+Shipped `["strategic", "tactical"]` predates the `planning` group
+(2026-10-04). The read block covers `planning` today only because both of
+its models are also members of `strategic` (checked against the dynamic
+config of 2026-10-24). Add `planning` explicitly, red-first, so the
+coverage does not depend on that overlap.
+
 ### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
 
 `applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
