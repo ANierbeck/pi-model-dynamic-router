@@ -174,6 +174,12 @@ original "Unknown error" symptom.
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### 🔎 **Open (2026-10-25): categories and groups do not line up**
+
+7 categories, 13 groups, names that point at the wrong category, 5 groups
+no category reaches. Plan with verified current state and owner decisions
+D1–D3: `docs/plans/2026-10-25-category-group-mismatch.md`.
+
 ### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
 
 `applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
