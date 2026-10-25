@@ -1,10 +1,18 @@
 # "fallback" — one word, too many meanings
 
-Status: investigation plan (owner request 2026-10-25: "mehrere semantische
-Verwendungen riecht nach Code-Smell — extra investigativer Ansatz").
-Nothing is renamed yet; Step 1 needs the owner's vocabulary decision.
+**Status:** proposed 2026-10-25 (owner request: the many meanings of
+"fallback" are a code smell — investigate separately). Nothing is renamed
+yet; Step 1 needs the owner's vocabulary decision.
 
-## Why this is a problem
+**Verified against:** `origin/main` 6f4ac08 and the laya-spike line
+(`feat/laya-active-snapshot`) on 2026-10-25 — counts by `grep -i
+fallback`; per-meaning classification by reading each use site.
+
+**Related:** `docs/plans/2026-10-25-category-group-mismatch.md` decides
+which groups exist and what they are called; the group `fallback` and
+`fallback_groups` (meanings A and B below) are named here, not there.
+
+## Problem
 
 `fallback` appears 334 times in `src/` + `index.ts`, 28 times in the shipped
 `router-config.json`, 698 times in `test/`, 648 times in `docs/` + README. It
@@ -30,7 +38,9 @@ A, B and F are the same idea at three scales (group, cascade, candidate);
 C is a different idea (classifier candidates) that borrowed the word; D and E
 are *labels about a classification* that borrowed it; G is harmless.
 
-## Principles
+## Solution
+
+### Principles
 
 1. One word, one meaning. After the round `fallback` must not name an entity
    (group, config key, stage, category, file) in two senses.
@@ -46,7 +56,7 @@ are *labels about a classification* that borrowed it; G is harmless.
    their old strings; readers accept both.
 5. Category G is left alone except where a name collides with A–F.
 
-## Proposed vocabulary — OWNER DECISION NEEDED
+### Proposed vocabulary (proposal — see Open decisions)
 
 These are proposals, not decisions.
 
@@ -66,7 +76,7 @@ their names because they are the one honest "fallback" in the system? The
 alternative is to keep exactly those two and rename C–E. Smaller change,
 less user-config churn.
 
-## Steps
+### Steps
 
 1. **Vocabulary decision** (owner). Output: the table above, amended.
 2. **Characterization tests** for the literal paths (A): unresolved target,
@@ -93,6 +103,14 @@ less user-config churn.
    that fails when a new identifier containing `fallback` appears outside
    category G's allow-list (ratchet, like `no-hardcoded-models`).
 
+## Open decisions (owner)
+
+- **V1:** the target vocabulary (table above), amended as the owner sees fit.
+- **V2:** keep `fallback` (group) and `fallback_groups` as the one honest
+  "fallback" and rename only C–E — or rename A and B too.
+- **V3:** when read-aliases for renamed public config keys are dropped
+  (a release decision, AGENTS.md §1).
+
 ## Risks
 
 - Config breakage for installed users → read-aliases with warnings; release
@@ -105,6 +123,7 @@ less user-config churn.
 
 ## Not in scope
 
-The Laya/`continue` analysis (docs/plans/2026-10-25-laya-sole-classifier.md).
+The Laya/`continue` analysis (`docs/plans/2026-10-25-laya-sole-classifier.md`
+on branch `feat/laya-active-snapshot`).
 `continue` keeps its owner-defined meaning: the model cannot tell whether the
 task changed, so the previous category stays.

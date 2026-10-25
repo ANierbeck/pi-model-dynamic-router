@@ -180,6 +180,12 @@ original "Unknown error" symptom.
 no category reaches. Plan with verified current state and owner decisions
 D1–D3: `docs/plans/2026-10-25-category-group-mismatch.md`.
 
+### 🔎 **Open (2026-10-25): "fallback" naming (code smell)**
+
+"fallback" names six different things (group, failover cascade, classifier
+candidates, decision-log stage, retired category, stream retry). Plan:
+`docs/plans/2026-10-25-fallback-naming.md`.
+
 ### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
 
 `applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
