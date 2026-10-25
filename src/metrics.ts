@@ -816,8 +816,10 @@ export function isFreeModelRef(
   const provDef = PROVIDER_MAP[prov];
   // Local providers are $0 — free in the cost sense.
   if (provDef?.local) return true;
-  // Explicit :free tag in the ref (e.g. openrouter/.../gpt-4o-mini:free)
-  if (ref.includes(':free')) return true;
+  // Explicit :free tag in the ref (e.g. openrouter/.../gpt-4o-mini:free).
+  // TERMINAL tag only (Sourcery PR #74): `includes` also matched refs like
+  // vendor/x:free-v2, misclassifying a paid variant as free.
+  if (ref.endsWith(':free')) return true;
   // Listed in the provider's free_models config (any normalization)
   const provCfg = providers?.[prov];
   if (provCfg?.free_models) {

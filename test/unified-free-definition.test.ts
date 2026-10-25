@@ -44,6 +44,13 @@ describe('isFreeModelRef — pure helper (the single source)', () => {
     expect(isFreeModelRef('openrouter/qwen/qwen3-4b:free', providers, available_models)).toBe(true);
   });
 
+  it('requires :free as the TERMINAL tag — a mid-string :free is not free (Sourcery PR #74)', () => {
+    // `x:free-v2` contains ':free' but the tag is not the exact suffix:
+    // treating it as free could route/spend on a paid variant.
+    expect(isFreeModelRef('openrouter/vendor/x:free-v2', providers, [])).toBe(false);
+    expect(isFreeModelRef('openrouter/vendor/x:free:extended', providers, [])).toBe(false);
+  });
+
   it('recognizes the free_models config list (full ref form)', () => {
     expect(isFreeModelRef('openrouter/qwen/qwen3-4b:free', providers, [])).toBe(true);
   });

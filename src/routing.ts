@@ -132,7 +132,9 @@ function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
     // path). Registry-first via lookupPrice/effCost: a scan placeholder
     // cost_per_m of 0 must not make a registry-priced model "free".
     isFree: (ref) => {
-      if (ref.includes(':free') || inFreeModelsList(cfg, ref)) return true;
+      // TERMINAL :free tag only (Sourcery PR #74) — a mid-string `:free`
+      // (e.g. vendor/x:free-v2) is a paid variant and must not enter a $0 group.
+      if (ref.endsWith(':free') || inFreeModelsList(cfg, ref)) return true;
       const price = lookupPrice(ref);
       if (price !== null && price.input === 0 && price.output === 0) return true;
       return effCost(ref) === 0 && isTokenBased(cfg, ref.split('/')[0]);

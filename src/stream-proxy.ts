@@ -373,7 +373,11 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // :free candidates at once — without this, only the failing
               // ref got the ordinary 60s backoff (live finding 2026-10-03:
               // 14 of a session's 23 errors were re-burned cap attempts).
-              if (isFreeTierDailyCapText(errorMsg)) rateLimitDetail = errorMsg;
+              // Keep the raw text for EVERY rate limit, not only the daily
+              // cap (Sourcery PR #74): driveStream's `429 body:` log line is
+              // the only way to tell an account-wide daily cap from a shared
+              // upstream pool apart, and it was empty for ordinary 429s.
+              rateLimitDetail = errorMsg;
             }
             // Check if this is a context-overflow rejection (Mistral/OpenAI/etc.)
             if (isOverflowErrorText(errorMsg)) {
