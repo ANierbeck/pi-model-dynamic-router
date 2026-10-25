@@ -250,5 +250,32 @@
   larger work rounds and before every release proposal.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
- 6a4e239 (chore: dev-tooling security round (vitest 4.1.11, lock refresh) + AGENTS.md §10)
 
+## 11. Plans: one problem, one plan
+
+- **Owner rule 2026-10-25:** a plan document addresses exactly ONE problem
+  and its solution — Problem → Solution. A second problem gets its own
+  plan, even when it is discovered while working on the first one; the
+  plans link each other instead of merging.
+- Every plan starts with: **Status** (proposed / approved / in progress /
+  done / superseded — with a date), **Problem**, **Solution**, **Open
+  decisions** (what the owner still has to decide), and **Verified
+  against** (the commit / config the current-state claims were checked
+  against). Current-state claims are checked against code, config and
+  logs, never written from memory; what was not checked is said so.
+- A plan is not a lab notebook. Measurements, experiment and evaluation
+  results go to `docs/research/` and the plan links them. Progress updates
+  the Status line and ticks off steps — it does not append narrative
+  sections.
+- When a plan turns out to cover more than one problem, split it before
+  continuing. A superseded plan gets a "superseded by …" header and is
+  otherwise left untouched as history.
+- A plan that drives work is committed. An uncommitted plan cannot be
+  reviewed and does not exist for the next session.
+- Incident that motivated the rule (2026-10-25):
+  `docs/plans/2026-10-11-category-model-alignment.md` grew over four days
+  to ~700 lines mixing group renaming, mid-tier ranking, taxonomy, the
+  golden set and Laya fine-tuning. Its header still said "Proposed", a
+  decided step still said "BLOCKED", one mapping claim contradicted the
+  code, the 1:1 group rename it planned silently never happened, and the
+  file itself was never committed although the CHANGELOG cites it.
