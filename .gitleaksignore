@@ -7,4 +7,4 @@ c4bfedb012ae2fd133c4f536fe5e1698a6c50f6c:src/slug-matcher.ts:generic-api-key:153
 # Fake credential fixtures in the formatRateLimitBodyForLog redaction test
 # (Sourcery PR #74 round): invented strings ("pk_live_…", "tok_…") that must
 # LOOK like credentials so the redaction rule is exercised. Not real keys.
-2e968488f9f3c71b6d859f3a05423413703c81ed:test/rate-limit-body-log.test.ts:generic-api-key:39
+762790018f08d42f6d43f1e04fcb573212698645:test/rate-limit-body-log.test.ts:generic-api-key:39
