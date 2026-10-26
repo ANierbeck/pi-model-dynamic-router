@@ -279,3 +279,19 @@
   decided step still said "BLOCKED", one mapping claim contradicted the
   code, the 1:1 group rename it planned silently never happened, and the
   file itself was never committed although the CHANGELOG cites it.
+
+## 12. ADRs are immutable
+
+- **Owner rule 2026-10-26:** an ADR records a decision as it was made. Once
+  accepted it is never edited and never receives pointers to later
+  documents — not for a wording fix, not for "see also", not for a
+  "superseded" marker, not for its Status line.
+- To clarify, correct or reverse a decision, write a NEW ADR that cites the
+  old one. The old text stays as history. A new ADR changes future
+  behaviour only; it does not reinterpret what the old one decided.
+- Citations run one way: plans (§11), code comments and newer ADRs may cite
+  an ADR; an ADR never cites forward.
+- Incident that motivated the rule (2026-10-26): the fallback-naming plan
+  proposed "historical ADRs get a pointer" in its docs sweep. That step was
+  dropped, and the rule written down so the next plan does not propose it
+  again.
