@@ -1,7 +1,12 @@
 # Live labeling of uncertain Laya decisions (design)
 
-**Status:** design validated with the owner 2026-10-26; implementation started
-2026-10-26 (separate terminal, as decided).
+**Status:** implemented 2026-10-26 (separate terminal, as decided).
+`~/.laya-ft/shadow_eval/live_label.py` (20 unit tests, red-first observed on
+the missing module; loop smoke-tested with a synthetic log, torn lines and
+`q` re-offer verified). Dry run against the live log: 17 uncertain + 1
+sample within the 24-hour window. The back-fill of `log_sha` into the
+hand-made queue row of 2026-10-25 is done (backup `queue.jsonl.bak-20261026-logsha`).
+Owner workflow fit to be re-checked after a week of use.
 Owner open point: practicality of the workflow (separate terminal) — accepted
 for now, to be re-checked after a week of real use.
 
