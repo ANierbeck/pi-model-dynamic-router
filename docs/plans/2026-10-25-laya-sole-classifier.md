@@ -69,10 +69,12 @@ ask Laya + the chain about those prompts too and log them as observations
    (almost) every non-HINT/compaction prompt; a `comparator` record with the
    same `input.sha` follows. Latency per stage from `laya.ms` vs. comparator
    `ms`.
-2. **Pair evaluation** (`scripts/laya-shadow-stats.ts` or the shadow-eval
-   harness): join `laya` and `comparator` records by `input.sha`; report
-   agreement per category and per group, confidence buckets, `continue`
-   confusion. Red-first with synthetic records.
+2. **Pair evaluation** — done 2026-10-26: `scripts/laya-pair-stats.ts`
+   joins `laya` and `comparator` records by `input.sha` and reports
+   agreement per category and per group, confidence buckets and the
+   `continue` confusion (red-first, synthetic records). First result:
+   `docs/research/2026-10-26-laya-comparator-pairs.md`. Re-run it as the log
+   grows.
 3. **Label the disagreements** (not the whole queue). They are the
    informative items and feed the next fine-tune.
 4. **Failure behaviour test**: sidecar down / timeout → chain decides, no
