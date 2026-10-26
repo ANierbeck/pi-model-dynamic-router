@@ -7,11 +7,11 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, isFreeTierDailyCapText } from './detection.ts';
+import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, isFreeTierDailyCapText, sanitizeForLog } from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
-import type { SourceModelInfo } from './stream-driver.ts';
+import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-driver.ts';
 import { splitRef } from './utils.ts';
 import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
@@ -23,6 +23,19 @@ import type { StreamOrchestrator } from './stream-orchestrator.ts';
  * every read sees the CURRENT closure value — index.ts reassigns cfg/router/
  * managers on reload, and a captured copy would go stale.
  */
+/**
+ * A terminal event carries the fields pi-ai 1.4.0 times in
+ * AssistantMessageEventStream.push(): `done` needs `message`, `error` needs
+ * `error`. Without them push() throws, so the event is not a result and must
+ * never be classified as one (an `aborted` error without `error` is a stream
+ * failure, not a user cancellation).
+ */
+function isMalformedTerminal(event: any): boolean {
+  if (event?.type === 'done') return typeof event.message !== 'object' || event.message === null;
+  if (event?.type === 'error') return typeof event.error !== 'object' || event.error === null;
+  return false;
+}
+
 interface StreamProxyDeps {
   readonly cfg: Config;
   localStreamsInFlight: number;
@@ -284,6 +297,10 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // next candidate instead of abandoning the turn.
     let streamThrew = false;
     let streamThrewDetail: string | undefined;
+    // A terminal event has reached the proxy, so the proxy is closed for
+    // further output. Later exceptions must not start a fallback that can
+    // never reach the consumer (PR #79 review).
+    let terminalForwarded = false;
     // Set once the timeout wins the race below. The loop is not cancelled by
     // losing the race — without this flag it kept forwarding the abandoned
     // stream's late events (content, or an 'aborted' terminal once driveStream
@@ -294,6 +311,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       try {
         for await (const event of upstream) {
           if (abandoned) return 'done';
+          if (isMalformedTerminal(event)) {
+            clearTimer();
+            streamThrew = true;
+            streamThrewDetail = `malformed ${event.type} event`;
+            return 'done';
+          }
           // Re-arm the stall timer on every event — this both cancels the
           // first-token timeout once content starts AND restarts the
           // inactivity window for the rest of the stream. A stream that emits
@@ -330,6 +353,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // handling already treats this specially (never retried, no
               // cooldown recorded against the model).
               proxy.push(event);
+              terminalForwarded = true;
               return 'done';
             }
             // Check if this is a rate limit or subscription error from claude-bridge.
@@ -369,6 +393,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
                 reason: 'aborted',
                 error: { ...(errObj as any), stopReason: 'aborted' },
               } as any);
+              terminalForwarded = true;
               return 'done';
             }
             if (isRateLimitText(errorMsg)) {
@@ -501,15 +526,34 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             }
           }
           proxy.push(event);
+          if (event.type === 'done') terminalForwarded = true;
         }
       } catch (err) {
         clearTimer();
-        // Stream threw — treat as soft failure. Record WHY: this catch also
-        // covers exceptions thrown by proxy.push(event) itself (forwarding),
-        // and the post-race classification below must be able to tell a
-        // thrown stream apart from a candidate that completed cleanly.
-        streamThrew = true;
-        streamThrewDetail = err instanceof Error ? err.message : String(err);
+        const message = err instanceof Error ? err.message : String(err);
+        if ((err as any)?.name === 'AbortError') {
+          // Upstream cancellation (the caller aborted) — the same meaning as a
+          // structured aborted event: the cascade must stop, not fall over.
+          // The consumer still needs a terminal event, or it waits forever.
+          userAborted = true;
+          if (!terminalForwarded) {
+            terminalForwarded = true;
+            proxy.push({
+              type: 'error',
+              reason: 'aborted',
+              error: { ...buildErrorAssistantMessage('Aborted', message), stopReason: 'aborted' },
+            } as any);
+          }
+        } else if (!terminalForwarded) {
+          // Stream threw before any terminal event was forwarded: a soft
+          // failure. Record WHY — this catch also covers exceptions thrown by
+          // proxy.push(event) itself, and the post-race classification below
+          // must tell a thrown stream apart from a clean completion.
+          streamThrew = true;
+          streamThrewDetail = sanitizeForLog(message);
+        }
+        // An exception AFTER a forwarded terminal event is harmless: the proxy
+        // already completed, and the candidate's content stands.
         return 'done';
       }
       clearTimer();

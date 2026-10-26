@@ -131,12 +131,14 @@ describe('driveStream: forwarding exception must not hang the stream', () => {
       // Guard against the exact regression this test pins: without the fix,
       // draining never completes. Race the drain against a hard deadline so
       // the failure is a clear assertion message, not a 30s suite timeout.
+      let deadline: ReturnType<typeof setTimeout> | undefined;
       const drained = await Promise.race([
         drainStream(stream).then((events) => ({ ok: true as const, events })),
-        new Promise<{ ok: false; events: AssistantMessageEvent[] }>((resolve) =>
-          setTimeout(() => resolve({ ok: false, events: [] }), 10_000)
-        ),
+        new Promise<{ ok: false; events: AssistantMessageEvent[] }>((resolve) => {
+          deadline = setTimeout(() => resolve({ ok: false, events: [] }), 10_000);
+        }),
       ]);
+      clearTimeout(deadline);
       expect(drained.ok).toBe(true);
 
       const text = drained.events

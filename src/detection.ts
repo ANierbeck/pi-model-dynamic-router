@@ -424,8 +424,18 @@ export function isFreeTierDailyCapText(text: string): boolean {
  * tokens are redacted before anything is written.
  */
 export function formatRateLimitBodyForLog(body: string | undefined): string {
-  if (!body) return '';
-  const flat = body
+  return body ? sanitizeForLog(body) : '';
+}
+
+/**
+ * One-line, bounded, credential-free rendering of provider-supplied text for
+ * the router log and the transcript (429 bodies and exception messages alike).
+ * Newlines collapse to spaces, so a provider or extension cannot forge a
+ * `> [router] ...` line; terminal control sequences and credential-looking
+ * values are removed (PR #79 review: exception text reached the transcript raw).
+ */
+export function sanitizeForLog(text: string): string {
+  const flat = text
     .replace(/\s+/g, ' ')
     .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
     .replace(/sk-[A-Za-z0-9_-]{6,}/g, '[redacted]')

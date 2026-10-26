@@ -133,7 +133,17 @@ function rateLimitNoResetEvents(): AssistantMessageEvent[] {
 function truncatingEvents(): AssistantMessageEvent[] {
   return [
     { type: 'text_delta', contentIndex: 0, delta: 'half an answer, cut off mid-' } as any,
-    { type: 'done', reason: 'length' } as any,
+    {
+      type: 'done',
+      reason: 'length',
+      message: {
+        role: 'assistant',
+        content: [],
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        stopReason: 'length',
+        timestamp: Date.now(),
+      },
+    } as any,
   ];
 }
 
