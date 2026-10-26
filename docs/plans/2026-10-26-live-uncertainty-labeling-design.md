@@ -94,6 +94,13 @@ Files stay mode 600. Prompt texts stay local.
   changed here (separate problem): either retire `build_queue.py` in favour
   of `live_label.py` or make it join the comparator by `log_sha`.
 
+## Context handling (2026-10-26)
+
+The dialogue shows exactly the context Laya receives: `previousUserMessage`
+truncated to 120 chars and `lastAssistantSnippet` truncated to 150 chars
+(`buildContextBlock` in `src/classification-prompt.ts`), plus the raw prompt.
+The snippet is stored in the queue row so the comparator can be joined later.
+
 ## Open decisions
 
 - **Workflow fit (owner):** The owner would have preferred the question
