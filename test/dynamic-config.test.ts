@@ -277,6 +277,24 @@ describe('sortModelsForGroup', () => {
     expect(sorted.map((m) => m.ref)).toEqual(['payg/high', 'payg/low']);
   });
 
+  it("score_by column: unprofiled models rank after profiled ones (PR #75 review)", () => {
+    // The generated router-config.dynamic.json must get the same order the
+    // live router produces: never mix an unprofiled model into a capability
+    // column ranking via calculateScore's gdpval fallback (1600 gdpval vs
+    // a measured coding 1200 — two scales).
+    setGdpval({ p: 900, u: 1600 });
+    setCache({
+      available_models: [],
+      capability_profiles: { p: { coding: 1200 } },
+    } as any);
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/u', gdpval: 1600, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/p', gdpval: 900, cost: 1, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'best', score_by: 'coding' }, cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/p', 'payg/u']);
+  });
+
   it('method min_cost: free models always rank before paid, then by ascending cost', () => {
     const models: ModelWithMetadata[] = [
       { ref: 'payg/pricey', gdpval: 500, cost: 10, price: null, isFreeModel: false },
