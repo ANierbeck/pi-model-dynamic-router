@@ -1,16 +1,16 @@
 # "fallback" — one word, too many meanings
 
-**Status:** proposed 2026-10-25 (owner request: the many meanings of
-"fallback" are a code smell — investigate separately). Nothing is renamed
-yet; Step 1 needs the owner's vocabulary decision.
+**Status:** approved 2026-10-26 with a reduced scope (owner decisions
+below). Nothing is renamed yet. Opened 2026-10-25 as an owner request: the
+many meanings of "fallback" are a code smell.
 
 **Verified against:** `origin/main` 6f4ac08 and the laya-spike line
 (`feat/laya-active-snapshot`) on 2026-10-25 — counts by `grep -i
 fallback`; per-meaning classification by reading each use site.
 
 **Related:** `docs/plans/2026-10-25-category-group-mismatch.md` decides
-which groups exist and what they are called; the group `fallback` and
-`fallback_groups` (meanings A and B below) are named here, not there.
+which groups exist; it removes the group `fallback` (meaning A below, its
+decision D4). This plan only follows that decision.
 
 ## Problem
 
@@ -38,92 +38,66 @@ A, B and F are the same idea at three scales (group, cascade, candidate);
 C is a different idea (classifier candidates) that borrowed the word; D and E
 are *labels about a classification* that borrowed it; G is harmless.
 
+## Owner decisions (2026-10-26)
+
+The test for a name: "fallback" must mean *everything I tried failed, now
+something else*. Where a name says exactly that, it stays.
+
+| Meaning | Verdict |
+|---------|---------|
+| F — stream-level retry | honest, stays |
+| B — failure cascade `fallback_groups` | honest, stays |
+| C — local second classifier (`classifier_fallback`, `fallbackModel`, `fallbackTimeoutMs`) | honest, stays |
+| C — static classifier (`allowStaticFallback`) | honest, stays |
+| D — decision-log stage `fallback` (no classifier answered) | honest, stays |
+| C — cloud chain (`classifier_cloud_fallback`, `allowCloudFallback`, `classifier-fallback-probe.ts`, `classifier_fallback_models`) | **dishonest**: main path since 2026-09-27, background comparator next to Laya since 2026-10-25 → rename |
+| E — retired category `fallback` | **dishonest**: a label of a dead thing, not an event → delete the remnants |
+| A — group `fallback` | **dishonest**: a pool, not an event → disappears: the group plan merges it into the cheapest group (its D4); the three exits (unresolved target, classification failure, unknown category) point there |
+| G — ordinary English | untouched |
+
+ADRs are immutable (AGENTS.md §12): this plan does not touch or annotate any
+ADR, `docs/adr/0001` included.
+
 ## Solution
 
-### Principles
-
-1. One word, one meaning. After the round `fallback` must not name an entity
-   (group, config key, stage, category, file) in two senses.
-2. Public surface is a contract: `fallback_groups`, `classifier_fallback`,
-   `classifier_cloud_fallback` and the group name `fallback` appear in users'
-   `router-config.user.json` files. A rename ships with a read-alias that
-   warns, and the owner decides when the alias is dropped.
-3. Characterize before renaming (§4): the literal `'fallback'` paths are
-   behaviour (unresolved target → pool, classification error → pool, unknown
-   category → pool). Pin them with tests that pass on today's code, then
-   rename and keep them green.
-4. Old data stays readable: decision-log records and the scan cache keep
-   their old strings; readers accept both.
-5. Category G is left alone except where a name collides with A–F.
-
-### Proposed vocabulary (proposal — see Open decisions)
-
-These are proposals, not decisions.
-
-| Today | Proposal | Reason |
-|-------|----------|--------|
-| group `fallback` (A) | `last_resort` | says what it is: any available model, cheapest first |
-| `fallback_groups` (B) | `failover_groups` | "what comes next after failure"; `escalation` is taken by the session escalation module |
-| `classifier_fallback` (C, local 2nd model) | `classifier_local_backup` | only the local second model |
-| `classifier_cloud_fallback` / `allowCloudFallback` (C) | `classifier_cloud_chain` / `allowCloudChain` | it is the primary path now, not a fallback |
-| `classifier-fallback-probe.ts`, `classifier_fallback_models` (C) | `classifier-cloud-probe.ts`, `classifier_cloud_models` | |
-| `allowStaticFallback` (C) | `allowStaticClassifier` | |
-| decision-log stage `fallback` (D) | `unclassified` | no classifier answered |
-| category `fallback` (E) | delete remnants; legacy label only in data tooling, named `legacy_fallback` | |
-
-Open sub-question: should `fallback_groups` and the group `fallback` keep
-their names because they are the one honest "fallback" in the system? The
-alternative is to keep exactly those two and rename C–E. Smaller change,
-less user-config churn.
-
-### Steps
-
-1. **Vocabulary decision** (owner). Output: the table above, amended.
-2. **Characterization tests** for the literal paths (A): unresolved target,
-   classification failure, unknown category, follow-up group, tier scan. They
-   must pass on today's code (no red expected: nothing changes yet; stated
-   explicitly per §4).
-3. **Round 1 — dead vocabulary (E, D)**: delete or rename the remnants,
-   stage `fallback` → `unclassified` with both readers accepting both
-   strings (log analysis in `~/.laya-ft` and `scripts/laya-shadow-stats.ts`).
-   Red-first: a test that the new stage string is written, and one that old
-   records still parse.
-4. **Round 2 — classifier names (C)**: internal identifiers, the probe file,
-   the two cache keys (read both, write new), and the three config keys with
-   warning aliases. Touches `content-classifier.ts`, which the Laya branches
-   also change — sequence after `fix/classifier-paid-guard-429-body` and
-   `feat/laya-active-snapshot` have landed or been dropped.
-5. **Round 3 — group and cascade (A, B)**: only if the vocabulary decision
-   renames them. Group rename needs a config migration for user layers
-   (backup, mode 600) and alias handling in `model_groups` lookup.
-6. **Docs sweep**: README, ADRs (historical ADRs get a pointer, not an edit),
-   CHANGELOG with an explicit "renamed" section.
-7. **Verification per round**: `npx tsc --noEmit`, `npx vitest run`,
-   coverage thresholds unchanged, `npm run build`, and a grep gate: a test
-   that fails when a new identifier containing `fallback` appears outside
-   category G's allow-list (ratchet, like `no-hardcoded-models`).
+1. **Characterization tests** for the literal `'fallback'` exits (unresolved
+   target, classification failure, unknown category, tool follow-up). They
+   are Step 1 of the group plan; this plan does not duplicate them.
+2. **Round 1 — dead vocabulary (E):** delete the category remnants in
+   `src/`, tests and comments (`commands.ts` text included); the legacy
+   label survives only in data tooling, named `legacy_fallback`. Red-first:
+   a taxonomy test that fails while code still accepts `fallback` as a
+   category.
+3. **Round 2 — cloud chain (C):** rename the identifiers, the probe file and
+   the two cache keys (read both, write new) and the config keys. Touches
+   `content-classifier.ts`; sequence it after the Laya verdict, because the
+   Laya branch changes the same file. Red-first: a test that the new key is
+   read and the old string is handled per the alias decision (V2).
+4. **Verification per round:** `npx tsc --noEmit`, `npx vitest run`,
+   coverage thresholds unchanged, `npm run build`, plus a ratchet test: a
+   new identifier containing `fallback` fails unless it belongs to an
+   honest meaning above or to category G.
 
 ## Open decisions (owner)
 
-- **V1:** the target vocabulary (table above), amended as the owner sees fit.
-- **V2:** keep `fallback` (group) and `fallback_groups` as the one honest
-  "fallback" and rename only C–E — or rename A and B too.
-- **V3:** when read-aliases for renamed public config keys are dropped
-  (a release decision, AGENTS.md §1).
+- **V1:** the new name of the cloud chain. Proposal: config
+  `classifier_cloud_chain`, `allowCloudChain`, file
+  `classifier-cloud-probe.ts`, cache key `classifier_cloud_models`.
+- **V2:** aliases for the renamed config keys. The group plan decided "no
+  read-aliases in 2.0" for groups (its D3); confirm that this applies to the
+  cloud-chain keys too, or ask for a warning alias.
+- **V3:** when the rename ships (a release decision, AGENTS.md §1).
 
 ## Risks
 
-- Config breakage for installed users → read-aliases with warnings; release
-  note; the release itself stays the owner's decision (§1).
-- Merge conflicts with the Laya branches (Round 2) → sequencing above.
 - Python tooling in `~/.laya-ft` reads stage strings and the legacy
-  category → update in the same round as D, with its own test.
+  category → update it in the same round as E, with its own test.
 - Silent behaviour change if a literal `'fallback'` is renamed in one place
-  and not another → Step 2 characterization tests plus the grep gate.
+  and not another → the Step 1 pins plus the ratchet test.
+- Merge conflicts with the Laya branch in Round 2 → sequencing above.
 
 ## Not in scope
 
-The Laya/`continue` analysis (`docs/plans/2026-10-25-laya-sole-classifier.md`
-on branch `feat/laya-active-snapshot`).
+The Laya/`continue` analysis (`docs/plans/2026-10-25-laya-sole-classifier.md`).
 `continue` keeps its owner-defined meaning: the model cannot tell whether the
 task changed, so the previous category stays.

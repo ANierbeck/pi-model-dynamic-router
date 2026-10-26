@@ -1,6 +1,7 @@
 # Categories and groups do not line up
 
-**Status:** all owner decisions recorded (D1–D3, 2026-10-25). No code
+**Status:** owner decisions recorded (D1–D3 2026-10-25, D4–D7 2026-10-26);
+one proposal still open (what separates `design` from `planning`). No code
 before the behaviour-change list from Step 2 is approved.
 
 **Verified against:** `origin/main` 6f4ac08 (`router-config.json`,
@@ -99,8 +100,8 @@ groups in place and with them the confusion; C changes nothing for
 anyone reading a config. B is the largest change, which is why both
 steps get a behaviour-change list for the owner before any code.
 
-`design` + `planning` → `planning` (2:1) and `continue` → `tactical` are
-owner decisions of 2026-10-04 and 2026-10-13 and stay as they are.
+The earlier owner decisions "`design` + `planning` → `planning` (2:1)" and
+"`continue` → `tactical`" are superseded by D5 and D6 below.
 
 ## Open decisions (owner)
 
@@ -124,8 +125,37 @@ owner decisions of 2026-10-04 and 2026-10-13 and stay as they are.
   is 1.6.1 and STAYS on 1.x (verified against `origin/main` 2026-10-25);
   the reduction/rename lands in 2.0. No read-aliases: the owner's answer
   reads as rename without an alias period in 2.0.
-- Out of scope here: the names `fallback` and `fallback_groups` — decided
-  in `docs/plans/2026-10-25-fallback-naming.md`.
+- **D4 — decided 2026-10-26: five groups, named like the categories.** The
+  group a category selects carries the category's name: `simple`,
+  `standard`, `code_complex`, `design`, `planning`. `bulk_reader`,
+  `code_writer` and `dynamic` are special groups outside that count.
+  Measured basis: `docs/research/2026-10-26-group-candidate-equivalence.md`
+  — `trivial`, `simple`, `scout` and `fallback` list identical models, so
+  they become the one cheap group `simple`; `operational` becomes
+  `standard`, `tactical` becomes `code_complex`. The three exits of the
+  group `fallback` (unresolved target, classification failure, unknown
+  category) and the tool follow-up step point at `simple`. A group exists
+  only if it leads to other models or a measured need is documented.
+- **D5 — decided 2026-10-26: `design` and `planning` stay separate
+  groups.** The mechanism (floor, `score_by`, quality window) is good; with
+  Claude + Mistral their candidate lists are identical today
+  (`claude-sonnet-5-5` leads both on the Briefcase column), but a larger
+  pool (OpenAI models, other setups) separates them. **Not decided yet:**
+  what separates them in the *shipped* config. Proposal for the Step 2
+  replay: `design` takes the "second guard" of the top band (lower floor,
+  cheaper-first inside the band), `planning` stays best-first.
+- **D6 — decided 2026-10-26: `continue` without a predecessor →
+  `standard`.** A catch-all for the first prompt of a session (today:
+  `tactical`, 9 log cases). With a predecessor the previous category is
+  inherited as today. Model stickiness for `continue` is its own plan:
+  `docs/plans/2026-10-26-continue-keeps-model.md`.
+- **D7 — decided 2026-10-26: five categories.** `simple` and `code_simple`
+  merge; `continue` is a signal, not a category. The model-visible
+  taxonomy changes only in the next Laya training round (existing labels
+  `code_simple` 12 + `simple` 5 map to `simple`); until then both
+  categories select the same group, so the router needs no extra step.
+- Out of scope here: the names `fallback_groups`, the classifier keys and the
+  stage names — decided in `docs/plans/2026-10-25-fallback-naming.md`.
 
 ## Steps
 
@@ -135,7 +165,8 @@ owner decisions of 2026-10-04 and 2026-10-13 and stay as they are.
 1. Characterization tests that pin today's mapping and failover chains.
    They pass on today's code — no red expected, stated per AGENTS.md §4.
 2. Offline replay of the target layout on the log since 2026-10-15:
-   selections and failover paths, one behaviour-change list per group.
+   selections and failover paths, one behaviour-change list per group,
+   plus a proposal for what separates `design` from `planning` (D5).
 3. Owner nod on that list.
 4. Red-first implementation: alias resolution, a warning for a removed or
    renamed group a config still references, new mapping pins.
