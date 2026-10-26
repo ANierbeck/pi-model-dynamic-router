@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
-import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug } from './metrics.ts';
+import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug, lookupCapability } from './metrics.ts';
 import { applyGroupFilters, type GroupFilterLookups } from './routing.ts';
 import type { Config, Group } from './types.ts';
 import { normalizeModelId } from './slug-matcher.ts';
@@ -85,7 +85,7 @@ export function buildModelsWithMetadata(
       const isFreeModel =
         staticFreeModelsLookup.has(ref) ||
         (price !== null && price.input === 0 && price.output === 0) ||
-        ref.includes(':free') ||
+        ref.endsWith(':free') || // terminal tag only (Sourcery PR #74)
         (cost === 0 && isTokenBased);
 
       const contextWindow = lookupContextWindow(ref);
@@ -175,6 +175,21 @@ export function sortModelsForGroup(
   const column = groupConfig.score_by ?? 'gdpval';
 
   if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
+    if (column === 'briefcase' || column === 'coding') {
+      // Same rule as routing.ts sortBest (PR #75): a model WITHOUT a value
+      // for the column never mixes into the column ranking via
+      // calculateScore's gdpval fallback (two scales — the coding column
+      // runs 130-250 points above GDPval for the same model). It ranks
+      // after every profiled one, in GDPval order. The generated
+      // router-config.dynamic.json must match what the live router
+      // would pick.
+      const hasColumn = (m: ModelWithMetadata) => lookupCapability(m.ref, column) !== null;
+      const profiled = sorted.filter(hasColumn);
+      const unprofiled = sorted.filter((m) => !hasColumn(m));
+      profiled.sort((a, b) => calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg));
+      unprofiled.sort((a, b) => b.gdpval - a.gdpval);
+      return [...profiled, ...unprofiled];
+    }
     sorted.sort((a, b) => calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg));
   } else if (groupConfig.method === 'min_cost') {
     sorted.sort((a, b) => {

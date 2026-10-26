@@ -60,7 +60,7 @@ async function runGroup(options: Record<string, unknown>, text: string) {
     const streamSimple = vi.fn((model: any) =>
       (async function* () {
         yield { type: 'text_delta', delta: `served by ${model.id}` };
-        yield { type: 'done' };
+        yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
       })()
     );
     const modelRegistry = {

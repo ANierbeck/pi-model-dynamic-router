@@ -119,7 +119,7 @@ describe('driveStream: local-stream concurrency limit', () => {
               maxConcurrentOllama = Math.max(maxConcurrentOllama, openOllamaStreams);
               try {
                 yield { type: 'text_delta', delta: `ollama ${model.id} ok` };
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               } finally {
                 openOllamaStreams--;
               }
@@ -128,7 +128,7 @@ describe('driveStream: local-stream concurrency limit', () => {
           if (model.provider === 'cloud') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'cloud fallback ok' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           }
           return (async function* () {})();
@@ -212,7 +212,7 @@ describe('driveStream: local-stream concurrency limit', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'next model ok' };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {

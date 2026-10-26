@@ -115,6 +115,20 @@ describe('buildModelsWithMetadata', () => {
     expect(result[0].isFreeModel).toBe(true);
   });
 
+  it('does NOT flag isFreeModel for a mid-string :free (Sourcery PR #74)', () => {
+    // ':free' must be the terminal tag — `m:free-v2` contains the substring
+    // but is a paid variant. No zero price, no free_models entry, so the
+    // tag is the only thing that could misclassify it.
+    setGdpval({ 'm:free-v2': 100 });
+    const result = buildModelsWithMetadata(
+      ['payg/m:free-v2'],
+      { ...baseCfg, model_metrics: { 'payg/m:free-v2': { cost_per_m: 5 } } },
+      new Set(),
+      new Set()
+    );
+    expect(result[0].isFreeModel).toBe(false);
+  });
+
   it('flags isFreeModel via a zero effective cost on a token-based provider', () => {
     setGdpval({ m: 100 });
     const cfg = { ...baseCfg, model_metrics: { 'payg/m': { cost_per_m: 0 } } };
@@ -261,6 +275,24 @@ describe('sortModelsForGroup', () => {
     ];
     const sorted = sortModelsForGroup(models, { method: 'best' }, cfg, calculateScore);
     expect(sorted.map((m) => m.ref)).toEqual(['payg/high', 'payg/low']);
+  });
+
+  it("score_by column: unprofiled models rank after profiled ones (PR #75 review)", () => {
+    // The generated router-config.dynamic.json must get the same order the
+    // live router produces: never mix an unprofiled model into a capability
+    // column ranking via calculateScore's gdpval fallback (1600 gdpval vs
+    // a measured coding 1200 — two scales).
+    setGdpval({ p: 900, u: 1600 });
+    setCache({
+      available_models: [],
+      capability_profiles: { p: { coding: 1200 } },
+    } as any);
+    const models: ModelWithMetadata[] = [
+      { ref: 'payg/u', gdpval: 1600, cost: 1, price: null, isFreeModel: false },
+      { ref: 'payg/p', gdpval: 900, cost: 1, price: null, isFreeModel: false },
+    ];
+    const sorted = sortModelsForGroup(models, { method: 'best', score_by: 'coding' }, cfg, calculateScore);
+    expect(sorted.map((m) => m.ref)).toEqual(['payg/p', 'payg/u']);
   });
 
   it('method min_cost: free models always rank before paid, then by ascending cost', () => {

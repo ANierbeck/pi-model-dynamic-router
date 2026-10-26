@@ -83,7 +83,13 @@
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
 - `npx vitest run` must be green (the exact count ratchets with every
   round — as of the v2-r3 taxonomy migration + output-reserve fix + review fixes +
-  decision-log prev + laya probabilities (+ validation) + classifier paid guard + 429 body log + laya background comparator + laya pair stats: 2202 passing / 3 skipped; do not
+  decision-log prev + laya probabilities (+ validation) + laya background
+  comparator + laya pair stats + the main-line rounds merged in (Sourcery
+  PR #74: terminal :free tag, credential-pair redaction, control-sequence
+  stripping, ordinary-429 body logging; unprofiled models rank last incl. the
+  PR #75 review round; dependency-lock security guard; host 1.4.0 alignment
+  with forwarding-exception termination, host-realistic stream fixtures and
+  the PR #79 review round): 2227 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

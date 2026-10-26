@@ -424,11 +424,33 @@ export function isFreeTierDailyCapText(text: string): boolean {
  * tokens are redacted before anything is written.
  */
 export function formatRateLimitBodyForLog(body: string | undefined): string {
-  if (!body) return '';
-  const flat = body
+  return body ? sanitizeForLog(body) : '';
+}
+
+/**
+ * One-line, bounded, credential-free rendering of provider-supplied text for
+ * the router log and the transcript (429 bodies and exception messages alike).
+ * Newlines collapse to spaces, so a provider or extension cannot forge a
+ * `> [router] ...` line; terminal control sequences and credential-looking
+ * values are removed (PR #79 review: exception text reached the transcript raw).
+ */
+export function sanitizeForLog(text: string): string {
+  const flat = text
     .replace(/\s+/g, ' ')
     .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
     .replace(/sk-[A-Za-z0-9_-]{6,}/g, '[redacted]')
+    // Credential values echoed back in key/value pairs (Sourcery PR #74):
+    // a 429 body can quote request headers or auth material. Only pairs
+    // with a credential-looking key are redacted — plain words that merely
+    // contain key/token ("keyboard", "tokens per minute") stay intact.
+    .replace(
+      /(["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|token|secret|password|key)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      '$1[redacted]',
+    )
+    // Terminal control sequences (Sourcery PR #74): a provider body could
+    // carry ANSI escapes; a log viewed in a terminal must not be spoofable.
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .trim();
   return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
 }
@@ -535,7 +557,9 @@ export function isAbortLikeText(text: string): boolean {
  */
 export function isPaidCloudRateLimitFailure(ref: string, reason: string, errorText?: string): boolean {
   const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
-  const isFreeModel = ref.includes(':free');
+  // TERMINAL :free tag only (Sourcery PR #74): a mid-string `:free` in a paid
+  // ref must not skip the paid hard-cooldown path for a 429/402.
+  const isFreeModel = ref.endsWith(':free');
   if (!isCloudProvider || isFreeModel) return false;
   // provider_error is only rate-limit-shaped when the underlying HTTP status
   // is 429 or 402, or when the error text indicates a rate-limit. Client

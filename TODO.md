@@ -702,6 +702,33 @@ pi-coding-agent 1.0.4, which ships `undici` 8.10.2 and dropped the
 (overrides were ignored even on a fresh lock resolution). `npm audit` is
 clean; the Dependabot alerts auto-close.
 
+**Host-pinned undici alert (evaluated 2026-10-26, PR fixing this repo's
+tree):** Dependabot #48 (HIGH, CVE-2026-109869 — DoS via unhandled error on
+excessive content-encodings, undici < 8.12.2). The vulnerable undici 8.10.2
+is a DIRECT dependency of the host (@earendil-works/pi-coding-agent), and
+even the latest host (1.4.0) still pins 8.10.2 — the fix cannot come from a
+host bump yet. Dev-only scope here (0 bundle markers), exploit needs a
+malicious provider endpoint answering with excessive content-encoding
+headers. Applied `"overrides": { "undici": "8.12.2" }` (works since host
+1.0.4 dropped its npm-shrinkwrap.json); the owner's globally installed
+pi 1.4.0 still ships undici 8.10.2 until the host bumps upstream — surface
+this upstream when convenient.
+
+**Host pin drift (detected 2026-10-26, resolved by the alignment round the
+same day):** repo devDependencies pinned @earendil-works/pi-coding-agent
+1.0.4 while the installed host was `pi` 1.4.0 (latest). Alignment round done
+per AGENTS.md section 10: devDependencies bumped to ^1.4.0 (pi-coding-agent,
+pi-ai, pi-tui), undici override still effective (8.12.2). Findings: pi-ai
+1.4.0 times terminal events inside `AssistantMessageEventStream.push()`
+(done needs `message`, error needs `error`), which turned the router's
+forwarding-exception swallow (catch → `return 'done'`, indistinguishable
+from success) into a permanent consumer hang — fixed as a real soft failure
+(`stream_threw`, test/forward-throw-terminates-stream.test.ts, red first);
+38 stream fixtures updated to host-realistic terminal events. Reach-throughs
+verified against the 1.4.0 host: `ModelRegistry.runtime.streamSimple` /
+`completeSimple` still exist. tsc, suite (2110 passing / 3 skipped),
+coverage (thresholds unchanged) and build all green.
+
 **Host upgrade policy (pinned 2026-10-04, guarded by
 test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is
 never auto-bumped. Host upgrades are deliberate, planned rounds (see

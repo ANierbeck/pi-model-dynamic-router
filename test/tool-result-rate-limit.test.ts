@@ -81,7 +81,7 @@ async function bootToolResultHarness() {
   const streamSimple = vi.fn(() =>
     (async function* () {
       yield { type: 'text_delta', delta: 'working on it' };
-      yield { type: 'done' };
+      yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
     })()
   );
   const modelRegistry = {

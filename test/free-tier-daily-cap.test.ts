@@ -181,12 +181,12 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
               // Must NEVER be reached: the account-wide cooldown must have
               // taken free-b out of the cascade before the loop reaches it.
               yield { type: 'text_delta', delta: 'WRONG: served by free-b' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by the paid model' };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {
@@ -295,7 +295,7 @@ describe('driveStream: "trying X" narration lookahead', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by ok-model' };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {

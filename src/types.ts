@@ -72,7 +72,10 @@ export interface Group {
    * work, the natural planning score) | 'coding' (SciCode/Terminal-Bench
    * blend). Floors and caps stay on the global GDPval — a column never
    * changes which models are ADMITTED, only their order within the pool.
-   * Missing column for a model → gdpval fallback (pre-round behavior).
+   * A model WITHOUT a value for the column is never mixed into the column
+   * ranking by its GDPval: it ranks after every model that has the column,
+   * in GDPval order among themselves (owner decision 2026-10-26).
+   * calculateScore itself keeps the gdpval fallback for its callers.
    */
   score_by?: 'gdpval' | 'briefcase' | 'coding';
   max_cost?: number;

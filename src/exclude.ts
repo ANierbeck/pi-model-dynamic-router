@@ -93,7 +93,9 @@ export function isPaidForClassifier(ref: string, rules: ExcludeRules | undefined
   const paidFrom = rules?.paid_models_from;
   if (!paidFrom?.length) return false;
   const prov = ref.split('/')[0];
-  return paidFrom.includes(prov) && !ref.includes(':free');
+  // :free must be the TERMINAL tag (Sourcery PR #74): `includes` also
+  // matched refs like vendor/x:free-v2, treating a paid variant as free.
+  return paidFrom.includes(prov) && !ref.endsWith(':free');
 }
 
 /**

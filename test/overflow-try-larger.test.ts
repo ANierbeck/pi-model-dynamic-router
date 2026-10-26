@@ -160,7 +160,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         // big model succeeds.
         return (async function* () {
           yield { type: 'text_delta', delta: 'served by the big model' };
-          yield { type: 'done' };
+          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
         })();
       });
       const modelRegistry = {
@@ -242,7 +242,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         }
         return (async function* () {
           yield { type: 'text_delta', delta: 'served by the big model' };
-          yield { type: 'done' };
+          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
         })();
       });
       const modelRegistry = {

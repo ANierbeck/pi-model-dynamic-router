@@ -23,12 +23,38 @@ describe('formatRateLimitBodyForLog', () => {
   });
 
   it('redacts API keys and bearer tokens', () => {
+    // Sourcery PR #74: the bearer fixture used to start with sk-, so the
+    // sk- rule alone satisfied the assertions and the Bearer rule was
+    // never verified (vacuous). The bearer token now has a non-sk prefix.
     const out = formatRateLimitBodyForLog(
-      'Authorization: Bearer sk-or-v1-abcdef1234567890 failed, key sk-proj-ZZZZ9999xxxx',
+      'Authorization: Bearer ghp_16C7eXfUllClarity947abcde failed, key sk-proj-ZZZZ9999xxxx',
     );
-    expect(out).not.toContain('abcdef1234567890');
+    expect(out).not.toContain('ghp_16C7eXfUllClarity947abcde');
     expect(out).not.toContain('ZZZZ9999xxxx');
     expect(out).toContain('[redacted]');
+  });
+
+  it('redacts credential values echoed in key/value pairs (Sourcery PR #74)', () => {
+    const out = formatRateLimitBodyForLog(
+      '{"error":{"message":"Usage limit","api_key":"pk_live_9f8e7d6c5b4a3210","auth_token":"tok_Ax9yB8z7C6w5"}}',
+    );
+    expect(out).not.toContain('pk_live_9f8e7d6c5b4a3210');
+    expect(out).not.toContain('tok_Ax9yB8z7C6w5');
+    expect(out).toContain('[redacted]');
+  });
+
+  it('strips terminal control sequences a provider body could carry (Sourcery PR #74)', () => {
+    const out = formatRateLimitBodyForLog('\u001b[31mRate limit\u001b[0m exceeded\u0007');
+    expect(out).not.toContain('\u001b');
+    expect(out).toBe('Rate limit exceeded');
+  });
+
+  it('keeps ordinary words that merely contain key/token (no false positives)', () => {
+    const out = formatRateLimitBodyForLog(
+      '{"error":{"type":"upstream_error","note":"tokens per minute: keyboard tokenizers"}}',
+    );
+    expect(out).toContain('tokens per minute');
+    expect(out).toContain('keyboard');
   });
 
   it('returns an empty string for a missing body', () => {

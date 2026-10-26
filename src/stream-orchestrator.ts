@@ -128,6 +128,7 @@ import {
   isFreeTierDailyCapText,
   formatRateLimitBodyForLog,
   nextUtcMidnightMs,
+  sanitizeForLog,
 } from './detection.ts';
 import { isOllamaProbablyDown } from './ollama-utils.ts';
 
@@ -1029,7 +1030,9 @@ export class StreamOrchestrator {
             ? 'stream stalled mid-response'
             : result.reason === 'provider_error'
               ? `provider error${result.detail ? `: ${result.detail}` : ''}`
-              : 'empty response from model';
+              : result.reason === 'stream_threw'
+                ? `stream error${result.detail ? `: ${result.detail}` : ''}`
+                : 'empty response from model';
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
@@ -1044,7 +1047,7 @@ export class StreamOrchestrator {
         if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg)) narrateBreakerOpen(ctx, proxy, ref);
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
-        pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${errorMsg}${suffix}\n\n`);
+        pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${sanitizeForLog(errorMsg)}${suffix}\n\n`);
       } finally {
         // Cancel the provider-side work of every attempt that did not win
         // (see openCandidateAttempt) — including timeouts, where the
