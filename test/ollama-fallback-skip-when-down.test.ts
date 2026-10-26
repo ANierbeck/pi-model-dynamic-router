@@ -115,7 +115,7 @@ describe('driveStream: ollama availability guard', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by the remote model' };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {
@@ -175,12 +175,12 @@ describe('driveStream: ollama availability guard', () => {
           if (model.provider === 'ollama') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the local model' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'must not be reached' };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {

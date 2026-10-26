@@ -272,6 +272,18 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     let accumulatedText = ''; // Accumulate text_delta to check for rate-limit/overflow/repetition text
     let lastRepetitionCheckLen = 0; // Throttle: only re-run the scan once enough new text has arrived
     let truncatedByLength = false; // stopReason 'length' detected (max output tokens hit)
+    // Set when the consume loop's catch swallowed an exception — either the
+    // upstream stream threw mid-iteration, or proxy.push(event) threw while
+    // FORWARDING (pi-ai 1.4.0 times terminal events in push(): a done without
+    // `message` or an error without `error` throws there). Without this flag
+    // the catch's `return 'done'` was indistinguishable from a successful
+    // candidate: driveStream recorded success, the proxy never received a
+    // terminal event, and the consumer awaited a stream that never ends —
+    // a permanent hang of the whole turn (found by the host 1.4.0 alignment,
+    // 2026-10-26). Treated as a soft failure so the cascade hands off to the
+    // next candidate instead of abandoning the turn.
+    let streamThrew = false;
+    let streamThrewDetail: string | undefined;
     // Set once the timeout wins the race below. The loop is not cancelled by
     // losing the race — without this flag it kept forwarding the abandoned
     // stream's late events (content, or an 'aborted' terminal once driveStream
@@ -492,7 +504,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
         }
       } catch (err) {
         clearTimer();
-        // Stream threw — treat as soft failure
+        // Stream threw — treat as soft failure. Record WHY: this catch also
+        // covers exceptions thrown by proxy.push(event) itself (forwarding),
+        // and the post-race classification below must be able to tell a
+        // thrown stream apart from a candidate that completed cleanly.
+        streamThrew = true;
+        streamThrewDetail = err instanceof Error ? err.message : String(err);
         return 'done';
       }
       clearTimer();
@@ -561,6 +578,19 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     if (truncatedByLength) {
       // stopReason 'length' means max output tokens hit — answer truncated, task incomplete.
       return { ok: false, reason: 'truncated_length' };
+    }
+
+    if (streamThrew) {
+      // The loop exited through the catch: the upstream stream threw, or
+      // forwarding an event into the proxy threw (pi-ai 1.4.0+ timing push).
+      // A candidate that never delivered a terminal event must NEVER be
+      // reported as success — driveStream would stop the cascade and leave
+      // the proxy unterminated, hanging the consumer forever.
+      return {
+        ok: false,
+        reason: 'stream_threw',
+        ...(streamThrewDetail ? { detail: streamThrewDetail } : {}),
+      };
     }
 
     if (!hadContent) {

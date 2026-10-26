@@ -172,7 +172,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
               type: 'text_delta',
               delta: 'Prompt contains 300000 tokens, too large for model with 262144 maximum context length',
             };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {
@@ -293,7 +293,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
                 'maximum context length before dispatching, and falls back to ' +
                 'compaction if the conversation is too large.',
             };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {

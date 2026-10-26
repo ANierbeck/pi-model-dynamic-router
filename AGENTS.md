@@ -86,7 +86,8 @@
   credential-pair redaction, control-sequence stripping, ordinary-429
   body logging) + unprofiled models rank last in capability-column
   groups (incl. the PR #75 review round) + dependency-lock security
-  guard: 2109 passing / 3 skipped; do not
+  guard + host 1.4.0 alignment (forwarding-exception termination,
+  host-realistic stream fixtures): 2110 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

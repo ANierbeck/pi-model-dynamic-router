@@ -1024,7 +1024,9 @@ export class StreamOrchestrator {
             ? 'stream stalled mid-response'
             : result.reason === 'provider_error'
               ? `provider error${result.detail ? `: ${result.detail}` : ''}`
-              : 'empty response from model';
+              : result.reason === 'stream_threw'
+                ? `stream error${result.detail ? `: ${result.detail}` : ''}`
+                : 'empty response from model';
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
