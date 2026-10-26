@@ -126,7 +126,7 @@ describe('free-model-on-demand-registration', () => {
             getApiKeyForProvider: async () => 'sk-or-test-fake-key',
             runtime: { streamSimple: vi.fn(() => (async function* () {
               yield { type: 'text_delta', delta: 'glm free model ok' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })()) },
           };
           // Hook: pi.registerProvider now flips openrouterRegistered in the
@@ -217,12 +217,12 @@ describe('free-model-on-demand-registration', () => {
                 if (model.id === 'some-paid-model') {
                   return (async function* () {
                     yield { type: 'text_delta', delta: 'paid model survived' };
-                    yield { type: 'done' };
+                    yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
                   })();
                 }
                 return (async function* () {
                   yield { type: 'text_delta', delta: 'free model ok' };
-                  yield { type: 'done' };
+                  yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
                 })();
               }),
             },

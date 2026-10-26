@@ -560,7 +560,7 @@ describe('blocklist-drivestream', () => {
             }
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           });
           const modelRegistry = {
@@ -711,12 +711,12 @@ describe('claude-bridge-empty-response-narration', () => {
           const streamSimple = vi.fn((model: any) => {
             if (model.provider === 'claude-bridge') {
               return (async function* () {
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the next model' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           });
           const modelRegistry = {
@@ -1060,7 +1060,7 @@ describe('context-overflow', () => {
           if (model.id === 'big-model') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the big-context fallback' };
-              yield { type: 'done' };
+              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
             })();
           }
           return (async function* () {})();
@@ -1177,7 +1177,7 @@ describe('cooldown-collapse', () => {
           }
           // Call 2: the in-pass collapse force-retry succeeds.
           yield { type: "text_delta", delta: `recovered after ${calls} calls` };
-          yield { type: 'done' };
+          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
         })();
       });
 
@@ -1507,7 +1507,7 @@ describe('provider-error-detection', () => {
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {})();
@@ -1810,7 +1810,7 @@ describe('reasoning-timeout', () => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `thought for a while, then answered` };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {
@@ -1903,7 +1903,7 @@ describe('reasoning-timeout', () => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `should never reach here` };
-            yield { type: 'done' };
+            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
           })();
         });
         const modelRegistry = {
@@ -2053,13 +2053,13 @@ describe('repetition-loop-detection', () => {
                 for (let i = 0; i < 10; i++) {
                   yield { type: 'text_delta', delta: sentence };
                 }
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {})();
@@ -2564,7 +2564,7 @@ describe('stall-timeout-detection', () => {
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {})();
@@ -2882,13 +2882,13 @@ describe('truncated-length', () => {
               // no stall — the pre-fix watcher classified this as success.
               return (async function* () {
                 yield { type: 'text_delta', delta: 'Half a sentence, cut off mid-' };
-                yield { type: 'done', reason: 'length' };
+                yield { type: 'done', reason: 'length', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'length', timestamp: Date.now() } };
               })();
             }
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done', reason: 'stop' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {})();
@@ -2969,7 +2969,7 @@ describe('truncated-length', () => {
             if (model.id === 'normal-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'complete answer' };
-                yield { type: 'done', reason: 'stop' };
+                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
               })();
             }
             return (async function* () {})();

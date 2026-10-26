@@ -611,11 +611,20 @@ headers. Applied `"overrides": { "undici": "8.12.2" }` (works since host
 pi 1.4.0 still ships undici 8.10.2 until the host bumps upstream — surface
 this upstream when convenient.
 
-**Host pin drift (detected 2026-10-26, needs an owner-scheduled alignment
-round):** repo devDependencies pin @earendil-works/pi-coding-agent 1.0.4;
-the installed host is `pi` 1.4.0 (latest). Per AGENTS.md section 10 this is
-the drift case that gets a deliberate alignment round (tsc, suite,
-coverage thresholds unchanged, build, verify the private reach-throughs).
+**Host pin drift (detected 2026-10-26, resolved by the alignment round the
+same day):** repo devDependencies pinned @earendil-works/pi-coding-agent
+1.0.4 while the installed host was `pi` 1.4.0 (latest). Alignment round done
+per AGENTS.md section 10: devDependencies bumped to ^1.4.0 (pi-coding-agent,
+pi-ai, pi-tui), undici override still effective (8.12.2). Findings: pi-ai
+1.4.0 times terminal events inside `AssistantMessageEventStream.push()`
+(done needs `message`, error needs `error`), which turned the router's
+forwarding-exception swallow (catch → `return 'done'`, indistinguishable
+from success) into a permanent consumer hang — fixed as a real soft failure
+(`stream_threw`, test/forward-throw-terminates-stream.test.ts, red first);
+38 stream fixtures updated to host-realistic terminal events. Reach-throughs
+verified against the 1.4.0 host: `ModelRegistry.runtime.streamSimple` /
+`completeSimple` still exist. tsc, suite (2110 passing / 3 skipped),
+coverage (thresholds unchanged) and build all green.
 
 **Host upgrade policy (pinned 2026-10-04, guarded by
 test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is
