@@ -77,12 +77,20 @@ parsed but not used for grouping), `router-config.json` on `laya-spike`.
 |---|---|---|
 | cheap (free Gemma, local last) | trivial, simple, scout, fallback | simple, code_simple |
 | tank (Mistral GLM/Medium, Gemma when paced) | standard, complex, operational, strategic (+ bulk_reader, code_writer) | standard |
-| tactical band (one model) | tactical | code_complex, continue |
+| tactical band (one model) | tactical | code_complex (`continue` only when the session has no previous category) |
 | planning (claude-bridge) | planning | design, planning |
 
 Reachable today: scout, simple, operational, tactical, planning (+ the
 infrastructure group `fallback`), per `2026-10-25-category-group-mismatch.md`.
 Measured, that is **four** distinct pools, not five.
+
+`continue` is not a pool of its own: `inheritPreviousCategory`
+(`src/content-classifier.ts:602`) replaces it with the previous category, so
+it reaches `tactical` (its default group in `CATEGORY_TO_GROUP`) only in a
+fresh session. In the decision log, with Laya or the cloud chain as the acting
+stage, such `continue` answers inherited `code_complex` 28 times, `standard`
+23 times and `design` 14 times; 9 had no predecessor and stayed `continue`.
+Comparator records are log-only and show no inheritance.
 
 ## Correction of an earlier statement
 
