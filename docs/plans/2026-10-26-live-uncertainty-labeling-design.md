@@ -1,6 +1,7 @@
 # Live labeling of uncertain Laya decisions (design)
 
-**Status:** design validated with the owner 2026-10-26; not implemented.
+**Status:** design validated with the owner 2026-10-26; implementation started
+2026-10-26 (separate terminal, as decided).
 Owner open point: practicality of the workflow (separate terminal) — accepted
 for now, to be re-checked after a week of real use.
 
@@ -65,6 +66,28 @@ Files stay mode 600. Prompt texts stay local.
 - 24-hour window applies.
 - Excluded prompts (training, golden, already labeled) are not shown.
 - The terminal UI is checked by a manual smoke test, not automated.
+
+## Implementation steps
+
+1. Back-fill `log_sha` into the one hand-made queue row of 2026-10-25
+   (`c3fd8b8ed540a3ea`, log sha `c3565155c479`) so the pair evaluation can join it.
+2. Tests first, observed RED: `~/.laya-ft/shadow_eval/test_live_label.py`
+   (unittest, synthetic records only, no prompt text), covering the testing
+   list above.
+3. Pure core in `live_label.py`: `select`, `read_new_records`, state offset
+   (log rotation resets it), `build_queue_row`.
+4. Terminal loop on top (reuses `MENU` keys and rendering of `label_shadow.py`).
+5. Manual smoke test against a copy of the log; real run only after that.
+6. Commit the plan status update to `laya-spike`. The tool itself lives in
+   `~/.laya-ft` (outside the repository) and is not versioned there.
+
+## Found on the way
+
+- `build_queue.py` keeps the FIRST decision-log record per prompt. Since the
+  comparator snapshot that is the `laya` record, so a new run would store
+  Laya's category as `chain_category`. It also stores no `log_sha`. Not
+  changed here (separate problem): either retire `build_queue.py` in favour
+  of `live_label.py` or make it join the comparator by `log_sha`.
 
 ## Open decisions
 
