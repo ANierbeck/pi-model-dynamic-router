@@ -599,6 +599,24 @@ pi-coding-agent 1.0.4, which ships `undici` 8.10.2 and dropped the
 (overrides were ignored even on a fresh lock resolution). `npm audit` is
 clean; the Dependabot alerts auto-close.
 
+**Host-pinned undici alert (evaluated 2026-10-26, PR fixing this repo's
+tree):** Dependabot #48 (HIGH, CVE-2026-109869 — DoS via unhandled error on
+excessive content-encodings, undici < 8.12.2). The vulnerable undici 8.10.2
+is a DIRECT dependency of the host (@earendil-works/pi-coding-agent), and
+even the latest host (1.4.0) still pins 8.10.2 — the fix cannot come from a
+host bump yet. Dev-only scope here (0 bundle markers), exploit needs a
+malicious provider endpoint answering with excessive content-encoding
+headers. Applied `"overrides": { "undici": "8.12.2" }` (works since host
+1.0.4 dropped its npm-shrinkwrap.json); the owner's globally installed
+pi 1.4.0 still ships undici 8.10.2 until the host bumps upstream — surface
+this upstream when convenient.
+
+**Host pin drift (detected 2026-10-26, needs an owner-scheduled alignment
+round):** repo devDependencies pin @earendil-works/pi-coding-agent 1.0.4;
+the installed host is `pi` 1.4.0 (latest). Per AGENTS.md section 10 this is
+the drift case that gets a deliberate alignment round (tsc, suite,
+coverage thresholds unchanged, build, verify the private reach-throughs).
+
 **Host upgrade policy (pinned 2026-10-04, guarded by
 test/dependabot-config.test.ts):** @earendil-works/pi-coding-agent is
 never auto-bumped. Host upgrades are deliberate, planned rounds (see
