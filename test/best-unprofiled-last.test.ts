@@ -22,6 +22,7 @@ const CONFIG = {
     'mistral/mistral-medium-3.5': { cost_per_m: 0.4, throughput_tps: 80, avg_latency_ms: 900 },
     'mistral/zai-glm-5-3': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
     'mistral/glm-5-2': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
+    'mistral/glm-flash': { cost_per_m: 0.1, throughput_tps: 200, avg_latency_ms: 800 },
     'claude-bridge/claude-sonnet-5-5': { cost_per_m: 2.0e-6, throughput_tps: 100, avg_latency_ms: 1000 },
     'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
   },
@@ -30,6 +31,7 @@ const CONFIG = {
     'mistral-medium-3.5': 933,
     'zai-glm-5-3': 1644,
     'glm-5-2': 1371,
+    'glm-flash': 1600,
     'claude-sonnet-5-5': 1844,
     'claude-opus-5-5': 1900,
   },
@@ -92,6 +94,15 @@ describe("sortBy('best') with a capability column: unprofiled models rank last",
     const r = new RoutingRouter(CONFIG, cache, new Map());
     const res = r.resolve('tactical');
     expect(res?.candidates?.slice(0, 2)).toEqual(['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3']);
+  });
+
+  it('unprofiled tail is STRICT GDPval order — no quality window, no cost tiebreak', () => {
+    // glm-5-3 (gdpval 1644, expensive) and glm-flash (gdpval 1600, nearly
+    // free) are both unprofiled for coding and inside the 5 % window.
+    // The window's cheaper-first rule would put glm-flash first; the
+    // promised GDPval order puts glm-5-3 first. Review round on PR #75.
+    const sorted = router.sortBy(['mistral/glm-flash', 'mistral/zai-glm-5-3'], 'best', 'coding');
+    expect(sorted).toEqual(['mistral/zai-glm-5-3', 'mistral/glm-flash']);
   });
 
   it('calculateScore keeps its documented gdpval fallback (the unit contract is unchanged)', () => {

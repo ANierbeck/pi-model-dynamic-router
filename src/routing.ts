@@ -699,7 +699,12 @@ export class Router {
     if (column === null) return this.rankByScore(models, taskType);
     const profiled = models.filter((m) => lookupCapability(m, column) !== null);
     const unprofiled = models.filter((m) => lookupCapability(m, column) === null);
-    return [...this.rankByScore(profiled, column), ...this.rankByScore(unprofiled, 'gdpval')];
+    // The unprofiled tail is STRICT GDPval order — no quality window, no
+    // cost tiebreak. The window's premise ("within N % these are equally
+    // good") is about measured scores; the tail has none, and letting the
+    // cheaper-first rule reorder it broke the promised GDPval order
+    // (review round on PR #75).
+    return [...this.rankByScore(profiled, column), ...this.sortBy(unprofiled, 'max_gdpval')];
   }
 
   /** Score order plus the quality-equivalence window (ADR-0023) for one score column. */
