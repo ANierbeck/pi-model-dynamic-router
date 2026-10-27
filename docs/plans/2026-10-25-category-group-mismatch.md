@@ -11,6 +11,10 @@ before the behaviour-change list from Step 2 is approved.
 2026-10-15 (taxonomy v2 live) to 2026-10-25. Not verified: other users'
 configs (unknown by nature).
 
+**Re-checked 2026-10-27 on `laya-spike` `9f94cab`:** the 13 group names in
+`router-config.json` and the category comment in `content-classifier.ts`
+(`:89-99`). The mapping table and the selection counts were NOT re-measured.
+
 **Replaces:** Phase 1.1/1.2 of the superseded
 `docs/plans/2026-10-11-category-model-alignment.md` (planned there, never
 implemented).
@@ -168,8 +172,8 @@ The earlier owner decisions "`design` + `planning` → `planning` (2:1)" and
    selections and failover paths, one behaviour-change list per group,
    plus a proposal for what separates `design` from `planning` (D5).
 3. Owner nod on that list.
-4. Red-first implementation: alias resolution, a warning for a removed or
-   renamed group a config still references, new mapping pins.
+4. Red-first implementation: a warning for a removed or renamed group a
+   config still references, new mapping pins. No aliases (D3).
 5. Shipped config, README, `docs/routing-flow.md`, CHANGELOG; migration
    note for the owner layer (backup, mode 600).
 6. `npx tsc --noEmit`, `npx vitest run`, coverage thresholds unchanged,

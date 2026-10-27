@@ -1,7 +1,8 @@
 # `continue` keeps the model, not only the category
 
 **Status:** approved 2026-10-26 (owner decision, rationale: cache efficiency).
-Not started. Open: the measurement in Step 1.
+Not started. Step 1 (measurement) is open: the first run on 2026-10-27 is not
+reproducible, see `docs/research/2026-10-27-continue-switch-measurement.md`.
 
 **Verified against:** `laya-spike` at `492243f` — `src/stream-orchestrator.ts`
 (`:332-358` tool follow-up, `:403-407` classifier context, `:604`
