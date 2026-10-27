@@ -162,6 +162,10 @@ The earlier owner decisions "`design` + `planning` → `planning` (2:1)" and
   `tactical`, 9 log cases). With a predecessor the previous category is
   inherited as today. Model stickiness for `continue` is its own plan:
   `docs/plans/2026-10-26-continue-keeps-model.md`.
+  **Re-confirmed by the owner 2026-10-27, unchanged.** Its size, measured
+  on the decision log since 2026-10-15: 11 of 12 routing `continue`
+  records have no predecessor and would move `tactical` → `standard`
+  (`docs/research/2026-10-27-replay-category-changes.md`).
 - **D7 — decided 2026-10-26: five categories.** `simple` and `code_simple`
   merge; `continue` is a signal, not a category. The model-visible
   taxonomy changes only in the next Laya training round (existing labels
