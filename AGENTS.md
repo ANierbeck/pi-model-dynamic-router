@@ -89,7 +89,7 @@
   stripping, ordinary-429 body logging; unprofiled models rank last incl. the
   PR #75 review round; dependency-lock security guard; host 1.4.0 alignment
   with forwarding-exception termination, host-realistic stream fixtures and
-  the PR #79 review round): 2227 passing / 3 skipped; do not
+  the PR #79 review round; fallback-exit characterization): 2238 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
