@@ -43,6 +43,8 @@ export interface DecisionRow {
   stage: string;
   category: string | null;
   group: string | null;
+  /** Process tag of the router that made the decision (`<project>/<pid>`). */
+  proc?: string | null;
 }
 
 export interface JoinedTurn extends SessionTurn {
@@ -50,6 +52,9 @@ export interface JoinedTurn extends SessionTurn {
   category: string | null;
   group: string | null;
   switched: boolean | null;
+  /** Time and process of the matched decision; null unless matched. */
+  decisionTs: number | null;
+  proc: string | null;
 }
 
 export interface JoinWindow {
@@ -130,6 +135,7 @@ export function readDecisions(path: string, bounds: Bounds): DecisionRow[] {
       stage: String(rec.stage ?? ''),
       category: rec.final?.category ?? null,
       group: rec.final?.group ?? null,
+      proc: typeof rec.proc === 'string' ? rec.proc : null,
     });
   }
   return rows;
@@ -168,6 +174,8 @@ export function joinTurns(
       category: status === 'matched' ? hits[0].category : null,
       group: status === 'matched' ? hits[0].group : null,
       switched,
+      decisionTs: status === 'matched' ? hits[0].ts : null,
+      proc: status === 'matched' ? (hits[0].proc ?? null) : null,
     };
   });
 }

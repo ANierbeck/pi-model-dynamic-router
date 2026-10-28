@@ -97,6 +97,23 @@ describe('joinTurns — matching', () => {
   });
 });
 
+describe('joinTurns — the matched decision carries its process and time', () => {
+  it('exposes the process tag and the decision time of the single matched record', () => {
+    const [j] = joinTurns(
+      [turn('s', 0, 'aaa')],
+      [decision(1, 'aaa', { proc: 'proj/2559' })],
+    );
+    expect(j.decisionTs).toBe(at(1));
+    expect(j.proc).toBe('proj/2559');
+  });
+
+  it('leaves both null when the turn is not matched', () => {
+    const [j] = joinTurns([turn('s', 0, 'aaa')], []);
+    expect(j.decisionTs).toBeNull();
+    expect(j.proc).toBeNull();
+  });
+});
+
 describe('joinTurns — switches', () => {
   it('marks a switch when the served model differs from the previous turn of the same session', () => {
     const out = joinTurns(
