@@ -103,6 +103,7 @@ export function loadLayeredConfig(
   const globalOverridePath = path.join(piAgentDir(), 'router-config.user.json');
   const globalOverride = tryReadPartial(globalOverridePath, log);
   if (globalOverride) {
+    validateRemovedGroups(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   }
@@ -111,6 +112,7 @@ export function loadLayeredConfig(
   const projectOverridePath = path.join(cwd, '.pi', 'router-config.json');
   const projectOverride = tryReadPartial(projectOverridePath, log);
   if (projectOverride) {
+    validateRemovedGroups(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   }
@@ -119,6 +121,70 @@ export function loadLayeredConfig(
   validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Groups of the 13-group layout that the five-group layout removed or renamed
+ * (docs/plans/2026-10-25-category-group-mismatch.md, D2/D4), mapped to the
+ * group that took over their role. Decision D3: no read aliases in 2.0, so a
+ * config still naming one is warned about, not translated. `complex` had no
+ * direct successor; `standard` is the closest mid band.
+ */
+export const REMOVED_GROUPS: Readonly<Record<string, string>> = {
+  trivial: 'simple',
+  scout: 'simple',
+  fallback: 'simple',
+  operational: 'standard',
+  tactical: 'code_complex',
+  strategic: 'planning',
+  complex: 'standard',
+};
+
+/**
+ * Warn about every reference to a removed group left in a user/project layer
+ * and drop it BEFORE the layer is merged: a `model_groups` entry (it would
+ * otherwise be a stray method-less group while the value the owner meant for
+ * the successor never applies), a `fallback_groups` entry, a
+ * `delegation.expensive_groups` entry. Only override layers are checked — the
+ * embedded defaults are the shipped config and own their group names. A list
+ * that held only removed names is deleted so the embedded default stands (an
+ * emptied `expensive_groups` would mean "check disabled" and silently turn the
+ * expensive-model read block off). Warn, never throw — an outdated override
+ * must not break routing. `category_groups` is covered by
+ * validateCategoryGroups (unknown group).
+ */
+function validateRemovedGroups(layer: Partial<Config>, source: string): void {
+  const hint = (name: string) => `moved to "${REMOVED_GROUPS[name]}" in the five-group layout`;
+  const groups = layer.model_groups as Record<string, { fallback_groups?: string[] | null }> | undefined;
+  if (groups && typeof groups === 'object') {
+    for (const name of Object.keys(groups)) {
+      if (name in REMOVED_GROUPS) {
+        warnLog(`[router] ${source} model_groups: removed group "${name}" — ignored; ${hint(name)}, move the settings there`);
+        delete groups[name];
+      }
+    }
+    for (const [name, g] of Object.entries(groups)) {
+      const chain = g?.fallback_groups;
+      if (!Array.isArray(chain)) continue;
+      const kept = chain.filter((t) => !(t in REMOVED_GROUPS));
+      for (const t of chain) {
+        if (t in REMOVED_GROUPS) warnLog(`[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`);
+      }
+      if (kept.length === chain.length) continue;
+      if (kept.length > 0) g.fallback_groups = kept;
+      else delete g.fallback_groups;
+    }
+  }
+  const expensive = layer.delegation?.expensive_groups;
+  if (layer.delegation && Array.isArray(expensive)) {
+    const kept = expensive.filter((t) => !(t in REMOVED_GROUPS));
+    for (const t of expensive) {
+      if (t in REMOVED_GROUPS) warnLog(`[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`);
+    }
+    if (kept.length === expensive.length) return;
+    if (kept.length > 0) layer.delegation.expensive_groups = kept;
+    else delete layer.delegation.expensive_groups;
+  }
 }
 
 /**
