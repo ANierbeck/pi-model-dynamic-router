@@ -15,7 +15,7 @@
 
 import { createHash } from 'node:crypto';
 import { appendRotating, procTag } from './logger.ts';
-import type { ClassifierLogConfig } from './types.ts';
+import type { ClassifierLogConfig, GroupPool, PoolCandidate } from './types.ts';
 
 export const DECISION_LOG_VERSION = 1;
 
@@ -252,5 +252,45 @@ export function writeDecisionRecord(rec: DecisionRecord, home: string, log: { ma
   } catch {
     // Unwritable location, full disk, another process rotating: swallow.
     // The classification is worth more than its log line.
+  }
+}
+
+/**
+ * The decision-time candidate pool, one record per group resolution that
+ * drives a stream (route 2 of the pool replay, ADR-0027 log): written to the
+ * same jsonl as the decision records, ordered right after the decision of
+ * the same turn (classification → resolve → stream). Correlation key with
+ * the decision record: `proc` + group + timestamp; the record deliberately
+ * carries NO `input` (no prompt, no sha) — readers without an `input.sha`
+ * are pool records and have nothing to join on (see readDecisions).
+ */
+export interface DecisionPoolRecord {
+  v: number;
+  ts: string;
+  proc: string;
+  stage: 'pool';
+  group: string;
+  method: string;
+  candidates: PoolCandidate[];
+}
+
+export function buildPoolRecord(pool: GroupPool): DecisionPoolRecord {
+  return {
+    v: DECISION_LOG_VERSION,
+    ts: new Date().toISOString(),
+    proc: procTag(),
+    stage: 'pool',
+    group: pool.group,
+    method: pool.method,
+    candidates: pool.candidates,
+  };
+}
+
+/** Append one pool record; fail-open like writeDecisionRecord. */
+export function writePoolRecord(rec: DecisionPoolRecord, home: string, log: { maxBytes: number; keep: number }): void {
+  try {
+    appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
+  } catch {
+    // Same contract as writeDecisionRecord: logging never breaks routing.
   }
 }

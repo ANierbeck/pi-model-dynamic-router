@@ -69,9 +69,26 @@ next turn's attempts; the walk must be bounded by the turn, not by time).
 3. Route 2 (writing a per-decision pool record into the decision log) would
    remove both the lookup guesswork and the failover ambiguity for the future.
 
+## Route 2 implemented (same day, follow-up commit)
+
+The owner picked "pool with metrics" for the future source. Implemented:
+`Router.resolveGroup` attaches the ranked pool (`GroupResolution.pool`: group,
+method, candidates with gdp/cost/score/flags), and the resolve glue
+(`src/model-resolve-glue.ts`, wired in `index.ts`) appends one `stage: 'pool'`
+record to `~/.pi/logs/classifier-decisions.jsonl` per group resolution that
+drives a stream — right after the turn's decision record, same `proc`.
+No prompt text, no `input` field; `readDecisions` skips records without
+`input.sha`, so the join is unaffected. Off unless the classifier log is
+enabled; fail-open.
+
+Correlation for future joins: `proc` + group + timestamp order. The failover
+walk (which attempt served) stays in router.log until separately modeled.
+
 ## Open
 
 - 1 turn with no pool line (process/tag mismatch or log rotation boundary) —
   not investigated.
 - The failover walk bounding per turn (needed before any "first choice" replay
   claim) — not implemented.
+- The join does not yet consume 'pool' records (they only start accumulating
+  from this commit on).

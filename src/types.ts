@@ -724,9 +724,31 @@ export interface ModelWithLimits {
   rank: number;
 }
 
+/** One ranked candidate of a group pool, as resolved at decision time.
+ * Metrics and flags mirror the `[routing]` debug line (routing.ts
+ * formatGroupDecision): refs and numbers only, never prompt text. */
+export interface PoolCandidate {
+  ref: string;
+  gdp: number | null;
+  cost: number | null;
+  /** Present for method 'best' (the column the group ranks by). */
+  score?: number;
+  flags: string[]; // 'unhealthy' | 'limited' | 'paced'
+}
+
+/** The pool a GroupResolution came from (route 2 of the pool replay:
+ * written into the decision log by the resolve glue). */
+export interface GroupPool {
+  group: string;
+  method: string;
+  candidates: PoolCandidate[];
+}
+
 export interface GroupResolution {
   selected: string;
   candidates: string[];
+  /** Ranked pool with metrics; attached by resolveGroup. */
+  pool?: GroupPool;
 }
 
 // ── Cost Tracking Types ────────────────────────────────────────────────

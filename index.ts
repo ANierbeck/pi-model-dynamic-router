@@ -43,6 +43,8 @@ import { costTracker } from './src/cost-tracker.ts';
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
 // and can land in the user's input field). Re-imported here for index.ts's own use.
 import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
+import { homedir } from 'node:os';
+import { buildPoolRecord, writePoolRecord, resolveClassifierLogConfig } from './src/classifier-decision-log.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 import { createContextUtils } from './src/context-utils.ts';
 import { createLimitGlue } from './src/limit-glue.ts';
@@ -231,6 +233,15 @@ let previousTokenCount = 0;
     get isLimited() { return isLimited; },
     get limitSecs() { return limitSecs; },
     get router() { return router; },
+    // Route 2 of the pool replay (ADR-0027 log): one 'pool' record per group
+    // resolution that drives a stream, appended to the decision log right
+    // after the turn's decision record. Fail-open, and off unless the
+    // classifier log is enabled — same gate as the decision records.
+    logPool: (pool) => {
+      const log = resolveClassifierLogConfig(cfg?.classifier_log);
+      if (!log) return;
+      writePoolRecord(buildPoolRecord(pool), homedir(), log);
+    },
   });
 
   const { populateLlmMatches, scan } = createScanRunner({

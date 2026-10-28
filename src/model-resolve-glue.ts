@@ -5,7 +5,7 @@
  */
 
 import * as metricsModule from './metrics.ts';
-import type { Cache, Metrics } from './types.ts';
+import type { Cache, GroupPool, Metrics } from './types.ts';
 import type { DiscoveryManager } from './discovery.ts';
 import type { Router } from './routing.ts';
 
@@ -24,6 +24,11 @@ interface ModelResolveGlueDeps {
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
   readonly router: Router;
+  /** Records a resolution's decision-time pool in the decision log (route 2
+   * of the pool replay). Called by resolve() for every resolution that
+   * carries a pool — the wiring in index.ts decides whether anything is
+   * actually written; absent means no pool logging. */
+  readonly logPool?: (pool: GroupPool) => void;
 }
 
 export function createModelResolveGlue(d: ModelResolveGlueDeps) {
@@ -37,7 +42,9 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
   }
 
   function resolve(name: string): { selected: string; candidates: string[] } | null {
-    return d.router.resolve(name);
+    const res = d.router.resolve(name);
+    if (res?.pool) d.logPool?.(res.pool);
+    return res;
   }
 
 

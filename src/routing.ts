@@ -9,6 +9,7 @@ import type {
   RateLimit,
   ModelWithLimits,
   GroupResolution,
+  GroupPool,
 } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, lookupContextWindow } from './metrics.ts';
@@ -1194,7 +1195,7 @@ export class Router {
     }
 
     if (c.length === 0) return null;
-    return { selected: c[0], candidates: c };
+    return { selected: c[0], candidates: c, pool: this.groupPool(name, g, c) };
   }
 
   /**
@@ -1204,6 +1205,36 @@ export class Router {
    * dropped it. Logged via debugLogOnce, so an unchanged decision is not
    * repeated on every prompt.
    */
+  /**
+   * The ranked candidates of a resolution as structured data (route 2 of
+   * the pool replay): the same values formatGroupDecision prints — gdp,
+   * effective cost, the 'best' score, and the state flags. Attached to
+   * every GroupResolution so the resolve glue can record the decision-time
+   * pool in the decision log. Refs and numbers only, never prompt text.
+   */
+  private groupPool(name: string, g: Group, ranked: string[]): GroupPool {
+    const paced = pacedProviders(this.cfg, this.cache.usage_log);
+    return {
+      group: name,
+      method: g.method,
+      candidates: ranked.map((ref) => {
+        const gdp = lookupGdp(ref);
+        const cost = effCost(ref);
+        const flags: string[] = [];
+        if (isUnhealthy(this.cache, ref)) flags.push('unhealthy');
+        if (this.isLimited(ref)) flags.push('limited');
+        if (paced.has(ref.split('/')[0])) flags.push('paced');
+        return {
+          ref,
+          gdp: gdp ?? null,
+          cost: cost === 'unknown' ? null : cost,
+          ...(g.method === 'best' ? { score: calculateScore(ref, g.score_by ?? 'gdpval', this.cfg) } : {}),
+          flags,
+        };
+      }),
+    };
+  }
+
   private formatGroupDecision(name: string, g: Group, ranked: string[], drops: Array<[string, string]>): string {
     const fmt = (v: number) => String(Number(v.toPrecision(4)));
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
