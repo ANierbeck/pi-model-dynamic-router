@@ -11,6 +11,10 @@ before the behaviour-change list from Step 2 is approved.
 2026-10-15 (taxonomy v2 live) to 2026-10-25. Not verified: other users'
 configs (unknown by nature).
 
+**Re-checked 2026-10-27 on `laya-spike` `9f94cab`:** the 13 group names in
+`router-config.json` and the category comment in `content-classifier.ts`
+(`:89-99`). The mapping table and the selection counts were NOT re-measured.
+
 **Replaces:** Phase 1.1/1.2 of the superseded
 `docs/plans/2026-10-11-category-model-alignment.md` (planned there, never
 implemented).
@@ -140,15 +144,31 @@ The earlier owner decisions "`design` + `planning` → `planning` (2:1)" and
   groups.** The mechanism (floor, `score_by`, quality window) is good; with
   Claude + Mistral their candidate lists are identical today
   (`claude-sonnet-5-5` leads both on the Briefcase column), but a larger
-  pool (OpenAI models, other setups) separates them. **Not decided yet:**
-  what separates them in the *shipped* config. Proposal for the Step 2
-  replay: `design` takes the "second guard" of the top band (lower floor,
-  cheaper-first inside the band), `planning` stays best-first.
+  pool (OpenAI models, other setups) separates them.
+  **Decided 2026-10-27 (owner): what separates them in the shipped config
+  is the floor, not the column.** Both sort by `score_by: 'briefcase'` —
+  `calculateScore` already falls back to the model's global GDPval per
+  model when the Briefcase value is missing, so the requested
+  Briefcase+GDPval combination is built in. A "thinking" benchmark column
+  does not exist (the capability profiles carry only `briefcase` and
+  `coding`), so nothing else flows in. Concretely: `planning` keeps
+  `min_gdpval: 1700` (top tier only, best-first); `design` becomes its own
+  group at `min_gdpval: 1600` — the best of the wider upper band (today
+  that admits claude-haiku-5-5 at 1620 and glm-5-3 at 1650 below the two
+  top models), also Briefcase-sorted. `planning` stays the "second guard"
+  of the top band via its escalation chain, as today.
 - **D6 — decided 2026-10-26: `continue` without a predecessor →
   `standard`.** A catch-all for the first prompt of a session (today:
   `tactical`, 9 log cases). With a predecessor the previous category is
   inherited as today. Model stickiness for `continue` is its own plan:
   `docs/plans/2026-10-26-continue-keeps-model.md`.
+  **Re-confirmed by the owner 2026-10-27, unchanged.** Its size, measured
+  on the decision log since 2026-10-15: 10 of 12 routing `continue`
+  records have no predecessor and would move `tactical` → `standard`; 2
+  more follow another `continue`, a case D6 does not cover (corrected
+  2026-10-28 from "11 of 12"; the first figure does not reproduce). Their
+  heads change from a top coding model to a free one in 9 of 10 cases
+  (`docs/research/2026-10-28-pool-content-replay.md`).
 - **D7 — decided 2026-10-26: five categories.** `simple` and `code_simple`
   merge; `continue` is a signal, not a category. The model-visible
   taxonomy changes only in the next Laya training round (existing labels
@@ -165,11 +185,12 @@ The earlier owner decisions "`design` + `planning` → `planning` (2:1)" and
 1. Characterization tests that pin today's mapping and failover chains.
    They pass on today's code — no red expected, stated per AGENTS.md §4.
 2. Offline replay of the target layout on the log since 2026-10-15:
-   selections and failover paths, one behaviour-change list per group,
-   plus a proposal for what separates `design` from `planning` (D5).
+   selections and failover paths, one behaviour-change list per group.
+   (D5's separation rule is decided — the replay evaluates the 1600/1700
+   floor pair against the log.)
 3. Owner nod on that list.
-4. Red-first implementation: alias resolution, a warning for a removed or
-   renamed group a config still references, new mapping pins.
+4. Red-first implementation: a warning for a removed or renamed group a
+   config still references, new mapping pins. No aliases (D3).
 5. Shipped config, README, `docs/routing-flow.md`, CHANGELOG; migration
    note for the owner layer (backup, mode 600).
 6. `npx tsc --noEmit`, `npx vitest run`, coverage thresholds unchanged,
