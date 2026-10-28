@@ -1,8 +1,11 @@
 # Categories and groups do not line up
 
-**Status:** owner decisions recorded (D1–D3 2026-10-25, D4–D7 2026-10-26);
-one proposal still open (what separates `design` from `planning`). No code
-before the behaviour-change list from Step 2 is approved.
+**Status:** in progress (2026-10-28). Steps 1-6 are implemented on branch
+`feat/five-groups` (commits `eafa938` layout, `388d81e` removed-group
+warning), not pushed. Still open: the owner's own `router-config.user.json`
+(it names `tactical` and `scout`; the loader now warns and drops them) and
+the release decision. D1-D7 are decided; the replay behind Step 3 is
+`docs/research/2026-10-28-pool-content-replay.md`.
 
 **Verified against:** `origin/main` 6f4ac08 (`router-config.json`,
 `src/content-classifier.ts` `CATEGORY_TO_GROUP`, `src/stream-orchestrator.ts`,
