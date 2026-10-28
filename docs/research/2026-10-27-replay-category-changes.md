@@ -27,8 +27,11 @@ replay, still to do.
 
 ## Record-level `continue` (routing stages, since 2026-10-15)
 
-12 records. 11 have no predecessor (`prev` = null) → under D6 they move
-`tactical` → `standard`. 1 has a predecessor and keeps `tactical`. This is more
+12 records. **Corrected 2026-10-28:** 10 have no predecessor (`prev` = null) →
+under D6 they move `tactical` → `standard`; 2 have `continue` itself as their
+predecessor (undecided, see `2026-10-28-pool-content-replay.md`). This note first
+said 11 + 1; that split does not reproduce with `scripts/pool-replay.ts --replay`
+(same bounds), and the cause of the difference was not found. This is more
 than the 5 joined turns: most `continue` decisions are not joined to a session
 turn, so the join sample understates D6.
 

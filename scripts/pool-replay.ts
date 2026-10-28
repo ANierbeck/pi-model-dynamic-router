@@ -101,4 +101,110 @@ function calibrationMain(): void {
   console.log(`calibration (pool first choice = served model): agree ${c.agree}/${c.compared} compared, ${c.unmatched} without a pool line`);
 }
 
-if (process.argv[1] && process.argv[1].endsWith('pool-replay.ts') && process.argv.includes('--calibrate')) calibrationMain();
+// ── Step 3 driver: pool content under the target layout ───────────────────
+// Only two category changes move a pool (docs/research/2026-10-27-replay-category-changes.md):
+//   design   : planning (floor 1700) → design (floor 1600, D5)
+//   continue : tactical → standard when the session has no predecessor (D6)
+// The other categories are pure renames of groups with identical pools.
+// Pools are compared by CONTENT and head, never by who served (failover decides that).
+
+import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
+import * as metrics from '../src/metrics.ts';
+
+interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
+
+function readRawDecisions(file: string, bounds: Bounds): RawDecision[] {
+  const out: RawDecision[] = [];
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    let r: any;
+    try { r = JSON.parse(line); } catch { continue; }
+    const ts = Date.parse(r?.ts);
+    if (Number.isNaN(ts) || typeof r?.proc !== 'string' || r.stage === 'pool' || r.stage === 'comparator') continue;
+    if ((bounds.since !== undefined && ts < bounds.since) || (bounds.until !== undefined && ts > bounds.until)) continue;
+    out.push({ ts, proc: r.proc, stage: r.stage, category: r.final?.category ?? null, group: r.final?.group ?? null, prevCategory: r.prev?.category ?? null });
+  }
+  return out;
+}
+
+function tally(xs: string[]): Record<string, number> {
+  return xs.reduce<Record<string, number>>((a, x) => ({ ...a, [x]: (a[x] ?? 0) + 1 }), {});
+}
+
+function replayMain(): void {
+  const bounds: Bounds = {};
+  const since = flagValue('since'); const until = flagValue('until');
+  if (since) bounds.since = Date.parse(since);
+  if (until) bounds.until = Date.parse(until);
+  const log = flagValue('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
+  const routerLog = flagValue('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
+  const shipped = JSON.parse(readFileSync('router-config.json', 'utf8')) as Config;
+  const cache = JSON.parse(readFileSync(flagValue('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8'));
+  // Billing classification needs the user's provider billing (e.g. a subscription
+  // provider); take ONLY the billing fields of the user layer, nothing else.
+  const userPath = flagValue('user-config') ?? join(homedir(), '.pi', 'agent', 'router-config.user.json');
+  try {
+    const user = JSON.parse(readFileSync(userPath, 'utf8')) as Config;
+    const providers: Record<string, Record<string, unknown>> = { ...(shipped.providers as object) };
+    for (const [name, p] of Object.entries(user.providers ?? {})) {
+      const { billing, free_models } = p as unknown as Record<string, unknown>;
+      providers[name] = { ...providers[name], ...(billing !== undefined ? { billing } : {}), ...(free_models !== undefined ? { free_models } : {}) };
+    }
+    (shipped as { providers?: unknown }).providers = providers;
+  } catch { /* no user layer: shipped billing only */ }
+  metrics.setConfig(shipped); metrics.setCache(cache); metrics.setModelRegistry({ find: () => undefined } as any);
+  const designFloor = (targetLayout(shipped).model_groups as Record<string, Group>).design.min_gdpval!;
+  const planningScoreBy = (shipped.model_groups as Record<string, Group>).planning.score_by;
+  const score = (ref: string) => metrics.calculateScore(ref, planningScoreBy, shipped);
+
+  const lines: RoutingLine[] = readFileSync(routerLog, 'utf8').split('\n').map(parseRoutingLine).filter((l): l is RoutingLine => l !== null);
+  const decisions = readRawDecisions(log, bounds);
+  const poolAt = (group: string, proc: string, ts: number) =>
+    lines.filter((l) => l.group === group && l.proc === proc && l.ts <= ts).sort((a, b) => b.ts - a.ts)[0];
+
+  console.log(`bounds: since=${since ?? '-'} until=${until ?? '-'}  decisions=${decisions.length}  routing lines=${lines.length}`);
+  console.log(`design floor=${designFloor}, ranking column=${planningScoreBy} (scan-cache profiles as of today, not as of the decision)`);
+
+  // design: planning pool (1700) vs the design pool (floor 1600 over the shown universe)
+  const design = decisions.filter((d) => d.category === 'design');
+  const dRows = design.map((d) => {
+    const cur = poolAt('planning', d.proc, d.ts);
+    if (!cur) return null;
+    const target = rankBy(admit(universeAsOf(lines, d.proc, d.ts), designFloor), score).map((c) => c.ref);
+    return diffPools(cur.candidates.map((c) => c.ref), target);
+  });
+  const dOk = dRows.filter((r): r is NonNullable<typeof r> => r !== null);
+  console.log(`\n== design: ${design.length} decisions, ${dOk.length} with a planning pool line`);
+  console.log(`   head changed: ${dOk.filter((r) => r.headChanged).length}/${dOk.length}`);
+  console.log(`   added to the pool: ${JSON.stringify(tally(dOk.flatMap((r) => r.added)))}`);
+  console.log(`   removed from the pool: ${JSON.stringify(tally(dOk.flatMap((r) => r.removed)))}`);
+  console.log(`   current heads: ${JSON.stringify(tally(dOk.map((r) => String(r.currentHead))))}`);
+  console.log(`   target heads : ${JSON.stringify(tally(dOk.map((r) => String(r.targetHead))))}`);
+
+  // continue: tactical (today) vs standard (operational pool) — D6 applies without a predecessor
+  const cont = decisions.filter((d) => d.category === 'continue');
+  const noPrev = cont.filter((d) => d.prevCategory === null);
+  const cRows = noPrev.map((d) => {
+    const cur = poolAt(d.group ?? 'tactical', d.proc, d.ts);
+    const tgt = poolAt('operational', d.proc, d.ts);
+    if (!cur || !tgt) return null;
+    return { d: diffPools(cur.candidates.map((c) => c.ref), tgt.candidates.map((c) => c.ref)), curHead: cur.candidates[0], tgtHead: tgt.candidates[0] };
+  });
+  const cOk = cRows.filter((r): r is NonNullable<typeof r> => r !== null);
+  const afterContinue = cont.filter((d) => d.prevCategory === 'continue').length;
+  console.log(`\n== continue: ${cont.length} decisions, ${noPrev.length} without a predecessor (D6 applies), ${afterContinue} after another continue (undecided), ${cOk.length} with both pool lines`);
+  console.log(`   head changed: ${cOk.filter((r) => r.d.headChanged).length}/${cOk.length}`);
+  console.log(`   current heads (tactical): ${JSON.stringify(tally(cOk.map((r) => String(r.curHead?.ref))))}`);
+  console.log(`   target heads (standard) : ${JSON.stringify(tally(cOk.map((r) => String(r.tgtHead?.ref))))}`);
+  // Billing as the router classifies it (metrics.billingTier), not the list price.
+  const TIER = ['free', 'subscription', 'local', 'payg'];
+  const billing = (c?: { ref: string }) => (c ? (TIER[metrics.billingTier(c.ref)] ?? 'unknown') : 'none');
+  console.log(`   head billing today : ${JSON.stringify(tally(cOk.map((r) => billing(r.curHead))))}`);
+  console.log(`   head billing target: ${JSON.stringify(tally(cOk.map((r) => billing(r.tgtHead))))}`);
+}
+
+
+if (process.argv[1] && process.argv[1].endsWith('pool-replay.ts')) {
+  if (process.argv.includes('--calibrate')) calibrationMain();
+  if (process.argv.includes('--replay')) replayMain();
+}
