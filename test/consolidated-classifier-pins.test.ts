@@ -20,29 +20,29 @@ describe('classifier-mapping-hints', () => {
   describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
     it('maps the seven v2 categories to their router groups', () => {
       expect(CATEGORY_TO_GROUP).toEqual({
-        simple: 'scout',
+        simple: 'simple',
         code_simple: 'simple',
-        standard: 'operational',
-        code_complex: 'tactical',
-        design: 'planning',
+        standard: 'standard',
+        code_complex: 'code_complex',
+        design: 'design',
         planning: 'planning',
-        continue: 'tactical',
+        continue: 'standard',
       });
     });
 
     it('resolves every known category', () => {
-      expect(getGroupForCategory('simple')).toBe('scout');
+      expect(getGroupForCategory('simple')).toBe('simple');
       expect(getGroupForCategory('code_simple')).toBe('simple');
-      expect(getGroupForCategory('standard')).toBe('operational');
-      expect(getGroupForCategory('code_complex')).toBe('tactical');
-      expect(getGroupForCategory('design')).toBe('planning');
+      expect(getGroupForCategory('standard')).toBe('standard');
+      expect(getGroupForCategory('code_complex')).toBe('code_complex');
+      expect(getGroupForCategory('design')).toBe('design');
       expect(getGroupForCategory('planning')).toBe('planning');
-      expect(getGroupForCategory('continue')).toBe('tactical');
+      expect(getGroupForCategory('continue')).toBe('standard');
     });
 
-    it('routes unknown categories to the fallback group', () => {
-      expect(getGroupForCategory('does-not-exist')).toBe('fallback');
-      expect(getGroupForCategory('')).toBe('fallback');
+    it('routes unknown categories to the simple group (D4)', () => {
+      expect(getGroupForCategory('does-not-exist')).toBe('simple');
+      expect(getGroupForCategory('')).toBe('simple');
     });
   });
 });

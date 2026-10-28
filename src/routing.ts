@@ -270,8 +270,8 @@ export function applyGroupFilters(
   // CONFIG-DRIVEN via cfg.non_agent_model_prefixes (the same key for all
   // users, set in the user layer — nothing ships, ADR-0025 Phase D;
   // absent/empty = explicitly off). Floor-INDEPENDENT
-  // and group-independent: without this, trivial/simple stay a zoo door and
-  // operational/tactical keep magistral-small (665). The prompt classifier
+  // and group-independent: without this, simple stays a zoo door and
+  // standard/code_complex keep magistral-small (665). The prompt classifier
   // chain does not pass through applyGroupFilters, so classification keeps
   // these models.
   c = gate('non_agent', (ref) => isAgentCapableRef(ref, cfg.non_agent_model_prefixes));
@@ -351,22 +351,22 @@ export function applyGroupFilters(
  * `fallback_groups`. Coarsest tiers first, cheapest/local last.
  */
 export const FALLBACK_GROUP_ORDER: readonly string[] = [
-  'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+  'planning', 'design', 'code_complex', 'standard', 'simple',
 ];
 
 /**
  * Resolves the next group to try when every candidate in `currentGroup` has
  * failed. Prefers the group's configured `fallback_groups` (from
  * router-config.json) over the global {@link FALLBACK_GROUP_ORDER} — this
- * allows per-group fallback chains like trivial → [scout, operational,
- * fallback] instead of always walking the hardcoded order. Falls through to
+ * allows per-group fallback chains like code_complex → [planning, standard,
+ * simple] instead of always walking the hardcoded order. Falls through to
  * the global order when `fallback_groups` is unset, empty, or every entry
  * in it is either unknown or already visited.
  *
  * `visited` excludes groups already tried in this cascade. The auto-generated
  * `fallback_groups` lists are a full ordering over every group, which
- * routinely produces mutual references (e.g. tactical's first pick is
- * strategic, and strategic's first pick is tactical). Without skipping
+ * routinely produces mutual references (e.g. code_complex's first pick is
+ * planning, and planning's first pick is code_complex). Without skipping
  * already-visited groups, two groups that both fail recurse into each other
  * forever and blow the stack.
  */
@@ -595,9 +595,9 @@ export class Router {
     // model picker / --model flag can select a group as the active model
     // (README: "You select `dynamic` group"). Pi's registry surfaces them
     // via getAvailable(), so without this filter a group could select
-    // ITSELF as its own top candidate — e.g. resolve('trivial') picking
-    // 'trivial/trivial', which has no real cost/gdpval and shows as a
-    // circular "trivial/trivial" entry in /router (regression 2026-09-10).
+    // ITSELF as its own top candidate — e.g. resolve('simple') picking
+    // 'simple/simple', which has no real cost/gdpval and shows as a
+    // circular "simple/simple" entry in /router (regression 2026-09-10).
     // Filtering here (not by omitting the registration) keeps the group
     // selectable as an entry point while excluding it as a resolution
     // candidate.
@@ -761,17 +761,17 @@ export class Router {
     // strict_local: local (tier 2) → free (tier 0) → subscription (tier 1)
     // → payg (tier 3). Unlike local_first (which keeps truly-free models
     // on top), strict_local puts the local daemon FIRST — for cheap groups
-    // (trivial/simple) a prompt should hit the local Ollama daemon (best
+    // (simple) a prompt should hit the local Ollama daemon (best
     // latency, no quota burn), then free remote models, and only then
     // subscription models whose $0 nominal cost hides a hard time/token
     // limit (the pi-claude incident, 2026-09-26).
     const strictRank = (t: number) => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
     // cloud_first: free (tier 0) → subscription (tier 1) → payg (tier 3) → local (tier 2) ALWAYS LAST.
-    // For scout/bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
+    // For bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
     // (2026-09-27, repeated GPU load / MLX-wedge incidents made the local daemon untrusted as a default hop).
     const cloudFirstRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3);
     // local_before_payg: free (tier 0) → subscription (tier 1) → local (tier 2) → payg (tier 3).
-    // For trivial/simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
+    // For simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
     // local ahead of free/subscription like the old strict_local did. This IS the tier numbering itself, so it needs
     // no rank table of its own: it takes the `default` branch below (an identity table was removed as redundant —
     // nightly R1 mutation triage, 2026-10-07).
@@ -1279,7 +1279,7 @@ export class Router {
     }
     
     // Fallback: return lowest tier that has no min_gdpval requirement
-    for (const name of ['scout', 'operational', 'tactical', 'strategic', 'fallback']) {
+    for (const name of ['simple', 'standard', 'code_complex', 'planning', 'design']) {
       const g = this.cfg.model_groups[name];
       if (g && (g.min_gdpval === undefined || g.min_gdpval === 0)) {
         return name;

@@ -141,18 +141,18 @@ describe('applyGroupFilters — min_gdpval_pct percentile gate', () => {
 // ── Cluster 3: detectGroup's no-score fallback list ─────────────────────────
 
 describe('detectGroup — unscored refs fall back to the first tier without a min', () => {
-  it('returns the first of [scout, operational, …] with no min_gdpval requirement', () => {
-    const cfg = { model_groups: { scout: { method: 'best' } } } as any;
+  it('returns the first of [simple, standard, …] with no min_gdpval requirement', () => {
+    const cfg = { model_groups: { simple: { method: 'best' } } } as any;
     const router = new Router(cfg, cache, new Map());
-    expect(router.detectGroup('zzq/qq-999')).toBe('scout');
+    expect(router.detectGroup('zzq/qq-999')).toBe('simple');
   });
 
   it('skips tiers WITH a positive min and picks the next unrestricted one', () => {
     const cfg = {
-      model_groups: { scout: { method: 'best', min_gdpval: 500 }, operational: { method: 'best' } },
+      model_groups: { simple: { method: 'best', min_gdpval: 500 }, standard: { method: 'best' } },
     } as any;
     const router = new Router(cfg, cache, new Map());
-    expect(router.detectGroup('zzq/qq-999')).toBe('operational');
+    expect(router.detectGroup('zzq/qq-999')).toBe('standard');
   });
 });
 

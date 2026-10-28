@@ -58,9 +58,9 @@ export interface Group {
    * Maximum GDPval a group member may have — the hard upper tier boundary,
    * symmetric to `min_gdpval` (owner decision 2026-10-04, ADR-0023). Keeps
    * top-tier models out of a group they would otherwise dominate via the
-   * `best` method's score convergence: e.g. `tactical` capped at 1700
+   * `best` method's score convergence: e.g. `code_complex` capped at 1700
    * admits glm-5-3 (1644) but excludes claude-opus-5-5 (1900) and
-   * claude-sonnet-5-5 (1844), reserving those for `strategic`. Strict
+   * claude-sonnet-5-5 (1844), reserving those for `planning`. Strict
    * null-fails semantics, matching `min_gdpval`: a model with a null
    * (unscored) GDPval fails a positive cap. Absent/0 = no upper bound.
    */
@@ -109,7 +109,7 @@ export interface Group {
    * - 'default':      free → subscription → local → payg
    * - 'local_first':  free → local → subscription → payg
    * - 'strict_local': local → free → subscription → payg — for cheap groups
-   *   (trivial/simple) where the local daemon should answer first: best
+   *   (simple) where the local daemon should answer first: best
    *   latency and no quota burn, ahead of even the $0 remote models.
    *
    * Note that a subscription model's nominal $0 cost does NOT mean it is
@@ -151,7 +151,7 @@ export interface Group {
    * and a resolvable key configured in router-config.json.
    */
   classifier_cloud_fallback?: boolean;
-  /** Groups to try (in order) when all candidates in this group fail. e.g. ["strategic", "operational"] */
+  /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */
   fallback_groups?: string[];
 }
 

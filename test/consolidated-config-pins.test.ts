@@ -29,14 +29,14 @@ describe('config-cloud-first-groups', () => {
   const cfg = JSON.parse(readFileSync(join(__dirname, '../router-config.json'), 'utf-8'));
 
   describe('router-config.json — cloud-first group billing_preference', () => {
-    it.each(['scout', 'bulk_reader', 'code_writer'])(
+    it.each(['bulk_reader', 'code_writer'])(
       '%s uses cloud_first (local always last)',
       (group) => {
         expect(cfg.model_groups[group]?.billing_preference).toBe('cloud_first');
       }
     );
 
-    it.each(['trivial', 'simple'])(
+    it.each(['simple'])(
       '%s uses local_before_payg (local ahead of payg only)',
       (group) => {
         expect(cfg.model_groups[group]?.billing_preference).toBe('local_before_payg');

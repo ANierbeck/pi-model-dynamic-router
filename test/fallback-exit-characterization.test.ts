@@ -1,17 +1,13 @@
 // test/fallback-exit-characterization.test.ts
 // Characterization of every place where the dynamic router falls back to the
-// group literally named `fallback`, and of the shipped failover chains.
+// cheap group, and of the shipped failover chains.
 //
 // Step 1 of docs/plans/2026-10-25-category-group-mismatch.md and Round 1 of
-// docs/plans/2026-10-25-fallback-naming.md: both plans rename or remove the
-// group `fallback` (the cheap-group merge, D4). Before they touch it, today's
-// behaviour is pinned here so every later change is a deliberate, visible
-// edit of this file.
-//
-// These tests pass on today's code — no red is expected (AGENTS.md §4,
-// characterization exception). Their non-vacuity is shown by mutating each
-// exit in src/stream-orchestrator.ts and observing the matching test fail
-// (recorded in the commit message).
+// docs/plans/2026-10-25-fallback-naming.md: the original pins captured the
+// pre-2.0 exits into the group literally named `fallback`. With D4 (the
+// cheap-group merge) shipped, the three exits and the tool follow-up pool
+// point at `simple` instead — this file pins the NEW behaviour, so every
+// later change is a deliberate, visible edit of this file.
 //
 // Already pinned elsewhere and NOT repeated here: the category → group table
 // (category-groups.test.ts, consolidated-classifier-pins.test.ts), the global
@@ -61,7 +57,7 @@ function harness(opts: {
     router: {},
     lastDynamicModel: opts.lastDynamicModel ?? '',
     lastClassifiedCategory: undefined,
-    escalation: { level: 'operational' },
+    escalation: { level: 'standard' },
     sessionCtx: undefined,
     resolve: (name: string) => {
       resolveCalls.push(name);
@@ -73,7 +69,7 @@ function harness(opts: {
     detectHintDirectly: () => null,
     isCompactionTurn: () => false,
     isLimited: () => false,
-    getGroupForCategory: (category: string) => (category === 'standard' ? 'operational' : 'tactical'),
+    getGroupForCategory: (category: string) => (category === 'standard' ? 'standard' : 'code_complex'),
     classifyPrompt: opts.classify ?? (async () => ({ category: 'standard' })),
   };
 
@@ -109,51 +105,51 @@ beforeEach(() => vi.clearAllMocks());
 
 // ── Exit 1: the classified target group cannot be resolved ────────────────
 
-describe("exit: classified target group unresolvable → group 'fallback'", () => {
-  it('resolves `fallback` instead and keeps the label of the ORIGINAL target', async () => {
+describe("exit: classified target group unresolvable → group 'simple' (D4)", () => {
+  it('resolves `simple` instead and keeps the label of the ORIGINAL target', async () => {
     const h = harness({
-      groups: ['operational', 'fallback'],
-      resolvable: { fallback: { candidates: ['free/a', 'free/b'], selected: 'free/a' } },
+      groups: ['standard', 'simple'],
+      resolvable: { simple: { candidates: ['free/a', 'free/b'], selected: 'free/a' } },
     });
     h.call();
     await vi.waitFor(() => expect(h.drive).toHaveBeenCalledTimes(1));
 
     const d = driven(h.drive);
-    expect(d.group).toBe('fallback');
+    expect(d.group).toBe('simple');
     expect(d.candidates).toEqual(['free/a', 'free/b']);
     // Quirk worth pinning: the label still names the unresolvable target,
-    // while the stream runs in `fallback`.
-    expect(d.label).toBe('standard → operational');
-    expect(h.resolveCalls).toEqual(['operational', 'fallback']);
+    // while the stream runs in `simple`.
+    expect(d.label).toBe('standard → standard');
+    expect(h.resolveCalls).toEqual(['standard', 'simple']);
     // The next classification sees the fallback pick as the last model.
     expect(h.ctx.lastDynamicModel).toBe('free/a');
   });
 
-  it('a resolvable target never touches `fallback`', async () => {
+  it('a resolvable target never touches `simple`', async () => {
     const h = harness({
-      groups: ['operational', 'fallback'],
+      groups: ['standard', 'simple'],
       resolvable: {
-        operational: { candidates: ['mid/a'], selected: 'mid/a' },
-        fallback: { candidates: ['free/a'], selected: 'free/a' },
+        standard: { candidates: ['mid/a'], selected: 'mid/a' },
+        simple: { candidates: ['free/a'], selected: 'free/a' },
       },
     });
     h.call();
     await vi.waitFor(() => expect(h.drive).toHaveBeenCalledTimes(1));
 
-    expect(driven(h.drive).group).toBe('operational');
-    expect(h.resolveCalls).not.toContain('fallback');
+    expect(driven(h.drive).group).toBe('standard');
+    expect(h.resolveCalls).not.toContain('simple');
     expect(h.ctx.lastDynamicModel).toBe('mid/a');
   });
 });
 
 // ── Exit 2: classification throws ─────────────────────────────────────────
 
-describe("exit: classification fails → group 'fallback'", () => {
-  it('streams from `fallback` with no dynamic label', async () => {
+describe("exit: classification fails → group 'simple' (D4)", () => {
+  it('streams from `simple` with no dynamic label', async () => {
     // `alpha` comes first in config order: a wrong group name would land there.
     const h = harness({
-      groups: ['alpha', 'fallback'],
-      resolvable: { fallback: { candidates: ['free/a', 'free/b'], selected: 'free/a' } },
+      groups: ['alpha', 'simple'],
+      resolvable: { simple: { candidates: ['free/a', 'free/b'], selected: 'free/a' } },
       classify: async () => {
         throw new Error('classifier down');
       },
@@ -162,14 +158,14 @@ describe("exit: classification fails → group 'fallback'", () => {
     await vi.waitFor(() => expect(h.drive).toHaveBeenCalledTimes(1));
 
     const d = driven(h.drive);
-    expect(d.group).toBe('fallback');
+    expect(d.group).toBe('simple');
     expect(d.candidates).toEqual(['free/a', 'free/b']);
     expect(d.label).toBeUndefined();
   });
 
-  it('with `fallback` unresolvable it takes the FIRST non-dynamic group in config order', async () => {
+  it('with `simple` unresolvable it takes the FIRST non-dynamic group in config order', async () => {
     const h = harness({
-      groups: ['alpha', 'beta', 'fallback'],
+      groups: ['alpha', 'beta', 'simple'],
       resolvable: { alpha: { candidates: ['a/1'], selected: 'a/1' }, beta: { candidates: ['b/1'], selected: 'b/1' } },
       classify: async () => {
         throw new Error('classifier down');
@@ -181,12 +177,12 @@ describe("exit: classification fails → group 'fallback'", () => {
     const d = driven(h.drive);
     expect(d.group).toBe('alpha');
     expect(d.candidates).toEqual(['a/1']);
-    expect(h.resolveCalls).toEqual(['fallback', 'alpha']);
+    expect(h.resolveCalls).toEqual(['simple', 'alpha']);
   });
 
   it('with nothing resolvable it does not stream; the proxy ends in an error event', async () => {
     const h = harness({
-      groups: ['alpha', 'fallback'],
+      groups: ['alpha', 'simple'],
       resolvable: {},
       classify: async () => {
         throw new Error('classifier down');
@@ -203,14 +199,14 @@ describe("exit: classification fails → group 'fallback'", () => {
 
 // ── Exit 3: tool follow-up step ───────────────────────────────────────────
 
-describe("exit: tool follow-up step → pool 'fallback' behind the last model", () => {
+describe("exit: tool follow-up step → pool 'simple' behind the last model (D4)", () => {
   it('skips classification and puts the last model first, de-duplicated', async () => {
     const classify = vi.fn(async () => ({ category: 'standard' }));
     const h = harness({
-      groups: ['alpha', 'fallback'],
+      groups: ['alpha', 'simple'],
       toolFollowUp: true,
       lastDynamicModel: 'free/b',
-      resolvable: { fallback: { candidates: ['free/a', 'free/b', 'free/c'], selected: 'free/a' } },
+      resolvable: { simple: { candidates: ['free/a', 'free/b', 'free/c'], selected: 'free/a' } },
       classify,
     });
     h.call();
@@ -218,16 +214,16 @@ describe("exit: tool follow-up step → pool 'fallback' behind the last model", 
 
     const d = driven(h.drive);
     expect(classify).not.toHaveBeenCalled();
-    expect(d.group).toBe('fallback');
+    expect(d.group).toBe('simple');
     expect(d.candidates).toEqual(['free/b', 'free/a', 'free/c']);
   });
 
   it('prepends the last model when the pool does not contain it', async () => {
     const h = harness({
-      groups: ['alpha', 'fallback'],
+      groups: ['alpha', 'simple'],
       toolFollowUp: true,
       lastDynamicModel: 'top/x',
-      resolvable: { fallback: { candidates: ['free/a'], selected: 'free/a' } },
+      resolvable: { simple: { candidates: ['free/a'], selected: 'free/a' } },
     });
     h.call();
     await vi.waitFor(() => expect(h.drive).toHaveBeenCalledTimes(1));
@@ -235,9 +231,9 @@ describe("exit: tool follow-up step → pool 'fallback' behind the last model", 
     expect(driven(h.drive).candidates).toEqual(['top/x', 'free/a']);
   });
 
-  it('with `fallback` unresolvable it uses the first non-dynamic group', async () => {
+  it('with `simple` unresolvable it uses the first non-dynamic group', async () => {
     const h = harness({
-      groups: ['alpha', 'fallback'],
+      groups: ['alpha', 'simple'],
       toolFollowUp: true,
       lastDynamicModel: 'top/x',
       resolvable: { alpha: { candidates: ['a/1'], selected: 'a/1' } },
@@ -261,31 +257,26 @@ describe('shipped router-config.json failover chains', () => {
 
   it('pins every group and its chain, exactly', () => {
     expect(chains).toEqual({
-      trivial: ['simple', 'operational', 'fallback'],
-      simple: ['operational', 'fallback'],
-      standard: ['complex', 'operational', 'scout', 'fallback'],
-      complex: ['strategic', 'tactical', 'operational', 'scout', 'fallback'],
-      strategic: ['tactical', 'complex', 'operational', 'scout', 'fallback'],
-      tactical: ['strategic', 'complex', 'operational', 'scout', 'fallback'],
-      operational: ['standard', 'scout', 'fallback'],
-      planning: ['strategic', 'tactical', 'operational', 'fallback'],
-      scout: ['fallback'],
-      fallback: [],
+      simple: ['standard'],
+      standard: ['simple'],
+      code_complex: ['planning', 'standard', 'simple'],
+      design: ['planning', 'code_complex', 'standard', 'simple'],
+      planning: ['code_complex', 'standard', 'simple'],
       dynamic: undefined,
-      bulk_reader: ['operational', 'scout', 'fallback'],
-      code_writer: ['operational', 'scout', 'fallback'],
+      bulk_reader: ['standard', 'simple'],
+      code_writer: ['standard', 'simple'],
     });
   });
 
-  it("11 chains end in `fallback`; the group itself and `dynamic` have none", () => {
-    const endsInFallback = Object.entries(chains)
-      .filter(([, c]) => c && c[c.length - 1] === 'fallback')
+  it('six chains end in `simple`; the group itself and `dynamic` have none', () => {
+    const endsInSimple = Object.entries(chains)
+      .filter(([, c]) => c && c[c.length - 1] === 'simple')
       .map(([name]) => name)
       .sort();
-    expect(endsInFallback).toEqual(
-      ['bulk_reader', 'code_writer', 'complex', 'operational', 'planning', 'scout', 'simple', 'standard', 'strategic', 'tactical', 'trivial'],
+    expect(endsInSimple).toEqual(
+      ['bulk_reader', 'code_complex', 'code_writer', 'design', 'planning', 'standard'],
     );
-    expect(chains.fallback).toEqual([]);
+    expect(chains.simple).toEqual(['standard']);
     expect(chains.dynamic).toBeUndefined();
   });
 

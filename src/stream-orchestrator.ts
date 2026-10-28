@@ -340,7 +340,7 @@ export class StreamOrchestrator {
         const isToolFollowUp =
           lastMsg?.role === 'toolResult' && !!this.ctx.lastDynamicModel && !this.ctx.detectHintDirectly(prompt ?? '');
         if (isToolFollowUp) {
-          let followUpGroup = 'fallback';
+          let followUpGroup = 'simple';
           let res = this.ctx.resolve(followUpGroup);
           if (!res) {
             const alt = Object.keys(cfg.model_groups).find(
@@ -559,7 +559,10 @@ export class StreamOrchestrator {
               // Cost tracking moved to turn_end (review I2 — hardcoded
               // 1000/500 here were fabricated audit data).
               const resolvedGdpval = this.ctx.lookupGdp(hintSiblings[0]) ?? 0;
-              const hintStartGroup = resolvedGdpval >= 700 ? 'strategic' : resolvedGdpval >= 300 ? 'tactical' : 'scout';
+              // D2: hints name models, not groups; the start group is re-pointed —
+              // top models start in 'planning' (old 'strategic'), the mid band in
+              // 'code_complex' (old 'tactical'), everything else in 'simple'.
+              const hintStartGroup = resolvedGdpval >= 700 ? 'planning' : resolvedGdpval >= 300 ? 'code_complex' : 'simple';
               await this.driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
               return;
             } else {
@@ -578,7 +581,7 @@ export class StreamOrchestrator {
 
         const normalClassification = classification as ClassificationResult;
         let targetGroup: string;
-        if (this.ctx.escalation.level !== 'operational') {
+        if (this.ctx.escalation.level !== 'standard') {
           targetGroup = this.ctx.escalation.level;
           routerLog(`[escalation] Using escalated group: ${targetGroup}`);
         } else {
@@ -587,7 +590,7 @@ export class StreamOrchestrator {
 
         let res = this.ctx.resolve(targetGroup);
         resolvedGroup = targetGroup;
-        if (!res) { res = this.ctx.resolve('fallback'); resolvedGroup = 'fallback'; }
+        if (!res) { res = this.ctx.resolve('simple'); resolvedGroup = 'simple'; }
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
 
         const seen = new Set<string>(res.candidates);
@@ -610,8 +613,9 @@ export class StreamOrchestrator {
         // 1000/500 here were fabricated audit data).
       } catch (err) {
         warnLog('[dynamic] classification failed, using fallback:', err);
-        resolvedGroup = 'fallback';
-        let fb = this.ctx.resolve('fallback');
+        // D4: the three exits of the former 'fallback' group point at 'simple'.
+        resolvedGroup = 'simple';
+        let fb = this.ctx.resolve('simple');
         if (!fb) {
           const alt = Object.keys(cfg.model_groups).find(
             (k) => cfg.model_groups[k].method !== 'dynamic'

@@ -307,7 +307,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // `models` array as a hard allow-list that persists for up to 30 days
       // (isScanCacheValid). Observed 2026-08-22: a scan scored only 13/125
       // models instead of the normal ~60+, silently dropping mistral-medium
-      // (933 GDPval) from "tactical" for hours across many session restarts.
+      // (933 GDPval) from "code_complex" for hours across many session restarts.
       const explicitlyMappedRefs = effectiveModelRefs.filter((ref) => typeof metricsModule.mapLookup(ref) === 'string');
       const explicitlyMappedScoredRefs = explicitlyMappedRefs.filter((ref) => (lookupGdp(ref) ?? 0) > 0);
       // Compare against the snapshot on disk (check 3), unless the user forced
@@ -421,7 +421,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         const originalModels = groupConfig.models ?? [];
         
         // Debug logging
-        if (groupName === 'trivial' || groupName === 'simple') {
+        if (groupName === 'simple') {
           routerLog(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
           routerLog(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
         }

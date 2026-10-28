@@ -327,15 +327,17 @@ describe('task-type-aware scoring (score_by threading)', () => {
 // ── Config wiring (router-config.json ships the columns) ──────────────────
 
 describe('shipped config wiring', () => {
-  it('router-config.json: planning scores by briefcase, tactical by coding', () => {
+  it('router-config.json: planning and design score by briefcase, code_complex by coding', () => {
     const cfg = JSON.parse(readFileSyncConfig());
     expect(cfg.model_groups.planning.score_by).toBe('briefcase');
-    expect(cfg.model_groups.tactical.score_by).toBe('coding');
+    expect(cfg.model_groups.design.score_by).toBe('briefcase');
+    expect(cfg.model_groups.code_complex.score_by).toBe('coding');
   });
 
-  it('strategic keeps gdpval (no score_by — column never leaks upward)', () => {
+  it('standard and simple keep gdpval (no score_by — column never leaks downward)', () => {
     const cfg = JSON.parse(readFileSyncConfig());
-    expect(cfg.model_groups.strategic.score_by ?? 'gdpval').toBe('gdpval');
+    expect(cfg.model_groups.standard.score_by ?? 'gdpval').toBe('gdpval');
+    expect(cfg.model_groups.simple.score_by ?? 'gdpval').toBe('gdpval');
   });
 });
 

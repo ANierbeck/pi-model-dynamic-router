@@ -117,11 +117,11 @@ export function createTools(rt: ToolDeps) {
     name: 'resolve_model_group',
     label: 'Resolve Model Group',
     description:
-      'Resolve a model group name (strategic, tactical, operational, scout, fallback) to a concrete provider/model. Use this when you need to select a model for a subagent or task and want the router to pick the best one.',
+      'Resolve a model group name (planning, design, code_complex, standard, simple) to a concrete provider/model. Use this when you need to select a model for a subagent or task and want the router to pick the best one.',
     parameters: Type.Object({
       group: Type.String({
         description:
-          'Model group name: strategic, tactical, operational, scout, fallback, or any custom group',
+          'Model group name: planning, design, code_complex, standard, simple, or any custom group',
       }),
     }) as any,
     async execute(_id: string, params: { group: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {

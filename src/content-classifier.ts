@@ -643,7 +643,7 @@ async function classifyPromptUncounted(
   // Model momentum: during compaction we need a model with enough context
   // window. If the last model was a large cloud model, reuse it. If it was a
   // small local model (which can't handle the full compacted context), route
-  // to 'strategic' instead — the context-window guard in driveStream will
+  // to code_complex instead — the context-window guard in driveStream will
   // skip any model that's too small.
   if (context.isCompaction) {
     // Check if the last model has a large enough context window for compaction.
@@ -663,13 +663,14 @@ async function classifyPromptUncounted(
       }
     }
     // Last model was small, unknown, or currently in cooldown (just failed) —
-    // route to strategic for compaction instead of hammering the same model.
+    // route to code_complex (the code_complex category's group) for compaction
+    // instead of hammering the same model.
     noteSource('compaction');
     return {
       category: 'code_complex',
       reason: context.lastModelLimited
-        ? 'Compaction — last model is in cooldown, routing to strategic'
-        : 'Compaction — routing to strategic for large context window',
+        ? 'Compaction — last model is in cooldown, routing to code_complex'
+        : 'Compaction — routing to code_complex for large context window',
       confidence: 0.9,
     };
   }
@@ -1253,20 +1254,20 @@ function isValidFullClassification(obj: any): obj is FullClassificationResult {
 // ── Mapping ──────────────────────────────────────────────────────────────
 
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
-  simple:       'scout',       // v2 (owner decision 2026-10-13): short real tasks stay cheap
-  code_simple:  'simple',      // GDPval ≥ 300, max_cost=0 (free models only)
-  standard:     'operational', // GDPval ≥ 300
-  code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
-  // design/planning → dedicated top-tier-only group (ADR-0023 follow-up,
-  // owner decision 2026-10-04): planning/architecture work goes to the best
-  // models available — never the daily-driver free tank. The `planning`
-  // group floors at min_gdpval 1700: today claude-sonnet-5-5 (1844, primary
-  // via the best-quality window) + claude-opus-5-5 (1900, escalation);
-  // future top-tier models (GPT-6, Gemini 4, …) auto-qualify. Escalation
-  // chain: strategic → tactical (glm free tank, emergency only).
-  design:       'planning',  // top tier only (min_gdpval 1700)
-  planning:     'planning',  // top tier only (min_gdpval 1700)
-  continue:     'tactical',   // was fallback: continuation / uncertain → a decent model, not a free one
+  // Five-group layout (docs/plans/2026-10-25-category-group-mismatch.md,
+  // D4/D6/D7, owner decisions 2026-10-25..27): each category selects the
+  // group named like it. simple/code_simple share the merged cheap pool
+  // (max_cost=0, cloud-first); design is planning's rule at a lower floor
+  // (D5: 1600 vs 1700, both briefcase-sorted); continue without a real
+  // predecessor inherits the previous category, and with none it goes to
+  // the standard mid band (D6 — a decent model, not a free one).
+  simple:       'simple',
+  code_simple:  'simple',
+  standard:     'standard',
+  code_complex: 'code_complex',
+  design:       'design',
+  planning:     'planning',
+  continue:     'standard',
 };
 
 /**
@@ -1303,7 +1304,7 @@ export function getGroupForCategory(category: string, cfg?: Config): string {
   // config is never shadowed by a stale install.
   const override = cfg?.category_groups?.[category] ?? categoryGroupOverrides?.[category];
   if (override !== undefined) return override;
-  return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'fallback';
+  return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'simple';
 }
 
 // ── Static Classification Fallback ─────────────────────────────────────

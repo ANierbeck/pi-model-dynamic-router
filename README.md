@@ -32,8 +32,8 @@ ln -s ~/pi-model-dynamic-router ~/.pi/agent/extensions/pi-model-dynamic-router
    (see [Adding a Provider](#adding-a-provider)).
 2. Run `/reload` in pi — the router discovers models, prices, and quality
    scores automatically.
-3. Switch your session to a group: `scout`, `operational`, `tactical`,
-   `strategic`, `planning`, or `dynamic` (content-classified per prompt).
+3. Switch your session to a group: `simple`, `standard`, `code_complex`,
+   `design`, `planning`, or `dynamic` (content-classified per prompt).
 
 The shipped defaults need no configuration. To personalize, see
 [Personalized configuration](#personalized-configuration) below — or jump
@@ -106,7 +106,7 @@ Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions
 
 ### Category-to-Group Mapping
 
-The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to a model group (e.g., `code_complex` → `tactical`). Users can override individual mappings via the `category_groups` config key:
+The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to a model group (e.g., `design` → `design`, `continue` → `standard`). Users can override individual mappings via the `category_groups` config key:
 
 ```json
 {
@@ -118,7 +118,7 @@ The built-in `CATEGORY_TO_GROUP` mapping routes each classification category to 
 
 Unknown categories or target groups are rejected with a warning at load time and ignored; the rest of the mapping still applies.
 
-When the classifier is uncertain and returns `fallback`, the classification now inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history the configured default (`fallback` → `tactical`) stands.
+When the classifier answers `continue` (a short continuation or confirmation, not a self-contained task), the classification inherits the previous turn's category (same momentum mechanism as the short-prompt path), so a conversation keeps its routing context; without history `continue` goes to the `standard` group — a decent model, not a free one.
 
 ### Budget Pacing
 
@@ -167,41 +167,37 @@ gates → ranking → failure handling) as a Mermaid diagram, see
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`: `trivial`/`exploration` → `scout`, `simple`/`standard` → `operational`, `code_simple` → `simple`, `code_complex`/`fallback` → `tactical`, and `design`/`planning` → `planning` (top tier only).
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`. Since 2.0 every category selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`.
 
 #### Categories for Classification
 
 The system classifies prompts into the following categories (see `CATEGORY_TO_GROUP` in `src/content-classifier.ts` for the authoritative mapping):
 
-- `trivial`: Greetings, one-liners, questions about the router itself
-- `simple`: Simple conversational requests
-- `standard`: Everyday tasks with no special shape
-- `code_simple`: Simple code changes (1-10 lines, syntax fixes, typos)
-- `code_complex`: Complex code changes (refactoring, debugging, >50 lines)
-- `design`: Architecture, system design, API design
-- `planning`: Project planning, roadmaps, task breakdown
-- `exploration`: Research, unclear requirements, brainstorming
-- `fallback`: Unclear or multiple categories apply
+- `simple`: Simple requests with clear, short answers
+- `code_simple`: Small code changes (1-10 lines, syntax fixes, renames, typos)
+- `standard`: Standard requests (general questions, moderate complexity)
+- `code_complex`: Substantial changes (refactoring, debugging, new features, >50 lines); analyzing or reviewing existing code
+- `design`: Architecture, system design, API design, weighing options
+- `planning`: Task breakdown, roadmaps, prioritization, project planning
+- `continue`: Not a self-contained task — a short continuation or confirmation
 
 #### Mapping of Categories to Model Groups
 
-Each category maps to a specific model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts`). Two tier-routing mechanisms (ADR-0023) keep the tiers meaningful despite GDPval compression at the top of the score range: a per-group **`max_gdpval`** cap (the shipped `tactical` is capped at 1700, so the flat-fee Mistral tank — glm-5-3 at 1644 — carries the daily `code_complex` load, while Claude's top models stay in `strategic`), and a **`best_quality_window`** (default 5%): inside a `best`-method group, candidates within the window of the best score are treated as equally good — cheapest first, cost ties to the lower score (in `strategic`, claude-sonnet-5-5 beats claude-opus-5-5 at equal subscription cost). On Mistral-quota days, `tactical` escalates through its `fallback_groups` into `strategic`, so Claude takes over automatically. Since the AA multi-benchmark round, a group can additionally rank its pool task-type-aware via **`score_by`** (ADR-0023 round 2): the same Artificial Analysis scrape that yields GDPval also carries the per-benchmark columns, so `planning` ranks by AA-Briefcase Elo and `tactical` by the SciCode/Terminal-Bench coding blend — floors and caps stay on GDPval, and a missing column falls back to GDPval ordering.
+Each category maps to a model group (`CATEGORY_TO_GROUP`, `src/content-classifier.ts`). Two tier-routing mechanisms (ADR-0023) keep the tiers meaningful despite GDPval compression at the top of the score range: a per-group **`max_gdpval`** cap (the shipped `code_complex` is capped at 1700, so the flat-fee Mistral tank — glm-5-3 at 1644 — carries the daily `code_complex` load, while Claude's top models stay in `design` and `planning`), and a **`best_quality_window`** (default 5%): inside a `best`-method group, candidates within the window of the best score are treated as equally good — cheapest first, cost ties to the lower score (in `planning`, claude-sonnet-5-5 beats claude-opus-5-5 at equal subscription cost). On Mistral-quota days, `code_complex` escalates through its `fallback_groups` into `planning`, so Claude takes over automatically. A group can additionally rank its pool task-type-aware via **`score_by`** (ADR-0023 round 2): the same Artificial Analysis scrape that yields GDPval also carries the per-benchmark columns, so `design` and `planning` rank by AA-Briefcase Elo and `code_complex` by the SciCode/Terminal-Bench coding blend — floors and caps stay on GDPval, and a missing column falls back to GDPval ordering.
 
 | Category | Model Group | Use Case |
 |----------|-------------|----------|
-| `trivial` | scout | Greetings, one-liners — any free model |
-| `simple` | operational | Simple conversational requests |
-| `standard` | operational | Everyday tasks (GDPval ≥ 300) |
-| `code_simple` | simple | Simple coding tasks (GDPval ≥ 300, free models only) |
-| `code_complex` | tactical | Complex coding tasks (GDPval ≥ 600, capped at 1700 — the free-tank tier) |
-| `design` | planning | High-stakes design decisions — top tier only (GDPval ≥ 1700) |
+| `simple` | simple | Short real tasks — free or subscription models, cheap |
+| `code_simple` | simple | Small coding tasks (free models only) |
+| `standard` | standard | Everyday tasks (GDPval ≥ 300) |
+| `continue` | standard | Continuation without a predecessor — a decent model, not a free one |
+| `code_complex` | code_complex | Complex coding tasks (1630 ≤ GDPval ≤ 1700 — the free-tank tier) |
+| `design` | design | Design decisions — upper band (GDPval ≥ 1600), best first |
 | `planning` | planning | Project planning and architecture — top tier only (GDPval ≥ 1700) |
-| `exploration` | scout | Research and exploration — any model, cheap |
-| `fallback` | tactical | Uncertain classification — a decent model, not a free one |
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `scout`, `operational`, `simple`, or `tactical` (`strategic` is not a classification target; `planning` is — design/planning prompts route to the top-tier-only planning group, never to the free-tank tactical tier). This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `simple`, `standard`, `code_complex`, `design`, or `planning`. Design and planning prompts never route to the free-tank `code_complex` tier. This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
@@ -217,7 +213,7 @@ tiered discovery → configured free models — and treats Ollama as the last
 resort (see [Data handling & privacy](#data-handling--privacy)). If every
 cloud candidate fails and Ollama is unavailable, the classifier falls back
 to static keyword-based classification (only if `allowStaticFallback` is
-enabled) — otherwise the category `fallback` is returned.
+enabled) — otherwise the classification fails and the router streams from the `simple` group.
 
 ---
 
@@ -232,11 +228,12 @@ When a model fails (API error, rate limit, empty response, or usage limit exceed
 1. **Tries the next model in the same group**
 2. **If all models in the group fail → cascades to fallback groups** in this order:
    ```
-   strategic → tactical → operational → scout → fallback
+   planning → design → code_complex → standard → simple
    ```
+   (the global order; every shipped group also carries its own `fallback_groups` chain, which wins over it)
 3. **Continues until a working model is found**
 
-**Example:** You select `dynamic` group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries `strategic` → then `tactical` → etc.
+**Example:** You select `dynamic` group, but the first model hits a rate limit → router automatically tries the next `dynamic` model → if all fail, tries the group's fallback chain (e.g. `standard` → `simple`).
 
 #### Configuration
 
@@ -244,11 +241,11 @@ Each group can define its fallback chain in `router-config.json`:
 
 ```json
 {
-  "strategic": {
+  "planning": {
     "description": "Best models by GDPval",
     "method": "best",
     "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"],
-    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
+    "fallback_groups": ["code_complex", "standard", "simple"]
   }
 }
 ```
@@ -261,9 +258,9 @@ Each group can define its fallback chain in `router-config.json`:
 
 The router encodes cost-quality tradeoffs directly in **model groups** rather than a
 separate tier overlay. Each group's `min_gdpval` and `max_cost` settings act as the
-cost tier: `trivial`/`simple` use `max_cost: 0` (free models only), `scout`/`fallback`
-use `min_gdpval: 0` (anything), `tactical`/`strategic` raise the GDPval floor to
-600/700. A classified prompt maps to a group via `CATEGORY_TO_GROUP`
+cost tier: `simple` uses `max_cost: 0` (free models only, `min_gdpval: 0`),
+`standard` clears a floor of 300 within `max_cost: 2.0`, `code_complex`,
+`design` and `planning` raise the GDPval floor to 1630/1600/1700. A classified prompt maps to a group via `CATEGORY_TO_GROUP`
 (content-classifier.ts), and the group's own filters do the rest.
 
 A group may also set `min_context_length` to require a minimum model context
@@ -317,10 +314,10 @@ The router now **synchronizes with Pi's status line** to display the **actually 
 
 ```
 # Before (incorrect):
-scout/dynamic→claude-bridge/claude-fable-5  # ← Failed, but shown!
+simple/dynamic→claude-bridge/claude-fable-5  # ← Failed, but shown!
 
 # After (correct):
-scout/dynamic→mistral/mistral-medium-3.5   # ← Actually active model
+simple/dynamic→mistral/mistral-medium-3.5   # ← Actually active model
 ```
 
 This provides **accurate feedback** about which model is currently generating responses.
@@ -354,12 +351,11 @@ by billing preference. The shipped groups (see `router-config.json`):
 
 | Group | Method | Quality gate | Ranks within the pool by | Use for |
 |-------|--------|--------------|--------------------------|---------|
-| **strategic** | `best` | GDPval ≥ 700 | GDPval (quality window) | Critical decisions |
-| **planning** | `best` | GDPval ≥ 1700 | AA-Briefcase Elo (`score_by`) | Design & architecture — top tier only |
-| **tactical** | `best` | 600 ≤ GDPval ≤ 1700 | SciCode/Terminal-Bench blend (`score_by`) | Daily coding — the free-tank tier |
-| **operational** | `tiered` | GDPval ≥ 300 | billing preference | Everyday tasks |
-| **scout** | `tiered` | GDPval ≥ 0 | billing preference | Exploration, cheap work |
-| **fallback** | `tiered` | GDPval ≥ 0 | billing preference | Last resort |
+| **planning** | `best` | GDPval ≥ 1700 | AA-Briefcase Elo (`score_by`) | Planning & architecture — top tier only |
+| **design** | `best` | GDPval ≥ 1600 | AA-Briefcase Elo (`score_by`) | Design decisions — the upper band |
+| **code_complex** | `best` | 1630 ≤ GDPval ≤ 1700 | SciCode/Terminal-Bench blend (`score_by`) | Daily coding — the free-tank tier |
+| **standard** | `tiered` | GDPval ≥ 300 | billing preference | Everyday tasks |
+| **simple** | `tiered` | GDPval ≥ 0 | billing preference | Short real tasks, cheap work, last resort |
 | **dynamic** | `dynamic` | — | — | Auto-classifies each prompt and routes to the best group |
 
 No curated model lists. Groups draw from all discovered models automatically.
@@ -380,7 +376,7 @@ GDPval is a composite quality score from [Artificial Analysis](https://artificia
    - Tier 3: pay-per-token (ascending effective cost)
 3. **Select** — pick the top-ranked model (cheapest within the preferred billing tier that clears the quality floor).
 
-This means `operational` picks the cheapest model that clears its GDPval floor, while `strategic` ranks by `best` (highest score, quality window applied) regardless of cost.
+This means `standard` picks the cheapest model that clears its GDPval floor, while `planning` ranks by `best` (highest score, quality window applied) regardless of cost.
 
 #### costMux
 
@@ -456,14 +452,14 @@ You're out of usage credits. Run /usage-credits to keep using Fable 5
 
 ```json
 {
-  "strategic": {
+  "planning": {
     "models": [
       "claude-bridge/claude-opus-5",    // First choice (Max only)
       "claude-bridge/claude-sonnet-5",  // Fallback (Pro/Max)
       "anthropic/claude-3-5-sonnet",    // Cloud fallback
       "mistral/mistral-medium-3.5"     // Final fallback
     ],
-    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
+    "fallback_groups": ["code_complex", "standard", "simple"]
   }
 }
 ```
@@ -480,7 +476,7 @@ When a streaming response fails mid-stream (empty body, connection drop, timeout
 
 ### Delegating subtasks to cheap groups (Pi subagents)
 
-The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `trivial/trivial`, `scout/scout`, `strategic/strategic`) is a valid `model` value for `subagent(...)` calls, exactly like any other provider/model pair Pi knows about.
+The router only resolves a group name to the best available model *for a single completion request* — it has no concept of "split this task into subtasks and run the cheap ones on a cheap model." That kind of decomposition belongs one layer up, in [Pi's subagent system](https://github.com/earendil-works/pi-subagents), which can already address any configured group directly by model ref: every group is registered as its own provider, so `<group>/<group>` (e.g. `simple/simple`, `standard/standard`, `planning/planning`) is a valid `model` value for `subagent(...)` calls, exactly like any other provider/model pair Pi knows about.
 
 This lets you fan out I/O-heavy work (reading/summarizing several files) to a cheap group in parallel, then run one expensive-group call over the collected results — without any router code changes:
 
@@ -491,13 +487,13 @@ subagent({
     const summaries = await runs.all(files.map((f) => ({
       key: f,
       agent: "scout",
-      model: "trivial/trivial",
+      model: "simple/simple",
       task: "Summarize the public API of " + f,
     })));
     const combined = summaries.map((s) => s.output).join("\\n\\n");
     return runs.run("synthesize", {
       agent: "worker",
-      model: "strategic/strategic",
+      model: "planning/planning",
       task: "Given these file summaries, propose a refactor:\\n\\n" + combined,
     });
   `,
@@ -506,7 +502,7 @@ subagent({
 
 The `bulk_reader` group adds a `min_context_length` floor so the cheap model
 it resolves to is guaranteed to hold several files at once — exactly the
-property a trivial/scout group does *not* guarantee:
+property the `simple` group does *not* guarantee:
 
 ```js
 subagent({
@@ -520,7 +516,7 @@ subagent({
     })));
     return runs.run("synthesize", {
       agent: "worker",
-      model: "strategic/strategic",
+      model: "planning/planning",
       task: "Given these file summaries, propose a refactor:\\n\\n" +
         summaries.map((s) => s.output).join("\\n\\n"),
     });
@@ -546,9 +542,9 @@ router derives candidates, free-tier models and subscription cost ordering from 
 ```jsonc
 {
   "model_groups": {
-    "strategic": { "method": "best" },
-    "tactical": { "method": "tiered", "min_gdpval_pct": 75 },
-    "scout": { "method": "tiered", "min_gdpval_pct": 25 }
+    "planning": { "method": "best" },
+    "code_complex": { "method": "tiered", "min_gdpval_pct": 75 },
+    "simple": { "method": "tiered", "min_gdpval_pct": 25 }
   },
   "gdpval_builtin": {
     "mistral-medium-3-5": 933,
@@ -608,20 +604,20 @@ By default, `method: "tiered"` sorts by billing tier first: **free → subscript
 | Value | Ordering | Use for |
 |-------|----------|---------|
 | `"default"` (or omitted) | free → subscription → local → payg | Groups where an already-paid subscription model is the cheaper choice in time/quota terms. |
-| `"cloud_first"` | cloud (free → subscription) ahead of local | Groups that should prefer cloud models — the local daemon is a fallback, not the default (scout / bulk_reader / code_writer). |
+| `"cloud_first"` | cloud (free → subscription) ahead of local | Groups that should prefer cloud models — the local daemon is a fallback, not the default (bulk_reader / code_writer). |
 | `"local_first"` | free → local → subscription → payg | Groups where local models should rank ahead of subscription, but genuinely-free remote models still win. |
-| `"local_before_payg"` | free → subscription → local → payg | Cheap groups (trivial / simple): free and subscription first, local ahead of pay-as-you-go only. |
+| `"local_before_payg"` | free → subscription → local → payg | Cheap group (simple): free and subscription first, local ahead of pay-as-you-go only. |
 | `"strict_local"` | local → free → subscription → payg | Groups where the local daemon should answer **first**, ahead of even the $0 remote models. Not used by the shipped config (a guard test forbids it there). |
 
-`payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `trivial`/`simple` → `local_before_payg`, `scout`/`bulk_reader`/`code_writer` → `cloud_first`.
+`payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `simple` → `local_before_payg`, `bulk_reader`/`code_writer` → `cloud_first`.
 
 ```json
-"scout": {
+"bulk_reader": {
   "method": "tiered",
   "billing_preference": "cloud_first",
-  "min_gdpval": 0
+  "min_context_length": 64000
 },
-"trivial": {
+"simple": {
   "method": "tiered",
   "billing_preference": "local_before_payg",
   "min_gdpval": 0
@@ -670,7 +666,7 @@ Delegation has two halves. A large `read`/`bash` result is **replaced** by a sum
   "min_chars": 3500,
   "max_raw_chars": 60000,
   "block_lines": 350,
-  "expensive_groups": ["strategic", "tactical"],
+  "expensive_groups": ["planning", "code_complex"],
   "expensive_providers": []
 }
 ```
@@ -683,7 +679,7 @@ Delegation has two halves. A large `read`/`bash` result is **replaced** by a sum
 | `min_chars` | `3500` | Minimum result size before delegating. Below this, delegation latency exceeds the savings. |
 | `max_raw_chars` | `60000` | Cap on result text sent to the sub-call. |
 | `block_lines` | `350` | Pre-call block for full-file reads. `0` **disables** pre-call blocking explicitly; negative or non-numeric falls back to the default. |
-| `expensive_groups` | `["strategic", "tactical"]` | Groups whose models may not do full-file reads. Matched against the **active** config's materialized model lists. |
+| `expensive_groups` | `["planning", "code_complex"]` | Groups whose models may not do full-file reads. Matched against the **active** config's materialized model lists. |
 | `expensive_providers` | `[]` | Provider **prefixes** whose models count as expensive regardless of group — e.g. `["pi-claude"]` matches `pi-claude/claude-sonnet-5`. |
 
 Targeted reads (any `read` with `offset` or `limit`) and piped/grep'd `bash` commands are **always** delegated around — they are precise extracts the orchestrator needs verbatim, and the pre-call block never fires for them.
@@ -706,7 +702,7 @@ The expensive-model pre-call block judges the caller by the **driving** model of
 
 | Option | Purpose | Example |
 |--------|---------|---------|
-| **`fallback_groups`** | Define cascade chain for fallback | `["tactical", "operational", "scout"]` |
+| **`fallback_groups`** | Define cascade chain for fallback | `["code_complex", "standard", "simple"]` |
 | **`cost_per_m`** | Cost per million tokens (for estimates) | `0.0000015` |
 | **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
 | **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933 }` |
@@ -834,7 +830,7 @@ inside the group's resolve path (`src/content-classifier.ts`).
 ## Footer
 
 ```
-strategic/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14m | ⌂ proj | ⎇ main | ⛔2 | ⚠1 err
+planning/anthropic/claude-opus-4-6 | int:1450 tps:80 | 12k/8k $1.43 62% | ⏱14m | ⌂ proj | ⎇ main | ⛔2 | ⚠1 err
 ```
 
 The `⚠N err` part counts the session's recorded stream failures — the same

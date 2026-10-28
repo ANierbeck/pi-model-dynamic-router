@@ -44,16 +44,16 @@ request and return:
 
 Examples of HINT instructions:
 - "HINT: use example-model-1"
-- "HINT: use group tactical"
+- "HINT: use group code_complex"
 - "HINT: nutze example-model-1"
-- "HINT: verwende Gruppe complex"
+- "HINT: verwende Gruppe planning"
 - "HINT: benutz modell xyz"
 
 If the CURRENT REQUEST (not the Context block) contains a HINT instruction
 (in any language), extract the model or group name and return it with the
 "hint:" prefix:
 - For models: {"category": "hint:example-model-1", "reason": "User specified model via HINT", "confidence": 1.0}
-- For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
+- For groups: {"category": "hint:group:code_complex", "reason": "User specified group via HINT", "confidence": 1.0}
 
 If NO HINT is present, first apply this DECISION PROCEDURE:
 

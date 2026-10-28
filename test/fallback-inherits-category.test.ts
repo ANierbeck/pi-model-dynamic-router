@@ -2,7 +2,7 @@
  * Task-type-balancing Phase 2: a classification that comes out as the
  * 'continue' category ("could not tell" — typically a long continuation like
  * "ok, then please carry on with the remaining items") inherits the previous
- * turn's category instead of dropping to the default fallback→tactical group.
+ * turn's category instead of dropping to the continue→standard default (D6).
  * Mirrors the low-confidence and short-prompt momentum inheritance.
  */
 import { describe, it, beforeEach, expect, vi } from 'vitest';
@@ -39,7 +39,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     resetClassificationCounts();
   });
 
-  it('design turn, then a confident LLM "continue" → routes to the design group, not tactical', async () => {
+  it('design turn, then a confident LLM "continue" → routes to the design group, not standard', async () => {
     llmSays('continue');
     const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
     expect('category' in result && result.category).toBe('design');
@@ -75,7 +75,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     llmSays('continue');
     const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: {} });
     expect('category' in result && result.category).toBe('continue');
-    expect(getGroupForCategory('continue')).toBe('tactical');
+    expect(getGroupForCategory('continue')).toBe('standard');
   });
 
   it('a concrete (non-fallback) classification is never replaced by the previous category', async () => {

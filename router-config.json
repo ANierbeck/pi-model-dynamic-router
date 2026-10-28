@@ -13,119 +13,59 @@
   },
   "providers": {},
   "model_groups": {
-    "trivial": {
-      "description": "Trivial tasks - free/subscription first, local Ollama as a fallback before PAYG",
-      "method": "tiered",
-      "billing_preference": "local_before_payg",
-      "max_cost": 0,
-      "min_gdpval": 0,
-      "fallback_groups": [
-        "simple",
-        "operational",
-        "fallback"
-      ]
-    },
     "simple": {
-      "description": "Simple tasks - free/subscription first, local Ollama as a fallback before PAYG",
+      "description": "Simple tasks and short real work - free/subscription models first, local Ollama ahead of pay-per-token",
       "method": "tiered",
       "billing_preference": "local_before_payg",
       "max_cost": 0,
       "min_gdpval": 0,
       "fallback_groups": [
-        "operational",
-        "fallback"
+        "standard"
       ]
     },
     "standard": {
-      "description": "Standard tasks - cost-effective models (GDPval >=500, cost <=5.0)",
-      "method": "tiered",
-      "min_gdpval": 500,
-      "max_cost": 5.0,
-      "fallback_groups": [
-        "complex",
-        "operational",
-        "scout",
-        "fallback"
-      ]
-    },
-    "complex": {
-      "description": "Complex tasks - strong models (GDPval >=600, cost <=10.0)",
-      "method": "tiered",
-      "min_gdpval": 600,
-      "max_cost": 10.0,
-      "fallback_groups": [
-        "strategic",
-        "tactical",
-        "operational",
-        "scout",
-        "fallback"
-      ]
-    },
-    "strategic": {
-      "description": "Best available model by intelligence (max GDPval) - for heavy tasks",
-      "method": "best",
-      "min_gdpval": 700,
-      "fallback_groups": [
-        "tactical",
-        "complex",
-        "operational",
-        "scout",
-        "fallback"
-      ]
-    },
-    "tactical": {
-      "description": "High-end models for demanding tasks (best GDPval)",
-      "method": "best",
-      "min_gdpval": 1630,
-      "fallback_groups": [
-        "strategic",
-        "complex",
-        "operational",
-        "scout",
-        "fallback"
-      ],
-      "max_gdpval": 1700,
-      "score_by": "coding"
-    },
-    "operational": {
-      "description": "Broad quality pool - cheap but capable (GDPval >=300, cost <=2.0)",
+      "description": "Standard tasks - GDPval >= 300, mid price band",
       "method": "tiered",
       "min_gdpval": 300,
       "max_cost": 2.0,
       "fallback_groups": [
-        "standard",
-        "scout",
-        "fallback"
+        "simple"
       ]
     },
-    "planning": {
-      "description": "Top-tier models only - architecture, project planning and high-stakes design decisions (GDPval >= 1700). Owner decision 2026-10-04 (ADR-0023 follow-up): planning work never goes to the daily-driver free tank.",
+    "code_complex": {
+      "description": "Complex coding - best-first in the 1630..1700 GDPval band",
       "method": "best",
-      "min_gdpval": 1700,
+      "min_gdpval": 1630,
       "fallback_groups": [
-        "strategic",
-        "tactical",
-        "operational",
-        "fallback"
+        "planning",
+        "standard",
+        "simple"
+      ],
+      "max_gdpval": 1700,
+      "score_by": "coding"
+    },
+    "design": {
+      "description": "Design work - best-first, GDPval >= 1600 (briefcase-sorted)",
+      "method": "best",
+      "min_gdpval": 1600,
+      "fallback_groups": [
+        "planning",
+        "code_complex",
+        "standard",
+        "simple"
       ],
       "score_by": "briefcase"
     },
-    "scout": {
-      "description": "Any available model, cheapest first \u2014 cloud models preferred, local Ollama as last resort",
-      "method": "tiered",
-      "billing_preference": "cloud_first",
-      "max_cost": 0,
-      "min_gdpval": 0,
+    "planning": {
+      "description": "Planning and architecture - top tier only (GDPval >= 1700, briefcase-sorted)",
+      "method": "best",
+      "min_gdpval": 1700,
       "fallback_groups": [
-        "fallback"
-      ]
-    },
-    "fallback": {
-      "description": "Any available, cheapest first",
-      "method": "tiered",
-      "max_cost": 0,
-      "min_gdpval": 0,
-      "fallback_groups": []
+        "code_complex",
+        "standard",
+        "simple"
+      ],
+      "score_by": "briefcase"
     },
     "dynamic": {
       "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
@@ -139,9 +79,8 @@
       "max_cost": 2.0,
       "min_context_length": 64000,
       "fallback_groups": [
-        "operational",
-        "scout",
-        "fallback"
+        "standard",
+        "simple"
       ]
     },
     "code_writer": {
@@ -151,9 +90,8 @@
       "max_cost": 2.0,
       "min_context_length": 32000,
       "fallback_groups": [
-        "operational",
-        "scout",
-        "fallback"
+        "standard",
+        "simple"
       ]
     }
   },
@@ -199,8 +137,8 @@
   "delegation": {
     "enabled": true,
     "expensive_groups": [
-      "strategic",
-      "tactical"
+      "planning",
+      "code_complex"
     ],
     "expensive_providers": []
   }
