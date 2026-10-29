@@ -65,14 +65,15 @@ Ruled out (each checked against all 12):
 
 - **Prompt text variants**: router-style hash, trimmed, narration stripped — no decision with any of these hashes anywhere in the log.
 - **Repeated prompts / classification cache**: none of the 12 texts occurs twice in the session, none has a decision before or after.
-- **Mid-loop messages**: the record before each is an assistant `stop` (7) or a Pi system entry (5), as for matched turns; the system entries (tools added/removed) precede 5 matched turns as well.
-- **Prompt length**: unmatched 1 / 3 / 3 / 5 / 3 turns in the buckets <20 / 20–49 / 50–99 / 100–299 / 300+, matched 2 / 11 / 17 / 47 / 37 — no pattern.
+- **Mid-loop messages**: the record before each is an assistant `stop` (8) or a Pi system entry (4), as for matched turns; the system entries (tools added/removed) precede 5 matched turns as well.
+- **Prompt length**: the 15 turns unmatched at the time fall 1 / 3 / 3 / 5 / 3 into the buckets <20 / 20–49 / 50–99 / 100–299 / 300+, the matched ones 2 / 11 / 17 / 47 / 37 — no pattern.
 - **Active model**: `dynamic/dynamic` at every one of the 12; served models are the same set as for matched turns.
 - **Code path**: every `classifyPrompt` call writes a record (cache hits included); the only skip without a record is the tool follow-up branch, which needs a `toolResult` as the last message.
 
 What the logs cannot tell: `router.log` has no event at all within ±30 min of
-3 of the 8 turns on 10-15/10-16 (probably a quieter log level then), so the
-router's own view of those turns is gone; the persisted session messages carry
+2 of the 12 turns (10-15 08:59 and 11:41) and none within ±60 s of 7 of them
+(probably a quieter log level on those days — not verified), so the router's
+own view of those turns is largely gone; the persisted session messages carry
 neither the router narration nor the memory block. Remaining hypotheses, none
 testable from existing data: a classification that threw before its record
 was written (the orchestrator then routes to the `simple`/fallback group
