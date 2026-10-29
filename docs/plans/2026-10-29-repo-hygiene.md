@@ -44,7 +44,7 @@ Out of scope (own plans, §11): splitting the three 1.4k-line `src` files; the C
 - Decision 4: **yes**. In `AGENTS.md` the incident narratives are trimmed to one line and linked; the rules stay verbatim.
 - Decision 5: **scripts are not adapted much**. No `scripts/` subfolder split; only the shared-helper consolidation in Phase 5 Steps 1–3.
 - Decision 1: the branch `feat/five-groups` was merged into `laya-spike` on 2026-10-29 (fast-forward, suite green). Phases 1–3 still wait for the `laya-spike` → `main` merge, because they start from `main`.
-- **New release gate (owner, 2026-10-29):** the Laya training skills must not ship. They are not in the repo, the tarball or `~/.laya-ft` (checked 2026-10-29). Owner to point to their location. Until then the gate is: `package.json` `files` contains only `skills/content-based-router` and `skills/router-login` (see Phase 2 Step 4).
+- **Release gate for the Laya tooling (owner, 2026-10-29):** the Laya training tooling must not ship. Located 2026-10-29: the `/laya-label`, `/laya-sidecar` and `/classifier-replay` commands are Pi extensions in `~/.pi/agent/extensions/` (`laya-labeler`, `laya-sidecar-manager`, `classifier-replay`), outside the repo. They are not in the package: `npm pack --dry-run` lists 10 files, only the two skills, and `dist/index.js` contains none of the command names. The Laya *classifier* stage (`src/laya-classifier.ts`) does ship, by design. Gate: `npm pack --dry-run` must list only `skills/content-based-router` and `skills/router-login` as skill files (see Phase 2 Step 3a).
 
 **Still open:** decision 6 (test deletion appetite).
 
@@ -93,7 +93,7 @@ Goal: finish with the least context spent.
 - [ ] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
 - [ ] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
 - [ ] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
-- [ ] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`). Any other skill directory under `skills/` (incl. a Laya training skill) fails the gate. The owner's Laya skill location is still open (see Decided above).
+- [ ] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`) in `test/package-contents.test.ts`. Any other skill file in the `npm pack` list fails the gate.
 - [ ] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
 - [ ] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
 
