@@ -739,7 +739,9 @@ export function getM(ref: string): Metrics {
  * A user-configured prior (model_metrics) is real information and still
  * blends. Throughput keeps its own counter (`tps_samples`): a stream can
  * complete without token counts, and such a stream is a latency sample but
- * never a throughput one.
+ * never a throughput one. The inputs are turn-level: whole-turn duration and
+ * input+output tokens, so one atypical first turn is the full estimate for
+ * `fastest`/`cheapest` sorts until later streams blend in.
  */
 export function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
   const m = getM(ref),

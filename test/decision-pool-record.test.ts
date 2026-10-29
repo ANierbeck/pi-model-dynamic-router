@@ -167,6 +167,24 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
     expect(pools).toHaveLength(0);
   });
 
+  // Wiring pin (re-review, 2026-10-29): index.ts used to spell
+  // `resolve(name, { logPool: true })` at two sites, and dropping the option at
+  // either one silently stopped pool records with every test green. The glue
+  // now owns the stream-driving variant; index.ts only picks it.
+  it('resolveForStream logs the pool, plain resolve does not', () => {
+    const { glue, pools } = glueDeps({
+      resolve: () => ({
+        selected: 'provx/aaa',
+        candidates: ['provx/aaa'],
+        pool: { group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] },
+      }),
+    });
+    glue.resolve('bestish');
+    expect(pools).toHaveLength(0);
+    expect(glue.resolveForStream('bestish')).toMatchObject({ selected: 'provx/aaa' });
+    expect(pools).toHaveLength(1);
+  });
+
   it('a resolve WITH { logPool: true } hands the pool to logPool', () => {
     const { glue, pools } = glueDeps({
       resolve: () => ({

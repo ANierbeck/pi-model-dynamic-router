@@ -224,7 +224,7 @@ let previousTokenCount = 0;
     get updateErrorStatusLine() { return updateErrorStatusLine; },
   });
 
-  const { resolve, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
+  const { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
     get cache() { return cache; },
     get costMux() { return costMux; },
     get discoveryManager() { return discoveryManager; },
@@ -237,7 +237,7 @@ let previousTokenCount = 0;
     // resolution that drives a stream, appended to the decision log right
     // after the turn's decision record. Only the stream-driving resolve
     // callers (stream proxy + orchestrator, wired below with
-    // { logPool: true }) pass this through — group registration, /router and
+    // resolveForStream) pass this through — group registration, /router and
     // the resolve_model_group tool resolve without logging, so the log holds
     // decisions, not non-decisions. Fail-open, and off unless the classifier
     // log is enabled — same gate as the decision records.
@@ -306,7 +306,7 @@ let previousTokenCount = 0;
     get registerFreeModelOnDemand() { return registerFreeModelOnDemand; },
     // Pool logging for the stream-driving resolutions only (ADR-0027):
     // this is the path that serves an actual group stream.
-    get resolve() { return (name: string) => resolve(name, { logPool: true }); },
+    get resolve() { return resolveForStream; },
     get sessionCtx() { return sessionCtx; },
     get skipReasons() { return skipReasons; },
     set skipReasons(v) { skipReasons = v; },
@@ -631,7 +631,7 @@ let previousTokenCount = 0;
     costTracker,
     // Pool logging for the stream-driving resolutions only (ADR-0027):
     // every ctx.resolve call here serves a candidate stream.
-    resolve: (name: string) => resolve(name, { logPool: true }),
+    resolve: resolveForStream,
     isLimited,
     clearLimit,
     tryStream,

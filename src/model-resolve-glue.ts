@@ -50,6 +50,16 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return res;
   }
 
+  /** The stream-driving variant: the one resolution path that records the
+   * decision-time pool. Stream proxy and orchestrator use this; everything
+   * else (registration, /router, tools) uses plain resolve(). A decision may
+   * resolve more than one group (target, then fallback groups), so one turn
+   * can carry several pool records — the pool replay keys on proc + group +
+   * timestamp. */
+  function resolveForStream(name: string): { selected: string; candidates: string[] } | null {
+    return resolve(name, { logPool: true });
+  }
+
 
 
   // ── Format ─────────────────────────────────────────────────────────────
@@ -98,5 +108,5 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return d.router.detectGroup(ref);
   }
 
-  return { resolve, detectGroup, fmtModel, getTopModels, allDiscoveredRefs };
+  return { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs };
 }
