@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** proposed — 2026-10-29. No phase started. Tick the boxes below as phases land; do not append narrative (AGENTS.md §11).
+**Status:** approved in part 2026-10-29 (owner decisions 1–5 below; decision 6 open). No phase started. Tick the boxes below as phases land; do not append narrative (AGENTS.md §11).
 
 **Verified against:** commit `f86846a` (branch `feat/five-groups`, not pushed), measured 2026-10-29. Checked: file counts, sizes, git-tracked status, the `files` list and build script in `package.json`, cross-references between root files (grep, excluding `node_modules`/`dist`/`.worktrees`), duplicate function names and test titles, repeated 6-line blocks across test files, full-suite runtime (13.8 s). **Not checked:** whether Pi really loads `CLAUDE.md` into every session (AGENTS.md says so; the session context shows only `AGENTS.md`), semantic overlap between `PI.md`, `SKILL.md`, `AGENT.md` and `README.md` (literal line overlap is low, 2–12 lines, so any overlap is topical and needs reading), whether the Stryker `mutation.json` carries `killedBy` per mutant in CI artifacts (config has `coverageAnalysis: perTest` and the `json` reporter, so it should).
 
@@ -37,6 +37,18 @@ The repository has grown by accretion. Measured:
 Out of scope (own plans, §11): splitting the three 1.4k-line `src` files; the CHANGELOG format (136 KB, release history, left alone); the Laya and five-group work.
 
 ## Open decisions (owner)
+
+**Decided 2026-10-29** (owner's words, paraphrased):
+- Decision 2: `CLAUDE.md` **stays where it is** (root, local). It is not moved to `docs/`.
+- Decision 3: `PI.md` **stays and is adapted** (Phase 2). The other root files follow the proposal.
+- Decision 4: **yes**. In `AGENTS.md` the incident narratives are trimmed to one line and linked; the rules stay verbatim.
+- Decision 5: **scripts are not adapted much**. No `scripts/` subfolder split; only the shared-helper consolidation in Phase 5 Steps 1–3.
+- Decision 1: the branch `feat/five-groups` was merged into `laya-spike` on 2026-10-29 (fast-forward, suite green). Phases 1–3 still wait for the `laya-spike` → `main` merge, because they start from `main`.
+- **New release gate (owner, 2026-10-29):** the Laya training skills must not ship. They are not in the repo, the tarball or `~/.laya-ft` (checked 2026-10-29). Owner to point to their location. Until then the gate is: `package.json` `files` contains only `skills/content-based-router` and `skills/router-login` (see Phase 2 Step 4).
+
+**Still open:** decision 6 (test deletion appetite).
+
+Original proposals, kept for the record:
 
 1. **Sequencing.** Start only after `feat/five-groups` is merged? Phases 1–3 move/delete files and would conflict with that branch's doc edits. Recommendation: yes, wait for the merge; Phase 0 (a new script and a new test) can start earlier.
 2. **`CLAUDE.md`.** Its content is Claude-bridge model support, not agent rules. If Pi loads it every session, ~0.8k tokens of irrelevant text ride along every time. Recommendation: move it to `docs/claude-bridge.md`, keep a one-line pointer in `AGENTS.md`. ADRs that mention `CLAUDE.md` stay untouched (§12) and dangle harmlessly.
@@ -81,6 +93,7 @@ Goal: finish with the least context spent.
 - [ ] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
 - [ ] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
 - [ ] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
+- [ ] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`). Any other skill directory under `skills/` (incl. a Laya training skill) fails the gate. The owner's Laya skill location is still open (see Decided above).
 - [ ] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
 - [ ] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
 
