@@ -77,6 +77,16 @@ describe('joinTurns — matching', () => {
     expect(j.status).toBe('unmatched');
   });
 
+  it.each(['observation', 'observation-comparator'])('never routes through the %s stage', (stage) => {
+    // A momentum turn: the routed record plus the detached observations of the same input.
+    const [j] = joinTurns(
+      [turn('s', 0, 'aaa')],
+      [decision(1, 'aaa', { stage: 'momentum' }), decision(2, 'aaa', { stage, category: 'design' })],
+    );
+    expect(j.status).toBe('matched');
+    expect(j.category).toBe('standard');
+  });
+
   it('reports two routing decisions in the window as ambiguous and picks neither', () => {
     const [j] = joinTurns(
       [turn('s', 0, 'aaa')],

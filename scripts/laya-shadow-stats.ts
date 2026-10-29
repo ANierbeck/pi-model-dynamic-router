@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { NON_ROUTING_STAGES } from '../src/classifier-decision-log.ts';
 
 interface DecisionRecord {
   stage: string;
@@ -43,7 +44,7 @@ const records: DecisionRecord[] = raw.split('\n')
   .filter((l) => l.trim())
   .map((l) => JSON.parse(l));
 
-const withLaya = records.filter((r) => r.laya);
+const withLaya = records.filter((r) => r.laya && !NON_ROUTING_STAGES.has(r.stage));
 const disagree = withLaya.filter((r) => {
   const finalCat = r.final.hint?.target ?? r.final.category;
   return r.laya && finalCat && r.laya.category !== finalCat;

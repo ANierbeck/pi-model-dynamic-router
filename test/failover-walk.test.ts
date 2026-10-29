@@ -24,6 +24,13 @@ const dec = (sec: number, proc: string, group: string | null): WalkDecision => (
 });
 
 describe('walkDecisions — one row per routed decision', () => {
+  it.each(['observation', 'observation-comparator', 'comparator'])('does not count a %s record as a routed decision', (stage) => {
+    const lines = [POOL(0, 'p/1', 'standard', ['a/one']), TRY(0.1, 'p/1', 'a/one'), DONE(0.5, 'p/1', 'a/one')];
+    const rows = walkDecisions(lines, [dec(0, 'p/1', 'standard'), { ...dec(1, 'p/1', 'planning'), stage }]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].group).toBe('standard');
+  });
+
   it('lists the attempts up to the first success and flags a failover away from the first choice', () => {
     const lines = [
       POOL(0, 'p/1', 'standard', ['mistral/a', 'mistral/b']),

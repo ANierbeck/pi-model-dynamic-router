@@ -244,6 +244,93 @@ describe('active mode + background comparator (compare_in_background)', () => {
   });
 });
 
+// Momentum observation (owner go 2026-10-29, plan 2026-10-25-laya-sole-classifier
+// step 5): short prompts keep inheriting the previous category — that routing
+// is untouched — but with `observe_momentum` Laya and the chain are asked about
+// them too, DETACHED, and the answers are logged as non-routing records so the
+// owner can see on data whether "ok, do it" after planning should move on.
+describe('momentum observation (observe_momentum)', () => {
+  const waitFor = async (cond: () => boolean, ms = 2000): Promise<void> => {
+    const deadline = Date.now() + ms;
+    while (!cond()) {
+      if (Date.now() > deadline) throw new Error('timeout waiting for the observation records');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  const ctx = { context: { lastCategory: 'planning' } };
+
+  it('routing is unchanged: the short prompt still inherits the previous category', async () => {
+    const r = await run('ok do it now', cfg({ observe_momentum: true }), ctx);
+    expect(r).toMatchObject({ category: 'planning', reason: expect.stringContaining('Short prompt') });
+    // Let the detached observation finish before the stub server goes away.
+    await waitFor(() => records().some((x) => x.stage === 'observation'));
+  });
+
+  it('logs Laya and the chain as observations next to the momentum record, same input.sha', async () => {
+    // A usable distribution covers the whole production taxonomy (validLayaDistribution).
+    stubAnswer = {
+      category: 'design',
+      confidence: 0.95,
+      probabilities: { simple: 0.01, code_simple: 0.01, standard: 0.01, code_complex: 0.01, design: 0.95, planning: 0.005, continue: 0.005 },
+      ms: 4,
+    };
+    await run('ok do it please', cfg({ observe_momentum: true, compare_in_background: true }), ctx);
+    await waitFor(() => records().some((x) => x.stage === 'observation-comparator'));
+    const recs = records();
+    const main = recs.find((x) => x.stage === 'momentum');
+    const obs = recs.find((x) => x.stage === 'observation');
+    const cmp = recs.find((x) => x.stage === 'observation-comparator');
+    expect(main.final.category).toBe('planning'); // what was routed
+    // What Laya would have said, with the distribution; never acted on.
+    expect(obs.laya).toMatchObject({ category: 'design', confidence: 0.95, acted: false });
+    expect(obs.laya.probabilities).toBeTruthy();
+    expect(obs.final.category).toBe('design');
+    expect(obs.prev.category).toBe('planning'); // the context the question was asked in
+    expect(cmp.final.category).toBe('simple'); // the chain's answer (ollama stub)
+    expect(obs.input.sha).toBe(main.input.sha);
+    expect(cmp.input.sha).toBe(main.input.sha);
+    // The plain comparator stage stays reserved for acted Laya decisions.
+    expect(recs.some((x) => x.stage === 'comparator')).toBe(false);
+  });
+
+  it('the detached run never touches the process-global source or the classification cache', async () => {
+    await run('ok do it again', cfg({ observe_momentum: true, compare_in_background: true }), ctx);
+    await waitFor(() => records().some((x) => x.stage === 'observation-comparator'));
+    expect(getLastClassificationSource()?.source).toBe('momentum');
+    // No cache entry: the same short prompt without lastCategory goes to Laya fresh, not to a cached observation.
+    bodies.length = 0;
+    const r = await run('ok do it again', cfg(), {});
+    expect(bodies).toHaveLength(1);
+    expect(r).toMatchObject({ category: 'design' });
+  });
+
+  it('does nothing unless observe_momentum is set', async () => {
+    await run('ok do it later', cfg({ compare_in_background: true }), ctx);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(bodies).toHaveLength(0);
+    expect(callOllama).not.toHaveBeenCalled();
+    expect(records().map((x) => x.stage)).toEqual(['momentum']);
+  });
+
+  it('does not observe prompts that are not momentum prompts', async () => {
+    await run('Draft the module boundaries for the billing service upsilon', cfg({ observe_momentum: true }), ctx);
+    expect(records().some((x) => x.stage === 'observation')).toBe(false);
+  });
+
+  it('does not observe without a previous category (nothing is inherited, the normal chain runs)', async () => {
+    await run('ok do it first', cfg({ observe_momentum: true }), {});
+    expect(records().some((x) => String(x.stage).startsWith('observation'))).toBe(false);
+  });
+
+  it('a broken sidecar neither breaks nor delays the routed answer', async () => {
+    stubStatus = 500;
+    const r = await run('ok do it broken', cfg({ observe_momentum: true }), ctx);
+    expect(r).toMatchObject({ category: 'planning' });
+    await new Promise((x) => setTimeout(x, 150));
+    expect(records().some((x) => x.stage === 'momentum')).toBe(true);
+  });
+});
+
 describe('decision log', () => {
   it('an active answer is stage `laya` with the checkpoint as answered_by', async () => {
     await run('Draft the module boundaries for the billing service kappa', cfg());

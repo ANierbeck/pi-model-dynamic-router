@@ -56,6 +56,19 @@ export interface DecisionInput {
   };
 }
 
+/**
+ * Stages whose records never routed a prompt: the pool snapshot, the live A/B
+ * comparator, and the momentum observations. Every reader that counts
+ * decisions (turn join, failover walk, pool replay, shadow stats) skips them —
+ * a stage that is added without joining this set inflates those numbers.
+ */
+export const NON_ROUTING_STAGES: ReadonlySet<string> = new Set([
+  'pool',
+  'comparator',
+  'observation',
+  'observation-comparator',
+]);
+
 export interface DecisionRecord {
   v: number;
   ts: string;
@@ -65,7 +78,12 @@ export interface DecisionRecord {
    * decision 2026-10-25): written only when a confident Laya answer took the
    * route, `compare_in_background` is set, and the chain it replaced answered.
    * Same `input.sha` as the `laya` record of that classification — the pairing
-   * key for evaluation. Never routed. */
+   * key for evaluation. Never routed.
+   * observation / observation-comparator — Laya's answer and the chain's answer
+   * for a short MOMENTUM prompt (`classifier_laya.observe_momentum`, owner go
+   * 2026-10-29). The prompt itself was routed by momentum (stage `momentum`,
+   * same `input.sha`); these records say what the classifiers would have
+   * decided without it. Never routed, `laya.acted` is always false. */
   stage: string;
   /** Model ref that produced the final classification (null for static/fallback). */
   answered_by: string | null;

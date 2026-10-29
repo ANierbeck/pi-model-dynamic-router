@@ -220,6 +220,9 @@ const callSource = new AsyncLocalStorage<{
   source: string | null;
   trace: ClassificationTrace;
   comparator?: boolean;
+  /** Set on the detached momentum observation (see spawnMomentumObservation);
+   *  its own background chain is logged as `observation-comparator`. */
+  observe?: boolean;
 }>();
 
 function noteSource(source: string): void {
@@ -612,9 +615,67 @@ function inheritPreviousCategory(
   };
 }
 
+/**
+ * Momentum observation (owner go 2026-10-29): ask Laya — and, through
+ * `compare_in_background`, the chain — about a prompt that momentum just
+ * routed, DETACHED, and log the answers as `observation` records. The normal
+ * pipeline runs with momentum switched off; the holder carries the comparator
+ * flag so the run cannot write the classification cache or the process-global
+ * source. `laya.acted` is forced to false: nothing here ever routes.
+ */
+function spawnMomentumObservation(prompt: string, options: ClassificationOptions): void {
+  const prevCategory = options.context?.lastCategory ?? null;
+  void (async () => {
+    const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean; observe?: boolean } = {
+      source: null,
+      trace: newTrace(),
+      comparator: true,
+      observe: true,
+    };
+    try {
+      await callSource.run(holder, async () => {
+        const started = Date.now();
+        const result = await classifyPromptUncounted(prompt, options, { skipMomentum: true });
+        try {
+          const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+          if (!log) return;
+          if (holder.trace.laya) holder.trace.laya = { ...holder.trace.laya, acted: false };
+          writeDecisionRecord(
+            buildDecisionRecord({
+              prompt,
+              stage: 'observation',
+              trace: holder.trace,
+              prev: prevCategory
+                ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }
+                : null,
+              final: {
+                category: 'category' in result ? result.category : null,
+                group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                hint: null,
+                reason: result.reason ?? null,
+              },
+              context: options.context,
+              ms: Date.now() - started,
+              cfgBlock: options.cfg?.classifier_log,
+              home: homedir(),
+            }),
+            homedir(),
+            log
+          );
+        } catch {
+          // swallowed on purpose — logging never breaks a classification
+        }
+      });
+    } catch {
+      // swallowed on purpose — a broken sidecar/chain must not surface here
+    }
+  })();
+}
+
 async function classifyPromptUncounted(
   prompt: string,
-  options: ClassificationOptions
+  options: ClassificationOptions,
+  internal: { skipMomentum?: boolean } = {}
 ): Promise<FullClassificationResult> {
   const {
     model: pinnedModel,
@@ -678,8 +739,11 @@ async function classifyPromptUncounted(
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
   const wordCount = prompt.trim().split(/\s+/).length;
-  if (context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
+  if (!internal.skipMomentum && context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
     noteSource('momentum');
+    if (options.cfg?.classifier_laya?.enabled && options.cfg.classifier_laya.observe_momentum) {
+      spawnMomentumObservation(prompt, options);
+    }
     return {
       category: context.lastCategory,
       reason: 'Short prompt — inheriting previous task context',
@@ -1120,6 +1184,8 @@ async function classifyPromptUncounted(
   // before the detached run finishes, the log simply lacks the record.
   const spawnBackgroundComparator = (): void => {
     const prevCategory = context.lastCategory ?? null;
+    // Inside a momentum observation the replaced chain is the observation's.
+    const comparatorStage = callSource.getStore()?.observe ? 'observation-comparator' : 'comparator';
     void (async () => {
       const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean } = {
         source: null,
@@ -1138,7 +1204,7 @@ async function classifyPromptUncounted(
             writeDecisionRecord(
               buildDecisionRecord({
                 prompt,
-                stage: 'comparator',
+                stage: comparatorStage,
                 trace: holder.trace,
                 prev: prevCategory
                   ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }

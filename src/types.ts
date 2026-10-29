@@ -246,6 +246,13 @@ export interface ClassifierLayaConfig {
    * classification cache, or the process-global classification source. Default
    * false; meaningless in shadow mode (the chain runs anyway and is logged). */
   compare_in_background?: boolean;
+  /** Momentum observation (owner go 2026-10-29): prompts of up to 4 words with a
+   * known previous category keep inheriting that category (short-prompt
+   * momentum) — but with this flag Laya (and, with `compare_in_background`, the
+   * chain) are asked about them DETACHED and the answers are logged as
+   * `observation` / `observation-comparator` records. Logging only: routing,
+   * cache and the process-global source are untouched. Default false. */
+  observe_momentum?: boolean;
 }
 
 export interface Config {
