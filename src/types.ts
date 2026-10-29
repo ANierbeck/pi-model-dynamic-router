@@ -27,6 +27,8 @@ export interface Metrics {
   avg_latency_ms: number;
   cost_per_m: number | 'unknown';
   last_updated: number;
+  /** Completed streams folded into latency/throughput in this process; 0 or undefined = the values are placeholders. */
+  samples?: number;
 }
 
 export interface RateLimit {

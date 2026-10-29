@@ -14,6 +14,7 @@
 
 import * as path from 'node:path';
 import { costTracker } from './cost-tracker.ts';
+import { formatOverviewTable, type OverviewRow } from './overview-table.ts';
 import {
   getLastClassificationSource,
   getClassificationCounts,
@@ -611,6 +612,12 @@ export function createCommands(rt: CommandDeps) {
 
       // Overview with table
       const lines: string[] = ['Model Router', ''];
+      lines.push(
+        'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
+        '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
+        'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
+        ''
+      );
 
       // Group tables with top 5 models (3 available + up to 2 limited)
       for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
@@ -674,55 +681,37 @@ export function createCommands(rt: CommandDeps) {
         } else if (topModels.length === 0) {
           lines.push('│ (no models configured)');
         } else {
-          // Compute max model name width (capped at 38)
-          const MW = Math.min(38, Math.max(5, ...topModels.map((t) => t.ref.length)));
-
-          // Table header
-          lines.push(
-            `│ ${'#'.padEnd(3)} ${'Model'.padEnd(MW)}  ${'GDP'.padStart(4)}  ${'Lat'.padStart(5)}  ${'TPS'.padStart(4)}  ${'Cost I/O'.padStart(11)}  ${'Usage 1d/7d/30d'.padStart(15)}  ${'Budg'.padStart(6)}  Status`
-          );
-          lines.push(
-            `│ ${'─'.padEnd(3)} ${'─'.repeat(MW)}  ${'────'}  ${'─────'}  ${'────'}  ${'───────────'}  ${'───────────────'}  ${'──────'}  ──────`
-          );
-
-          for (const { ref, limited, rank } of topModels) {
+          // Name column: the longest shown ref, capped so the table fits a standard terminal
+          const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
+          const rows: OverviewRow[] = topModels.map(({ ref, limited, rank }) => {
             const m = rt.getM(ref);
             const prov = ref.split('/')[0];
-            const mux = rt.costMux(prov);
-            const cost = rt.effCost(ref);
-            const price = rt.lookupListPrice?.(ref) ?? rt.lookupPrice(ref);
-            const modelShort = ref.length > MW ? '…' + ref.slice(-(MW - 1)) : ref;
-            const isActive = rt.curModel === ref;
-            const statusParts: string[] = [];
-            if (limited) statusParts.push(`⛔${rt.limitSecs(ref)}s`);
-            if (mux > 1) statusParts.push(`×${mux}`);
-            if (isActive) statusParts.push('●');
-            const status = statusParts.join(' ') || (limited ? '' : 'active');
-
-            const costDisplay = costColumnFor(ref, rt);
-
-            // Add budget info for subscription providers
             const budgetInfo = rt.cache.budget_cache?.[prov];
-            let budgetDisplay = '';
+            let budget = '';
             if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
-              const now = Date.now();
-              if (now < budgetInfo.window_reset) {
-                const remaining = budgetInfo.remaining_tokens;
+              if (Date.now() < budgetInfo.window_reset) {
                 const windowType = budgetInfo.window_type ?? 'monthly';
-                budgetDisplay = `${Math.round(remaining)}${windowType.substring(0, 1)}`;
+                budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
               }
             }
-
-            const u1 = rt.getUsage(ref, 1),
-              u7 = rt.getUsage(ref, 7),
-              u30 = rt.getUsage(ref, 30);
-            const usageDisplay = `${fmt(u1)}/${fmt(u7)}/${fmt(u30)}`;
-
-            const sel = rank === 0 ? ' ←' : '';
-            lines.push(
-              `│ ${String(rank + 1).padEnd(3)} ${modelShort.padEnd(MW)}  ${String(m.gdpval).padStart(4)}  ${String(Math.round(m.avg_latency_ms)).padStart(5)}  ${String(Math.round(m.throughput_tps)).padStart(4)}  ${costDisplay.padStart(11)}  ${usageDisplay.padStart(15)}  ${budgetDisplay.padStart(6)} ${status}${sel}`
-            );
-          }
+            return {
+              rank,
+              ref,
+              // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
+              gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
+              // Latency and throughput are placeholders until a stream of this model completed
+              latencyMs: m.samples ? m.avg_latency_ms : null,
+              tps: m.samples ? m.throughput_tps : null,
+              price: costColumnFor(ref, rt),
+              usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
+              budget,
+              limited,
+              limitSecs: limited ? rt.limitSecs(ref) : 0,
+              costMux: rt.costMux(prov),
+              current: rt.curModel === ref,
+            };
+          });
+          lines.push(...formatOverviewTable(rows, MW));
         }
         // Footer: show total count if more than shown
         if (total > n) {

@@ -744,6 +744,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
     if (!cache.benchmarks) cache.benchmarks = {};
     cache.benchmarks[ref] = m.throughput_tps;
   }
+  m.samples = (m.samples ?? 0) + 1;
   m.last_updated = Date.now();
 }
 
