@@ -236,3 +236,45 @@ describe('readSessionTurns / readDecisions — file parsing', () => {
     ]);
   });
 });
+
+// The decision log hashes what the router classified:
+// stripRouterNarration(messageText(lastUserMessage)) (src/context-utils.ts).
+// The join must hash a session message the same way, or a turn whose text
+// carries a "> [router]" line, outer whitespace or several text blocks looks
+// "unmatched" although it was classified (live 2026-10-22: one of the 14).
+describe('readSessionTurns — hashes the text the router classified', () => {
+  let dir = '';
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'turn-join-norm-'));
+    const msg = (role: string, content: unknown, ms: number, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ type: 'message', timestamp: new Date(ms).toISOString(), message: { role, content, timestamp: ms, ...extra } });
+    writeFileSync(
+      join(dir, 'a.jsonl'),
+      [
+        msg('user', 'fix the build\n> [router] standard → x/y\nthen run the tests\n', at(0)),
+        msg('assistant', [], at(1), { provider: 'p', model: 'a' }),
+        msg('user', '  padded request \n\n', at(10)),
+        msg('assistant', [], at(11), { provider: 'p', model: 'b' }),
+        msg('user', [{ type: 'text', text: 'part one ' }, { type: 'image', data: 'x' }, { type: 'text', text: 'part two' }], at(20)),
+        msg('assistant', [], at(21), { provider: 'p', model: 'c' }),
+      ].join('\n') + '\n',
+    );
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('drops router narration lines before hashing', () => {
+    expect(readSessionTurns(dir, {})[0].sha).toBe(promptSha('fix the build\nthen run the tests'));
+  });
+
+  it('trims outer whitespace before hashing', () => {
+    expect(readSessionTurns(dir, {})[1].sha).toBe(promptSha('padded request'));
+  });
+
+  it('joins text blocks without a separator and ignores non-text blocks', () => {
+    expect(readSessionTurns(dir, {})[2].sha).toBe(promptSha('part one part two'));
+  });
+});

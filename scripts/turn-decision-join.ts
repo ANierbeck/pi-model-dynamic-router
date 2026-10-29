@@ -29,6 +29,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { messageText, stripRouterNarration } from '../src/utils.ts';
 
 export interface SessionTurn {
   session: string;
@@ -78,12 +79,14 @@ function inBounds(ts: number, b: Bounds): boolean {
   return (b.since === undefined || ts >= b.since) && (b.until === undefined || ts <= b.until);
 }
 
+/**
+ * The text the router classified: `extractLastUserPrompt` (src/context-utils.ts)
+ * hashes `stripRouterNarration(messageText(content))`, so the join must too —
+ * otherwise a message with a "> [router]" line, outer whitespace or several
+ * text blocks never meets its own decision record.
+ */
 function userText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.map((b) => (b && typeof b === 'object' ? String((b as { text?: unknown }).text ?? '') : '')).join(' ');
-  }
-  return '';
+  return stripRouterNarration(messageText(content));
 }
 
 function parseLines(path: string): unknown[] {
