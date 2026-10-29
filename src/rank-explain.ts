@@ -13,6 +13,11 @@ export interface ExplainInput {
   costOf: (ref: string) => number | 'unknown';
   /** Whether the model has a value for the group's score column. */
   isProfiled: (ref: string) => boolean;
+  /** Refs the router demoted (limited or unhealthy) — they rank last and
+   * carry NO reason: the table's own flags show why they are unusable, and a
+   * 'top score' label on a demoted model would explain the order of models
+   * it actually ranks BEHIND. Absent = nothing is demoted. */
+  isDemoted?: (ref: string) => boolean;
   /** Relative width of the quality window (0.05 = 5 %); 0 or absent = off. */
   window?: number | undefined;
 }
@@ -31,14 +36,19 @@ const pct = (gap: number): string => `${MINUS}${(gap * 100).toFixed(1)}%`;
  *   `cheaper`, `same price`, or nothing when a cost is unknown.
  * - `no profile, by GDPval`: no value for the score column; ranked after every
  *   profiled model on GDPval.
+ * - Demoted refs (limited or unhealthy, `isDemoted`) get NO reason: they rank
+ *   last for a cause the table shows in its own flags, and the top-score label
+ *   only goes to a model the router would actually stream to.
  */
 export function explainBestRanking(input: ExplainInput): Map<string, string> {
   const { ranked, scoreOf, costOf, isProfiled } = input;
   const out = new Map<string, string>();
   if (ranked.length < 2) return out;
 
-  const profiled = ranked.filter(isProfiled);
-  for (const ref of ranked) if (!isProfiled(ref)) out.set(ref, 'no profile, by GDPval');
+  const demoted = input.isDemoted ?? (() => false);
+  const eligible = ranked.filter((ref) => !demoted(ref));
+  const profiled = eligible.filter(isProfiled);
+  for (const ref of eligible) if (!isProfiled(ref)) out.set(ref, 'no profile, by GDPval');
   if (profiled.length === 0) return out;
 
   const top = profiled.reduce((a, b) => (scoreOf(b) > scoreOf(a) ? b : a));

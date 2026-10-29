@@ -20,6 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 export interface PairLogRecord {
   ts: string;
@@ -99,7 +100,7 @@ export function effectiveCategory(r: PairLogRecord): string | null {
 export function observedGroupMap(records: PairLogRecord[]): Record<string, string> {
   const counts = new Map<string, Map<string, number>>();
   for (const r of records) {
-    if (r.stage === 'hint') continue;
+    if (r.stage === 'hint' || !isRoutingRecord(r)) continue;
     const cat = r.final?.category;
     const group = r.final?.group;
     if (!cat || cat === 'continue' || !group) continue;

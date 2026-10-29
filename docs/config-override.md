@@ -89,7 +89,7 @@ Override a group's `min_gdpval` or `fallback_groups`:
 ```json
 {
   "model_groups": {
-    "strategic": { "min_gdpval": 800 }
+    "planning": { "min_gdpval": 1500 }
   }
 }
 ```

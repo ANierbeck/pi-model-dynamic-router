@@ -14,7 +14,7 @@
 
 import * as path from 'node:path';
 import { costTracker } from './cost-tracker.ts';
-import { formatOverviewTable, type OverviewRow } from './overview-table.ts';
+import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
 import { describeBestMethod } from './rank-explain.ts';
 import {
   getLastClassificationSource,
@@ -700,9 +700,9 @@ export function createCommands(rt: CommandDeps) {
               ref,
               // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
               gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
-              // Latency and throughput are placeholders until a stream of this model completed
-              latencyMs: m.samples ? m.avg_latency_ms : null,
-              tps: m.samples ? m.throughput_tps : null,
+              // Measured in this process or explicitly configured by the user
+              // (src/overview-table.ts displayMetricsFor — placeholders dash).
+              ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
               price: costColumnFor(ref, rt),
               usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
               budget,

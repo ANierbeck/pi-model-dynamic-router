@@ -6,9 +6,9 @@
 
 ## What You Get
 
-- **Content-aware routing** — every prompt is classified (trivial one-liner up to
-  architecture review) and routed to a matching model tier: free models for daily
-  coding, top-tier models reserved for design and planning work.
+- **Content-aware routing** — every prompt is classified (from a short
+  follow-up to an architecture review) and routed to a matching model tier: free
+  models for daily coding, top-tier models reserved for design and planning work.
 - **Automatic discovery & pricing** — the router scans local daemons (Ollama,
   LM Studio) and cloud catalogs, and scrapes Artificial Analysis benchmark
   scores (GDPval plus per-task capability columns: AA-Briefcase Elo for

@@ -110,7 +110,7 @@ function calibrationMain(): void {
 
 import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
 import * as metrics from '../src/metrics.ts';
-import { NON_ROUTING_STAGES } from '../src/classifier-decision-log.ts';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
 
@@ -121,7 +121,7 @@ function readRawDecisions(file: string, bounds: Bounds): RawDecision[] {
     let r: any;
     try { r = JSON.parse(line); } catch { continue; }
     const ts = Date.parse(r?.ts);
-    if (Number.isNaN(ts) || typeof r?.proc !== 'string' || NON_ROUTING_STAGES.has(r.stage)) continue;
+    if (Number.isNaN(ts) || typeof r?.proc !== 'string' || !isRoutingRecord(r)) continue;
     if ((bounds.since !== undefined && ts < bounds.since) || (bounds.until !== undefined && ts > bounds.until)) continue;
     out.push({ ts, proc: r.proc, stage: r.stage, category: r.final?.category ?? null, group: r.final?.group ?? null, prevCategory: r.prev?.category ?? null });
   }

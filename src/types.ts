@@ -27,8 +27,10 @@ export interface Metrics {
   avg_latency_ms: number;
   cost_per_m: number | 'unknown';
   last_updated: number;
-  /** Completed streams folded into latency/throughput in this process; 0 or undefined = the values are placeholders. */
+  /** Completed streams folded into the latency EMA in this process; 0 or undefined = latency is a placeholder. */
   samples?: number;
+  /** Completed streams with token counts folded into the throughput EMA; 0 or undefined = throughput is a placeholder. Kept separate from `samples`: a stream can complete without token counts. */
+  tps_samples?: number;
 }
 
 export interface RateLimit {
@@ -251,7 +253,11 @@ export interface ClassifierLayaConfig {
    * momentum) — but with this flag Laya (and, with `compare_in_background`, the
    * chain) are asked about them DETACHED and the answers are logged as
    * `observation` / `observation-comparator` records. Logging only: routing,
-   * cache and the process-global source are untouched. Default false. */
+   * cache and the process-global source are untouched. Cost note: the
+   * observation runs whenever a momentum prompt occurs — in shadow mode, on
+   * below-threshold answers and when Laya is down (the chain then answers in
+   * shadow), and regardless of `compare_in_background` — so short prompts can
+   * incur classifier spend. Default false. */
   observe_momentum?: boolean;
 }
 
@@ -425,7 +431,8 @@ export interface DelegationConfig {
    *  size (ADR-0007 escalation): expensive models orchestrate and reason;
    *  file inspection belongs to the cheap delegation group. Matched against
    *  the ACTIVE config's materialized model lists (scan output). Defaults
-   *  to ['strategic', 'tactical']; an empty array disables the group check. */
+   *  to ['planning', 'code_complex'] (src/delegation.ts); an empty array
+   *  disables the group check. */
   expensive_groups?: string[];
   /** Provider prefixes (e.g. 'pi-claude') whose models count as expensive
    *  regardless of group membership — for fixed (non-routed) sessions whose

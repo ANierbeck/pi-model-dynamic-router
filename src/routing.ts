@@ -1200,13 +1200,6 @@ export class Router {
   }
 
   /**
-   * One debug line per group decision (Phase 0 of the task-type-balancing
-   * plan): the ranked candidates as resolveGroup returns them, with the
-   * values the ranking used, and every dropped ref with the gate that
-   * dropped it. Logged via debugLogOnce, so an unchanged decision is not
-   * repeated on every prompt.
-   */
-  /**
    * The ranked candidates of a resolution as structured data (route 2 of
    * the pool replay): the same values formatGroupDecision prints — gdp,
    * effective cost, the 'best' score, and the state flags. Attached to
@@ -1236,6 +1229,13 @@ export class Router {
     };
   }
 
+  /**
+   * One debug line per group decision (Phase 0 of the task-type-balancing
+   * plan): the ranked candidates as resolveGroup returns them, with the
+   * values the ranking used, and every dropped ref with the gate that
+   * dropped it. Logged via debugLogOnce, so an unchanged decision is not
+   * repeated on every prompt.
+   */
   private formatGroupDecision(name: string, g: Group, ranked: string[], drops: Array<[string, string]>): string {
     const fmt = (v: number) => String(Number(v.toPrecision(4)));
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
@@ -1418,6 +1418,11 @@ export class Router {
             scoreOf: (r) => calculateScore(r, column, this.cfg),
             costOf: (r) => effCost(r),
             isProfiled: (r) => (column === 'briefcase' || column === 'coding' ? lookupCapability(r, column) !== null : true),
+            // The ranked order demotes limited refs to the end and unhealthy
+            // ones within the available block — the reason must not hand the
+            // top-score label to a model the router would not stream to right
+            // now (limited top scorer: the usable runner-up is 'top score').
+            isDemoted: (r) => this.isLimited(r) || isUnhealthy(this.cache, r),
             window: this.cfg.best_quality_window,
           })
         : null;

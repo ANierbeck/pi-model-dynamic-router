@@ -33,6 +33,25 @@ describe('explainBestRanking', () => {
     expect(why.get('glm')).toMatch(/^−\d+\.\d% score$/);
   });
 
+  // Regression (review round on laya-spike, 2026-10-29): the top scorer was
+  // computed over ALL ranked refs, including the ones the router demoted
+  // (limited or unhealthy — they sit at the END of `ranked`). A limited top
+  // scorer therefore kept the 'top score' label while every usable model
+  // ranked AHEAD of it was explained with a window/price claim the window
+  // never made — the limitation ranked them, not the price rule.
+  it('gives the top score to the best USABLE model when the top scorer is demoted', () => {
+    // opus has the top score but is limited; ranked puts it last.
+    const s = { ...scores, sonnet: 1909, opus: 2007 };
+    const why = explainBestRanking({
+      ...base,
+      scoreOf: (r) => s[r],
+      ranked: ['sonnet', 'opus'],
+      isDemoted: (r) => r === 'opus',
+    });
+    expect(why.get('sonnet')).toBe('top score');
+    expect(why.has('opus')).toBe(false);
+  });
+
   it('says "same price" when the promoted model costs the same as the top-scoring one', () => {
     const s = { ...scores, sonnet: 1909, opus: 2007 };
     const why = explainBestRanking({
@@ -66,6 +85,24 @@ describe('explainBestRanking', () => {
     const why = explainBestRanking({ ...base, isProfiled: (r) => r !== 'tiny', ranked: ['sonnet', 'opus', 'tiny'] });
     expect(why.get('tiny')).toBe('no profile, by GDPval');
     expect(why.get('sonnet')).toBe('top score');
+  });
+
+  it('marks every model "no profile" when nothing is profiled — no top, no gaps', () => {
+    const why = explainBestRanking({ ...base, isProfiled: () => false, ranked: ['sonnet', 'opus'] });
+    expect([...why.entries()].sort()).toEqual([
+      ['opus', 'no profile, by GDPval'],
+      ['sonnet', 'no profile, by GDPval'],
+    ]);
+  });
+
+  it('drops the window mention for an in-window model ranked AFTER the top scorer', () => {
+    // The price rule only explains models ranked AHEAD of the top scorer;
+    // one ranked behind it just shows its gap, window or not.
+    const s = { ...scores, sonnet: 1823, opus: 1807, glm: 1790 };
+    const why = explainBestRanking({ ...base, scoreOf: (r) => s[r], ranked: ['sonnet', 'opus', 'glm'] });
+    expect(why.get('sonnet')).toBe('top score');
+    expect(why.get('opus')).toBe('−0.9% score');
+    expect(why.get('glm')).toBe('−1.8% score');
   });
 
   it('explains nothing for a single model', () => {

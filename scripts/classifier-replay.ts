@@ -23,6 +23,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { getGroupForCategory } from '../src/content-classifier.ts';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 export interface SessionPrompt {
   text: string;
@@ -152,6 +153,7 @@ export function buildCorpus(opts: {
   };
   for (const r of opts.records ?? []) {
     if (opts.since && r.ts < opts.since) continue;
+    if (!isRoutingRecord(r)) continue; // observations / comparators / pool snapshots never routed
     const prompt = r.input?.text?.prompt;
     if (!prompt) continue; // store_text "none" — no prompt, nothing to replay
     const t = r.input.text!;

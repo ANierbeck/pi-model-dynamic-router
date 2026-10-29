@@ -84,6 +84,23 @@ describe('a layer that still defines a removed group', () => {
   });
 });
 
+describe('prototype keys are not group names', () => {
+  // Regression (review round on laya-spike, 2026-10-29): `name in
+  // REMOVED_GROUPS` also matched Object.prototype keys, so a layer defining a
+  // group literally named "constructor" was warned about ("moved to
+  // \"undefined\"") and deleted. Own-key check only.
+  it('a group named like a prototype key is not a removed group', () => {
+    loadWithProjectLayer({ model_groups: { constructor: { min_gdpval: 1600 } } });
+    expect(warnings().some((m) => m.includes('removed group'))).toBe(false);
+  });
+
+  it('a fallback_groups entry named like a prototype key stays in the chain', () => {
+    const { config } = loadWithProjectLayer({ model_groups: { standard: { fallback_groups: ['toString', 'simple'] } } });
+    expect(config.model_groups.standard.fallback_groups).toEqual(['toString', 'simple']);
+    expect(warnings().some((m) => m.includes('removed group'))).toBe(false);
+  });
+});
+
 describe('references to a removed group', () => {
   it('a fallback_groups entry naming a removed group is warned and dropped from the chain', () => {
     const { config } = loadWithProjectLayer({ model_groups: { standard: { fallback_groups: ['operational', 'simple'] } } });

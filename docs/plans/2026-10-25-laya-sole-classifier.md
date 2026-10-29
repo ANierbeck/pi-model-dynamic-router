@@ -79,7 +79,7 @@ ask Laya + the chain about those prompts too and log them as observations
    informative items and feed the next fine-tune.
 4. **Failure behaviour test**: sidecar down / timeout → chain decides, no
    comparator, no error surfaced. (Covered for 500; add timeout.)
-5. **Momentum observation** — owner go 2026-10-29, implemented as `classifier_laya.observe_momentum` (default off; `observation` / `observation-comparator` stages, `acted: false`, listed in `NON_ROUTING_STAGES`). Needs a Pi restart and the flag in the user config; evaluate once enough short prompts have accumulated (about 1.5 % of prompts, so weeks).
+5. **Momentum observation** — owner go 2026-10-29, implemented as `classifier_laya.observe_momentum` (default off; `observation` / `observation-comparator` stages, `acted: false`, listed in `NON_ROUTING_STAGES`). Cost note (2026-10-29 review): the observation also runs in shadow mode, on below-threshold answers and when Laya is down (the chain then answers in shadow), regardless of `compare_in_background` — short prompts can incur classifier spend. Needs a Pi restart and the flag in the user config; evaluate once enough short prompts have accumulated (about 1.5 % of prompts, so weeks).
 6. **Decide on `continue`** with data: Laya's `continue` precision/recall from
    the logged probabilities; whether the owner-defined inheritance is what
    the traffic needs.

@@ -145,6 +145,39 @@ describe('updateMetrics — guards', () => {
     expect(cache.benchmarks).toBeUndefined();
   });
 
+  // Regression (review round on laya-spike, 2026-10-29): the first completed
+  // stream blended into the PLACEHOLDER defaults (1000 ms / 100 tok/s) with
+  // α = 0.3, so one stream left latency 70 % placeholder (and “100 tok/s”
+  // printed as measured). A user-configured prior is real information and
+  // still blends; only the placeholder initializes. tps gets its own counter
+  // because a stream can complete without token counts.
+  it('the first completed stream initializes latency and throughput instead of blending the placeholder defaults', () => {
+    world({});
+    m.updateMetrics('zz/u', 500, 200, 1000);
+    const met = m.getM('zz/u');
+    expect(met.avg_latency_ms).toBe(500);
+    expect(met.throughput_tps).toBe(200);
+  });
+
+  it('a user-configured prior still blends on the first stream', () => {
+    world({ cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80, avg_latency_ms: 400 } } as any } });
+    m.updateMetrics('zz/u', 500, 100, 1000);
+    expect(m.getM('zz/u').throughput_tps).toBeCloseTo(80 * 0.7 + 100 * 0.3, 6);
+    expect(m.getM('zz/u').avg_latency_ms).toBeCloseTo(400 * 0.7 + 500 * 0.3, 6);
+  });
+
+  it('a token-less stream counts as a latency sample but not as a throughput sample', () => {
+    world({});
+    m.updateMetrics('zz/u', 500, 0, 1000);
+    expect(m.getM('zz/u').samples).toBe(1);
+    expect(m.getM('zz/u').tps_samples).toBeUndefined();
+    // First token-bearing sample initializes: nothing was blended into the
+    // placeholder while tokens were missing.
+    m.updateMetrics('zz/u', 600, 200, 1000);
+    expect(m.getM('zz/u').throughput_tps).toBe(200);
+    expect(m.getM('zz/u').tps_samples).toBe(1);
+  });
+
   it('a throughput update keeps benchmarks of OTHER refs', () => {
     const { cache } = world({
       cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80 } } as any },

@@ -25,9 +25,12 @@ interface ModelResolveGlueDeps {
   readonly limitSecs: (ref: string) => number;
   readonly router: Router;
   /** Records a resolution's decision-time pool in the decision log (route 2
-   * of the pool replay). Called by resolve() for every resolution that
-   * carries a pool — the wiring in index.ts decides whether anything is
-   * actually written; absent means no pool logging. */
+   * of the pool replay). resolve() only calls it when the caller passes
+   * `{ logPool: true }` — the stream-driving paths. Group registration,
+   * `/router group` and the resolve_model_group tool resolve without logging:
+   * their resolutions never drive a stream, and logging them would fill the
+   * log with non-decisions (ADR-0027's "right after the same turn's
+   * decision" ordering). Absent means no pool logging at all. */
   readonly logPool?: (pool: GroupPool) => void;
 }
 
@@ -41,9 +44,9 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return d.router.allDiscoveredRefs();
   }
 
-  function resolve(name: string): { selected: string; candidates: string[] } | null {
+  function resolve(name: string, opts?: { logPool?: boolean }): { selected: string; candidates: string[] } | null {
     const res = d.router.resolve(name);
-    if (res?.pool) d.logPool?.(res.pool);
+    if (res?.pool && opts?.logPool) d.logPool?.(res.pool);
     return res;
   }
 

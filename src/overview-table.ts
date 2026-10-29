@@ -33,6 +33,40 @@ export interface OverviewRow {
 
 const DASH = '–';
 
+/** The measurement state of one model's latency/throughput pair. */
+export interface MetricsDisplaySource {
+  avg_latency_ms: number;
+  throughput_tps: number;
+  /** Completed streams folded into the latency EMA; 0/undefined = placeholder. */
+  samples?: number;
+  /** Token-bearing streams folded into the throughput EMA; 0/undefined = placeholder. */
+  tps_samples?: number;
+}
+
+/** A user's model_metrics entry; only the two displayed keys matter here. */
+export interface MetricsUserConfig {
+  avg_latency_ms?: number | undefined;
+  throughput_tps?: number | undefined;
+}
+
+/**
+ * The latency/tok-s gate behind the overview columns: a value is shown when
+ * it was MEASURED in this process (samples / tps_samples) or explicitly
+ * CONFIGURED by the user (model_metrics) — otherwise null (dash). Before this
+ * gate existed, a user-configured value was hidden behind a dash until the
+ * first stream, and the untouched 100 tok/s placeholder printed as measured
+ * once any stream had completed.
+ */
+export function displayMetricsFor(
+  m: MetricsDisplaySource,
+  userCfg: MetricsUserConfig | undefined
+): { latencyMs: number | null; tps: number | null } {
+  return {
+    latencyMs: (m.samples ?? 0) > 0 || userCfg?.avg_latency_ms !== undefined ? m.avg_latency_ms : null,
+    tps: (m.tps_samples ?? 0) > 0 || userCfg?.throughput_tps !== undefined ? m.throughput_tps : null,
+  };
+}
+
 /** Token counts with a unit that stays readable: 812, 45k, 1.2M, 303M, 1.9B. */
 export function fmtTokens(n: number): string {
   if (n < 1_000) return `${n}`;

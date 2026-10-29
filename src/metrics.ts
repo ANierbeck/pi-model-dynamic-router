@@ -733,14 +733,31 @@ export function getM(ref: string): Metrics {
 }
 
 /**
- * Updates the metrics for a reference
+ * Updates the metrics for a reference. The FIRST completed stream initializes
+ * the EMA instead of blending into the placeholder defaults (1000 ms /
+ * 100 tok/s) — with α = 0.3 one stream would leave latency 70 % placeholder.
+ * A user-configured prior (model_metrics) is real information and still
+ * blends. Throughput keeps its own counter (`tps_samples`): a stream can
+ * complete without token counts, and such a stream is a latency sample but
+ * never a throughput one.
  */
 export function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
   const m = getM(ref),
     α = 0.3;
-  m.avg_latency_ms = m.avg_latency_ms * (1 - α) + latMs * α;
+  const prior = cfg.model_metrics?.[ref];
+  if ((m.samples ?? 0) === 0 && prior?.avg_latency_ms === undefined) {
+    m.avg_latency_ms = latMs;
+  } else {
+    m.avg_latency_ms = m.avg_latency_ms * (1 - α) + latMs * α;
+  }
   if (durMs > 0 && tokens > 0) {
-    m.throughput_tps = m.throughput_tps * (1 - α) + (tokens / durMs) * 1000 * α;
+    const tps = (tokens / durMs) * 1000;
+    if ((m.tps_samples ?? 0) === 0 && prior?.throughput_tps === undefined) {
+      m.throughput_tps = tps;
+    } else {
+      m.throughput_tps = m.throughput_tps * (1 - α) + tps * α;
+    }
+    m.tps_samples = (m.tps_samples ?? 0) + 1;
     if (!cache.benchmarks) cache.benchmarks = {};
     cache.benchmarks[ref] = m.throughput_tps;
   }

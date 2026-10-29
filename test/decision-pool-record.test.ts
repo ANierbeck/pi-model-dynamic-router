@@ -130,7 +130,7 @@ describe('the pool record', () => {
   });
 });
 
-describe('the glue resolve writes the pool record', () => {
+describe('the glue resolve writes the pool record (stream-driving calls only)', () => {
   // deps minimal enough to construct the glue: only `router` is touched.
   const glueDeps = (router: unknown) => {
     const pools: unknown[] = [];
@@ -148,7 +148,14 @@ describe('the glue resolve writes the pool record', () => {
     return { glue, pools };
   };
 
-  it('a resolution with a pool is handed to logPool', () => {
+  // Regression (review round on laya-spike, 2026-10-29): resolve() logged a
+  // pool record for EVERY caller — group registration (once per static group
+  // on every session_start and scan), /router group, the resolve_model_group
+  // tool and the streams alike. The log is written for every user with
+  // classifier_log on (default), burns the 20 MiB x 3 rotation budget on
+  // non-decisions and breaks the pool replay's "right after the same turn's
+  // decision" ordering. Only the stream-driving callers pass { logPool: true }.
+  it('a resolve WITHOUT opts logs nothing — group registration, /router and tools must not fill the log', () => {
     const { glue, pools } = glueDeps({
       resolve: () => ({
         selected: 'provx/aaa',
@@ -157,6 +164,18 @@ describe('the glue resolve writes the pool record', () => {
       }),
     });
     expect(glue.resolve('bestish')).toMatchObject({ selected: 'provx/aaa' });
+    expect(pools).toHaveLength(0);
+  });
+
+  it('a resolve WITH { logPool: true } hands the pool to logPool', () => {
+    const { glue, pools } = glueDeps({
+      resolve: () => ({
+        selected: 'provx/aaa',
+        candidates: ['provx/aaa'],
+        pool: { group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] },
+      }),
+    });
+    expect(glue.resolve('bestish', { logPool: true })).toMatchObject({ selected: 'provx/aaa' });
     expect(pools).toHaveLength(1);
     expect((pools[0] as { group: string }).group).toBe('bestish');
   });

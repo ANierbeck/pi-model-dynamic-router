@@ -2,9 +2,11 @@
 
 ## Overview
 
-The pi-model-router extension dynamically routes model groups (strategic,
-tactical, operational, scout, etc.) to concrete models based on intelligence
-scores (GDPval), cost, availability, and user preferences.
+The pi-model-router extension dynamically routes model groups (the five
+category groups `simple`, `standard`, `code_complex`, `design` and `planning`,
+plus the special groups `dynamic`, `bulk_reader` and `code_writer`) to concrete
+models based on intelligence scores (GDPval), cost, availability, and user
+preferences.
 
 ## Key modules
 

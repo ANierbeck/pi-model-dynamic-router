@@ -235,8 +235,12 @@ let previousTokenCount = 0;
     get router() { return router; },
     // Route 2 of the pool replay (ADR-0027 log): one 'pool' record per group
     // resolution that drives a stream, appended to the decision log right
-    // after the turn's decision record. Fail-open, and off unless the
-    // classifier log is enabled — same gate as the decision records.
+    // after the turn's decision record. Only the stream-driving resolve
+    // callers (stream proxy + orchestrator, wired below with
+    // { logPool: true }) pass this through — group registration, /router and
+    // the resolve_model_group tool resolve without logging, so the log holds
+    // decisions, not non-decisions. Fail-open, and off unless the classifier
+    // log is enabled — same gate as the decision records.
     logPool: (pool) => {
       const log = resolveClassifierLogConfig(cfg?.classifier_log);
       if (!log) return;
@@ -300,7 +304,9 @@ let previousTokenCount = 0;
     set localStreamsInFlight(v) { localStreamsInFlight = v; },
     get OLLAMA_MAX_CONCURRENT_STREAMS() { return OLLAMA_MAX_CONCURRENT_STREAMS; },
     get registerFreeModelOnDemand() { return registerFreeModelOnDemand; },
-    get resolve() { return resolve; },
+    // Pool logging for the stream-driving resolutions only (ADR-0027):
+    // this is the path that serves an actual group stream.
+    get resolve() { return (name: string) => resolve(name, { logPool: true }); },
     get sessionCtx() { return sessionCtx; },
     get skipReasons() { return skipReasons; },
     set skipReasons(v) { skipReasons = v; },
@@ -623,7 +629,9 @@ let previousTokenCount = 0;
     get cacheManager() { return cacheManager; },
     escalation,
     costTracker,
-    resolve,
+    // Pool logging for the stream-driving resolutions only (ADR-0027):
+    // every ctx.resolve call here serves a candidate stream.
+    resolve: (name: string) => resolve(name, { logPool: true }),
     isLimited,
     clearLimit,
     tryStream,

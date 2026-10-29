@@ -158,7 +158,7 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
   const groups = layer.model_groups as Record<string, { fallback_groups?: string[] | null }> | undefined;
   if (groups && typeof groups === 'object') {
     for (const name of Object.keys(groups)) {
-      if (name in REMOVED_GROUPS) {
+      if (Object.hasOwn(REMOVED_GROUPS, name)) {
         warnLog(`[router] ${source} model_groups: removed group "${name}" — ignored; ${hint(name)}, move the settings there`);
         delete groups[name];
       }
@@ -166,9 +166,9 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
     for (const [name, g] of Object.entries(groups)) {
       const chain = g?.fallback_groups;
       if (!Array.isArray(chain)) continue;
-      const kept = chain.filter((t) => !(t in REMOVED_GROUPS));
+      const kept = chain.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
       for (const t of chain) {
-        if (t in REMOVED_GROUPS) warnLog(`[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`);
+        if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`);
       }
       if (kept.length === chain.length) continue;
       if (kept.length > 0) g.fallback_groups = kept;
@@ -177,9 +177,9 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
   }
   const expensive = layer.delegation?.expensive_groups;
   if (layer.delegation && Array.isArray(expensive)) {
-    const kept = expensive.filter((t) => !(t in REMOVED_GROUPS));
+    const kept = expensive.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
     for (const t of expensive) {
-      if (t in REMOVED_GROUPS) warnLog(`[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`);
+      if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`);
     }
     if (kept.length === expensive.length) return;
     if (kept.length > 0) layer.delegation.expensive_groups = kept;
@@ -231,7 +231,7 @@ function validateCategoryGroups(config: Config): void {
   const mapping = config.category_groups;
   if (!mapping || typeof mapping !== 'object') return;
   for (const [category, group] of Object.entries(mapping)) {
-    if (!(category in CATEGORY_TO_GROUP)) {
+    if (!Object.hasOwn(CATEGORY_TO_GROUP, category)) {
       warnLog(`[router] category_groups: unknown category "${category}" — entry ignored (known: ${Object.keys(CATEGORY_TO_GROUP).join(', ')})`);
       delete mapping[category];
       continue;

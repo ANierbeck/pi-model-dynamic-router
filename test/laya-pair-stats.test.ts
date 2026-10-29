@@ -146,6 +146,21 @@ describe('effectiveCategory', () => {
 });
 
 describe('observedGroupMap', () => {
+  it('skips non-routing stages — observations and comparators never routed anything', () => {
+    // Regression (review round on laya-spike, 2026-10-29): observedGroupMap
+    // only skipped 'hint' records, so detached observation / comparator /
+    // pool records fed the category->group map as if they had routed.
+    const obs = (stage: string): PairLogRecord =>
+      ({ ...laya({ category: 'design', group: 'planning' }), stage }) as PairLogRecord;
+    const m = observedGroupMap([
+      obs('observation'),
+      obs('observation-comparator'),
+      obs('comparator'),
+      obs('pool'),
+    ]);
+    expect(m).toEqual({});
+  });
+
   it('learns category -> group from the log, never from continue', () => {
     const m = observedGroupMap([
       laya({ category: 'code_complex', group: 'tactical' }),

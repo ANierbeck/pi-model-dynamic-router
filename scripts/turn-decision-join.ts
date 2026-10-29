@@ -30,7 +30,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, stripRouterNarration } from '../src/utils.ts';
-import { NON_ROUTING_STAGES } from '../src/classifier-decision-log.ts';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 export interface SessionTurn {
   session: string;
@@ -156,7 +156,7 @@ export function joinTurns(
 ): JoinedTurn[] {
   const routing = new Map<string, DecisionRow[]>();
   for (const d of decisions) {
-    if (NON_ROUTING_STAGES.has(d.stage)) continue;
+    if (!isRoutingRecord(d)) continue;
     const list = routing.get(d.sha) ?? [];
     list.push(d);
     routing.set(d.sha, list);

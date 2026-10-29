@@ -4,7 +4,7 @@
 // and the status column mixed "active" with the selection arrow.
 
 import { describe, it, expect } from 'vitest';
-import { formatOverviewTable, type OverviewRow } from '../src/overview-table.ts';
+import { formatOverviewTable, displayMetricsFor, type OverviewRow } from '../src/overview-table.ts';
 
 const row = (over: Partial<OverviewRow> = {}): OverviewRow => ({
   rank: 1,
@@ -39,6 +39,40 @@ describe('formatOverviewTable — unknown values are not invented', () => {
   it('rounds a measured GDPval to an integer', () => {
     const body = formatOverviewTable([row({ gdpval: 1837.82 })], 30)[2];
     expect(body).toContain(' 1838 ');
+  });
+});
+
+describe('displayMetricsFor — the latency/tok-s gate behind the overview columns', () => {
+  // Regression (review round on laya-spike, 2026-10-29): the gate was
+  // `samples ? value : null` in commands.ts. A user-configured value
+  // (model_metrics.throughput_tps / avg_latency_ms) was hidden behind a dash
+  // until the first stream, and once ANY stream completed, the untouched
+  // 100 tok/s placeholder printed as measured (samples counted token-less
+  // streams too). The gate is now: measured (samples / tps_samples) or
+  // user-configured; otherwise null (dash).
+  const met = (over: Partial<{ samples: number; tps_samples: number; avg_latency_ms: number; throughput_tps: number }> = {}) => ({
+    avg_latency_ms: 1000,
+    throughput_tps: 100,
+    ...over,
+  });
+
+  it('shows dashes for pure placeholders — no samples, no user config', () => {
+    expect(displayMetricsFor(met(), undefined)).toEqual({ latencyMs: null, tps: null });
+  });
+
+  it('shows a user-configured value before the first completed stream', () => {
+    const d = displayMetricsFor(met({ avg_latency_ms: 123, throughput_tps: 55 }), { avg_latency_ms: 123, throughput_tps: 55 });
+    expect(d).toEqual({ latencyMs: 123, tps: 55 });
+  });
+
+  it('shows measured latency but not the throughput placeholder after a token-less stream', () => {
+    const d = displayMetricsFor(met({ samples: 1, avg_latency_ms: 500 }), undefined);
+    expect(d).toEqual({ latencyMs: 500, tps: null });
+  });
+
+  it('shows measured values once both counters are non-zero', () => {
+    const d = displayMetricsFor(met({ samples: 2, tps_samples: 2, avg_latency_ms: 510, throughput_tps: 210 }), undefined);
+    expect(d).toEqual({ latencyMs: 510, tps: 210 });
   });
 });
 

@@ -58,6 +58,22 @@ describe('getTopModels — ranking reasons in best groups', () => {
     ]);
   });
 
+  it('a limited top scorer loses the top-score label to the best usable model', () => {
+    // code_complex ranks by coding, where opus leads (2007 vs 1909) — but
+    // opus is rate-limited, so getTopModels ranks it LAST. Before the fix the
+    // table claimed 'top score' for the demoted opus and explained sonnet
+    // with a window/price claim the window never made.
+    const limits = new Map<string, import('../src/types.ts').RateLimit>([
+      ['claude-bridge/claude-opus-5-5', { cooldown_until: Date.now() + 60_000, backoff_ms: 1000 }],
+    ]);
+    const limitedRouter = new Router(cfg, cache, limits);
+    const { models } = limitedRouter.getTopModels('code_complex', 5);
+    expect(models.map((m) => [m.ref, m.why ?? null])).toEqual([
+      ['claude-bridge/claude-sonnet-5-5', 'top score'],
+      ['claude-bridge/claude-opus-5-5', null],
+    ]);
+  });
+
   it('tiered groups carry no reason', () => {
     const { models } = router.getTopModels('standard', 5);
     expect(models.every((m) => m.why === undefined)).toBe(true);

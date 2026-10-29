@@ -69,6 +69,17 @@ export const NON_ROUTING_STAGES: ReadonlySet<string> = new Set([
   'observation-comparator',
 ]);
 
+/**
+ * True exactly for records whose stage routed (or could have routed) a
+ * prompt. The single source of truth for every reader that counts or joins
+ * decisions: turn join, failover walk, pool replay, shadow/pair stats and the
+ * replay corpus. A stage that joins NON_ROUTING_STAGES later is skipped by all
+ * of them at once.
+ */
+export function isRoutingRecord(rec: { stage: string }): boolean {
+  return !NON_ROUTING_STAGES.has(rec.stage);
+}
+
 export interface DecisionRecord {
   v: number;
   ts: string;
@@ -280,7 +291,8 @@ export function writeDecisionRecord(rec: DecisionRecord, home: string, log: { ma
  * the same turn (classification → resolve → stream). Correlation key with
  * the decision record: `proc` + group + timestamp; the record deliberately
  * carries NO `input` (no prompt, no sha) — readers without an `input.sha`
- * are pool records and have nothing to join on (see readDecisions).
+ * are pool records and have nothing to join on (readDecisions lives in
+ * scripts/turn-decision-join.ts).
  */
 export interface DecisionPoolRecord {
   v: number;

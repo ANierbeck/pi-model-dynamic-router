@@ -119,6 +119,32 @@ describe('decision-log corpus', () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  it('skips non-routing stages — observations and pool snapshots are not decisions', () => {
+    // Regression (review round on laya-spike, 2026-10-29): buildCorpus fed
+    // every record with stored text into the corpus, so detached observation /
+    // observation-comparator / pool records entered the replay corpus as if
+    // they had routed a prompt.
+    const d = dir();
+    const f = join(d, 'decisions.jsonl');
+    // A record with stored text in a non-routing stage — exactly what the
+    // observation writes (same schema, stage differs).
+    const obs = (stage: string, sha: string) =>
+      JSON.stringify({
+        v: 1, ts: '2026-10-29T10:00:00Z', proc: 'p/1', stage, answered_by: 'laya:x/y', chain: [], cache_origin: null,
+        raw: { category: 'code_complex', confidence: 0.8, reason: null },
+        final: { category: 'code_complex', group: 'code_complex', hint: null, reason: null },
+        steps: [], ms: 5,
+        input: { chars: 3, words: 1, sha, text: { prompt: 'ok do it now please' }, context: { hasContextBlock: false, lastCategory: null, isCompaction: false, hasHistory: false } },
+      });
+    writeFileSync(
+      f,
+      [obs('observation', 'obs1'), obs('observation-comparator', 'obs2'), obs('pool', 'obs3')].join('\n') + '\n',
+    );
+    const corpus = buildCorpus({ records: readDecisionRecords([f]) });
+    expect(corpus).toHaveLength(0);
+    rmSync(d, { recursive: true, force: true });
+  });
+
   it('carries the stored context texts into the corpus item (replay input parity)', () => {
     const d = dir();
     const f = join(d, 'decisions.jsonl');

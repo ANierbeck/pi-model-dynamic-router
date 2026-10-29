@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseRoutingLine } from './route-pool-log.ts';
-import { NON_ROUTING_STAGES } from '../src/classifier-decision-log.ts';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 export interface WalkDecision {
   ts: number;
@@ -87,7 +87,7 @@ export function parseWalkEvents(lines: string[]): Event[] {
 export function walkDecisions(lines: string[], decisions: WalkDecision[]): WalkRow[] {
   const events = parseWalkEvents(lines);
   const routed = decisions
-    .filter((d) => d.group !== null && !NON_ROUTING_STAGES.has(d.stage))
+    .filter((d) => d.group !== null && isRoutingRecord(d))
     .sort((a, b) => a.ts - b.ts);
   const rows: WalkRow[] = [];
   for (const d of routed) {
