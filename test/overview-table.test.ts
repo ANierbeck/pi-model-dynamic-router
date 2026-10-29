@@ -103,3 +103,19 @@ describe('metrics — samples count the completed streams behind latency and tok
     expect(getM(ref).samples).toBe(1);
   });
 });
+
+describe('formatOverviewTable — ranking reason', () => {
+  it('puts the reason in the status after "first", before limits', () => {
+    const lines = formatOverviewTable(
+      [row({ rank: 0, why: '−4.9% score, in window, cheaper', limited: true, limitSecs: 30 })],
+      30
+    );
+    expect(lines[2]).toMatch(/first · −4\.9% score, in window, cheaper · ⛔ 30s/);
+  });
+
+  it('shows the reason instead of a bare "ok"', () => {
+    const lines = formatOverviewTable([row({ rank: 1, why: '−0.9% score' })], 30);
+    expect(lines[2].trimEnd().endsWith('−0.9% score')).toBe(true);
+    expect(lines[2]).not.toMatch(/\bok\b/);
+  });
+});

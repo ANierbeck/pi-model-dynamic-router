@@ -724,6 +724,8 @@ export interface ModelWithLimits {
   ref: string;
   limited: boolean;
   rank: number;
+  /** Ranking reason in a `best` group (see rank-explain.ts); display only. */
+  why?: string;
 }
 
 /** One ranked candidate of a group pool, as resolved at decision time.

@@ -15,6 +15,7 @@
 import * as path from 'node:path';
 import { costTracker } from './cost-tracker.ts';
 import { formatOverviewTable, type OverviewRow } from './overview-table.ts';
+import { describeBestMethod } from './rank-explain.ts';
 import {
   getLastClassificationSource,
   getClassificationCounts,
@@ -62,7 +63,7 @@ interface CommandDeps {
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly formatBlocklist: () => string;
   readonly getM: (ref: string) => Metrics;
-  readonly getTopModels: (groupName: string, n: number) => { models: { ref: string; limited: boolean; rank: number; }[]; total: number; };
+  readonly getTopModels: (groupName: string, n: number) => { models: { ref: string; limited: boolean; rank: number; why?: string; }[]; total: number; };
   readonly getUsage: (ref: string, days: number) => number;
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
@@ -627,7 +628,7 @@ export function createCommands(rt: CommandDeps) {
           g.method === 'pipeline'
             ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
             : g.method === 'best'
-              ? 'best gdpval'
+              ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
               : g.method === 'tiered'
                 ? g.min_gdpval != null
                   ? `tiered ≥${g.min_gdpval}`
@@ -683,7 +684,7 @@ export function createCommands(rt: CommandDeps) {
         } else {
           // Name column: the longest shown ref, capped so the table fits a standard terminal
           const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
-          const rows: OverviewRow[] = topModels.map(({ ref, limited, rank }) => {
+          const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
             const m = rt.getM(ref);
             const prov = ref.split('/')[0];
             const budgetInfo = rt.cache.budget_cache?.[prov];
@@ -709,6 +710,7 @@ export function createCommands(rt: CommandDeps) {
               limitSecs: limited ? rt.limitSecs(ref) : 0,
               costMux: rt.costMux(prov),
               current: rt.curModel === ref,
+              ...(why ? { why } : {}),
             };
           });
           lines.push(...formatOverviewTable(rows, MW));

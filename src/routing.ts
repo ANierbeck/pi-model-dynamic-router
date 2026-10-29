@@ -12,6 +12,7 @@ import type {
   GroupPool,
 } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
+import { explainBestRanking } from './rank-explain.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
@@ -1408,7 +1409,24 @@ export class Router {
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
     const total = ranked.length;
-    const models = ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));
+    // Display-only reasons for a `best` group; the order above is untouched.
+    const column = g.score_by ?? 'gdpval';
+    const why =
+      g.method === 'best'
+        ? explainBestRanking({
+            ranked,
+            scoreOf: (r) => calculateScore(r, column, this.cfg),
+            costOf: (r) => effCost(r),
+            isProfiled: (r) => (column === 'briefcase' || column === 'coding' ? lookupCapability(r, column) !== null : true),
+            window: this.cfg.best_quality_window,
+          })
+        : null;
+    const models = ranked.slice(0, n).map((ref, i) => ({
+      ref,
+      limited: this.isLimited(ref),
+      rank: i,
+      ...(why?.has(ref) ? { why: why.get(ref) as string } : {}),
+    }));
     return { models, total };
   }
 

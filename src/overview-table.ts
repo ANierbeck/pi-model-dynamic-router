@@ -27,6 +27,8 @@ export interface OverviewRow {
   costMux: number;
   /** Whether this is the model the session is currently using. */
   current: boolean;
+  /** Why the model sits here in a `best` group (src/rank-explain.ts); absent elsewhere. */
+  why?: string;
 }
 
 const DASH = '–';
@@ -44,6 +46,7 @@ function status(row: OverviewRow): string {
   const parts: string[] = [];
   if (row.rank === 0) parts.push('first');
   if (row.current) parts.push('current');
+  if (row.why) parts.push(row.why);
   if (row.limited) parts.push(`⛔ ${row.limitSecs}s`);
   if (row.costMux > 1) parts.push(`cost ×${row.costMux}`);
   if (parts.length === 0) parts.push('ok');
