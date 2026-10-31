@@ -113,7 +113,7 @@ const CONFIG = {
 const PROFILES = {
   'claude-opus-5-5': { briefcase: 1800.51, reasoning: 56.02 },
   // Sonnet is CHEAPER and ahead on Briefcase: only the reasoning column can
-  // put Opus first (56.02 vs 46.6 is far outside the 5 % window).
+  // put Opus first (fixture values: 56.02 vs 46.6 is far outside the 5 % window).
   'claude-sonnet-5-5': { briefcase: 1813.57, reasoning: 46.6 },
   // Haiku has no reasoning value: it must rank after every profiled model.
   'claude-haiku-5-5': { briefcase: 1575.9 },

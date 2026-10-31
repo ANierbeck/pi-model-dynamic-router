@@ -116,6 +116,23 @@ export interface GroupFilterLookups {
   isFree(ref: string): boolean;
 }
 
+/**
+ * The score-column gate a model fails in group `g`, or null when it passes
+ * both (or neither is configured). `require_score_column` is checked first, so
+ * a model without any value is reported by it rather than by `min_score`.
+ * Both gates stand down while no model has a value for the column (scrape
+ * never ran or drifted): an empty group would be worse than an unranked one.
+ * Shared by applyGroupFilters (live, display, persist) and detectGroup.
+ */
+function scoreColumnGateFailure(ref: string, g: Group): 'require_score_column' | 'min_score' | null {
+  const column = g.score_by;
+  if (!isCapabilityColumn(column) || !hasCapabilityData(column)) return null;
+  const value = lookupCapability(ref, column);
+  if (g.require_score_column && value === null) return 'require_score_column';
+  if (g.min_score != null && g.min_score > 0 && (value === null || value < g.min_score)) return 'min_score';
+  return null;
+}
+
 /** Whether `ref` is listed in its provider's `free_models` (prefixed or bare). */
 function inFreeModelsList(cfg: Config, ref: string): boolean {
   const prov = ref.split('/')[0];
@@ -308,26 +325,17 @@ export function applyGroupFilters(
   if (g.max_gdpval != null && g.max_gdpval > 0) {
     c = gate('max_gdpval', ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
   }
-  // 4c. require_score_column — opt-in: a model with no value in the group's
+  // 4c. require_score_column — opt-in (rule in scoreColumnGateFailure,
+  //     shared with detectGroup): a model with no value in the group's
   //     own score_by capability column does not belong in this category
   //     (owner decision 2026-10-31). Reads the SAME metrics-module mirror as
   //     the ranking, so live, display and persist agree. Stands down when no
   //     model at all has a value for the column (scrape never ran or
   //     drifted): an empty group would be worse than an unranked one.
-  if (isCapabilityColumn(g.score_by) && hasCapabilityData(g.score_by)) {
-    const column = g.score_by;
-    if (g.require_score_column) {
-      c = gate('require_score_column', ref => lookupCapability(ref, column) !== null);
-    }
-    // 4d. min_score — the floor on that same column. Strict like min_gdpval:
-    //     a model without a value fails a positive floor.
-    if (g.min_score != null && g.min_score > 0) {
-      c = gate('min_score', ref => {
-        const v = lookupCapability(ref, column);
-        return v !== null && v >= g.min_score!;
-      });
-    }
-  }
+  c = gate('require_score_column', ref => scoreColumnGateFailure(ref, g) !== 'require_score_column');
+  // 4d. min_score — the floor on that same column. Strict like min_gdpval:
+  //     a model without a value fails a positive floor.
+  c = gate('min_score', ref => scoreColumnGateFailure(ref, g) !== 'min_score');
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
   //    carries the rule's positive stand-in cost (ADR-0025 B2) and must
@@ -1298,9 +1306,14 @@ export class Router {
     if (gdpval !== null) {
       for (const [name, g] of groupsByThreshold) {
         const minGdpval = g.min_gdpval ?? 0;
-        if (gdpval >= minGdpval) {
-          return name;
-        }
+        if (gdpval < minGdpval) continue;
+        // The label follows the pool: a model the group's score-column gates
+        // refuse (require_score_column / min_score) is not a member, whatever
+        // its GDPval says (Sourcery PR #80 round). Only those two gates are
+        // consulted here — this method stays a GDPval-tier approximation for
+        // everything else (cost caps, context floors).
+        if (scoreColumnGateFailure(ref, g) !== null) continue;
+        return name;
       }
     }
     

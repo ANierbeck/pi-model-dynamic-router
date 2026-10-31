@@ -552,11 +552,14 @@ export function setConfig(config: Config): void {
 export function setCache(newCache: Cache): void {
   cache = newCache;
   // ADR-0023 round 2: capability profiles live in the cache and are read
-  // through lookupCapability (additive like gdpval_scores — new cache
-  // entries add to whatever earlier profiles exist; no separate in-memory
-  // index needed because lookups are per-ref at scan/routing time).
+  // through lookupCapability. REPLACE when the cache carries the field (the
+  // scan passes the LATEST scrape): a model or value the newer scrape dropped
+  // must not linger in this mirror — the score-column gates read it, and a
+  // stale value would admit, rank or keep a gate active on obsolete data
+  // (Sourcery PR #80 round; same rule as gdpval_provenance below). A cache
+  // without the field leaves the mirror untouched.
   if (cache.capability_profiles) {
-    capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
+    capabilityProfiles = { ...cache.capability_profiles };
   }
   // Task-0 identity audit (2026-10-12): per-slug provenance. REPLACE when
   // the cache carries the field (scan passes the map of the LATEST scrape —

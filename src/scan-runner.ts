@@ -617,7 +617,15 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               // gdpval_provenance in the PR #66 round.
               rt.cache.capability_profiles = profiles;
               metricsModule.setCache(rt.cache);
-              capabilityScrapeFresh = true;
+              // Fresh only when the reasoning column arrived: profiles that
+              // carry briefcase/coding alone would stamp SCRAPE_VERSION and
+              // pin a cache without reasoning values for the whole TTL
+              // (planning's gates would stand down). Unstamped, the next
+              // scan retries (Sourcery PR #80 round).
+              capabilityScrapeFresh = Object.values(profiles).some((p) => typeof p.reasoning === 'number');
+              if (!capabilityScrapeFresh) {
+                routerLog('[scan] Capability profiles carry no reasoning blend - scrape stays unstamped and retries on the next scan');
+              }
             } else {
               routerLog('[scan] No capability profiles extracted - AA payload shape may have drifted');
             }

@@ -89,8 +89,8 @@ export interface Group {
    * blend) | 'reasoning' (equal thirds of AA Intelligence Index, Omniscience
    * and HLE Diamond — the planning score, owner decision 2026-10-31).
    * Floors and caps stay on the global GDPval — a column never changes
-   * which models are ADMITTED, only their order within the pool (the one
-   * opt-in exception is `require_score_column`).
+   * which models are ADMITTED, only their order within the pool (the opt-in
+   * exceptions are `require_score_column` and `min_score`).
    * A model WITHOUT a value for the column is never mixed into the column
    * ranking by its GDPval: it ranks after every model that has the column,
    * in GDPval order among themselves (owner decision 2026-10-26).

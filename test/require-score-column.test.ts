@@ -220,3 +220,19 @@ describe('min_score (floor on the score_by column)', () => {
     expect(kept.map((x: any) => x.ref)).toEqual([OPUS, SONNET]);
   });
 });
+
+describe('detectGroup respects the score-column gates (PR #80 round)', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('a model below the planning score floor is not labelled planning', async () => {
+    const g = { ...PLANNING, require_score_column: true, min_score: 35 };
+    const groups = { planning: g, standard: { method: 'tiered', min_gdpval: 300, fallback_groups: [] } };
+    const profiles = { 'claude-opus-5-5': { reasoning: 58 }, 'claude-newcomer-9': { reasoning: 19.5 } };
+    const { routing, cfg } = await fresh(profiles, groups);
+    const router = new routing.Router(cfg, { available_models: [], capability_profiles: profiles } as any, new Map());
+    expect(router.detectGroup(OPUS)).toBe('planning');
+    // GDPval 2000 clears planning's 1700 floor, but the model is unmeasured
+    // enough to be refused from the pool: the label must follow the pool.
+    expect(router.detectGroup(NEWCOMER)).toBe('standard');
+  });
+});
