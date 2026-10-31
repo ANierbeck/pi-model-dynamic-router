@@ -364,9 +364,11 @@ Quality gates (`min_gdpval`/`max_gdpval`) always use GDPval — a `score_by`
 column only orders the models **within** an admitted pool. A model without a
 value in the column ranks after every model that has one. `planning` goes one
 step further (`require_score_column`): a model that is not measured on the
-reasoning column does not belong in the planning tier and is left out. The
-rule stands down while no model has a value at all (before the first scrape),
-so a fresh install never ends up with an empty planning group.
+reasoning column does not belong in the planning tier and is left out, and
+`min_score: 35` adds a floor on that column (GDPval alone admitted a fast
+"Flash" model whose reasoning blend ranks it near last). Both rules stand down
+while no model has a value at all (before the first scrape), so a fresh
+install never ends up with an empty planning group.
 
 #### GDPval
 

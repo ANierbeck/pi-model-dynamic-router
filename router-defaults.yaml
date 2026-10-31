@@ -98,7 +98,8 @@ best_quality_window: 0.05
 # come from the same Artificial Analysis scrape as GDPval (no new fetch). A
 # model without a value for the column ranks after every model that has one.
 # `require_score_column: true` on a group goes one step further and drops
-# such models from the group (it stands down while no model at all has a
-# value, e.g. before the first scrape).
+# such models from the group; `min_score: N` adds a floor on that same
+# column (>= N, a model without a value fails). Both stand down while no
+# model at all has a value, e.g. before the first scrape.
 # Set per group in router-config.json, e.g.: planning -> reasoning,
 # design -> briefcase, code_complex -> coding.

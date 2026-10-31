@@ -106,6 +106,17 @@ export interface Group {
    * with an empty group. No effect on `gdpval` groups.
    */
   require_score_column?: boolean;
+  /**
+   * Minimum value in this group's own `score_by` capability column (>=, a
+   * model WITHOUT a value fails, like `min_gdpval`). GDPval floors admit on
+   * one benchmark; this is the floor on the column the group actually ranks
+   * by — GDPval alone let a fast "Flash" model into planning (GDPval 1746)
+   * whose reasoning blend ranks it near last (owner decision 2026-10-31).
+   * Absent/0 = no floor. Stands down together with `require_score_column`
+   * while no model has a value for the column, and does nothing for groups
+   * without a capability column.
+   */
+  min_score?: number;
   max_cost?: number;
   max_cost_per_m?: number;
 

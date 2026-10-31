@@ -193,6 +193,7 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  *   4b. max_gdpval — upper tier boundary
  *   4c. require_score_column (opt-in) — drop models without a value in the
  *       group's own capability column
+ *   4d. min_score (opt-in) — floor on that same column
  *   5. max_cost           — total cost cap
  *   6. max_cost_per_m     — per-million input-price cap
  *   7. min_context_length — context window floor
@@ -313,9 +314,19 @@ export function applyGroupFilters(
   //     the ranking, so live, display and persist agree. Stands down when no
   //     model at all has a value for the column (scrape never ran or
   //     drifted): an empty group would be worse than an unranked one.
-  if (g.require_score_column && isCapabilityColumn(g.score_by) && hasCapabilityData(g.score_by)) {
+  if (isCapabilityColumn(g.score_by) && hasCapabilityData(g.score_by)) {
     const column = g.score_by;
-    c = gate('require_score_column', ref => lookupCapability(ref, column) !== null);
+    if (g.require_score_column) {
+      c = gate('require_score_column', ref => lookupCapability(ref, column) !== null);
+    }
+    // 4d. min_score — the floor on that same column. Strict like min_gdpval:
+    //     a model without a value fails a positive floor.
+    if (g.min_score != null && g.min_score > 0) {
+      c = gate('min_score', ref => {
+        const v = lookupCapability(ref, column);
+        return v !== null && v >= g.min_score!;
+      });
+    }
   }
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model

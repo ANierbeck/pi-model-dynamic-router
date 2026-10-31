@@ -185,6 +185,14 @@ describe('shipped config: planning reasons, design stays on Briefcase', () => {
     expect(cfg.model_groups.design.require_score_column).toBeUndefined();
   });
 
+  it('planning also has a floor on the reasoning column itself (owner decision 2026-10-31)', () => {
+    // 35 sits in the gap of the 2026-10-31 scrape: Muse Wonder 35.8 above,
+    // Grok 4.7 29.6, DeepSeek V4.1 Flash 19.6 and GLM-5.3 18.5 below. GDPval
+    // alone admitted the Flash model (1746) although its blend ranks it last.
+    expect(cfg.model_groups.planning.min_score).toBe(35);
+    expect(cfg.model_groups.design.min_score).toBeUndefined();
+  });
+
   it('the GDPval floor on planning is untouched (columns order, floors admit)', () => {
     expect(cfg.model_groups.planning.min_gdpval).toBe(1700);
   });
