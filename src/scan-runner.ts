@@ -47,11 +47,16 @@ interface ScanRunnerDeps {
  * pre-fix junk keys forever (Sourcery PR #66 round: stale qwen3-8-27b: 580,
  * low-variant labelKeys, missing provenance).
  *
+ *   4 — `reasoning` capability column (Intelligence Index / Omniscience /
+ *       HLE Diamond blend, owner decision 2026-10-31); caches scraped before
+ *       it carry no such value, so planning would rank on the fallback
+ *   3 — capability profiles from the `initialModels` payload shape
+ *       (commit 895a9c8)
  *   2 — labelKey write discipline, provenance extraction, variant-token
  *       veto, qwen3-8-27b builtin removal (Task-0 identity audit 2026-10-12)
  *   1 — original extraction (implicit for pre-version caches)
  */
-export const SCRAPE_VERSION = 3;
+export const SCRAPE_VERSION = 4;
 
 /**
  * Whether the AA scrape must (re-)run for this cache. force bypasses all
@@ -355,7 +360,7 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   while ((mr = modelRecRe.exec(html))) {
     const slug = mr[1];
     const chunk = mr[3];
-    const profile: { briefcase?: number; coding?: number } = {};
+    const profile: { briefcase?: number; coding?: number; reasoning?: number } = {};
 
     const bc = /"briefcaseElo":([0-9.]+)/.exec(chunk);
     if (bc) {
@@ -364,11 +369,28 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
     }
 
     const pct = (field: string): number | null => {
-      const m = new RegExp(`"${field}":(null|[0-9.]+)`).exec(chunk);
+      const m = new RegExp(`"${field}":(null|-?[0-9.]+)`).exec(chunk);
       if (!m || m[1] === 'null') return null;
       const v = parseFloat(m[1]);
       return Number.isFinite(v) ? v : null;
     };
+
+    // reasoning = equal thirds of the AA Intelligence Index (0-100), the
+    // Omniscience index (accuracy net of hallucination, can be negative) and
+    // HLE Diamond (0-1, scaled to 0-100) — owner decision 2026-10-31. All
+    // three or nothing: a partial mean would put a model on the column with
+    // evidence the others were measured on (missing data beats wrong data,
+    // Sourcery PR #69). Each field occurs once per record in the live payload
+    // (checked on the 2026-10-31 scrape, 27/27 records). Rounded to two
+    // decimals like the coding blend — the value crosses the cache JSON
+    // boundary and is compared in tests.
+    const intelligence = pct('intelligenceIndex');
+    const omniscience = pct('omniscience');
+    const hleDiamond = pct('hleDiamond');
+    if (intelligence !== null && omniscience !== null && hleDiamond !== null) {
+      profile.reasoning = Math.round(((intelligence + omniscience + 100 * hleDiamond) / 3) * 100) / 100;
+    }
+
     const scicode = pct('scicode');
     const terminalBench40 = pct('terminalBench40');
     if (scicode !== null || terminalBench40 !== null) {
@@ -595,7 +617,15 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               // gdpval_provenance in the PR #66 round.
               rt.cache.capability_profiles = profiles;
               metricsModule.setCache(rt.cache);
-              capabilityScrapeFresh = true;
+              // Fresh only when the reasoning column arrived: profiles that
+              // carry briefcase/coding alone would stamp SCRAPE_VERSION and
+              // pin a cache without reasoning values for the whole TTL
+              // (planning's gates would stand down). Unstamped, the next
+              // scan retries (Sourcery PR #80 round).
+              capabilityScrapeFresh = Object.values(profiles).some((p) => typeof p.reasoning === 'number');
+              if (!capabilityScrapeFresh) {
+                routerLog('[scan] Capability profiles carry no reasoning blend - scrape stays unstamped and retries on the next scan');
+              }
             } else {
               routerLog('[scan] No capability profiles extracted - AA payload shape may have drifted');
             }
