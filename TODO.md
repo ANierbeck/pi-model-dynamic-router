@@ -210,6 +210,21 @@ its models are also members of `strategic` (checked against the dynamic
 config of 2026-10-24). Add `planning` explicitly, red-first, so the
 coverage does not depend on that overlap.
 
+### 🔎 **Open (2026-10-31): felt quality does not match the benchmark ranking**
+
+Owner observation, not a measurement: working with an explicit `HINT` on the
+newest Fable and on Opus, the difference to the models the groups pick is
+clearly noticeable, although the benchmark columns the ranking sorts by
+(GDPval, Briefcase) do not show it. The ranking therefore cannot express what
+the owner experiences. Open question: how does felt quality enter the ranking
+(e.g. owner ratings per model and task type, collected like the Laya live
+labels) without model names in shipped code (AGENTS.md §9; the user layer is
+allowed)? Needs its own plan (§11) once the owner wants it. Related facts: the
+user layer excludes the older Fable for its token consumption, Opus/Sonnet 5.5
+are back in because they are frugal, and the newest Fable has no consumption
+measurement yet (zero turns in the session files). It also inherits the older
+Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
+
 ### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
 
 `applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
