@@ -5,6 +5,18 @@ import type { Model } from '@earendil-works/pi-ai';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
+/**
+ * The Artificial Analysis capability columns a group can rank by
+ * (`Group.score_by`), next to the global GDPval. ONE list so every place that
+ * asks "is this a capability column?" agrees when a column is added.
+ */
+export const CAPABILITY_COLUMNS = ['briefcase', 'coding', 'reasoning'] as const;
+export type CapabilityColumn = (typeof CAPABILITY_COLUMNS)[number];
+
+export function isCapabilityColumn(value: unknown): value is CapabilityColumn {
+  return typeof value === 'string' && (CAPABILITY_COLUMNS as readonly string[]).includes(value);
+}
+
 export interface Defaults {
   gdpval_url: string;
   backoff_minutes: number[];
@@ -73,15 +85,27 @@ export interface Group {
   /**
    * Which capability column ranks WITHIN this group (ADR-0023 round 2):
    * 'gdpval' (default) | 'briefcase' (AA-Briefcase Elo — agentic knowledge
-   * work, the natural planning score) | 'coding' (SciCode/Terminal-Bench
-   * blend). Floors and caps stay on the global GDPval — a column never
-   * changes which models are ADMITTED, only their order within the pool.
+   * work, the natural design score) | 'coding' (SciCode/Terminal-Bench
+   * blend) | 'reasoning' (equal thirds of AA Intelligence Index, Omniscience
+   * and HLE Diamond — the planning score, owner decision 2026-10-31).
+   * Floors and caps stay on the global GDPval — a column never changes
+   * which models are ADMITTED, only their order within the pool (the one
+   * opt-in exception is `require_score_column`).
    * A model WITHOUT a value for the column is never mixed into the column
    * ranking by its GDPval: it ranks after every model that has the column,
    * in GDPval order among themselves (owner decision 2026-10-26).
    * calculateScore itself keeps the gdpval fallback for its callers.
    */
-  score_by?: 'gdpval' | 'briefcase' | 'coding';
+  score_by?: 'gdpval' | CapabilityColumn;
+  /**
+   * Refuse models that have no value in this group's `score_by` capability
+   * column ("a model that cannot be measured on this does not belong in this
+   * category", owner decision 2026-10-31). Default off: such models only rank
+   * last. Safety valve: when NO model has a value for the column (scrape never
+   * ran or failed) the gate stands down, so a stale install does not end up
+   * with an empty group. No effect on `gdpval` groups.
+   */
+  require_score_column?: boolean;
   max_cost?: number;
   max_cost_per_m?: number;
 
@@ -494,7 +518,7 @@ export interface Cache {
    * Same additive-merge lifecycle as gdpval_scores: setCache merges,
    * absent column = null (gdpval fallback), never 0.
    */
-  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number }>;
+  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number; reasoning?: number }>;
 
   /**
    * Per-slug PROVENANCE from the Artificial Analysis scrape (Task-0

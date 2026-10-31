@@ -57,7 +57,7 @@
       "score_by": "briefcase"
     },
     "planning": {
-      "description": "Planning and architecture - top tier only (GDPval >= 1700, briefcase-sorted)",
+      "description": "Planning and architecture - top tier only (GDPval >= 1700, reasoning-sorted: Intelligence Index, Omniscience, HLE Diamond)",
       "method": "best",
       "min_gdpval": 1700,
       "fallback_groups": [
@@ -65,7 +65,8 @@
         "standard",
         "simple"
       ],
-      "score_by": "briefcase"
+      "score_by": "reasoning",
+      "require_score_column": true
     },
     "dynamic": {
       "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",

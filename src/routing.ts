@@ -11,9 +11,10 @@ import type {
   GroupResolution,
   GroupPool,
 } from './types.ts';
+import { isCapabilityColumn } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { explainBestRanking } from './rank-explain.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, lookupContextWindow } from './metrics.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, hasCapabilityData, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
@@ -189,6 +190,9 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  *       src/agent-capability.ts) drop out of EVERY group; the prompt
  *       classifier chain never passes through here and keeps them
  *   4. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
+ *   4b. max_gdpval — upper tier boundary
+ *   4c. require_score_column (opt-in) — drop models without a value in the
+ *       group's own capability column
  *   5. max_cost           — total cost cap
  *   6. max_cost_per_m     — per-million input-price cap
  *   7. min_context_length — context window floor
@@ -302,6 +306,16 @@ export function applyGroupFilters(
   // method's score convergence (owner decision 2026-10-04).
   if (g.max_gdpval != null && g.max_gdpval > 0) {
     c = gate('max_gdpval', ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
+  }
+  // 4c. require_score_column — opt-in: a model with no value in the group's
+  //     own score_by capability column does not belong in this category
+  //     (owner decision 2026-10-31). Reads the SAME metrics-module mirror as
+  //     the ranking, so live, display and persist agree. Stands down when no
+  //     model at all has a value for the column (scrape never ran or
+  //     drifted): an empty group would be worse than an unranked one.
+  if (g.require_score_column && isCapabilityColumn(g.score_by) && hasCapabilityData(g.score_by)) {
+    const column = g.score_by;
+    c = gate('require_score_column', ref => lookupCapability(ref, column) !== null);
   }
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
@@ -686,8 +700,8 @@ export class Router {
   }
 
   /**
-   * 'best' ranking. With a capability column (score_by 'briefcase' or
-   * 'coding') the candidates split in two: models WITH a profile value for
+   * 'best' ranking. With a capability column (score_by 'briefcase', 'coding'
+   * or 'reasoning') the candidates split in two: models WITH a profile value for
    * that column are ranked on it, models WITHOUT one rank after all of them,
    * on GDPval among themselves. Scoring an unprofiled model by its GDPval
    * inside a column ranking mixed two scales (the coding column runs 130-250
@@ -697,7 +711,7 @@ export class Router {
    * calculateScore keeps its own gdpval fallback; only the ranking changes.
    */
   private sortBest(models: string[], taskType?: string): string[] {
-    const column = taskType === 'briefcase' || taskType === 'coding' ? taskType : null;
+    const column = isCapabilityColumn(taskType) ? taskType : null;
     if (column === null) return this.rankByScore(models, taskType);
     const profiled = models.filter((m) => lookupCapability(m, column) !== null);
     const unprofiled = models.filter((m) => lookupCapability(m, column) === null);
@@ -1164,8 +1178,8 @@ export class Router {
 
     if (g.method === 'best') {
       // Multi-metric scoring for 'best' method. The third arg is the group's
-      // score_by column (ADR-0023 round 2): 'briefcase'/'coding' rank by the
-      // AA capability columns, anything else (absent, 'gdpval', legacy group
+      // score_by column (ADR-0023 round 2): 'briefcase'/'coding'/'reasoning'
+      // rank by the AA capability columns, anything else (absent, 'gdpval', legacy group
       // names) by the global GDPval — the exact pre-round behavior.
       c = rank(this.sortBy(c, 'best', g.score_by ?? 'gdpval'));
     } else if (g.method === 'tiered') {
@@ -1417,7 +1431,7 @@ export class Router {
             ranked,
             scoreOf: (r) => calculateScore(r, column, this.cfg),
             costOf: (r) => effCost(r),
-            isProfiled: (r) => (column === 'briefcase' || column === 'coding' ? lookupCapability(r, column) !== null : true),
+            isProfiled: (r) => (isCapabilityColumn(column) ? lookupCapability(r, column) !== null : true),
             // The ranked order demotes limited refs to the end and unhealthy
             // ones within the available block — the reason must not hand the
             // top-score label to a model the router would not stream to right

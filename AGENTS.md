@@ -91,7 +91,7 @@
   with forwarding-exception termination, host-realistic stream fixtures and
   the PR #79 review round; fallback-exit characterization; turn-decision join; pool replay layout; the laya-spike review round
   (pool-record scope, first-sample metrics, demoted-top ranking reasons,
-  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin): 2395 passing / 3 skipped; do not
+  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column): 2419 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

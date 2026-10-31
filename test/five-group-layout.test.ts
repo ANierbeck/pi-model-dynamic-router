@@ -60,9 +60,11 @@ describe('shipped groups', () => {
     expect(groups.standard).toMatchObject({ method: 'tiered', min_gdpval: 300, max_cost: 2.0 });
   });
 
-  it('code_complex is the old tactical band; planning keeps 1700; design is planning at 1600 (D5)', () => {
+  it('code_complex is the old tactical band; planning keeps 1700 and reasons; design is planning at 1600 on Briefcase (D5)', () => {
     expect(groups.code_complex).toMatchObject({ method: 'best', min_gdpval: 1630, max_gdpval: 1700, score_by: 'coding' });
-    expect(groups.planning).toMatchObject({ method: 'best', min_gdpval: 1700, score_by: 'briefcase' });
+    // planning ranks by the reasoning blend since 2026-10-31 (owner decision);
+    // the floor stays 1700 and models without a value are refused.
+    expect(groups.planning).toMatchObject({ method: 'best', min_gdpval: 1700, score_by: 'reasoning', require_score_column: true });
     expect(groups.design).toMatchObject({ method: 'best', min_gdpval: 1600, score_by: 'briefcase' });
   });
 

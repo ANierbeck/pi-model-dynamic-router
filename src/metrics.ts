@@ -36,7 +36,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import { routerLog, errorLog } from './logger.ts';
-import type { Metrics, Config, Cache } from './types.ts';
+import { isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
 import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
@@ -594,17 +594,27 @@ let capabilityProfiles: NonNullable<Cache['capability_profiles']> = {};
 
 /**
  * Resolves a model ref to a capability column (AA-Briefcase Elo / coding
- * blend) via the same slug pipeline as lookupGdp. Returns null when the
+ * blend / reasoning blend) via the same slug pipeline as lookupGdp. Returns null when the
  * model, the profile, or the COLUMN is absent — null IS the fallback
  * signal (callers fall back to gdpval), never 0.
  */
-export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): number | null {
+export function lookupCapability(ref: string, column: CapabilityColumn): number | null {
   const slug = resolveSlug(ref);
   if (!slug) return null;
   const profile = capabilityProfiles[slug];
   if (!profile) return null;
   const v = profile[column];
   return typeof v === 'number' ? v : null;
+}
+
+/**
+ * Whether ANY scanned model carries a value for `column`. The safety valve of
+ * `Group.require_score_column`: with no data anywhere (scrape never ran,
+ * failed or drifted) a "must have a value" gate would empty the group, so it
+ * stands down instead.
+ */
+export function hasCapabilityData(column: CapabilityColumn): boolean {
+  return Object.values(capabilityProfiles).some((p) => typeof p?.[column] === 'number');
 }
 
 /** Test/inspection accessor for the merged capability profiles. */
@@ -791,7 +801,8 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * The 'best' method's ranking score (ADR-0023 round 2). The second param
  * is the group's score_by column — it FINALLY does something: 'briefcase'
  * ranks by AA-Briefcase Elo (agentic knowledge work), 'coding' by the
- * SciCode/Terminal-Bench blend. Everything else (absent, 'gdpval', legacy
+ * SciCode/Terminal-Bench blend, 'reasoning' by the Intelligence Index /
+ * Omniscience / HLE Diamond blend. Everything else (absent, 'gdpval', legacy
  * group-name strings from pre-round callers) ranks by the global GDPval —
  * the exact pre-round behavior.
  *
@@ -801,7 +812,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * GDPval-only").
  */
 export function calculateScore(ref: string, column?: string, _config?: Config): number {
-  if (column === 'briefcase' || column === 'coding') {
+  if (isCapabilityColumn(column)) {
     const v = lookupCapability(ref, column);
     if (v !== null) return v;
   }
