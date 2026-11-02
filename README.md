@@ -224,9 +224,13 @@ a confident Laya answer takes the route, everything else falls through
 unchanged. It is **experimental** and **disabled by default** — see
 `docs/config-override.md#classifier_laya` for every config key.
 
-- Requires **Apple Silicon**: Laya is served by an MLX sidecar
-  (`spikes/laya-http/server.py`) exposing `POST /classify`; the router only
-  talks HTTP to `127.0.0.1` and never downloads weights.
+- Requires **Apple Silicon**: Laya is served by an MLX sidecar exposing
+  `POST /classify` (the current reference server lives in the GitHub repo at
+  `spikes/laya-http/server.py` — it is not part of the npm package; a
+  packaged cross-platform sidecar with `GET /health` is planned, see
+  `docs/plans/2026-10-31-laya-sidecar-distribution.md`). The router only
+  talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` — enforced at
+  config load) and never downloads weights.
 - **Bring-your-own weights**: a pinned `checkpoint` is required when enabled.
   Publishing a fine-tuned router checkpoint is planned separately
   (`docs/plans/2026-10-31-laya-sidecar-distribution.md`).

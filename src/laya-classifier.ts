@@ -1,7 +1,7 @@
 // src/laya-classifier.ts
 // Local Laya typed-decision classifier (opt-in, disabled by default).
 //
-// Contract with the wrapper (contrib/laya-sidecar/server.py) — the endpoint is
+// Contract with the wrapper (spikes/laya-http/server.py) — the endpoint is
 // configurable via `classifier_laya.endpoint` (default http://127.0.0.1:8089):
 //   POST /classify {prompt: string, context?: {previousUserMessage?, lastAssistantSnippet?}}
 //   -> { category: string, confidence: number, probabilities: Record<string, number>, ms: number }
