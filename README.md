@@ -216,6 +216,25 @@ cloud candidate fails and Ollama is unavailable, the classifier falls back
 to static keyword-based classification (only if `allowStaticFallback` is
 enabled) — otherwise the classification fails and the router streams from the `simple` group.
 
+#### Local Laya classifier stage (experimental)
+
+An opt-in **local stage** can answer the category from a small multilingual
+encoder model (Laya, 322M parameters, Apache-2.0 base) instead of the chain:
+a confident Laya answer takes the route, everything else falls through
+unchanged. It is **experimental** and **disabled by default** — see
+`docs/config-override.md#classifier_laya` for every config key.
+
+- Requires **Apple Silicon**: Laya is served by an MLX sidecar
+  (`spikes/laya-http/server.py`) exposing `POST /classify`; the router only
+  talks HTTP to `127.0.0.1` and never downloads weights.
+- **Bring-your-own weights**: a pinned `checkpoint` is required when enabled.
+  Publishing a fine-tuned router checkpoint is planned separately
+  (`docs/plans/2026-10-31-laya-sidecar-distribution.md`).
+- `mode: "shadow"` (default) logs Laya's answer without affecting the route
+  (ADR-0027 decision log); `mode: "active"` lets a confident result route.
+  Keep the confidence gate (default 0.8) — the shipped confidence scale is
+  uncalibrated.
+
 ---
 
 ### Cascading Fallback & Intelligent Routing
