@@ -44,9 +44,10 @@
     "access": "public"
   },
   "files": [
-    "dist/",
-    "!dist/.cache",
-    "!dist/router-config.dynamic.json",
+    "dist/index.js",
+    "dist/router-config.json",
+    "dist/router-defaults.yaml",
+    "dist/model-map.yaml",
     "skills/",
     "PI.md",
     "README.md"
