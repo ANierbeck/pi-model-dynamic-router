@@ -15,7 +15,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
 import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug, lookupCapability } from './metrics.ts';
 import { applyGroupFilters, type GroupFilterLookups } from './routing.ts';
-import type { Config, Group } from './types.ts';
+import { isCapabilityColumn, type Config, type Group } from './types.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 
 export interface ModelWithMetadata {
@@ -175,7 +175,7 @@ export function sortModelsForGroup(
   const column = groupConfig.score_by ?? 'gdpval';
 
   if (groupConfig.method === 'best' || groupConfig.method === 'max_gdpval') {
-    if (column === 'briefcase' || column === 'coding') {
+    if (isCapabilityColumn(column)) {
       // Same rule as routing.ts sortBest (PR #75): a model WITHOUT a value
       // for the column never mixes into the column ranking via
       // calculateScore's gdpval fallback (two scales — the coding column

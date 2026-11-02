@@ -18,7 +18,7 @@
 // classifier probes no-op on an empty sessionCtx.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { createScanRunner } from '../src/scan-runner.js';
+import { createScanRunner, SCRAPE_VERSION } from '../src/scan-runner.js';
 import * as metricsModule from '../src/metrics.js';
 import type { Cache } from '../src/types.js';
 
@@ -91,5 +91,32 @@ describe('scan() capability persistence (PR #69 round)', () => {
     // ...but the version must stay unstamped so the NEXT scan retries the
     // scrape (needsGdpvalScrape: scrape_version !== SCRAPE_VERSION).
     expect(cache.scrape_version).toBeUndefined();
+  });
+});
+
+// ── PR #80 round (Sourcery) ────────────────────────────────────────────────
+
+const REASONING_PROFILE_HTML =
+  '{"slug":"gdpval-aa","initialModels":[{"id":"11111111-1111-1111-1111-111111111111","slug":"live-model","name":"Live Model","shortName":"LM","intelligenceIndex":50,"omniscience":40,"hleDiamond":0.6,"briefcaseElo":1500.5}]}';
+
+describe('scan() freshness needs the reasoning column (PR #80 round)', () => {
+  // Profiles that carry only briefcase/coding would stamp SCRAPE_VERSION 4
+  // and pin a cache WITHOUT reasoning values for the whole TTL: planning's
+  // gates would stand down and it would rank on the fallback until a forced
+  // scan. Unstamped, the next scan retries.
+  it('briefcase-only profiles do not stamp scrape_version', async () => {
+    const cache: Cache = { models_cached: new Date().toISOString(), openrouter_pricing: {} } as any;
+    stubFetch(ONE_PROFILE_HTML + SCORES_ONLY_HTML);
+    await createScanRunner(makeRt(cache)).scan(false);
+    expect(cache.capability_profiles?.['live-model']).toEqual({ briefcase: 1500.5 });
+    expect(cache.scrape_version).toBeUndefined();
+  });
+
+  it('a profile with a reasoning blend stamps scrape_version', async () => {
+    const cache: Cache = { models_cached: new Date().toISOString(), openrouter_pricing: {} } as any;
+    stubFetch(REASONING_PROFILE_HTML + SCORES_ONLY_HTML);
+    await createScanRunner(makeRt(cache)).scan(false);
+    expect(cache.capability_profiles?.['live-model']?.reasoning).toBeCloseTo(50, 5); // (50 + 40 + 60) / 3
+    expect(cache.scrape_version).toBe(SCRAPE_VERSION);
   });
 });

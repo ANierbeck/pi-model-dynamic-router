@@ -631,3 +631,19 @@ describe('fresh module — first version bump must build the token-set index', (
     expect(f.getM('zz/never-configured').gdpval).toBe(50);
   });
 });
+
+describe('capability profile mirror follows the LATEST cache (PR #80 round)', () => {
+  it('a model the newer cache dropped no longer resolves, and no longer counts as column data', () => {
+    world({ cache: { capability_profiles: { 'old-slug': { reasoning: 50 } } as any } });
+    expect(m.hasCapabilityData('reasoning')).toBe(true);
+    m.setCache({ available_models: [], capability_profiles: { 'new-slug': { briefcase: 5 } } } as any);
+    expect(m.getCapabilityProfiles()['old-slug']).toBeUndefined();
+    expect(m.hasCapabilityData('reasoning')).toBe(false);
+  });
+
+  it('a cache WITHOUT the field leaves the mirror untouched', () => {
+    world({ cache: { capability_profiles: { 'keep-slug': { reasoning: 50 } } as any } });
+    m.setCache({ available_models: [] } as any);
+    expect(m.getCapabilityProfiles()['keep-slug']).toEqual({ reasoning: 50 });
+  });
+});

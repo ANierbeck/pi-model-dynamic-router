@@ -5,10 +5,12 @@
 // rule inside the quality window, ADR-0023); this module only describes its
 // outcome so the `/router` overview can show it. It never decides anything.
 
+import { isCapabilityColumn } from './types.ts';
+
 export interface ExplainInput {
   /** Refs in the order the router ranks them. */
   ranked: string[];
-  /** The group's sort key for a model (GDPval, briefcase or coding score). */
+  /** The group's sort key for a model (GDPval or a capability column score). */
   scoreOf: (ref: string) => number;
   costOf: (ref: string) => number | 'unknown';
   /** Whether the model has a value for the group's score column. */
@@ -79,7 +81,7 @@ export function explainBestRanking(input: ExplainInput): Map<string, string> {
 
 /** Header text of a `best` group: the real sort key and the window, not a fixed "gdpval". */
 export function describeBestMethod(scoreBy: string | undefined, window: number | undefined): string {
-  const column = scoreBy === 'briefcase' || scoreBy === 'coding' ? scoreBy : 'gdpval';
+  const column = isCapabilityColumn(scoreBy) ? scoreBy : 'gdpval';
   const w = window && window > 0 ? ` · ${Number((window * 100).toFixed(1))}% window` : '';
   return `best by ${column}${w}`;
 }

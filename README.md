@@ -11,8 +11,9 @@
   models for daily coding, top-tier models reserved for design and planning work.
 - **Automatic discovery & pricing** — the router scans local daemons (Ollama,
   LM Studio) and cloud catalogs, and scrapes Artificial Analysis benchmark
-  scores (GDPval plus per-task capability columns: AA-Briefcase Elo for
-  planning work, SciCode/Terminal-Bench for coding).
+  scores (GDPval plus per-task capability columns: an Intelligence Index /
+  Omniscience / HLE Diamond blend for planning, AA-Briefcase Elo for design,
+  SciCode/Terminal-Bench for coding).
 - **Cost & quota balancing** — flat-fee subscription models carry the daily
   load so expensive top-tier models stay available; quality-equivalence
   windows pick the cheapest model that is just as good.
@@ -351,7 +352,7 @@ by billing preference. The shipped groups (see `router-config.json`):
 
 | Group | Method | Quality gate | Ranks within the pool by | Use for |
 |-------|--------|--------------|--------------------------|---------|
-| **planning** | `best` | GDPval ≥ 1700 | AA-Briefcase Elo (`score_by`) | Planning & architecture — top tier only |
+| **planning** | `best` | GDPval ≥ 1700 | Intelligence Index, Omniscience and HLE Diamond, equal thirds (`score_by: reasoning`) | Planning & architecture — top tier only |
 | **design** | `best` | GDPval ≥ 1600 | AA-Briefcase Elo (`score_by`) | Design decisions — the upper band |
 | **code_complex** | `best` | 1630 ≤ GDPval ≤ 1700 | SciCode/Terminal-Bench blend (`score_by`) | Daily coding — the free-tank tier |
 | **standard** | `tiered` | GDPval ≥ 300 | billing preference | Everyday tasks |
@@ -360,7 +361,14 @@ by billing preference. The shipped groups (see `router-config.json`):
 
 No curated model lists. Groups draw from all discovered models automatically.
 Quality gates (`min_gdpval`/`max_gdpval`) always use GDPval — a `score_by`
-column only orders the models **within** an admitted pool.
+column only orders the models **within** an admitted pool. A model without a
+value in the column ranks after every model that has one. `planning` goes one
+step further (`require_score_column`): a model that is not measured on the
+reasoning column does not belong in the planning tier and is left out, and
+`min_score: 35` adds a floor on that column (GDPval alone admitted a fast
+"Flash" model whose reasoning blend ranks it near last). Both rules stand down
+while no model has a value at all (before the first scrape), so a fresh
+install never ends up with an empty planning group.
 
 #### GDPval
 
