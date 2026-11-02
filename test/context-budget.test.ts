@@ -71,6 +71,26 @@ describe('planOutputBudget', () => {
     expect(estimateMessageTokens(messages as any)).toBeGreaterThanOrEqual(1000);
   });
 
+  it('counts toolCall arguments and thinking blocks, not 0 (reviewer Important 1)', () => {
+    // Regression: blockText returned '' for any block without .text/.content,
+    // so a write tool call with a whole file in `arguments` estimated as 0
+    // tokens and the window guard admitted models whose window is too small.
+    // Main's estimator stringified such blocks (v1.6.1 context-utils.ts).
+    const messages = [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'toolCall', name: 'write', arguments: { path: '/x', content: 'y'.repeat(40_000) } },
+          { type: 'thinking', thinking: 'z'.repeat(8_000) },
+        ],
+      },
+    ];
+    const est = estimateMessageTokens(messages as any);
+    // 48k chars / 4 = 12k tokens at the rough chars/4 rule; allow the JSON
+    // overhead of the serialized block to vary, but it must be far from 0.
+    expect(est).toBeGreaterThanOrEqual(10_000);
+  });
+
   it('counts CJK text at ~1 token per character, not chars/4', () => {
     const messages = [{ role: 'user', content: '中'.repeat(10_000) }];
     expect(estimateMessageTokens(messages as any)).toBeGreaterThanOrEqual(10_000);

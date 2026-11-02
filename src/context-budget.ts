@@ -53,7 +53,12 @@ function blockText(b: unknown): string {
   if (typeof block.text === 'string') return block.text;
   if (Array.isArray(block.content)) return (block.content as unknown[]).map(blockText).join('');
   if (typeof block.content === 'string') return block.content;
-  return '';
+  // Any other block (toolCall with its arguments, thinking, …): count the
+  // serialized block. Returning '' here estimated a write/edit call carrying
+  // a whole file as 0 tokens, so the window guard admitted models whose
+  // context window was too small (regression vs. v1.6.1, which stringified
+  // unknown blocks — merge-review Important 1, 2026-11-01).
+  return JSON.stringify(block);
 }
 
 function isImageBlock(b: unknown): boolean {
