@@ -36,7 +36,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import { routerLog, errorLog } from './logger.ts';
-import { isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
+import { CAPABILITY_COLUMNS, isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
 import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
@@ -560,6 +560,9 @@ export function setCache(newCache: Cache): void {
   // without the field leaves the mirror untouched.
   if (cache.capability_profiles) {
     capabilityProfiles = { ...cache.capability_profiles };
+    capabilityColumnsWithData = new Set(
+      CAPABILITY_COLUMNS.filter((col) => Object.values(capabilityProfiles).some((p) => typeof p?.[col] === 'number'))
+    );
   }
   // Task-0 identity audit (2026-10-12): per-slug provenance. REPLACE when
   // the cache carries the field (scan passes the map of the LATEST scrape —
@@ -616,8 +619,14 @@ export function lookupCapability(ref: string, column: CapabilityColumn): number 
  * failed or drifted) a "must have a value" gate would empty the group, so it
  * stands down instead.
  */
+// Columns that have at least one value in the current profile mirror, computed
+// once per setCache instead of scanning every profile per candidate per group
+// (merge review 2026-11-01, Minor: hasCapabilityData was O(profiles) per call
+// and the score-column gates call it per candidate).
+let capabilityColumnsWithData: ReadonlySet<CapabilityColumn> = new Set();
+
 export function hasCapabilityData(column: CapabilityColumn): boolean {
-  return Object.values(capabilityProfiles).some((p) => typeof p?.[column] === 'number');
+  return capabilityColumnsWithData.has(column);
 }
 
 /** Test/inspection accessor for the merged capability profiles. */

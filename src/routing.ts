@@ -1229,7 +1229,19 @@ export class Router {
     }
 
     if (c.length === 0) return null;
-    return { selected: c[0], candidates: c, pool: this.groupPool(name, g, c) };
+    // The decision-time pool is only read by the logging path (the resolve
+    // glue, and only when logPool is set) — build it lazily so plain
+    // resolutions (registration, /router, tools) don't pay for the
+    // paced-provider scan plus a score per candidate (merge review
+    // 2026-11-01, Minor). The getter memoizes, so repeated reads are free.
+    const res: GroupResolution = { selected: c[0], candidates: c };
+    let poolMemo: GroupPool | undefined;
+    Object.defineProperty(res, 'pool', {
+      enumerable: true,
+      configurable: true,
+      get: () => (poolMemo ??= this.groupPool(name, g, c)),
+    });
+    return res;
   }
 
   /**

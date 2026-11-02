@@ -8,7 +8,7 @@
 // decision (classification → resolve → stream), same group. No prompt text —
 // refs, metrics and flags only.
 
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,6 +52,22 @@ beforeAll(() => {
 });
 
 describe('Router.resolve carries the decision-time pool', () => {
+  it('builds the pool lazily — only when a reader accesses it (merge review 2026-11-01)', () => {
+    // The pool costs a paced-provider scan plus a score per candidate; plain
+    // resolutions (registration, /router, tools) never read it, so resolve()
+    // must not build it. Red against the eager implementation: resolve()
+    // itself called groupPool.
+    const router = new Router(testConfig, cache, new Map());
+    const spy = vi.fn((router as any).groupPool.bind(router));
+    (router as any).groupPool = spy;
+    const r = router.resolve('bestish');
+    expect(spy).not.toHaveBeenCalled();
+    expect(r!.pool?.group).toBe('bestish');
+    expect(spy).toHaveBeenCalledTimes(1);
+    void r!.pool;
+    expect(spy).toHaveBeenCalledTimes(1); // memoized
+  });
+
   it('ranks candidates with gdp, cost, score and the group it came from', () => {
     const router = new Router(testConfig, cache, new Map());
     const r = router.resolve('bestish');
