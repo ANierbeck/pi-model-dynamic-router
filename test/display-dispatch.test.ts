@@ -239,21 +239,21 @@ describe('detectGroup — an unscored ref takes the first UNRESTRICTED tier of t
   const detect = (groups: Record<string, any>) =>
     new Router({ ...config, model_groups: groups } as Config, cache, new Map()).detectGroup(unscored);
 
-  it('the list is scout, operational, tactical, strategic, fallback — each tier on its own', () => {
-    expect(detect({ strategic: { method: 'best' } })).toBe('strategic');
-    expect(detect({ tactical: { method: 'best' } })).toBe('tactical');
-    expect(detect({ fallback: { method: 'best' } })).toBe('fallback');
-    expect(detect({ fallback: { method: 'best' }, strategic: { method: 'best' } })).toBe('strategic');
-    expect(detect({ strategic: { method: 'best' }, tactical: { method: 'best' } })).toBe('tactical');
+  it('the list is simple, standard, code_complex, planning, design — each tier on its own', () => {
+    expect(detect({ planning: { method: 'best' } })).toBe('planning');
+    expect(detect({ code_complex: { method: 'best' } })).toBe('code_complex');
+    expect(detect({ simple: { method: 'best' } })).toBe('simple');
+    expect(detect({ simple: { method: 'best' }, planning: { method: 'best' } })).toBe('simple');
+    expect(detect({ planning: { method: 'best' }, code_complex: { method: 'best' } })).toBe('code_complex');
   });
 
   it('the fallback list wins over a min-0 group that merely sorts first (no null -> 0 coercion)', () => {
-    expect(detect({ zzz: { method: 'best', min_gdpval: 0 }, tactical: { method: 'best' } })).toBe('tactical');
+    expect(detect({ zzz: { method: 'best', min_gdpval: 0 }, code_complex: { method: 'best' } })).toBe('code_complex');
   });
 
   it('an explicit min_gdpval of 0 still counts as unrestricted; a positive floor does not', () => {
-    expect(detect({ scout: { method: 'best', min_gdpval: 0 } })).toBe('scout');
-    expect(detect({ scout: { method: 'best', min_gdpval: 100 } })).toBeNull();
+    expect(detect({ simple: { method: 'best', min_gdpval: 0 } })).toBe('simple');
+    expect(detect({ simple: { method: 'best', min_gdpval: 100 } })).toBeNull();
   });
 });
 

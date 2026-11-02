@@ -32,10 +32,10 @@ const mockWarnLog = vi.mocked(loggerModule.warnLog);
 
 const BASE_CONFIG: Config = {
   model_groups: {
-    scout: { method: 'best' },
-    operational: { method: 'best', min_gdpval: 300 },
-    simple: { method: 'best', min_gdpval: 300, max_cost: 0 },
-    tactical: { method: 'best', min_gdpval: 600, max_gdpval: 1700 },
+    simple: { method: 'tiered', min_gdpval: 0, max_cost: 0 },
+    standard: { method: 'tiered', min_gdpval: 300, max_cost: 2.0 },
+    code_complex: { method: 'best', min_gdpval: 1630, max_gdpval: 1700 },
+    design: { method: 'best', min_gdpval: 1600 },
     planning: { method: 'best', min_gdpval: 1700 },
   },
   model_metrics: {},
@@ -52,10 +52,10 @@ afterEach(() => {
 
 describe('getGroupForCategory with category_groups overrides', () => {
   it('built-in mapping applies when no override is configured', () => {
-    expect(getGroupForCategory('code_complex')).toBe('tactical');
-    expect(getGroupForCategory('design')).toBe('planning');
-    expect(getGroupForCategory('continue')).toBe('tactical');
-    expect(getGroupForCategory('does-not-exist')).toBe('fallback');
+    expect(getGroupForCategory('code_complex')).toBe('code_complex');
+    expect(getGroupForCategory('design')).toBe('design');
+    expect(getGroupForCategory('continue')).toBe('standard');
+    expect(getGroupForCategory('does-not-exist')).toBe('simple');
   });
 
   it('a cfg fixture maps code_complex → planning and the resolver follows it', () => {
@@ -65,26 +65,26 @@ describe('getGroupForCategory with category_groups overrides', () => {
     };
     expect(getGroupForCategory('code_complex', cfg)).toBe('planning');
     // Sibling categories keep their built-in mapping.
-    expect(getGroupForCategory('standard', cfg)).toBe('operational');
-    expect(getGroupForCategory('continue', cfg)).toBe('tactical');
+    expect(getGroupForCategory('standard', cfg)).toBe('standard');
+    expect(getGroupForCategory('continue', cfg)).toBe('standard');
   });
 
   it('the module-level install (setCategoryGroupMapping) applies without a cfg argument', () => {
-    setCategoryGroupMapping({ design: 'tactical' });
-    expect(getGroupForCategory('design')).toBe('tactical');
+    setCategoryGroupMapping({ design: 'code_complex' });
+    expect(getGroupForCategory('design')).toBe('code_complex');
     expect(getGroupForCategory('planning')).toBe('planning');
   });
 
   it('an explicit cfg argument wins over the module-level install', () => {
-    setCategoryGroupMapping({ design: 'tactical' });
-    const cfg: Config = { ...BASE_CONFIG, category_groups: { design: 'scout' } };
-    expect(getGroupForCategory('design', cfg)).toBe('scout');
+    setCategoryGroupMapping({ design: 'code_complex' });
+    const cfg: Config = { ...BASE_CONFIG, category_groups: { design: 'simple' } };
+    expect(getGroupForCategory('design', cfg)).toBe('simple');
   });
 
   it('an override for one category never leaks into another category', () => {
     const cfg: Config = { ...BASE_CONFIG, category_groups: { simple: 'planning' } };
     expect(getGroupForCategory('simple', cfg)).toBe('planning');
-    expect(getGroupForCategory('standard', cfg)).toBe('operational');
+    expect(getGroupForCategory('standard', cfg)).toBe('standard');
   });
 });
 
@@ -95,19 +95,19 @@ describe('deepMergeConfig carries category_groups through the layers', () => {
     });
     expect(merged.category_groups).toEqual({ code_complex: 'planning' });
     const merged2 = deepMergeConfig(merged, {
-      category_groups: { design: 'tactical' },
+      category_groups: { design: 'code_complex' },
     });
-    expect(merged2.category_groups).toEqual({ code_complex: 'planning', design: 'tactical' });
+    expect(merged2.category_groups).toEqual({ code_complex: 'planning', design: 'code_complex' });
   });
 
   it('a project layer overrides a single category without dropping the user layer entries', () => {
     const global = deepMergeConfig(BASE_CONFIG, {
-      category_groups: { code_complex: 'planning', design: 'tactical' },
+      category_groups: { code_complex: 'planning', design: 'code_complex' },
     });
     const project = deepMergeConfig(global, {
-      category_groups: { code_complex: 'operational' },
+      category_groups: { code_complex: 'standard' },
     });
-    expect(project.category_groups).toEqual({ code_complex: 'operational', design: 'tactical' });
+    expect(project.category_groups).toEqual({ code_complex: 'standard', design: 'code_complex' });
   });
 });
 
@@ -152,7 +152,7 @@ describe('loadLayeredConfig validates category_groups (warn, never throw)', () =
     // The offending entry is dropped; the valid sibling still applies.
     expect(config.category_groups).toEqual({ code_complex: 'planning' });
     expect(getGroupForCategory('code_complex', config)).toBe('planning');
-    expect(getGroupForCategory('not_a_category', config)).toBe('fallback');
+    expect(getGroupForCategory('not_a_category', config)).toBe('simple');
     // The warning names the offending entry.
     expect(mockWarnLog).toHaveBeenCalledTimes(1);
     const msg = String(mockWarnLog.mock.calls[0][0]);
@@ -164,12 +164,12 @@ describe('loadLayeredConfig validates category_groups (warn, never throw)', () =
     fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
     fs.writeFileSync(
       path.join(cwdDir, '.pi', 'router-config.json'),
-      JSON.stringify({ category_groups: { design: 'no_such_group', simple: 'scout' } })
+      JSON.stringify({ category_groups: { design: 'no_such_group', simple: 'standard' } })
     );
     const { config } = loadLayeredConfig(extDir, cwdDir);
-    expect(config.category_groups).toEqual({ simple: 'scout' });
-    expect(getGroupForCategory('design', config)).toBe('planning'); // built-in stands
-    expect(getGroupForCategory('simple', config)).toBe('scout');
+    expect(config.category_groups).toEqual({ simple: 'standard' });
+    expect(getGroupForCategory('design', config)).toBe('design'); // built-in stands
+    expect(getGroupForCategory('simple', config)).toBe('standard');
     expect(mockWarnLog).toHaveBeenCalledTimes(1);
     const msg = String(mockWarnLog.mock.calls[0][0]);
     expect(msg).toContain('category_groups');
@@ -206,8 +206,8 @@ describe('category_groups survives the dynamic-config resync (user intent)', () 
       category_groups: { code_complex: 'planning' },
     } as Config;
     const dyn = {
-      model_groups: { tactical: { method: 'best' } },
-      category_groups: { code_complex: 'tactical' }, // stale value from an old file
+      model_groups: { code_complex: { method: 'best' } },
+      category_groups: { code_complex: 'code_complex' }, // stale value from an old file
     } as unknown as Config;
     resyncDynamicFromStatic(dyn, staticCfg);
     expect(dyn.category_groups).toEqual({ code_complex: 'planning' });
@@ -216,26 +216,26 @@ describe('category_groups survives the dynamic-config resync (user intent)', () 
   it('resyncDynamicFromStatic installs the mapping when the dynamic file predates the key', () => {
     const staticCfg = {
       ...BASE_CONFIG,
-      category_groups: { design: 'tactical' },
+      category_groups: { design: 'code_complex' },
     } as Config;
     const dyn = {
       model_groups: { tactical: { method: 'best' } },
     } as unknown as Config;
     resyncDynamicFromStatic(dyn, staticCfg);
-    expect(dyn.category_groups).toEqual({ design: 'tactical' });
+    expect(dyn.category_groups).toEqual({ design: 'code_complex' });
   });
 });
 
 describe('built-in mapping is unchanged (defaults for everyone)', () => {
   it('CATEGORY_TO_GROUP maps the seven v2 categories to their groups', () => {
     expect(CATEGORY_TO_GROUP).toEqual({
-      simple: 'scout',
+      simple: 'simple',
       code_simple: 'simple',
-      standard: 'operational',
-      code_complex: 'tactical',
-      design: 'planning',
+      standard: 'standard',
+      code_complex: 'code_complex',
+      design: 'design',
       planning: 'planning',
-      continue: 'tactical',
+      continue: 'standard',
     });
   });
 

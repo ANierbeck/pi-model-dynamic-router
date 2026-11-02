@@ -25,13 +25,13 @@ flowchart TD
         PROBEDM --> CLOUD
         PROV --> CLOUD
         CLOUD -- "fails / disabled" --> STATIC["Static classifier<br/>(heuristic last resort)"]
-        CLOUD -- "structured reply" --> CATOUT["Category: trivial · simple · code_simple · standard ·<br/>code_complex · design · planning · exploration · fallback"]
+        CLOUD -- "structured reply" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
         STATIC --> CATOUT
     end
 
     subgraph INH["2 · Category adjustments (src/content-classifier.ts)"]
         direction TB
-        FB{"fallback category<br/>or low confidence?"}
+        FB{"continue category<br/>or low confidence?"}
         FB -- "yes" --> INHERIT["Inherit lastCategory<br/>(task-type-balancing Phase 2;<br/>low-confidence same idea)"]
         FB -- "no, confident" --> OVERRIDE["category_groups user override<br/>wins over built-in CATEGORY_TO_GROUP<br/>(Phase 3)"]
         INHERIT --> OVERRIDE
@@ -40,12 +40,12 @@ flowchart TD
     subgraph GROUP["3 · Group selection (src/stream-orchestrator.ts)"]
         direction TB
         ESC{"Escalation active?<br/>(src/escalation.ts:<br/>streak / LLM-based)"}
-        ESC -- "level ≠ operational" --> ESCG["Use the escalated group"]
+        ESC -- "level ≠ standard" --> ESCG["Use the escalated group"]
         ESC -- "no" --> MAP["category → group<br/>(CATEGORY_TO_GROUP / override)"]
         ESG{"Classification<br/>succeeded?"}
         ESCG --> ESG
         MAP --> ESG
-        ESG -- "failed / unavailable" --> FBG["Group 'fallback'<br/>(+ its fallback_groups appended)"]
+        ESG -- "failed / unavailable" --> FBG["Group 'simple'<br/>(+ its fallback_groups appended)"]
         ESG -- "yes" --> GOUT["Target group"]
         FBG --> GOUT
     end
@@ -113,13 +113,16 @@ flowchart TD
    embedding-only/non-completion models and sorts by parameter size; the probe
    marks models whose backend lacks structured output (501) permanently
    (`classifier_no_schema`).
-2. **Category adjustments (Phase 2/3 of task-type balancing).** `fallback`
-   ("ambiguous, or a short continuation/confirmation") inherits the previous
-   turn's category; low-confidence replies do too. `category_groups` user
-   overrides win over the built-in `CATEGORY_TO_GROUP`.
+2. **Category adjustments (Phase 2/3 of task-type balancing).** `continue`
+   ("a short continuation/confirmation", not a self-contained task) inherits
+   the previous turn's category; low-confidence replies do too. With no
+   previous category, `continue` goes to `standard` (D6). `category_groups`
+   user overrides win over the built-in `CATEGORY_TO_GROUP`, which maps every
+   category to the group named like it (`simple` and `code_simple` share
+   `simple`; `continue` shares `standard`).
 3. **Group selection.** An active escalation (a streak of frustration signals
    or the LLM-based check, src/escalation.ts) overrides the classified group;
-   a failed classification routes to the `fallback` group with its
+   a failed classification routes to the `simple` group with its
    `fallback_groups` appended. An explicit `hint:group:<name>` in the prompt
    routes directly (only from a user hint — the synthesis layer was removed).
 4. **Candidate pool.** Everything is derived from Pi's own registry plus scan

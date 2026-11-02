@@ -810,7 +810,11 @@ describe('context-overflow', () => {
         JSON.stringify({
           free_models: [],
           rate_limit_wait_max_ms: 0,
-          model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+          // 'standard' is a member of FALLBACK_GROUP_ORDER since the five-group
+          // layout, so an empty fallback_groups would cascade into 'simple' and
+          // narrate it. code_writer sits outside that order; its 32k
+          // min_context_length would drop this fixture model, so it is lifted.
+          model_groups: { code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 } },
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
@@ -857,7 +861,7 @@ describe('context-overflow', () => {
 
         // Build a ~30K-token conversation (120K chars / 4).
         const bigMessage = 'x '.repeat(60_000);
-        const groupModel = { provider: 'standard', id: 'standard' };
+        const groupModel = { provider: 'code_writer', id: 'code_writer' };
         const context: any = {
           messages: [{ role: 'user', content: bigMessage }],
         };
@@ -2367,7 +2371,11 @@ describe('skip-failure-malus', () => {
           // so applyGroupFilters keeps it.
           providers: { 'phantom-provider': { billing: 'subscription' } },
           rate_limit_wait_max_ms: 0,
-          model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+          // 'standard' is a member of FALLBACK_GROUP_ORDER since the five-group
+          // layout, so an empty fallback_groups would cascade into 'simple' and
+          // narrate it. code_writer sits outside that order; its 32k
+          // min_context_length would drop this fixture model, so it is lifted.
+          model_groups: { code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 } },
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
@@ -2406,7 +2414,7 @@ describe('skip-failure-malus', () => {
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
-        const groupModel = { provider: 'standard', id: 'standard' };
+        const groupModel = { provider: 'code_writer', id: 'code_writer' };
         const context: any = { messages: [{ role: 'user', content: 'hello' }] };
 
         const events1 = await drainStream(defaultExport.groupStream(groupModel, context, {}));

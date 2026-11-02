@@ -2,9 +2,11 @@
 
 ## Overview
 
-The pi-model-router extension dynamically routes model groups (strategic,
-tactical, operational, scout, etc.) to concrete models based on intelligence
-scores (GDPval), cost, availability, and user preferences.
+The pi-model-router extension dynamically routes model groups (the five
+category groups `simple`, `standard`, `code_complex`, `design` and `planning`,
+plus the special groups `dynamic`, `bulk_reader` and `code_writer`) to concrete
+models based on intelligence scores (GDPval), cost, availability, and user
+preferences.
 
 ## Key modules
 
@@ -171,6 +173,17 @@ inline in `src/discovery.ts`.
   global exclude rules + session scoping.
 - `getTopModels(group, n)` — top N candidates for a group, used by the
   `/router` TUI table.
+
+### `src/laya-classifier.ts` — Local Laya classifier stage (experimental)
+
+Opt-in stage of the content classifier (the `classifier_laya` config block):
+answers the category from a local MLX sidecar (Apple Silicon) over
+`POST /classify` and either routes (`mode: "active"`, above the confidence
+gate) or only logs (`mode: "shadow"`, ADR-0027). Disabled by default;
+`checkpoint` required when enabled — the router never downloads weights. A
+low-confidence answer, a timeout, or a down sidecar is a plain fall-through
+for the chain in `src/content-classifier.ts`; nothing about the shipped
+routing depends on this stage.
 
 ## Configuration
 

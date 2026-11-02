@@ -23,6 +23,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { getGroupForCategory } from '../src/content-classifier.ts';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
+import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 
 export interface SessionPrompt {
   text: string;
@@ -36,7 +37,16 @@ export interface DecisionRecordLite {
   ts: string;
   stage: string;
   final: { category: string | null; group: string | null };
-  input: { text: { prompt: string } | null; sha: string };
+  input: {
+    text: { prompt: string; previousUserMessage?: string; lastAssistantSnippet?: string } | null;
+    sha: string;
+  };
+}
+
+/** Background context the known classifier saw (store_text "full" records only). */
+export interface CorpusContext {
+  previousUserMessage?: string;
+  lastAssistantSnippet?: string;
 }
 
 export interface CorpusItem {
@@ -47,6 +57,8 @@ export interface CorpusItem {
   ts: string;
   hasAttachment: boolean;
   duplicates: number;
+  /** Present when the decision record stored the context texts. */
+  context?: CorpusContext;
 }
 
 export interface Disagreement {
@@ -141,8 +153,14 @@ export function buildCorpus(opts: {
   };
   for (const r of opts.records ?? []) {
     if (opts.since && r.ts < opts.since) continue;
+    if (!isRoutingRecord(r)) continue; // observations / comparators / pool snapshots never routed
     const prompt = r.input?.text?.prompt;
     if (!prompt) continue; // store_text "none" — no prompt, nothing to replay
+    const t = r.input.text!;
+    const context: CorpusContext = {
+      ...(t.previousUserMessage ? { previousUserMessage: t.previousUserMessage } : {}),
+      ...(t.lastAssistantSnippet ? { lastAssistantSnippet: t.lastAssistantSnippet } : {}),
+    };
     add({
       prompt,
       knownCategory: r.final?.category ?? null,
@@ -151,6 +169,7 @@ export function buildCorpus(opts: {
       ts: r.ts,
       hasAttachment: false,
       duplicates: 0,
+      ...(Object.keys(context).length ? { context } : {}),
     });
   }
   for (const s of opts.sessionPrompts ?? []) {
@@ -192,13 +211,15 @@ const KNOWN_CATEGORIES = new Set(VALID_CATEGORIES);
 
 async function classifyViaEndpoint(
   endpoint: string,
-  item: { prompt: string; hasAttachment?: boolean },
+  item: { prompt: string; context?: CorpusContext },
 ): Promise<{ category: string | null; invalid: boolean; error: boolean }> {
   try {
     const res = await fetch(`${endpoint.replace(/\/$/, '')}/classify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: item.prompt }),
+      // Same inputs the known classifier saw: the prompt plus, when the
+      // decision record stored them, the two background context texts.
+      body: JSON.stringify({ prompt: item.prompt, ...(item.context ? { context: item.context } : {}) }),
     });
     if (!res.ok) return { category: null, invalid: false, error: true };
     const body = (await res.json().catch(() => null)) as any;

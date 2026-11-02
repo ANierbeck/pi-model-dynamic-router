@@ -15,7 +15,7 @@
 
 import { createHash } from 'node:crypto';
 import { appendRotating, procTag } from './logger.ts';
-import type { ClassifierLogConfig } from './types.ts';
+import type { ClassifierLogConfig, GroupPool, PoolCandidate } from './types.ts';
 
 export const DECISION_LOG_VERSION = 1;
 
@@ -56,11 +56,45 @@ export interface DecisionInput {
   };
 }
 
+/**
+ * Stages whose records never routed a prompt: the pool snapshot, the live A/B
+ * comparator, and the momentum observations. Every reader that counts
+ * decisions (turn join, failover walk, pool replay, shadow stats) skips them —
+ * a stage that is added without joining this set inflates those numbers.
+ */
+export const NON_ROUTING_STAGES: ReadonlySet<string> = new Set([
+  'pool',
+  'comparator',
+  'observation',
+  'observation-comparator',
+]);
+
+/**
+ * True exactly for records whose stage routed (or could have routed) a
+ * prompt. The single source of truth for every reader that counts or joins
+ * decisions: turn join, failover walk, pool replay, shadow/pair stats and the
+ * replay corpus. A stage that joins NON_ROUTING_STAGES later is skipped by all
+ * of them at once.
+ */
+export function isRoutingRecord(rec: { stage: string }): boolean {
+  return !NON_ROUTING_STAGES.has(rec.stage);
+}
+
 export interface DecisionRecord {
   v: number;
   ts: string;
   proc: string;
-  /** hint | compaction | momentum | cache | llm-local | llm-cloud | static | fallback */
+  /** hint | compaction | momentum | cache | laya | llm-local | llm-cloud | static | fallback |
+   * comparator — the DETACHED background chain of the live A/B snapshot (owner
+   * decision 2026-10-25): written only when a confident Laya answer took the
+   * route, `compare_in_background` is set, and the chain it replaced answered.
+   * Same `input.sha` as the `laya` record of that classification — the pairing
+   * key for evaluation. Never routed.
+   * observation / observation-comparator — Laya's answer and the chain's answer
+   * for a short MOMENTUM prompt (`classifier_laya.observe_momentum`, owner go
+   * 2026-10-29). The prompt itself was routed by momentum (stage `momentum`,
+   * same `input.sha`); these records say what the classifiers would have
+   * decided without it. Never routed, `laya.acted` is always false. */
   stage: string;
   /** Model ref that produced the final classification (null for static/fallback). */
   answered_by: string | null;
@@ -70,6 +104,10 @@ export interface DecisionRecord {
   cache_origin: string | null;
   /** The classification as the model returned it, before post-processing. */
   raw: null | { category: string | null; confidence: number | null; reason: null | string };
+  /** The session's previous category before this classification — sticky
+   * context, needed to evaluate 'continue' answers against the group they
+   * would have kept (shadow monitoring, plan 2026-10-15). */
+  prev: null | { category: string | null; group: string | null };
   /** The classification actually applied, with the routed group. */
   final: {
     category: string | null;
@@ -81,7 +119,38 @@ export interface DecisionRecord {
   steps: string[];
   /** Total classifyPrompt time in ms. */
   ms: number;
+  /**
+   * What the Laya stage said about this input - present whenever the stage
+   * answered, in ANY mode (omitted otherwise, so older records and runs
+   * without the stage are unchanged). `acted: false` is the shadow-mode
+   * comparison data (ADR-0027 Phase 4): same input, what Laya would have said
+   * next to what the chain actually decided in `final`. Also logged when the
+   * answer fell through (low confidence / `fallback`) - calibration needs
+   * those cases most.
+   */
+  laya?: LayaObservation;
   input: DecisionInput;
+}
+
+export interface LayaObservation {
+  /** `laya:<checkpoint>` */
+  ref: string;
+  category: string;
+  confidence: number;
+  /**
+   * Full class distribution of the answer (label -> probability, as the
+   * sidecar reports it). The winning label's confidence alone cannot be
+   * calibrated against owner labels; the distribution can (temperature /
+   * class-bias fits, per-class precision). The sidecar contract requires it
+   * (`classifyWithLayaRaw` rejects answers without it); absent only on records
+   * written before the field existed, and when the distribution is malformed
+   * (see `validLayaDistribution`).
+   */
+  probabilities?: Record<string, number>;
+  /** True only when this answer became the classification (active mode, vetted). */
+  acted: boolean;
+  /** Wall time of the whole stage (probe included when it ran). */
+  ms: number;
 }
 
 /** Mutable per-call trace threaded through the classifier via AsyncLocalStorage. */
@@ -92,6 +161,8 @@ export interface ClassificationTrace {
   cacheOrigin: string | null;
   /** Ref of the model that answered (updated by noteSource). */
   answeredBy: string | null;
+  /** Laya stage observation, set by the chain when the stage answered. */
+  laya?: LayaObservation;
 }
 
 export function newTrace(): ClassificationTrace {
@@ -137,6 +208,7 @@ export interface RecordParams {
   prompt: string;
   stage: string;
   trace: ClassificationTrace;
+  prev?: { category: string | null; group: string | null } | null;
   final: {
     category: string | null;
     group: string | null;
@@ -173,6 +245,9 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
       confidence: p.trace.raw.confidence ?? null,
       reason: reasonsAllowed ? p.trace.raw.reason : null,
     },
+    prev: p.prev
+      ? { category: p.prev.category ?? null, group: p.prev.group ?? null }
+      : null,
     final: {
       category: p.final.category,
       group: p.final.group,
@@ -181,6 +256,7 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
     },
     steps: p.trace.steps,
     ms: p.ms,
+    ...(p.trace.laya ? { laya: p.trace.laya } : {}),
     input: {
       chars: p.prompt.length,
       words: p.prompt.trim() ? p.prompt.trim().split(/\s+/).length : 0,
@@ -205,5 +281,46 @@ export function writeDecisionRecord(rec: DecisionRecord, home: string, log: { ma
   } catch {
     // Unwritable location, full disk, another process rotating: swallow.
     // The classification is worth more than its log line.
+  }
+}
+
+/**
+ * The decision-time candidate pool, one record per group resolution that
+ * drives a stream (route 2 of the pool replay, ADR-0027 log): written to the
+ * same jsonl as the decision records, ordered right after the decision of
+ * the same turn (classification → resolve → stream). Correlation key with
+ * the decision record: `proc` + group + timestamp; the record deliberately
+ * carries NO `input` (no prompt, no sha) — readers without an `input.sha`
+ * are pool records and have nothing to join on (readDecisions lives in
+ * scripts/turn-decision-join.ts).
+ */
+export interface DecisionPoolRecord {
+  v: number;
+  ts: string;
+  proc: string;
+  stage: 'pool';
+  group: string;
+  method: string;
+  candidates: PoolCandidate[];
+}
+
+export function buildPoolRecord(pool: GroupPool): DecisionPoolRecord {
+  return {
+    v: DECISION_LOG_VERSION,
+    ts: new Date().toISOString(),
+    proc: procTag(),
+    stage: 'pool',
+    group: pool.group,
+    method: pool.method,
+    candidates: pool.candidates,
+  };
+}
+
+/** Append one pool record; fail-open like writeDecisionRecord. */
+export function writePoolRecord(rec: DecisionPoolRecord, home: string, log: { maxBytes: number; keep: number }): void {
+  try {
+    appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
+  } catch {
+    // Same contract as writeDecisionRecord: logging never breaks routing.
   }
 }

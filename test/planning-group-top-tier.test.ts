@@ -32,8 +32,8 @@ const repoCfg = JSON.parse(readFileSync(join(repoRoot, 'router-config.json'), 'u
 const testConfig: Config = {
   model_groups: {
     planning: repoCfg.model_groups!.planning,
-    strategic: repoCfg.model_groups!.strategic,
-    tactical: repoCfg.model_groups!.tactical,
+    design: repoCfg.model_groups!.design,
+    code_complex: repoCfg.model_groups!.code_complex,
   },
   model_metrics: {
     'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
@@ -79,19 +79,29 @@ describe('shipped config: the planning group exists and is top-tier-only by floo
     const g = repoCfg.model_groups!.planning;
     expect(g.fallback_groups).toBeDefined();
     expect(g.fallback_groups!.length).toBeGreaterThan(0);
-    expect(g.fallback_groups![0]).toBe('strategic');
+    expect(g.fallback_groups![0]).toBe('code_complex');
   });
 });
 
-describe('CATEGORY_TO_GROUP: design and planning route to the planning group', () => {
-  it('design → planning (not tactical)', () => {
-    expect(CATEGORY_TO_GROUP.design).toBe('planning');
+describe('CATEGORY_TO_GROUP: design and planning are the two top groups (D5)', () => {
+  it('design → design (its own group at floor 1600)', () => {
+    expect(CATEGORY_TO_GROUP.design).toBe('design');
   });
-  it('planning → planning (not tactical)', () => {
+  it('planning → planning (top tier only, floor 1700)', () => {
     expect(CATEGORY_TO_GROUP.planning).toBe('planning');
   });
-  it('code_complex stays tactical (glm free tank keeps the coding daily load)', () => {
-    expect(CATEGORY_TO_GROUP.code_complex).toBe('tactical');
+  it('code_complex stays in its own band group (glm free tank keeps the coding daily load)', () => {
+    expect(CATEGORY_TO_GROUP.code_complex).toBe('code_complex');
+  });
+});
+
+describe('design group filtering (D5): the 1600 floor admits the wider upper band', () => {
+  it('sonnet/opus pass; glm (1644) passes too — the planning 1700 floor is what keeps it out', () => {
+    const filtered = applyGroupFilters(ALL, testConfig.model_groups!.design, testConfig);
+    expect(filtered).toContain('claude-bridge/claude-sonnet-5-5');
+    expect(filtered).toContain('claude-bridge/claude-opus-5-5');
+    expect(filtered).toContain('mistral/zai-glm-5-3');
+    expect(filtered).not.toContain('mistral/mistral-medium-3.5');
   });
 });
 

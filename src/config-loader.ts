@@ -24,6 +24,7 @@ import { homedir } from 'node:os';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
+import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -102,6 +103,7 @@ export function loadLayeredConfig(
   const globalOverridePath = path.join(piAgentDir(), 'router-config.user.json');
   const globalOverride = tryReadPartial(globalOverridePath, log);
   if (globalOverride) {
+    validateRemovedGroups(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   }
@@ -110,13 +112,155 @@ export function loadLayeredConfig(
   const projectOverridePath = path.join(cwd, '.pi', 'router-config.json');
   const projectOverride = tryReadPartial(projectOverridePath, log);
   if (projectOverride) {
+    validateRemovedGroups(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   }
 
   validateCategoryGroups(config);
+  validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Groups of the 13-group layout that the five-group layout removed or renamed
+ * (docs/plans/2026-10-25-category-group-mismatch.md, D2/D4), mapped to the
+ * group that took over their role. Decision D3: no read aliases in 2.0, so a
+ * config still naming one is warned about, not translated. `complex` had no
+ * direct successor; `standard` is the closest mid band.
+ */
+export const REMOVED_GROUPS: Readonly<Record<string, string>> = {
+  trivial: 'simple',
+  scout: 'simple',
+  fallback: 'simple',
+  operational: 'standard',
+  tactical: 'code_complex',
+  strategic: 'planning',
+  complex: 'standard',
+};
+
+/**
+ * Warn about every reference to a removed group left in a user/project layer
+ * and drop it BEFORE the layer is merged: a `model_groups` entry (it would
+ * otherwise be a stray method-less group while the value the owner meant for
+ * the successor never applies), a `fallback_groups` entry, a
+ * `delegation.expensive_groups` entry. Only override layers are checked — the
+ * embedded defaults are the shipped config and own their group names. A list
+ * that held only removed names is deleted so the embedded default stands (an
+ * emptied `expensive_groups` would mean "check disabled" and silently turn the
+ * expensive-model read block off). Warn, never throw — an outdated override
+ * must not break routing. `category_groups` is covered by
+ * validateCategoryGroups (unknown group).
+ */
+function validateRemovedGroups(layer: Partial<Config>, source: string): void {
+  const hint = (name: string) => `moved to "${REMOVED_GROUPS[name]}" in the five-group layout`;
+  const groups = layer.model_groups as Record<string, { fallback_groups?: string[] | null }> | undefined;
+  if (groups && typeof groups === 'object') {
+    for (const name of Object.keys(groups)) {
+      if (Object.hasOwn(REMOVED_GROUPS, name)) {
+        warnLog(`[router] ${source} model_groups: removed group "${name}" — ignored; ${hint(name)}, move the settings there`);
+        delete groups[name];
+      }
+    }
+    for (const [name, g] of Object.entries(groups)) {
+      const chain = g?.fallback_groups;
+      if (!Array.isArray(chain)) continue;
+      const kept = chain.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
+      for (const t of chain) {
+        if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`);
+      }
+      if (kept.length === chain.length) continue;
+      if (kept.length > 0) g.fallback_groups = kept;
+      else delete g.fallback_groups;
+    }
+  }
+  const expensive = layer.delegation?.expensive_groups;
+  if (layer.delegation && Array.isArray(expensive)) {
+    const kept = expensive.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
+    for (const t of expensive) {
+      if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`);
+    }
+    if (kept.length === expensive.length) return;
+    if (kept.length > 0) layer.delegation.expensive_groups = kept;
+    else delete layer.delegation.expensive_groups;
+  }
+}
+
+/**
+ * Validate the opt-in Laya classifier stage (src/types.ts, ClassifierLayaConfig).
+ *
+ * Rules:
+ * - `enabled: true` REQUIRES a pinned checkpoint reference (ADR-0025: the router
+ *   never ships or infers a concrete model name).
+ * - `endpoint` must be loopback (127.0.0.0/8, localhost, ::1): the documented
+ *   privacy promise is that prompt text never leaves the machine, so a remote
+ *   endpoint is rejected, not merely discouraged (merge review 2026-11-01).
+ * - On `enabled: true` the remaining fields are filled with defaults so callers
+ *   can read them without guards (endpoint, timeout_ms, confidence_threshold, mode);
+ *   wrong-typed fields fall back to their defaults with a warning.
+ *
+ * Fail-safe, never loud: this runs at extension start and mid-turn from tools,
+ * so an invalid user-layer block disables the stage (enabled:false) with a
+ * warning instead of throwing and taking the whole router down (merge review
+ * 2026-11-01; previously a missing checkpoint threw).
+ *
+ * Mutates the config object in place. Exported for test access (called once
+ * during config load).
+ */
+export function validateClassifierLaya(config: Config): void {
+  const c = config.classifier_laya;
+  if (!c || !c.enabled) return;
+  const disable = (why: string): void => {
+    warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
+    c.enabled = false;
+  };
+  if (!c.checkpoint) {
+    disable(
+      `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
+        `repo:revision — the router never downloads weights, ADR-0025)`
+    );
+    return;
+  }
+  const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
+  let hostname = '';
+  try {
+    const u = new URL(endpoint);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
+    hostname = u.hostname;
+  } catch {
+    disable(`endpoint ${JSON.stringify(endpoint)} is not a valid http(s) URL`);
+    return;
+  }
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const loopback =
+    host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  if (!loopback) {
+    disable(
+      `endpoint host ${JSON.stringify(hostname)} is not loopback — the router only sends ` +
+        `prompts to 127.0.0.0/8, localhost or ::1`
+    );
+    return;
+  }
+  if (c.mode != null && c.mode !== 'active' && c.mode !== 'shadow') {
+    warnLog(`[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`);
+    c.mode = 'shadow';
+  }
+  if (
+    c.confidence_threshold != null &&
+    (typeof c.confidence_threshold !== 'number' || !(c.confidence_threshold > 0 && c.confidence_threshold <= 1))
+  ) {
+    warnLog(`[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`);
+    c.confidence_threshold = 0.8;
+  }
+  if (c.timeout_ms != null && (typeof c.timeout_ms !== 'number' || !(c.timeout_ms > 0))) {
+    warnLog(`[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`);
+    c.timeout_ms = 1500;
+  }
+  if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
+  if (c.timeout_ms == null) c.timeout_ms = 1500;
+  if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
+  if (!c.mode) c.mode = 'shadow';
 }
 
 /**
@@ -131,7 +275,7 @@ function validateCategoryGroups(config: Config): void {
   const mapping = config.category_groups;
   if (!mapping || typeof mapping !== 'object') return;
   for (const [category, group] of Object.entries(mapping)) {
-    if (!(category in CATEGORY_TO_GROUP)) {
+    if (!Object.hasOwn(CATEGORY_TO_GROUP, category)) {
       warnLog(`[router] category_groups: unknown category "${category}" — entry ignored (known: ${Object.keys(CATEGORY_TO_GROUP).join(', ')})`);
       delete mapping[category];
       continue;

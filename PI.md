@@ -16,15 +16,13 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 | Category | Model Group | Description |
 |----------|-------------|-------------|
-| `trivial` | scout | Greetings, one-liners |
-| `simple` | operational | Simple conversational requests |
-| `standard` | operational | Everyday tasks |
-| `code_simple` | simple | Simple code changes (1-10 lines, syntax fixes, typos) |
-| `code_complex` | tactical | Complex code changes (refactoring, debugging, >50 lines) |
-| `design` | planning | Architecture, system design, API design — top tier only |
+| `simple` | simple | Short real tasks — free or subscription models, cheap |
+| `code_simple` | simple | Small code changes (1–10 lines, syntax fixes, typos) |
+| `standard` | standard | Everyday tasks |
+| `continue` | standard | Continuation or confirmation without a self-contained task |
+| `code_complex` | code_complex | Substantial code changes (>50 lines), code analysis and review |
+| `design` | design | Architecture, system design, API design — upper band, best first |
 | `planning` | planning | Project planning, roadmaps, task breakdown — top tier only |
-| `exploration` | scout | Research, unclear requirements, brainstorming |
-| `fallback` | tactical | Fallback for unclear or multi-category requests |
 
 ### Implementation
 
@@ -36,7 +34,8 @@ With the shipped cloud-first classifier chain, **no local setup is required** �
 classification runs on free cloud models, and Ollama is only the last resort:
 
 - **Optional, for local-only classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
-- If every classifier hop fails, the category `fallback` is returned (or static keyword classification, if `allowStaticFallback` is enabled)
+- If every classifier hop fails, the router streams from the `simple` group (or static keyword classification, if `allowStaticFallback` is enabled)
+- **Experimental, Apple Silicon**: an optional local Laya classifier stage can answer the category from a local MLX sidecar instead of the chain — disabled by default, bring-your-own weights, see the README section "Local Laya classifier stage (experimental)"
 
 ## Architecture
 
@@ -63,6 +62,7 @@ startup → load config + cache → scan() → register local Ollama + groups
 | **CacheManager** | Persistent caching | `src/cache.ts` |
 | **Router** | Model group resolution | `src/routing.ts` |
 | **ContentClassifier** | Prompt classification | `src/content-classifier.ts` |
+| **LayaClassifier** | Experimental local classifier stage | `src/laya-classifier.ts` |
 
 ## Rate Limits & Failover
 

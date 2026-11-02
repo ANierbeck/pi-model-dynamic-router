@@ -5,7 +5,7 @@
 //     the owner never used them in 180 ratings),
 //   - fallback is RENAMED to continue (73 % of the fallback items were true
 //     continuations in the owner continue-pass),
-//   - continue keeps the group the fallback category had (tactical).
+//   - continue goes to the standard mid band (D6).
 // Red-first: these pins were observed failing against the pre-migration code.
 
 import { describe, it, expect } from 'vitest';
@@ -31,19 +31,19 @@ describe('v2 taxonomy: category set', () => {
 });
 
 describe('v2 taxonomy: category → group mapping', () => {
-  it('continue routes to tactical (the group the old fallback category used)', () => {
-    expect(CATEGORY_TO_GROUP.continue).toBe('tactical');
+  it('continue routes to standard (D6: a decent model, not a free one)', () => {
+    expect(CATEGORY_TO_GROUP.continue).toBe('standard');
   });
 
-  it('simple routes to scout (owner decision 2026-10-13: short real tasks stay cheap)', () => {
-    expect(CATEGORY_TO_GROUP.simple).toBe('scout');
+  it('simple routes to the merged cheap pool named like the category (D4/D7)', () => {
+    expect(CATEGORY_TO_GROUP.simple).toBe('simple');
   });
 
   it('keeps the unchanged mappings for the other five categories', () => {
     expect(CATEGORY_TO_GROUP.code_simple).toBe('simple');
-    expect(CATEGORY_TO_GROUP.standard).toBe('operational');
-    expect(CATEGORY_TO_GROUP.code_complex).toBe('tactical');
-    expect(CATEGORY_TO_GROUP.design).toBe('planning');
+    expect(CATEGORY_TO_GROUP.standard).toBe('standard');
+    expect(CATEGORY_TO_GROUP.code_complex).toBe('code_complex');
+    expect(CATEGORY_TO_GROUP.design).toBe('design');
     expect(CATEGORY_TO_GROUP.planning).toBe('planning');
   });
 });

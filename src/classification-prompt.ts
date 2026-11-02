@@ -44,16 +44,16 @@ request and return:
 
 Examples of HINT instructions:
 - "HINT: use example-model-1"
-- "HINT: use group tactical"
+- "HINT: use group code_complex"
 - "HINT: nutze example-model-1"
-- "HINT: verwende Gruppe complex"
+- "HINT: verwende Gruppe planning"
 - "HINT: benutz modell xyz"
 
 If the CURRENT REQUEST (not the Context block) contains a HINT instruction
 (in any language), extract the model or group name and return it with the
 "hint:" prefix:
 - For models: {"category": "hint:example-model-1", "reason": "User specified model via HINT", "confidence": 1.0}
-- For groups: {"category": "hint:group:tactical", "reason": "User specified group via HINT", "confidence": 1.0}
+- For groups: {"category": "hint:group:code_complex", "reason": "User specified group via HINT", "confidence": 1.0}
 
 If NO HINT is present, first apply this DECISION PROCEDURE:
 
@@ -144,6 +144,41 @@ export function buildClassificationPrompt(userPrompt: string, contextBlock: stri
     '{{prompt}}',
     userPrompt
   );
+}
+
+/**
+ * The FROZEN short instruction head the fine-tuned Laya classifier was
+ * trained on (v2-r3 taxonomy, frozen 2026-10-13). Byte-identical to
+ * SHORT_INSTRUCTIONS in ~/.laya-ft/to_laya_jsonl_v2.py, which writes it to
+ * laya_head_v2.json; the sidecar serves exactly this head via --head-json
+ * (train/serve parity is the hard rule). Laya's window is ~1024 tokens and
+ * the full v2-r3 production prompt body alone is ~1000+ tokens, so the head
+ * is deliberately condensed — the long-form rules are distilled through the
+ * training LABELS, not the question text. DO NOT edit this text without
+ * retraining and re-validating; the criteria order below is the choice-head
+ * order (choice index -> category by position).
+ */
+export const LAYA_HEAD_V2_INSTRUCTIONS =
+  'Classify the user\'s request into exactly one category. ' +
+  'simple: short factual question, lookup, read or run something. ' +
+  'code_simple: small clear code change. ' +
+  'standard: general or multi-step request with a clear procedure. ' +
+  'code_complex: substantial coding, debugging, review or analysis of existing code or docs. ' +
+  'design: architecture, API or system design, weighing options. ' +
+  'planning: task breakdown, roadmap, prioritization. ' +
+  'continue: NOT a self-contained task - a go-ahead, a mechanical step of the current act ' +
+  '(commit, build, rebase), a status check or a correction of what the assistant is doing right now. ' +
+  'A request that opens a new act (new question or instruction) is never continue.';
+
+/**
+ * The typed-decision question Laya receives. The head is the frozen
+ * LAYA_HEAD_V2_INSTRUCTIONS (not derived from CLASSIFICATION_PROMPT — see
+ * its doc comment), criteria in the trained choice-head order. Used for the
+ * prompt-window budget (the client sends only prompt + context; the sidecar
+ * owns the question head and must serve the same one via --head-json).
+ */
+export function buildClassifierLayaQuestion(): { instructions: string; criteria: string[] } {
+  return { instructions: LAYA_HEAD_V2_INSTRUCTIONS, criteria: [...VALID_CATEGORIES] };
 }
 
 /**

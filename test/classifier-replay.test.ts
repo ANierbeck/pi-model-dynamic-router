@@ -119,6 +119,48 @@ describe('decision-log corpus', () => {
     rmSync(d, { recursive: true, force: true });
   });
 
+  it('skips non-routing stages — observations and pool snapshots are not decisions', () => {
+    // Regression (review round on laya-spike, 2026-10-29): buildCorpus fed
+    // every record with stored text into the corpus, so detached observation /
+    // observation-comparator / pool records entered the replay corpus as if
+    // they had routed a prompt.
+    const d = dir();
+    const f = join(d, 'decisions.jsonl');
+    // A record with stored text in a non-routing stage — exactly what the
+    // observation writes (same schema, stage differs).
+    const obs = (stage: string, sha: string) =>
+      JSON.stringify({
+        v: 1, ts: '2026-10-29T10:00:00Z', proc: 'p/1', stage, answered_by: 'laya:x/y', chain: [], cache_origin: null,
+        raw: { category: 'code_complex', confidence: 0.8, reason: null },
+        final: { category: 'code_complex', group: 'code_complex', hint: null, reason: null },
+        steps: [], ms: 5,
+        input: { chars: 3, words: 1, sha, text: { prompt: 'ok do it now please' }, context: { hasContextBlock: false, lastCategory: null, isCompaction: false, hasHistory: false } },
+      });
+    writeFileSync(
+      f,
+      [obs('observation', 'obs1'), obs('observation-comparator', 'obs2'), obs('pool', 'obs3')].join('\n') + '\n',
+    );
+    const corpus = buildCorpus({ records: readDecisionRecords([f]) });
+    expect(corpus).toHaveLength(0);
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it('carries the stored context texts into the corpus item (replay input parity)', () => {
+    const d = dir();
+    const f = join(d, 'decisions.jsonl');
+    writeFileSync(
+      f,
+      JSON.stringify({
+        v: 1, ts: '2026-10-08T10:00:00Z', proc: 'p/1', stage: 'llm-cloud', answered_by: null, chain: [], cache_origin: null,
+        raw: null, final: { category: 'planning', group: 'planning', hint: null, reason: null }, steps: [], ms: 1,
+        input: { chars: 9, words: 2, sha: 'x', text: { prompt: 'and then?', previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' }, context: {} },
+      }) + '\n',
+    );
+    const [item] = buildCorpus({ records: readDecisionRecords([f]) });
+    expect(item.context).toEqual({ previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' });
+    rmSync(d, { recursive: true, force: true });
+  });
+
   it('dedupes repeated prompts (subagent fan-out) keeping the first record', () => {
     const d = dir();
     const f = join(d, 'decisions.jsonl');
@@ -212,6 +254,34 @@ describe('replay against a candidate endpoint', () => {
     expect(seen.method).toBe('POST');
     expect(seen.url).toBe('/classify');
     expect(seen.body).toEqual({ prompt: 'contract probe' });
+    await new Promise<void>((r) => probe.close(r));
+  });
+
+  it('sends context only when the corpus item has one', async () => {
+    const seen: any[] = [];
+    const probe = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        seen.push(JSON.parse(body));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ category: 'simple' }));
+      });
+    });
+    await new Promise<void>((r) => probe.listen(0, r));
+    const u = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
+    const base = { knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: 't', hasAttachment: false, duplicates: 0 };
+    await replayAgainstEndpoint(
+      [
+        { ...base, prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+        { ...base, prompt: 'without ctx' },
+      ],
+      { endpoint: u, concurrency: 1 },
+    );
+    expect(seen).toEqual([
+      { prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+      { prompt: 'without ctx' },
+    ]);
     await new Promise<void>((r) => probe.close(r));
   });
 });

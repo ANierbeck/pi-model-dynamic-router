@@ -82,12 +82,16 @@
   report, never implied.
 - `npx tsc --noEmit` must pass before committing non-test-only changes.
 - `npx vitest run` must be green (the exact count ratchets with every
-  round — as of the Sourcery PR #74 review round (terminal :free tag,
-  credential-pair redaction, control-sequence stripping, ordinary-429
-  body logging) + unprofiled models rank last in capability-column
-  groups (incl. the PR #75 review round) + dependency-lock security
-  guard + host 1.4.0 alignment (forwarding-exception termination,
-  host-realistic stream fixtures + PR #79 review round): 2114 passing / 3 skipped; do not
+  round — as of the v2-r3 taxonomy migration + output-reserve fix + review fixes +
+  decision-log prev + laya probabilities (+ validation) + laya background
+  comparator + laya pair stats + the main-line rounds merged in (Sourcery
+  PR #74: terminal :free tag, credential-pair redaction, control-sequence
+  stripping, ordinary-429 body logging; unprofiled models rank last incl. the
+  PR #75 review round; dependency-lock security guard; host 1.4.0 alignment
+  with forwarding-exception termination, host-realistic stream fixtures and
+  the PR #79 review round; fallback-exit characterization; turn-decision join; pool replay layout; the laya-spike review round
+  (pool-record scope, first-sample metrics, demoted-top ranking reasons,
+  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column + min_score + review round; the 2026-11-01 merge-review round on laya-spike (token-estimator toolCall/thinking regression, classifier_laya loopback+warn-and-disable validation, stale-groups-fingerprint load guard, lazy decision pool, capability-column data cache, pack/build sync pin): 2444 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.
@@ -254,5 +258,48 @@
   larger work rounds and before every release proposal.
 - Before a release is proposed (§1), include the current `npm audit`
   summary in the report.
- 6a4e239 (chore: dev-tooling security round (vitest 4.1.11, lock refresh) + AGENTS.md §10)
 
+## 11. Plans: one problem, one plan
+
+- **Owner rule 2026-10-25:** a plan document addresses exactly ONE problem
+  and its solution — Problem → Solution. A second problem gets its own
+  plan, even when it is discovered while working on the first one; the
+  plans link each other instead of merging.
+- Every plan starts with: **Status** (proposed / approved / in progress /
+  done / superseded — with a date), **Problem**, **Solution**, **Open
+  decisions** (what the owner still has to decide), and **Verified
+  against** (the commit / config the current-state claims were checked
+  against). Current-state claims are checked against code, config and
+  logs, never written from memory; what was not checked is said so.
+- A plan is not a lab notebook. Measurements, experiment and evaluation
+  results go to `docs/research/` and the plan links them. Progress updates
+  the Status line and ticks off steps — it does not append narrative
+  sections.
+- When a plan turns out to cover more than one problem, split it before
+  continuing. A superseded plan gets a "superseded by …" header and is
+  otherwise left untouched as history.
+- A plan that drives work is committed. An uncommitted plan cannot be
+  reviewed and does not exist for the next session.
+- Incident that motivated the rule (2026-10-25):
+  `docs/plans/2026-10-11-category-model-alignment.md` grew over four days
+  to ~700 lines mixing group renaming, mid-tier ranking, taxonomy, the
+  golden set and Laya fine-tuning. Its header still said "Proposed", a
+  decided step still said "BLOCKED", one mapping claim contradicted the
+  code, the 1:1 group rename it planned silently never happened, and the
+  file itself was never committed although the CHANGELOG cites it.
+
+## 12. ADRs are immutable
+
+- **Owner rule 2026-10-26:** an ADR records a decision as it was made. Once
+  accepted it is never edited and never receives pointers to later
+  documents — not for a wording fix, not for "see also", not for a
+  "superseded" marker, not for its Status line.
+- To clarify, correct or reverse a decision, write a NEW ADR that cites the
+  old one. The old text stays as history. A new ADR changes future
+  behaviour only; it does not reinterpret what the old one decided.
+- Citations run one way: plans (§11), code comments and newer ADRs may cite
+  an ADR; an ADR never cites forward.
+- Incident that motivated the rule (2026-10-26): the fallback-naming plan
+  proposed "historical ADRs get a pointer" in its docs sweep. That step was
+  dropped, and the rule written down so the next plan does not propose it
+  again.

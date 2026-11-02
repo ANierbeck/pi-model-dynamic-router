@@ -38,7 +38,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     const esc = new SessionEscalation();
     esc.recordTurn('please add a login button', 'Done, added the button.');
     esc.recordTurn('Ok you did stop again, please proceed', 'Continuing...');
-    expect(esc.level).toBe('operational');
+    expect(esc.level).toBe('standard');
     expect(esc.frustrationStreak).toBe(1);
   });
 
@@ -47,9 +47,9 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('please add a login button', 'Done, added the button.');
     esc.recordTurn('Ok you did stop again, please proceed', 'Continuing...');
     esc.recordTurn('you stopped again, keep going', 'Continuing...');
-    expect(esc.level).toBe('operational'); // only 2 so far
+    expect(esc.level).toBe('standard'); // only 2 so far
     esc.recordTurn('still not done, try again please', 'Continuing...');
-    expect(esc.level).toBe('tactical'); // 3rd consecutive signal escalates
+    expect(esc.level).toBe('code_complex'); // 3rd consecutive signal escalates
     expect(esc.frustrationStreak).toBe(0); // streak resets after escalating
   });
 
@@ -62,18 +62,18 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(esc.frustrationStreak).toBe(0);
     esc.recordTurn('again broken', 'Fixing...');
     esc.recordTurn('still broken', 'Fixing...');
-    expect(esc.level).toBe('operational'); // only 2 consecutive since the reset
+    expect(esc.level).toBe('standard'); // only 2 consecutive since the reset
   });
 
   it('escalates at most one tier per streak, requiring another 3-streak to escalate further', () => {
     const esc = new SessionEscalation();
     for (let i = 0; i < 3; i++) esc.recordTurn('again failed', 'retrying');
-    expect(esc.level).toBe('tactical');
+    expect(esc.level).toBe('code_complex');
     for (let i = 0; i < 3; i++) esc.recordTurn('still failing again', 'retrying');
-    expect(esc.level).toBe('strategic');
+    expect(esc.level).toBe('planning');
     // Already at the top tier — further streaks don't escalate past it.
     for (let i = 0; i < 3; i++) esc.recordTurn('again still broken', 'retrying');
-    expect(esc.level).toBe('strategic');
+    expect(esc.level).toBe('planning');
   });
 
   it('reset() clears the streak along with the level and history', () => {
@@ -83,7 +83,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(esc.frustrationStreak).toBe(2);
     esc.reset();
     expect(esc.frustrationStreak).toBe(0);
-    expect(esc.level).toBe('operational');
+    expect(esc.level).toBe('standard');
   });
 
   // roborev job 373 MEDIUM: index.ts's only real call site invokes
@@ -110,7 +110,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('you stopped again', '');
     esc.recordTurn('', 'Continuing...');
     expect(esc.frustrationStreak).toBe(0); // reset after escalating on the 3rd
-    expect(esc.level).toBe('tactical');
+    expect(esc.level).toBe('code_complex');
   });
 
   it('is NOT driven by frustration/error keywords in the router\'s own assistant-side fallback text', () => {
@@ -120,10 +120,10 @@ describe('SessionEscalation — streak-based escalation', () => {
     // (pushRouterInfo/pushRouterInfoLogged) with zero real user frustration
     // behind it. Three such assistant-only turns must not escalate anything.
     esc.recordTurn('', 'openrouter/foo — error: rate limited, trying openrouter/bar …');
-    esc.recordTurn('', 'All models in scout failed, trying operational...');
+    esc.recordTurn('', 'All models in simple failed, trying standard...');
     esc.recordTurn('', 'mistral/baz — error: empty response, trying mistral/qux …');
     expect(esc.frustrationStreak).toBe(0);
-    expect(esc.level).toBe('operational');
+    expect(esc.level).toBe('standard');
   });
 
   // roborev job 376 MEDIUM: the periodic LLM-check trigger
@@ -158,8 +158,8 @@ describe('SessionEscalation — streak-based escalation', () => {
     await tick(); // let call #2 resolve (shouldEscalate:false)
 
     esc.recordTurn('', 'ok'); // len 6
-    esc.recordTurn('again please', ''); // len 7, streak 3 -> escalates to 'tactical'
-    expect(esc.level).toBe('tactical');
+    esc.recordTurn('again please', ''); // len 7, streak 3 -> escalates to 'code_complex'
+    expect(esc.level).toBe('code_complex');
 
     // len 8, assistant-only call: (8-2)%3===0 fires _checkAndEscalate here,
     // one call AFTER the streak escalation (not the same recordTurn call).
@@ -168,9 +168,9 @@ describe('SessionEscalation — streak-based escalation', () => {
     esc.recordTurn('', 'ok');
     await tick(); // let call #3 resolve (shouldEscalate:true)
 
-    // Must still be 'tactical', not 'strategic' — the LLM's shouldEscalate:
+    // Must still be 'code_complex', not 'planning' — the LLM's shouldEscalate:
     // true on call #3 must NOT stack a second bump on top of the streak's.
-    expect(esc.level).toBe('tactical');
+    expect(esc.level).toBe('code_complex');
     // Prove call #3 (the len-8 dispatch) actually happened — otherwise this
     // assertion would pass vacuously without ever exercising the guard.
     expect(vi.mocked(callOllama).mock.calls.length).toBe(3);

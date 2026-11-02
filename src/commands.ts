@@ -14,6 +14,8 @@
 
 import * as path from 'node:path';
 import { costTracker } from './cost-tracker.ts';
+import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
+import { describeBestMethod } from './rank-explain.ts';
 import {
   getLastClassificationSource,
   getClassificationCounts,
@@ -21,6 +23,7 @@ import {
   type ClassificationSourceInfo,
   type ClassificationCounts,
 } from './content-classifier.ts';
+import { LAYA_DEFAULT_ENDPOINT, getLastProbeError, layaAvailabilityState, type LayaAvailabilityState } from './laya-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
 import { localClassifierPins, resolveLocalClassifierChain, type LocalClassifierChain } from './classifier-local-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
@@ -60,7 +63,7 @@ interface CommandDeps {
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly formatBlocklist: () => string;
   readonly getM: (ref: string) => Metrics;
-  readonly getTopModels: (groupName: string, n: number) => { models: { ref: string; limited: boolean; rank: number; }[]; total: number; };
+  readonly getTopModels: (groupName: string, n: number) => { models: { ref: string; limited: boolean; rank: number; why?: string; }[]; total: number; };
   readonly getUsage: (ref: string, days: number) => number;
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
@@ -124,6 +127,17 @@ export interface ClassifierStatusInput {
   localProbed?: boolean;
   /** Today's classification mix; omitted or empty → no counter lines. */
   counts?: ClassificationCounts;
+  /** Laya stage, present when `classifier_laya.enabled` is true. */
+  laya?: {
+    checkpoint: string;
+    endpoint: string;
+    confidence_threshold: number;
+    /** `active` decides; `shadow` only observes (and is therefore not part of the Chain line). */
+    mode: 'active' | 'shadow';
+    state: LayaAvailabilityState;
+    /** Why the sidecar is down (state `down` only). */
+    probeError?: string | undefined;
+  };
 }
 
 /**
@@ -138,6 +152,7 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   const lines: string[] = [];
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
+  if (input.laya?.mode === 'active') legs.push('Laya');
   if (g.classifier_cloud_fallback) {
     legs.push(
       g.classifier_cloud_model
@@ -158,6 +173,18 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
+  const laya = input.laya;
+  if (laya) {
+    const stateText =
+      laya.state === 'ok'
+        ? 'reachable'
+        : laya.state === 'down'
+          ? `unreachable${laya.probeError ? ` (${laya.probeError})` : ''}`
+          : 'not probed yet (probes on first use)';
+    lines.push(
+      `│ Laya (${laya.mode}): laya:${laya.checkpoint} @ ${laya.endpoint} — ${stateText} · threshold ${laya.confidence_threshold}`
+    );
+  }
   // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
   // digging through the router log.
   const counts = input.counts;
@@ -586,6 +613,12 @@ export function createCommands(rt: CommandDeps) {
 
       // Overview with table
       const lines: string[] = ['Model Router', ''];
+      lines.push(
+        'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
+        '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
+        'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
+        ''
+      );
 
       // Group tables with top 5 models (3 available + up to 2 limited)
       for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
@@ -595,7 +628,7 @@ export function createCommands(rt: CommandDeps) {
           g.method === 'pipeline'
             ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
             : g.method === 'best'
-              ? 'best gdpval'
+              ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
               : g.method === 'tiered'
                 ? g.min_gdpval != null
                   ? `tiered ≥${g.min_gdpval}`
@@ -631,60 +664,56 @@ export function createCommands(rt: CommandDeps) {
               localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
               localProbed: Array.isArray(rt.cache.classifier_local_models),
               counts: getClassificationCounts(),
+              ...(rt.cfg.classifier_laya?.enabled
+                ? {
+                    laya: {
+                      checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
+                      endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
+                      confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
+                      // same safe reading as the chain: only an explicit 'active' decides
+                      mode: rt.cfg.classifier_laya.mode === 'active' ? ('active' as const) : ('shadow' as const),
+                      state: layaAvailabilityState(),
+                      probeError: getLastProbeError() ?? undefined,
+                    },
+                  }
+                : {}),
             })
           );
         } else if (topModels.length === 0) {
           lines.push('│ (no models configured)');
         } else {
-          // Compute max model name width (capped at 38)
-          const MW = Math.min(38, Math.max(5, ...topModels.map((t) => t.ref.length)));
-
-          // Table header
-          lines.push(
-            `│ ${'#'.padEnd(3)} ${'Model'.padEnd(MW)}  ${'GDP'.padStart(4)}  ${'Lat'.padStart(5)}  ${'TPS'.padStart(4)}  ${'Cost I/O'.padStart(11)}  ${'Usage 1d/7d/30d'.padStart(15)}  ${'Budg'.padStart(6)}  Status`
-          );
-          lines.push(
-            `│ ${'─'.padEnd(3)} ${'─'.repeat(MW)}  ${'────'}  ${'─────'}  ${'────'}  ${'───────────'}  ${'───────────────'}  ${'──────'}  ──────`
-          );
-
-          for (const { ref, limited, rank } of topModels) {
+          // Name column: the longest shown ref, capped so the table fits a standard terminal
+          const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
+          const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
             const m = rt.getM(ref);
             const prov = ref.split('/')[0];
-            const mux = rt.costMux(prov);
-            const cost = rt.effCost(ref);
-            const price = rt.lookupListPrice?.(ref) ?? rt.lookupPrice(ref);
-            const modelShort = ref.length > MW ? '…' + ref.slice(-(MW - 1)) : ref;
-            const isActive = rt.curModel === ref;
-            const statusParts: string[] = [];
-            if (limited) statusParts.push(`⛔${rt.limitSecs(ref)}s`);
-            if (mux > 1) statusParts.push(`×${mux}`);
-            if (isActive) statusParts.push('●');
-            const status = statusParts.join(' ') || (limited ? '' : 'active');
-
-            const costDisplay = costColumnFor(ref, rt);
-
-            // Add budget info for subscription providers
             const budgetInfo = rt.cache.budget_cache?.[prov];
-            let budgetDisplay = '';
+            let budget = '';
             if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
-              const now = Date.now();
-              if (now < budgetInfo.window_reset) {
-                const remaining = budgetInfo.remaining_tokens;
+              if (Date.now() < budgetInfo.window_reset) {
                 const windowType = budgetInfo.window_type ?? 'monthly';
-                budgetDisplay = `${Math.round(remaining)}${windowType.substring(0, 1)}`;
+                budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
               }
             }
-
-            const u1 = rt.getUsage(ref, 1),
-              u7 = rt.getUsage(ref, 7),
-              u30 = rt.getUsage(ref, 30);
-            const usageDisplay = `${fmt(u1)}/${fmt(u7)}/${fmt(u30)}`;
-
-            const sel = rank === 0 ? ' ←' : '';
-            lines.push(
-              `│ ${String(rank + 1).padEnd(3)} ${modelShort.padEnd(MW)}  ${String(m.gdpval).padStart(4)}  ${String(Math.round(m.avg_latency_ms)).padStart(5)}  ${String(Math.round(m.throughput_tps)).padStart(4)}  ${costDisplay.padStart(11)}  ${usageDisplay.padStart(15)}  ${budgetDisplay.padStart(6)} ${status}${sel}`
-            );
-          }
+            return {
+              rank,
+              ref,
+              // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
+              gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
+              // Measured in this process or explicitly configured by the user
+              // (src/overview-table.ts displayMetricsFor — placeholders dash).
+              ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
+              price: costColumnFor(ref, rt),
+              usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
+              budget,
+              limited,
+              limitSecs: limited ? rt.limitSecs(ref) : 0,
+              costMux: rt.costMux(prov),
+              current: rt.curModel === ref,
+              ...(why ? { why } : {}),
+            };
+          });
+          lines.push(...formatOverviewTable(rows, MW));
         }
         // Footer: show total count if more than shown
         if (total > n) {

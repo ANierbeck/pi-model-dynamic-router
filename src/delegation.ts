@@ -72,7 +72,7 @@ const DEFAULTS: DelegationSettings = {
   // burn context on file I/O the bulk_reader answers for ~$0 — and pi-claude
   // file tool calls crash on the broken kendex bridge anyway, so routing
   // file inspection through bulk_read avoids the broken path entirely.
-  expensive_groups: ['strategic', 'tactical'],
+  expensive_groups: ['planning', 'code_complex'],
   expensive_providers: [],
 };
 

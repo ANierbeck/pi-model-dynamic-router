@@ -32,7 +32,7 @@ import {
   isLocalProviderName,
   type ProviderEvidenceKind,
 } from './src/provider-breaker.ts';
-import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, type StaticContributions } from './src/dynamic-config.ts';
+import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, staticGroupsFingerprint, type StaticContributions } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
@@ -43,6 +43,8 @@ import { costTracker } from './src/cost-tracker.ts';
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
 // and can land in the user's input field). Re-imported here for index.ts's own use.
 import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
+import { homedir } from 'node:os';
+import { buildPoolRecord, writePoolRecord, resolveClassifierLogConfig } from './src/classifier-decision-log.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 import { createContextUtils } from './src/context-utils.ts';
 import { createLimitGlue } from './src/limit-glue.ts';
@@ -222,7 +224,7 @@ let previousTokenCount = 0;
     get updateErrorStatusLine() { return updateErrorStatusLine; },
   });
 
-  const { resolve, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
+  const { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
     get cache() { return cache; },
     get costMux() { return costMux; },
     get discoveryManager() { return discoveryManager; },
@@ -231,6 +233,19 @@ let previousTokenCount = 0;
     get isLimited() { return isLimited; },
     get limitSecs() { return limitSecs; },
     get router() { return router; },
+    // Route 2 of the pool replay (ADR-0027 log): one 'pool' record per group
+    // resolution that drives a stream, appended to the decision log right
+    // after the turn's decision record. Only the stream-driving resolve
+    // callers (stream proxy + orchestrator, wired below with
+    // resolveForStream) pass this through — group registration, /router and
+    // the resolve_model_group tool resolve without logging, so the log holds
+    // decisions, not non-decisions. Fail-open, and off unless the classifier
+    // log is enabled — same gate as the decision records.
+    logPool: (pool) => {
+      const log = resolveClassifierLogConfig(cfg?.classifier_log);
+      if (!log) return;
+      writePoolRecord(buildPoolRecord(pool), homedir(), log);
+    },
   });
 
   const { populateLlmMatches, scan } = createScanRunner({
@@ -289,7 +304,9 @@ let previousTokenCount = 0;
     set localStreamsInFlight(v) { localStreamsInFlight = v; },
     get OLLAMA_MAX_CONCURRENT_STREAMS() { return OLLAMA_MAX_CONCURRENT_STREAMS; },
     get registerFreeModelOnDemand() { return registerFreeModelOnDemand; },
-    get resolve() { return resolve; },
+    // Pool logging for the stream-driving resolutions only (ADR-0027):
+    // this is the path that serves an actual group stream.
+    get resolve() { return resolveForStream; },
     get sessionCtx() { return sessionCtx; },
     get skipReasons() { return skipReasons; },
     set skipReasons(v) { skipReasons = v; },
@@ -417,6 +434,23 @@ let previousTokenCount = 0;
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
+          // Merge review 2026-11-01 (Important 3a): a snapshot whose stored
+          // groups fingerprint does not match the current static model_groups
+          // is stale — e.g. a pre-five-group-layout snapshot on upgrade, whose
+          // old virtual groups would be registered into Pi and used for
+          // routing until the background scan regenerates. Ignore it and use
+          // the static config; the groups-drift check in dynamic-config-runner
+          // regenerates the snapshot on the next scan. Snapshots predating the
+          // fingerprint (undefined) are still accepted — the scan regenerates
+          // them once (self-healing, PR #68).
+          const storedGroupsFp = dynamicCfg._dynamic.groups_fingerprint;
+          if (typeof storedGroupsFp === 'string' && storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups)) {
+            routerLog(
+              '[router] Stored router-config.dynamic.json has a stale groups fingerprint ' +
+                '(static model_groups changed since it was built) — ignoring it and using the static config; ' +
+                'the next scan regenerates the snapshot'
+            );
+          } else {
           // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
           // rate-limit scheduling, delegation, the local-stream limiter, …)
           // must ALWAYS come from staticCfg — the dynamic config can contain
@@ -438,6 +472,7 @@ let previousTokenCount = 0;
           loadResync = resyncDynamicFromStatic(dynamicCfg, staticCfg, staticContributions);
           cfg = dynamicCfg;
           loadedFromDynamic = true;
+          }
         }
       }
     } catch (error) {
@@ -612,7 +647,9 @@ let previousTokenCount = 0;
     get cacheManager() { return cacheManager; },
     escalation,
     costTracker,
-    resolve,
+    // Pool logging for the stream-driving resolutions only (ADR-0027):
+    // every ctx.resolve call here serves a candidate stream.
+    resolve: resolveForStream,
     isLimited,
     clearLimit,
     tryStream,

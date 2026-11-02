@@ -5,7 +5,7 @@
  */
 
 import * as metricsModule from './metrics.ts';
-import type { Cache, Metrics } from './types.ts';
+import type { Cache, GroupPool, Metrics } from './types.ts';
 import type { DiscoveryManager } from './discovery.ts';
 import type { Router } from './routing.ts';
 
@@ -24,6 +24,14 @@ interface ModelResolveGlueDeps {
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
   readonly router: Router;
+  /** Records a resolution's decision-time pool in the decision log (route 2
+   * of the pool replay). resolve() only calls it when the caller passes
+   * `{ logPool: true }` — the stream-driving paths. Group registration,
+   * `/router group` and the resolve_model_group tool resolve without logging:
+   * their resolutions never drive a stream, and logging them would fill the
+   * log with non-decisions (ADR-0027's "right after the same turn's
+   * decision" ordering). Absent means no pool logging at all. */
+  readonly logPool?: (pool: GroupPool) => void;
 }
 
 export function createModelResolveGlue(d: ModelResolveGlueDeps) {
@@ -36,8 +44,20 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return d.router.allDiscoveredRefs();
   }
 
-  function resolve(name: string): { selected: string; candidates: string[] } | null {
-    return d.router.resolve(name);
+  function resolve(name: string, opts?: { logPool?: boolean }): { selected: string; candidates: string[] } | null {
+    const res = d.router.resolve(name);
+    if (res?.pool && opts?.logPool) d.logPool?.(res.pool);
+    return res;
+  }
+
+  /** The stream-driving variant: the one resolution path that records the
+   * decision-time pool. Stream proxy and orchestrator use this; everything
+   * else (registration, /router, tools) uses plain resolve(). A decision may
+   * resolve more than one group (target, then fallback groups), so one turn
+   * can carry several pool records — the pool replay keys on proc + group +
+   * timestamp. */
+  function resolveForStream(name: string): { selected: string; candidates: string[] } | null {
+    return resolve(name, { logPool: true });
   }
 
 
@@ -88,5 +108,5 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return d.router.detectGroup(ref);
   }
 
-  return { resolve, detectGroup, fmtModel, getTopModels, allDiscoveredRefs };
+  return { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs };
 }

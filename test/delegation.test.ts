@@ -69,7 +69,7 @@ describe('delegationSettings', () => {
       max_raw_chars: 1000,
       tools: ['read'],
       block_lines: 350,
-      expensive_groups: ['strategic', 'tactical'],
+      expensive_groups: ['planning', 'code_complex'],
       expensive_providers: [],
     });
   });
@@ -789,9 +789,15 @@ describe('default export wiring: tool_call pre-call read block', () => {
     };
     const config = {
       ...baseConfig,
-      model_metrics: { 'pi-claude/claude-sonnet-5': { gdpval: 1200 } },
+      // Floor checks resolve GDPval through the gdpval map (gdpval_builtin
+      // in the layered config), never through model_metrics — the shipped
+      // value for claude-sonnet-5 (1603) would fall outside the 1630..1700
+      // code_complex band, so pin the builtin score inside the band.
+      gdpval_builtin: { 'claude-sonnet-5': 1650 },
       model_groups: {
-        standard: { fallback_groups: [], min_gdpval: 0, models: ['pi-claude/claude-sonnet-5'] },
+        // code_complex is one of the two expensive groups (D4 renames);
+        // 1650 sits inside its 1630..1700 band.
+        code_complex: { fallback_groups: [], min_gdpval: 1630, max_gdpval: 1700, models: ['pi-claude/claude-sonnet-5'] },
       },
     };
     const boot = await bootWithConfig(config, [KNOWN_MODEL, expensiveModel]);
@@ -808,7 +814,7 @@ describe('default export wiring: tool_call pre-call read block', () => {
         (c: any) => c[0]?.name === 'set_model_from_group'
       )?.[0];
       expect(setGroupTool).toBeDefined();
-      await (setGroupTool as any).execute('test', { group: 'standard' }, undefined, undefined, boot.sessionCtx);
+      await (setGroupTool as any).execute('test', { group: 'code_complex' }, undefined, undefined, boot.sessionCtx);
 
       // Sanity: the pin is in place and blocks the expensive driver below
       // the size threshold.

@@ -13,6 +13,7 @@ import {
   markNoSchema,
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
+import { classifyWithLayaDetailed, validLayaDistribution } from './laya-classifier.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { homedir } from 'node:os';
 import {
@@ -187,7 +188,7 @@ const classifyCache = new Map<string, ClassifyCacheEntry>();
 /** Which backend produced a classification (for /router status honesty). */
 export interface ClassificationSourceInfo {
   /** 'hint' | 'compaction' | 'momentum' | 'cache' | 'static' | 'fallback'
-   *  (deterministic paths) or 'ollama:<id>' | 'cloud:<provider/id>' (LLM). */
+   *  (deterministic paths) or 'laya:<checkpoint>' | 'ollama:<id>' | 'cloud:<provider/id>'. */
   source: string;
   at: number;
 }
@@ -210,17 +211,29 @@ export function getLastClassificationSource(): ClassificationSourceInfo | null {
 // Per-call source holder. `lastClassificationSource` is process-global, so a
 // counter reading it after an await could credit an overlapping call's source
 // (subagent fan-out); each classifyPrompt call runs inside its own holder.
-const callSource = new AsyncLocalStorage<{ source: string | null; trace: ClassificationTrace }>();
+// `comparator: true` marks the DETACHED background chain of the live A/B
+// snapshot (see spawnBackgroundComparator): it fills its own trace for its
+// own decision-log record, but must never touch the process-global source
+// or the classification cache — those belong to the classification that
+// actually routed.
+const callSource = new AsyncLocalStorage<{
+  source: string | null;
+  trace: ClassificationTrace;
+  comparator?: boolean;
+  /** Set on the detached momentum observation (see spawnMomentumObservation);
+   *  its own background chain is logged as `observation-comparator`. */
+  observe?: boolean;
+}>();
 
 function noteSource(source: string): void {
-  lastClassificationSource = { source, at: Date.now() };
   const holder = callSource.getStore();
+  if (!holder?.comparator) lastClassificationSource = { source, at: Date.now() };
   if (holder) {
     holder.source = source;
     // Decision log: which candidate produced the final classification.
     // The deterministic stages have no model behind them.
     holder.trace.answeredBy =
-      source.startsWith('ollama:') || source.startsWith('cloud:') ? source : null;
+      source.startsWith('ollama:') || source.startsWith('cloud:') || source.startsWith('laya:') ? source : null;
   }
 }
 
@@ -289,6 +302,10 @@ function classifyCacheGet(prompt: string): { result: FullClassificationResult; o
 
 function classifyCacheSet(prompt: string, result: FullClassificationResult): void {
   if (contextDerived.has(result)) return;
+  // The detached comparator chain must not (over)write the cache: it runs
+  // AFTER the real classification was cached, so its write would silently
+  // replace the routed answer with the comparator's (shadow, never routed).
+  if (callSource.getStore()?.comparator) return;
   if (classifyCache.size >= MAX_CLASSIFY_CACHE) {
     // Evict the oldest entry (first in iteration order).
     const oldest = classifyCache.keys().next().value;
@@ -501,13 +518,19 @@ export async function classifyPrompt(
 ): Promise<FullClassificationResult> {
   const started = Date.now();
   const holder: { source: string | null; trace: ClassificationTrace } = { source: null, trace: newTrace() };
+  // Snapshot the sticky context BEFORE the (awaited) classification: the log's
+  // `prev` must describe the context the decision was made in, not a newer
+  // category a caller might write into a shared context object while the
+  // provider request is pending (Sourcery finding). Inherit uses the same
+  // snapshot so the logged prev can never disagree with what inherit applied.
+  const prevCategory = options.context?.lastCategory;
   const raw = await callSource.run(holder, () => classifyPromptUncounted(prompt, options));
-  const result = inheritPreviousCategory(raw, options.context?.lastCategory);
+  const result = inheritPreviousCategory(raw, prevCategory);
   countClassification(result, holder.source);
   // Fail-open for the WHOLE log step (record construction included, not just
   // the file write): logging must never change or break a classification.
   try {
-    writeDecisionLog(prompt, options, holder, raw, result, started);
+    writeDecisionLog(prompt, options, holder, raw, result, started, prevCategory);
   } catch {
     // swallowed on purpose
   }
@@ -527,21 +550,30 @@ function writeDecisionLog(
   raw: FullClassificationResult,
   result: FullClassificationResult,
   started: number,
+  prevCategory: ClassificationContext['lastCategory'],
 ): void {
   const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
   if (!log) return;
   const rawCategory = 'category' in raw ? raw.category : undefined;
   const inherited = result !== raw && rawCategory === 'continue';
   if (inherited) holder.trace.steps.push('fallback-inherit');
-  const stage = holder.source?.startsWith('ollama:')
-    ? 'llm-local'
-    : holder.source?.startsWith('cloud:')
-      ? 'llm-cloud'
-      : (holder.source ?? 'fallback');
+  const stage = holder.source?.startsWith('laya:')
+    ? 'laya'
+    : holder.source?.startsWith('ollama:')
+      ? 'llm-local'
+      : holder.source?.startsWith('cloud:')
+        ? 'llm-cloud'
+        : (holder.source ?? 'fallback');
   const record = buildDecisionRecord({
     prompt,
     stage,
     trace: holder.trace,
+    prev: prevCategory
+      ? {
+          category: prevCategory,
+          group: getGroupForCategory(prevCategory, options.cfg),
+        }
+      : null,
     final: {
       category: 'category' in result ? result.category : null,
       group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
@@ -583,9 +615,67 @@ function inheritPreviousCategory(
   };
 }
 
+/**
+ * Momentum observation (owner go 2026-10-29): ask Laya — and, through
+ * `compare_in_background`, the chain — about a prompt that momentum just
+ * routed, DETACHED, and log the answers as `observation` records. The normal
+ * pipeline runs with momentum switched off; the holder carries the comparator
+ * flag so the run cannot write the classification cache or the process-global
+ * source. `laya.acted` is forced to false: nothing here ever routes.
+ */
+function spawnMomentumObservation(prompt: string, options: ClassificationOptions): void {
+  const prevCategory = options.context?.lastCategory ?? null;
+  void (async () => {
+    const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean; observe?: boolean } = {
+      source: null,
+      trace: newTrace(),
+      comparator: true,
+      observe: true,
+    };
+    try {
+      await callSource.run(holder, async () => {
+        const started = Date.now();
+        const result = await classifyPromptUncounted(prompt, options, { skipMomentum: true });
+        try {
+          const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+          if (!log) return;
+          if (holder.trace.laya) holder.trace.laya = { ...holder.trace.laya, acted: false };
+          writeDecisionRecord(
+            buildDecisionRecord({
+              prompt,
+              stage: 'observation',
+              trace: holder.trace,
+              prev: prevCategory
+                ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }
+                : null,
+              final: {
+                category: 'category' in result ? result.category : null,
+                group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                hint: null,
+                reason: result.reason ?? null,
+              },
+              context: options.context,
+              ms: Date.now() - started,
+              cfgBlock: options.cfg?.classifier_log,
+              home: homedir(),
+            }),
+            homedir(),
+            log
+          );
+        } catch {
+          // swallowed on purpose — logging never breaks a classification
+        }
+      });
+    } catch {
+      // swallowed on purpose — a broken sidecar/chain must not surface here
+    }
+  })();
+}
+
 async function classifyPromptUncounted(
   prompt: string,
-  options: ClassificationOptions
+  options: ClassificationOptions,
+  internal: { skipMomentum?: boolean } = {}
 ): Promise<FullClassificationResult> {
   const {
     model: pinnedModel,
@@ -614,7 +704,7 @@ async function classifyPromptUncounted(
   // Model momentum: during compaction we need a model with enough context
   // window. If the last model was a large cloud model, reuse it. If it was a
   // small local model (which can't handle the full compacted context), route
-  // to 'strategic' instead — the context-window guard in driveStream will
+  // to code_complex instead — the context-window guard in driveStream will
   // skip any model that's too small.
   if (context.isCompaction) {
     // Check if the last model has a large enough context window for compaction.
@@ -634,13 +724,14 @@ async function classifyPromptUncounted(
       }
     }
     // Last model was small, unknown, or currently in cooldown (just failed) —
-    // route to strategic for compaction instead of hammering the same model.
+    // route to code_complex (the code_complex category's group) for compaction
+    // instead of hammering the same model.
     noteSource('compaction');
     return {
       category: 'code_complex',
       reason: context.lastModelLimited
-        ? 'Compaction — last model is in cooldown, routing to strategic'
-        : 'Compaction — routing to strategic for large context window',
+        ? 'Compaction — last model is in cooldown, routing to code_complex'
+        : 'Compaction — routing to code_complex for large context window',
       confidence: 0.9,
     };
   }
@@ -648,8 +739,11 @@ async function classifyPromptUncounted(
   // Short-prompt momentum: ≤4 words with a known prior category → inherit it.
   // Language-agnostic: "yes", "do it", "Machen!", "oui", "dale" all qualify.
   const wordCount = prompt.trim().split(/\s+/).length;
-  if (context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
+  if (!internal.skipMomentum && context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
     noteSource('momentum');
+    if (options.cfg?.classifier_laya?.enabled && options.cfg.classifier_laya.observe_momentum) {
+      spawnMomentumObservation(prompt, options);
+    }
     return {
       category: context.lastCategory,
       reason: 'Short prompt — inheriting previous task context',
@@ -1033,50 +1127,153 @@ async function classifyPromptUncounted(
     return null;
   };
 
-  // Cloud-first (2026-09-27): the local Ollama daemon is a last resort, not
-  // the default path — repeated MLX wedge incidents (2026-09-25/26) pinned
-  // the GPU at 100% when it was hit on every turn. When allowCloudFallback
-  // is enabled, try the cloud chain first; only fall through to Ollama if
-  // every cloud candidate failed. When allowCloudFallback is disabled, the
-  // behavior is unchanged (Ollama only, no cloud attempt).
-  if (allowCloudFallback) {
-    const cloudResult = await tryCloud();
-    if (cloudResult) {
-      if (!contextBlock) classifyCacheSet(prompt, cloudResult);
-      return cloudResult;
+  // Laya: local typed-decision classifier (opt-in, disabled by default).
+  // After the deterministic early-returns and the cache, before the cloud and
+  // local-LLM legs. `mode: 'active'` lets a confident, vetted answer decide
+  // and short-circuit the chain; anything else - `shadow` (the validated
+  // default) or an unset mode - runs the stage only to LOG what it would have
+  // said next to the real decision (ADR-0027 Phase 4) and never changes the
+  // route. A stage that is unavailable, errors, or falls through (low
+  // confidence, `fallback`) leaves the chain exactly as it is without Laya.
+  // The cloud/ollama chain after Laya — shared by the main path and the
+  // detached background comparator (live A/B snapshot), so both run EXACTLY
+  // the same chain. Cache writes inside are suppressed per-holder for the
+  // comparator (see classifyCacheSet).
+  const classifyViaLlmChain = async (): Promise<FullClassificationResult> => {
+    if (allowCloudFallback) {
+      const cloudResult = await tryCloud();
+      if (cloudResult) {
+        if (!contextBlock) classifyCacheSet(prompt, cloudResult);
+        return cloudResult;
+      }
+      await tryOllama();
+    } else {
+      await tryOllama();
     }
-    await tryOllama();
-  } else {
-    await tryOllama();
+
+    if (classificationResult) {
+      if (!contextBlock) classifyCacheSet(prompt, classificationResult);
+      return classificationResult;
+    }
+
+    // Static fallback
+    if (!allowStaticFallback) {
+      errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+      noteSource('fallback');
+      return {
+        category: 'continue',
+        reason: 'Ollama unavailable, static classifier disabled',
+        confidence: 0,
+      };
+    }
+
+    errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
+    noteSource('static');
+
+    // Static result routes via its category — no escalation synthesis
+    // (see the module-level note above).
+    return classifyStatically(prompt);
+  };
+
+  // Live A/B snapshot (owner decision 2026-10-25): when a confident Laya
+  // answer takes the route in active mode and `compare_in_background` is
+  // set, run the chain it replaced DETACHED and log its answer as a
+  // `comparator` decision-log record for the same input. Logging only: the
+  // route stays Laya's, the cache stays Laya's, the global source stays
+  // Laya's (comparator holder flag). Best-effort — if the process exits
+  // before the detached run finishes, the log simply lacks the record.
+  const spawnBackgroundComparator = (): void => {
+    const prevCategory = context.lastCategory ?? null;
+    // Inside a momentum observation the replaced chain is the observation's.
+    const comparatorStage = callSource.getStore()?.observe ? 'observation-comparator' : 'comparator';
+    void (async () => {
+      const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean } = {
+        source: null,
+        trace: newTrace(),
+        comparator: true,
+      };
+      try {
+        await callSource.run(holder, async () => {
+          const started = Date.now();
+          const result = await classifyViaLlmChain();
+          // Fail-open like the main log step: the comparator must never
+          // break the process, and a logging failure is not a routing event.
+          try {
+            const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+            if (!log) return;
+            writeDecisionRecord(
+              buildDecisionRecord({
+                prompt,
+                stage: comparatorStage,
+                trace: holder.trace,
+                prev: prevCategory
+                  ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }
+                  : null,
+                final: {
+                  category: 'category' in result ? result.category : null,
+                  group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                  hint: null,
+                  reason: result.reason ?? null,
+                },
+                context,
+                ms: Date.now() - started,
+                cfgBlock: options.cfg?.classifier_log,
+                home: homedir(),
+              }),
+              homedir(),
+              log
+            );
+          } catch {
+            // swallowed on purpose
+          }
+        });
+      } catch {
+        // swallowed on purpose — a broken sidecar/chain must not surface here
+      }
+    })();
+  };
+
+  const layaCfg = options.cfg?.classifier_laya;
+  if (layaCfg?.enabled) {
+    const ref = `laya:${layaCfg.checkpoint}`;
+    const t0 = Date.now();
+    const out = await classifyWithLayaDetailed(prompt, context, {
+      checkpoint: layaCfg.checkpoint!,
+      ...(options.cfg ? { cfg: options.cfg } : {}),
+    });
+    const trace = callSource.getStore()?.trace;
+    if (out) {
+      const ms = Date.now() - t0;
+      const acts = layaCfg.mode === 'active' && out.result !== null;
+      if (trace) {
+        trace.laya = {
+          ref,
+          category: out.answer.category,
+          confidence: out.answer.confidence,
+          ...(validLayaDistribution(out.answer.probabilities) ? { probabilities: out.answer.probabilities } : {}),
+          acted: acts,
+          ms,
+        };
+      }
+      if (acts && out.result) {
+        noteSource(ref);
+        if (layaCfg.compare_in_background) spawnBackgroundComparator();
+        if (trace) {
+          trace.chain.push({ ref, outcome: 'ok', ms });
+          // Decision log: what the stage said before post-processing.
+          trace.raw = { category: out.answer.category, confidence: out.answer.confidence, reason: out.result.reason ?? null };
+        }
+        if (!contextBlock) classifyCacheSet(prompt, out.result);
+        return out.result;
+      }
+    }
   }
 
-  if (classificationResult) {
-    // Cache the LLM classification result for repeated identical prompts
-    // (only when there was no conversation context — see cache check above).
-    if (!contextBlock) classifyCacheSet(prompt, classificationResult);
-    return classificationResult;
-  }
-
-  // Static fallback
-  if (!allowStaticFallback) {
-    errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
-    // The 'continue' category routes via CATEGORY_TO_GROUP (continue→tactical)
-    // — a capable model, exactly what the F5 fix (2026-09-02) wanted; no
-    // escalation synthesis is needed (see the module-level note above).
-    noteSource('fallback');
-    return {
-      category: 'continue',
-      reason: 'Ollama unavailable, static classifier disabled',
-      confidence: 0,
-    };
-  }
-
-  errorLog('[classifier] Ollama and cloud models failed, falling back to static classification');
-  noteSource('static');
-
-  // Static result routes via its category — no escalation synthesis
-  // (see the module-level note above).
-  return classifyStatically(prompt);
+  // Cloud-first chain (2026-09-27 rationale: Ollama is a last resort — repeated
+  // MLX wedge incidents pinned the GPU at 100%), then the static fallback. The
+  // whole tail lives in classifyViaLlmChain so the detached background
+  // comparator (live A/B snapshot) runs EXACTLY the chain the main path runs.
+  return classifyViaLlmChain();
 }
 
 function isValidClassification(obj: any): obj is ClassificationResult {
@@ -1123,20 +1320,20 @@ function isValidFullClassification(obj: any): obj is FullClassificationResult {
 // ── Mapping ──────────────────────────────────────────────────────────────
 
 export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string> = {
-  simple:       'scout',       // v2 (owner decision 2026-10-13): short real tasks stay cheap
-  code_simple:  'simple',      // GDPval ≥ 300, max_cost=0 (free models only)
-  standard:     'operational', // GDPval ≥ 300
-  code_complex: 'tactical',   // GDPval ≥ 600 (mistral-medium-3.5 qualifies)
-  // design/planning → dedicated top-tier-only group (ADR-0023 follow-up,
-  // owner decision 2026-10-04): planning/architecture work goes to the best
-  // models available — never the daily-driver free tank. The `planning`
-  // group floors at min_gdpval 1700: today claude-sonnet-5-5 (1844, primary
-  // via the best-quality window) + claude-opus-5-5 (1900, escalation);
-  // future top-tier models (GPT-6, Gemini 4, …) auto-qualify. Escalation
-  // chain: strategic → tactical (glm free tank, emergency only).
-  design:       'planning',  // top tier only (min_gdpval 1700)
-  planning:     'planning',  // top tier only (min_gdpval 1700)
-  continue:     'tactical',   // was fallback: continuation / uncertain → a decent model, not a free one
+  // Five-group layout (docs/plans/2026-10-25-category-group-mismatch.md,
+  // D4/D6/D7, owner decisions 2026-10-25..27): each category selects the
+  // group named like it. simple/code_simple share the merged cheap pool
+  // (max_cost=0, cloud-first); design is planning's rule at a lower floor
+  // (D5: 1600 vs 1700, both briefcase-sorted); continue without a real
+  // predecessor inherits the previous category, and with none it goes to
+  // the standard mid band (D6 — a decent model, not a free one).
+  simple:       'simple',
+  code_simple:  'simple',
+  standard:     'standard',
+  code_complex: 'code_complex',
+  design:       'design',
+  planning:     'planning',
+  continue:     'standard',
 };
 
 /**
@@ -1173,7 +1370,7 @@ export function getGroupForCategory(category: string, cfg?: Config): string {
   // config is never shadowed by a stale install.
   const override = cfg?.category_groups?.[category] ?? categoryGroupOverrides?.[category];
   if (override !== undefined) return override;
-  return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'fallback';
+  return CATEGORY_TO_GROUP[category as ClassificationResult['category']] ?? 'simple';
 }
 
 // ── Static Classification Fallback ─────────────────────────────────────

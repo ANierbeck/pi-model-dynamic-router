@@ -2,7 +2,7 @@
  * Regression tests: Layer 1 escalation for expensive models (2026-09-26).
  *
  * ADR-0007 extension, user-requested: models in expensive groups
- * (default: strategic, tactical) or behind expensive provider prefixes
+ * (default: planning, code_complex) or behind expensive provider prefixes
  * (default: none) must NEVER do full-file reads — they orchestrate and
  * reason; file inspection belongs to the cheap bulk_reader group. While
  * the size-based block (delegation.block_lines) protects against huge
@@ -61,8 +61,8 @@ function makeCfg(overrides?: Record<string, unknown>): Config {
   return {
     delegation,
     model_groups: {
-      strategic: { models: ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] },
-      tactical: { models: ['mistral/zai-glm-5-2'] },
+      planning: { models: ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] },
+      code_complex: { models: ['mistral/zai-glm-5-2'] },
       trivial: { models: ['ollama/qwen3.8:27b-mlx'] },
     },
   } as unknown as Config;
@@ -75,9 +75,9 @@ const CHEAP_FREE = 'openrouter/z-ai/glm-5.2:free';
 // ── delegationSettings: expensive_groups / expensive_providers ───────────
 
 describe('delegationSettings expensive-model fields', () => {
-  it('defaults: expensive_groups strategic+tactical, expensive_providers empty', () => {
+  it('defaults: expensive_groups planning+code_complex, expensive_providers empty', () => {
     const s = delegationSettings(makeCfg());
-    expect(s.expensive_groups).to.deep.equal(['strategic', 'tactical']);
+    expect(s.expensive_groups).to.deep.equal(['planning', 'code_complex']);
     expect(s.expensive_providers).to.deep.equal([]);
   });
 
@@ -90,8 +90,8 @@ describe('delegationSettings expensive-model fields', () => {
   });
 
   it('invalid lists (non-array / non-string entries) fall back to defaults whole-list', () => {
-    const s1 = delegationSettings(makeCfg({ expensive_groups: 'strategic' }));
-    expect(s1.expensive_groups).to.deep.equal(['strategic', 'tactical']);
+    const s1 = delegationSettings(makeCfg({ expensive_groups: 'planning' }));
+    expect(s1.expensive_groups).to.deep.equal(['planning', 'code_complex']);
     const s2 = delegationSettings(makeCfg({ expensive_providers: ['pi-claude', 42] }));
     expect(s2.expensive_providers).to.deep.equal([]);
   });
@@ -102,11 +102,11 @@ describe('delegationSettings expensive-model fields', () => {
 describe('isExpensiveModelRef', () => {
   const s = delegationSettings(makeCfg());
 
-  it('matches a member of an expensive group (strategic)', () => {
+  it('matches a member of an expensive group (planning)', () => {
     expect(isExpensiveModelRef(EXPENSIVE_GROUP_MEMBER, makeCfg(), s)).to.equal(true);
   });
 
-  it('matches a member of a second expensive group (tactical)', () => {
+  it('matches a member of a second expensive group (code_complex)', () => {
     expect(isExpensiveModelRef('mistral/zai-glm-5-2', makeCfg(), s)).to.equal(true);
   });
 
@@ -128,14 +128,14 @@ describe('isExpensiveModelRef', () => {
   });
 
   it('fail-open: missing group key or missing models array → false', () => {
-    const cfg = { model_groups: { strategic: {} } } as unknown as Config;
+    const cfg = { model_groups: { planning: {} } } as unknown as Config;
     expect(isExpensiveModelRef(EXPENSIVE_GROUP_MEMBER, cfg, s)).to.equal(false);
     expect(isExpensiveModelRef(EXPENSIVE_GROUP_MEMBER, undefined, s)).to.equal(false);
   });
 
   it('defensive: group entries as { ref } objects are matched too', () => {
     const cfg = {
-      model_groups: { strategic: { models: [{ ref: 'mistral/zai-glm-5-3' }] } },
+      model_groups: { planning: { models: [{ ref: 'mistral/zai-glm-5-3' }] } },
     } as unknown as Config;
     expect(isExpensiveModelRef(EXPENSIVE_GROUP_MEMBER, cfg, s)).to.equal(true);
   });
@@ -270,8 +270,8 @@ function makeStaticCfg(overrides?: Record<string, unknown>): Config {
   return {
     delegation,
     model_groups: {
-      strategic: { method: 'best', min_gdpval: 1000 },
-      tactical: { method: 'best', min_gdpval: 900 },
+      planning: { method: 'best', min_gdpval: 1000 },
+      code_complex: { method: 'best', min_gdpval: 900 },
       trivial: { method: 'best', min_gdpval: 1 },
     },
   } as unknown as Config;
@@ -280,15 +280,15 @@ function makeStaticCfg(overrides?: Record<string, unknown>): Config {
 describe('checkReadBlock live group resolver (live bug 2026-09-26)', () => {
   it('live resolver blocks an expensive member when cfg has NO materialized lists (the live bug, fixed)', () => {
     const liveRefs = (group: string): string[] =>
-      group === 'strategic' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
+      group === 'planning' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
     const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
     expect(out?.block).to.equal(true);
     expect(out?.expensive).to.equal(true);
     expect(out?.reason).to.match(/expensive models/i);
   });
 
-  it('live resolver blocks a member resolved via the second expensive group (tactical)', () => {
-    const liveRefs = (group: string): string[] => (group === 'tactical' ? ['mistral/zai-glm-5-2'] : []);
+  it('live resolver blocks a member resolved via the second expensive group (code_complex)', () => {
+    const liveRefs = (group: string): string[] => (group === 'code_complex' ? ['mistral/zai-glm-5-2'] : []);
     const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), 'mistral/zai-glm-5-2', liveRefs);
     expect(out?.block).to.equal(true);
     expect(out?.expensive).to.equal(true);
@@ -311,13 +311,13 @@ describe('checkReadBlock live group resolver (live bug 2026-09-26)', () => {
 
   it('resolver without the ref does not block (cheap member passes)', () => {
     const liveRefs = (group: string): string[] =>
-      group === 'strategic' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
+      group === 'planning' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
     expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_LOCAL, liveRefs)).to.equal(undefined);
     expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_FREE, liveRefs)).to.equal(undefined);
   });
 
   it('targeted reads are never blocked, even for live-resolved expensive members', () => {
-    const liveRefs = (group: string): string[] => (group === 'strategic' ? [EXPENSIVE_GROUP_MEMBER] : []);
+    const liveRefs = (group: string): string[] => (group === 'planning' ? [EXPENSIVE_GROUP_MEMBER] : []);
     const withOffset = checkReadBlock({ toolName: 'read', input: { path: smallFile, offset: 1, limit: 5 } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
     expect(withOffset).to.equal(undefined);
   });

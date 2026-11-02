@@ -89,7 +89,7 @@ Override a group's `min_gdpval` or `fallback_groups`:
 ```json
 {
   "model_groups": {
-    "strategic": { "min_gdpval": 800 }
+    "planning": { "min_gdpval": 1500 }
   }
 }
 ```
@@ -105,6 +105,38 @@ Add or override benchmark scores for models not in the scraped table:
   }
 }
 ```
+
+### `classifier_laya` — Experimental local classifier stage
+
+An opt-in stage that classifies with a **local Laya sidecar** (Apple
+Silicon / MLX) instead of the cloud chain. Disabled by default and
+experimental — start in `"shadow"` mode, which only logs.
+
+```json
+{
+  "classifier_laya": {
+    "enabled": true,
+    "checkpoint": "<hf-repo>:<revision>",
+    "mode": "shadow",
+    "endpoint": "http://127.0.0.1:8089",
+    "confidence_threshold": 0.8,
+    "timeout_ms": 1500,
+    "compare_in_background": false,
+    "observe_momentum": false
+  }
+}
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Turn the stage on (requires `checkpoint`) |
+| `checkpoint` | — | Pinned weights, `<hf-repo>:<revision>`. Required when enabled — the router never downloads weights |
+| `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
+| `confidence_threshold` | `0.8` | Minimum confidence to use the answer (the scale is uncalibrated — keep the gate) |
+| `endpoint` | `http://127.0.0.1:8089` | Sidecar URL, `POST /classify` |
+| `timeout_ms` | `1500` | Fall through to the chain after this long |
+| `compare_in_background` | `false` | In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027) |
+| `observe_momentum` | `false` | Log detached answers for short momentum prompts (can incur classifier spend) |
 
 ## Merge semantics
 

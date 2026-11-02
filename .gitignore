@@ -31,3 +31,5 @@ coverage/
 # Stryker mutation testing (nightly, report-only)
 .stryker-tmp/
 reports/
+__pycache__/
+*.pyc

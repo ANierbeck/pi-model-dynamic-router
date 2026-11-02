@@ -174,6 +174,57 @@ original "Unknown error" symptom.
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### 🔎 **Open (2026-10-25): categories and groups do not line up**
+
+7 categories, 13 groups, names that point at the wrong category, 5 groups
+no category reaches. Plan with verified current state and owner decisions
+D1–D3: `docs/plans/2026-10-25-category-group-mismatch.md`.
+
+### 🔎 **Open (2026-10-25): "fallback" naming (code smell)**
+
+"fallback" names six different things (group, failover cascade, classifier
+candidates, decision-log stage, retired category, stream retry). Plan:
+`docs/plans/2026-10-25-fallback-naming.md`.
+
+### 🐛 **Open (2026-10-25): compaction reason text names the wrong group**
+
+`classifyPromptUncounted` (`src/content-classifier.ts`, compaction branch)
+returns `category: 'code_complex'` — routed to `tactical` — with the reason
+"routing to strategic" (comment says the same). Seen once in 62 compaction
+decisions (the other 61 reuse the last model). Decide which is intended
+(strategic or tactical), then fix code or text red-first.
+
+### 🔍 **Open (2026-10-25): tool follow-up steps fail over into the free pool**
+
+A tool follow-up step (`src/stream-orchestrator.ts`, `isToolFollowUp`) puts
+the last model first and the `fallback` group (free, cheapest first)
+behind it — whatever group the turn started in. A planning turn whose model
+fails mid-loop would continue on a free model. Found by code reading; the
+impact is not measured yet — measure in the log first, then decide.
+
+### 🔍 **Open (2026-10-25): `delegation.expensive_groups` omits `planning`**
+
+Shipped `["strategic", "tactical"]` predates the `planning` group
+(2026-10-04). The read block covers `planning` today only because both of
+its models are also members of `strategic` (checked against the dynamic
+config of 2026-10-24). Add `planning` explicitly, red-first, so the
+coverage does not depend on that overlap.
+
+### 🔎 **Open (2026-10-31): felt quality does not match the benchmark ranking**
+
+Owner observation, not a measurement: working with an explicit `HINT` on the
+newest Fable and on Opus, the difference to the models the groups pick is
+clearly noticeable, although the benchmark columns the ranking sorts by
+(GDPval, Briefcase) do not show it. The ranking therefore cannot express what
+the owner experiences. Open question: how does felt quality enter the ranking
+(e.g. owner ratings per model and task type, collected like the Laya live
+labels) without model names in shipped code (AGENTS.md §9; the user layer is
+allowed)? Needs its own plan (§11) once the owner wants it. Related facts: the
+user layer excludes the older Fable for its token consumption, Opus/Sonnet 5.5
+are back in because they are frugal, and the newest Fable has no consumption
+measurement yet (zero turns in the session files). It also inherits the older
+Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
+
 ### ✅ **A1 — Shared group-candidate filters (DONE 2026-08-23)**
 
 `applyGroupFilters(refs, g, cfg, dedup?, dedupFn?)` in `src/routing.ts` is the
@@ -358,6 +409,26 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 
 ### Extended Classification
 - [ ] **Add more categories** - More specific distinction
+- [ ] **Pinned continuation does not update the category memory** (found 2026-10-22,
+  code read, not yet reproduced live). A `HINT:` model pin bypasses the
+  classifier, so the turn returns no `category`, and
+  `lastClassifiedCategory` (`src/stream-orchestrator.ts:419`) keeps the value
+  from before the pin. A following unpinned "weiter" then inherits a stale
+  category. Routing of the pinned turn itself is unaffected (the pin decides
+  the model); only the next turn's category and the calibration label are
+  wrong. Planned fix: a pinned turn classifies its content, but keeps the
+  model pin, and writes its category to the memory. Needs a red-first test.
+  Background: `docs/research/2026-10-22-hint-category-signal.md`.
+- [ ] **Use explicit HINT pins as owner category labels** (research, 2026-10-22).
+  Hand-labelled, 96 unique pinned prompts in the local session logs: code_complex 67,
+  planning 11, continue 9, design 5, simple 2, standard 2. A Sonnet pin mostly
+  means code_complex, but not always (4 of 33 are continuations). An Opus pin
+  is planning in 5 of 12 cases, code_complex in 7 (plan checks count as
+  code_complex under the taxonomy). The 4 Haiku pins are not enough to
+  support "Haiku = simple". Pins are NOT a routing rule; they are a
+  label source for calibration. Open: keep labels separate from model
+  predictions (`owner_label` field) and decide the category handling of
+  "plan check" (taxonomy says code_complex).
 - [ ] **Multi-label classification** - Multiple categories per prompt (needs an ADR before implementation, see below)
 - [x] **Context-based classification (partially done, 2026-08-29)** — the
   classifier already accepted `lastCategory` (short-prompt momentum: "yes",
@@ -521,6 +592,53 @@ judged sufficient.
   Failure Management section (2026-08-28).
 
 ## 🔭 **Future Tasks (registered)**
+
+### Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator (OWNER-MANDATED 2026-10-15 — do this first after laya-spike merges to main)
+
+Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
+the first nightly with the v2-r3 taxonomy): 3-file scope (stream-orchestrator,
+metrics, routing), 2784 mutants, score **69.94 %** — 1947 killed / 573
+survived / 264 no-coverage. Two consecutive nightlies are identical (+1 kill),
+so the picture is stable.
+
+**85 % of all undetected mutants sit in `src/stream-orchestrator.ts` (710)**,
+concentrated in the classification/HINT region that v2-r3 rewrote
+(line numbers for main @ 6f4ac08 — re-locate against the fresh report):
+
+- classifyOpts context build (L401 region, 17 survived): lastCategory,
+  lastModel, isCompaction, lastModelLimited wiring
+- HINT alias matching, `namesMatch` over `allDiscoveredRefs()` (L476, 26
+  survived) and the documented B3 follow-up clusters L465/L549
+  (dynamic-HINT match)
+- hint-not-found fallback cascade, including explicit-hint `clearLimit` and
+  registry/provider lookups (L520–570, ~120 no-coverage)
+- escalation gate after normal classification (L576+, ~32 undetected)
+- plus B3 follow-up: breaker-dead-end wait guard (L1107)
+
+The v2-r3 pin tests cover the classifier itself, but **no test drives the
+orchestrator wiring mutation-lethally** — the most consequential selection
+code in the router has the weakest mutation coverage. Round shape: red-first
+tests around the orchestrator integration surface (classifyOpts context,
+HINT resolution, hint-not-found cascade), mutant-by-mutant verification via
+`scripts/mutation-recheck.ts`, verdicts ledgered in `docs/mutation-triage.md`.
+
+**Why after the spike merge:** the laya-spike branch (prev logging,
+output-budget guard) shifts stream-orchestrator line numbers, so today's
+mutant references go stale. Re-run the nightly on merged main first, triage
+against the fresh report, use the regions above as orientation.
+
+**Owner decision 2026-10-15 (exit-cost rule):** laya-spike does NOT merge to
+main while the Laya verdict is open — if Laya fails, it gets removed entirely
+rather than un-merged later. So this round triggers in EITHER ending:
+(a) Laya succeeds -> spike merge, or (b) Laya is dropped -> the non-Laya
+orchestrator changes (output-budget guard, prev logging) are cherry-picked
+to main first. In both cases: fresh nightly on the updated main, then triage.
+
+metrics.ts (73) and routing.ts (54) remainders are low priority — after
+batches 1–4 these look mostly like equivalents (slug/GDPval matching, group
+constant lists, round-robin fields); confirm before spending a round.
+
+---
 
 ### Periodic mutation-testing audit of the suite
 A vacuous test (assert-true equivalent) is invisible to green runs — only

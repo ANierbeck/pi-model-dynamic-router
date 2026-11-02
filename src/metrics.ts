@@ -36,7 +36,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import { routerLog, errorLog } from './logger.ts';
-import type { Metrics, Config, Cache } from './types.ts';
+import { CAPABILITY_COLUMNS, isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
 import { norm, baseTokens, splitRef } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
@@ -552,11 +552,17 @@ export function setConfig(config: Config): void {
 export function setCache(newCache: Cache): void {
   cache = newCache;
   // ADR-0023 round 2: capability profiles live in the cache and are read
-  // through lookupCapability (additive like gdpval_scores — new cache
-  // entries add to whatever earlier profiles exist; no separate in-memory
-  // index needed because lookups are per-ref at scan/routing time).
+  // through lookupCapability. REPLACE when the cache carries the field (the
+  // scan passes the LATEST scrape): a model or value the newer scrape dropped
+  // must not linger in this mirror — the score-column gates read it, and a
+  // stale value would admit, rank or keep a gate active on obsolete data
+  // (Sourcery PR #80 round; same rule as gdpval_provenance below). A cache
+  // without the field leaves the mirror untouched.
   if (cache.capability_profiles) {
-    capabilityProfiles = { ...capabilityProfiles, ...cache.capability_profiles };
+    capabilityProfiles = { ...cache.capability_profiles };
+    capabilityColumnsWithData = new Set(
+      CAPABILITY_COLUMNS.filter((col) => Object.values(capabilityProfiles).some((p) => typeof p?.[col] === 'number'))
+    );
   }
   // Task-0 identity audit (2026-10-12): per-slug provenance. REPLACE when
   // the cache carries the field (scan passes the map of the LATEST scrape —
@@ -594,17 +600,33 @@ let capabilityProfiles: NonNullable<Cache['capability_profiles']> = {};
 
 /**
  * Resolves a model ref to a capability column (AA-Briefcase Elo / coding
- * blend) via the same slug pipeline as lookupGdp. Returns null when the
+ * blend / reasoning blend) via the same slug pipeline as lookupGdp. Returns null when the
  * model, the profile, or the COLUMN is absent — null IS the fallback
  * signal (callers fall back to gdpval), never 0.
  */
-export function lookupCapability(ref: string, column: 'briefcase' | 'coding'): number | null {
+export function lookupCapability(ref: string, column: CapabilityColumn): number | null {
   const slug = resolveSlug(ref);
   if (!slug) return null;
   const profile = capabilityProfiles[slug];
   if (!profile) return null;
   const v = profile[column];
   return typeof v === 'number' ? v : null;
+}
+
+/**
+ * Whether ANY scanned model carries a value for `column`. The safety valve of
+ * `Group.require_score_column`: with no data anywhere (scrape never ran,
+ * failed or drifted) a "must have a value" gate would empty the group, so it
+ * stands down instead.
+ */
+// Columns that have at least one value in the current profile mirror, computed
+// once per setCache instead of scanning every profile per candidate per group
+// (merge review 2026-11-01, Minor: hasCapabilityData was O(profiles) per call
+// and the score-column gates call it per candidate).
+let capabilityColumnsWithData: ReadonlySet<CapabilityColumn> = new Set();
+
+export function hasCapabilityData(column: CapabilityColumn): boolean {
+  return capabilityColumnsWithData.has(column);
 }
 
 /** Test/inspection accessor for the merged capability profiles. */
@@ -733,17 +755,37 @@ export function getM(ref: string): Metrics {
 }
 
 /**
- * Updates the metrics for a reference
+ * Updates the metrics for a reference. The FIRST completed stream initializes
+ * the EMA instead of blending into the placeholder defaults (1000 ms /
+ * 100 tok/s) — with α = 0.3 one stream would leave latency 70 % placeholder.
+ * A user-configured prior (model_metrics) is real information and still
+ * blends. Throughput keeps its own counter (`tps_samples`): a stream can
+ * complete without token counts, and such a stream is a latency sample but
+ * never a throughput one. The inputs are turn-level: whole-turn duration and
+ * input+output tokens, so one atypical first turn is the full estimate for
+ * `fastest`/`cheapest` sorts until later streams blend in.
  */
 export function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
   const m = getM(ref),
     α = 0.3;
-  m.avg_latency_ms = m.avg_latency_ms * (1 - α) + latMs * α;
+  const prior = cfg.model_metrics?.[ref];
+  if ((m.samples ?? 0) === 0 && prior?.avg_latency_ms === undefined) {
+    m.avg_latency_ms = latMs;
+  } else {
+    m.avg_latency_ms = m.avg_latency_ms * (1 - α) + latMs * α;
+  }
   if (durMs > 0 && tokens > 0) {
-    m.throughput_tps = m.throughput_tps * (1 - α) + (tokens / durMs) * 1000 * α;
+    const tps = (tokens / durMs) * 1000;
+    if ((m.tps_samples ?? 0) === 0 && prior?.throughput_tps === undefined) {
+      m.throughput_tps = tps;
+    } else {
+      m.throughput_tps = m.throughput_tps * (1 - α) + tps * α;
+    }
+    m.tps_samples = (m.tps_samples ?? 0) + 1;
     if (!cache.benchmarks) cache.benchmarks = {};
     cache.benchmarks[ref] = m.throughput_tps;
   }
+  m.samples = (m.samples ?? 0) + 1;
   m.last_updated = Date.now();
 }
 
@@ -771,7 +813,8 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * The 'best' method's ranking score (ADR-0023 round 2). The second param
  * is the group's score_by column — it FINALLY does something: 'briefcase'
  * ranks by AA-Briefcase Elo (agentic knowledge work), 'coding' by the
- * SciCode/Terminal-Bench blend. Everything else (absent, 'gdpval', legacy
+ * SciCode/Terminal-Bench blend, 'reasoning' by the Intelligence Index /
+ * Omniscience / HLE Diamond blend. Everything else (absent, 'gdpval', legacy
  * group-name strings from pre-round callers) ranks by the global GDPval —
  * the exact pre-round behavior.
  *
@@ -781,7 +824,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
  * GDPval-only").
  */
 export function calculateScore(ref: string, column?: string, _config?: Config): number {
-  if (column === 'briefcase' || column === 'coding') {
+  if (isCapabilityColumn(column)) {
     const v = lookupCapability(ref, column);
     if (v !== null) return v;
   }

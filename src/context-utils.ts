@@ -5,6 +5,7 @@
  */
 
 import { stripRouterNarration, splitRef, messageText } from './utils.ts';
+import { estimateInputTokens } from './context-budget.ts';
 import type { Context } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 
@@ -50,32 +51,9 @@ export function createContextUtils(d: ContextUtilsDeps) {
   }
 
   function estimateContextTokens(context: Context): number {
-    let total = 0;
-    for (const msg of context.messages) {
-      // Content may be a string OR an array of content blocks (text, tool_use,
-      // tool_result, image, etc.). For arrays, sum the text representation of
-      // every block — a tool_result block can easily carry tens of thousands of
-      // tokens (a full file read, a command's stdout). Treating arrays as ''
-      // silently produced a 0-token estimate for every tool message, which made
-      // the context-window guard in driveStream think a 300K-token conversation
-      // (after a 1M-context model) was small enough for a 256K model. The
-      // provider then hung for minutes trying to ingest an oversized prompt.
-      const c = msg.content;
-      let text: string;
-      if (typeof c === 'string') {
-        text = c;
-      } else if (Array.isArray(c)) {
-        text = c.map((b: any) =>
-          typeof b === 'string'
-            ? b
-            : b?.text ?? b?.content ?? (b != null ? JSON.stringify(b) : '')
-        ).join('');
-      } else {
-        text = c != null ? String(c) : '';
-      }
-      total += Math.ceil(text.length / 4); // Rough estimate: 4 chars ≈ 1 token
-    }
-    return total;
+    // Includes context.systemPrompt: the system prompt occupies the window
+    // just like message text (Sourcery finding — was previously omitted).
+    return estimateInputTokens(context, undefined);
   }
 
   /**

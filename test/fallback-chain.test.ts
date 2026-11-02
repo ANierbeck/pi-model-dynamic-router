@@ -4,9 +4,9 @@
 //
 // Bug this guards against: getFallbackGroup() ignored a group's configured
 // fallback_groups and always used the hardcoded global FALLBACK_GROUP_ORDER.
-// This meant a group configured to skip ahead in the cascade (e.g. trivial
-// → fallback, bypassing scout) would silently fall through to whatever the
-// global order put next instead.
+// This meant a group configured to skip ahead in the cascade (e.g. a group
+// pointing straight at 'simple', bypassing its global-order neighbor) would
+// silently fall through to whatever the global order put next instead.
 //
 // getFallbackGroup() used to be a closure-private function inside index.ts's
 // activate(), which forced tests to either spin up the full extension harness
@@ -23,65 +23,64 @@ import type { Group } from '../src/types.ts';
 
 describe('getFallbackGroup', () => {
   it('prefers a configured fallback_groups entry over the global order', () => {
-    // Global order has 'scout' immediately after 'trivial'. A configured
-    // fallback_groups pointing straight to 'fallback' must win instead.
+    // Global order has 'simple' immediately after 'standard'. A configured
+    // fallback_groups pointing straight at 'code_complex' must win instead.
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best', fallback_groups: ['fallback'] },
-      scout: { method: 'best' },
-      fallback: { method: 'best' },
+      standard: { method: 'best', fallback_groups: ['code_complex'] },
+      code_complex: { method: 'best' },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('fallback');
+    expect(getFallbackGroup('standard', modelGroups, new Set())).toBe('code_complex');
   });
 
   it('skips configured fallback_groups entries that do not exist in config', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best', fallback_groups: ['nonexistent', 'fallback'] },
-      fallback: { method: 'best' },
+      standard: { method: 'best', fallback_groups: ['nonexistent', 'simple'] },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('fallback');
+    expect(getFallbackGroup('standard', modelGroups, new Set())).toBe('simple');
   });
 
   it('skips already-visited groups from the configured list', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best', fallback_groups: ['scout', 'fallback'] },
-      scout: { method: 'best' },
-      fallback: { method: 'best' },
+      standard: { method: 'best', fallback_groups: ['code_complex', 'simple'] },
+      code_complex: { method: 'best' },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set(['scout']))).toBe('fallback');
+    expect(getFallbackGroup('standard', modelGroups, new Set(['code_complex']))).toBe('simple');
   });
 
   it('falls through to the global order when fallback_groups is unset', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best' },
-      scout: { method: 'best' },
-      fallback: { method: 'best' },
+      standard: { method: 'best' },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+    expect(getFallbackGroup('standard', modelGroups, new Set())).toBe('simple');
   });
 
   it('falls through to the global order when fallback_groups is empty', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best', fallback_groups: [] },
-      scout: { method: 'best' },
+      standard: { method: 'best', fallback_groups: [] },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+    expect(getFallbackGroup('standard', modelGroups, new Set())).toBe('simple');
   });
 
   it('falls through to the global order when every configured entry is unusable', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best', fallback_groups: ['nonexistent'] },
-      scout: { method: 'best' },
+      standard: { method: 'best', fallback_groups: ['nonexistent'] },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set())).toBe('scout');
+    expect(getFallbackGroup('standard', modelGroups, new Set())).toBe('simple');
   });
 
   it('skips already-visited groups in the global order too', () => {
     const modelGroups: Record<string, Group> = {
-      trivial: { method: 'best' },
-      scout: { method: 'best' },
-      fallback: { method: 'best' },
+      code_complex: { method: 'best' },
+      standard: { method: 'best' },
+      simple: { method: 'best' },
     };
-    expect(getFallbackGroup('trivial', modelGroups, new Set(['scout']))).toBe('fallback');
+    expect(getFallbackGroup('code_complex', modelGroups, new Set(['standard']))).toBe('simple');
   });
 
   it('returns null when the current group is not in the global order and has no config', () => {
@@ -90,19 +89,19 @@ describe('getFallbackGroup', () => {
   });
 
   it('returns null when every remaining group in the global order is visited or undefined', () => {
-    const modelGroups: Record<string, Group> = { fallback: { method: 'best' } };
-    expect(getFallbackGroup('fallback', modelGroups, new Set())).toBeNull();
+    const modelGroups: Record<string, Group> = { simple: { method: 'best' } };
+    expect(getFallbackGroup('simple', modelGroups, new Set())).toBeNull();
   });
 
-  it('FALLBACK_GROUP_ORDER ends with fallback (last resort)', () => {
-    expect(FALLBACK_GROUP_ORDER[FALLBACK_GROUP_ORDER.length - 1]).toBe('fallback');
+  it('FALLBACK_GROUP_ORDER ends with simple (the cheap last resort)', () => {
+    expect(FALLBACK_GROUP_ORDER[FALLBACK_GROUP_ORDER.length - 1]).toBe('simple');
   });
 
   // Nightly R1 (2026-10-07): the tests above import FALLBACK_GROUP_ORDER, so
   // its contents were never pinned — an emptied or renamed list passed.
   it('FALLBACK_GROUP_ORDER is the coarse-to-cheap cascade, spelled out', () => {
     expect([...FALLBACK_GROUP_ORDER]).toEqual([
-      'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+      'planning', 'design', 'code_complex', 'standard', 'simple',
     ]);
   });
 
@@ -111,20 +110,20 @@ describe('getFallbackGroup', () => {
     for (const name of FALLBACK_GROUP_ORDER) modelGroups[name] = { method: 'best' };
     const visited = new Set<string>();
     const walk: string[] = [];
-    let cur: string | null = 'strategic';
+    let cur: string | null = 'planning';
     while (cur !== null) {
       walk.push(cur);
       visited.add(cur);
       cur = getFallbackGroup(cur, modelGroups, visited);
     }
     expect(walk).toEqual([
-      'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+      'planning', 'design', 'code_complex', 'standard', 'simple',
     ]);
   });
 
   it('a current group that is absent from config still cascades through the global order', () => {
     // g is undefined here: the configured-fallbacks lookup must not crash.
-    const modelGroups: Record<string, Group> = { complex: { method: 'best' } };
-    expect(getFallbackGroup('strategic', modelGroups, new Set())).toBe('complex');
+    const modelGroups: Record<string, Group> = { design: { method: 'best' } };
+    expect(getFallbackGroup('planning', modelGroups, new Set())).toBe('design');
   });
 });

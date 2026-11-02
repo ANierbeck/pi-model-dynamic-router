@@ -5,6 +5,18 @@ import type { Model } from '@earendil-works/pi-ai';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
+/**
+ * The Artificial Analysis capability columns a group can rank by
+ * (`Group.score_by`), next to the global GDPval. ONE list so every place that
+ * asks "is this a capability column?" agrees when a column is added.
+ */
+export const CAPABILITY_COLUMNS = ['briefcase', 'coding', 'reasoning'] as const;
+export type CapabilityColumn = (typeof CAPABILITY_COLUMNS)[number];
+
+export function isCapabilityColumn(value: unknown): value is CapabilityColumn {
+  return typeof value === 'string' && (CAPABILITY_COLUMNS as readonly string[]).includes(value);
+}
+
 export interface Defaults {
   gdpval_url: string;
   backoff_minutes: number[];
@@ -27,6 +39,10 @@ export interface Metrics {
   avg_latency_ms: number;
   cost_per_m: number | 'unknown';
   last_updated: number;
+  /** Completed streams folded into the latency EMA in this process; 0 or undefined = latency is a placeholder. */
+  samples?: number;
+  /** Completed streams with token counts folded into the throughput EMA; 0 or undefined = throughput is a placeholder. Kept separate from `samples`: a stream can complete without token counts. */
+  tps_samples?: number;
 }
 
 export interface RateLimit {
@@ -58,9 +74,9 @@ export interface Group {
    * Maximum GDPval a group member may have — the hard upper tier boundary,
    * symmetric to `min_gdpval` (owner decision 2026-10-04, ADR-0023). Keeps
    * top-tier models out of a group they would otherwise dominate via the
-   * `best` method's score convergence: e.g. `tactical` capped at 1700
+   * `best` method's score convergence: e.g. `code_complex` capped at 1700
    * admits glm-5-3 (1644) but excludes claude-opus-5-5 (1900) and
-   * claude-sonnet-5-5 (1844), reserving those for `strategic`. Strict
+   * claude-sonnet-5-5 (1844), reserving those for `planning`. Strict
    * null-fails semantics, matching `min_gdpval`: a model with a null
    * (unscored) GDPval fails a positive cap. Absent/0 = no upper bound.
    */
@@ -69,15 +85,38 @@ export interface Group {
   /**
    * Which capability column ranks WITHIN this group (ADR-0023 round 2):
    * 'gdpval' (default) | 'briefcase' (AA-Briefcase Elo — agentic knowledge
-   * work, the natural planning score) | 'coding' (SciCode/Terminal-Bench
-   * blend). Floors and caps stay on the global GDPval — a column never
-   * changes which models are ADMITTED, only their order within the pool.
+   * work, the natural design score) | 'coding' (SciCode/Terminal-Bench
+   * blend) | 'reasoning' (equal thirds of AA Intelligence Index, Omniscience
+   * and HLE Diamond — the planning score, owner decision 2026-10-31).
+   * Floors and caps stay on the global GDPval — a column never changes
+   * which models are ADMITTED, only their order within the pool (the opt-in
+   * exceptions are `require_score_column` and `min_score`).
    * A model WITHOUT a value for the column is never mixed into the column
    * ranking by its GDPval: it ranks after every model that has the column,
    * in GDPval order among themselves (owner decision 2026-10-26).
    * calculateScore itself keeps the gdpval fallback for its callers.
    */
-  score_by?: 'gdpval' | 'briefcase' | 'coding';
+  score_by?: 'gdpval' | CapabilityColumn;
+  /**
+   * Refuse models that have no value in this group's `score_by` capability
+   * column ("a model that cannot be measured on this does not belong in this
+   * category", owner decision 2026-10-31). Default off: such models only rank
+   * last. Safety valve: when NO model has a value for the column (scrape never
+   * ran or failed) the gate stands down, so a stale install does not end up
+   * with an empty group. No effect on `gdpval` groups.
+   */
+  require_score_column?: boolean;
+  /**
+   * Minimum value in this group's own `score_by` capability column (>=, a
+   * model WITHOUT a value fails, like `min_gdpval`). GDPval floors admit on
+   * one benchmark; this is the floor on the column the group actually ranks
+   * by — GDPval alone let a fast "Flash" model into planning (GDPval 1746)
+   * whose reasoning blend ranks it near last (owner decision 2026-10-31).
+   * Absent/0 = no floor. Stands down together with `require_score_column`
+   * while no model has a value for the column, and does nothing for groups
+   * without a capability column.
+   */
+  min_score?: number;
   max_cost?: number;
   max_cost_per_m?: number;
 
@@ -109,7 +148,7 @@ export interface Group {
    * - 'default':      free → subscription → local → payg
    * - 'local_first':  free → local → subscription → payg
    * - 'strict_local': local → free → subscription → payg — for cheap groups
-   *   (trivial/simple) where the local daemon should answer first: best
+   *   (simple) where the local daemon should answer first: best
    *   latency and no quota burn, ahead of even the $0 remote models.
    *
    * Note that a subscription model's nominal $0 cost does NOT mean it is
@@ -151,7 +190,7 @@ export interface Group {
    * and a resolvable key configured in router-config.json.
    */
   classifier_cloud_fallback?: boolean;
-  /** Groups to try (in order) when all candidates in this group fail. e.g. ["strategic", "operational"] */
+  /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */
   fallback_groups?: string[];
 }
 
@@ -203,6 +242,60 @@ export interface ClassifierLogConfig {
   keep?: number;
 }
 
+/**
+ * Opt-in local classifier stage: Laya, a typed decision model (Apache 2.0).
+ * Local on Apple Silicon, no prompt content leaves the machine, but quality
+ * (zero-shot ~0.36 on typed decisions) is insufficient for active routing —
+ * the stage ships disabled (see docs/research/2026-10-09-laya-spike.md and
+ * docs/plans/2026-10-09-laya-tasks1-5.md).
+ */
+export interface ClassifierLayaConfig {
+  /** Enable the local Laya classifier stage. Default false — active use is gated
+   * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
+  enabled?: boolean;
+  /** Confidence threshold for forwarding a Laya result into the chain (default 0.8).
+   * The shipped confidence scale is uncalibrated (ECE 0.466); the gate is the
+   * first line of defense until the benchmark says otherwise. */
+  confidence_threshold?: number;
+  /** Endpoint of the local Laya wrapper/sidecar (default http://127.0.0.1:8089).
+   * The wrapper speaks POST /classify {prompt, context?} ->
+   * {category, confidence, probabilities, ms}. */
+  endpoint?: string;
+  /** Pinned Laya model checkpoint: the HF repo path of the laya-mlx weights,
+   * ideally with a revision hash (e.g. aac6fef/laya-multilingual-mlx:f2b4faf5...).
+   * REQUIRED when enabled. The router never downloads weights — fetching is a
+   * manual step (pip install laya-mlx + huggingface_hub.snapshot_download).
+   * Shipped config must NOT name a checkpoint (ADR-0025).
+   */
+  checkpoint?: string;
+  /** Milliseconds to wait for a classify request before falling through to the
+   * next stage (default 1500). Laya is local and fast; a short timeout prevents
+   * the chain from stalling on a broken sidecar. */
+  timeout_ms?: number;
+  /** Mode: "shadow" writes Laya's decision into the decision log (ADR-0027 Phase 4)
+   * without affecting the routed answer; "active" lets a confident result take the
+   * route. Default "shadow" when enabled. */
+  mode?: 'active' | 'shadow';
+  /** Live A/B snapshot (owner decision 2026-10-25): in active mode, when a
+   * confident Laya answer takes the route, still run the cloud/ollama chain it
+   * replaced DETACHED and log its answer as a `comparator` decision-log record
+   * for the same input. Logging only — it never changes the route, the
+   * classification cache, or the process-global classification source. Default
+   * false; meaningless in shadow mode (the chain runs anyway and is logged). */
+  compare_in_background?: boolean;
+  /** Momentum observation (owner go 2026-10-29): prompts of up to 4 words with a
+   * known previous category keep inheriting that category (short-prompt
+   * momentum) — but with this flag Laya (and, with `compare_in_background`, the
+   * chain) are asked about them DETACHED and the answers are logged as
+   * `observation` / `observation-comparator` records. Logging only: routing,
+   * cache and the process-global source are untouched. Cost note: the
+   * observation runs whenever a momentum prompt occurs — in shadow mode, on
+   * below-threshold answers and when Laya is down (the chain then answers in
+   * shadow), and regardless of `compare_in_background` — so short prompts can
+   * incur classifier spend. Default false. */
+  observe_momentum?: boolean;
+}
+
 export interface Config {
   providers?: Record<string, ProviderConfig>;
   model_groups: Record<string, Group>;
@@ -223,6 +316,13 @@ export interface Config {
    * replay needs; stays local, file mode 0600).
    */
   classifier_log?: ClassifierLogConfig;
+  /**
+   * Opt-in local Laya typed-decision classifier stage (Apache 2.0; spike at
+   * docs/research/2026-10-09-laya-spike.md, plan at
+   * docs/plans/2026-10-09-laya-tasks1-5.md). Disabled by default; requires a
+   * pinned HF checkpoint ref when enabled — the router never downloads weights.
+   */
+  classifier_laya?: ClassifierLayaConfig;
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the
@@ -366,7 +466,8 @@ export interface DelegationConfig {
    *  size (ADR-0007 escalation): expensive models orchestrate and reason;
    *  file inspection belongs to the cheap delegation group. Matched against
    *  the ACTIVE config's materialized model lists (scan output). Defaults
-   *  to ['strategic', 'tactical']; an empty array disables the group check. */
+   *  to ['planning', 'code_complex'] (src/delegation.ts); an empty array
+   *  disables the group check. */
   expensive_groups?: string[];
   /** Provider prefixes (e.g. 'pi-claude') whose models count as expensive
    *  regardless of group membership — for fixed (non-routed) sessions whose
@@ -428,7 +529,7 @@ export interface Cache {
    * Same additive-merge lifecycle as gdpval_scores: setCache merges,
    * absent column = null (gdpval fallback), never 0.
    */
-  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number }>;
+  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number; reasoning?: number }>;
 
   /**
    * Per-slug PROVENANCE from the Artificial Analysis scrape (Task-0
@@ -672,11 +773,35 @@ export interface ModelWithLimits {
   ref: string;
   limited: boolean;
   rank: number;
+  /** Ranking reason in a `best` group (see rank-explain.ts); display only. */
+  why?: string;
+}
+
+/** One ranked candidate of a group pool, as resolved at decision time.
+ * Metrics and flags mirror the `[routing]` debug line (routing.ts
+ * formatGroupDecision): refs and numbers only, never prompt text. */
+export interface PoolCandidate {
+  ref: string;
+  gdp: number | null;
+  cost: number | null;
+  /** Present for method 'best' (the column the group ranks by). */
+  score?: number;
+  flags: string[]; // 'unhealthy' | 'limited' | 'paced'
+}
+
+/** The pool a GroupResolution came from (route 2 of the pool replay:
+ * written into the decision log by the resolve glue). */
+export interface GroupPool {
+  group: string;
+  method: string;
+  candidates: PoolCandidate[];
 }
 
 export interface GroupResolution {
   selected: string;
   candidates: string[];
+  /** Ranked pool with metrics; attached by resolveGroup. */
+  pool?: GroupPool;
 }
 
 // ── Cost Tracking Types ────────────────────────────────────────────────

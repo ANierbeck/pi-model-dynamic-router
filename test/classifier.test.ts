@@ -39,7 +39,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Optimize this 200-line function for performance", { cache: localModelCache() });
     expect(result.category).toBe("code_complex");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("code_complex");
   });
 
   it("classifies design questions as 'design'", async () => {
@@ -49,7 +49,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Design an event-sourcing architecture", { cache: localModelCache() });
     expect(result.category).toBe("design");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("planning");
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("design");
   });
 
   it("classifies unclear requests as 'continue'", async () => {
@@ -59,7 +59,7 @@ describe("classifyPrompt (Unit Tests)", () => {
     
     const result = await classifyPrompt("Make this better", { cache: localModelCache() });
     expect(result.category).toBe("continue");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("tactical"); // Default fallback
+    expect(CATEGORY_TO_GROUP[result.category]).toBe("standard"); // D6 default
   });
 
   it("handles Ollama errors with allowStaticFallback=false (default)", async () => {

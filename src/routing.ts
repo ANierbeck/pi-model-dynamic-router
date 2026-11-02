@@ -9,9 +9,12 @@ import type {
   RateLimit,
   ModelWithLimits,
   GroupResolution,
+  GroupPool,
 } from './types.ts';
+import { isCapabilityColumn } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, lookupContextWindow } from './metrics.ts';
+import { explainBestRanking } from './rank-explain.ts';
+import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, hasCapabilityData, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
@@ -113,6 +116,23 @@ export interface GroupFilterLookups {
   isFree(ref: string): boolean;
 }
 
+/**
+ * The score-column gate a model fails in group `g`, or null when it passes
+ * both (or neither is configured). `require_score_column` is checked first, so
+ * a model without any value is reported by it rather than by `min_score`.
+ * Both gates stand down while no model has a value for the column (scrape
+ * never ran or drifted): an empty group would be worse than an unranked one.
+ * Shared by applyGroupFilters (live, display, persist) and detectGroup.
+ */
+function scoreColumnGateFailure(ref: string, g: Group): 'require_score_column' | 'min_score' | null {
+  const column = g.score_by;
+  if (!isCapabilityColumn(column) || !hasCapabilityData(column)) return null;
+  const value = lookupCapability(ref, column);
+  if (g.require_score_column && value === null) return 'require_score_column';
+  if (g.min_score != null && g.min_score > 0 && (value === null || value < g.min_score)) return 'min_score';
+  return null;
+}
+
 /** Whether `ref` is listed in its provider's `free_models` (prefixed or bare). */
 function inFreeModelsList(cfg: Config, ref: string): boolean {
   const prov = ref.split('/')[0];
@@ -187,6 +207,10 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  *       src/agent-capability.ts) drop out of EVERY group; the prompt
  *       classifier chain never passes through here and keeps them
  *   4. min_gdpval / min_gdpval_pct — quality gate (GDPval ≥ threshold)
+ *   4b. max_gdpval — upper tier boundary
+ *   4c. require_score_column (opt-in) — drop models without a value in the
+ *       group's own capability column
+ *   4d. min_score (opt-in) — floor on that same column
  *   5. max_cost           — total cost cap
  *   6. max_cost_per_m     — per-million input-price cap
  *   7. min_context_length — context window floor
@@ -269,8 +293,8 @@ export function applyGroupFilters(
   // CONFIG-DRIVEN via cfg.non_agent_model_prefixes (the same key for all
   // users, set in the user layer — nothing ships, ADR-0025 Phase D;
   // absent/empty = explicitly off). Floor-INDEPENDENT
-  // and group-independent: without this, trivial/simple stay a zoo door and
-  // operational/tactical keep magistral-small (665). The prompt classifier
+  // and group-independent: without this, simple stays a zoo door and
+  // standard/code_complex keep magistral-small (665). The prompt classifier
   // chain does not pass through applyGroupFilters, so classification keeps
   // these models.
   c = gate('non_agent', (ref) => isAgentCapableRef(ref, cfg.non_agent_model_prefixes));
@@ -301,6 +325,17 @@ export function applyGroupFilters(
   if (g.max_gdpval != null && g.max_gdpval > 0) {
     c = gate('max_gdpval', ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
   }
+  // 4c. require_score_column — opt-in (rule in scoreColumnGateFailure,
+  //     shared with detectGroup): a model with no value in the group's
+  //     own score_by capability column does not belong in this category
+  //     (owner decision 2026-10-31). Reads the SAME metrics-module mirror as
+  //     the ranking, so live, display and persist agree. Stands down when no
+  //     model at all has a value for the column (scrape never ran or
+  //     drifted): an empty group would be worse than an unranked one.
+  c = gate('require_score_column', ref => scoreColumnGateFailure(ref, g) !== 'require_score_column');
+  // 4d. min_score — the floor on that same column. Strict like min_gdpval:
+  //     a model without a value fails a positive floor.
+  c = gate('min_score', ref => scoreColumnGateFailure(ref, g) !== 'min_score');
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
   //    carries the rule's positive stand-in cost (ADR-0025 B2) and must
@@ -350,22 +385,22 @@ export function applyGroupFilters(
  * `fallback_groups`. Coarsest tiers first, cheapest/local last.
  */
 export const FALLBACK_GROUP_ORDER: readonly string[] = [
-  'strategic', 'complex', 'operational', 'tactical', 'simple', 'trivial', 'scout', 'fallback',
+  'planning', 'design', 'code_complex', 'standard', 'simple',
 ];
 
 /**
  * Resolves the next group to try when every candidate in `currentGroup` has
  * failed. Prefers the group's configured `fallback_groups` (from
  * router-config.json) over the global {@link FALLBACK_GROUP_ORDER} — this
- * allows per-group fallback chains like trivial → [scout, operational,
- * fallback] instead of always walking the hardcoded order. Falls through to
+ * allows per-group fallback chains like code_complex → [planning, standard,
+ * simple] instead of always walking the hardcoded order. Falls through to
  * the global order when `fallback_groups` is unset, empty, or every entry
  * in it is either unknown or already visited.
  *
  * `visited` excludes groups already tried in this cascade. The auto-generated
  * `fallback_groups` lists are a full ordering over every group, which
- * routinely produces mutual references (e.g. tactical's first pick is
- * strategic, and strategic's first pick is tactical). Without skipping
+ * routinely produces mutual references (e.g. code_complex's first pick is
+ * planning, and planning's first pick is code_complex). Without skipping
  * already-visited groups, two groups that both fail recurse into each other
  * forever and blow the stack.
  */
@@ -594,9 +629,9 @@ export class Router {
     // model picker / --model flag can select a group as the active model
     // (README: "You select `dynamic` group"). Pi's registry surfaces them
     // via getAvailable(), so without this filter a group could select
-    // ITSELF as its own top candidate — e.g. resolve('trivial') picking
-    // 'trivial/trivial', which has no real cost/gdpval and shows as a
-    // circular "trivial/trivial" entry in /router (regression 2026-09-10).
+    // ITSELF as its own top candidate — e.g. resolve('simple') picking
+    // 'simple/simple', which has no real cost/gdpval and shows as a
+    // circular "simple/simple" entry in /router (regression 2026-09-10).
     // Filtering here (not by omitting the registration) keeps the group
     // selectable as an entry point while excluding it as a resolution
     // candidate.
@@ -684,8 +719,8 @@ export class Router {
   }
 
   /**
-   * 'best' ranking. With a capability column (score_by 'briefcase' or
-   * 'coding') the candidates split in two: models WITH a profile value for
+   * 'best' ranking. With a capability column (score_by 'briefcase', 'coding'
+   * or 'reasoning') the candidates split in two: models WITH a profile value for
    * that column are ranked on it, models WITHOUT one rank after all of them,
    * on GDPval among themselves. Scoring an unprofiled model by its GDPval
    * inside a column ranking mixed two scales (the coding column runs 130-250
@@ -695,7 +730,7 @@ export class Router {
    * calculateScore keeps its own gdpval fallback; only the ranking changes.
    */
   private sortBest(models: string[], taskType?: string): string[] {
-    const column = taskType === 'briefcase' || taskType === 'coding' ? taskType : null;
+    const column = isCapabilityColumn(taskType) ? taskType : null;
     if (column === null) return this.rankByScore(models, taskType);
     const profiled = models.filter((m) => lookupCapability(m, column) !== null);
     const unprofiled = models.filter((m) => lookupCapability(m, column) === null);
@@ -760,17 +795,17 @@ export class Router {
     // strict_local: local (tier 2) → free (tier 0) → subscription (tier 1)
     // → payg (tier 3). Unlike local_first (which keeps truly-free models
     // on top), strict_local puts the local daemon FIRST — for cheap groups
-    // (trivial/simple) a prompt should hit the local Ollama daemon (best
+    // (simple) a prompt should hit the local Ollama daemon (best
     // latency, no quota burn), then free remote models, and only then
     // subscription models whose $0 nominal cost hides a hard time/token
     // limit (the pi-claude incident, 2026-09-26).
     const strictRank = (t: number) => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
     // cloud_first: free (tier 0) → subscription (tier 1) → payg (tier 3) → local (tier 2) ALWAYS LAST.
-    // For scout/bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
+    // For bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
     // (2026-09-27, repeated GPU load / MLX-wedge incidents made the local daemon untrusted as a default hop).
     const cloudFirstRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3);
     // local_before_payg: free (tier 0) → subscription (tier 1) → local (tier 2) → payg (tier 3).
-    // For trivial/simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
+    // For simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
     // local ahead of free/subscription like the old strict_local did. This IS the tier numbering itself, so it needs
     // no rank table of its own: it takes the `default` branch below (an identity table was removed as redundant —
     // nightly R1 mutation triage, 2026-10-07).
@@ -1162,8 +1197,8 @@ export class Router {
 
     if (g.method === 'best') {
       // Multi-metric scoring for 'best' method. The third arg is the group's
-      // score_by column (ADR-0023 round 2): 'briefcase'/'coding' rank by the
-      // AA capability columns, anything else (absent, 'gdpval', legacy group
+      // score_by column (ADR-0023 round 2): 'briefcase'/'coding'/'reasoning'
+      // rank by the AA capability columns, anything else (absent, 'gdpval', legacy group
       // names) by the global GDPval — the exact pre-round behavior.
       c = rank(this.sortBy(c, 'best', g.score_by ?? 'gdpval'));
     } else if (g.method === 'tiered') {
@@ -1194,7 +1229,49 @@ export class Router {
     }
 
     if (c.length === 0) return null;
-    return { selected: c[0], candidates: c };
+    // The decision-time pool is only read by the logging path (the resolve
+    // glue, and only when logPool is set) — build it lazily so plain
+    // resolutions (registration, /router, tools) don't pay for the
+    // paced-provider scan plus a score per candidate (merge review
+    // 2026-11-01, Minor). The getter memoizes, so repeated reads are free.
+    const res: GroupResolution = { selected: c[0], candidates: c };
+    let poolMemo: GroupPool | undefined;
+    Object.defineProperty(res, 'pool', {
+      enumerable: true,
+      configurable: true,
+      get: () => (poolMemo ??= this.groupPool(name, g, c)),
+    });
+    return res;
+  }
+
+  /**
+   * The ranked candidates of a resolution as structured data (route 2 of
+   * the pool replay): the same values formatGroupDecision prints — gdp,
+   * effective cost, the 'best' score, and the state flags. Attached to
+   * every GroupResolution so the resolve glue can record the decision-time
+   * pool in the decision log. Refs and numbers only, never prompt text.
+   */
+  private groupPool(name: string, g: Group, ranked: string[]): GroupPool {
+    const paced = pacedProviders(this.cfg, this.cache.usage_log);
+    return {
+      group: name,
+      method: g.method,
+      candidates: ranked.map((ref) => {
+        const gdp = lookupGdp(ref);
+        const cost = effCost(ref);
+        const flags: string[] = [];
+        if (isUnhealthy(this.cache, ref)) flags.push('unhealthy');
+        if (this.isLimited(ref)) flags.push('limited');
+        if (paced.has(ref.split('/')[0])) flags.push('paced');
+        return {
+          ref,
+          gdp: gdp ?? null,
+          cost: cost === 'unknown' ? null : cost,
+          ...(g.method === 'best' ? { score: calculateScore(ref, g.score_by ?? 'gdpval', this.cfg) } : {}),
+          flags,
+        };
+      }),
+    };
   }
 
   /**
@@ -1241,14 +1318,19 @@ export class Router {
     if (gdpval !== null) {
       for (const [name, g] of groupsByThreshold) {
         const minGdpval = g.min_gdpval ?? 0;
-        if (gdpval >= minGdpval) {
-          return name;
-        }
+        if (gdpval < minGdpval) continue;
+        // The label follows the pool: a model the group's score-column gates
+        // refuse (require_score_column / min_score) is not a member, whatever
+        // its GDPval says (Sourcery PR #80 round). Only those two gates are
+        // consulted here — this method stays a GDPval-tier approximation for
+        // everything else (cost caps, context floors).
+        if (scoreColumnGateFailure(ref, g) !== null) continue;
+        return name;
       }
     }
     
     // Fallback: return lowest tier that has no min_gdpval requirement
-    for (const name of ['scout', 'operational', 'tactical', 'strategic', 'fallback']) {
+    for (const name of ['simple', 'standard', 'code_complex', 'planning', 'design']) {
       const g = this.cfg.model_groups[name];
       if (g && (g.min_gdpval === undefined || g.min_gdpval === 0)) {
         return name;
@@ -1377,7 +1459,29 @@ export class Router {
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
     const total = ranked.length;
-    const models = ranked.slice(0, n).map((ref, i) => ({ ref, limited: this.isLimited(ref), rank: i }));
+    // Display-only reasons for a `best` group; the order above is untouched.
+    const column = g.score_by ?? 'gdpval';
+    const why =
+      g.method === 'best'
+        ? explainBestRanking({
+            ranked,
+            scoreOf: (r) => calculateScore(r, column, this.cfg),
+            costOf: (r) => effCost(r),
+            isProfiled: (r) => (isCapabilityColumn(column) ? lookupCapability(r, column) !== null : true),
+            // The ranked order demotes limited refs to the end and unhealthy
+            // ones within the available block — the reason must not hand the
+            // top-score label to a model the router would not stream to right
+            // now (limited top scorer: the usable runner-up is 'top score').
+            isDemoted: (r) => this.isLimited(r) || isUnhealthy(this.cache, r),
+            window: this.cfg.best_quality_window,
+          })
+        : null;
+    const models = ranked.slice(0, n).map((ref, i) => ({
+      ref,
+      limited: this.isLimited(ref),
+      rank: i,
+      ...(why?.has(ref) ? { why: why.get(ref) as string } : {}),
+    }));
     return { models, total };
   }
 

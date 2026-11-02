@@ -5,9 +5,11 @@
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog, warnLog } from './logger.ts';
 
-type EscalationLevel = 'operational' | 'tactical' | 'strategic';
+type EscalationLevel = 'standard' | 'code_complex' | 'planning';
 
-const ESCALATION_GROUPS: EscalationLevel[] = ['operational', 'tactical', 'strategic'];
+// D2: the top level is re-pointed from 'strategic' to 'planning'; the lower
+// levels follow the D4 renames (operational → standard, tactical → code_complex).
+const ESCALATION_GROUPS: EscalationLevel[] = ['standard', 'code_complex', 'planning'];
 
 // ── Internal helpers ───────────────────────────────────────────────────────
 
@@ -151,7 +153,7 @@ export class SessionEscalation {
   // The ring keeps the last 10; a separate monotonic _turnCount preserves
   // the every-3rd-turn check cadence (a saturating length would freeze it).
   private static readonly MAX_HISTORY = 10;
-  private _level: EscalationLevel = 'operational';
+  private _level: EscalationLevel = 'standard';
   private _history: TurnRecord[] = [];
   private _turnCount = 0;
   private _llmInFlight = false;
@@ -185,7 +187,7 @@ export class SessionEscalation {
   }
 
   reset(): void {
-    this._level = 'operational';
+    this._level = 'standard';
     this._history = [];
     this._turnCount = 0;
     this._sessionId++;
