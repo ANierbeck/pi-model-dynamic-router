@@ -193,30 +193,74 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
  * Rules:
  * - `enabled: true` REQUIRES a pinned checkpoint reference (ADR-0025: the router
  *   never ships or infers a concrete model name).
+ * - `endpoint` must be loopback (127.0.0.0/8, localhost, ::1): the documented
+ *   privacy promise is that prompt text never leaves the machine, so a remote
+ *   endpoint is rejected, not merely discouraged (merge review 2026-11-01).
  * - On `enabled: true` the remaining fields are filled with defaults so callers
- *   can read them without guards (endpoint, timeout_ms, confidence_threshold, mode).
- * - Validation is strict (throws) because an improperly configured classifier
- *   could change routing behavior; a typo in the user layer must fail loudly.
+ *   can read them without guards (endpoint, timeout_ms, confidence_threshold, mode);
+ *   wrong-typed fields fall back to their defaults with a warning.
  *
- * Throws an Error on violation; otherwise mutates the config object in place by
- * inserting defaults. Exported for test access (called once during config load).
+ * Fail-safe, never loud: this runs at extension start and mid-turn from tools,
+ * so an invalid user-layer block disables the stage (enabled:false) with a
+ * warning instead of throwing and taking the whole router down (merge review
+ * 2026-11-01; previously a missing checkpoint threw).
+ *
+ * Mutates the config object in place. Exported for test access (called once
+ * during config load).
  */
 export function validateClassifierLaya(config: Config): void {
   const c = config.classifier_laya;
-  if (!c) return;
-  if (c.enabled && !c.checkpoint) {
-    throw new Error(
-      `[router] classifier_laya: 'checkpoint' is required when enabled:true ` +
-        `(set a pinned HF checkpoint ref — repo:revision — before enabling). The router ` +
-        `never downloads weights and never ships a model name (ADR-0025).`
+  if (!c || !c.enabled) return;
+  const disable = (why: string): void => {
+    warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
+    c.enabled = false;
+  };
+  if (!c.checkpoint) {
+    disable(
+      `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
+        `repo:revision — the router never downloads weights, ADR-0025)`
     );
+    return;
   }
-  if (c.enabled) {
-    if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
-    if (c.timeout_ms == null) c.timeout_ms = 1500;
-    if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
-    if (!c.mode) c.mode = 'shadow';
+  const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
+  let hostname = '';
+  try {
+    const u = new URL(endpoint);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
+    hostname = u.hostname;
+  } catch {
+    disable(`endpoint ${JSON.stringify(endpoint)} is not a valid http(s) URL`);
+    return;
   }
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const loopback =
+    host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+  if (!loopback) {
+    disable(
+      `endpoint host ${JSON.stringify(hostname)} is not loopback — the router only sends ` +
+        `prompts to 127.0.0.0/8, localhost or ::1`
+    );
+    return;
+  }
+  if (c.mode != null && c.mode !== 'active' && c.mode !== 'shadow') {
+    warnLog(`[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`);
+    c.mode = 'shadow';
+  }
+  if (
+    c.confidence_threshold != null &&
+    (typeof c.confidence_threshold !== 'number' || !(c.confidence_threshold > 0 && c.confidence_threshold <= 1))
+  ) {
+    warnLog(`[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`);
+    c.confidence_threshold = 0.8;
+  }
+  if (c.timeout_ms != null && (typeof c.timeout_ms !== 'number' || !(c.timeout_ms > 0))) {
+    warnLog(`[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`);
+    c.timeout_ms = 1500;
+  }
+  if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
+  if (c.timeout_ms == null) c.timeout_ms = 1500;
+  if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
+  if (!c.mode) c.mode = 'shadow';
 }
 
 /**

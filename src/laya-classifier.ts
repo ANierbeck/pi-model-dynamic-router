@@ -177,7 +177,9 @@ export async function classifyWithLayaRaw(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    clearTimeout(id);
+    // The timeout must cover the BODY read too, not just the headers: a
+    // sidecar that stalls mid-body would otherwise hang with no limit
+    // (merge review 2026-11-01). clearTimeout moved to the finally below.
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
     }
@@ -196,11 +198,12 @@ export async function classifyWithLayaRaw(
       ms: Math.round(performance.now() - t0),
     };
   } catch (err) {
-    clearTimeout(id);
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(`classify request timed out after ${timeoutMs}ms`);
     }
     throw err;
+  } finally {
+    clearTimeout(id);
   }
 }
 
