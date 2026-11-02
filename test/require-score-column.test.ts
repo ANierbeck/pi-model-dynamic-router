@@ -10,7 +10,7 @@
 // built-in GDPval floor could still serve it.
 //
 // Every test gets fresh module state (the metrics mirror of the capability
-// profiles is additive across setCache calls, so "no data anywhere" cannot be
+// profiles is replace-on-write since 390b30d, so "no data anywhere" cannot be
 // staged in a shared module).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -181,6 +181,39 @@ describe('min_score (floor on the score_by column)', () => {
     const g = group({ min_score: 35 });
     const { routing, cfg } = await fresh({ 'claude-opus-5-5': { reasoning: 58 } }, { planning: g });
     expect(routing.applyGroupFilters([OPUS, SONNET], g as any, cfg)).toEqual([OPUS]);
+  });
+
+  it('an explicit require_score_column: false does not disable the min_score floor (merge review 2026-11-01)', async () => {
+    // The two gates are independent: min_score fails a null value on its own,
+    // require_score_column only drops unprofiled models from admission.
+    const g = group({ min_score: 35, require_score_column: false });
+    const { routing, cfg } = await fresh(PROFILES, { planning: g });
+    expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([OPUS, SONNET]);
+  });
+
+  it('the generated path applies the min_score floor BEFORE sorting (filter → sort pipeline order)', async () => {
+    // Merge review 2026-11-01: pin the pipeline contract at
+    // dynamic-config-runner.ts:414-417 — filterModelsForGroup drops the
+    // below-floor model, sortModelsForGroup then only orders the survivors.
+    // A below-floor model with the HIGHEST GDPval must not survive into the
+    // generated pool even though it would rank first if sorted unfiltered.
+    const g = group({ min_score: 35 });
+    const { dyn, cfg, metrics } = await fresh(PROFILES, { planning: g });
+    const model = (ref: string, gdpval: number) => ({
+      ref,
+      gdpval,
+      cost: 1e-6,
+      price: { input: 1, output: 3 },
+      contextWindow: 128_000,
+      isFreeModel: false,
+    });
+    const filtered = dyn.filterModelsForGroup(
+      [model(NEWCOMER, 2000), model(SONNET, 1950), model(OPUS, 1900)],
+      g as any,
+      cfg,
+    );
+    const sorted = dyn.sortModelsForGroup(filtered, g as any, cfg, metrics.calculateScore);
+    expect(sorted.map((m: any) => m.ref)).toEqual([OPUS, SONNET]);
   });
 
   it('absent or 0 means no floor', async () => {

@@ -39,6 +39,10 @@ const PAGE = [
   ',',
   rec('no-hle-diamond', { intelligenceIndex: 59.4, omniscience: 53.5, hleDiamond: null, briefcaseElo: 1610.19 }),
   ',',
+  rec('no-intelligence-index', { omniscience: 53.5, hleDiamond: 0.6, briefcaseElo: 1500 }),
+  ',',
+  rec('no-omniscience', { intelligenceIndex: 59.4, hleDiamond: 0.6 }),
+  ',',
   rec('negative-omniscience', { intelligenceIndex: 20, omniscience: -8, hleDiamond: 0.2 }),
   ',',
   rec('measured-zero', { intelligenceIndex: 0, omniscience: 0, hleDiamond: 0 }),
@@ -65,6 +69,14 @@ describe('extractCapabilityProfiles: reasoning blend', () => {
   it('a model missing ANY of the three gets no blend, but keeps its other columns', () => {
     expect(profiles['no-hle-diamond']?.reasoning).toBeUndefined();
     expect(profiles['no-hle-diamond']?.briefcase).toBe(1610.19);
+  });
+
+  it('missing Intelligence Index alone or Omniscience alone also means no blend (merge review 2026-11-01)', () => {
+    // Each of the three inputs is required individually — a partial row must
+    // not produce a blend from the remaining two.
+    expect(profiles['no-intelligence-index']?.reasoning).toBeUndefined();
+    expect(profiles['no-intelligence-index']?.briefcase).toBe(1500);
+    expect(profiles['no-omniscience']?.reasoning).toBeUndefined();
   });
 
   it('a negative Omniscience (hallucination exceeds accuracy) is data, not absence', () => {

@@ -63,4 +63,20 @@ describe('npm package contents', () => {
 
     expect(distFiles).toEqual(BUILD_OUTPUTS.map((f) => `dist/${f}`).sort());
   }, 30_000);
+
+  it('BUILD_OUTPUTS stays in sync with the files the build script produces (merge review 2026-11-01)', () => {
+    // The allowlist in package.json `files` and this test's BUILD_OUTPUTS are
+    // both hand-maintained next to the build script — a new build output that
+    // is neither listed in `files` nor here would silently not ship (or ship
+    // untested). Derive the script's dist/ outputs from the build command and
+    // require exact equality.
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    const build: string = pkg.scripts.build;
+    const fromScript = new Set<string>();
+    const outfile = build.match(/--outfile=(\S+)/);
+    if (outfile?.[1]?.startsWith('dist/')) fromScript.add(outfile[1].slice('dist/'.length));
+    const cp = build.match(/\bcp\s+([^&|;]+?)\s+dist\//);
+    if (cp) for (const f of cp[1].trim().split(/\s+/)) fromScript.add(f);
+    expect([...fromScript].sort()).toEqual([...BUILD_OUTPUTS].sort());
+  });
 });
