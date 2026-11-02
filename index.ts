@@ -32,7 +32,7 @@ import {
   isLocalProviderName,
   type ProviderEvidenceKind,
 } from './src/provider-breaker.ts';
-import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, type StaticContributions } from './src/dynamic-config.ts';
+import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, staticGroupsFingerprint, type StaticContributions } from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
@@ -434,6 +434,23 @@ let previousTokenCount = 0;
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
+          // Merge review 2026-11-01 (Important 3a): a snapshot whose stored
+          // groups fingerprint does not match the current static model_groups
+          // is stale — e.g. a pre-five-group-layout snapshot on upgrade, whose
+          // old virtual groups would be registered into Pi and used for
+          // routing until the background scan regenerates. Ignore it and use
+          // the static config; the groups-drift check in dynamic-config-runner
+          // regenerates the snapshot on the next scan. Snapshots predating the
+          // fingerprint (undefined) are still accepted — the scan regenerates
+          // them once (self-healing, PR #68).
+          const storedGroupsFp = dynamicCfg._dynamic.groups_fingerprint;
+          if (typeof storedGroupsFp === 'string' && storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups)) {
+            routerLog(
+              '[router] Stored router-config.dynamic.json has a stale groups fingerprint ' +
+                '(static model_groups changed since it was built) — ignoring it and using the static config; ' +
+                'the next scan regenerates the snapshot'
+            );
+          } else {
           // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
           // rate-limit scheduling, delegation, the local-stream limiter, …)
           // must ALWAYS come from staticCfg — the dynamic config can contain
@@ -455,6 +472,7 @@ let previousTokenCount = 0;
           loadResync = resyncDynamicFromStatic(dynamicCfg, staticCfg, staticContributions);
           cfg = dynamicCfg;
           loadedFromDynamic = true;
+          }
         }
       }
     } catch (error) {
