@@ -23,8 +23,10 @@ model group, and picks a model from that group. Classification is the single
 most consequential decision in the pipeline. Today's production classifier is
 a cloud LLM call; a local classifier would remove that dependency (offline,
 zero marginal cost, ~30 ms instead of seconds). Laya
-(`convaiinnovations/laya-multilingual`, 643 M parameters, MLX-served on Apple
-Silicon) is the local candidate under test.
+(`convaiinnovations/laya-multilingual`, 322 M parameters — corrected 2026-11-01;
+the earlier "643 M" here was the fp16 checkpoint file size in MB, not the
+parameter count; source: the upstream model card, "mmBERT-base | 322M" —
+MLX-served on Apple Silicon) is the local candidate under test.
 
 ## 2. What the categories are (taxonomy v2)
 
