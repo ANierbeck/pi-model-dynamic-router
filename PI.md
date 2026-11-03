@@ -1,6 +1,6 @@
 # pi-model-dynamic-router
 
-Route model group names (strategic, planning, tactical, operational, scout, fallback, **dynamic**) to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence, cost, and availability.
+Route model group names (`simple`, `standard`, `code_complex`, `design`, `planning`, plus `bulk_reader`, `code_writer` and **dynamic**) to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence, cost, and availability.
 
 ## Dynamic Routing
 
@@ -9,7 +9,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 ### How It Works
 
 1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_fallback`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
-2. **Group Mapping**: The category is mapped to a specific model group via the shipped `CATEGORY_TO_GROUP` table (`scout`, `operational`, `simple`, `tactical`, or the top-tier `planning` group).
+2. **Group Mapping**: The category is mapped to the model group of the same name via the shipped `CATEGORY_TO_GROUP` table (`simple`, `standard`, `code_complex`, `design`, `planning`); `code_simple` shares `simple`, and `continue` inherits the previous category (or `standard` when there is none).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
 ### Categories and Mappings
@@ -120,57 +120,53 @@ The actual configuration file contains provider definitions and model groups. Be
   "providers": {
     "openrouter": {
       "billing": "pay_per_token",
-      "free_models": [
-        "openrouter/qwen/qwen3-4b:free",
-        "openrouter/google/gemma-3-4b-it:free"
-      ]
+      "free_models": ["<provider>/<model>:free"]
     }
   },
   "model_groups": {
-    "trivial": {
-      "description": "Trivial tasks - free models only",
-      "method": "min_cost",
-      "max_cost": 0,
-      "models": ["qwen/qwen3-4b:free", "google/gemma-3-4b-it:free"]
-    },
     "simple": {
-      "description": "Simple tasks - free models only",
-      "method": "min_cost",
+      "description": "Simple tasks and short real work",
+      "method": "tiered",
+      "billing_preference": "local_before_payg",
       "max_cost": 0,
-      "models": ["qwen/qwen3-4b:free", "google/gemma-3-12b-it:free"]
+      "fallback_groups": ["standard"]
     },
     "standard": {
-      "description": "Standard tasks - cost-effective models",
+      "description": "Standard tasks - GDPval >= 300, mid price band",
       "method": "tiered",
-      "min_gdpval": 500,
-      "max_cost_per_m": 0.5,
-      "models": ["openai/gpt-4o-mini", "anthropic/claude-3-haiku"]
+      "min_gdpval": 300,
+      "max_cost": 2.0,
+      "fallback_groups": ["simple"]
     },
-    "complex": {
-      "description": "Complex tasks - GDPval >=600 (mistral-medium tier), best available",
+    "code_complex": {
+      "description": "Complex coding - best-first in the 1630..1700 GDPval band",
       "method": "best",
-      "min_gdpval": 600,
-      "models": ["anthropic/claude-3-sonnet", "openai/gpt-4o", "mistral/mistral-medium-3.5"]
+      "min_gdpval": 1630,
+      "max_gdpval": 1700,
+      "score_by": "coding",
+      "fallback_groups": ["planning", "standard", "simple"]
     },
-    "tactical": {
-      "description": "GDPval >=600: magistral/mistral-medium tier, best available",
+    "design": {
+      "description": "Design work - best-first, GDPval >= 1600",
       "method": "best",
-      "min_gdpval": 600,
-      "models": ["mistral/mistral-medium-3.5"]
+      "min_gdpval": 1600,
+      "score_by": "briefcase",
+      "fallback_groups": ["planning", "code_complex", "standard", "simple"]
+    },
+    "planning": {
+      "description": "Planning and architecture - top tier only",
+      "method": "best",
+      "min_gdpval": 1700,
+      "score_by": "reasoning",
+      "require_score_column": true,
+      "min_score": 35,
+      "fallback_groups": ["code_complex", "standard", "simple"]
     },
     "dynamic": {
-      "description": "Dynamic model selection based on content classification",
-      "method": "dynamic"
-    },
-    "fallback": {
-      "description": "Fallback group for ambiguous requests",
-      "method": "tiered",
-      "models": ["anthropic/claude-3-haiku"]
+      "description": "Classifies each prompt and routes to the appropriate group",
+      "method": "dynamic",
+      "classifier_cloud_fallback": true
     }
-  },
-  "gdpval_builtin": {
-    "magistral-small": 665,
-    "magistral-medium": 669
   }
 }
 ```
@@ -198,7 +194,7 @@ What the router still registers (ADR-0021 out-of-scope decisions):
 |--------------|-------|
 | **Local Ollama** | The only local registration — Pi has no live local-discovery mechanism; `num_ctx` comes from real capabilities the scan captured from `/api/show` |
 | **Configured free models** | On demand (`free_models` in the provider config) — explicit user intent, not scan discovery; never overwrites a provider Pi knows |
-| **Virtual group providers** | The router's own product surface (`strategic`, `tactical`, …) |
+| **Virtual group providers** | The router's own product surface (`simple`, `standard`, `code_complex`, `design`, `planning`, `bulk_reader`, `code_writer`, `dynamic`) |
 
 A `SKIP_REGISTRATION` set used to guard the (removed) scan-union registration;
 it was deleted together with it in commit `ff81300`.
@@ -209,23 +205,19 @@ Define a **cascade chain** for automatic fallback when all models in a group fai
 
 ```json
 {
-  "strategic": {
+  "design": {
     "method": "best",
-    "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"],
-    "fallback_groups": ["tactical", "operational", "scout", "fallback"]
-  },
-  "tactical": {
-    "method": "best",
-    "min_gdpval": 600,
-    "models": ["mistral/mistral-medium-3.5"],
-    "fallback_groups": ["operational", "scout", "fallback"]
+    "min_gdpval": 1600,
+    "fallback_groups": ["planning", "code_complex", "standard", "simple"]
   }
 }
 ```
 
-**Cascade order:** `strategic → tactical → operational → scout → fallback`
+**Cascade order (shipped):** `design → planning → code_complex → standard → simple`;
+`planning → code_complex → standard → simple`; `code_complex → planning → standard → simple`;
+`standard ↔ simple`; `bulk_reader`/`code_writer → standard → simple`.
 
-When a model fails (API error, rate limit, empty response), the router automatically tries the next model in the same group, then descends to the fallback groups in order.
+When a model fails (API error, rate limit, empty response), the router automatically tries the next model in the same group, then descends to the fallback groups in order. See `docs/routing-flow.md` for the full flow.
 
 #### Model Metrics
 
@@ -234,9 +226,7 @@ Override cost per million tokens for specific models:
 ```json
 {
   "model_metrics": {
-    "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-opus-5": { "cost_per_m": 0.0000015 },
-    "claude-bridge/claude-fable-5": { "cost_per_m": 0.0000015 }
+    "<provider>/<model>": { "cost_per_m": 0.0000015 }
   }
 }
 ```
@@ -250,15 +240,12 @@ Override GDPval scores for new or unranked models:
 ```json
 {
   "gdpval_builtin": {
-    "mistral-medium-3-5": 933,    // Was 665, corrected to 933
-    "claude-sonnet-5": 1603,
-    "claude-fable-5": 1747,
-    "claude-opus-5": 1860
+    "<model-slug>": 1603
   }
 }
 ```
 
-**Purpose:** Ensure new Claude models have correct GDPval scores for proper ranking.
+**Purpose:** Give a model Pi reports without a GDPval score a value, so it can be ranked. Keys are model slugs (the id without the provider prefix).
 
 #### Exclude Providers/Models
 
@@ -267,10 +254,9 @@ Filter out specific providers or models from selection:
 ```json
 {
   "model_groups": {
-    "strategic": {
-      "exclude_providers": ["openai"],
-      "exclude_models": ["anthropic/claude-3-haiku"],
-      "models": ["anthropic/claude-3-sonnet", "mistral/mistral-medium-3.5"]
+    "standard": {
+      "exclude_providers": ["<provider>"],
+      "exclude_models": ["<provider>/<model>"]
     }
   }
 }
@@ -296,7 +282,6 @@ Filter out specific providers or models from selection:
 - **Group-based cost/quality routing** — cost-quality tradeoffs encoded directly in each group's `min_gdpval`/`max_cost` thresholds (no separate tier overlay)
 - **Model momentum** for consistency after compaction
 - **Status line integration** for accurate model display
-- **Claude-bridge support** via extension
 - Modular architecture for easy extension
 
 ### Limitations
@@ -310,7 +295,7 @@ Filter out specific providers or models from selection:
 | Command | Description |
 |---------|-------------|
 | `/router` | Show status of all model groups |
-| `/router <group>` | Details for a specific group (e.g., `/router strategic`) |
+| `/router <group>` | Details for a specific group (e.g., `/router planning`) |
 | `/router scan` | Re-scan models and GDPval scores |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
@@ -327,7 +312,6 @@ Filter out specific providers or models from selection:
 
 ## Additional Documentation
 
-- **AGENT.md**: Quick reference guide for AI agents using this extension
 - **CLAUDE.md**: Specific information about Claude model support and claude-bridge integration
 - **README.md**: Complete documentation with architecture, features, and configuration details
 - **docs/architecture.md**: Detailed architecture documentation

@@ -49,6 +49,7 @@ export interface Report {
   /** Untracked root leftovers: informational, never gated (CI cannot see them). */
   rootUntracked: string[];
   plansWithoutStatus: string[];
+  plansMissingFromIndex: string[];
   counts: Counts;
 }
 
@@ -56,13 +57,27 @@ export interface Counts {
   staleNames: number;
   rootOutsideAllowlist: number;
   plansWithoutStatus: number;
+  plansMissingFromIndex: number;
   duplicateFunctions: number;
   repeatedBlocks: number;
   ollamaMockFiles: number;
 }
 
-/** Group names of the 13-group layout; the five-group layout removed them. */
-export const STALE_NAMES = ['strategic', 'operational', 'scout', 'tactical', 'fallback group'] as const;
+/**
+ * Names the project no longer uses: the 13-group layout's group names (removed
+ * by the five-group layout) plus the one retired category name that is
+ * unambiguous. `fallback` and `trivial` are NOT here — both are ordinary
+ * English words this project uses for other things (failover, a trivial
+ * prompt); the retired category `fallback` is covered by `fallback group`.
+ */
+export const STALE_NAMES = ['strategic', 'operational', 'scout', 'tactical', 'fallback group', 'exploration'] as const;
+
+/**
+ * A line that explicitly marks the name as history is documentation, not a
+ * stale claim: "the pre-v2 categories X and Y were removed" is exactly what a
+ * shipped doc should say. Only current-state claims are findings.
+ */
+const HISTORY_MARKER = /\b(?:pre-v2|were removed|was removed|are removed|no longer|retired|dropped)\b/i;
 
 /** Historical documents are never edited for tidiness (AGENTS.md §12). */
 const HISTORICAL = ['docs/adr/', 'docs/plans/', 'docs/research/', 'CHANGELOG.md'];
@@ -144,6 +159,18 @@ function isShipped(path: string, shipped: string[]): boolean {
   return shipped.some((s) => (s.endsWith('/') ? path.startsWith(s) : path === s));
 }
 
+// A removed group name is only stale when it names a ROUTER group. Two of the
+// five also exist outside the router: `scout` is a pi-subagents agent
+// identifier (README's subagent examples pass `agent: "scout"`), and
+// `operational` is an ordinary English adjective. Both are legitimate in a
+// shipped doc, so the check skips a hit whose line uses the word in one of
+// those roles — the subagent assignment below, and the adjective phrase for
+// `operational`. Everything else is a finding.
+const NON_GROUP_USES: Partial<Record<(typeof STALE_NAMES)[number], RegExp>> = {
+  scout: /\bagent:\s*['"]scout['"]/i,
+  operational: /\boperational\s+(?:problems?|issues?|overhead|cost|risk|work)\b/i,
+};
+
 function findStaleNames(docs: TextFile[], shipped: string[]): Report['staleNames'] {
   const patterns = STALE_NAMES.map((name) => ({ name, re: new RegExp(`\\b${name}\\b`, 'gi') }));
   const out: Report['staleNames'] = [];
@@ -151,8 +178,15 @@ function findStaleNames(docs: TextFile[], shipped: string[]): Report['staleNames
     if (!isShipped(d.path, shipped)) continue;
     d.text.split('\n').forEach((text, i) => {
       for (const { name, re } of patterns) {
+        // Strip the exempt occurrences, then test again: a line can carry both
+        // `agent: "scout"` and a stale group reference, and only the exempt
+        // occurrence is legitimate (Sourcery on PR #84, 2026-11-03).
+        if (HISTORY_MARKER.test(text)) continue;
+        const exemption = NON_GROUP_USES[name];
+        const subject = exemption ? text.replace(new RegExp(exemption.source, 'gi'), '') : text;
         re.lastIndex = 0;
-        if (re.test(text)) out.push({ path: d.path, line: i + 1, name });
+        if (!re.test(subject)) continue;
+        out.push({ path: d.path, line: i + 1, name });
       }
     });
   }
@@ -196,10 +230,22 @@ export function analyze(input: AnalyzeInput): Report {
     .filter((p) => !p.path.endsWith('/README.md') && !hasStatusField(p.text))
     .map((p) => p.path)
     .sort();
+  // The plan index is hand-maintained; a plan without a row would silently
+  // disappear from the only overview (Sourcery on PR #84, 2026-11-03). The
+  // index links each plan by filename, so presence is a substring check.
+  const index = plans.find((p) => p.path === 'docs/plans/README.md');
+  const plansMissingFromIndex = index
+    ? plans
+        .filter((p) => p.path !== 'docs/plans/README.md')
+        .filter((p) => !index.text.includes(p.path.split('/').pop()!))
+        .map((p) => p.path)
+        .sort()
+    : [];
   return {
     duplicateFunctions,
     repeatedBlocks,
     ollamaMockFiles,
+    plansMissingFromIndex,
     staleNames,
     rootOutsideAllowlist,
     rootUntracked,
@@ -208,6 +254,7 @@ export function analyze(input: AnalyzeInput): Report {
       staleNames: staleNames.length,
       rootOutsideAllowlist: rootOutsideAllowlist.length,
       plansWithoutStatus: plansWithoutStatus.length,
+      plansMissingFromIndex: plansMissingFromIndex.length,
       duplicateFunctions: duplicateFunctions.length,
       repeatedBlocks: repeatedBlocks.length,
       ollamaMockFiles: ollamaMockFiles.length,
@@ -315,6 +362,7 @@ export function formatRedundancyReport(r: Report): string {
     `  stale group names in shipped docs : ${c.staleNames}`,
     `  root files outside the allowlist  : ${c.rootOutsideAllowlist}  (untracked leftovers: ${r.rootUntracked.length})`,
     `  plans without a Status line       : ${c.plansWithoutStatus}`,
+    `  plans missing from the index      : ${c.plansMissingFromIndex}`,
     `  duplicate function names          : ${c.duplicateFunctions}`,
     `  repeated ${BLOCK_LINES}-line test blocks (>= ${BLOCK_MIN_FILES} files) : ${c.repeatedBlocks}`,
     `  test files mocking ollama-utils   : ${c.ollamaMockFiles}`,
@@ -324,6 +372,7 @@ export function formatRedundancyReport(r: Report): string {
     ...topList('Duplicate functions', r.duplicateFunctions.map((d) => `${d.name} x${d.paths.length}: ${d.paths.join(', ')}`), c.duplicateFunctions),
     ...topList('Repeated blocks', r.repeatedBlocks.map((b) => `${b.files} files: ${b.preview}`), c.repeatedBlocks),
     ...topList('Plans without status', r.plansWithoutStatus, c.plansWithoutStatus),
+    ...topList('Plans missing from docs/plans/README.md', r.plansMissingFromIndex, c.plansMissingFromIndex),
     ...topList('Test files mocking ollama-utils', r.ollamaMockFiles, c.ollamaMockFiles),
     ...topList('Untracked root leftovers', r.rootUntracked, r.rootUntracked.length),
   ].join('\n');

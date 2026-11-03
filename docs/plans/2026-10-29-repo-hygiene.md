@@ -81,28 +81,28 @@ Goal: finish with the least context spent.
 
 ### Phase 1 — Root and loose files
 
-- [ ] **Step 1: Inventory** — `node scripts/redundancy-report.ts --root`. For each root file the report shows tracked/ignored, size, inbound references.
-- [ ] **Step 2: Delete finished reports** (tracked, referenced only by each other): `FINAL_SUMMARY.md`, `IMPLEMENTATION_SUMMARY.md`, `AUDIT_PLAN_800_TESTS.md` (superseded by `docs/plans/2026-09-20-consolidate-tests.md`). `git rm`; history keeps them.
-- [ ] **Step 3: Local leftovers** (`archive/`, the `.tgz`, `v1.6.0-changes-local.md`; all git-ignored): list them to the owner, delete only after a yes (outside version control, not recoverable).
-- [ ] **Step 4: Decide the doc roots** per open decisions 2 and 3; `git mv` + scripted reference update; `grep` for the old names returns nothing outside ADRs/CHANGELOG.
-- [ ] **Step 5: `docs/` top level.** Move the three `v1.x-release-plan.md`, `ollama-crash-prevention-plan.md`, `review-cloud-classification-2026-09-02.md`, `router-log-analysis-2026-10-08.md` to `docs/archive/` (history, not deleted); keep `architecture.md`, `config-override.md`, `routing-flow.md`, `mutation-triage.md`, `router-config.example.json`. Add the allowlist of root files to the gate.
-- [ ] **Step 6: Commit** `chore: tidy repo root and docs top level`.
+- [x] **Step 1: Inventory** — `node scripts/redundancy-report.ts --root`. For each root file the report shows tracked/ignored, size, inbound references.
+- [x] **Step 2: Delete finished reports** (tracked, referenced only by each other): `FINAL_SUMMARY.md`, `IMPLEMENTATION_SUMMARY.md`, `AUDIT_PLAN_800_TESTS.md` (superseded by `docs/plans/2026-09-20-consolidate-tests.md`). `git rm`; history keeps them.
+- [x] **Step 3: Local leftovers** (`archive/`, the `.tgz`, `v1.6.0-changes-local.md`; all git-ignored): list them to the owner, delete only after a yes (outside version control, not recoverable).
+- [x] **Step 4: Decide the doc roots** per open decisions 2 and 3; `git mv` + scripted reference update; `grep` for the old names returns nothing outside ADRs/CHANGELOG.
+- [x] **Step 5: `docs/` top level.** Move the three `v1.x-release-plan.md`, `ollama-crash-prevention-plan.md`, `review-cloud-classification-2026-09-02.md`, `router-log-analysis-2026-10-08.md` to `docs/archive/` (history, not deleted); keep `architecture.md`, `config-override.md`, `routing-flow.md`, `mutation-triage.md`, `router-config.example.json`. Add the allowlist of root files to the gate.
+- [x] **Step 6: Commit** `chore: tidy repo root and docs top level`.
 
 ### Phase 2 — Shipped docs tell the truth
 
-- [ ] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
-- [ ] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
-- [ ] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
-- [ ] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`) in `test/package-contents.test.ts`. Any other skill file in the `npm pack` list fails the gate.
-- [ ] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
-- [ ] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
+- [x] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
+- [x] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
+- [x] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
+- [x] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`) in `test/package-contents.test.ts`. Any other skill file in the `npm pack` list fails the gate.
+- [x] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
+- [x] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
 
 ### Phase 3 — Plans, TODO, ownership map
 
-- [ ] **Step 1: Plan index.** `docs/plans/README.md`: one table, one row per plan (file, status, one-line problem, successor). Built from a script that reads each plan's first 30 lines; the agent fills in statuses it can verify from code/git and marks the rest `unknown — owner to confirm`. Do **not** edit 30 old plans (§11: superseded plans stay untouched). New rule enforced by the gate: every *new* plan has a `Status` line.
-- [ ] **Step 2: Ownership map** (`docs/README.md`, ≤ 40 lines): for each kind of fact the single document that owns it — routing flow → `docs/routing-flow.md`; decisions → ADRs; config keys → `router-config.example.json` + README table; release steps → `RELEASE_CHECKLIST.md`; history → CHANGELOG. Everything else links, never copies. This is the redundancy concept for docs.
-- [ ] **Step 3: `TODO.md` (835 lines).** Script: list checkbox lines marked done and sections titled "Completed"; move completed sections to `docs/archive/TODO-completed.md`. Open items stay; items older than the five-group layout that mention removed groups are flagged, not silently dropped.
-- [ ] **Step 4: Commit** `docs: plan index, ownership map, TODO split`.
+- [x] **Step 1: Plan index.** `docs/plans/README.md`: one table, one row per plan (file, status, one-line problem, successor). Built from a script that reads each plan's first 30 lines; the agent fills in statuses it can verify from code/git and marks the rest `unknown — owner to confirm`. Do **not** edit 30 old plans (§11: superseded plans stay untouched). New rule enforced by the gate: every *new* plan has a `Status` line.
+- [x] **Step 2: Ownership map** (`docs/README.md`, ≤ 40 lines): for each kind of fact the single document that owns it — routing flow → `docs/routing-flow.md`; decisions → ADRs; config keys → `router-config.example.json` + README table; release steps → `RELEASE_CHECKLIST.md`; history → CHANGELOG. Everything else links, never copies. This is the redundancy concept for docs.
+- [x] **Step 3: `TODO.md` (835 lines).** Script: list checkbox lines marked done and sections titled "Completed"; move completed sections to `docs/archive/TODO-completed.md`. Open items stay; items older than the five-group layout that mention removed groups are flagged, not silently dropped.
+- [x] **Step 4: Commit** `docs: plan index, ownership map, TODO split`.
 
 ### Phase 4 — Test redundancy
 
@@ -111,7 +111,7 @@ Goal: finish with the least context spent.
 - [ ] **Step 3: Mutation evidence.** Download the latest nightly `mutation.json` artifact (CI), compute per test: the set of mutants it is the *only* killer of. Tests with an empty set *and* no unique line coverage are candidates. Cap the output at 30 candidates. If the report has no `killedBy`, stop here and record "needs a perTest run" in this step instead of guessing.
 - [ ] **Step 4: Delete or merge candidates one file at a time**; each needs (a) the Stryker evidence, (b) the suite green, (c) coverage thresholds unchanged. Keep a one-line `NOTE:` where a test was removed (the 2026-09-20 convention). Expect single-digit removals.
 - [ ] **Step 5: Naming convention for pin files.** `consolidated-<topic>-pins.test.ts` stays, but a file over 1,000 lines is split by `describe` block into `<topic>-pins-<part>.test.ts` (navigation only, no content change). Only `consolidated-stream-error-pins` (3,017) and `consolidated-routing-cache-pins` (1,366) qualify now.
-- [ ] **Step 6: Commit(s)** `refactor(test): shared router/ollama helpers` and `test: remove mutation-redundant tests`.
+- [x] **Step 6: Commit(s)** `refactor(test): shared router/ollama helpers` and `test: remove mutation-redundant tests`.
 
 ### Phase 5 — Code and scripts
 
@@ -120,7 +120,7 @@ Goal: finish with the least context spent.
 - [ ] **Step 3: Shared CLI helpers** (`arg`, `fmtTime`, `isRecord`, `pct`, `offsetOf`) into `scripts/lib/cli.ts`; same migration.
 - [ ] **Step 4: Stale names in `src` comments** (44 hits of `tactical|strategic|operational|scout`). Classify with a script: migration warnings and history comments stay; comments describing current behaviour with removed names are fixed (Boyscout, §7).
 - [ ] **Step 5: `scripts/` layout** per open decision 5, if approved: `git mv`, scripted update of `package.json`, both workflows, `.githooks/pre-push`, docs; the grep for the old paths must be empty.
-- [ ] **Step 6: Commit(s)** per step.
+- [x] **Step 6: Commit(s)** per step.
 
 ### Phase 6 — Close
 

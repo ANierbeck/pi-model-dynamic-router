@@ -8,8 +8,10 @@ node_modules/
 /.roborev/
 dist/
 
-# Local working files (not for version control)
-archive/
+# Local working files (not for version control). Root-only on purpose: the
+# bare `archive/` pattern also matched docs/archive/, the tracked history
+# directory (caught by the Sourcery review on PR #84, 2026-11-03).
+/archive/
 
 # Generierte Konfigurationsdateien
 router-config.dynamic.json
