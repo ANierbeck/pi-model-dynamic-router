@@ -376,7 +376,20 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // Shrink oversized `read` results with a cheap summarizer (routed via
     // the delegation group — default bulk_reader) BEFORE the main model
     // sees them. Strictly fail-open: undefined → original passes through.
-    const replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
+    // The sub-call streams through the router's own groupStream/driveStream,
+    // so it runs inside the sub-call scope: otherwise the summarizer ref
+    // becomes the TURN's model and the next tool follow-up step starts on it
+    // (live incident 2026-11-03 — a GLM-driven planning turn continued on the
+    // free bulk_reader model, fell through 429s to openrouter/free and stayed
+    // there). The scope also keeps curModel on the turn's model, so turn_end
+    // attributes usage to it. See test/subcall-model-scope.test.ts.
+    rt.router.enterSubCall();
+    let replacement: Awaited<ReturnType<typeof handleReadDelegation>>;
+    try {
+      replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
+    } finally {
+      rt.router.exitSubCall();
+    }
     if (replacement) return replacement;
 
     // The rate-limit branch that lived here since the initial release

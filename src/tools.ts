@@ -62,7 +62,15 @@ export function createTools(rt: ToolDeps) {
       _onUpdate: unknown,
       ctx: ExtensionContext
     ) {
-      const result = await executeBulkRead(params, ctx, rt.cfg, routerLog);
+      // The reader stream is a SUB-CALL: it must not become the turn's model
+      // (see Router.enterSubCall / test/subcall-model-scope.test.ts).
+      rt.router.enterSubCall();
+      let result: Awaited<ReturnType<typeof executeBulkRead>>;
+      try {
+        result = await executeBulkRead(params, ctx, rt.cfg, routerLog);
+      } finally {
+        rt.router.exitSubCall();
+      }
       return {
         ...result,
         details: { tool: 'bulk_read', files: params.paths.length },
