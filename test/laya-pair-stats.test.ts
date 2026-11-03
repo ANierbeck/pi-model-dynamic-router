@@ -319,5 +319,7 @@ describe('laya-pair-stats CLI', () => {
     expect(ok.stdout).not.toContain('LEAK-PROMPT-TEXT');
     expect(missing.status).toBe(0);
     expect(missing.stdout).toContain('No decision log yet');
-  });
+    // Two cold `npx tsx` starts: the 5 s default timed out on a loaded CI runner
+    // (main run 41706825576, 7.4 s).
+  }, 30_000);
 });

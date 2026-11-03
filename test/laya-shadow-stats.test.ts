@@ -39,7 +39,7 @@ describe('laya-shadow-stats', () => {
     expect(out).toContain('Avg confidence: agree 97.0 | disagree 64.8');
     expect(out).toContain('≥ 0.95=2 0.90-0.95=1 < 0.70=2 0.80-0.90=1');
     expect(out).toContain('avg 49 ms');
-  });
+  }, 30_000);
 
   it('lists only real disagreements in the top-pairs matrix and shows the high-confidence prompt', () => {
     const out = run([]);
@@ -53,7 +53,7 @@ describe('laya-shadow-stats', () => {
     expect(out).toContain('This is the raw material for the golden set (Task 7):');
     expect(out).toContain('rename variable cnt to count');
     expect(out).toContain('HINT: use group strategic');
-  });
+  }, 30_000);
 
   it('handles an empty decision log gracefully', () => {
     const dir = mkdtempSync(join(tmpdir(), 'laya-stats-'));
@@ -66,7 +66,7 @@ describe('laya-shadow-stats', () => {
     rmSync(dir, { recursive: true, force: true });
     expect(out.status).toBe(0);
     expect(out.stdout).toContain('(no Laya calls)');
-  });
+  }, 30_000);
 
   it('exits 0 with a friendly hint when the log file does not exist', () => {
     const out = spawnSync('npx', ['tsx', 'scripts/laya-shadow-stats.ts', '--file=/tmp/nonexistent-laya-stats.jsonl'], {
@@ -75,5 +75,5 @@ describe('laya-shadow-stats', () => {
     });
     expect(out.status).toBe(0);
     expect(out.stdout).toContain('No decision log yet');
-  });
+  }, 30_000);
 });
