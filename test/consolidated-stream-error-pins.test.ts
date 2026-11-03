@@ -17,7 +17,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
-import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
 
 describe('422-client-error-not-rate-limit', () => {
   /**
@@ -41,14 +41,8 @@ describe('422-client-error-not-rate-limit', () => {
    * behavior with the exact production error text.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -174,14 +168,8 @@ describe('abort-not-provider-error', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -322,14 +310,8 @@ describe('abort-text-not-rate-limit', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -441,14 +423,8 @@ describe('blocklist-drivestream', () => {
   // End-to-end check for ADR-0008 Tier 1: a provider_error with a known-permanent
   // OpenRouter signature blocks the model for the following requests.
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -590,14 +566,8 @@ describe('claude-bridge-empty-response-narration', () => {
   //     the router's own cooldown is narrated as "backing off until …".
 
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -751,11 +721,6 @@ describe('context-overflow', () => {
   const dynamicConfigBackupPath = `${dynamicConfigPath}.overflow-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   describe('driveStream: context overflow triggers native compaction signal', () => {
     it('emits a native-style overflow error when all candidates skip on context window', async () => {
@@ -1067,14 +1032,8 @@ describe('cooldown-collapse', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   function allText(events: AssistantMessageEvent[]): string {
     return events
@@ -1326,14 +1285,8 @@ describe('provider-error-detection', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1499,14 +1452,8 @@ describe('provider-error-paid-cloud-cooldown', () => {
    * The wording is a direct, observable proxy for which escalation branch ran.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1642,14 +1589,8 @@ describe('reasoning-timeout', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   function textDeltaText(events: AssistantMessageEvent[]): string {
     return events
@@ -1842,14 +1783,8 @@ describe('repetition-loop-detection', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1990,14 +1925,8 @@ describe('reset-msg-fallback', () => {
    * case no cooldown was applied to it at all).
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -2190,11 +2119,6 @@ describe('skip-failure-malus', () => {
   const dynamicConfigBackupPath = `${dynamicConfigPath}.skip-malus-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   // Collects every bit of text the router pushed to the stream — the final
   // error event's content, plus any "> [router] ..." info lines pushed along
@@ -2313,14 +2237,8 @@ describe('stall-timeout-detection', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -2484,14 +2402,8 @@ describe('summarization-error-message', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -2623,14 +2535,8 @@ describe('truncated-length', () => {
    * "lazy 'stop'" variant of the failure remains diagnosable.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,

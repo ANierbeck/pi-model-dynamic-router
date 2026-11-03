@@ -41,10 +41,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -64,12 +63,7 @@ async function withIsolatedRouter(
   globalThis.fetch = (() =>
     Promise.reject(new Error('network disabled during test (adr-0021)'))) as typeof fetch;
 
-  const dynBak = `${dynamicConfigPath}.adr-0021-bak`;
-  const cacheBak = `${scanCachePath}.adr-0021-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
   // lastScanTimestamp 0 = expired cache, so the background scan regenerates
   // router-config.dynamic.json (the snapshot assertions need that). The
@@ -104,9 +98,8 @@ async function withIsolatedRouter(
     cwdSpy.mockRestore();
     globalThis.fetch = originalFetch;
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 

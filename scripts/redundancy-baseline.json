@@ -5,7 +5,7 @@
     "rootOutsideAllowlist": 0,
     "plansWithoutStatus": 23,
     "duplicateFunctions": 6,
-    "repeatedBlocks": 53,
+    "repeatedBlocks": 50,
     "ollamaMockFiles": 27,
     "plansMissingFromIndex": 0
   }

@@ -38,9 +38,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 async function withIsolatedRouter(
   registryModels: any[],
@@ -58,12 +58,7 @@ async function withIsolatedRouter(
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-  const dynBak = `${dynamicConfigPath}.ollama-merge-bak`;
-  const cacheBak = `${scanCachePath}.ollama-merge-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
   fs.writeFileSync(
     scanCachePath,
@@ -126,9 +121,8 @@ async function withIsolatedRouter(
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 

@@ -24,7 +24,7 @@ import { setConfig, setCache, setGdpval, setModelMap, setMetrics, setModelRegist
 import type { Group } from '../src/types.ts';
 import { test, beforeAll, afterAll } from 'vitest';
 import { lookupGdp } from '../src/metrics.js';
-import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
 
 describe('cache-session-reload', () => {
   // test/cache-session-reload.test.ts
@@ -372,14 +372,8 @@ describe('dynamic-config-staleness', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withStaleDynamicConfig(
     staleDynamicConfig: Record<string, unknown>,
@@ -987,14 +981,8 @@ describe('orchestrator-router-context-freshness', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1167,11 +1155,6 @@ describe('sticky-model-regression', () => {
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
   const scanCacheBackupPath = `${scanCachePath}.regression-test-bak`;
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   describe('Sticky model regression (driveStream must never call pi.setModel)', () => {
     let mod: typeof import('../index.ts');

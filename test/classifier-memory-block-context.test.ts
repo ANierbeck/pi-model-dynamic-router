@@ -23,7 +23,7 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -37,8 +37,7 @@ vi.mock('../src/ollama-utils.ts', () => ({
   isOllamaAvailable: vi.fn(async () => true),
 }));
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 const MEMORY_BODY = 'final_fix_2026_05_31: Extension komplett neu aufgebaut, altes Verzeichnis geloescht';
 const memoryBlock = `<memory>\n## Relevant Memory\n- ${MEMORY_BODY}\n</memory>`;
@@ -61,12 +60,7 @@ async function classifierSees(messages: any[]): Promise<string> {
     })
   );
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-  const dynBak = `${dynamicConfigPath}.memblock-bak`;
-  const cacheBak = `${scanCachePath}.memblock-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
   writeNoOpScanCache(scanCachePath, { localModels: ['foo:3b'] });
 
   try {
@@ -102,9 +96,8 @@ async function classifierSees(messages: any[]): Promise<string> {
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 

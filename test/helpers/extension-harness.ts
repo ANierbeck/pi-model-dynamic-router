@@ -7,6 +7,7 @@
 // it lives here once. Everything a test needs to vary is an override.
 
 import { existsSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
 import { vi } from 'vitest';
 
 export type EventHandlers = Record<string, (ev: any, ctx: any) => any>;
@@ -71,6 +72,19 @@ export function parkStateFiles(paths: (string | undefined | null)[], suffix = '.
         // Best effort: the test already asserted what it needed.
       }
     }
+  };
+}
+
+/**
+ * The router's two state-file paths, derived from PI_ROUTER_STATE_DIR. Nine
+ * files spelled the same two `path.join(...)` lines out; the names are part of
+ * the state layout, so they live here.
+ */
+export function routerStatePaths(): { dynamicConfigPath: string; scanCachePath: string } {
+  const stateDir = process.env.PI_ROUTER_STATE_DIR!;
+  return {
+    dynamicConfigPath: join(stateDir, 'router-config.dynamic.json'),
+    scanCachePath: join(stateDir, '.cache', 'scan-cache.json'),
   };
 }
 
