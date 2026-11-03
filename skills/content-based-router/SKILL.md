@@ -44,16 +44,20 @@ The categories **shipped** in `src/content-classifier.ts` (the authoritative
 list — the original sketch had only six):
 
 | Category           | Description                                                                   | Example                                                                   |
-|--------------------|------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `trivial`          | Greetings, one-liners, questions about the router itself.                    | `"Hi"`                                                                    |
-| `simple`          | Simple conversational requests.                                              | `"Thanks, that worked"`                                                   |
-| `standard`        | Everyday tasks with no special shape.                                       | `"Summarize this file"`                                                   |
-| `code_simple`      | Simple code changes (1–10 lines, syntax fixes, typos).                       | `"Replace 'foo' with 'bar' in line 42"`                                  |
-| `code_complex`     | Complex code changes (refactoring, debugging, >50 lines).                    | `"Optimize this 200-line function for performance"`                      |
-| `design`           | Architecture, system design, API design.                                     | `"Design an event-sourcing architecture for an e-commerce system"`       |
-| `planning`         | Project planning, roadmaps, task breakdown.                                  | `"Create a 3-month plan for the Kubernetes migration"`                   |
-| `exploration`      | Research, unclear requirements, brainstorming.                                | `"Which database would be suitable for 10M IoT devices?"`                |
-| `fallback`         | Unclear, or several categories apply.                                         | `"Help"` or `"Make everything better"`                                   |
+|--------------------|-------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `simple`           | Short real work, greetings, one-liners, confirmations.                       | `"Hi"` / `"Thanks, that worked"`                                          |
+| `code_simple`      | Simple code changes (1–10 lines, syntax fixes, typos).                       | `"Replace 'foo' with 'bar' in line 42"`                                   |
+| `standard`         | Everyday tasks with no special shape.                                        | `"Summarize this file"`                                                   |
+| `code_complex`     | Complex code changes (refactoring, debugging, >50 lines), code review.       | `"Optimize this 200-line function for performance"`                       |
+| `design`           | Architecture, system design, API design.                                     | `"Design an event-sourcing architecture for an e-commerce system"`        |
+| `planning`         | Project planning, roadmaps, task breakdown.                                  | `"Create a 3-month plan for the Kubernetes migration"`                    |
+| `continue`         | Continuation/confirmation without a self-contained task; inherits the previous category, or `standard` when there is none. | `"ok, go on"` |
+
+The pre-v2 categories `trivial`, `exploration` and `fallback` were removed
+with the five-group layout (2026-10-25): `trivial` folded into `simple`,
+`exploration` into `standard`, and `fallback` disappeared because an
+unclear request is now classified into the closest real category instead of
+a catch-all bucket.
 
 ### 2. Routing decision (shipped)
 Based on the category, a **model group** is selected via the shipped
@@ -63,18 +67,17 @@ GDPval/cost/availability at runtime:
 
 | Category           | Target group        | Rationale (shipped comment)                                                  |
 |--------------------|---------------------|-----------------------------------------------------------------------------|
-| `trivial`          | `scout`             | any free model                                                              |
-| `simple`           | `operational`       | GDPval ≥ 300                                                                 |
-| `standard`        | `operational`       | GDPval ≥ 300                                                                |
-| `code_simple`      | `simple`            | GDPval ≥ 300, max_cost=0 (free models only)                                 |
-| `code_complex`     | `tactical`          | GDPval ≥ 600                                                                 |
-| `design`           | `tactical`          | GDPval ≥ 600                                                                 |
-| `planning`         | `tactical`          | GDPval ≥ 600                                                                 |
-| `exploration`      | `scout`             | any model, cheap                                                             |
-| `fallback`         | `tactical`          | uncertain → use a decent model, not a free one                              |
+| `simple`           | `simple`            | free/subscription first, local ahead of pay-per-token, max_cost=0            |
+| `code_simple`      | `simple`            | shares the merged cheap pool                                                 |
+| `standard`         | `standard`          | GDPval ≥ 300, mid price band                                                 |
+| `code_complex`     | `code_complex`      | best-first in the 1630..1700 GDPval band, sorted by coding                   |
+| `design`           | `design`            | GDPval ≥ 1600, sorted by briefcase                                           |
+| `planning`         | `planning`          | GDPval ≥ 1700, sorted by reasoning, reasoning score ≥ 35                     |
+| `continue`         | `standard`          | no self-contained task → a decent model, not a free one                      |
 
-Note: nothing maps to `strategic`, and there is no "user confirmation"
-branch — the original sketch's `design → strategic` and
+Every category maps to the group of the same name (`continue` → `standard`);
+the mapping is configurable per user via `category_groups`. There is no
+"user confirmation" branch — the original sketch's `design → top tier` and
 `fallback → ask the user` rows were never shipped.
 
 ### 3. Integration into the existing router
@@ -90,8 +93,8 @@ branch — the original sketch's `design → strategic` and
      `code_simple` → `simple`).
   4. **Model selection**: the existing router picks the best model from
      the group (based on GDPval, cost, availability).
-  5. **Uncertain classification**: the `fallback` category routes to
-     `tactical` — no user prompt, no cost gate.
+  5. **Uncertain classification**: an unclear request lands in the closest
+     real category — no user prompt, no cost gate, no catch-all bucket.
 
 ---
 
@@ -128,8 +131,8 @@ Classify the following request into **exactly one** of the categories:
 
 ### 3. Fallback logic (sketch — NOT shipped)
 The original proposal asked the user on cost or uncertainty. **None of this
-shipped**: the shipped classifier routes `fallback` → `tactical`
-automatically and never consults the user. Kept for design history:
+shipped**: the classifier picks a real category automatically and never
+consults the user. Kept for design history:
 
 - **Cost check (sketch)**: if the estimated tokens are >5000 or the cost is >$0.50:
   ```text
@@ -161,9 +164,9 @@ automatically and never consults the user. Kept for design history:
    the categories?
    - *Test*: manual evaluation with 20–30 example prompts.
 2. **Performance**: how long does classification take (target: <500ms)?
-3. **Fallback strategy**: should `fallback` always ask, or select a
-   default group (e.g. `tactical`)? — *Shipped answer: route `fallback` →
-   the `tactical` group automatically (`CATEGORY_TO_GROUP`); no asking.*
+3. **Fallback strategy**: should an unclear request ask, or select a
+   default group? — *Shipped answer: it is classified into the closest real
+   category (`CATEGORY_TO_GROUP`); no asking.*
 4. **User control**: should the user be able to override the
    classification (e.g. via a `/model-hint complex` prefix)? — *Shipped
    answer: yes, the HINT prefix mechanism.*

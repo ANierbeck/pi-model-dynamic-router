@@ -35,6 +35,9 @@ const BUILD_OUTPUTS = ['index.js', 'router-config.json', 'router-defaults.yaml',
 const STATE_FILES = ['.cache/scan-cache.json', 'router-config.dynamic.json'];
 // Stray non-build, non-state files that must never ship — seeded counterexamples.
 const STRAY_FILES = ['router-config.dynamic.json.bak-20261022-ghosts', 'scratch.txt'];
+// Release gate (owner 2026-10-29, hygiene Phase 2 Step 3a): the only skill
+// directories allowed in the tarball. Adding one is a deliberate act.
+const SHIPPED_SKILLS = ['content-based-router', 'router-login'];
 
 describe('npm package contents', () => {
   let tmpDir: string | undefined;
@@ -63,6 +66,48 @@ describe('npm package contents', () => {
 
     expect(distFiles).toEqual(BUILD_OUTPUTS.map((f) => `dist/${f}`).sort());
   }, 30_000);
+
+  it('ships every directory under skills/ — so the allowlist, not the packer, is the gate (hygiene Phase 2, Step 3a)', () => {
+    // Premise of the gate below: `files` names `skills/`, which is a wildcard.
+    // Anything a future commit puts there ships to every user. This test makes
+    // that explicit with a seeded third directory, so the allowlist assertion
+    // in the next test is provably the thing doing the work.
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-skills-'));
+    fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(tmpDir, 'package.json'));
+    for (const rel of BUILD_OUTPUTS) {
+      const file = path.join(tmpDir, 'dist', rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{}');
+    }
+    for (const dir of [...SHIPPED_SKILLS, 'laya-tooling']) {
+      fs.mkdirSync(path.join(tmpDir, 'skills', dir), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'skills', dir, 'SKILL.md'), '# x\n');
+    }
+
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const files: string[] = JSON.parse(out)[0].files.map((f: { path: string }) => f.path);
+    const skillDirs = [...new Set(files.filter((f) => f.startsWith('skills/')).map((f) => f.split('/')[1]))].sort();
+
+    expect(skillDirs).toEqual([...SHIPPED_SKILLS, 'laya-tooling'].sort());
+  }, 30_000);
+
+  it('the repo ships exactly the two user-facing skills (release gate, owner 2026-10-29)', () => {
+    // The Laya training tooling must not ship: /laya-label, /laya-sidecar and
+    // /classifier-replay are Pi extensions outside this repo, and the training
+    // scripts live in ~/.laya-ft. A new directory under skills/ is a
+    // deliberate act — adding it here is the same kind of decision as adding a
+    // build output to BUILD_OUTPUTS.
+    const dirs = fs
+      .readdirSync(path.join(repoRoot, 'skills'), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+    expect(dirs).toEqual([...SHIPPED_SKILLS].sort());
+  });
 
   it('BUILD_OUTPUTS stays in sync with the files the build script produces (merge review 2026-11-01)', () => {
     // The allowlist in package.json `files` and this test's BUILD_OUTPUTS are

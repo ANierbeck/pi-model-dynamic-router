@@ -144,6 +144,18 @@ function isShipped(path: string, shipped: string[]): boolean {
   return shipped.some((s) => (s.endsWith('/') ? path.startsWith(s) : path === s));
 }
 
+// A removed group name is only stale when it names a ROUTER group. Two of the
+// five also exist outside the router: `scout` is a pi-subagents agent
+// identifier (README's subagent examples pass `agent: "scout"`), and
+// `operational` is an ordinary English adjective. Both are legitimate in a
+// shipped doc, so the check skips a hit whose line uses the word in one of
+// those roles — the subagent assignment below, and the adjective phrase for
+// `operational`. Everything else is a finding.
+const NON_GROUP_USES: Partial<Record<(typeof STALE_NAMES)[number], RegExp>> = {
+  scout: /\bagent:\s*['"]scout['"]/i,
+  operational: /\boperational\s+(?:problems?|issues?|overhead|cost|risk|work)\b/i,
+};
+
 function findStaleNames(docs: TextFile[], shipped: string[]): Report['staleNames'] {
   const patterns = STALE_NAMES.map((name) => ({ name, re: new RegExp(`\\b${name}\\b`, 'gi') }));
   const out: Report['staleNames'] = [];
@@ -152,7 +164,10 @@ function findStaleNames(docs: TextFile[], shipped: string[]): Report['staleNames
     d.text.split('\n').forEach((text, i) => {
       for (const { name, re } of patterns) {
         re.lastIndex = 0;
-        if (re.test(text)) out.push({ path: d.path, line: i + 1, name });
+        if (!re.test(text)) continue;
+        const exemption = NON_GROUP_USES[name];
+        if (exemption?.test(text)) continue;
+        out.push({ path: d.path, line: i + 1, name });
       }
     });
   }

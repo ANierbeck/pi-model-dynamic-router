@@ -628,7 +628,7 @@ default is either derived or a **user-layer** choice in `router-config.user.json
 
 #### Billing Preference (per-group tier override)
 
-By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models (e.g. Mistral) always rank ahead of local compute (Ollama), even in scout where local models conceptually belong on top.
+By default, `method: "tiered"` sorts by billing tier first: **free → subscription → local → payg**. This means already-paid subscription models always rank ahead of local compute (Ollama), even in `simple` where local models conceptually belong on top — set `billing_preference: "local_before_payg"` (the shipped `simple` setting) to put local ahead of pay-per-token.
 
 `billing_preference` re-ranks a group by billing tier after its `method` has ordered the candidates. It does not change which models passed the filters — only their order. Five values:
 

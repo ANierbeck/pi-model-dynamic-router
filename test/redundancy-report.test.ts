@@ -251,6 +251,27 @@ describe('stale group names in shipped docs', () => {
     expect(r.staleNames.map((s) => s.name)).toEqual(['scout']);
   });
 
+  it('does not flag a pi-subagents agent name that happens to be a removed group name', () => {
+    // README's subagent examples pass `agent: "scout"` — that is pi-subagents'
+    // own agent identifier, not a router group, and `scout` is a real agent
+    // there. Flagging it would force the docs to lie about the subagent API.
+    const r = analyze({
+      ...empty(),
+      docs: [{ path: 'README.md', text: 'agent: "scout",\n  agent: \'scout\',\n' }],
+      shipped: ['README.md'],
+    });
+    expect(r.staleNames).toEqual([]);
+  });
+
+  it('still flags the same name when it is used as a group', () => {
+    const r = analyze({
+      ...empty(),
+      docs: [{ path: 'README.md', text: '  agent: "scout",\nthe scout group ranks local models first\n' }],
+      shipped: ['README.md'],
+    });
+    expect(r.staleNames.map((s) => `${s.line}:${s.name}`)).toEqual(['2:scout']);
+  });
+
   it('matches whole words only', () => {
     const r = analyze({
       ...empty(),

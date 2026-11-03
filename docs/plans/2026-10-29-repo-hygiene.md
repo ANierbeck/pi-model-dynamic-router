@@ -90,12 +90,12 @@ Goal: finish with the least context spent.
 
 ### Phase 2 — Shipped docs tell the truth
 
-- [ ] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
-- [ ] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
-- [ ] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
-- [ ] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`) in `test/package-contents.test.ts`. Any other skill file in the `npm pack` list fails the gate.
-- [ ] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
-- [ ] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
+- [x] **Step 1: List** the stale-name hits in shipped docs (`--stale`): `PI.md`, `skills/content-based-router/SKILL.md`, `skills/router-login/SKILL.md`, `README.md`.
+- [x] **Step 2: Rewrite `PI.md`** to the five-group layout. Take the facts from `router-config.json` and `docs/routing-flow.md` (already updated), not from memory; keep it short and link instead of copying (single owner per fact, see "Ownership map").
+- [x] **Step 3: Fix the skills** (group names only; skill behaviour unchanged).
+- [x] **Step 3a: Release gate for skills.** Pin the list of shipped skill directories to the two known ones (`content-based-router`, `router-login`) in `test/package-contents.test.ts`. Any other skill file in the `npm pack` list fails the gate.
+- [x] **Step 4: Pin** the stale-name ceiling at 0 in the gate. A `package-contents` style check already exists (`test/package-contents.test.ts`); extend it rather than adding a new file.
+- [x] **Step 5: Commit** `docs: shipped documentation matches the five-group layout`.
 
 ### Phase 3 — Plans, TODO, ownership map
 

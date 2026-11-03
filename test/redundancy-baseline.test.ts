@@ -20,7 +20,7 @@ import { analyze, collectInput, type Counts } from '../scripts/redundancy-report
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const CEILING: Counts = {
-  staleNames: 46,
+  staleNames: 0,
   rootOutsideAllowlist: 0,
   plansWithoutStatus: 23,
   duplicateFunctions: 6,

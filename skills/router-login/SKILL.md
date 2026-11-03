@@ -100,10 +100,11 @@ If pricing still shows `$0.0` for a paid model, set `cost_per_m`
 The new models automatically participate in group selection based on their
 quality scores (GDPval + AA capability columns):
 
-- **strategic**: best available model (GDPval-ranked, quality window)
-- **planning**: top tier only (GDPval ≥ 1700, ranked by AA-Briefcase Elo)
-- **tactical**: daily coding tier (600–1700, ranked by SciCode/Terminal-Bench)
-- **operational / scout / fallback**: billing-preference-ranked cheap tiers
+- **planning**: top tier only (GDPval ≥ 1700, ranked by the reasoning column)
+- **design**: GDPval ≥ 1600, ranked by AA-Briefcase
+- **code_complex**: the 1630..1700 band, ranked by coding
+- **standard**: GDPval ≥ 300, mid price band
+- **simple**: free/subscription first, local ahead of pay-per-token, max_cost=0
 
 Ask: "Run `/router` to verify the new models appear in the appropriate groups."
 
