@@ -327,7 +327,6 @@ Filter out specific providers or models from selection:
 
 ## Additional Documentation
 
-- **AGENT.md**: Quick reference guide for AI agents using this extension
 - **CLAUDE.md**: Specific information about Claude model support and claude-bridge integration
 - **README.md**: Complete documentation with architecture, features, and configuration details
 - **docs/architecture.md**: Detailed architecture documentation

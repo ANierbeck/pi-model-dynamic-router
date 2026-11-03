@@ -21,7 +21,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const CEILING: Counts = {
   staleNames: 46,
-  rootOutsideAllowlist: 5,
+  rootOutsideAllowlist: 0,
   plansWithoutStatus: 23,
   duplicateFunctions: 6,
   repeatedBlocks: 61,

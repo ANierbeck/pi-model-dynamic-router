@@ -2,7 +2,7 @@
   "note": "Ratcheting baseline for scripts/redundancy-report.ts (docs/plans/2026-10-29-repo-hygiene.md). Counts only go DOWN: a higher measured count fails test/redundancy-baseline.test.ts, a lower one requires lowering this file and CEILING in that test in the same change. Never raise an entry to make a PR green.",
   "counts": {
     "staleNames": 46,
-    "rootOutsideAllowlist": 5,
+    "rootOutsideAllowlist": 0,
     "plansWithoutStatus": 23,
     "duplicateFunctions": 6,
     "repeatedBlocks": 61,
