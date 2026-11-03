@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { drainStream, routerStatePaths } from './helpers/extension-harness.ts';
 
 describe('free-model-on-demand-registration', () => {
   /**
@@ -26,14 +27,8 @@ describe('free-model-on-demand-registration', () => {
    */
 
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-  async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-    const events: AssistantMessageEvent[] = [];
-    for await (const ev of stream) events.push(ev);
-    return events;
-  }
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,

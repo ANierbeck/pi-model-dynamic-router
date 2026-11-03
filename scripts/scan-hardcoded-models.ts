@@ -10,6 +10,7 @@
 // itself.
 
 import ts from 'typescript';
+import { isRecord } from '../src/utils.ts';
 
 export interface HardcodedFinding {
   file: string;
@@ -161,10 +162,6 @@ export function compareToBaseline(findings: readonly HardcodedFinding[], baselin
 }
 
 const SHIPPED_CONFIG_FILE = 'router-config.json';
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 function stringsOf(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];

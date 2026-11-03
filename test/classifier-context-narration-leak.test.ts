@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -41,14 +42,8 @@ vi.mock('../src/ollama-utils.ts', () => ({
 }));
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-  const events: AssistantMessageEvent[] = [];
-  for await (const ev of stream) events.push(ev);
-  return events;
-}
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -59,12 +54,7 @@ async function withIsolatedRouter(
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-  const dynBak = `${dynamicConfigPath}.narration-leak-bak`;
-  const cacheBak = `${scanCachePath}.narration-leak-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
   writeNoOpScanCache(scanCachePath, { localModels: ['foo:3b'] });
 
@@ -75,9 +65,8 @@ async function withIsolatedRouter(
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 
@@ -100,16 +89,7 @@ describe('classifier context: router narration must not leak into lastAssistantS
       async (defaultExport, tmpDir) => {
         vi.mocked(ollamaUtils.callOllama).mockClear();
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const scoutModel = {

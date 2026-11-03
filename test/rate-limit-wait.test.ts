@@ -29,6 +29,7 @@ import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { RateLimitManager } from '../src/rate-limit.ts';
 import { routerLog } from '../src/logger.ts';
+import { drainStream, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 
 // The 429-body assertions below need the log call, not the log file.
 vi.mock('../src/logger.ts', async (importOriginal) => {
@@ -42,14 +43,8 @@ vi.mock('../src/logger.ts', async (importOriginal) => {
   };
 });
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-  const events: AssistantMessageEvent[] = [];
-  for await (const ev of stream) events.push(ev);
-  return events;
-}
 
 /** Formats an absolute reset instant the way claude-bridge does (de-DE, Berlin
  * zone) — the format parseResetAtMs understands, including TZ correction. */
@@ -70,12 +65,7 @@ async function withIsolatedRouter(
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-  const dynBak = `${dynamicConfigPath}.rlwait-bak`;
-  const cacheBak = `${scanCachePath}.rlwait-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
   writeNoOpScanCache(scanCachePath);
 
@@ -86,9 +76,8 @@ async function withIsolatedRouter(
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 

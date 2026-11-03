@@ -17,14 +17,14 @@ import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();

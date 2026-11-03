@@ -22,25 +22,20 @@ import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
   return { ...actual, isOllamaAvailable: vi.fn(async () => false) };
 });
 
-async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-  const events: AssistantMessageEvent[] = [];
-  for await (const ev of stream) events.push(ev);
-  return events;
-}
 
 // First candidate streams content, then terminates with a MALFORMED done
 // event (no `message`) — the exact shape that makes pi-ai 1.4.0's push()
@@ -82,16 +77,7 @@ describe('driveStream: forwarding exception must not hang the stream', () => {
       vi.resetModules();
       const mod = await import('../index.ts');
 
-      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-      const pi: any = {
-        registerTool: vi.fn(),
-        registerCommand: vi.fn(),
-        registerProvider: vi.fn(),
-        setModel: vi.fn(async () => true),
-        on: vi.fn((event: string, handler: any) => {
-          onHandlers[event] = handler;
-        }),
-      };
+      const { ctx: pi, onHandlers } = makeExtensionContext();
       mod.default(pi);
 
       const streamSimple = vi.fn((model: any) => {

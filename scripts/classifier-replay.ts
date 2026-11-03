@@ -24,6 +24,8 @@ import { join } from 'node:path';
 import { getGroupForCategory } from '../src/content-classifier.ts';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { readDecisionLogRecords, type DecisionRecord } from './lib/decision-log.ts';
+import { invokedDirectly } from './lib/cli.ts';
 
 export interface SessionPrompt {
   text: string;
@@ -32,16 +34,18 @@ export interface SessionPrompt {
   hasAttachment: boolean;
 }
 
-export interface DecisionRecordLite {
-  v: number;
-  ts: string;
-  stage: string;
-  final: { category: string | null; group: string | null };
+/**
+ * The decision-log record as this script needs it. The full type is owned by
+ * the writer (src/classifier-decision-log.ts) and re-exported by
+ * scripts/lib/decision-log.ts; this alias keeps the local call sites readable
+ * while the fields below are the ones the replay actually reads.
+ */
+export type DecisionRecordLite = DecisionRecord & {
   input: {
     text: { prompt: string; previousUserMessage?: string; lastAssistantSnippet?: string } | null;
     sha: string;
   };
-}
+};
 
 /** Background context the known classifier saw (store_text "full" records only). */
 export interface CorpusContext {
@@ -122,14 +126,10 @@ export function readDecisionRecords(paths: string[]): DecisionRecordLite[] {
   const out: DecisionRecordLite[] = [];
   for (const p of paths) {
     if (!existsSync(p)) continue;
-    for (const line of readFileSync(p, 'utf8').split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const rec = JSON.parse(line);
-        if (rec?.v === 1) out.push(rec);
-      } catch {
-        // A torn line (two processes appending) — skip, the next one is fine.
-      }
+    // One reader for the log (scripts/lib/decision-log.ts): it owns the
+    // skipping rules, so a torn line is handled the same way everywhere.
+    for (const rec of readDecisionLogRecords(p)) {
+      if (rec.v === 1) out.push(rec as DecisionRecordLite);
     }
   }
   return out;
@@ -314,6 +314,6 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('classifier-replay.ts')) {
+if (invokedDirectly(import.meta.url)) {
   await main();
 }

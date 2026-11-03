@@ -26,16 +26,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-async function drainStream(stream: AsyncIterable<AssistantMessageEvent>) {
-  const events: AssistantMessageEvent[] = [];
-  for await (const ev of stream) events.push(ev);
-  return events;
-}
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -46,12 +41,7 @@ async function withIsolatedRouter(
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-  const dynBak = `${dynamicConfigPath}.overflow2-bak`;
-  const cacheBak = `${scanCachePath}.overflow2-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
   writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
 
@@ -62,10 +52,9 @@ async function withIsolatedRouter(
   } finally {
     cwdSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    restoreState();
     removeNoOpScanCache(scanCachePath);
 
-    if (hadCache) fs.renameSync(cacheBak, scanCachePath);
   }
 }
 
@@ -79,16 +68,7 @@ describe('estimateContextTokens: array message content', () => {
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // Small context window — must be skipped because the tool_result
@@ -145,16 +125,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // Large advertised context window, so the pre-flight guard does NOT
@@ -208,16 +179,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const model = {
@@ -266,16 +228,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const model = {

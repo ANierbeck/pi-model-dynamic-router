@@ -16,13 +16,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
 } from './helpers/noop-scan-cache.ts';
 
-const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 function makeMockPi(): any {
   return {
@@ -44,12 +44,7 @@ describe('exit-listener dedupe', () => {
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.exit-dedupe-bak`;
-    const cacheBak = `${scanCachePath}.exit-dedupe-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
     writeNoOpScanCache(scanCachePath);
 
     // Fresh-process state: the guard flag must be unset so the FIRST
@@ -75,8 +70,7 @@ describe('exit-listener dedupe', () => {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+      restoreState();
     }
   });
 });

@@ -31,6 +31,7 @@ import {
 } from '../src/delegation';
 import { stripRouterNarration } from '../src/utils';
 import type { Config } from '../src/types';
+import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
 
 // ── delegationSettings ──────────────────────────────────────────────────
 
@@ -500,8 +501,7 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
 
 describe('default export wiring: tool_result returns the delegation replacement', () => {
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
   // Production-realistic registry model (cost is mandatory on real models).
   const KNOWN_MODEL = {
@@ -535,16 +535,7 @@ describe('default export wiring: tool_result returns the delegation replacement'
       vi.resetModules();
       const mod = await import('../index.ts');
 
-      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-      const pi: any = {
-        registerTool: vi.fn(),
-        registerCommand: vi.fn(),
-        registerProvider: vi.fn(),
-        setModel: vi.fn(async () => true),
-        on: vi.fn((event: string, handler: any) => {
-          onHandlers[event] = handler;
-        }),
-      };
+      const { ctx: pi, onHandlers } = makeExtensionContext();
       (mod.default as any)(pi);
 
       const sessionCtx = {
@@ -611,8 +602,7 @@ describe('default export wiring: tool_result returns the delegation replacement'
 // block/pass decisions) — not the module logic, which the unit tests cover.
 describe('default export wiring: tool_call pre-call read block', () => {
   const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
-  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
   const KNOWN_MODEL = {
     provider: 'mistral',

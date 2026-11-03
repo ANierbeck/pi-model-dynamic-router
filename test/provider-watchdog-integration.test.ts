@@ -12,6 +12,7 @@ import * as ollamaUtils from '../src/ollama-utils';
 import { isProviderWedged } from '../src/provider-watchdog.ts';
 import type { Cache } from '../src/types.ts';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
@@ -118,16 +119,7 @@ describe('driveStream feeds the local-provider watchdog', () => {
       vi.resetModules();
       const mod = await import('../index.ts');
       const defaultExport: any = mod.default;
-      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-      const pi: any = {
-        registerTool: vi.fn(),
-        registerCommand: vi.fn(),
-        registerProvider: vi.fn(),
-        setModel: vi.fn(async () => true),
-        on: vi.fn((event: string, handler: any) => {
-          onHandlers[event] = handler;
-        }),
-      };
+      const { ctx: pi, onHandlers } = makeExtensionContext();
       defaultExport(pi);
 
       const mk = (provider: string, id: string, price = 0) => ({

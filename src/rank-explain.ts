@@ -26,7 +26,7 @@ export interface ExplainInput {
 
 const MINUS = '−';
 
-const pct = (gap: number): string => `${MINUS}${(gap * 100).toFixed(1)}%`;
+const fmtGap = (gap: number): string => `${MINUS}${(gap * 100).toFixed(1)}%`;
 
 /**
  * One reason per model, keyed by ref. Empty for fewer than two models: a lone
@@ -64,7 +64,7 @@ export function explainBestRanking(input: ExplainInput): Map<string, string> {
       continue;
     }
     const gap = topScore > 0 ? (topScore - scoreOf(ref)) / topScore : 0;
-    const base = `${pct(gap)} score`;
+    const base = `${fmtGap(gap)} score`;
     const inWindow = w > 0 && scoreOf(ref) >= topScore * (1 - w);
     if (!inWindow || ranked.indexOf(ref) > topIndex) {
       out.set(ref, base);

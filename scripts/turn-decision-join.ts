@@ -26,11 +26,13 @@
 // are never printed.
 
 import { createHash } from 'node:crypto';
+import { readDecisionLog } from './lib/decision-log.ts';
 import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, stripRouterNarration } from '../src/utils.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { arg } from './lib/cli.ts';
 
 export interface SessionTurn {
   session: string;
@@ -128,21 +130,20 @@ export function readSessionTurns(dir: string, bounds: Bounds): SessionTurn[] {
 
 /** Decision-log records as rows; the record text itself is not kept. */
 export function readDecisions(path: string, bounds: Bounds): DecisionRow[] {
-  const rows: DecisionRow[] = [];
-  for (const rec of parseLines(path) as Array<Record<string, any>>) {
-    const sha = rec?.input?.sha;
-    const ts = Date.parse(rec?.ts);
-    if (typeof sha !== 'string' || Number.isNaN(ts) || !inBounds(ts, bounds)) continue;
-    rows.push({
-      ts,
-      sha,
-      stage: String(rec.stage ?? ''),
-      category: rec.final?.category ?? null,
-      group: rec.final?.group ?? null,
-      proc: typeof rec.proc === 'string' ? rec.proc : null,
-    });
-  }
-  return rows;
+  // One reader for the log (scripts/lib/decision-log.ts) owns the skipping and
+  // bounds rules. The join is about prompts, so a record without an `input.sha`
+  // (a pool record) has nothing to join on and is dropped here — deliberately,
+  // and in one place instead of in the reader.
+  return readDecisionLog(path, bounds)
+    .filter((row) => row.sha !== null)
+    .map((row) => ({
+      ts: row.ts,
+      sha: row.sha!,
+      stage: row.stage,
+      category: row.category,
+      group: row.group,
+      proc: row.proc,
+    }));
 }
 
 const byTsThenSession = (a: SessionTurn, b: SessionTurn) =>
@@ -207,11 +208,6 @@ export function summarizeJoin(joined: JoinedTurn[]): JoinSummary {
 function fingerprint(joined: JoinedTurn[]): string {
   const rows = joined.map((j) => [j.session, j.ts, j.sha, j.status, j.category, j.group, j.served, j.switched]);
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16);
-}
-
-function arg(name: string): string | undefined {
-  const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
 }
 
 /** pi names a session directory after the working directory: /a/b -> --a-b-- */
