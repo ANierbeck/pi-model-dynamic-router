@@ -1092,8 +1092,8 @@ describe('cooldown-collapse', () => {
       } finally {
         cwdSpy.mockRestore();
         fs.rmSync(tmpDir, { recursive: true, force: true });
-        restoreState();
         removeNoOpScanCache(scanCachePath);
+        restoreState();
       }
     });
 

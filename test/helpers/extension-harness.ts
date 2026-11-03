@@ -44,9 +44,10 @@ export function makeExtensionContext(): ExtensionContextHarness {
  * afterwards. Returns the restore function; call it in a `finally`. What
  * parking protects is state an EARLIER test in the same file wrote —
  * test/setup/isolate-home.ts gives every test file its own state directory,
- * so no developer's live session state is at risk. A file that fails to park
- * or restore (read-only, concurrently removed) is skipped, not fatal: the
- * test still runs, at worst against the previous state.
+ * so no developer's live session state is at risk. A file that cannot be
+ * PARKED throws (after putting back what was already parked): running on
+ * would test against the previous test's state. A failing RESTORE is
+ * best-effort — the test has already asserted what it needed.
  *
  * The 12-file duplicate this replaces parked `router-config.dynamic.json`
  * and the scan cache by hand, with three lines each, and restored them in a
@@ -55,21 +56,7 @@ export function makeExtensionContext(): ExtensionContextHarness {
 export function parkStateFiles(paths: (string | undefined | null)[]): () => void {
   const suffix = '.test-park';
   const parked: [string, string][] = [];
-  for (const p of paths) {
-    if (!p) continue;
-    try {
-      // existsSync + rename: a missing file is not an error, and a test that
-      // never created it must not fail on restore.
-      if (existsSync(p)) {
-        const bak = `${p}${suffix}`;
-        renameSync(p, bak);
-        parked.push([bak, p]);
-      }
-    } catch {
-      // A read-only or concurrently removed file: skip it, the test still runs.
-    }
-  }
-  return () => {
+  const restore = (): void => {
     for (const [bak, original] of parked) {
       try {
         renameSync(bak, original);
@@ -78,6 +65,24 @@ export function parkStateFiles(paths: (string | undefined | null)[]): () => void
       }
     }
   };
+  for (const p of paths) {
+    if (!p) continue;
+    // existsSync + rename: a missing file is not an error, and a test that
+    // never created it must not fail on restore.
+    if (!existsSync(p)) continue;
+    const bak = `${p}${suffix}`;
+    try {
+      renameSync(p, bak);
+    } catch (err) {
+      // A file that cannot be parked would leave the test running against the
+      // previous test's state and passing for the wrong reason: put back what
+      // was already parked and fail loudly.
+      restore();
+      throw new Error(`parkStateFiles: cannot park ${p}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    parked.push([bak, p]);
+  }
+  return restore;
 }
 
 /**
