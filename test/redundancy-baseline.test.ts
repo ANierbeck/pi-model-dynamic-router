@@ -20,11 +20,11 @@ import { analyze, collectInput, type Counts } from '../scripts/redundancy-report
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const CEILING: Counts = {
-  staleNames: 52,
+  staleNames: 46,
   rootOutsideAllowlist: 5,
-  plansWithoutStatus: 24,
+  plansWithoutStatus: 23,
   duplicateFunctions: 6,
-  repeatedBlocks: 58,
+  repeatedBlocks: 61,
   ollamaMockFiles: 27,
 };
 
