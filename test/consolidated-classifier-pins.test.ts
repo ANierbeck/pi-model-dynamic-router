@@ -5,7 +5,7 @@
 // tests themselves are UNCHANGED; hooks and fixtures moved verbatim.
 
 import { describe, it, expect } from 'vitest';
-import { CATEGORY_TO_GROUP, getGroupForCategory } from '../src/content-classifier.ts';
+import { getGroupForCategory } from '../src/content-classifier.ts';
 import { classifyPrompt } from "../src/content-classifier";
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,17 +18,7 @@ describe('classifier-mapping-hints', () => {
 
 
   describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
-    it('maps the seven v2 categories to their router groups', () => {
-      expect(CATEGORY_TO_GROUP).toEqual({
-        simple: 'simple',
-        code_simple: 'simple',
-        standard: 'standard',
-        code_complex: 'code_complex',
-        design: 'design',
-        planning: 'planning',
-        continue: 'standard',
-      });
-    });
+    // NOTE: the CATEGORY_TO_GROUP table pin that lived here was byte-identical to the one in test/five-group-layout.test.ts (hygiene Phase 4 Step 4, 2026-11-03); kept there only.
 
     it('resolves every known category', () => {
       expect(getGroupForCategory('simple')).toBe('simple');
