@@ -91,7 +91,7 @@
   with forwarding-exception termination, host-realistic stream fixtures and
   the PR #79 review round; fallback-exit characterization; turn-decision join; pool replay layout; the laya-spike review round
   (pool-record scope, first-sample metrics, demoted-top ranking reasons,
-  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column + min_score + review round; the 2026-11-01 merge-review round on laya-spike (token-estimator toolCall/thinking regression, classifier_laya loopback+warn-and-disable validation, stale-groups-fingerprint load guard, lazy decision pool, capability-column data cache, pack/build sync pin); redundancy report + ratchet gate; hygiene phases 1-2 (root/docs tidy, shipped docs on the five-group layout, skill allowlist gate): 2485 passing / 3 skipped; do not
+  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column + min_score + review round; the 2026-11-01 merge-review round on laya-spike (token-estimator toolCall/thinking regression, classifier_laya loopback+warn-and-disable validation, stale-groups-fingerprint load guard, lazy decision pool, capability-column data cache, pack/build sync pin); redundancy report + ratchet gate; hygiene phases 1-3 (root/docs tidy, shipped docs on the five-group layout, skill allowlist gate, plan index, ownership map, TODO split): 2492 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

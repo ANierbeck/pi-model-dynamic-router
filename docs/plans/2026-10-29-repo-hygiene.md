@@ -99,10 +99,10 @@ Goal: finish with the least context spent.
 
 ### Phase 3 — Plans, TODO, ownership map
 
-- [ ] **Step 1: Plan index.** `docs/plans/README.md`: one table, one row per plan (file, status, one-line problem, successor). Built from a script that reads each plan's first 30 lines; the agent fills in statuses it can verify from code/git and marks the rest `unknown — owner to confirm`. Do **not** edit 30 old plans (§11: superseded plans stay untouched). New rule enforced by the gate: every *new* plan has a `Status` line.
-- [ ] **Step 2: Ownership map** (`docs/README.md`, ≤ 40 lines): for each kind of fact the single document that owns it — routing flow → `docs/routing-flow.md`; decisions → ADRs; config keys → `router-config.example.json` + README table; release steps → `RELEASE_CHECKLIST.md`; history → CHANGELOG. Everything else links, never copies. This is the redundancy concept for docs.
-- [ ] **Step 3: `TODO.md` (835 lines).** Script: list checkbox lines marked done and sections titled "Completed"; move completed sections to `docs/archive/TODO-completed.md`. Open items stay; items older than the five-group layout that mention removed groups are flagged, not silently dropped.
-- [ ] **Step 4: Commit** `docs: plan index, ownership map, TODO split`.
+- [x] **Step 1: Plan index.** `docs/plans/README.md`: one table, one row per plan (file, status, one-line problem, successor). Built from a script that reads each plan's first 30 lines; the agent fills in statuses it can verify from code/git and marks the rest `unknown — owner to confirm`. Do **not** edit 30 old plans (§11: superseded plans stay untouched). New rule enforced by the gate: every *new* plan has a `Status` line.
+- [x] **Step 2: Ownership map** (`docs/README.md`, ≤ 40 lines): for each kind of fact the single document that owns it — routing flow → `docs/routing-flow.md`; decisions → ADRs; config keys → `router-config.example.json` + README table; release steps → `RELEASE_CHECKLIST.md`; history → CHANGELOG. Everything else links, never copies. This is the redundancy concept for docs.
+- [x] **Step 3: `TODO.md` (835 lines).** Script: list checkbox lines marked done and sections titled "Completed"; move completed sections to `docs/archive/TODO-completed.md`. Open items stay; items older than the five-group layout that mention removed groups are flagged, not silently dropped.
+- [x] **Step 4: Commit** `docs: plan index, ownership map, TODO split`.
 
 ### Phase 4 — Test redundancy
 
