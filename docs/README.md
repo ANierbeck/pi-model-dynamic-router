@@ -26,9 +26,13 @@ changes, and no second copy can go stale (hygiene Phase 3,
 ## Conventions
 
 - **Shipped documents** are the `files` list of `package.json` plus
-  `README.md`. They must describe the *current* layout: a removed group or
-  category name in one of them fails `test/redundancy-baseline.test.ts`
-  (`staleNames` is pinned at 0).
+  `README.md`. They must describe the *current* layout: a removed group name
+  (`strategic`, `tactical`, `operational`, `scout`, `fallback group`) or the
+  removed category `exploration` in one of them fails
+  `test/redundancy-baseline.test.ts` (`staleNames` is pinned at 0). `fallback`
+  and `trivial` are not gated — both are ordinary English words here — and a
+  line that explicitly marks the name as history ("were removed", "pre-v2") is
+  documentation, not a finding.
 - **Historical documents** — `adr/`, `plans/`, `research/`, `archive/`,
   `CHANGELOG.md` — are never edited for tidiness. They may name anything.
 - **Plans** start with `Status`, `Problem`, `Solution`, `Open decisions`,

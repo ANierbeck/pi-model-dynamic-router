@@ -53,11 +53,10 @@ list — the original sketch had only six):
 | `planning`         | Project planning, roadmaps, task breakdown.                                  | `"Create a 3-month plan for the Kubernetes migration"`                    |
 | `continue`         | Continuation/confirmation without a self-contained task; inherits the previous category, or `standard` when there is none. | `"ok, go on"` |
 
-The pre-v2 categories `trivial`, `exploration` and `fallback` were removed
-with the five-group layout (2026-10-25): `trivial` folded into `simple`,
-`exploration` into `standard`, and `fallback` disappeared because an
-unclear request is now classified into the closest real category instead of
-a catch-all bucket.
+Three pre-v2 categories were removed with the five-group layout
+(2026-10-25): the greeting bucket folded into `simple`, the open-question
+bucket into `standard`, and the catch-all bucket disappeared because an
+unclear request is now classified into the closest real category.
 
 ### 2. Routing decision (shipped)
 Based on the category, a **model group** is selected via the shipped
@@ -103,12 +102,13 @@ the mapping is configurable per user via `category_groups`. There is no
 The classification model receives a prompt like:
 ```text
 Classify the following request into **exactly one** of the categories:
+- simple
 - code_simple
+- standard
 - code_complex
 - design
 - planning
-- exploration
-- fallback
+- continue
 
 **Request**: "{{user_prompt}}"
 
@@ -126,8 +126,9 @@ Classify the following request into **exactly one** of the categories:
 | "Debug this recursive function — it crashes on large inputs."                 | `code_complex`     | Requires analysis of logic and performance.                                 |
 | "Design a REST API for a user-management system."                             | `design`           | Architecture decisions, no implementation details.                         |
 | "Create a project plan for the TypeScript migration."                         | `planning`         | Task breakdown and scheduling.                                             |
-| "Which database is suitable for real-time analytics over 10M records?"       | `exploration`      | Open question without clear requirements.                                  |
-| "Make this better."                                                            | `fallback`         | Unclear what is meant.                                                      |
+| "Which database is suitable for real-time analytics over 10M records?"       | `standard`         | Open question without clear requirements — an everyday task.               |
+| "Make this better."                                                            | `standard`         | Unclear what is meant — classified into the closest real category.          |
+| "ok, go on"                                                                    | `continue`         | Continuation without a self-contained task.                                 |
 
 ### 3. Fallback logic (sketch — NOT shipped)
 The original proposal asked the user on cost or uncertainty. **None of this
@@ -197,7 +198,7 @@ confirmation):
 async function classifyPrompt(prompt) {
   const classificationPrompt = `
     Classify the following request into one of the categories:
-    code_simple, code_complex, design, planning, exploration, fallback.
+    simple, code_simple, standard, code_complex, design, planning, continue.
 
     Request: "${prompt}"
     Response format: { "category": "...", "reason": "..." }

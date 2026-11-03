@@ -92,6 +92,20 @@ describe('collectInput covers every shipped path (Sourcery 2026-11-03)', () => {
   });
 });
 
+describe('plan index completeness (Sourcery on PR #84, 2026-11-03)', () => {
+  it('flags a plan that has no row in docs/plans/README.md', () => {
+    const r = analyze({
+      ...empty(),
+      plans: [
+        { path: 'docs/plans/README.md', text: '| [`a.md`](a.md) | A | done |\n' },
+        { path: 'docs/plans/a.md', text: '# A\n\n**Status:** done\n' },
+        { path: 'docs/plans/b.md', text: '# B\n\n**Status:** proposed\n' },
+      ],
+    });
+    expect(r.plansMissingFromIndex).toEqual(['docs/plans/b.md']);
+  });
+});
+
 describe('report robustness (Sourcery round 2026-11-03)', () => {
   it('finds duplicate helpers declared as typed arrows, function expressions and default exports', () => {
     const decls = [
@@ -263,13 +277,35 @@ describe('stale group names in shipped docs', () => {
     expect(r.staleNames).toEqual([]);
   });
 
-  it('still flags the same name when it is used as a group', () => {
+  it('still flags the same name when it is used as a group on the SAME line as an exempt use', () => {
+    // The exemption must remove only the exempt occurrence, not the whole line
+    // (Sourcery on PR #84, 2026-11-03): a line can carry both
+    // `agent: "scout"` and a stale group reference.
     const r = analyze({
       ...empty(),
-      docs: [{ path: 'README.md', text: '  agent: "scout",\nthe scout group ranks local models first\n' }],
-      shipped: ['README.md'],
+      docs: [
+        { path: 'README.md', text: '  agent: "scout",  // the scout group ranks local models first\n' },
+        { path: 'PI.md', text: 'the scout group ranks local models first\n' },
+      ],
+      shipped: ['README.md', 'PI.md'],
     });
-    expect(r.staleNames.map((s) => `${s.line}:${s.name}`)).toEqual(['2:scout']);
+    expect(r.staleNames.map((s) => `${s.path}:${s.line}:${s.name}`).sort()).toEqual([
+      'PI.md:1:scout',
+      'README.md:1:scout',
+    ]);
+  });
+
+  it('flags a removed CATEGORY name in a shipped doc, not just a removed group name', () => {
+    // docs/README.md promises the gate catches removed category names too
+    // (Sourcery on PR #84). `exploration` was removed with the v2 taxonomy and
+    // is unambiguous, so it is gated; `fallback` and `trivial` are ordinary
+    // English words here and are not.
+    const r = analyze({
+      ...empty(),
+      docs: [{ path: 'PI.md', text: 'exploration requests go to the cheap pool\n' }],
+      shipped: ['PI.md'],
+    });
+    expect(r.staleNames.map((s) => `${s.line}:${s.name}`)).toEqual(['1:exploration']);
   });
 
   it('matches whole words only', () => {
@@ -345,6 +381,7 @@ describe('counts', () => {
       staleNames: 0,
       rootOutsideAllowlist: 1,
       plansWithoutStatus: 1,
+      plansMissingFromIndex: 0,
       duplicateFunctions: 0,
       repeatedBlocks: 0,
       ollamaMockFiles: 0,

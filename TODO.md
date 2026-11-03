@@ -20,11 +20,13 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
-### 🔎 **Open (2026-10-25): categories and groups do not line up**
+### ✅ **Categories and groups did not line up — CLOSED 2026-11-02 (five-group layout shipped)**
 
-7 categories, 13 groups, names that point at the wrong category, 5 groups
-no category reaches. Plan with verified current state and owner decisions
-D1–D3: `docs/plans/2026-10-25-category-group-mismatch.md`.
+7 categories against 13 groups, names pointing at the wrong category, 5
+groups no category reached. Resolved by the five-group layout
+(`docs/plans/2026-10-25-category-group-mismatch.md`, merged to `main` in
+#81): each category now selects the group of the same name, and the shipped
+`router-config.json` has exactly the groups the categories reach.
 
 ### 🔎 **Open (2026-10-25): "fallback" naming (code smell)**
 
