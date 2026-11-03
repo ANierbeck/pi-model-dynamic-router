@@ -10,7 +10,7 @@
 // itself.
 
 import ts from 'typescript';
-import { isJsonRecord } from './lib/cli.ts';
+import { isRecord } from '../src/utils.ts';
 
 export interface HardcodedFinding {
   file: string;
@@ -177,26 +177,26 @@ function stringsOf(v: unknown): string[] {
  * scores models Pi already supplied (ADR-0025 §2).
  */
 export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
-  if (!isJsonRecord(cfgJson)) return [];
+  if (!isRecord(cfgJson)) return [];
   const literals: string[] = [];
   const add = (literal: string) => literals.push(`config:${literal}`);
 
   for (const p of stringsOf(cfgJson.non_agent_model_prefixes)) add(`non_agent_model_prefixes[]=${p}`);
 
-  if (isJsonRecord(cfgJson.exclude)) {
+  if (isRecord(cfgJson.exclude)) {
     for (const m of stringsOf(cfgJson.exclude.models)) add(`exclude.models[]=${m}`);
   }
 
-  if (isJsonRecord(cfgJson.providers)) {
+  if (isRecord(cfgJson.providers)) {
     for (const [prov, def] of Object.entries(cfgJson.providers)) {
-      if (!isJsonRecord(def)) continue;
+      if (!isRecord(def)) continue;
       for (const m of stringsOf(def.free_models)) add(`providers.${prov}.free_models[]=${m}`);
     }
   }
 
-  if (isJsonRecord(cfgJson.model_groups)) {
+  if (isRecord(cfgJson.model_groups)) {
     for (const [group, def] of Object.entries(cfgJson.model_groups)) {
-      if (!isJsonRecord(def)) continue;
+      if (!isRecord(def)) continue;
       for (const m of stringsOf(def.models)) add(`model_groups.${group}.models[]=${m}`);
       for (const m of stringsOf(def.exclude_models)) add(`model_groups.${group}.exclude_models[]=${m}`);
       for (const key of ['classifier_model', 'classifier_fallback', 'classifier_cloud_model']) {
@@ -206,7 +206,7 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
     }
   }
 
-  if (isJsonRecord(cfgJson.model_metrics)) {
+  if (isRecord(cfgJson.model_metrics)) {
     for (const ref of Object.keys(cfgJson.model_metrics)) add(`model_metrics[${JSON.stringify(ref)}]`);
   }
 

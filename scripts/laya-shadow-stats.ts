@@ -11,11 +11,11 @@
 //
 //   npx tsx scripts/laya-shadow-stats.ts [--file=<log>] [--threshold=0.8]
 
-import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLogRecords, type DecisionRecord as LogDecisionRecord } from './lib/decision-log.ts';
+import { arg } from './lib/cli.ts';
 
 /**
  * The decision-log record as this script reads it. The full type is owned by
@@ -30,9 +30,8 @@ type DecisionRecord = LogDecisionRecord & {
 
 const LOG_FILE = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 
-const args = process.argv.slice(2);
-const file = args.find((a) => a.startsWith('--file='))?.split('=', 2)[1] ?? LOG_FILE;
-const threshold = parseFloat(args.find((a) => a.startsWith('--threshold='))?.split('=', 2)[1] ?? '0.8');
+const file = arg('file') ?? LOG_FILE;
+const threshold = parseFloat(arg('threshold') ?? '0.8');
 
 const records: DecisionRecord[] = (() => {
   try {

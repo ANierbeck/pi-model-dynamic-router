@@ -48,15 +48,6 @@ export function offsetOf(source: string, line: number, column: number): number {
   return off + column - 1;
 }
 
-/**
- * A plain JSON object (not null, not an array). Deliberately separate from
- * src/utils.ts `isRecord`: scripts are standalone tools and do not import from
- * src for a three-line predicate. The name says which side it belongs to.
- */
-export function isJsonRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
 /** `k` of `n` as a percentage with one decimal, or an en dash for n = 0. */
 export function pct(k: number, n: number): string {
   return n ? `${((k / n) * 100).toFixed(1)} %` : '–';

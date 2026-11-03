@@ -21,8 +21,7 @@
 // positive is allowlisted by adding its fingerprint to .gitleaksignore.
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { FORBIDDEN, SKIP_PATHS } from './forbidden-patterns.ts';
 import { invokedDirectly } from './lib/cli.ts';
 

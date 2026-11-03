@@ -23,8 +23,7 @@
 //     (ledgers in chronological order; a later ledger wins for the same key)
 //   node scripts/mutation-carryover.ts --backfill <triaged-report.json> <ledger.json>
 
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { invokedDirectly } from './lib/cli.ts';
 
 interface Pos { line: number; column: number }

@@ -6,11 +6,10 @@
 // Usage: node scripts/router-kpi-audit.ts [--log <path>] [--since <7d|24h|ISO>] [--json]
 // Reads the log and its rotations (<log>.N … <log>.1, oldest first), line by line.
 
-import { createReadStream, existsSync, realpathSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { invokedDirectly } from './lib/cli.ts';
 
 export interface Kpis {
@@ -231,9 +230,8 @@ async function main(argv: string[]): Promise<void> {
   console.log(argv.includes('--json') ? JSON.stringify(k, null, 2) : formatReport(k));
 }
 
-// import.meta.url is the real path, URL-encoded: a plain `file://${argv[1]}`
-// misses paths with spaces or symlinks, and the script then exits silently.
-// Importing the module (tests, other tools) must never throw here.
+// Direct-invocation guard: see invokedDirectly in scripts/lib/cli.ts for why
+// the caller's import.meta.url is passed explicitly.
 if (invokedDirectly(import.meta.url)) {
   main(process.argv.slice(2)).catch((err) => {
     console.error(err instanceof Error ? err.message : err);

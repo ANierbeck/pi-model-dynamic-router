@@ -7,7 +7,7 @@
 // both, which is what this test pins.
 
 import { describe, it, expect } from 'vitest';
-import { arg, invokedDirectly, isJsonRecord, offsetOf, pct } from '../scripts/lib/cli.ts';
+import { arg, invokedDirectly, offsetOf, pct } from '../scripts/lib/cli.ts';
 
 describe('arg', () => {
   it('reads the --name=value shape', () => {
@@ -36,16 +36,6 @@ describe('invokedDirectly', () => {
     // disable the pre-push hook's entry point.
     expect(invokedDirectly(import.meta.url)).toBe(false); // vitest is argv[1]
     expect(invokedDirectly('file:///definitely/not/argv1.ts')).toBe(false);
-  });
-});
-
-describe('isJsonRecord', () => {
-  it('accepts a plain object and rejects null, arrays and primitives', () => {
-    expect(isJsonRecord({})).toBe(true);
-    expect(isJsonRecord(null)).toBe(false);
-    expect(isJsonRecord([])).toBe(false);
-    expect(isJsonRecord('x')).toBe(false);
-    expect(isJsonRecord(0)).toBe(false);
   });
 });
 

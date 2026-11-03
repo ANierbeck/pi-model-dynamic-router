@@ -62,19 +62,16 @@ import { join } from 'node:path';
 import { parseRoutingLine, firstChoiceAsOf, calibrate, type RoutingLine } from './route-pool-log.ts';
 import { readSessionTurns, readDecisions, joinTurns, type Bounds } from './turn-decision-join.ts';
 
-const flagValue = (name: string): string | undefined =>
-  process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
-
 function calibrationMain(): void {
-  const since = flagValue('since');
-  const until = flagValue('until');
+  const since = arg('since');
+  const until = arg('until');
   const bounds: Bounds = {};
   if (since) bounds.since = Date.parse(since);
   if (until) bounds.until = Date.parse(until);
   const encoded = process.cwd().replace(/^\//, '').replace(/\//g, '-');
-  const sessions = flagValue('sessions') ?? join(homedir(), '.pi', 'agent', 'sessions', `--${encoded}--`);
-  const log = flagValue('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
-  const routerLog = flagValue('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
+  const sessions = arg('sessions') ?? join(homedir(), '.pi', 'agent', 'sessions', `--${encoded}--`);
+  const log = arg('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
+  const routerLog = arg('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
 
   const lines: RoutingLine[] = readFileSync(routerLog, 'utf8')
     .split('\n')
@@ -112,6 +109,7 @@ import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
 import * as metrics from '../src/metrics.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLog } from './lib/decision-log.ts';
+import { arg } from './lib/cli.ts';
 
 interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
 
@@ -136,16 +134,16 @@ function tally(xs: string[]): Record<string, number> {
 
 function replayMain(): void {
   const bounds: Bounds = {};
-  const since = flagValue('since'); const until = flagValue('until');
+  const since = arg('since'); const until = arg('until');
   if (since) bounds.since = Date.parse(since);
   if (until) bounds.until = Date.parse(until);
-  const log = flagValue('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
-  const routerLog = flagValue('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
+  const log = arg('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
+  const routerLog = arg('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
   const shipped = JSON.parse(readFileSync('router-config.json', 'utf8')) as Config;
-  const cache = JSON.parse(readFileSync(flagValue('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8'));
+  const cache = JSON.parse(readFileSync(arg('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8'));
   // Billing classification needs the user's provider billing (e.g. a subscription
   // provider); take ONLY the billing fields of the user layer, nothing else.
-  const userPath = flagValue('user-config') ?? join(homedir(), '.pi', 'agent', 'router-config.user.json');
+  const userPath = arg('user-config') ?? join(homedir(), '.pi', 'agent', 'router-config.user.json');
   try {
     const user = JSON.parse(readFileSync(userPath, 'utf8')) as Config;
     const providers: Record<string, Record<string, unknown>> = { ...(shipped.providers as object) };

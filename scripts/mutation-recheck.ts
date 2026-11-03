@@ -34,6 +34,7 @@
 // Output: JSON array of { file, line, id, mutatorName, replacement, result: "killed"|"survived"|"stale"|"timeout"|"unconfirmed", killer?, rejected? }
 
 import { cpSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { arg } from './lib/cli.ts';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,11 +60,6 @@ interface Result {
 }
 
 const RUN_TIMEOUT_MS = 180_000;
-
-function flag(args: string[], name: string, fallback?: string): string | undefined {
-  const i = args.indexOf(name);
-  return i < 0 ? fallback : args[i + 1];
-}
 
 // Live vitest children, so a signal can kill them before the scratch dir is
 // removed (R1 re-review m4: orphaned runs kept writing into a deleted dir).
@@ -91,11 +87,11 @@ function failingFiles(out: string): string[] {
 
 async function main(argv: string[]): Promise<number> {
   const reportPath = argv[0];
-  const tree = flag(argv, '--tree');
-  const outPath = flag(argv, '--out');
-  const jobs = Number(flag(argv, '--jobs', '4'));
-  const maxWorkers = flag(argv, '--max-workers', '3')!;
-  const tests = (flag(argv, '--tests') ?? '').split(',').filter(Boolean);
+  const tree = arg('tree', argv);
+  const outPath = arg('out', argv);
+  const jobs = Number(arg('jobs', argv) ?? '4');
+  const maxWorkers = arg('max-workers', argv) ?? '3';
+  const tests = (arg('tests', argv) ?? '').split(',').filter(Boolean);
   if (!reportPath || !tree || !outPath) {
     process.stderr.write('usage: node scripts/mutation-recheck.ts <mutation.json> --tree <dir> --out <results.json> [--jobs 4] [--max-workers 3] [--tests a.test.ts,b.test.ts]\n');
     return 2;

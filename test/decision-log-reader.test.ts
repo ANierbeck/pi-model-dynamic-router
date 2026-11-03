@@ -88,6 +88,20 @@ describe('readDecisionLog', () => {
     });
   });
 
+  it('drops a record whose ts cannot be parsed even without bounds', () => {
+    // PR #85 review round, Important 1: the old per-script loops in
+    // turn-decision-join and pool-replay ALWAYS dropped an unparseable ts, not
+    // only when bounds were given. A DecisionRow with ts NaN breaks every
+    // sort and window downstream, so the row reader drops it — while the raw
+    // reader keeps it (classifier-replay and laya-pair-stats never checked ts
+    // and must not lose records).
+    const torn = JSON.stringify({ v: 1, ts: 'not-a-date', stage: 'llm-cloud', final: { category: 'standard', group: 'standard' } });
+    withLog([rec(), torn], (path) => {
+      expect(readDecisionLog(path, {})).toHaveLength(1);
+      expect(readDecisionLogRecords(path, {})).toHaveLength(2);
+    });
+  });
+
   it('skips a line that is valid JSON but not an object', () => {
     withLog(['42', '"a string"', rec()], (path) => {
       expect(readDecisionLog(path, {})).toHaveLength(1);

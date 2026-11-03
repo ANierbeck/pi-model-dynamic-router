@@ -17,11 +17,11 @@
 // The report contains counts and category names only. It never prints prompt
 // text or the classifiers' free-text reasons (a reason can quote the prompt).
 
-import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLogRecords } from './lib/decision-log.ts';
+import { arg } from './lib/cli.ts';
 import { pct } from './lib/cli.ts';
 
 export interface PairLogRecord {
@@ -284,9 +284,8 @@ export function formatPairReport(
 }
 
 function main(): void {
-  const args = process.argv.slice(2);
-  const file = args.find((a) => a.startsWith('--file='))?.split('=', 2)[1] ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
-  const windowSec = Number(args.find((a) => a.startsWith('--window='))?.split('=', 2)[1] ?? DEFAULT_WINDOW_MS / 1000);
+  const file = arg('file') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
+  const windowSec = Number(arg('window') ?? DEFAULT_WINDOW_MS / 1000);
 
   let records: PairLogRecord[];
   try {

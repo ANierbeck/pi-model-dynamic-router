@@ -25,6 +25,7 @@ import { getGroupForCategory } from '../src/content-classifier.ts';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLogRecords, type DecisionRecord } from './lib/decision-log.ts';
+import { invokedDirectly } from './lib/cli.ts';
 
 export interface SessionPrompt {
   text: string;
@@ -313,6 +314,6 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('classifier-replay.ts')) {
+if (invokedDirectly(import.meta.url)) {
   await main();
 }

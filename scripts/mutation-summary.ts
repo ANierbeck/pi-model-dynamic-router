@@ -10,8 +10,7 @@
 //
 // Usage: node scripts/mutation-summary.ts [reports/mutation/mutation.json]
 
-import { readFileSync, realpathSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { invokedDirectly } from './lib/cli.ts';
 
 export interface MutationSummary {

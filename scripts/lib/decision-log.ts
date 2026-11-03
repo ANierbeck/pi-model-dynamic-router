@@ -71,15 +71,29 @@ export interface DecisionRow {
   record: DecisionRecord;
 }
 
-/** The records as flat rows, with the same skipping rules as the raw reader. */
+/**
+ * The records as flat rows, with the same skipping rules as the raw reader,
+ * plus one: a record whose `ts` cannot be parsed is dropped even when no
+ * bounds are given. Every caller sorts or windows on `ts`, so a NaN row is
+ * unusable — and the per-script loops this reader replaced always dropped
+ * those records (PR #85 review round, Important 1). The raw reader keeps
+ * them: classifier-replay and laya-pair-stats never looked at `ts` and must
+ * not lose records.
+ */
 export function readDecisionLog(path: string, bounds: LogBounds = {}): DecisionRow[] {
-  return readDecisionLogRecords(path, bounds).map((rec) => ({
-    ts: Date.parse(String(rec.ts)),
-    sha: typeof rec.input?.sha === 'string' ? rec.input.sha : null,
-    stage: String(rec.stage ?? ''),
-    category: rec.final?.category ?? null,
-    group: rec.final?.group ?? null,
-    proc: typeof rec.proc === 'string' ? rec.proc : null,
-    record: rec,
-  }));
+  const rows: DecisionRow[] = [];
+  for (const rec of readDecisionLogRecords(path, bounds)) {
+    const ts = Date.parse(String(rec.ts));
+    if (Number.isNaN(ts)) continue;
+    rows.push({
+      ts,
+      sha: typeof rec.input?.sha === 'string' ? rec.input.sha : null,
+      stage: String(rec.stage ?? ''),
+      category: rec.final?.category ?? null,
+      group: rec.final?.group ?? null,
+      proc: typeof rec.proc === 'string' ? rec.proc : null,
+      record: rec,
+    });
+  }
+  return rows;
 }
