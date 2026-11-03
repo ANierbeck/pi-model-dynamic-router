@@ -45,7 +45,7 @@ interface EventHandlerDeps {
   readonly extDir: string;
   readonly getM: (ref: string) => Metrics;
   readonly isLimited: (ref: string) => boolean;
-  readonly lastDynamicModel: string;
+  lastDynamicModel: string;
   readonly load: () => void;
   readonly loadCache: () => void;
   readonly pi: ExtensionAPI;
@@ -376,7 +376,21 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // Shrink oversized `read` results with a cheap summarizer (routed via
     // the delegation group — default bulk_reader) BEFORE the main model
     // sees them. Strictly fail-open: undefined → original passes through.
-    const replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
+    //
+    // The sub-call streams through the router's own groupStream/driveStream,
+    // which records the ref it served as lastDynamicModel. That field is the
+    // TURN's model — the next tool follow-up step puts it first — so the
+    // delegation must not leave its summarizer there (live incident
+    // 2026-11-03: a GLM-driven planning turn continued on the free
+    // bulk_reader model after one delegated bash result, fell through 429s
+    // to openrouter/free and stayed there). Restore it on every path.
+    const turnModel = rt.lastDynamicModel;
+    let replacement: Awaited<ReturnType<typeof handleReadDelegation>>;
+    try {
+      replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
+    } finally {
+      rt.lastDynamicModel = turnModel;
+    }
     if (replacement) return replacement;
 
     // The rate-limit branch that lived here since the initial release

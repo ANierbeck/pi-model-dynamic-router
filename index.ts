@@ -337,6 +337,7 @@ let previousTokenCount = 0;
     get getM() { return getM; },
     get isLimited() { return isLimited; },
     get lastDynamicModel() { return lastDynamicModel; },
+    set lastDynamicModel(v) { lastDynamicModel = v; },
     get load() { return load; },
     get loadCache() { return loadCache; },
     get pi() { return pi; },
