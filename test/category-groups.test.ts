@@ -12,7 +12,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import {
-  CATEGORY_TO_GROUP,
   getGroupForCategory,
   setCategoryGroupMapping,
   resetCategoryGroupMapping,
@@ -227,17 +226,7 @@ describe('category_groups survives the dynamic-config resync (user intent)', () 
 });
 
 describe('built-in mapping is unchanged (defaults for everyone)', () => {
-  it('CATEGORY_TO_GROUP maps the seven v2 categories to their groups', () => {
-    expect(CATEGORY_TO_GROUP).toEqual({
-      simple: 'simple',
-      code_simple: 'simple',
-      standard: 'standard',
-      code_complex: 'code_complex',
-      design: 'design',
-      planning: 'planning',
-      continue: 'standard',
-    });
-  });
+  // NOTE: the CATEGORY_TO_GROUP table pin that lived here was byte-identical to the one in test/five-group-layout.test.ts (hygiene Phase 4 Step 4, 2026-11-03); kept there only.
 
   it('the shipped router-config.json gains no category_groups key', () => {
     const repo = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');

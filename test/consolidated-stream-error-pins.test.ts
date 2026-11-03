@@ -17,7 +17,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
-import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+import { drainStream, makeExtensionContext, routerStatePaths, parkStateFiles } from './helpers/extension-harness.ts';
 
 describe('422-client-error-not-rate-limit', () => {
   /**
@@ -53,12 +53,7 @@ describe('422-client-error-not-rate-limit', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.422-soft-bak`;
-    const cacheBak = `${scanCachePath}.422-soft-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -69,9 +64,8 @@ describe('422-client-error-not-rate-limit', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -180,12 +174,7 @@ describe('abort-not-provider-error', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.abort-bak`;
-    const cacheBak = `${scanCachePath}.abort-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -196,9 +185,8 @@ describe('abort-not-provider-error', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -322,12 +310,7 @@ describe('abort-text-not-rate-limit', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.abort-text-bak`;
-    const cacheBak = `${scanCachePath}.abort-text-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -338,9 +321,8 @@ describe('abort-text-not-rate-limit', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -435,12 +417,7 @@ describe('blocklist-drivestream', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.blocklist-bak`;
-    const cacheBak = `${scanCachePath}.blocklist-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -451,9 +428,8 @@ describe('blocklist-drivestream', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -578,12 +554,7 @@ describe('claude-bridge-empty-response-narration', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.bridge-empty-bak`;
-    const cacheBak = `${scanCachePath}.bridge-empty-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -594,9 +565,8 @@ describe('claude-bridge-empty-response-narration', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -1085,12 +1055,7 @@ describe('cooldown-collapse', () => {
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-      const dynBak = `${dynamicConfigPath}.spp-bak`;
-      const cacheBak = `${scanCachePath}.spp-bak`;
-      const hadDyn = fs.existsSync(dynamicConfigPath);
-      const hadCache = fs.existsSync(scanCachePath);
-      if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-      if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+      const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
       writeNoOpScanCache(scanCachePath);
 
       try {
@@ -1127,9 +1092,8 @@ describe('cooldown-collapse', () => {
       } finally {
         cwdSpy.mockRestore();
         fs.rmSync(tmpDir, { recursive: true, force: true });
-        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
         removeNoOpScanCache(scanCachePath);
+        restoreState();
       }
     });
 
@@ -1160,12 +1124,7 @@ describe('cooldown-collapse', () => {
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-      const dynBak = `${dynamicConfigPath}.collapse-pe-bak`;
-      const cacheBak = `${scanCachePath}.collapse-pe-bak`;
-      const hadDyn = fs.existsSync(dynamicConfigPath);
-      const hadCache = fs.existsSync(scanCachePath);
-      if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-      if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+      const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
       writeNoOpScanCache(scanCachePath);
 
@@ -1229,9 +1188,8 @@ describe('cooldown-collapse', () => {
       } finally {
         cwdSpy.mockRestore();
         fs.rmSync(tmpDir, { recursive: true, force: true });
-        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
         removeNoOpScanCache(scanCachePath);
-        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+        restoreState();
       }
     });
   });
@@ -1297,12 +1255,7 @@ describe('provider-error-detection', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.provider-err-bak`;
-    const cacheBak = `${scanCachePath}.provider-err-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -1313,9 +1266,8 @@ describe('provider-error-detection', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -1464,12 +1416,7 @@ describe('provider-error-paid-cloud-cooldown', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.paid-provider-err-bak`;
-    const cacheBak = `${scanCachePath}.paid-provider-err-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -1480,9 +1427,8 @@ describe('provider-error-paid-cloud-cooldown', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -1616,12 +1562,7 @@ describe('reasoning-timeout', () => {
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-      const dynBak = `${dynamicConfigPath}.reasoning-bak`;
-      const cacheBak = `${scanCachePath}.reasoning-bak`;
-      const hadDyn = fs.existsSync(dynamicConfigPath);
-      const hadCache = fs.existsSync(scanCachePath);
-      if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-      if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+      const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
 
@@ -1675,10 +1616,9 @@ describe('reasoning-timeout', () => {
       } finally {
         cwdSpy.mockRestore();
         fs.rmSync(tmpDir, { recursive: true, force: true });
-        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
         removeNoOpScanCache(scanCachePath);
 
-        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+        restoreState();
       }
     });
 
@@ -1699,12 +1639,7 @@ describe('reasoning-timeout', () => {
         })
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-      const dynBak = `${dynamicConfigPath}.non-reasoning-bak`;
-      const cacheBak = `${scanCachePath}.non-reasoning-bak`;
-      const hadDyn = fs.existsSync(dynamicConfigPath);
-      const hadCache = fs.existsSync(scanCachePath);
-      if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-      if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+      const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
       try {
         vi.resetModules();
@@ -1765,8 +1700,7 @@ describe('reasoning-timeout', () => {
       } finally {
         cwdSpy.mockRestore();
         fs.rmSync(tmpDir, { recursive: true, force: true });
-        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+        restoreState();
       }
     });
   });
@@ -1795,12 +1729,7 @@ describe('repetition-loop-detection', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.repetition-bak`;
-    const cacheBak = `${scanCachePath}.repetition-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
 
@@ -1811,10 +1740,9 @@ describe('repetition-loop-detection', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
 
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -1937,12 +1865,7 @@ describe('reset-msg-fallback', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.reset-msg-bak`;
-    const cacheBak = `${scanCachePath}.reset-msg-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -1953,9 +1876,8 @@ describe('reset-msg-fallback', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -2249,12 +2171,7 @@ describe('stall-timeout-detection', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.stall-bak`;
-    const cacheBak = `${scanCachePath}.stall-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -2265,9 +2182,8 @@ describe('stall-timeout-detection', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -2414,12 +2330,7 @@ describe('summarization-error-message', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.summ-err-bak`;
-    const cacheBak = `${scanCachePath}.summ-err-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -2430,9 +2341,8 @@ describe('summarization-error-message', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
@@ -2547,12 +2457,7 @@ describe('truncated-length', () => {
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.trunc-bak`;
-    const cacheBak = `${scanCachePath}.trunc-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
     writeNoOpScanCache(scanCachePath);
 
@@ -2563,9 +2468,8 @@ describe('truncated-length', () => {
     } finally {
       cwdSpy.mockRestore();
       fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
       removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      restoreState();
     }
   }
 
