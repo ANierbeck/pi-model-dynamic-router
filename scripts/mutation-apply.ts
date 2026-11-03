@@ -16,6 +16,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { offsetOf } from './lib/cli.ts';
 
 interface Mutant {
   id: string;
@@ -23,13 +24,6 @@ interface Mutant {
   replacement?: string;
   status: string;
   location: { start: { line: number; column: number }; end: { line: number; column: number } };
-}
-
-function offsetOf(source: string, line: number, column: number): number {
-  const lines = source.split('\n');
-  let off = 0;
-  for (let i = 0; i < line - 1; i++) off += lines[i].length + 1;
-  return off + column - 1;
 }
 
 function main(argv: string[]): number {

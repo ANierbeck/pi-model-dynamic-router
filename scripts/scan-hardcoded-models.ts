@@ -10,6 +10,7 @@
 // itself.
 
 import ts from 'typescript';
+import { isJsonRecord } from './lib/cli.ts';
 
 export interface HardcodedFinding {
   file: string;
@@ -162,10 +163,6 @@ export function compareToBaseline(findings: readonly HardcodedFinding[], baselin
 
 const SHIPPED_CONFIG_FILE = 'router-config.json';
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
 function stringsOf(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 }
@@ -180,26 +177,26 @@ function stringsOf(v: unknown): string[] {
  * scores models Pi already supplied (ADR-0025 §2).
  */
 export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
-  if (!isRecord(cfgJson)) return [];
+  if (!isJsonRecord(cfgJson)) return [];
   const literals: string[] = [];
   const add = (literal: string) => literals.push(`config:${literal}`);
 
   for (const p of stringsOf(cfgJson.non_agent_model_prefixes)) add(`non_agent_model_prefixes[]=${p}`);
 
-  if (isRecord(cfgJson.exclude)) {
+  if (isJsonRecord(cfgJson.exclude)) {
     for (const m of stringsOf(cfgJson.exclude.models)) add(`exclude.models[]=${m}`);
   }
 
-  if (isRecord(cfgJson.providers)) {
+  if (isJsonRecord(cfgJson.providers)) {
     for (const [prov, def] of Object.entries(cfgJson.providers)) {
-      if (!isRecord(def)) continue;
+      if (!isJsonRecord(def)) continue;
       for (const m of stringsOf(def.free_models)) add(`providers.${prov}.free_models[]=${m}`);
     }
   }
 
-  if (isRecord(cfgJson.model_groups)) {
+  if (isJsonRecord(cfgJson.model_groups)) {
     for (const [group, def] of Object.entries(cfgJson.model_groups)) {
-      if (!isRecord(def)) continue;
+      if (!isJsonRecord(def)) continue;
       for (const m of stringsOf(def.models)) add(`model_groups.${group}.models[]=${m}`);
       for (const m of stringsOf(def.exclude_models)) add(`model_groups.${group}.exclude_models[]=${m}`);
       for (const key of ['classifier_model', 'classifier_fallback', 'classifier_cloud_model']) {
@@ -209,7 +206,7 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
     }
   }
 
-  if (isRecord(cfgJson.model_metrics)) {
+  if (isJsonRecord(cfgJson.model_metrics)) {
     for (const ref of Object.keys(cfgJson.model_metrics)) add(`model_metrics[${JSON.stringify(ref)}]`);
   }
 

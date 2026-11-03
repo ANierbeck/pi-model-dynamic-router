@@ -23,11 +23,7 @@ import { classifyPrompt, getLastClassificationSource } from '../src/content-clas
 import { validateClassifierLaya } from '../src/config-loader.ts';
 import { getLastProbeError, layaAvailabilityState } from '../src/laya-classifier.ts';
 import type { Config } from '../src/types.ts';
-
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
+import { arg } from './lib/cli.ts';
 
 const checkpoint = arg('checkpoint');
 if (!checkpoint) {

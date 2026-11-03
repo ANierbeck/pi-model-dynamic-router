@@ -15,13 +15,18 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { readDecisionLogRecords, type DecisionRecord as LogDecisionRecord } from './lib/decision-log.ts';
 
-interface DecisionRecord {
-  stage: string;
+/**
+ * The decision-log record as this script reads it. The full type is owned by
+ * the writer (src/classifier-decision-log.ts); scripts/lib/decision-log.ts
+ * re-exports it and owns the JSONL rules.
+ */
+type DecisionRecord = LogDecisionRecord & {
   final: { category: string | null; hint?: { target: string } };
   laya?: { category: string; confidence: number; acted: boolean; ms: number };
   input?: { text: { prompt: string } | null };
-}
+};
 
 const LOG_FILE = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 
@@ -29,9 +34,9 @@ const args = process.argv.slice(2);
 const file = args.find((a) => a.startsWith('--file='))?.split('=', 2)[1] ?? LOG_FILE;
 const threshold = parseFloat(args.find((a) => a.startsWith('--threshold='))?.split('=', 2)[1] ?? '0.8');
 
-const raw = (() => {
+const records: DecisionRecord[] = (() => {
   try {
-    return readFileSync(file, 'utf8').trim();
+    return readDecisionLogRecords(file) as DecisionRecord[];
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       console.log(`No decision log yet at ${file} — run some prompts and come back.`);
@@ -40,9 +45,6 @@ const raw = (() => {
     throw err;
   }
 })();
-const records: DecisionRecord[] = raw.split('\n')
-  .filter((l) => l.trim())
-  .map((l) => JSON.parse(l));
 
 const withLaya = records.filter((r) => r.laya && isRoutingRecord(r));
 const disagree = withLaya.filter((r) => {

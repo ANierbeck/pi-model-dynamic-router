@@ -96,7 +96,7 @@ export function countSessionErrorsSince(cache: Cache, sessionStartTs: number, pi
   ).length;
 }
 
-function fmtTime(ts: number): string {
+function fmtClock(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-GB', { hour12: false });
 }
 
@@ -136,7 +136,7 @@ export function formatErrorsReport(
   const showSession = sessionEntries.slice(-limit);
   for (const e of showSession) {
     lines.push(
-      `  ${fmtTime(e.ts)}  ${fmtModel(e.ref, 34)} ${e.reason.padEnd(20)} ${e.consequence.padEnd(14)} ${e.detail ?? ''}`.trimEnd()
+      `  ${fmtClock(e.ts)}  ${fmtModel(e.ref, 34)} ${e.reason.padEnd(20)} ${e.consequence.padEnd(14)} ${e.detail ?? ''}`.trimEnd()
     );
   }
   const omitted = sessionEntries.length - showSession.length;
@@ -146,7 +146,7 @@ export function formatErrorsReport(
     lines.push(`--- outside this session (persisted history, ${older.length}) ---`);
     for (const e of older.slice(-limit)) {
       lines.push(
-        `  ${fmtTime(e.ts)}  ${fmtModel(e.ref, 34)} ${e.reason.padEnd(20)} ${e.consequence.padEnd(14)} ${e.detail ?? ''}`.trimEnd()
+        `  ${fmtClock(e.ts)}  ${fmtModel(e.ref, 34)} ${e.reason.padEnd(20)} ${e.consequence.padEnd(14)} ${e.detail ?? ''}`.trimEnd()
       );
     }
   }

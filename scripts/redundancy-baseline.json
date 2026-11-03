@@ -4,7 +4,7 @@
     "staleNames": 0,
     "rootOutsideAllowlist": 0,
     "plansWithoutStatus": 23,
-    "duplicateFunctions": 6,
+    "duplicateFunctions": 0,
     "repeatedBlocks": 50,
     "ollamaMockFiles": 27,
     "plansMissingFromIndex": 0

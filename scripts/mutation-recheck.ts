@@ -37,6 +37,7 @@ import { cpSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync 
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { offsetOf } from './lib/cli.ts';
 
 interface Mutant {
   id: string;
@@ -58,13 +59,6 @@ interface Result {
 }
 
 const RUN_TIMEOUT_MS = 180_000;
-
-function offsetOf(source: string, line: number, column: number): number {
-  const lines = source.split('\n');
-  let off = 0;
-  for (let i = 0; i < line - 1; i++) off += lines[i].length + 1;
-  return off + column - 1;
-}
 
 function flag(args: string[], name: string, fallback?: string): string | undefined {
   const i = args.indexOf(name);

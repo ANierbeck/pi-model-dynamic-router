@@ -18,10 +18,12 @@
 // The report prints counts and model refs only, never prompt text.
 
 import { readFileSync } from 'node:fs';
+import { readDecisionLog } from './lib/decision-log.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseRoutingLine } from './route-pool-log.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { arg } from './lib/cli.ts';
 
 export interface WalkDecision {
   ts: number;
@@ -140,30 +142,17 @@ export function summarizeWalk(rows: WalkRow[]) {
   return groups;
 }
 
-function arg(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
-
 function main(): void {
   const logPath = arg('log') ?? join(homedir(), '.pi/logs/router.log');
   const decPath = arg('decisions') ?? join(homedir(), '.pi/logs/classifier-decisions.jsonl');
   const since = arg('since') ? Date.parse(arg('since') as string) : -Infinity;
   const until = arg('until') ? Date.parse(arg('until') as string) : Infinity;
   const lines = readFileSync(logPath, 'utf8').split('\n');
-  const decisions: WalkDecision[] = [];
-  for (const l of readFileSync(decPath, 'utf8').split('\n')) {
-    if (!l.trim()) continue;
-    let r: any;
-    try {
-      r = JSON.parse(l);
-    } catch {
-      continue;
-    }
-    const ts = Date.parse(r.ts);
-    if (Number.isNaN(ts) || ts < since || ts > until || typeof r.proc !== 'string') continue;
-    decisions.push({ ts, proc: r.proc, group: r.final?.group ?? null, stage: String(r.stage ?? '') });
-  }
+  // One reader for the log (scripts/lib/decision-log.ts) owns the skipping and
+  // bounds rules; this script projects the fields the walk needs.
+  const decisions: WalkDecision[] = readDecisionLog(decPath, { since, until })
+    .filter((row) => row.proc !== null)
+    .map((row) => ({ ts: row.ts, proc: row.proc!, group: row.group, stage: row.stage }));
   const rows = walkDecisions(lines, decisions);
   console.log(`bounds: since=${arg('since') ?? '-'} until=${arg('until') ?? '-'}`);
   console.log(`routed turns=${rows.length} success=${rows.filter((r) => r.outcome === 'success').length}`);

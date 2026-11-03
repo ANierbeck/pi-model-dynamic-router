@@ -24,6 +24,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { FORBIDDEN, SKIP_PATHS } from './forbidden-patterns.ts';
+import { invokedDirectly } from './lib/cli.ts';
 
 export interface Finding {
   commit: string;
@@ -164,12 +165,4 @@ function main(argv: string[]): number {
 
 // Same direct-invocation guard as scripts/router-kpi-audit.ts: importing
 // the module (tests) must never run main().
-function invokedDirectly(): boolean {
-  try {
-    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
-  } catch {
-    return false;
-  }
-}
-
-if (invokedDirectly()) process.exit(main(process.argv.slice(2)));
+if (invokedDirectly(import.meta.url)) process.exit(main(process.argv.slice(2)));

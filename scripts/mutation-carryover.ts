@@ -25,6 +25,7 @@
 
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { invokedDirectly } from './lib/cli.ts';
 
 interface Pos { line: number; column: number }
 export interface ReportMutant {
@@ -179,12 +180,4 @@ function main(argv: string[]): number {
   return 0;
 }
 
-function invokedDirectly(): boolean {
-  try {
-    return !!process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
-  } catch {
-    return false;
-  }
-}
-
-if (invokedDirectly()) process.exit(main(process.argv.slice(2)));
+if (invokedDirectly(import.meta.url)) process.exit(main(process.argv.slice(2)));

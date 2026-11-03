@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { readDecisionLogRecords } from './lib/decision-log.ts';
+import { pct } from './lib/cli.ts';
 
 export interface PairLogRecord {
   ts: string;
@@ -228,7 +230,6 @@ export function wilsonInterval(k: number, n: number): [number, number] {
 // malformed answer can never smuggle free text into the report.
 const label = (s: string): string => (/^[a-z_]{1,24}$/.test(s) ? s : '(other)');
 
-const pct = (k: number, n: number): string => (n ? `${((k / n) * 100).toFixed(1)} %` : '–');
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 function rate(k: number, n: number): string {
@@ -287,24 +288,18 @@ function main(): void {
   const file = args.find((a) => a.startsWith('--file='))?.split('=', 2)[1] ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
   const windowSec = Number(args.find((a) => a.startsWith('--window='))?.split('=', 2)[1] ?? DEFAULT_WINDOW_MS / 1000);
 
-  let raw: string;
+  let records: PairLogRecord[];
   try {
-    raw = readFileSync(file, 'utf8');
+    // One reader for the log (scripts/lib/decision-log.ts) owns the skipping
+    // rules, so a torn line at a rotation boundary is handled the same way as
+    // in every other script.
+    records = readDecisionLogRecords(file) as PairLogRecord[];
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       console.log(`No decision log yet at ${file} — run some prompts and come back.`);
       return;
     }
     throw err;
-  }
-  const records: PairLogRecord[] = [];
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      records.push(JSON.parse(line) as PairLogRecord);
-    } catch {
-      // torn line at a rotation boundary — skip it
-    }
   }
   const { pairs, unpairedLaya, orphanComparators } = pairRecords(records, windowSec * 1000);
   console.log(formatPairReport(summarizePairs(pairs, observedGroupMap(records)), { file, unpairedLaya, orphanComparators }));

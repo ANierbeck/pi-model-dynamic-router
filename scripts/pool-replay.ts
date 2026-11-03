@@ -111,21 +111,23 @@ function calibrationMain(): void {
 import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
 import * as metrics from '../src/metrics.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
+import { readDecisionLog } from './lib/decision-log.ts';
 
 interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
 
 function readRawDecisions(file: string, bounds: Bounds): RawDecision[] {
-  const out: RawDecision[] = [];
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let r: any;
-    try { r = JSON.parse(line); } catch { continue; }
-    const ts = Date.parse(r?.ts);
-    if (Number.isNaN(ts) || typeof r?.proc !== 'string' || !isRoutingRecord(r)) continue;
-    if ((bounds.since !== undefined && ts < bounds.since) || (bounds.until !== undefined && ts > bounds.until)) continue;
-    out.push({ ts, proc: r.proc, stage: r.stage, category: r.final?.category ?? null, group: r.final?.group ?? null, prevCategory: r.prev?.category ?? null });
-  }
-  return out;
+  // One reader for the log (scripts/lib/decision-log.ts) owns the skipping and
+  // bounds rules; this script only projects the fields it replays.
+  return readDecisionLog(file, bounds)
+    .filter((row) => row.proc !== null && isRoutingRecord(row.record))
+    .map((row) => ({
+      ts: row.ts,
+      proc: row.proc!,
+      stage: row.stage,
+      category: row.category,
+      group: row.group,
+      prevCategory: row.record.prev?.category ?? null,
+    }));
 }
 
 function tally(xs: string[]): Record<string, number> {
