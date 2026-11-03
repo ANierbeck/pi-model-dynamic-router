@@ -45,7 +45,7 @@ interface EventHandlerDeps {
   readonly extDir: string;
   readonly getM: (ref: string) => Metrics;
   readonly isLimited: (ref: string) => boolean;
-  lastDynamicModel: string;
+  readonly lastDynamicModel: string;
   readonly load: () => void;
   readonly loadCache: () => void;
   readonly pi: ExtensionAPI;
@@ -376,20 +376,19 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // Shrink oversized `read` results with a cheap summarizer (routed via
     // the delegation group — default bulk_reader) BEFORE the main model
     // sees them. Strictly fail-open: undefined → original passes through.
-    //
     // The sub-call streams through the router's own groupStream/driveStream,
-    // which records the ref it served as lastDynamicModel. That field is the
-    // TURN's model — the next tool follow-up step puts it first — so the
-    // delegation must not leave its summarizer there (live incident
-    // 2026-11-03: a GLM-driven planning turn continued on the free
-    // bulk_reader model after one delegated bash result, fell through 429s
-    // to openrouter/free and stayed there). Restore it on every path.
-    const turnModel = rt.lastDynamicModel;
+    // so it runs inside the sub-call scope: otherwise the summarizer ref
+    // becomes the TURN's model and the next tool follow-up step starts on it
+    // (live incident 2026-11-03 — a GLM-driven planning turn continued on the
+    // free bulk_reader model, fell through 429s to openrouter/free and stayed
+    // there). The scope also keeps curModel on the turn's model, so turn_end
+    // attributes usage to it. See test/subcall-model-scope.test.ts.
+    rt.router.enterSubCall();
     let replacement: Awaited<ReturnType<typeof handleReadDelegation>>;
     try {
       replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
     } finally {
-      rt.lastDynamicModel = turnModel;
+      rt.router.exitSubCall();
     }
     if (replacement) return replacement;
 

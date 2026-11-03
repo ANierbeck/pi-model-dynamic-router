@@ -779,9 +779,16 @@ export class StreamOrchestrator {
 
       const prefix = label ? `${label} · ${ref}` : ref;
       pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
-      ctx.router.setCurModel(ref);
-      ctx.router.setActiveGroup(ctx.activeGroup);
-      ctx.lastDynamicModel = ref;
+      // A nested sub-call (bulk_reader delegation, bulk_read tool) is the
+      // turn's own tool work, not a model switch: recording its ref here made
+      // the next tool follow-up step start on the cheap reader model (live
+      // incident 2026-11-03). curModel is left alone too, so turn_end keeps
+      // attributing usage to the turn's model.
+      if (!ctx.router.inSubCall) {
+        ctx.router.setCurModel(ref);
+        ctx.router.setActiveGroup(ctx.activeGroup);
+        ctx.lastDynamicModel = ref;
+      }
 
       let attemptSucceeded = false;
       try {
