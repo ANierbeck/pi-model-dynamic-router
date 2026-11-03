@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** approved in part 2026-10-29 (owner decisions 1–5 below; decision 6 open). No phase started. Tick the boxes below as phases land; do not append narrative (AGENTS.md §11).
+**Status:** in progress — Phase 0 done 2026-10-29 (branch `chore/redundancy-gate`, off `laya-spike`). Phases 1–3 wait for the `laya-spike` → `main` merge; decision 6 (test deletion) is open and blocks Phase 4 Steps 3–4. Tick the boxes below as phases land; do not append narrative (AGENTS.md §11).
 
 **Verified against:** commit `f86846a` (branch `feat/five-groups`, not pushed), measured 2026-10-29. Checked: file counts, sizes, git-tracked status, the `files` list and build script in `package.json`, cross-references between root files (grep, excluding `node_modules`/`dist`/`.worktrees`), duplicate function names and test titles, repeated 6-line blocks across test files, full-suite runtime (13.8 s). **Not checked:** whether Pi really loads `CLAUDE.md` into every session (AGENTS.md says so; the session context shows only `AGENTS.md`), semantic overlap between `PI.md`, `SKILL.md`, `AGENT.md` and `README.md` (literal line overlap is low, 2–12 lines, so any overlap is topical and needs reading), whether the Stryker `mutation.json` carries `killedBy` per mutant in CI artifacts (config has `coverageAnalysis: perTest` and the `json` reporter, so it should).
 
@@ -73,11 +73,11 @@ Goal: finish with the least context spent.
 
 ### Phase 0 — Measure and gate (new script + ratchet test)
 
-- [ ] **Step 1: Write the failing test** `test/redundancy-report.test.ts` for a pure `analyze(inputs)` function. Inputs are plain arrays (`{path, text}` for src/scripts/tests/docs, `{path, tracked}` for root files); no file system in the unit under test. Cases: duplicate function names across files are reported once with both paths; a 6-line block in ≥ 3 test files is counted; a stale group name (`strategic|operational|scout|tactical|fallback group`) in a *shipped* doc is a finding while the same word in `docs/adr/` is not; a root file absent from the allowlist is a finding; a plan without a `Status` line is a finding.
-- [ ] **Step 2: Run it, expect FAIL** (`Cannot find module '../scripts/redundancy-report.ts'`). Record the red evidence in the commit body (§4).
-- [ ] **Step 3: Implement** `scripts/redundancy-report.ts` (`analyze` exported; thin CLI reads the file system and prints ≤ 60 lines, counts first, top-10 lists after). Shipped docs = the `files` list of `package.json` plus `README.md`. Historical dirs (`docs/adr`, `docs/plans`, `docs/research`, `CHANGELOG.md`) are exempt from the stale-name rule.
-- [ ] **Step 4: Gate.** `scripts/redundancy-baseline.json` with the counts measured now (stale names in shipped docs, root files outside the allowlist, plans without status, duplicate function names, repeated test blocks, test files with the Ollama-mock boilerplate). `test/redundancy-baseline.test.ts` fails when any count exceeds its baseline; the shipped-docs stale-name ceiling and the root-allowlist ceiling are pinned at the *target* (0) from Phase 2 and Phase 1 on, the others only ratchet. Never add an entry to make a PR green (same rule as §9).
-- [ ] **Step 5: Commit** `feat: redundancy report and ratchet gate`. Suite green, ratchet in AGENTS.md §4 bumped.
+- [x] **Step 1: Write the failing test** `test/redundancy-report.test.ts` for a pure `analyze(inputs)` function. Inputs are plain arrays (`{path, text}` for src/scripts/tests/docs, `{path, tracked}` for root files); no file system in the unit under test. Cases: duplicate function names across files are reported once with both paths; a 6-line block in ≥ 3 test files is counted; a stale group name (`strategic|operational|scout|tactical|fallback group`) in a *shipped* doc is a finding while the same word in `docs/adr/` is not; a root file absent from the allowlist is a finding; a plan without a `Status` line is a finding.
+- [x] **Step 2: Run it, expect FAIL** (`Cannot find module '../scripts/redundancy-report.ts'`). Record the red evidence in the commit body (§4).
+- [x] **Step 3: Implement** `scripts/redundancy-report.ts` (`analyze` exported; thin CLI reads the file system and prints ≤ 60 lines, counts first, top-10 lists after). Shipped docs = the `files` list of `package.json` plus `README.md`. Historical dirs (`docs/adr`, `docs/plans`, `docs/research`, `CHANGELOG.md`) are exempt from the stale-name rule.
+- [x] **Step 4: Gate.** `scripts/redundancy-baseline.json` with the counts measured now (stale names in shipped docs, root files outside the allowlist, plans without status, duplicate function names, repeated test blocks, test files with the Ollama-mock boilerplate). `test/redundancy-baseline.test.ts` fails when any count exceeds its baseline; the shipped-docs stale-name ceiling and the root-allowlist ceiling are pinned at the *target* (0) from Phase 2 and Phase 1 on, the others only ratchet. Never add an entry to make a PR green (same rule as §9).
+- [x] **Step 5: Commit** `feat: redundancy report and ratchet gate`. Suite green, ratchet in AGENTS.md §4 bumped.
 
 ### Phase 1 — Root and loose files
 
