@@ -40,8 +40,12 @@ describe('redundancy baseline', () => {
     expect(Object.keys(baseline.counts).sort()).toEqual([...keys].sort());
   });
 
-  it.each(keys)('%s: the baseline never exceeds the pinned ceiling', (key) => {
-    expect(baseline.counts[key]).toBeLessThanOrEqual(CEILING[key]);
+  it.each(keys)('%s: the baseline and the ceiling move together', (key) => {
+    // Equality, not <=. With only an upper bound, a cleanup could lower the
+    // JSON while leaving CEILING at the old value — a later increase could then
+    // pass by raising the JSON back up to the stale ceiling (Sourcery
+    // 2026-11-03). Both locks are lowered in the same change, or neither is.
+    expect(baseline.counts[key]).toBe(CEILING[key]);
   });
 
   it.each(keys)('%s: no new redundancy above the baseline', (key) => {

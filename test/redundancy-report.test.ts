@@ -4,7 +4,11 @@
 // under test. The CLI that feeds it lives in the same script.
 
 import { describe, it, expect } from 'vitest';
-import { analyze, type AnalyzeInput } from '../scripts/redundancy-report.ts';
+import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { analyze, collectInput, formatRedundancyReport, type AnalyzeInput } from '../scripts/redundancy-report.ts';
 
 const empty = (): AnalyzeInput => ({
   code: [],
@@ -49,6 +53,93 @@ describe('duplicate function names', () => {
       ],
     });
     expect(r.duplicateFunctions).toEqual([]);
+  });
+});
+
+describe('collectInput covers every shipped path (Sourcery 2026-11-03)', () => {
+  it('does not analyze a file twice when it is both a root file and a shipped file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redundancy-dup-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ files: ['PI.md'] }));
+      fs.writeFileSync(path.join(dir, 'PI.md'), 'the tactical group\n');
+
+      const report = analyze(collectInput(dir));
+      expect(report.staleNames.map((f) => `${f.path}:${f.name}`)).toEqual(['PI.md:tactical']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+
+  it('loads a shipped Markdown file from a directory outside root, docs/ and skills/', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redundancy-shipped-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      fs.writeFileSync(
+        path.join(dir, 'package.json'),
+        JSON.stringify({ files: ['PI.md', 'guides/'] }),
+      );
+      fs.writeFileSync(path.join(dir, 'PI.md'), '# PI\n');
+      fs.mkdirSync(path.join(dir, 'guides'));
+      fs.writeFileSync(path.join(dir, 'guides', 'groups.md'), 'the tactical group\n');
+
+      const report = analyze(collectInput(dir));
+      expect(report.staleNames.map((f) => `${f.path}:${f.name}`)).toEqual(['guides/groups.md:tactical']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('report robustness (Sourcery round 2026-11-03)', () => {
+  it('finds duplicate helpers declared as typed arrows, function expressions and default exports', () => {
+    const decls = [
+      'const arg = (i: number): string => process.argv[i] ?? "";',
+      'export const fmtTime = function (t: number) { return String(t); };',
+      'export default function pct(n: number) { return n; }',
+    ];
+    const r = analyze({
+      ...empty(),
+      code: [
+        { path: 'scripts/a.ts', text: decls.join('\n') },
+        { path: 'scripts/b.ts', text: decls.join('\n') },
+      ],
+    });
+    expect(r.duplicateFunctions.map((d) => d.name).sort()).toEqual(['arg', 'fmtTime', 'pct']);
+  });
+
+
+  it('counts a repeated block whose six lines are short in total', () => {
+    // The 80-char guard exists to skip brace-and-one-word windows, but it must
+    // not hide a real repeated set-up: three files sharing the same six short
+    // lines is redundancy the ratchet has to see.
+    const short = ['const a = 1;', 'const b = 2;', 'const c = 3;', 'const d = 4;', 'const e = 5;', 'const f = 6;'].join('\n');
+    const r = analyze({
+      ...empty(),
+      tests: ['x', 'y', 'z'].map((n) => ({ path: `test/${n}.test.ts`, text: `${short}\n` })),
+    });
+    expect(r.repeatedBlocks.length).toBe(1);
+  });
+
+  it('normalizes Windows-style separators before matching shipped paths', () => {
+    const r = analyze({
+      ...empty(),
+      docs: [{ path: 'skills\\router-login\\SKILL.md', text: 'use the scout group\n' }],
+      shipped: ['skills/'],
+    });
+    expect(r.staleNames.map((s) => s.name)).toEqual(['scout']);
+  });
+
+  it('lists the ollama-mock files and untracked leftovers, not just their counts', () => {
+    const r = analyze({
+      ...empty(),
+      tests: [{ path: 'test/a.test.ts', text: "vi.mock('../src/ollama-utils.ts', () => ({}));\n" }],
+      rootFiles: [{ path: 'leftover.md', tracked: false }],
+    });
+    const text = formatRedundancyReport(r);
+    expect(text).toContain('test/a.test.ts');
+    expect(text).toContain('leftover.md');
   });
 });
 
@@ -195,6 +286,15 @@ describe('root files', () => {
 });
 
 describe('plans without a status line', () => {
+  it('does not accept a Status line that appears deep in the body (Sourcery 2026-11-03)', () => {
+    // The field belongs at the top (§11). A plan that merely mentions
+    // "Status: ..." in a later paragraph has no Status field, and the ratchet
+    // must still count it — otherwise the gate can be satisfied by prose.
+    const body = ['# Plan', '', '## Problem', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'Status: mentioned in passing', ''].join('\n');
+    const r = analyze({ ...empty(), plans: [{ path: 'docs/plans/x.md', text: body }] });
+    expect(r.plansWithoutStatus).toEqual(['docs/plans/x.md']);
+  });
+
   it('flags a plan with no Status line and accepts the bold and plain forms', () => {
     const r = analyze({
       ...empty(),
