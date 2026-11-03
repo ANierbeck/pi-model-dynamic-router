@@ -31,6 +31,7 @@ import {
 } from '../src/delegation';
 import { stripRouterNarration } from '../src/utils';
 import type { Config } from '../src/types';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 // ── delegationSettings ──────────────────────────────────────────────────
 
@@ -535,16 +536,7 @@ describe('default export wiring: tool_result returns the delegation replacement'
       vi.resetModules();
       const mod = await import('../index.ts');
 
-      const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-      const pi: any = {
-        registerTool: vi.fn(),
-        registerCommand: vi.fn(),
-        registerProvider: vi.fn(),
-        setModel: vi.fn(async () => true),
-        on: vi.fn((event: string, handler: any) => {
-          onHandlers[event] = handler;
-        }),
-      };
+      const { ctx: pi, onHandlers } = makeExtensionContext();
       (mod.default as any)(pi);
 
       const sessionCtx = {

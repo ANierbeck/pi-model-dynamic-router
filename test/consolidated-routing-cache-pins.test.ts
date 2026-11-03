@@ -24,6 +24,7 @@ import { setConfig, setCache, setGdpval, setModelMap, setMetrics, setModelRegist
 import type { Group } from '../src/types.ts';
 import { test, beforeAll, afterAll } from 'vitest';
 import { lookupGdp } from '../src/metrics.js';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 describe('cache-session-reload', () => {
   // test/cache-session-reload.test.ts
@@ -440,16 +441,7 @@ describe('dynamic-config-staleness', () => {
           exclude: { models: ['*blocked*'] },
         },
         async (defaultExport) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // Provider deliberately NOT 'openrouter': this machine's real global
@@ -512,16 +504,7 @@ describe('dynamic-config-staleness', () => {
           reasoning_empty_response_timeout_ms: 5000,
         },
         async (defaultExport) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const chatModel = {
@@ -1055,16 +1038,7 @@ describe('orchestrator-router-context-freshness', () => {
           gdpval_builtin: { 'paid-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           // Module setup runs load() once here (site #1) and constructs
           // StreamOrchestrator, capturing whatever `router` is at this point.
           defaultExport(pi);

@@ -41,6 +41,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
@@ -213,16 +214,7 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
       },
       scanModels,
       async (defaultExport, tmpDir) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const modelRegistry = {

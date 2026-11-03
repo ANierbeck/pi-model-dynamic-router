@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -100,16 +101,7 @@ describe('classifier context: router narration must not leak into lastAssistantS
       async (defaultExport, tmpDir) => {
         vi.mocked(ollamaUtils.callOllama).mockClear();
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const scoutModel = {

@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 // These tests exercise the CONCURRENCY machinery, not local availability.
 // The driveStream availability guard (2026-10-03) skips ollama/* candidates
@@ -87,16 +88,7 @@ describe('driveStream: local-stream concurrency limit', () => {
         ollama_max_concurrent_streams: 1,
       },
       async (defaultExport, tmpDir) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const bigModel = { provider: 'ollama', id: 'big-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
@@ -185,16 +177,7 @@ describe('driveStream: local-stream concurrency limit', () => {
         ollama_max_concurrent_streams: 1,
       },
       async (defaultExport, tmpDir) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         const throwingModel = { provider: 'ollama', id: 'throwing-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };

@@ -39,6 +39,7 @@ import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -217,16 +218,7 @@ async function driveCollapseScenario(
     vi.resetModules();
     const mod = await import('../index.ts');
     const defaultExport: any = mod.default;
-    const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-    const pi: any = {
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerProvider: vi.fn(),
-      setModel: vi.fn(async () => true),
-      on: vi.fn((event: string, handler: any) => {
-        onHandlers[event] = handler;
-      }),
-    };
+    const { ctx: pi, onHandlers } = makeExtensionContext();
     defaultExport(pi);
 
     const mock = makeScriptedRegistry({

@@ -17,6 +17,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
 
 describe('422-client-error-not-rate-limit', () => {
   /**
@@ -91,16 +92,7 @@ describe('422-client-error-not-rate-limit', () => {
           gdpval_builtin: { 'paid-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // PAID cloud model (no ':free' suffix, not ollama/lm-studio) failing
@@ -232,16 +224,7 @@ describe('abort-not-provider-error', () => {
           gdpval_builtin: { 'paid-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const paidModel = {
@@ -389,16 +372,7 @@ describe('abort-text-not-rate-limit', () => {
           gdpval_builtin: { 'claude-sonnet-5': 1603 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // Mirrors the production pi-claude case: a paid cloud model (no
@@ -517,16 +491,7 @@ describe('blocklist-drivestream', () => {
           gdpval_builtin: { 'gated-model': 1000, 'healthy-model': 900 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // Not on the bundled static exclude list, so only the learned block can remove it.
@@ -678,16 +643,7 @@ describe('claude-bridge-empty-response-narration', () => {
           gdpval_builtin: { 'claude-opus-5-5': 1000, 'next-model': 900 },
         },
         async (defaultExport) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // The exact live signature: bridge answers 'stop' with ZERO
@@ -827,16 +783,7 @@ describe('context-overflow', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // One candidate with a small context window (8K). The conversation
@@ -939,16 +886,7 @@ describe('context-overflow', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // Candidate is "available" but find() returns null — tryStream skips
@@ -1028,16 +966,7 @@ describe('context-overflow', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // 'standard' group's only candidate is too small for the conversation.
@@ -1286,16 +1215,7 @@ describe('cooldown-collapse', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // Single, PAID cloud candidate (no ':free' suffix, not ollama/lm-studio)
@@ -1461,16 +1381,7 @@ describe('provider-error-detection', () => {
           },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const errModel = {
@@ -1644,16 +1555,7 @@ describe('provider-error-paid-cloud-cooldown', () => {
           gdpval_builtin: { 'paid-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const paidModel = {
@@ -1787,16 +1689,7 @@ describe('reasoning-timeout', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // A reasoning model. It waits 500ms before emitting its first token —
@@ -1877,16 +1770,7 @@ describe('reasoning-timeout', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // A NON-reasoning model (no `reasoning`/`thinking` field). Same 500ms
@@ -2016,16 +1900,7 @@ describe('repetition-loop-detection', () => {
           },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // Two models: loopy-model repeats the same phrase, healthy-model
@@ -2166,16 +2041,7 @@ describe('reset-msg-fallback', () => {
           gdpval_builtin: { 'rate-limited-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const model = {
@@ -2241,16 +2107,7 @@ describe('reset-msg-fallback', () => {
           gdpval_builtin: { 'paid-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           // No ":free" suffix and not ollama/lm-studio — a paid cloud model.
@@ -2388,16 +2245,7 @@ describe('skip-failure-malus', () => {
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
 
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
-          registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
         // Listed as "available" (so it becomes a candidate) but unresolvable via
@@ -2528,16 +2376,7 @@ describe('stall-timeout-detection', () => {
           stall_timeout_ms: 300,
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const stallingModel = {
@@ -2696,16 +2535,7 @@ describe('summarization-error-message', () => {
           gdpval_builtin: { 'broken-model': 1000 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const brokenModel = {
@@ -2855,16 +2685,7 @@ describe('truncated-length', () => {
           stall_timeout_ms: 5000,
         },
         async (defaultExport) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const truncatingModel = {
@@ -2952,16 +2773,7 @@ describe('truncated-length', () => {
           stall_timeout_ms: 5000,
         },
         async (defaultExport) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
-            registerProvider: vi.fn(),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
           const normalModel = {
