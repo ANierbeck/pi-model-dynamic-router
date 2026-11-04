@@ -474,30 +474,6 @@ export class Router {
   private turnDriverAt: number = 0;
   /** Start of the current turn, as reported by noteTurnStart(). 0 = unknown. */
   private turnBoundaryAt: number = 0;
-  /**
-   * Depth of nested router sub-calls (bulk_reader delegation, the bulk_read
-   * tool). While > 0, driveStream must NOT record the ref it serves as the
-   * turn's model: a sub-call is the turn's own tool work, not a model switch.
-   * Without this, the sub-call's cheap reader ref became lastDynamicModel and
-   * the next tool follow-up step put it FIRST (live incident 2026-11-03, see
-   * test/subcall-model-scope.test.ts).
-   */
-  private subCallDepth: number = 0;
-
-  /** Marks the start of a nested sub-call stream (see subCallDepth). */
-  enterSubCall(): void {
-    this.subCallDepth++;
-  }
-
-  /** Closes a sub-call scope. Unbalanced calls never wrap around. */
-  exitSubCall(): void {
-    if (this.subCallDepth > 0) this.subCallDepth--;
-  }
-
-  /** True while a nested sub-call stream is in flight. */
-  get inSubCall(): boolean {
-    return this.subCallDepth > 0;
-  }
 
   /**
    * Marks the start of a new turn. Called from the turn_start hook BEFORE
