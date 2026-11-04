@@ -47,7 +47,7 @@ export function makeExtensionContext(): ExtensionContextHarness {
  * so no developer's live session state is at risk. A file that cannot be
  * PARKED throws (after putting back what was already parked): running on
  * would test against the previous test's state. A failing RESTORE is
- * best-effort — the test has already asserted what it needed.
+ * best-effort and warns — the test has already asserted what it needed.
  *
  * The 12-file duplicate this replaces parked `router-config.dynamic.json`
  * and the scan cache by hand, with three lines each, and restored them in a
@@ -60,8 +60,11 @@ export function parkStateFiles(paths: (string | undefined | null)[]): () => void
     for (const [bak, original] of parked) {
       try {
         renameSync(bak, original);
-      } catch {
-        // Best effort: the test already asserted what it needed.
+      } catch (err) {
+        // Best effort — the test already asserted what it needed, and throwing
+        // from a `finally` would mask its real failure — but not silent: a
+        // state file left behind as `.test-park` would otherwise be a mystery.
+        console.warn(`parkStateFiles: cannot restore ${original} from ${bak}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   };
