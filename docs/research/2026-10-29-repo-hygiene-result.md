@@ -30,6 +30,15 @@
 
 Test count grew because every fix in the period carried its regression test; the two test deletions (Phase 4 Step 4) removed 2.
 
+## Per-phase results
+
+| phase | PR(s) | result |
+| --- | --- | --- |
+| 0–2 root & docs tidy | #83, #84 | tracked root entries 34 → 29; `TODO.md` 850 → 631 lines; stale group names in shipped docs 52 → 0 (pinned); root files outside the allowlist 5 → 0 (pinned); shipped docs on the five-group layout; skill allowlist gate; plan index + completeness gate; ownership map |
+| 3 extension harness | #85 | one `test/helpers/extension-harness.ts` instead of the per-file copies: `makeExtensionContext()` (15 files), `parkStateFiles()` (12), `routerStatePaths()` (21), `drainStream()` (11); one decision-log reader `scripts/lib/decision-log.ts` for all six scripts (local record types and readers deleted); shared CLI helpers `scripts/lib/cli.ts` (11 duplicates removed); `repeatedBlocks` ratchet 61 → 50 |
+| 4 test redundancy | #85, #87 | Stryker containment evidence → 2 byte-identical pins deleted (0 of 186 candidates was a subset); `parkStateFiles()` migration of the un-split files (16 blocks); `repeatedBlocks` ratchet 50 → 49 → 47; `duplicateFunctions` 6 → 0 (pinned); Step 5 (pin-file split) built, measured, deferred (would raise the gate 47 → 57) |
+| 5 duplicate names | #85 | duplicate names removed; remaining arg parsers migrated to the shared helpers |
+
 ## Test deletion evidence (Phase 4 Step 4)
 
 Stryker run 41434044059: 834 covering tests, 386 with a unique kill, 297 containment candidates, 186 of them same-file. Assertion-level review: 0 of 186 are a subset of their container; 2 byte-identical tests deleted. Detail: `docs/research/2026-11-03-test-redundancy-evidence.md`.
