@@ -515,7 +515,9 @@ clean; the Dependabot alerts auto-close.
   attacker-controlled objects re-serialized with `arrayFormat: 'comma'` —
   not reachable; in-range lock refresh merged, alert auto-closed.
 - `zod` 4.4.3 -> 4.6.7 (PR #92, lockfile-only): high (memory exhaustion on
-  oversized constraints) via Stryker's mutation-server-protocol ^4.1.12;
+  oversized constraints). The single dev-tree instance sat under Stryker's
+  mutation-server-protocol 0.4.1 (zod `^4.1.12`) and, deduped, under
+  @earendil-works/pi-ai -> @anthropic-ai/sdk 0.129.0 and openai 7.19.0;
   fix in range, refreshed. Full audit now: 0 prod, only the minimatch
   cascade left (12 moderate, dev-only).
 - `minimatch` 10.2.6 (open Dependabot alert, medium, CVE-2026-118764,
@@ -523,9 +525,10 @@ clean; the Dependabot alerts auto-close.
   eslint / typescript-eslint / Stryker and the pi host (exact pin 10.2.6).
   NOT REACHABLE (all consumers match our own repo-controlled globs, no
   attacker input) and BLOCKED: no fixed 10.x exists, every consumer
-  declares ^10.x, and the host pins exactly — an `overrides` force to 11
-  would be a major under three packages that do not declare support (and
-  cannot reach the host's tree anyway). `npm audit`'s suggested "fixes"
+  declares ^10.x or ~10.2.4 (Stryker), and the host pins exactly — an
+  `overrides` force to 11 would be a major under three packages that do
+  not declare support (and cannot reach the owner's globally installed
+  host anyway). `npm audit`'s suggested "fixes"
   are downgrades (eslint 9.39.5, typescript-eslint 6.15.0) — not applied
   per section 10. Re-evaluate when eslint / typescript-eslint / Stryker /
   the pi host ship minimatch 11 support; the alert stays open as the
