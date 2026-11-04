@@ -492,7 +492,8 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
 **vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
 UPDATE 2026-10-06: vitest is now on 4.1.11 (security round, see CHANGELOG) —
 it passes the pinned coverage thresholds unchanged, so only the 4 -> 5 step
-(Node >= 22.12 engines, the coverage-v8 5.x accounting below) is still open.
+(the coverage-v8 5.x accounting below; the Node >= 22.12 requirement is met
+since the package floor is node >= 22.19.0, 2026-11-04) is still open.
 Dependabot proposed vitest 3.2.6 -> 5.0.3 (two majors, PRs #10/#13, both
 closed). Red CI: coverage-v8 5.x counts branches differently and the run
 lands at 74.27% against the pinned 76% threshold — AGENTS.md §4 forbids

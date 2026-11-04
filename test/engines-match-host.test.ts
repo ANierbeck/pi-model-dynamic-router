@@ -13,10 +13,19 @@ const readJson = (rel: string) => JSON.parse(readFileSync(join(process.cwd(), re
   engines?: { node?: string };
 };
 
-/** `>=22.19.0` -> [22, 19, 0]; anything else is a test failure, not a guess. */
-function floorOf(range: string | undefined, who: string): [number, number, number] {
-  const m = /^>=\s*(\d+)\.(\d+)\.(\d+)$/.exec(range ?? '');
-  if (!m) throw new Error(`${who}: engines.node must be a plain ">=X.Y.Z" floor, got ${JSON.stringify(range)}`);
+/**
+ * `>=22.19.0` -> [22, 19, 0]. A missing or unparseable range is a test
+ * failure, not a guess. `strict` (our own package.json) demands exactly a plain
+ * floor; the host side may carry an upper bound (">=22.19.0 <25"), so only its
+ * first ">=" bound is read.
+ */
+function floorOf(range: string | undefined, who: string, strict: boolean): [number, number, number] {
+  const m = (strict ? /^>=\s*(\d+)\.(\d+)\.(\d+)$/ : />=\s*(\d+)\.(\d+)\.(\d+)/).exec(range ?? '');
+  if (!m) {
+    throw new Error(
+      `${who}: engines.node must ${strict ? 'be a plain ">=X.Y.Z" floor' : 'contain a ">=X.Y.Z" bound'}, got ${JSON.stringify(range)}`,
+    );
+  }
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
@@ -27,10 +36,11 @@ const atLeast = (a: number[], b: number[]): boolean => {
 
 describe('Node engines floor follows the Pi host', () => {
   it('package.json engines.node is at least the host\'s engines.node', () => {
-    const own = floorOf(readJson('package.json').engines?.node, 'package.json');
+    const own = floorOf(readJson('package.json').engines?.node, 'package.json', true);
     const host = floorOf(
       readJson('node_modules/@earendil-works/pi-coding-agent/package.json').engines?.node,
       'pi-coding-agent',
+      false,
     );
     expect(
       atLeast(own, host),
