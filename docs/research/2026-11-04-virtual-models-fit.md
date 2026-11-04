@@ -46,6 +46,23 @@ With a virtual model Pi streams the physical model directly. The router could st
 - **C2 data** — reader-model benchmarks/health written before the fix decay by themselves.
 - Ranking, classification (Laya), group definitions, cost/billing rules, config layers: unchanged; `route()` would call the same `resolve()`.
 
+## Read-direction turn-state leaks (found in the PR #89 review, 2026-11-04)
+
+The sub-call scope fix guards the WRITE direction. Three READ-direction leaks
+remain (all pre-existing, none default-config, none correctness-relevant —
+cost only). The migration must not inherit them:
+
+- **Escalation level**: a sub-call into the dynamic group inherits the
+  session's escalated level (`escalation.level` becomes the target group), so
+  a summarizer can run on the expensive group.
+- **Classification context**: a sub-call's classifier input is fed the main
+  turn's `lastCategory`/`lastModel`.
+- **`recordServedRef` timing**: the ref is recorded before `tryStream`
+  confirms the stream opens (probe and collapse paths), so a ref that never
+  served can become curModel/lastDynamicModel. Faithful port of the
+  pre-fix semantics; `route()`'s `state` per branch would need the same
+  look.
+
 ## Every other open item, mapped
 
 | item (source) | depends on this plan? |
