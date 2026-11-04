@@ -13,7 +13,7 @@ import { runAsSubCall } from './subcall-scope.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { Type } from '@sinclair/typebox';
+import { Type } from 'typebox';
 import * as fs from 'node:fs';
 import type { Config, Metrics } from './types.ts';
 import type { Router } from './routing.ts';

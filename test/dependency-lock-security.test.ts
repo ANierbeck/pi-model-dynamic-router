@@ -54,10 +54,10 @@ describe('dependency lock security (Dependabot #42-#45, #48)', () => {
     }
   });
 
-  it("package.json still carries the undici override (host pins 8.10.2 — without the override every npm install re-vulnerabilizes)", () => {
+  it("package.json still carries the undici override (the host pins its own undici — without the override every npm install re-vulnerabilizes)", () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
       overrides?: Record<string, string>;
     };
-    expect(pkg.overrides?.undici, 'overrides.undici must stay until the host bumps upstream').toBe('8.12.2');
+    expect(pkg.overrides?.undici, 'overrides.undici must stay until the host bumps upstream').toBe('8.12.3');
   });
 });
