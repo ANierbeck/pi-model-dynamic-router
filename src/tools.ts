@@ -9,6 +9,7 @@
 
 import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
+import { runAsSubCall } from './subcall-scope.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -63,14 +64,8 @@ export function createTools(rt: ToolDeps) {
       ctx: ExtensionContext
     ) {
       // The reader stream is a SUB-CALL: it must not become the turn's model
-      // (see Router.enterSubCall / test/subcall-model-scope.test.ts).
-      rt.router.enterSubCall();
-      let result: Awaited<ReturnType<typeof executeBulkRead>>;
-      try {
-        result = await executeBulkRead(params, ctx, rt.cfg, routerLog);
-      } finally {
-        rt.router.exitSubCall();
-      }
+      // (see src/subcall-scope.ts).
+      const result = await runAsSubCall(() => executeBulkRead(params, ctx, rt.cfg, routerLog));
       return {
         ...result,
         details: { tool: 'bulk_read', files: params.paths.length },

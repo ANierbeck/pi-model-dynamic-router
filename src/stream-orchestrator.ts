@@ -131,6 +131,7 @@ import {
   sanitizeForLog,
 } from './detection.ts';
 import { isOllamaProbablyDown } from './ollama-utils.ts';
+import { inSubCall } from './subcall-scope.ts';
 
 /**
  * Narration label for an empty response on a PAID cloud model: stopReason
@@ -287,6 +288,22 @@ export interface StreamOrchestratorContext {
 
 // ── Orchestrator ───────────────────────────────────────────────────────────
 
+/**
+ * Records the ref a stream was opened on as THE TURN's model state (curModel,
+ * active group, lastDynamicModel). A router-internal sub-call (src/
+ * subcall-scope.ts) is the turn's own tool work, not a model switch: letting it
+ * record here made the next tool follow-up step start on the cheap reader model
+ * (live incident 2026-11-03) and booked the main model's turn_end success to
+ * the reader (health, breaker, metrics). Every stream-opening path of
+ * driveStream goes through this one function.
+ */
+function recordServedRef(ctx: StreamOrchestratorContext, ref: string): void {
+  if (inSubCall()) return;
+  ctx.router.setCurModel(ref);
+  ctx.router.setActiveGroup(ctx.activeGroup);
+  ctx.lastDynamicModel = ref;
+}
+
 export class StreamOrchestrator {
   constructor(public ctx: StreamOrchestratorContext) {}
 
@@ -418,7 +435,7 @@ export class StreamOrchestrator {
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
 
         if ('category' in classification) {
-          this.ctx.lastClassifiedCategory = classification.category;
+          if (!inSubCall()) this.ctx.lastClassifiedCategory = classification.category;
         }
 
         // HINT override
@@ -436,7 +453,7 @@ export class StreamOrchestrator {
                 }
               }
               candidates = [...res.candidates];
-              this.ctx.lastDynamicModel = res.selected;
+              if (!inSubCall()) this.ctx.lastDynamicModel = res.selected;
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
@@ -548,7 +565,7 @@ export class StreamOrchestrator {
                   candidates.push(...fallbackCandidates);
                 }
               }
-              this.ctx.lastDynamicModel = hintSiblings[0];
+              if (!inSubCall()) this.ctx.lastDynamicModel = hintSiblings[0];
               // MHINT (not HINT): the router's OWN model-hint narration must
               // never collide with the user's reserved "HINT:" channel —
               // quoted narration re-read as a fresh HINT locked a session
@@ -605,7 +622,7 @@ export class StreamOrchestrator {
         }
 
         candidates = [...res.candidates, ...fallbackCandidates];
-        this.ctx.lastDynamicModel = res.selected;
+        if (!inSubCall()) this.ctx.lastDynamicModel = res.selected;
         dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
         appendRawLog(logLine);
@@ -779,16 +796,7 @@ export class StreamOrchestrator {
 
       const prefix = label ? `${label} · ${ref}` : ref;
       pushRouterInfoLogged(proxy, `> [router] ${prefix}\n\n`);
-      // A nested sub-call (bulk_reader delegation, bulk_read tool) is the
-      // turn's own tool work, not a model switch: recording its ref here made
-      // the next tool follow-up step start on the cheap reader model (live
-      // incident 2026-11-03). curModel is left alone too, so turn_end keeps
-      // attributing usage to the turn's model.
-      if (!ctx.router.inSubCall) {
-        ctx.router.setCurModel(ref);
-        ctx.router.setActiveGroup(ctx.activeGroup);
-        ctx.lastDynamicModel = ref;
-      }
+      recordServedRef(ctx, ref);
 
       let attemptSucceeded = false;
       try {
@@ -1144,9 +1152,7 @@ export class StreamOrchestrator {
           );
           await sleepMs(probeSecs * 1000 + 2000);
         }
-        ctx.router.setCurModel(probeRef);
-        ctx.router.setActiveGroup(ctx.activeGroup);
-        ctx.lastDynamicModel = probeRef;
+        recordServedRef(ctx, probeRef);
         const probeAttempt = openCandidateAttempt(options);
         const probeTarget = await ctx.tryStream(probeRef, context, probeAttempt.options).catch((err) => {
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -1252,9 +1258,7 @@ export class StreamOrchestrator {
             `> [router] All models in cooldown, retrying ${bestRef} (shortest cooldown, ${bestSecs}s)...\n\n`
           );
         }
-        ctx.router.setCurModel(bestRef);
-        ctx.router.setActiveGroup(ctx.activeGroup);
-        ctx.lastDynamicModel = bestRef;
+        recordServedRef(ctx, bestRef);
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
           const errorMsg = err instanceof Error ? err.message : String(err);

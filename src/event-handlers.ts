@@ -13,6 +13,7 @@
 import { resolveReadBlockStreamRef, checkReadBlock } from './bulk-read.ts';
 import { costTracker } from './cost-tracker.ts';
 import { handleReadDelegation } from './delegation.ts';
+import { runAsSubCall } from './subcall-scope.ts';
 import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
@@ -377,19 +378,13 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // the delegation group — default bulk_reader) BEFORE the main model
     // sees them. Strictly fail-open: undefined → original passes through.
     // The sub-call streams through the router's own groupStream/driveStream,
-    // so it runs inside the sub-call scope: otherwise the summarizer ref
+    // so it runs inside a sub-call scope: otherwise the summarizer ref
     // becomes the TURN's model and the next tool follow-up step starts on it
     // (live incident 2026-11-03 — a GLM-driven planning turn continued on the
     // free bulk_reader model, fell through 429s to openrouter/free and stayed
     // there). The scope also keeps curModel on the turn's model, so turn_end
-    // attributes usage to it. See test/subcall-model-scope.test.ts.
-    rt.router.enterSubCall();
-    let replacement: Awaited<ReturnType<typeof handleReadDelegation>>;
-    try {
-      replacement = await handleReadDelegation(ev, ctx, rt.cfg, routerLog);
-    } finally {
-      rt.router.exitSubCall();
-    }
+    // attributes usage to it. See src/subcall-scope.ts.
+    const replacement = await runAsSubCall(() => handleReadDelegation(ev, ctx, rt.cfg, routerLog));
     if (replacement) return replacement;
 
     // The rate-limit branch that lived here since the initial release
