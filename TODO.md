@@ -509,6 +509,31 @@ pi-coding-agent 1.0.4, which ships `undici` 8.10.2 and dropped the
 (overrides were ignored even on a fresh lock resolution). `npm audit` is
 clean; the Dependabot alerts auto-close.
 
+**Dependency-security round 2026-11-04 (per AGENTS.md section 10):**
+- `qs` 6.16.0 -> 6.17.1 (PR #82, Dependabot, lockfile-only): dev-only via
+  Stryker -> typed-rest-client, 0 bundle markers, CVE-2026-110816 needs
+  attacker-controlled objects re-serialized with `arrayFormat: 'comma'` —
+  not reachable; in-range lock refresh merged, alert auto-closed.
+- `zod` 4.4.3 -> 4.6.7 (PR #92, lockfile-only): high (memory exhaustion on
+  oversized constraints). The single dev-tree instance sat under Stryker's
+  mutation-server-protocol 0.4.1 (zod `^4.1.12`) and, deduped, under
+  @earendil-works/pi-ai -> @anthropic-ai/sdk 0.129.0 and openai 7.19.0;
+  fix in range, refreshed. Full audit now: 0 prod, only the minimatch
+  cascade left (12 moderate, dev-only).
+- `minimatch` 10.2.6 (open Dependabot alert, medium, CVE-2026-118764,
+  DoS via globparts amplification, patched only in 11.0.1): dev-only via
+  eslint / typescript-eslint / Stryker and the pi host (exact pin 10.2.6).
+  NOT REACHABLE (all consumers match our own repo-controlled globs, no
+  attacker input) and BLOCKED: no fixed 10.x exists, every consumer
+  declares ^10.x or ~10.2.4 (Stryker), and the host pins exactly — an
+  `overrides` force to 11 would be a major under three packages that do
+  not declare support (and cannot reach the owner's globally installed
+  host anyway). `npm audit`'s suggested "fixes"
+  are downgrades (eslint 9.39.5, typescript-eslint 6.15.0) — not applied
+  per section 10. Re-evaluate when eslint / typescript-eslint / Stryker /
+  the pi host ship minimatch 11 support; the alert stays open as the
+  tracker (dismissal needs the owner's go).
+
 **Host-pinned undici alert (evaluated 2026-10-26, PR fixing this repo's
 tree):** Dependabot #48 (HIGH, CVE-2026-109869 — DoS via unhandled error on
 excessive content-encodings, undici < 8.12.2). The vulnerable undici 8.10.2
