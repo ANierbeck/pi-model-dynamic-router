@@ -1303,3 +1303,25 @@ boundary scenarios (bestSecs*1000 == waitMaxMs) or duration assertions, which
 are follow-up rounds, not free fixes. Next clusters by size: the
 breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
 
+## Nightly R4 (2026-11-04) — stream orchestrator after the Laya merge, slice 1 (`groupStream`)
+
+> Run 41817385588, `main` @ `fde54f8` (first nightly after the merge and the hygiene PRs). `src/stream-orchestrator.ts`: 1084 mutants, 420 killed, **663 undetected** (449 survived, 214 NoCoverage), score 38.7 %. `metrics.ts` 76 and `routing.ts` 77 undetected are the already-ledgered remainders. Plan: `docs/plans/2026-11-04-orchestrator-mutation-triage.md`; numbers: `docs/research/2026-11-04-orchestrator-mutation-r4.md`; dataset: `docs/mutation-data/nightly-r4.json` (slice 1 only).
+
+| region | lines | undetected | slice |
+| --- | --- | --- | --- |
+| `groupStream` | 305–643 | 272 | **1 (this section)** |
+| `driveStream` | 644–1347 | 337 | 2 |
+| helpers, breaker narration | 49–180 | 49 | 3 |
+
+### Slice 1 verdicts (272)
+
+| category | count | evidence |
+| --- | --- | --- |
+| REAL-KILLED by `test/orchestrator-hint-wiring.test.ts` (74 tests) | 257 | `scripts/mutation-recheck.ts --tests` against the pristine `fde54f8` tree: each kill observed on the mutated tree and confirmed alone on mutated tree and baseline |
+| EQUIVALENT | 15 | rationale per row in the dataset |
+
+What was missing: the explicit `HINT: <group>` and `HINT: <model>` branches (lines 423–580) were almost entirely **NoCoverage** — nothing drove a pinned model or group through the orchestrator. Also unpinned before: the classifier call wiring (`findModel`, `completeSimple`, `hasConfiguredAuth` fail-open, cloud-fallback strictness, pins), escalation versus category, the tool follow-up gate, the decision lines in `router.log`, and the total-failure path.
+
+Equivalents, by reason: junk-array fallbacks (`?? []` → `['Stryker was here']`, lines 430/499); throws caught by the enclosing try/catch with only the log text differing (352, 594); conditions implied by the one beside them (425, 463, 478 `ref === shortName`, 517 ×2); idempotent guards (533 `isExcluded` with undefined rules, 466 `includes('')`, 465 overwritten initial value); end anchor-only regex (311).
+
+Method as in R2/R3. Not done: a full-suite recheck of the 15 equivalents (the verdicts rest on reading the code, like R1/R2).
