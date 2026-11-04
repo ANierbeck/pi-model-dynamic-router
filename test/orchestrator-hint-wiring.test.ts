@@ -103,6 +103,7 @@ function world(o: Opts) {
   const open = async () => {
     orch.groupStream({ provider: 'router', id: 'dynamic', api: 'openai-completions' } as any, { messages } as any, undefined);
     await vi.waitFor(() => expect(drive).toHaveBeenCalled());
+    // driveStream(proxy, candidates, context, options, label, groupName, ...)
     const a = drive.mock.calls[0] as unknown as any[];
     return { candidates: a[1] as string[], label: a[4] as string | undefined, group: a[5] as string | undefined };
   };
@@ -143,7 +144,7 @@ describe('HINT: <group>', () => {
   });
 
   it('a group without fallback_groups uses only its own candidates', async () => {
-    const w = world({ classification: { hintType: 'group', hintTarget: 'simple' }, resolvable: { ...res, simple: res.simple } });
+    const w = world({ classification: { hintType: 'group', hintTarget: 'simple' }, resolvable: res });
     // `simple` has no fallback_groups in DEFAULT_GROUPS
     const d = await w.open();
     expect(d.candidates).toEqual(['openrouter/free', 'mistral/large']);
@@ -688,8 +689,6 @@ describe('group name parsing', () => {
   it('a :use-static suffix names the group and switches the static fallback on', async () => {
     const w = world({ classification: { category: 'standard' }, resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } } });
     w.ctx.cfg.model_groups.dynamic = { method: 'dynamic' };
-    const stream = w.ctx;
-    void stream;
     const orch = new StreamOrchestrator(w.ctx);
     const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
     orch.groupStream({ provider: 'router', id: 'dynamic:use-static', api: 'x' } as any, { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any, undefined);
