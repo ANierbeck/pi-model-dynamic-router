@@ -52,5 +52,6 @@ raises `plansMissingFromIndex` — both pinned, so neither can grow.
 | [`2026-10-26-live-uncertainty-labeling-design.md`](2026-10-26-live-uncertainty-labeling-design.md) | Live labeling of uncertain Laya decisions (design) | done |  |  |
 | [`2026-10-29-repo-hygiene.md`](2026-10-29-repo-hygiene.md) | Repo hygiene: clean up the layout and stop redundancy from | in progress — phases 0-3 | A repository where every file has one obvious home and one owner, and wh | docs/plans/2026-09-20-consolidate-tests |
 | [`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md) | Laya sidecar distribution: give every user a classifier th | in progress |  |  |
+| [`2026-11-04-virtual-models-routing.md`](2026-11-04-virtual-models-routing.md) | Route through Pi's Virtual Models: evaluate whether the router's own turn-state machine can go | proposed |  |  |
 | [`candidates_consolidation.md`](candidates_consolidation.md) | Test Consolidation — Candidate Analysis | done — analysis for the consolidation |  |  |
 | [`redundancy-analysis.md`](redundancy-analysis.md) | Test Suite Redundancy & Timeout Analysis (Task 3) | done — analysis for the consolidation |  |  |

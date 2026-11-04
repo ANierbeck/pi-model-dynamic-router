@@ -3,7 +3,7 @@
 // test's dynamic config / scan cache and pass for the wrong reason (PR #87
 // review round, Sourcery finding).
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -41,5 +41,27 @@ describe('parkStateFiles', () => {
     // The first file was parked before the failure: it must be back in place.
     expect(fs.readFileSync(ok, 'utf8')).toBe('OK');
     expect(fs.readFileSync(stuck, 'utf8')).toBe('STUCK');
+  });
+
+  it('a failing restore is reported (not silent) and does not stop the other files from coming back', () => {
+    const d = tmp();
+    const a = path.join(d, 'a.json');
+    const b = path.join(d, 'b.json');
+    fs.writeFileSync(a, 'A');
+    fs.writeFileSync(b, 'B');
+    const restore = parkStateFiles([a, b]);
+    // Something re-created `a` as a non-empty directory while it was parked: renaming the backup over it fails.
+    fs.mkdirSync(a);
+    fs.writeFileSync(path.join(a, 'blocker'), 'x');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      restore();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('a.json');
+      expect(fs.readFileSync(b, 'utf8')).toBe('B'); // the second file was still restored
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
