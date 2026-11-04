@@ -1,8 +1,10 @@
 // Regression guard for the dependency-security fixes (AGENTS.md section 10):
 // Dependabot #42-#45 (fast-uri < 3.1.9, URI confusions under ajv/stryker) and
-// #48 (undici < 8.12.2, DoS via excessive content-encodings — host-pinned, so
-// an `overrides` entry in package.json is what holds the patched version in
-// place). A later lock refresh or a removed override can silently resolve the
+// #48 (undici < 8.12.2, DoS via excessive content-encodings — the host pinned
+// the vulnerable 8.10.2 until 1.5.0, then its own patched 8.12.3). A later lock
+// refresh can silently resolve the vulnerable versions again. The old
+// `overrides` entry is gone (AGENTS.md section 10: overrides are the last resort).
+// This test makes a regression a red suite, not a silent one. It
 // vulnerable versions again; this test makes that a red suite, not a silent
 // regression (review round on PR #78).
 //
@@ -46,18 +48,19 @@ describe('dependency lock security (Dependabot #42-#45, #48)', () => {
     }
   });
 
-  it('resolves only patched undici (>= 8.12.2) — the override must not be dropped', () => {
+  it('resolves only patched undici (>= 8.12.2)', () => {
     const versions = resolvedVersions('undici');
     expect(versions.length, 'undici must appear in the lockfile').toBeGreaterThan(0);
     for (const v of versions) {
-      expect(cmp(v, '8.12.2'), `undici ${v} is below the patched 8.12.2 (overrides entry removed?)`).toBeGreaterThanOrEqual(0);
+      expect(cmp(v, '8.12.2'), `undici ${v} is below the patched 8.12.2 (host pin regressed or an override forces it?)`).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("package.json still carries the undici override (host pins 8.10.2 — without the override every npm install re-vulnerabilizes)", () => {
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
-      overrides?: Record<string, string>;
-    };
-    expect(pkg.overrides?.undici, 'overrides.undici must stay until the host bumps upstream').toBe('8.12.2');
+  it('the top-level undici is the host\'s own pin, so no override is needed (the host pins a patched version since 1.5.0)', () => {
+    const host = lock.packages['node_modules/@earendil-works/pi-coding-agent'];
+    const pinned = host?.dependencies?.undici;
+    expect(pinned, 'the pi host must declare undici in the lockfile').toBeDefined();
+    expect(cmp(pinned!, '8.12.2'), `the host pins undici ${pinned}, below the patched 8.12.2`).toBeGreaterThanOrEqual(0);
+    expect(lock.packages['node_modules/undici']?.version, 'top-level undici must equal the host pin').toBe(pinned);
   });
 });
