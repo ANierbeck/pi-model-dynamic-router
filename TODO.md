@@ -525,7 +525,7 @@ clean; the Dependabot alerts auto-close.
   eslint / typescript-eslint / Stryker. The pi host is NOT the blocker
   since 1.5.0: it ships minimatch 11.0.3 nested (patched). NOT REACHABLE
   (all consumers match our own repo-controlled globs, no attacker input)
-  and BLOCKED: no fixed 10.x exists, and eslint (^10.2.6),
+  and BLOCKED: no fixed 10.x exists, and eslint (^10.2.4),
   typescript-eslint (^10.2.2) and Stryker (~10.2.4) keep the top-level copy
   on 10.x. An `overrides` force to 11 would be a major under three packages
   that do not declare support. `npm audit`'s suggested "fixes" are
@@ -533,6 +533,12 @@ clean; the Dependabot alerts auto-close.
   section 10. Re-evaluate when eslint / typescript-eslint / Stryker ship
   minimatch 11 support; the alert stays open as the tracker (dismissal
   needs the owner's go).
+
+**Host-pinned undici alert — RESOLVED by the host (2026-11-04):** pi 1.5.0
+pins undici 8.12.3 itself, so the `"overrides": { "undici": "8.12.2" }` from
+the 2026-10-26 round is removed (overrides are the last resort under
+AGENTS.md section 10). The lock-security guard now asserts that the top-level
+undici equals the host's own pin. History of the 2026-10-26 round below.
 
 **Host-pinned undici alert (evaluated 2026-10-26, PR fixing this repo's
 tree):** Dependabot #48 (HIGH, CVE-2026-109869 — DoS via unhandled error on
