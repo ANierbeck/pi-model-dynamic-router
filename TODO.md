@@ -20,6 +20,17 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
+
+Independent review of `38d2a27..fde54f8` (Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
+
+- **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** (`stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Proposal: remember the run's driver and group at classification; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context skip `:free` and meta-routers unless the run group is `simple`.
+- **I4 — tool-call markup emitted as text counts as a good answer** (`stream-proxy.ts` consumeWithDetection → `{ ok: true }` → `recordOk`). The incident's `openrouter/free` printed `<..._function_call>` as text and was rewarded. Proposal: with tools present, hold the first ~200 chars; if they match generic wire markers (`<tool_call`, `<function_call`, `<…_function_call>`, `<|tool_call`, `[TOOL_CALLS]`) and no tool-call event arrived, record a soft failure and try the next candidate (format markers, not model names: §9 allows).
+- **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`): the check is a parameter-size regex, so a free tier or meta-router (`openrouter/openrouter/free`) gets the compaction HINT. Proposal: decide by real context window and exclude `:free`/meta-routers.
+- **I2 remainder / M1 — turn state is per process, not per session.** Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
+- **M3 — turn latency includes tool and sub-call time** (`event-handlers.ts` turn_end), which inflates latency and deflates tokens/s for every turn that runs tools; ranking reads `benchmarks`.
+- **C2 data — benchmarks/health/breaker values written for reader models before the fix may be skewed.** They decay (EMA, health windows); a reset is possible but not needed unless a reader model ranks oddly.
+
 ### ✅ **Categories and groups did not line up — CLOSED 2026-11-02 (five-group layout shipped)**
 
 7 categories against 13 groups, names pointing at the wrong category, 5
