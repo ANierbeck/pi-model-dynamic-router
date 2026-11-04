@@ -10,7 +10,7 @@
 
 ---
 
-**Status:** in progress — Phase 0 done 2026-10-29 (PR #83, merged); Phases 1–3 done 2026-11-03 (PR #84, merged); Phases 4 (Steps 1–2) and 5 (Steps 1–5) done 2026-11-03 (PR #85); Phase 4 Steps 3–4 done 2026-11-03 in a follow-up PR (decision 6: 2 clear-case deletions, evidence in `docs/research/2026-11-03-test-redundancy-evidence.md`); Phase 4 Step 5 deferred (gate inflation, see below). Phase 6 (close) pending. Tick the boxes below as phases land; do not append narrative (AGENTS.md §11).
+**Status:** done 2026-11-04 — Phases 0–5 landed in PRs #83–#87 (Phase 4 Step 5 deliberately deferred, see below); Phase 6 closed with the result report `docs/research/2026-10-29-repo-hygiene-result.md` and the independent review of `38d2a27..fde54f8`. Open follow-up outside this plan: extract the test boilerplate that the pin-file split would reveal, then split the two oversized pin files (own round).
 
 **Verified against:** commit `f86846a` (branch `feat/five-groups`, not pushed), measured 2026-10-29. Checked: file counts, sizes, git-tracked status, the `files` list and build script in `package.json`, cross-references between root files (grep, excluding `node_modules`/`dist`/`.worktrees`), duplicate function names and test titles, repeated 6-line blocks across test files, full-suite runtime (13.8 s). **Not checked:** whether Pi really loads `CLAUDE.md` into every session (AGENTS.md says so; the session context shows only `AGENTS.md`), semantic overlap between `PI.md`, `SKILL.md`, `AGENT.md` and `README.md` (literal line overlap is low, 2–12 lines, so any overlap is topical and needs reading), whether the Stryker `mutation.json` carries `killedBy` per mutant in CI artifacts (config has `coverageAnalysis: perTest` and the `json` reporter, so it should). **Later claims (Phase 4 Steps 3–5, 2026-11-03)** were checked against `main` at `c9d60d2` (after PR #86): `node scripts/redundancy-report.ts` counts, `npx tsc --noEmit`, full suite (2515 passed / 3 skipped), coverage thresholds unchanged. **Not checked:** a fresh Stryker run after the two deletions (they were byte-identical copies of a test that stays, so no new survivor is expected).
 
@@ -110,7 +110,7 @@ Goal: finish with the least context spent.
 - [x] **Step 2: Migrate in batches** (2026-11-03, PR #85): two batches (15 files then 12+21+11), suite green after each, repeatedBlocks 61 → 50, baseline lowered in the same commits. Mechanical rewrites; behaviour of every test unchanged (verified in the PR #85 review round: no assertion line differs).
 - [x] **Step 3: Mutation evidence** (2026-11-03). Nightly run 41434044059 (2822 mutants: 1977 killed / 579 survived / 266 NoCoverage; `killedBy` present): 386 of 834 covering tests have at least one unique kill (untouchable); 297 tests have no unique kill and their coverage is fully contained in another test — an upper bound for Step 4, not a deletion list.
 - [x] **Step 4: Delete or merge candidates one file at a time** (2026-11-03, PR #87). Owner decision 6 applied: 2 clear-case deletions (the `CATEGORY_TO_GROUP` pin existed byte-identically in three files; one copy stays in `five-group-layout.test.ts`, `NOTE:` lines mark the removals). The Stryker containment candidates did not hold up at assertion level. Measurements and reasoning: `docs/research/2026-11-03-test-redundancy-evidence.md`.
-- [ ] **Step 5: Naming convention for pin files** — measured and DEFERRED (2026-11-03): the `describe`-based split would raise the `repeatedBlocks` ratchet, which may not be raised; it waits until the boilerplate the split reveals is extracted into helpers (own round). The `parkStateFiles` migration of the un-split files landed instead (16 blocks, `repeatedBlocks` 49 → 47). Numbers: `docs/research/2026-11-03-test-redundancy-evidence.md`.
+- [ ] **Step 5: Naming convention for pin files** (deferred, not part of "done") — measured and DEFERRED (2026-11-03): the `describe`-based split would raise the `repeatedBlocks` ratchet, which may not be raised; it waits until the boilerplate the split reveals is extracted into helpers (own round). The `parkStateFiles` migration of the un-split files landed instead (16 blocks, `repeatedBlocks` 49 → 47). Numbers: `docs/research/2026-11-03-test-redundancy-evidence.md`.
 - [x] **Step 6: Commit(s)** `refactor(test): shared router/ollama helpers` and `test: remove mutation-redundant tests`.
 
 ### Phase 5 — Code and scripts
@@ -124,9 +124,9 @@ Goal: finish with the least context spent.
 
 ### Phase 6 — Close
 
-- [ ] Final report run: all baseline counts, before → after, in `docs/research/2026-10-29-repo-hygiene-result.md` (numbers only, §11).
-- [ ] `npx tsc --noEmit`, `npx vitest run`, `npm run test:coverage` (thresholds unchanged), `npm run build`, `npm audit` summary in the PR body.
-- [ ] Review per AGENTS.md §1 before the PR is proposed; all three PR review endpoints read before merge (§8). Status → `done`.
+- [x] Final report run (2026-11-04): all baseline counts, before → after, in `docs/research/2026-10-29-repo-hygiene-result.md` (numbers only, §11).
+- [x] `npx tsc --noEmit`, `npx vitest run`, `npm run test:coverage` (thresholds unchanged), `npm run build`, `npm audit` summary in the PR body (PR body of the Phase 6 PR).
+- [x] Review per AGENTS.md §1 (2026-11-04): independent reviewer over `38d2a27..fde54f8`; the hygiene phases were behaviour-preserving. The Critical/Important findings concerned PR #86 and are fixed in their own PR; all three PR review endpoints are read before each merge (§8).
 
 ## What "redundancy control" means here (the concept)
 
