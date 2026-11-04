@@ -22,9 +22,9 @@
 
 ### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
 
-Independent review of `38d2a27..fde54f8` (Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
+Independent review of `38d2a27..fde54f8` (the structural question behind most of these — should the router keep its own turn-state machine at all? — is `docs/plans/2026-11-04-virtual-models-routing.md`; mapping of every item in `docs/research/2026-11-04-virtual-models-fit.md`). Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
 
-- **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** (`stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Proposal: remember the run's driver and group at classification; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context skip `:free` and meta-routers unless the run group is `simple`.
+- **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** (first registered 2026-10-25; `stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Proposal: remember the run's driver and group at classification; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context skip `:free` and meta-routers unless the run group is `simple`.
 - **I4 — tool-call markup emitted as text counts as a good answer** (`stream-proxy.ts` consumeWithDetection → `{ ok: true }` → `recordOk`). The incident's `openrouter/free` printed `<..._function_call>` as text and was rewarded. Proposal: with tools present, hold the first ~200 chars; if they match generic wire markers (`<tool_call`, `<function_call`, `<…_function_call>`, `<|tool_call`, `[TOOL_CALLS]`) and no tool-call event arrived, record a soft failure and try the next candidate (format markers, not model names: §9 allows).
 - **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`): the check is a parameter-size regex, so a free tier or meta-router (`openrouter/openrouter/free`) gets the compaction HINT. Proposal: decide by real context window and exclude `:free`/meta-routers.
 - **I2 remainder / M1 — turn state is per process, not per session.** Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
@@ -57,11 +57,9 @@ code change needed.
 
 ### 🔍 **Open (2026-10-25): tool follow-up steps fail over into the free pool**
 
-A tool follow-up step (`src/stream-orchestrator.ts`, `isToolFollowUp`) puts
-the last model first and the `fallback` group (free, cheapest first)
-behind it — whatever group the turn started in. A planning turn whose model
-fails mid-loop would continue on a free model. Found by code reading; the
-impact is not measured yet — measure in the log first, then decide.
+Same problem as review item I3 below, kept as ONE entry there (measured now:
+the 2026-11-03 incident is the live case). Structural answer proposed in
+`docs/plans/2026-11-04-virtual-models-routing.md`.
 
 ### ✅ **`delegation.expensive_groups` omitted `planning` — CLOSED 2026-11-02 (already fixed)**
 
