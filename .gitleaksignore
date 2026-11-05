@@ -11,4 +11,4 @@ c4bfedb012ae2fd133c4f536fe5e1698a6c50f6c:src/slug-matcher.ts:generic-api-key:153
 
 # Same fixture after the one-time Prettier reformat moved the line 39 -> 40
 # (commit aeb8bb6): the invented pk_live_/tok_ strings are not credentials.
-aeb8bb6970fa6f2646147ecf533c708e1efb6ff7:test/rate-limit-body-log.test.ts:generic-api-key:40
+df7db8e72ad444cf7d3fb5e155bfe0b0b1690e39:test/rate-limit-body-log.test.ts:generic-api-key:40
