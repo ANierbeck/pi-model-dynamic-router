@@ -98,6 +98,31 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
     });
   });
 
+    // Pins for the matcher's edges (review of #102). A lone `*` is a catch-all,
+    // an empty entry matches nothing, globs are case-insensitive (the same
+    // matcher as exclude.models), and exact entries stay case-sensitive.
+    it('a lone `*` drops every model in the group', () => {
+      const g: Group = { method: 'best', exclude_models: ['*'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toEqual([]);
+    });
+
+    it('an empty entry drops nothing', () => {
+      const plain = applyGroupFilters(REFS, { method: 'best' } as any, CFG);
+      const g: Group = { method: 'best', exclude_models: [''] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toEqual(plain);
+    });
+
+    it('a glob matches case-insensitively', () => {
+      const g: Group = { method: 'best', exclude_models: ['*:FREE'] } as any;
+      const out = applyGroupFilters(REFS, g, CFG);
+      expect(out).not.toContain('openrouter/qwen3-4b:free');
+    });
+
+    it('an exact entry stays case-sensitive', () => {
+      const g: Group = { method: 'best', exclude_models: ['OPENROUTER/PAID-MODEL'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toContain('openrouter/paid-model');
+    });
+
   describe('min_gdpval', () => {
     it('strict positive threshold drops unscored models (no fallback)', () => {
       // This is the 13/148-collapse fix: unscored models must NOT leak past

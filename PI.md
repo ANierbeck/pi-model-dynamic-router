@@ -262,6 +262,8 @@ Filter out specific providers or models from selection:
 }
 ```
 
+Each `exclude_models` entry is an exact ref, or a glob where `*` matches any run of characters (case-insensitive, the same matcher as `exclude.models`). `"*:free"` drops every `:free` tier in that group. `["*"]` drops every model in the group; `[""]` drops nothing.
+
 **Note:** Currently not actively used in the default config, but available for custom configurations.
 
 ### Files
