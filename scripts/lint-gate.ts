@@ -70,14 +70,19 @@ export function prePushLintPlan(stdin: string, head: string, dirty: readonly str
   return { run: true };
 }
 
-function prePushPlanFromGit(root: string): PrePushLintPlan {
+/**
+ * The plan for a real checkout: `stdin` is git's ref list for the hook, the
+ * rest is read from `root`. Exported so the git-status parsing (renames,
+ * untracked files, pathspec) is tested against real repositories.
+ */
+export function prePushPlanFromGit(root: string, stdin: string): PrePushLintPlan {
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: root, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
   const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ...LINT_INPUTS)
     .split('\n')
     .filter((l) => l.trim() !== '')
     .map((l) => l.slice(3));
-  return prePushLintPlan(readFileSync(0, 'utf-8'), git('rev-parse', 'HEAD').trim(), dirty);
+  return prePushLintPlan(stdin, git('rev-parse', 'HEAD').trim(), dirty);
 }
 
 /** Aggregate ESLint results into canonical (file, rule) counts. */
@@ -150,7 +155,7 @@ async function main(): Promise<void> {
   const root = process.cwd();
   const write = process.argv.includes('--write');
   if (process.argv.includes('--pre-push')) {
-    const plan = prePushPlanFromGit(root);
+    const plan = prePushPlanFromGit(root, readFileSync(0, 'utf-8'));
     if (!plan.run) {
       console.error(`lint gate (pre-push): skipped, ${plan.reason}`);
       return;

@@ -11,6 +11,11 @@
 hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 refs=$(cat)
 printf '%s\n' "$refs" | node "$hook_dir/../scripts/secret-scan.ts" --pre-push || exit $?
+# The gate is the one of the repository being pushed (the working directory),
+# not the one next to this hook: core.hooksPath can point at another checkout.
+# A checkout without the gate still skips, announced on stderr.
 if [ -f scripts/lint-gate.ts ]; then
   printf '%s\n' "$refs" | node scripts/lint-gate.ts --pre-push || exit $?
+else
+  echo "pre-push: no lint gate in this checkout (scripts/lint-gate.ts), lint skipped" >&2
 fi
