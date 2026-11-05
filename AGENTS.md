@@ -87,6 +87,9 @@
   `CEILING_FINDINGS` in `test/lint-baseline.test.ts` in the same change
   (`npm run lint -- --write` regenerates the baseline; `npm run lint:fix`
   applies the auto-fixes but leaves the baseline stale until `--write` runs).
+  The pre-push hook runs the same gate after the secret scan; it skips with
+  a notice when the working tree is not what is being pushed (another ref,
+  or uncommitted changes in the lint inputs), and CI stays the authority.
 - `npx vitest run` must be green (the exact count ratchets with every
   round — as of the v2-r3 taxonomy migration + output-reserve fix + review fixes +
   decision-log prev + laya probabilities (+ validation) + laya background
