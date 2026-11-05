@@ -21,10 +21,9 @@ import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
 import * as logger from '../src/logger.ts';
 
-vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
-  return { ...actual, callOllama: vi.fn(), isOllamaAvailable: vi.fn() };
-});
+vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockPatched(await importOriginal())
+);
 
 vi.mock('../src/logger.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/logger.ts')>();

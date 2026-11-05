@@ -13,6 +13,7 @@ import { isProviderWedged } from '../src/provider-watchdog.ts';
 import type { Cache } from '../src/types.ts';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
@@ -139,7 +140,7 @@ describe('driveStream feeds the local-provider watchdog', () => {
         }
         return (async function* () {
           yield { type: 'text_delta', delta: 'cloud answered' };
-          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+          yield doneEvent();
         })();
       });
       const modelRegistry = {

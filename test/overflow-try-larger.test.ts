@@ -92,6 +92,7 @@ import {
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 // Under vitest, import('../index.ts') runs the TS source, so import.meta.url
 // resolves to the repo root/index.ts and extDir = repo root (NOT dist/). loadLayeredConfig
@@ -160,7 +161,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         // big model succeeds.
         return (async function* () {
           yield { type: 'text_delta', delta: 'served by the big model' };
-          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+          yield doneEvent();
         })();
       });
       const modelRegistry = {
@@ -242,7 +243,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         }
         return (async function* () {
           yield { type: 'text_delta', delta: 'served by the big model' };
-          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+          yield doneEvent();
         })();
       });
       const modelRegistry = {

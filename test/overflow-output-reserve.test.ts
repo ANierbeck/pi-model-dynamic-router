@@ -17,6 +17,7 @@ import {
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -60,7 +61,7 @@ async function runGroup(options: Record<string, unknown>, text: string) {
     const streamSimple = vi.fn((model: any) =>
       (async function* () {
         yield { type: 'text_delta', delta: `served by ${model.id}` };
-        yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+        yield doneEvent();
       })()
     );
     const modelRegistry = {

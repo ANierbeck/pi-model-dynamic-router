@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 // These tests exercise the CONCURRENCY machinery, not local availability.
 // The driveStream availability guard (2026-10-03) skips ollama/* candidates
@@ -96,7 +97,7 @@ describe('driveStream: local-stream concurrency limit', () => {
               maxConcurrentOllama = Math.max(maxConcurrentOllama, openOllamaStreams);
               try {
                 yield { type: 'text_delta', delta: `ollama ${model.id} ok` };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               } finally {
                 openOllamaStreams--;
               }
@@ -105,7 +106,7 @@ describe('driveStream: local-stream concurrency limit', () => {
           if (model.provider === 'cloud') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'cloud fallback ok' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           }
           return (async function* () {})();
@@ -180,7 +181,7 @@ describe('driveStream: local-stream concurrency limit', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'next model ok' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {

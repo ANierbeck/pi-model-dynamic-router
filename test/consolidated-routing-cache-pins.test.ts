@@ -23,6 +23,7 @@ import type { Group } from '../src/types.ts';
 import { test, beforeAll, afterAll } from 'vitest';
 import { lookupGdp } from '../src/metrics.js';
 import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 describe('cache-session-reload', () => {
   // test/cache-session-reload.test.ts
@@ -512,7 +513,7 @@ describe('dynamic-config-staleness', () => {
             return (async function* () {
               await new Promise((r) => setTimeout(r, 500)); // > 100ms static override, < 999999ms stale value
               yield { type: 'text_delta', delta: 'should be aborted by the 100ms override' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           });
           const modelRegistry = {
@@ -1240,7 +1241,7 @@ describe('sticky-model-regression', () => {
       function makeStream(providerId: string) {
         return (async function* () {
           yield { type: 'text_delta', text: `hi from ${providerId}` };
-          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+          yield doneEvent();
         })();
       }
 

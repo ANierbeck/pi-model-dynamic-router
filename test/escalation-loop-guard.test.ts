@@ -11,10 +11,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
-  return { ...actual, callOllama: vi.fn(), isOllamaAvailable: vi.fn() };
-});
+vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockPatched(await importOriginal())
+);
 
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { detectLoopWithLLM } from '../src/escalation.ts';

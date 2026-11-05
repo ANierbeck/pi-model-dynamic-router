@@ -21,50 +21,24 @@
 // model's real prior answer.
 
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import { drainStream, makeExtensionContext } from './helpers/extension-harness.ts';
 import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
+import { withRouterEnv } from './helpers/router-env.ts';
 
-vi.mock('../src/ollama-utils.ts', () => ({
-  callOllama: vi.fn(async () =>
-    JSON.stringify({ category: 'simple', reason: 'test', confidence: 0.9 })
-  ),
-  // Daemon probed as reachable so the mocked Ollama path stays exercised.
-  isOllamaAvailable: vi.fn(async () => true),
-}));
+vi.mock('../src/ollama-utils.ts', async () =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockModule()
+);
 
-const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-narration-leak-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-  writeNoOpScanCache(scanCachePath, { localModels: ['foo:3b'] });
-
-  try {
-    vi.resetModules();
-    const mod = await import('../index.ts');
-    await fn(mod.default as any, tmpDir);
-  } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
-  }
+  return withRouterEnv(fn, { config: configOverride, seedScanCache: { localModels: ['foo:3b'] } });
 }
 
 describe('classifier context: router narration must not leak into lastAssistantSnippet', () => {
@@ -99,7 +73,7 @@ describe('classifier context: router narration must not leak into lastAssistantS
         const streamSimple = vi.fn(() =>
           (async function* () {
             yield { type: 'text_delta', delta: 'scout model reply' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })()
         );
         const modelRegistry = {
