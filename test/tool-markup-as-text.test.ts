@@ -277,6 +277,45 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
     }
   });
 
+  it('holds thinking too once answer text is held — no reorder, no sparse content array (review of #101, round 3)', async () => {
+    // Interleaved stream: a little answer text, THEN a thinking block, all inside
+    // the hold window. Forwarding the thinking while the text is held would put
+    // content[1] in front of content[0] at the consumer (sparse partial array,
+    // pi-messages "Invalid contentIndex" when folding from scratch).
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'text_start', contentIndex: 0, partial: {} } as any;
+          yield { type: 'text_delta', contentIndex: 0, delta: 'Let me check…', partial: {} } as any;
+          yield { type: 'thinking_start', contentIndex: 1, partial: {} } as any;
+          yield { type: 'thinking_delta', contentIndex: 1, delta: 'hmm', partial: {} } as any;
+          yield { type: 'thinking_end', contentIndex: 1, content: 'hmm', partial: {} } as any;
+          yield { type: 'text_delta', contentIndex: 0, delta: 'ANSWER', partial: {} } as any;
+          yield { type: 'text_end', contentIndex: 0, content: 'Let me check…ANSWER', partial: {} } as any;
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      // The model's own answer text opened first (the router narration is a
+      // separate earlier text block, so key on the model's delta, not on the
+      // first text event overall).
+      const firstText = events.findIndex((e: any) => e.type === 'text_delta' && String(e.delta ?? '').includes('Let me check'));
+      const firstThinking = events.findIndex((e: any) => e.type === 'thinking_start');
+      expect(firstText).toBeGreaterThanOrEqual(0);
+      // The thinking block followed the answer text, so it must reach the
+      // consumer after it — forwarding it while the text is held would reorder
+      // content[1] in front of content[0] (sparse partial array downstream).
+      expect(firstThinking).toBeGreaterThan(firstText);
+      // Nothing was lost: the thinking and the full answer both arrived.
+      expect(events.some((e: any) => e.type === 'thinking_delta')).toBe(true);
+      expect(textOf(events)).toContain('ANSWER');
+    } finally {
+      harness.cleanup();
+    }
+  });
+
   it('still catches a markup opening that follows a long thinking phase (review of #101)', async () => {
     // Reasoning models think for a while before they print the call. Thinking is
     // not the answer: the hold must start at the answer's first text event, and

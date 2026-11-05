@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- The tool-markup hold no longer lets a thinking block overtake held answer text: once the first answer text is held, all later events are held too, so the consumer never sees `content[1]` before `content[0]` (reorder + sparse partial array). Thinking before any answer text still passes through immediately.
+
+
 ### Changed — BREAKING (five-group layout, 2.0)
 
 - **Thirteen groups become five category groups plus the special groups.** Every classification category now selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`. `dynamic`, `bulk_reader` and `code_writer` stay as special groups. The old names are gone with no read alias (decision D3): `trivial`, `scout` and `fallback` merged into `simple`; `operational` → `standard`; `tactical` → `code_complex`; `strategic` → `planning`; `complex` has no successor (closest: `standard`). Plan: `docs/plans/2026-10-25-category-group-mismatch.md`; measurement: `docs/research/2026-10-28-pool-content-replay.md`.

@@ -348,10 +348,15 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // While the hold is open, the answer's TEXT events (text_start, text_delta,
     // text_end) are held in order: text_start / text_end forwarded ahead of their
     // held deltas would reach the consumer out of order. Thinking and other events
-    // pass straight through, so a long reasoning phase is not held back and the
-    // window counts answer text only (review of #101: thinking alone released the
-    // hold before any text arrived, and the markup check was skipped).
+    // pass straight through UNTIL the first answer text is held — from then on
+    // everything is held, so an interleaved thinking block cannot overtake the
+    // held text (content[1] in front of content[0]: reorder + sparse partial
+    // array downstream; review of #101 round 3). Thinking BEFORE any text still
+    // passes through, so a long reasoning phase is not held back and the window
+    // counts answer text only (review of #101 round 2: thinking alone released
+    // the hold before any text arrived, and the markup check was skipped).
     const heldEvents: AssistantMessageEvent[] = [];
+    let heldAnswerText = false;
     // The delta as the accumulator reads it: fixtures and some providers send `text`.
     const deltaOf = (e: AssistantMessageEvent): string => {
       const fields = e as { delta?: unknown; text?: unknown };
@@ -366,12 +371,14 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     const flushHeld = (): void => {
       if (!holdActive) return;
       holdActive = false;
+      heldAnswerText = false;
       for (const held of heldEvents) proxy.push(held);
       heldEvents.length = 0;
     };
     /** Drops the held events unforwarded: the content of a rejected candidate. */
     const discardHeld = (): void => {
       holdActive = false;
+      heldAnswerText = false;
       heldEvents.length = 0;
     };
     let toolMarkupAsText = false;
@@ -642,8 +649,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               return 'done';
             }
           }
-          if (holdActive && isAnswerTextEvent(event)) {
+          if (holdActive && (isAnswerTextEvent(event) || heldAnswerText)) {
             heldEvents.push(event);
+            if (isAnswerTextEvent(event)) heldAnswerText = true;
             if (event.type === 'text_delta') {
               const delta = deltaOf(event);
               heldChars += delta.length;
