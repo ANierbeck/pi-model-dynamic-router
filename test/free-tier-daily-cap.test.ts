@@ -22,16 +22,14 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { routerStatePaths } from './helpers/extension-harness.ts';
+import path from 'node:path';
 import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
+import { withRouterEnv } from './helpers/router-env.ts';
 
-const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 async function drainStream(stream: any) {
   const events: any[] = [];
@@ -43,27 +41,20 @@ async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-free-day-cap-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
+  const { dynamicConfigPath } = routerStatePaths();
   const dynBak = `${dynamicConfigPath}.freedaycap-bak`;
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-  writeNoOpScanCache(scanCachePath);
-
-  try {
-    vi.resetModules();
-    const mod = await import('../index.ts');
-    await fn(mod.default as any, tmpDir);
-  } finally {
-    cwdSpy.mockRestore();
-    vi.restoreAllMocks();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    removeNoOpScanCache(scanCachePath);
-    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-  }
+  let hadDyn = false;
+  return withRouterEnv(fn, {
+    config: configOverride,
+    beforeImport: () => {
+      hadDyn = fs.existsSync(dynamicConfigPath);
+      if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+    },
+    teardown: () => {
+      vi.restoreAllMocks();
+      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+    },
+  });
 }
 
 const FREE_DAY_CAP_429 =
@@ -181,12 +172,12 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
               // Must NEVER be reached: the account-wide cooldown must have
               // taken free-b out of the cascade before the loop reaches it.
               yield { type: 'text_delta', delta: 'WRONG: served by free-b' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by the paid model' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {
@@ -295,7 +286,7 @@ describe('driveStream: "trying X" narration lookahead', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by ok-model' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {

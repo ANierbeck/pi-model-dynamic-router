@@ -6,13 +6,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../src/ollama-utils', () => ({
-  callOllama: vi.fn(async (_model: string, _prompt: string, _opts: any) =>
-    JSON.stringify({ category: 'code_complex', reason: 'cached test', confidence: 0.9 })
-  ),
-  // Daemon probed as reachable so the mocked Ollama path stays exercised.
-  isOllamaAvailable: vi.fn(async () => true),
-}));
+vi.mock('../src/ollama-utils.ts', async () =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockModule({ category: 'code_complex', reason: 'cached test' })
+);
 
 // Import AFTER the mock is registered.
 import { classifyPrompt } from '../src/content-classifier.ts';

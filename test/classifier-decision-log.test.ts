@@ -15,10 +15,9 @@ import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
 import type { Config, Cache } from '../src/types.ts';
 
-vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
-  return { ...actual, callOllama: vi.fn(), isOllamaAvailable: vi.fn() };
-});
+vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockPatched(await importOriginal())
+);
 
 const logFile = () => join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 const records = (): any[] =>

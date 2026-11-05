@@ -37,16 +37,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+
+
+import { makeExtensionContext , routerStatePaths} from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
-
-const { dynamicConfigPath, scanCachePath } = routerStatePaths();
+import { withRouterEnv } from './helpers/router-env.ts';
 
 async function drainStream(stream: AsyncIterable<AssistantMessageEvent>): Promise<AssistantMessageEvent[]> {
   const events: AssistantMessageEvent[] = [];
@@ -202,21 +201,13 @@ async function driveCollapseScenario(
     backoff_minutes: [0.02, 0.04],
     soft_backoff_ms: [1000, 2000],
   };
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-collapse-narr-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(cfg));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-  const hadDyn = fs.existsSync(dynamicConfigPath);
-  const hadCache = fs.existsSync(scanCachePath);
-  if (hadDyn) fs.renameSync(dynamicConfigPath, `${dynamicConfigPath}.bak`);
-  if (hadCache) fs.renameSync(scanCachePath, `${scanCachePath}.bak`);
-  writeNoOpScanCache(scanCachePath);
-
-  try {
-    vi.resetModules();
-    const mod = await import('../index.ts');
-    const defaultExport: any = mod.default;
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
+  const dynBak = `${dynamicConfigPath}.bak`;
+  const cacheBak = `${scanCachePath}.bak`;
+  let hadDyn = false;
+  let hadCache = false;
+  await withRouterEnv(
+    async (defaultExport: any, tmpDir) => {
     const { ctx: pi, onHandlers } = makeExtensionContext();
     defaultExport(pi);
 
@@ -242,13 +233,24 @@ async function driveCollapseScenario(
     );
 
     assert({ text: allText(events), errText: streamErrorText(events), calls: mock.calls });
-  } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    if (hadDyn) fs.renameSync(`${dynamicConfigPath}.bak`, dynamicConfigPath);
-    removeNoOpScanCache(scanCachePath);
-    if (hadCache) fs.renameSync(`${scanCachePath}.bak`, scanCachePath);
-  }
+    },
+    {
+      config: cfg,
+      seedScanCache: false,
+      beforeImport: () => {
+        hadDyn = fs.existsSync(dynamicConfigPath);
+        hadCache = fs.existsSync(scanCachePath);
+        if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+        if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+        writeNoOpScanCache(scanCachePath);
+      },
+      teardown: () => {
+        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+        removeNoOpScanCache(scanCachePath);
+        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      },
+    }
+  );
 }
 
 describe('cooldown-collapse: retried-result narrations (B3 / mutation R3)', () => {

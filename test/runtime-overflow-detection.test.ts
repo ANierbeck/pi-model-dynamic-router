@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -140,7 +141,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
               type: 'text_delta',
               delta: 'Prompt contains 300000 tokens, too large for model with 262144 maximum context length',
             };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {
@@ -243,7 +244,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
                 'maximum context length before dispatching, and falls back to ' +
                 'compaction if the conversation is too large.',
             };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {

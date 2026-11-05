@@ -25,6 +25,7 @@ import {
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 const scanCachePath = path.join(
   process.env.PI_ROUTER_STATE_DIR!,
@@ -81,7 +82,7 @@ async function bootToolResultHarness() {
   const streamSimple = vi.fn(() =>
     (async function* () {
       yield { type: 'text_delta', delta: 'working on it' };
-      yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+      yield doneEvent();
     })()
   );
   const modelRegistry = {

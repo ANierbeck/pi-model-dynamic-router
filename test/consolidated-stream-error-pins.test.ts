@@ -16,7 +16,11 @@ import {
 } from './helpers/noop-scan-cache.ts';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
-import { drainStream, makeExtensionContext, routerStatePaths, parkStateFiles } from './helpers/extension-harness.ts';
+import { drainStream, makeExtensionContext, parkStateFiles , routerStatePaths} from './helpers/extension-harness.ts';
+
+const { dynamicConfigPath, scanCachePath } = routerStatePaths();
+import { doneEvent } from './helpers/stream-fixtures.ts';
+import { withRouterEnv } from './helpers/router-env.ts';
 
 describe('422-client-error-not-rate-limit', () => {
   /**
@@ -40,32 +44,12 @@ describe('422-client-error-not-rate-limit', () => {
    * behavior with the exact production error text.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-422-soft-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: bare 422 on a paid cloud model is a soft failure, not a rate limit', () => {
@@ -160,32 +144,12 @@ describe('abort-not-provider-error', () => {
    * recorded against the model and no further candidates tried.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-abort-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: user-abort error events', () => {
@@ -295,32 +259,12 @@ describe('abort-text-not-rate-limit', () => {
    * candidate retry.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-abort-text-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: free-text abort inside an error event (not reason:"aborted")', () => {
@@ -402,32 +346,12 @@ describe('blocklist-drivestream', () => {
   // End-to-end check for ADR-0008 Tier 1: a provider_error with a known-permanent
   // OpenRouter signature blocks the model for the following requests.
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-blocklist-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: learned blocklist (ADR-0008, Tier 1)', () => {
@@ -474,7 +398,7 @@ describe('blocklist-drivestream', () => {
             }
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           });
           const modelRegistry = {
@@ -539,32 +463,11 @@ describe('claude-bridge-empty-response-narration', () => {
   //     the router's own cooldown is narrated as "backing off until …".
 
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-bridge-empty-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('claude-bridge empty response narration (no invented cause)', () => {
@@ -604,12 +507,12 @@ describe('claude-bridge-empty-response-narration', () => {
           const streamSimple = vi.fn((model: any) => {
             if (model.provider === 'claude-bridge') {
               return (async function* () {
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the next model' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           });
           const modelRegistry = {
@@ -924,7 +827,7 @@ describe('context-overflow', () => {
           if (model.id === 'big-model') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the big-context fallback' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           }
           return (async function* () {})();
@@ -997,8 +900,6 @@ describe('cooldown-collapse', () => {
    * candidate pool is exactly our single mocked model.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   function allText(events: AssistantMessageEvent[]): string {
     return events
@@ -1034,7 +935,7 @@ describe('cooldown-collapse', () => {
           }
           // Call 2: the in-pass collapse force-retry succeeds.
           yield { type: "text_delta", delta: `recovered after ${calls} calls` };
-          yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+          yield doneEvent();
         })();
       });
 
@@ -1237,32 +1138,12 @@ describe('provider-error-detection', () => {
    * driveStream records a soft failure so the next candidate gets tried.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-provider-err-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: mid-stream provider error (unrecognized finish_reason)', () => {
@@ -1321,7 +1202,7 @@ describe('provider-error-detection', () => {
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {})();
@@ -1398,32 +1279,12 @@ describe('provider-error-paid-cloud-cooldown', () => {
    * The wording is a direct, observable proxy for which escalation branch ran.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-paid-provider-err-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: provider_error on a paid cloud model', () => {
@@ -1528,8 +1389,6 @@ describe('reasoning-timeout', () => {
    * of 500ms is > 100ms (short timeout fires) but < 5000ms (long doesn't).
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   function textDeltaText(events: AssistantMessageEvent[]): string {
     return events
@@ -1582,7 +1441,7 @@ describe('reasoning-timeout', () => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `thought for a while, then answered` };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {
@@ -1660,7 +1519,7 @@ describe('reasoning-timeout', () => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `should never reach here` };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {
@@ -1709,33 +1568,12 @@ describe('repetition-loop-detection', () => {
    * window and then retrying the same unhealthy model on the next turn.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-repetition-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: repetition loop detection', () => {
@@ -1787,13 +1625,13 @@ describe('repetition-loop-detection', () => {
                 for (let i = 0; i < 10; i++) {
                   yield { type: 'text_delta', delta: sentence };
                 }
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {})();
@@ -1845,32 +1683,12 @@ describe('reset-msg-fallback', () => {
    * case no cooldown was applied to it at all).
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-reset-msg-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: rate-limit reset-time messaging fallback', () => {
@@ -2149,32 +1967,12 @@ describe('stall-timeout-detection', () => {
    * content is reported as `stall_timeout` (distinct from `empty_timeout`).
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-stall-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: mid-stream stall detection', () => {
@@ -2235,7 +2033,7 @@ describe('stall-timeout-detection', () => {
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {})();
@@ -2307,32 +2105,12 @@ describe('summarization-error-message', () => {
    * classifier (guards against the retry-storm regression).
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-summ-err-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: all-candidates-failed errorMessage', () => {
@@ -2434,32 +2212,12 @@ describe('truncated-length', () => {
    * "lazy 'stop'" variant of the failure remains diagnosable.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-trunc-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-    const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
-      restoreState();
-    }
+    return withRouterEnv(fn, { config: configOverride });
   }
 
   describe('driveStream: stopReason length interception', () => {
@@ -2516,7 +2274,7 @@ describe('truncated-length', () => {
             if (model.id === 'healthy-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'served by the healthy fallback' };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {})();
@@ -2588,7 +2346,7 @@ describe('truncated-length', () => {
             if (model.id === 'normal-model') {
               return (async function* () {
                 yield { type: 'text_delta', delta: 'complete answer' };
-                yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                yield doneEvent();
               })();
             }
             return (async function* () {})();

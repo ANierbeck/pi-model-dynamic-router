@@ -18,6 +18,7 @@ import {
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -94,7 +95,7 @@ describe('driveStream: ollama availability guard', () => {
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'served by the remote model' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {
@@ -145,12 +146,12 @@ describe('driveStream: ollama availability guard', () => {
           if (model.provider === 'ollama') {
             return (async function* () {
               yield { type: 'text_delta', delta: 'served by the local model' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })();
           }
           return (async function* () {
             yield { type: 'text_delta', delta: 'must not be reached' };
-            yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+            yield doneEvent();
           })();
         });
         const modelRegistry = {

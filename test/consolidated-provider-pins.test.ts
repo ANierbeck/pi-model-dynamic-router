@@ -9,7 +9,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { drainStream, routerStatePaths } from './helpers/extension-harness.ts';
+import { drainStream , routerStatePaths} from './helpers/extension-harness.ts';
+import { doneEvent } from './helpers/stream-fixtures.ts';
+import { withRouterEnv } from './helpers/router-env.ts';
 
 describe('free-model-on-demand-registration', () => {
   /**
@@ -24,38 +26,29 @@ describe('free-model-on-demand-registration', () => {
    * to the next non-free model (claude-sonnet-5) on every turn.
    */
 
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-free-reg-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
+    const { dynamicConfigPath, scanCachePath } = routerStatePaths();
     const dynBak = `${dynamicConfigPath}.freereg-bak`;
     const cacheBak = `${scanCachePath}.freereg-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    const hadCache = fs.existsSync(scanCachePath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    if (hadCache) fs.renameSync(scanCachePath, cacheBak);
-
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
-      await fn(mod.default as any, tmpDir);
-    } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
-      if (hadCache) fs.renameSync(cacheBak, scanCachePath);
-    }
+    let hadDyn = false;
+    let hadCache = false;
+    return withRouterEnv(fn, {
+      config: configOverride,
+      beforeImport: () => {
+        hadDyn = fs.existsSync(dynamicConfigPath);
+        hadCache = fs.existsSync(scanCachePath);
+        if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+        if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+      },
+      teardown: () => {
+        if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+        if (hadCache) fs.renameSync(cacheBak, scanCachePath);
+      },
+    });
   }
 
   describe('driveStream: on-demand free-model registration', () => {
@@ -118,7 +111,7 @@ describe('free-model-on-demand-registration', () => {
             getApiKeyForProvider: async () => 'sk-or-test-fake-key',
             runtime: { streamSimple: vi.fn(() => (async function* () {
               yield { type: 'text_delta', delta: 'glm free model ok' };
-              yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+              yield doneEvent();
             })()) },
           };
           // Hook: pi.registerProvider now flips openrouterRegistered in the
@@ -209,12 +202,12 @@ describe('free-model-on-demand-registration', () => {
                 if (model.id === 'some-paid-model') {
                   return (async function* () {
                     yield { type: 'text_delta', delta: 'paid model survived' };
-                    yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                    yield doneEvent();
                   })();
                 }
                 return (async function* () {
                   yield { type: 'text_delta', delta: 'free model ok' };
-                  yield { type: 'done', reason: 'stop', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'stop', timestamp: Date.now() } };
+                  yield doneEvent();
                 })();
               }),
             },

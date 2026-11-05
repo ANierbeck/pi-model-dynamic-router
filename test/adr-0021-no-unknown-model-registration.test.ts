@@ -38,10 +38,9 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+import { withRouterEnv } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -50,57 +49,38 @@ async function withIsolatedRouter(
   scanModels: Array<Record<string, unknown>>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-adr-0021-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-  // Hermetic + fast (ADR-0022): with keys resolved by Pi, the LLM matcher's
-  // free-cloud fallback is eligible whenever the registry stub returns a
-  // key — so it attempts real HTTP calls. Stub fetch to reject so the
-  // matcher fails fast instead of hitting the network (and so the dynamic
-  // snapshot lands well before the assertions).
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (() =>
-    Promise.reject(new Error('network disabled during test (adr-0021)'))) as typeof fetch;
-
-  const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
-
-  // lastScanTimestamp 0 = expired cache, so the background scan regenerates
-  // router-config.dynamic.json (the snapshot assertions need that). The
-  // gdpval/model-score fixtures below make both refs scoreable so the
-  // snapshot builder neither drops the known ref as unscored nor needs the
-  // LLM matcher (populateLlmMatches early-returns when nothing is unscored).
-  fs.writeFileSync(
-    scanCachePath,
-    JSON.stringify({
-      available_models: scanModels,
-      // ref → slug resolution so lookupGdp finds a score without the LLM.
-      model_score_cache: {
-        'mistral-zai/zai-glm-5-2': 'glm-5-2',
-        'mistral-zai/glm-5-2': 'glm-5-2',
-      },
-      gdpval_scores: { 'glm-5-2': 1497 },
-      openrouter_pricing: {},
-      lastScanTimestamp: 0,
-      // Hermetic fixtures (roborev review round): without gdpval_scraped the
-      // background scan scrapes GDPval from the network; without
-      // models_cached it re-fetches model inventories.
-      gdpval_scraped: true,
-      models_cached: new Date().toISOString(),
-    })
-  );
-
-  try {
-    vi.resetModules();
-    const mod = await import('../index.ts');
-    await fn(mod.default as any, tmpDir);
-  } finally {
-    cwdSpy.mockRestore();
-    globalThis.fetch = originalFetch;
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
-  }
+  return withRouterEnv(fn, {
+    config: configOverride,
+    seedScanCache: false,
+    disableNetwork: 'network disabled during test (adr-0021)',
+    beforeImport: () => {
+      // lastScanTimestamp 0 = expired cache, so the background scan regenerates
+      // router-config.dynamic.json (the snapshot assertions need that). The
+      // gdpval/model-score fixtures below make both refs scoreable so the
+      // snapshot builder neither drops the known ref as unscored nor needs the
+      // LLM matcher (populateLlmMatches early-returns when nothing is unscored).
+      fs.writeFileSync(
+        scanCachePath,
+        JSON.stringify({
+          available_models: scanModels,
+          // ref → slug resolution so lookupGdp finds a score without the LLM.
+          model_score_cache: {
+            'mistral-zai/zai-glm-5-2': 'glm-5-2',
+            'mistral-zai/glm-5-2': 'glm-5-2',
+          },
+          gdpval_scores: { 'glm-5-2': 1497 },
+          openrouter_pricing: {},
+          lastScanTimestamp: 0,
+          // Hermetic fixtures (roborev review round): without gdpval_scraped the
+          // background scan scrapes GDPval from the network; without
+          // models_cached it re-fetches model inventories.
+          gdpval_scraped: true,
+          models_cached: new Date().toISOString(),
+        })
+      );
+    },
+    teardown: () => removeNoOpScanCache(scanCachePath),
+  });
 }
 
 /** pi-known chat model the scan also reports. */

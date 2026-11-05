@@ -17,10 +17,9 @@ import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
 import { isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
-vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
-  return { ...actual, callOllama: vi.fn(), isOllamaAvailable: vi.fn() };
-});
+vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
+  (await import('./helpers/ollama-mock.ts')).ollamaMockPatched(await importOriginal())
+);
 
 const mockModel = { id: 'some-model', provider: 'openrouter' };
 const cloudReply = (r: unknown) => ({
