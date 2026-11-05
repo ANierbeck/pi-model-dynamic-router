@@ -182,6 +182,8 @@ describe('pre-push hook end to end', () => {
     const r = push();
     expect(r.status, r.stderr).toBe(0);
     expect(git(remote, 'rev-list', '--count', 'main')).toBe('2');
+    // This checkout has no lint gate, so the skip must be announced, not silent.
+    expect(r.stderr).toContain('no lint gate in this checkout');
   });
 
   // The hook runs the pushed repository's OWN lint gate (scripts/lint-gate.ts)

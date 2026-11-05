@@ -76,7 +76,8 @@ describe('prePushPlanFromGit — against real git status', () => {
   });
 
   it('skips when a pushed ref is not the checked-out HEAD', () => {
-    const older = git(repo, 'rev-parse', 'HEAD~0');
+    // The commit being pushed: the HEAD before the next commit below.
+    const older = git(repo, 'rev-parse', 'HEAD');
     writeFileSync(join(repo, 'docs', 'b.md'), 'b\n');
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'second');
