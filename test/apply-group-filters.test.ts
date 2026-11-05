@@ -84,6 +84,18 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       expect(out).not.toContain('ollama/qwen3.5');
       expect(out).toContain('openrouter/qwen3-4b:free');
     });
+
+    // Glob entries, the same matcher as the global exclude.models. Needed
+    // because the free tier is a SUFFIX (`…:free`), which the family-prefix
+    // agent gate cannot see, and a global rule would also remove free models
+    // from `simple`, where they belong.
+    it('drops glob patterns (e.g. every `:free` tier) and keeps the rest', () => {
+      const g: Group = { method: 'best', exclude_models: ['*:free'] } as any;
+      const out = applyGroupFilters(REFS, g, CFG);
+      expect(out).not.toContain('openrouter/qwen3-4b:free');
+      expect(out).toContain('openrouter/paid-model');
+      expect(out).toContain('ollama/qwen3.5');
+    });
   });
 
   describe('min_gdpval', () => {
