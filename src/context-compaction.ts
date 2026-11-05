@@ -29,7 +29,7 @@
 // plain compact() call below.
 
 import type { Config, ContextBudgetConfig, UsageLogEntry } from './types.ts';
-import { fmt } from './utils.ts';
+import { fmt, textOf } from './utils.ts';
 import { routerLog, warnLog } from './logger.ts';
 
 /**
@@ -174,7 +174,7 @@ export function runContextCompaction(opts: {
   try {
     runContextCompactionInner(opts);
   } catch (err) {
-    warnLog(`[compaction] evaluation failed (fail-open, no compaction): ${err instanceof Error ? err.message : String(err)}`);
+    warnLog(`[compaction] evaluation failed (fail-open, no compaction): ${err instanceof Error ? err.message : textOf(err)}`);
   }
 }
 

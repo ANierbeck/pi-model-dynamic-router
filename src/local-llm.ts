@@ -160,7 +160,7 @@ export async function callLocalLlm(prompt: string, deps: LocalLlmDeps): Promise<
         timeoutMs,
       });
       return content;
-    } catch (err) {
+    } catch {
       // Fall through to cloud fallback.
       // (Intentionally swallowed; cloud fallback is the safety net.)
     }
@@ -277,7 +277,7 @@ async function collectFreeCloudModels(
     const freeModels = provConfig.free_models;
     if (!freeModels || freeModels.length === 0) continue;
     const def = providers[provId];
-    if (!def || !def.baseUrl || def.api !== 'openai-completions') continue;
+    if (!def?.baseUrl || def.api !== 'openai-completions') continue;
     const apiKey = await resolveApiKey(provId);
     if (!apiKey) continue;
 

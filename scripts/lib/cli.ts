@@ -7,6 +7,7 @@
 // silently ignored in another. One implementation, both shapes.
 
 import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -19,7 +20,7 @@ export function arg(name: string, argv: string[] = process.argv.slice(2)): strin
   const eq = argv.find((a) => a.startsWith(`--${name}=`));
   if (eq !== undefined) return eq.slice(name.length + 3);
   const i = argv.indexOf(`--${name}`);
-  if (i >= 0 && i + 1 < argv.length && !argv[i + 1]!.startsWith('--')) return argv[i + 1];
+  if (i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--')) return argv[i + 1];
   return undefined;
 }
 
@@ -33,18 +34,25 @@ export function arg(name: string, argv: string[] = process.argv.slice(2)): strin
  * pre-push hook silently stopped rejecting leaks).
  */
 export function invokedDirectly(moduleUrl: string): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  // realpath first (symlinked entry points); if that throws, fall back to the
+  // resolved path instead of answering "not the entry" — a false here makes a
+  // gate script exit 0 without checking anything.
+  let entryPath: string;
   try {
-    return !!process.argv[1] && moduleUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+    entryPath = realpathSync(entry);
   } catch {
-    return false;
+    entryPath = resolve(entry);
   }
+  return moduleUrl === pathToFileURL(entryPath).href;
 }
 
 /** 1-based line/column of a mutation report -> offset into the source text. */
 export function offsetOf(source: string, line: number, column: number): number {
   const lines = source.split('\n');
   let off = 0;
-  for (let i = 0; i < line - 1; i++) off += lines[i]!.length + 1;
+  for (let i = 0; i < line - 1; i++) off += lines[i].length + 1;
   return off + column - 1;
 }
 

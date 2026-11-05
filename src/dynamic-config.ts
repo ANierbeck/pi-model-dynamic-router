@@ -533,7 +533,7 @@ function readRememberedContributions(dynamicCfg: Config): Partial<StaticContribu
     const parsed: Record<string, string[] | null> = {};
     for (const [entry, fields] of Object.entries(section)) {
       if (fields === null) parsed[entry] = null;
-      else if (Array.isArray(fields) && fields.every((f) => typeof f === 'string')) parsed[entry] = fields as string[];
+      else if (Array.isArray(fields) && fields.every((f) => typeof f === 'string')) parsed[entry] = fields;
     }
     out[key] = parsed;
   }

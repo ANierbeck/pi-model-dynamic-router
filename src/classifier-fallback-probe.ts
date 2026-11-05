@@ -186,7 +186,7 @@ export function judgeProbeReply(raw: string, tc: ProbeCase): { ok: true } | { ok
  */
 export interface ProbeContext {
   /** Resolves a "provider/id" ref to a pi Model object. */
-  findModel: (ref: string) => any | undefined;
+  findModel: (ref: string) => any;
   /** Pi's one-shot completion API (modelRegistry.runtime.completeSimple). */
   completeSimple: (model: any, ctx: any, options: any) => Promise<any>;
   /**

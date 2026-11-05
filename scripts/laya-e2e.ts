@@ -56,9 +56,12 @@ const cases: Array<[string, string, Record<string, string>?]> = [
 
 for (const [name, text, context] of cases) {
   const t0 = Date.now();
-  const r = (await classifyPrompt(text, { cfg, model: 'none', timeoutMs: 500, context: context ?? {} })) as unknown as Record<string, unknown>;
-  const verdict = r.category ?? `${r.hintType}:${r.hintTarget}`;
-  console.log(`${name.padEnd(15)} -> ${String(verdict).padEnd(18)} via ${getLastClassificationSource()?.source}  ${Date.now() - t0}ms`);
+  // The real result type, not a Record<string, unknown>: the verdict is a
+  // category or a hint, and both are strings (a bare String() of an unknown
+  // would print "[object Object]" if the shape ever changed).
+  const r = await classifyPrompt(text, { cfg, model: 'none', timeoutMs: 500, context: context ?? {} });
+  const verdict = 'category' in r ? r.category : `${r.hintType}:${r.hintTarget}`;
+  console.log(`${name.padEnd(15)} -> ${verdict.padEnd(18)} via ${getLastClassificationSource()?.source}  ${Date.now() - t0}ms`);
 }
 
 console.log(`state after use: ${layaAvailabilityState()}${getLastProbeError() ? ` (${getLastProbeError()})` : ''}`);

@@ -182,5 +182,45 @@ describe('pre-push hook end to end', () => {
     const r = push();
     expect(r.status, r.stderr).toBe(0);
     expect(git(remote, 'rev-list', '--count', 'main')).toBe('2');
+    // This checkout has no lint gate, so the skip must be announced, not silent.
+    expect(r.stderr).toContain('no lint gate in this checkout');
+  });
+
+  // The hook runs the pushed repository's OWN lint gate (scripts/lint-gate.ts)
+  // and hands it git's ref list on stdin. A stub gate stands in for the real
+  // one so this test needs no ESLint; the real gate's decision logic is
+  // covered in test/lint-pre-push.test.ts.
+  describe('lint gate step', () => {
+    const stubGate = (exitCode: number): void => {
+      fs.mkdirSync(path.join(work, 'scripts'), { recursive: true });
+      fs.writeFileSync(
+        path.join(work, 'scripts', 'lint-gate.ts'),
+        "import { readFileSync } from 'node:fs';\n" +
+          "const refs = readFileSync(0, 'utf-8').trim();\n" +
+          `console.error('stub lint gate ' + process.argv.slice(2).join(' ') + ' refs=' + refs);\n` +
+          `process.exit(${exitCode});\n`,
+      );
+    };
+
+    it('rejects the push when the repository\'s lint gate fails, and forwards the refs', () => {
+      git(work, 'reset', '-q', '--hard', 'origin/main');
+      stubGate(1);
+      const sha = commitFile(work, 'lint.md', 'x\n', 'chore: stub failing gate');
+      const r = push();
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('stub lint gate --pre-push');
+      expect(r.stderr).toContain(sha);
+      expect(git(remote, 'rev-list', '--count', 'main')).toBe('2');
+    });
+
+    it('lets the push through when the lint gate passes', () => {
+      git(work, 'reset', '-q', '--hard', 'origin/main');
+      stubGate(0);
+      commitFile(work, 'lint.md', 'y\n', 'chore: stub passing gate');
+      const r = push();
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stderr).toContain('stub lint gate --pre-push');
+      expect(git(remote, 'rev-list', '--count', 'main')).toBe('3');
+    });
   });
 });

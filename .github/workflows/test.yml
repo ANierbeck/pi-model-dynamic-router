@@ -24,6 +24,12 @@ jobs:
     - name: Run TypeScript checks
       run: npx tsc --noEmit
 
+    # Ratcheting lint gate (docs/plans/2026-11-04-lint-gate.md). A step in this
+    # job, not a separate one: `test` is already a required check of the
+    # "Protect main" ruleset, so the gate bites without a ruleset change.
+    - name: Lint (ratcheting baseline)
+      run: npm run lint
+
     - name: Check test coverage
       run: npm run test:coverage
 

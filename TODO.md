@@ -20,12 +20,75 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
+
+The gate is live (`npm run lint`, step in the required `test` job,
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: **955 findings / 183 (file, rule)
+entries** after the S1+S2+S3 burn-down (was 1217 / 299; S3 took it to 919 / 159). Each slice lowers
+`scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
+`test/lint-baseline.test.ts` in the same commit:
+
+- [x] **S1** cheap real defects — done 2026-11-04: `no-empty` (10 documented
+      swallows), `prefer-const`, `no-useless-assignment`, `preserve-caught-error`
+      (`{ cause }` on three rethrows), `no-control-regex` (two documented
+      directives — ESLint 10 removed the rule's `allow` option),
+      `no-unused-vars` (79: dead imports/state in `src/`, unused test fixtures),
+      `no-regex-spaces`, `require-yield`, `no-useless-escape`,
+      `no-irregular-whitespace`
+- [x] **S2** real bug classes — done 2026-11-04. `no-floating-promises` found a
+      real hang: `driveStream` was started fire-and-forget by three callers and
+      had no outer guard, so a throw outside the candidate loop became an
+      unhandled rejection AND left the proxy without a terminal event
+      (`test/drive-stream-never-rejects.test.ts`). Also: `require-await` (8, the
+      handler/tool contracts allow sync bodies), `no-base-to-string` (new
+      `textOf()` helper), `restrict-template-expressions`,
+      `no-redundant-type-constituents`
+- [x] **S3** `prefer-nullish-coalescing` + `prefer-optional-chain` — done
+      2026-11-05. `prefer-nullish-coalescing`: 32 findings → 0 in the baseline.
+      9 `||` sites are kept on purpose, each with a one-line
+      `eslint-disable-next-line` and its reason (an empty string must fall
+      through; a `false` from `includes()` must still reach the provider-rule
+      check). The rest were converted to `??`/`??=`. (The earlier "18 converted /
+      14 kept" split did not match the tree; the directive count is the
+      checkable number.) The 4 `prefer-optional-chain` findings became the
+      existing `invokedDirectly()` helper in five scripts. Baseline
+      955 → 919 findings, 183 → 159 entries. The `no-unnecessary-type-assertion`
+      part was already burned down by the `--fix` run in the S1+S2 commit
+      One conversion is not behaviour-neutral and is noted here: `fuzzyMatch ?? null`
+      in `src/utils.ts` differs from `||` only for an empty-string ref, which no
+      caller reaches in practice.
+- [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
+      burn down, explicit return types are treated as an API contract
+- [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,
+      per-file slices. May never reach zero; the ratchet only requires it never
+      grows.
+
+Note: keeping ESLint keeps the dev-only `minimatch` alert
+(CVE-2026-118764) open until ESLint 11 / typescript-eslint / Stryker move to
+minimatch 11 (see the dependency-security round below).
+
 ### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
 
 Independent review of `38d2a27..fde54f8` (the structural question behind most of these — should the router keep its own turn-state machine at all? — is `docs/plans/2026-11-04-virtual-models-routing.md`; mapping of every item in `docs/research/2026-11-04-virtual-models-fit.md`). Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
 
 - **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** (first registered 2026-10-25; `stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Proposal: remember the run's driver and group at classification; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context skip `:free` and meta-routers unless the run group is `simple`.
-- **I4 — tool-call markup emitted as text counts as a good answer** (`stream-proxy.ts` consumeWithDetection → `{ ok: true }` → `recordOk`). The incident's `openrouter/free` printed `<..._function_call>` as text and was rewarded. Proposal: with tools present, hold the first ~200 chars; if they match generic wire markers (`<tool_call`, `<function_call`, `<…_function_call>`, `<|tool_call`, `[TOOL_CALLS]`) and no tool-call event arrived, record a soft failure and try the next candidate (format markers, not model names: §9 allows).
+- [x] **I4 — tool-call markup emitted as text counted as a good answer** — FIXED
+      2026-11-05 (`test/tool-markup-as-text.test.ts`). It happened again live on
+      2026-11-05 10:53–10:54Z: `openrouter/openrouter/free` served ten
+      consecutive turns with `stopReason: toolUse` and 0–3 chars, printing
+      `<dots_function_call>…</dots_function_call>` as prose, and `recordOk`
+      rewarded it. `consumeWithDetection` now holds the answer's opening (200
+      chars) whenever the request carries tools and drops it as a soft failure
+      (`reason: 'tool_markup_as_text'`) when the stream ends with no tool-call
+      event and the held text opens with a wire marker
+      (`isToolCallMarkupText` in `src/detection.ts` — format markers only,
+      including the generic `<*_function_call>` shape, never model names). The
+      hold ends at a real tool-call event or when the window fills, so a
+      healthy stream pays at most 200 chars of latency. Format markers cannot
+      identify the model, so the user-layer `non_agent_model_prefixes` still
+      has to carry the family judgement: `free` was added there on 2026-11-05
+      (it matches only the `openrouter/openrouter/free` meta-router, not the
+      `…:free` variants).
 - **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`): the check is a parameter-size regex, so a free tier or meta-router (`openrouter/openrouter/free`) gets the compaction HINT. Proposal: decide by real context window and exclude `:free`/meta-routers.
 - **I2 remainder / M1 — turn state is per process, not per session.** Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
 - **M3 — turn latency includes tool and sub-call time** (`event-handlers.ts` turn_end), which inflates latency and deflates tokens/s for every turn that runs tools; ranking reads `benchmarks`.

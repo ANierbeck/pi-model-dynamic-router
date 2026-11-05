@@ -1,0 +1,800 @@
+{
+  "note": "Ratcheting lint baseline (docs/plans/2026-11-04-lint-gate.md). Only shrinks.",
+  "entries": [
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 19
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 5
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 3
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 16
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 3
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 15
+    },
+    {
+      "file": "index.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 10
+    },
+    {
+      "file": "scripts/classifier-replay.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 2
+    },
+    {
+      "file": "scripts/classifier-replay.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "scripts/classifier-replay.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "scripts/classifier-replay.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 6
+    },
+    {
+      "file": "scripts/classifier-replay.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 9
+    },
+    {
+      "file": "scripts/failover-walk.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/laya-e2e.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "scripts/laya-e2e.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 8
+    },
+    {
+      "file": "scripts/laya-pair-stats.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/laya-shadow-stats.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 2
+    },
+    {
+      "file": "scripts/mutation-apply.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/mutation-carryover.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 5
+    },
+    {
+      "file": "scripts/mutation-carryover.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 3
+    },
+    {
+      "file": "scripts/mutation-carryover.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
+    },
+    {
+      "file": "scripts/mutation-recheck.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/pool-replay.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 3
+    },
+    {
+      "file": "scripts/pool-replay.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "scripts/pool-replay.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "scripts/pool-replay.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "scripts/provider-breaker-replay.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/redundancy-report.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 3
+    },
+    {
+      "file": "scripts/router-kpi-audit.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 3
+    },
+    {
+      "file": "scripts/scan-hardcoded-models.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 3
+    },
+    {
+      "file": "scripts/turn-decision-join.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "scripts/turn-decision-join.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "scripts/turn-decision-join.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 2
+    },
+    {
+      "file": "scripts/turn-decision-join.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 3
+    },
+    {
+      "file": "scripts/turn-decision-join.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 9
+    },
+    {
+      "file": "src/budget-pacing.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/bulk-read.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 2
+    },
+    {
+      "file": "src/bulk-read.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/bulk-read.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 3
+    },
+    {
+      "file": "src/bulk-read.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 2
+    },
+    {
+      "file": "src/bulk-read.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 3
+    },
+    {
+      "file": "src/cache.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "src/cache.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 3
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 8
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 4
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 3
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 11
+    },
+    {
+      "file": "src/classifier-fallback-probe.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
+    },
+    {
+      "file": "src/classifier-local-probe.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 2
+    },
+    {
+      "file": "src/commands.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 5
+    },
+    {
+      "file": "src/commands.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "src/commands.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/commands.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 2
+    },
+    {
+      "file": "src/config-loader.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/config-loader.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 2
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 4
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 25
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 19
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 10
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 43
+    },
+    {
+      "file": "src/content-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 3
+    },
+    {
+      "file": "src/context-utils.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/context-utils.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 3
+    },
+    {
+      "file": "src/context-utils.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 4
+    },
+    {
+      "file": "src/context-utils.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 3
+    },
+    {
+      "file": "src/context-utils.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 9
+    },
+    {
+      "file": "src/delegation.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 2
+    },
+    {
+      "file": "src/delegation.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/delegation.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 6
+    },
+    {
+      "file": "src/delegation.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 2
+    },
+    {
+      "file": "src/delegation.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 10
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 4
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 2
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 4
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 2
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 15
+    },
+    {
+      "file": "src/dynamic-config-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
+    },
+    {
+      "file": "src/dynamic-config.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 4
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 5
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 1
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 11
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 4
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 12
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 1
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 3
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 2
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 10
+    },
+    {
+      "file": "src/event-handlers.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 2
+    },
+    {
+      "file": "src/free-model-registration.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/free-model-registration.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 3
+    },
+    {
+      "file": "src/free-model-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 4
+    },
+    {
+      "file": "src/free-model-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 3
+    },
+    {
+      "file": "src/free-model-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 9
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 2
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 12
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 2
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 23
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 9
+    },
+    {
+      "file": "src/group-registration.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 47
+    },
+    {
+      "file": "src/hint-resolution.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/hint-resolution.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 4
+    },
+    {
+      "file": "src/laya-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 4
+    },
+    {
+      "file": "src/laya-classifier.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 5
+    },
+    {
+      "file": "src/limit-glue.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 7
+    },
+    {
+      "file": "src/local-llm.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/logger.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/metrics.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 5
+    },
+    {
+      "file": "src/metrics.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 10
+    },
+    {
+      "file": "src/metrics.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 3
+    },
+    {
+      "file": "src/metrics.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 7
+    },
+    {
+      "file": "src/model-resolve-glue.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 2
+    },
+    {
+      "file": "src/overview-table.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/rank-explain.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/routing.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 7
+    },
+    {
+      "file": "src/routing.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 1
+    },
+    {
+      "file": "src/routing.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "src/routing.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 1
+    },
+    {
+      "file": "src/routing.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 3
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 5
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 7
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 7
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 11
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 10
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 34
+    },
+    {
+      "file": "src/scan-runner.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 4
+    },
+    {
+      "file": "src/session-errors.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/stream-driver.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 3
+    },
+    {
+      "file": "src/stream-driver.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 3
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 5
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 13
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 15
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 13
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 12
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 44
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 2
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 4
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 16
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 3
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 11
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 7
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 45
+    },
+    {
+      "file": "src/stream-proxy.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 2
+    },
+    {
+      "file": "src/tools.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/tools.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 5
+    },
+    {
+      "file": "src/tools.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 9
+    },
+    {
+      "file": "src/tools.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 1
+    },
+    {
+      "file": "src/user-config-store.ts",
+      "rule": "@typescript-eslint/explicit-function-return-type",
+      "count": 1
+    },
+    {
+      "file": "src/user-config-store.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "src/utils.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "count": 2
+    },
+    {
+      "file": "src/utils.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 2
+    },
+    {
+      "file": "src/version.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 1
+    },
+    {
+      "file": "src/version.ts",
+      "rule": "@typescript-eslint/no-unsafe-member-access",
+      "count": 1
+    }
+  ]
+}

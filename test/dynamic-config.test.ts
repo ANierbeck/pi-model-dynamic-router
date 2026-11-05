@@ -231,7 +231,6 @@ describe('filterModelsForGroup', () => {
 
 describe('sortModelsForGroup', () => {
   const cfg = baseCfg;
-  const score = (ref: string) => calculateScore(ref, 'standard', cfg);
 
   it("a group's score_by column orders candidates, not the group NAME (release review 2026-10-04)", () => {
     // The dynamic-config sort path passed the group NAME as calculateScore's

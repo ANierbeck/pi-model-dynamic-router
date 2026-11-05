@@ -24,9 +24,9 @@
  * to router internals; zero provider registration (no Ü1 risk).
  */
 
-import type { Config, DelegationConfig } from './types.ts';
+import type { Config } from './types.ts';
 import type { Usage } from '@earendil-works/pi-ai';
-import { stripRouterNarration } from './utils.ts';
+import { stripRouterNarration, textOf } from './utils.ts';
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ const DEFAULTS: DelegationSettings = {
  */
 export function delegationSettings(cfg: Config | undefined): DelegationSettings {
   const d = cfg?.delegation ?? {};
-  const toolsRaw = (d as DelegationConfig).tools;
+  const toolsRaw = d.tools;
   const tools =
     Array.isArray(toolsRaw) && toolsRaw.every((t) => typeof t === 'string' && t.trim().length > 0)
       ? toolsRaw.map((t) => t.trim())
@@ -103,8 +103,8 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
     Array.isArray(raw) && raw.every((x) => typeof x === 'string' && x.trim().length > 0)
       ? (raw as string[]).map((x) => x.trim())
       : fallback;
-  const expensiveGroups = strList((d as DelegationConfig).expensive_groups, DEFAULTS.expensive_groups);
-  const expensiveProviders = strList((d as DelegationConfig).expensive_providers, DEFAULTS.expensive_providers);
+  const expensiveGroups = strList(d.expensive_groups, DEFAULTS.expensive_groups);
+  const expensiveProviders = strList(d.expensive_providers, DEFAULTS.expensive_providers);
   return {
     enabled: d.enabled === true,
     min_chars: typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
@@ -132,8 +132,8 @@ export function extractTextContent(content: unknown): string | null {
   if (!Array.isArray(content) || content.length === 0) return null;
   const parts: string[] = [];
   for (const block of content) {
-    if (!block || typeof block !== 'object' || (block as any).type !== 'text') return null;
-    parts.push(String((block as any).text ?? ''));
+    if (!block || typeof block !== 'object' || block.type !== 'text') return null;
+    parts.push(String(block.text ?? ''));
   }
   return parts.join('\n');
 }
@@ -296,7 +296,7 @@ export async function handleReadDelegation(
     return outcome;
   } catch (err) {
     // Fail-open: the main model must never lose the original result.
-    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : String(err)}`);
+    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : textOf(err)}`);
     return undefined;
   }
 }

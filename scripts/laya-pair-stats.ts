@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLogRecords } from './lib/decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 import { pct } from './lib/cli.ts';
 
 export interface PairLogRecord {
@@ -292,7 +292,7 @@ function main(): void {
     // One reader for the log (scripts/lib/decision-log.ts) owns the skipping
     // rules, so a torn line at a rotation boundary is handled the same way as
     // in every other script.
-    records = readDecisionLogRecords(file) as PairLogRecord[];
+    records = readDecisionLogRecords(file);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       console.log(`No decision log yet at ${file} — run some prompts and come back.`);
@@ -304,4 +304,4 @@ function main(): void {
   console.log(formatPairReport(summarizePairs(pairs, observedGroupMap(records)), { file, unpairedLaya, orphanComparators }));
 }
 
-if (process.argv[1] && process.argv[1].endsWith('laya-pair-stats.ts')) main();
+if (invokedDirectly(import.meta.url)) main();

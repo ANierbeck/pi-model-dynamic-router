@@ -18,7 +18,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as metricsModule from '../src/metrics.js';
-import type { Config, Cache } from '../src/types.js';
+import type { Config } from '../src/types.js';
 
 // Registry fixtures for the alias-retry observations. NOTE: the mock
 // deliberately answers a SLASH-CONTAINING id ('deepx/deep-model') — registry

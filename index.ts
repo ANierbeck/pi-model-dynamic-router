@@ -108,6 +108,7 @@ const defaultExport = function (pi: ExtensionAPI) {
   // negation in package.json `files` and (b) an entry in
   // test/package-contents.test.ts STATE_FILES — otherwise the npm package
   // ships runtime state (roborev jobs 634/644).
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
   const stateDir = process.env.PI_ROUTER_STATE_DIR || extDir;
   // Scan-sanity acceptance of a smaller result requires a "settled" scan:
   // one that runs at least scan_settle_ms after start, when the model registry
@@ -292,7 +293,7 @@ let previousTokenCount = 0;
     // ADR-0022: the router never resolves keys itself — pi does.
     get resolveApiKey() {
       return async (provider: string) =>
-        (await (sessionCtx?.modelRegistry as any)?.getApiKeyForProvider?.(provider).catch?.(
+        (await (sessionCtx?.modelRegistry)?.getApiKeyForProvider?.(provider).catch?.(
           () => null
         )) ?? null;
     },

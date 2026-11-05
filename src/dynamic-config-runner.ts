@@ -261,7 +261,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           // this provider" answer — getAvailable()-derived registryRefs
           // already gets this right; only the free-model shortcut didn't ask.
           hasConfiguredAuth: (provider: string) => {
-            const runtime = (rt.sessionCtx?.modelRegistry as any)?.runtime;
+            const runtime = (rt.sessionCtx?.modelRegistry)?.runtime;
             return typeof runtime?.hasConfiguredAuth === 'function' ? runtime.hasConfiguredAuth(provider) : true;
           },
         };
@@ -411,10 +411,10 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         //
         // Same gate rules as the live and display paths (applyGroupFilters,
         // ADR-0010), fed with the per-model values computed above.
-        let filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, rt.cfg);
+        const filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, rt.cfg);
         
         // 7. Sort the models according to the group's method
-        let sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, rt.cfg, metricsModule.calculateScore);
+        const sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, rt.cfg, metricsModule.calculateScore);
         
         // 8. Collect models: static first (highest priority), then dynamic additions
         const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, rt.cfg);
@@ -467,7 +467,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           // (load() already pruned rt.cfg against the previous one).
         }
       };
-      resyncDynamicFromStatic(dynamicConfig as Config, rt.staticCfg, rt.staticContributions);
+      resyncDynamicFromStatic(dynamicConfig, rt.staticCfg, rt.staticContributions);
 
       const dynamicConfigPath = path.join(rt.stateDir, 'router-config.dynamic.json');
       fs.writeFileSync(dynamicConfigPath, JSON.stringify(dynamicConfig, null, 2));
@@ -477,7 +477,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // Delegation (and every other DYNAMIC_CONFIG_RESYNC_KEYS entry, among
       // them delegation — user intent per the ADR-0007 revision) was already
       // re-synced from staticCfg by the loop above; no special case remains.
-      rt.cfg = dynamicConfig as Config;
+      rt.cfg = dynamicConfig;
       // A mid-turn scan (a tool calling load()) replaces the Router, which
       // would drop both curModel and the turn's pinned driving ref — leaving
       // the expensive-model read block un-protected for the rest of the turn.

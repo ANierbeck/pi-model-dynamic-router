@@ -11,7 +11,7 @@ import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { isExcluded, type ExcludeContext } from '../src/exclude.js';
-import type { Config, Cache } from '../src/types.js';
+import type { Config } from '../src/types.js';
 import { vi } from 'vitest';
 import * as path from 'node:path';
 import * as os from 'node:os';

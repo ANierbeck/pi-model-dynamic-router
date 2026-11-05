@@ -14,6 +14,7 @@ import {
   isOverflowDeltaText,
   parseResetAtMs,
   isPaidCloudRateLimitFailure,
+  isToolCallMarkupText,
   RATE_LIMIT_PATTERNS,
 } from '../src/detection.ts';
 
@@ -341,5 +342,30 @@ describe('parseResetAtMs — informal "Npm (Zone/City)" format (Claude Code CLI 
     expect(parseResetAtMs('your session limit resets soon')).toBeUndefined();
     expect(parseResetAtMs('resets 7pm')).toBeUndefined(); // no zone
     expect(parseResetAtMs('resets (Europe/Berlin)')).toBeUndefined(); // no time
+  });
+});
+
+describe('isToolCallMarkupText — a tool call printed as prose (I4)', () => {
+  it('matches the observed dialects at the start of the answer', () => {
+    expect(isToolCallMarkupText('<dots_function_call>\n<invoke name="edit">')).toBe(true);
+    expect(isToolCallMarkupText('<tool_call>{"name":"read"}</tool_call>')).toBe(true);
+    expect(isToolCallMarkupText('<function_call>read</function_call>')).toBe(true);
+    expect(isToolCallMarkupText('<|tool_call|>read')).toBe(true);
+    expect(isToolCallMarkupText('[TOOL_CALLS]read')).toBe(true);
+    expect(isToolCallMarkupText('  \n<tool_call>')).toBe(true);
+  });
+
+  it('does not match through a leading markdown fence (a fenced example is prose)', () => {
+    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.')).toBe(false);
+    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>')).toBe(false);
+  });
+
+  it('does not match ordinary prose that merely mentions a marker', () => {
+    expect(isToolCallMarkupText('Here is the answer: 42.')).toBe(false);
+    expect(isToolCallMarkupText('The <tool_call> tag is how some models print calls.')).toBe(false);
+    expect(isToolCallMarkupText('')).toBe(false);
+    expect(isToolCallMarkupText('   ')).toBe(false);
+    // Generic shape only counts when the marker IS the opening.
+    expect(isToolCallMarkupText('I would emit <x_function_call> here')).toBe(false);
   });
 });

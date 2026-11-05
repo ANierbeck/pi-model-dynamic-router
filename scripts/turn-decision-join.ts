@@ -32,7 +32,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, stripRouterNarration } from '../src/utils.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 
 export interface SessionTurn {
   session: string;
@@ -119,7 +119,7 @@ export function readSessionTurns(dir: string, bounds: Bounds): SessionTurn[] {
         const ts = typeof m.timestamp === 'number' ? m.timestamp : Date.parse(rec.timestamp);
         pending = { session: file, ts, sha: promptSha(text), served: null };
         if (inBounds(ts, bounds)) turns.push(pending);
-      } else if (m.role === 'assistant' && pending && pending.served === null) {
+      } else if (m.role === 'assistant' && pending?.served === null) {
         if (m.provider && m.model) pending.served = `${m.provider}/${m.model}`;
         pending = null;
       }
@@ -235,4 +235,4 @@ function main(): void {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('turn-decision-join.ts')) main();
+if (invokedDirectly(import.meta.url)) main();

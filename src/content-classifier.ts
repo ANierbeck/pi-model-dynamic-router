@@ -142,7 +142,7 @@ interface ClassificationOptions {
    * registry, so completeSimple can be called. Returns undefined if pi
    * doesn't know the model.
    */
-  findModel?: (ref: string) => any | undefined;
+  findModel?: (ref: string) => any;
   /**
    * Pi's available models (modelRegistry.getAvailable()), pre-resolved so the
    * classifier can pick the cheapest without a second round-trip. Optional.
@@ -468,6 +468,7 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
     const groupName = hintTarget.slice(6).trim(); // Remove 'group:' prefix
     if (!groupName) return null;
     return {
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
       reason: parsed.reason || 'User specified group via HINT',
       confidence: 1.0,
       hintType: 'group',
@@ -486,6 +487,7 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
   }
   if (!cleanHintTarget) return null; // e.g. "hint:use" with nothing after the verb
   return {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
     reason: parsed.reason || 'User specified model via HINT',
     confidence: 1.0,
     hintType: 'model',
@@ -579,7 +581,7 @@ function writeDecisionLog(
       group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
       hint:
         'hintType' in result
-          ? { type: (result as HintClassificationResult).hintType, target: (result as HintClassificationResult).hintTarget }
+          ? { type: result.hintType, target: result.hintTarget }
           : null,
       reason: result.reason ?? null,
     },

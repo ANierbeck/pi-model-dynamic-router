@@ -11,7 +11,7 @@ and fill in the version-specific details. **Replace every `<VERSION>` and
 - [ ] All tests pass (`npm run test:coverage` → note the pass/skip count)
 - [ ] Coverage stays above the CI floor (see `vitest.config.ts` thresholds)
 - [ ] Build succeeds (`npm run build`)
-- [ ] No linting errors (`npx eslint src/`)
+- [ ] Lint gate green (`npm run lint` → "lint gate ok", no new findings)
 
 ### Functionality Verified (re-run against current code)
 - [ ] `/router scan` completes without timeout

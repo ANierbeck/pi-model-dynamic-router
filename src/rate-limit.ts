@@ -254,8 +254,8 @@ export class RateLimitManager {
       return;
     }
 
-    if (!this.cache.cost_mux) this.cache.cost_mux = {};
-    if (!this.cache.cost_mux_last_bump) this.cache.cost_mux_last_bump = {};
+    this.cache.cost_mux ??= {};
+    this.cache.cost_mux_last_bump ??= {};
     this.cache.cost_mux[prov] = (this.cache.cost_mux[prov] ?? 1) + 1;
     this.cache.cost_mux_last_bump[prov] = new Date().toISOString();
   }

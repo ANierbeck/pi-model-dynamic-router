@@ -80,7 +80,16 @@
   the calculate-score contract pin went stale silently (suite hygiene round,
   PR #16). Exceptions (docs-only, pure config) are stated explicitly in the
   report, never implied.
-- `npx tsc --noEmit` must pass before committing non-test-only changes.
+- `npx tsc --noEmit` and `npm run lint` must pass before committing
+  non-test-only changes. The lint gate is a ratcheting baseline
+  (`scripts/lint-baseline.json`, `docs/plans/2026-11-04-lint-gate.md`): new
+  findings fail, and a fixed finding must lower the baseline and
+  `CEILING_FINDINGS` in `test/lint-baseline.test.ts` in the same change
+  (`npm run lint -- --write` regenerates the baseline; `npm run lint:fix`
+  applies the auto-fixes but leaves the baseline stale until `--write` runs).
+  The pre-push hook runs the same gate after the secret scan; it skips with
+  a notice when the working tree is not what is being pushed (another ref,
+  or uncommitted changes in the lint inputs), and CI stays the authority.
 - `npx vitest run` must be green (the exact count ratchets with every
   round — as of the v2-r3 taxonomy migration + output-reserve fix + review fixes +
   decision-log prev + laya probabilities (+ validation) + laya background
@@ -92,7 +101,7 @@
   the PR #79 review round; fallback-exit characterization; turn-decision join; pool replay layout; the laya-spike review round
   (pool-record scope, first-sample metrics, demoted-top ranking reasons,
 
-  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column + min_score + review round; the 2026-11-01 merge-review round on laya-spike (token-estimator toolCall/thinking regression, classifier_laya loopback+warn-and-disable validation, stale-groups-fingerprint load guard, lazy decision pool, capability-column data cache, pack/build sync pin); redundancy report + ratchet gate; hygiene phases 1-3 (root/docs tidy, shipped docs on the five-group layout, skill allowlist gate, plan index + completeness gate, ownership map, TODO split) plus the Sourcery round on them; hygiene phases 4-5 (one extension-context harness instead of 43 copies, one decision-log reader for six scripts, shared script CLI helpers, duplicate-name cleanup, duplicateFunctions pinned at 0) plus the PR #85 review round (unbounded-NaN row drop, remaining arg parsers migrated, harness comments corrected); delegation sub-call no longer hijacks the turn model (sub-call scope); hygiene Phase 4 Step 4 test deletions; sub-call scope per async chain (post-merge review); orchestrator mutation triage slice 1 (HINT/classifier wiring, 74 tests) on top of the sub-call scope fix; pi 1.5.0 host alignment + node-engines guard: 2600 passing / 3 skipped; do not
+  isRoutingRecord readers, prototype-key group checks; resolveForStream wiring pin; planning reasoning column + require_score_column + min_score + review round; the 2026-11-01 merge-review round on laya-spike (token-estimator toolCall/thinking regression, classifier_laya loopback+warn-and-disable validation, stale-groups-fingerprint load guard, lazy decision pool, capability-column data cache, pack/build sync pin); redundancy report + ratchet gate; hygiene phases 1-3 (root/docs tidy, shipped docs on the five-group layout, skill allowlist gate, plan index + completeness gate, ownership map, TODO split) plus the Sourcery round on them; hygiene phases 4-5 (one extension-context harness instead of 43 copies, one decision-log reader for six scripts, shared script CLI helpers, duplicate-name cleanup, duplicateFunctions pinned at 0) plus the PR #85 review round (unbounded-NaN row drop, remaining arg parsers migrated, harness comments corrected); delegation sub-call no longer hijacks the turn model (sub-call scope); hygiene Phase 4 Step 4 test deletions; sub-call scope per async chain (post-merge review); orchestrator mutation triage slice 1 (HINT/classifier wiring, 74 tests) on top of the sub-call scope fix; pi 1.5.0 host alignment + node-engines guard + lint gate (baseline 1217 findings, 299 entries) + free-tier `exclude_models` globs: 2668 passing / 3 skipped; do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

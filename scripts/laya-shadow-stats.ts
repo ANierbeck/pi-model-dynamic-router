@@ -70,7 +70,7 @@ for (const r of withLaya) {
   confByOutcome.set(outcome, m);
   m.sum += c; m.n += 1;
   if (outcome === 'disagree') {
-    const key = r.laya!.category + ' |→ ' + finalCat!;
+    const key = r.laya!.category + ' |→ ' + finalCat;
     confusion.set(key, (confusion.get(key) ?? 0) + 1);
   }
   if (c >= threshold) decided.push(r);

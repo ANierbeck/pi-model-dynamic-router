@@ -12,11 +12,9 @@
  * parallel within 75ms (~55GB RAM demand).
  */
 import { describe, it, expect, vi } from 'vitest';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 
@@ -31,7 +29,6 @@ vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   return { ...actual, isOllamaAvailable: vi.fn(async () => true) };
 });
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 

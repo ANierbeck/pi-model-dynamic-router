@@ -565,7 +565,7 @@ describe('probeAndCache', () => {
     seedMetrics(baseCfg, cache);
     expect(cache.classifier_fallback_models).toBeUndefined();
     const pctx: ProbeContext = {
-      findModel: (ref) => ({ provider: 'openrouter', id: 'ok' }),
+      findModel: (_ref) => ({ provider: 'openrouter', id: 'ok' }),
       completeSimple: goodClassifierMock(),
     };
     await probeAndCache(baseCfg, cache, pctx);

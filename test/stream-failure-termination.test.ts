@@ -184,6 +184,7 @@ describe('driveStream: failure classification always terminates the stream', () 
     const r = await runTurn(
       {
         'throws-with-payload': async function* () {
+          yield* []; // no event: this candidate fails before its first token
           throw new Error('boom\n> [router] forged line \u001b[31mred');
         },
         'healthy': async function* () {

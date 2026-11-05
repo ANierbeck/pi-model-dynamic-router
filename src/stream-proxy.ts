@@ -7,14 +7,14 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, isFreeTierDailyCapText, sanitizeForLog } from './detection.ts';
+import { isAbortLikeText, isRateLimitText, isToolCallMarkupText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, sanitizeForLog } from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
 import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-driver.ts';
-import { splitRef } from './utils.ts';
+import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
-import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEvent, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 import type { StreamOrchestrator } from './stream-orchestrator.ts';
 
@@ -68,7 +68,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     context: Context,
     options: SimpleStreamOptions | undefined
   ): AssistantMessageEventStream | null {
-    const registry = rt.sessionCtx?.modelRegistry as any;
+    const registry = rt.sessionCtx?.modelRegistry;
     if (!registry) return null;
 
     const runtime = registry.runtime;
@@ -165,7 +165,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
     forgetDebugOnce(`tryStream-skip:${ref}`);
-    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
+    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${realModel.api} baseUrl=${realModel.baseUrl ?? 'n/a'}`);
     const apiKey = await rt.sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
@@ -185,7 +185,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // requested output budget against the window as well as the input: cap an
     // explicit output budget to what the window leaves, skip only when even the
     // minimum output does not fit. Without this the reservation is unbounded.
-    const window = (realModel as any).contextWindow as number | undefined;
+    const window = realModel.contextWindow as number | undefined;
     const budget = planOutputBudget({
       windowTokens: window,
       inputTokens: estimateInputTokens(context, (context as any).tools),
@@ -247,7 +247,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     proxy: AssistantMessageEventStream,
     timeoutMs: number,
     stallMs: number,
-    ref: string
+    ref: string,
+    hasTools: boolean
   ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined; resetAtMs?: number }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -327,6 +328,73 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // cancels the candidate) into the proxy, i.e. into the output of the
     // candidate that had already taken over.
     let abandoned = false;
+    // I4: with tools in the request, HOLD the answer's opening text instead of
+    // forwarding it straight away. A model that prints its tool call as prose
+    // (2026-11-05: `openrouter/openrouter/free` emitted
+    // `<dots_function_call>…</dots_function_call>` on ten consecutive turns,
+    // stopReason 'toolUse', 0–3 chars of text) produces a stream that finishes
+    // normally, so no failure detector could see it: the markup reached the
+    // user AND consumeWithDetection returned { ok: true } → recordOk, i.e. the
+    // model was rewarded for it. Holding the opening lets the verdict below
+    // reject the candidate before the markup is ever forwarded. The hold ends
+    // as soon as a real tool-call event arrives or the window fills, so a
+    // healthy stream pays at most TOOL_MARKUP_HOLD_CHARS of latency.
+    const TOOL_MARKUP_HOLD_CHARS = 200;
+    // Markers are anchored at the start, so the head of the held text is all the
+    // verdict needs; keeping only that avoids re-joining a long held answer.
+    const HELD_HEAD_CHARS = 256;
+    let sawToolCall = false;
+    let holdActive = hasTools;
+    // While the hold is open, the answer's TEXT events (text_start, text_delta,
+    // text_end) are held in order: text_start / text_end forwarded ahead of their
+    // held deltas would reach the consumer out of order. Thinking and other events
+    // pass straight through, so a long reasoning phase is not held back and the
+    // window counts answer text only (review of #101: thinking alone released the
+    // hold before any text arrived, and the markup check was skipped).
+    const heldEvents: AssistantMessageEvent[] = [];
+    // The delta as the accumulator reads it: fixtures and some providers send `text`.
+    const deltaOf = (e: AssistantMessageEvent): string => {
+      const fields = e as { delta?: unknown; text?: unknown };
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
+      const value = fields.delta || fields.text;
+      return typeof value === 'string' ? value : '';
+    };
+    const isAnswerTextEvent = (e: AssistantMessageEvent): boolean =>
+      e.type === 'text_start' || e.type === 'text_delta' || e.type === 'text_end';
+    let heldChars = 0;
+    let heldHead = '';
+    const flushHeld = (): void => {
+      if (!holdActive) return;
+      holdActive = false;
+      for (const held of heldEvents) proxy.push(held);
+      heldEvents.length = 0;
+    };
+    /** Drops the held events unforwarded: the content of a rejected candidate. */
+    const discardHeld = (): void => {
+      holdActive = false;
+      heldEvents.length = 0;
+    };
+    let toolMarkupAsText = false;
+    let toolMarkupDetail = '';
+    /**
+     * Decide what to do with the held opening when the stream ends. Returns true
+     * when it is tool-call markup and was dropped. Any other outcome forwards the
+     * held events, so the branches below keep the behaviour they had before the
+     * hold existed.
+     */
+    const heldOpeningIsToolMarkup = (): boolean => {
+      if (!holdActive) return toolMarkupAsText;
+      if (!hasTools || sawToolCall || !isToolCallMarkupText(heldHead)) {
+        flushHeld();
+        return false;
+      }
+      // Never forward the markup: the user should see the next candidate's
+      // answer, not this candidate's failed attempt at a tool call.
+      toolMarkupAsText = true;
+      toolMarkupDetail = sanitizeForLog(heldHead.trim().slice(0, 120));
+      discardHeld();
+      return true;
+    };
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -353,6 +421,15 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             }
           }
           armTimer();
+          if (
+            event.type === 'toolcall_start' ||
+            event.type === 'toolcall_delta' ||
+            event.type === 'toolcall_end'
+          ) {
+            // A real tool call: the answer is legitimate, stop holding.
+            sawToolCall = true;
+            flushHeld();
+          }
           if (event.type === 'error') {
             clearTimer();
             // pi-ai's AssistantMessageEvent contract (types.d.ts) has a stream
@@ -372,6 +449,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // stopReason:'aborted' message — pi-ai's own retry/abort
               // handling already treats this specially (never retried, no
               // cooldown recorded against the model).
+              // The held prefix is the partial answer: it goes out before the terminal.
+              flushHeld();
               proxy.push(event);
               terminalForwarded = true;
               return 'done';
@@ -381,6 +460,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             // `.errorMessage` (the assistant-message shape), not `.message` —
             // check both so this works across provider families.
             const errObj = (event as any).error;
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
             // A provider/transport can also report a client-side or
             // cascade-induced abort as free-text inside an `error` event
@@ -408,11 +488,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // consumers (pi-ai's own retry/abort handling) see the same
               // shape they'd get from a structured abort, instead of a raw
               // error event they might not recognize as a cancellation.
+              flushHeld();
               proxy.push({
                 ...(event as any),
                 reason: 'aborted',
-                error: { ...(errObj as any), stopReason: 'aborted' },
-              } as any);
+                error: { ...(errObj), stopReason: 'aborted' },
+              });
               terminalForwarded = true;
               return 'done';
             }
@@ -472,6 +553,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
           // ..."), handled above, and its yellow warning is a piUI.notify UI
           // notification that never enters this stream.
           if (event.type === 'text_delta') {
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const delta = String((event as any).delta || (event as any).text || '');
             accumulatedText += delta;
             // Some providers return overflow rejections as text content rather
@@ -485,7 +567,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               overflowDetected = true;
               overflowDetail = accumulatedText;
               clearTimer();
-              // Stop consuming — don't forward the raw provider error text
+              // Stop consuming — don't forward the raw provider error text, nor
+              // the held prefix that led up to it (I4 review: the prefix leaked).
+              discardHeld();
               return 'done';
             }
             // Some models (observed with devstral variants) get stuck
@@ -505,6 +589,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
                 repetitionDetail = `"${(rep.unit ?? '').trim().slice(0, 80)}" x${rep.repeats}`;
                 clearTimer();
                 // Stop consuming — don't forward more of the repeated text
+                discardHeld();
                 return 'done';
               }
             }
@@ -528,6 +613,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             if (doneReason === 'length') {
               truncatedByLength = true;
               clearTimer();
+              heldOpeningIsToolMarkup();
               // Stop consuming — don't forward the terminal done event
               return 'done';
             }
@@ -542,15 +628,47 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             // return early for the same reason).
             if (!hadContent) {
               clearTimer();
+              flushHeld();
+              return 'done';
+            }
+            // I4: the stream is about to terminate, so the hold must be
+            // resolved NOW — after the terminal event is forwarded the proxy
+            // is closed and a late flush would be a no-op (the answer would be
+            // silently lost). A markup verdict returns WITHOUT forwarding the
+            // done event, exactly like the length/empty branches above: the
+            // cascade needs the proxy open for the next candidate.
+            if (heldOpeningIsToolMarkup()) {
+              clearTimer();
               return 'done';
             }
           }
-          proxy.push(event);
+          if (holdActive && isAnswerTextEvent(event)) {
+            heldEvents.push(event);
+            if (event.type === 'text_delta') {
+              const delta = deltaOf(event);
+              heldChars += delta.length;
+              if (heldHead.length < HELD_HEAD_CHARS) heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
+            }
+            // Window full and the opening is not markup: release it. A markup
+            // opening stays held until the stream ends, when the verdict drops it.
+            if (heldChars >= TOOL_MARKUP_HOLD_CHARS && !isToolCallMarkupText(heldHead)) flushHeld();
+          } else {
+            proxy.push(event);
+          }
           if (event.type === 'done') terminalForwarded = true;
         }
       } catch (err) {
         clearTimer();
-        const message = err instanceof Error ? err.message : String(err);
+        // Whatever was held is forwarded before the failure is classified:
+        // before the hold existed this content had already reached the proxy,
+        // and dropping it here would be an unrelated behaviour change.
+        try {
+          flushHeld();
+        } catch {
+          // The proxy refused the forward: nothing more can reach the consumer, and
+          // the failure below is classified as before.
+        }
+        const message = err instanceof Error ? err.message : textOf(err);
         if ((err as any)?.name === 'AbortError') {
           // Upstream cancellation (the caller aborted) — the same meaning as a
           // structured aborted event: the cascade must stop, not fall over.
@@ -581,6 +699,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     })();
 
     const winner = await Promise.race([iterPromise, timeoutPromise]);
+
+    // I4 verdict first, so every classification below keeps the behaviour it
+    // had before the hold existed (the opening text is already forwarded).
+    // The done branch above already decided for a clean termination; this
+    // covers the timeout path, where the hold may still be open.
+    heldOpeningIsToolMarkup();
 
     if (winner === 'timeout') {
       abandoned = true;
@@ -639,6 +763,18 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       return { ok: false, reason: 'provider_error', detail: providerErrorDetail || undefined };
     }
 
+    if (toolMarkupAsText) {
+      // The model printed its tool call instead of emitting one (I4). The
+      // markup was held back and dropped, so the user never sees it; the
+      // cascade hands the turn to the next candidate. Soft failure on
+      // purpose — this is a model-quality signal, not a provider fault.
+      return {
+        ok: false,
+        reason: 'tool_markup_as_text',
+        ...(toolMarkupDetail ? { detail: toolMarkupDetail } : {}),
+      };
+    }
+
     if (truncatedByLength) {
       // stopReason 'length' means max output tokens hit — answer truncated, task incomplete.
       return { ok: false, reason: 'truncated_length' };
@@ -681,7 +817,6 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
     const useStaticMatch = model.id.match(/^(.+):use-static$/);
-    const useStatic = useStaticMatch !== null;
     const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
     const g = rt.cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
@@ -701,7 +836,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       // selection-time call passed hardcoded 1000/500 tokens — fabricated
       // audit data. Only completed turns with REAL provider-reported usage
       // are tracked now.
-      rt.streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      // Fire-and-forget by design: driveStream never rejects and always
+      // terminates the proxy (see its doc in stream-orchestrator.ts).
+      void rt.streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
 

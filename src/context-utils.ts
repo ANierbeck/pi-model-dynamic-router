@@ -67,7 +67,7 @@ export function createContextUtils(d: ContextUtilsDeps) {
     try {
       const model = d.sessionCtx.modelRegistry.find(provider, modelId);
       if (!model) return null;
-      const cw = (model as any).contextWindow;
+      const cw = model.contextWindow;
       return typeof cw === 'number' && cw > 0 ? cw : null;
     } catch {
       return null;
@@ -85,7 +85,7 @@ export function createContextUtils(d: ContextUtilsDeps) {
     if (!d.sessionCtx || !cw) return;
     const { provider, modelId } = splitRef(ref);
     try {
-      const model = d.sessionCtx.modelRegistry.find(provider, modelId) as any;
+      const model = d.sessionCtx.modelRegistry.find(provider, modelId);
       if (model) model.contextWindow = cw;
     } catch {
       /* registry error — no-op */
@@ -107,7 +107,7 @@ export function createContextUtils(d: ContextUtilsDeps) {
     if (!d.sessionCtx) return false;
     const { provider, modelId } = splitRef(ref);
     try {
-      const model = d.sessionCtx.modelRegistry.find(provider, modelId) as any;
+      const model = d.sessionCtx.modelRegistry.find(provider, modelId);
       if (!model) return false;
       // pi-ai's Model type carries `reasoning?: boolean` when the model
       // supports thinking (not to be confused with SimpleStreamOptions.reasoning,
@@ -137,7 +137,7 @@ export function createContextUtils(d: ContextUtilsDeps) {
    * reasoning distinction only matters for the first token (which they spend
    * thinking before emitting).
    */
-  function getStallTimeout(ref: string): number {
+  function getStallTimeout(_ref: string): number {
     return d.cfg.stall_timeout_ms ?? d.STALL_TIMEOUT_MS;
   }
 
@@ -192,7 +192,10 @@ export function createContextUtils(d: ContextUtilsDeps) {
       const assistantMsgs = context.messages.filter((m) => m.role === 'assistant');
       const last = assistantMsgs[assistantMsgs.length - 1];
       if (!last) return undefined;
-      const c = last.content as string | Array<{ type: string; text: string }> | unknown;
+      // `unknown`, not a union: `| unknown` absorbs every other member, so
+      // the union claimed narrowings the cast never provided. The typeof /
+      // Array.isArray checks below are the real narrowing.
+      const c = last.content as unknown;
       if (typeof c === 'string') return stripRouterNarration(c).slice(0, 150);
       if (Array.isArray(c)) {
         const textContent = c

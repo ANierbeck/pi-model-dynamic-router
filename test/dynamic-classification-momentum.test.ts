@@ -14,11 +14,9 @@
  * called once — on the second, short turn it must be skipped entirely.
  */
 import { describe, it, expect, vi } from 'vitest';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
@@ -34,7 +32,6 @@ vi.mock('../src/ollama-utils.ts', () => ({
   isOllamaAvailable: vi.fn(async () => true),
 }));
 
-const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 

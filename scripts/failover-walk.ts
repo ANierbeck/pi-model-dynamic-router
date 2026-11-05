@@ -23,7 +23,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseRoutingLine } from './route-pool-log.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 
 export interface WalkDecision {
   ts: number;
@@ -163,4 +163,4 @@ function main(): void {
   }
 }
 
-if (process.argv[1]?.endsWith('failover-walk.ts')) main();
+if (invokedDirectly(import.meta.url)) main();
