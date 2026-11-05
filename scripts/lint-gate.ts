@@ -32,6 +32,11 @@ const TARGETS = ['src', 'index.ts', 'scripts', 'test'];
 const SEP = '\u0000';
 
 /** Aggregate ESLint results into canonical (file, rule) counts. */
+/** Entries --write must not baseline: a parse error (`fatal`) is never accepted as known. */
+export function refusedBaselineEntries(found: readonly LintEntry[]): LintEntry[] {
+  return found.filter((entry) => entry.rule === 'fatal');
+}
+
 export function toEntries(results: ESLint.LintResult[], root: string): LintEntry[] {
   const counts = new Map<string, number>();
   for (const result of results) {
@@ -100,6 +105,14 @@ async function main(): Promise<void> {
   const total = found.reduce((sum, entry) => sum + entry.count, 0);
 
   if (write) {
+    const refused = refusedBaselineEntries(found);
+    if (refused.length > 0) {
+      console.error(
+        `refusing --write: ${refused.map((e) => e.file).join(', ')} does not parse. Fix the syntax error; a parse error is never baselined.`
+      );
+      process.exitCode = 1;
+      return;
+    }
     const baseline: LintBaseline = {
       note: 'Ratcheting lint baseline (docs/plans/2026-11-04-lint-gate.md). Only shrinks.',
       entries: found,

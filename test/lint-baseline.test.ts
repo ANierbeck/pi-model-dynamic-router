@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ESLint } from 'eslint';
-import { compareLintFindingsToBaseline, toEntries } from '../scripts/lint-gate.ts';
+import { compareLintFindingsToBaseline, refusedBaselineEntries, toEntries } from '../scripts/lint-gate.ts';
 
 interface LintEntry {
   file: string;
@@ -144,5 +144,21 @@ describe('compareLintFindingsToBaseline', () => {
   it('reports a vanished entry as stale and to be removed', () => {
     const violations = compareLintFindingsToBaseline([], [{ file: 'a.ts', rule: 'r', count: 2 }]);
     expect(violations[0]).toContain('stale and must be REMOVED');
+  });
+});
+
+describe('--write refuses to baseline a parse error', () => {
+  // A file that stops parsing is one 'fatal' entry. Writing it into the baseline
+  // would let the next normal run pass with the file unchecked (round-2 review of #96).
+  it('reports a fatal entry as refused', () => {
+    const found = [
+      { file: 'src/a.ts', rule: 'fatal', count: 1 },
+      { file: 'src/b.ts', rule: 'no-unused-vars', count: 2 },
+    ] as any;
+    expect(refusedBaselineEntries(found).map((e: any) => e.file)).toEqual(['src/a.ts']);
+  });
+
+  it('refuses nothing when every finding is a rule finding', () => {
+    expect(refusedBaselineEntries([{ file: 'src/b.ts', rule: 'no-unused-vars', count: 2 }] as any)).toEqual([]);
   });
 });
