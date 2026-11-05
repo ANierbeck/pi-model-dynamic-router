@@ -1005,7 +1005,10 @@ export class StreamOrchestrator {
           }
 
           // No larger candidates remain — this is a genuine overflow.
-          pushError(ref, 'context_overflow (provider rejected prompt as too large)');
+          // (No pushError here: the walk returns right after the terminal
+          // pushStreamError below, so an allErrors entry on this path is never
+          // consumed by the end-of-walk aggregation — dead store, removed per
+          // AGENTS.md §7, mutation slice-2 triage mutant 741.)
           ctx.recordStreamFailure(ref, 'context_overflow', undefined, result.detail);
           pushStreamError(
             proxy,

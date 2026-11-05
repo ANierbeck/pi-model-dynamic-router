@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Mutation slice 2 (driveStream) triaged: all 329 non-killed mutants have verdicts (205 real gaps → follow-up test round, 118 equivalent, 1 false survivor, 1 dead store). The dead `pushError` on the genuine-overflow path was removed (AGENTS.md §7). Per-cluster inventory with test sketches: `docs/mutation-data/slice2-triage/`.
+
+
 ### Fixed
 - The tool-markup hold no longer lets a thinking block overtake held answer text: once the first answer text is held, all later events are held too, so the consumer never sees `content[1]` before `content[0]` (reorder + sparse partial array). Thinking before any answer text still passes through immediately.
 
