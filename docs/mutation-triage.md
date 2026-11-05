@@ -1313,6 +1313,16 @@ breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
 | `driveStream` | 644–1347 | 337 | 2 |
 | helpers, breaker narration | 49–180 | 49 | 3 |
 
+### Slice 2 verdicts (driveStream)
+
+> Run of 2026-11-05: 642 mutants via the standalone one-file instrumenter (`scripts/mutation-instrument-one.ts`), rechecked with `scripts/mutation-recheck.ts`. **313 real-killed, 325 real-gap survivors, 4 unconfirmed (equivalent).**
+
+| category | count | evidence |
+| --- | --- | --- |
+| REAL-KILLED (observed on mutated tree + confirmed alone) | 313 | `scripts/mutation-recheck.ts` kill observed on the mutated tree and confirmed alone on the mutated tree and baseline |
+| UNCONFIRMED → judged EQUIVALENT after code read | 4 | idempotent `attempt.abandon()` guard; conditional inside cooldown-collapse else-branch; no live edge |
+| Real-gap survivors (to triage in Slice 2 follow-up) | 325 | clusters: driveStream-core 118, collapse 66, probe/breaker 86, driveStream-pre 55 |
+
 ### Slice 1 verdicts (272)
 
 | category | count | evidence |
