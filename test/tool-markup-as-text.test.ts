@@ -277,6 +277,42 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
     }
   });
 
+  it('still catches a markup opening that follows a long thinking phase (review of #101)', async () => {
+    // Reasoning models think for a while before they print the call. Thinking is
+    // not the answer: the hold must start at the answer's first text event, and
+    // thinking alone must not release it.
+    const thought = Array.from({ length: 40 }, (_, i) => `thought${i}`).join(' ');
+    const args = Array.from({ length: 60 }, (_, i) => `k${i}:v${i * 7}`).join(',');
+    const markup = `<tool_call>{"name":"write","arguments":{${args}}}</tool_call>`;
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'thinking_start', contentIndex: 0, partial: {} } as any;
+          yield { type: 'thinking_delta', contentIndex: 0, delta: thought, partial: {} } as any;
+          yield { type: 'thinking_end', contentIndex: 0, content: thought, partial: {} } as any;
+          yield { type: 'text_start', contentIndex: 1, partial: {} } as any;
+          for (let i = 0; i < markup.length; i += 90) {
+            yield { type: 'text_delta', contentIndex: 1, delta: markup.slice(i, i + 90), partial: {} } as any;
+          }
+          yield { type: 'text_end', contentIndex: 1, content: markup, partial: {} } as any;
+          yield { type: 'done', reason: 'stop', message: doneMessage('toolUse') };
+        },
+        'second-model': async function* () {
+          yield { type: 'text_delta', delta: 'ANSWER-FROM-SECOND' };
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      expect(textOf(events)).not.toContain('tool_call');
+      expect(textOf(events)).toContain('ANSWER-FROM-SECOND');
+      expect(harness.streamSimple).toHaveBeenCalledTimes(2);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
   it('keeps the partial answer when the stream is aborted while the hold is open', async () => {
     const harness = await bootHarness({
       bodies: {

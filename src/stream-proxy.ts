@@ -345,10 +345,22 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     const HELD_HEAD_CHARS = 256;
     let sawToolCall = false;
     let holdActive = hasTools;
-    // Every event after `start` is held in order while the hold is open, not only
-    // text deltas: text_start / text_end forwarded ahead of their held deltas would
-    // reach the consumer out of order.
+    // While the hold is open, the answer's TEXT events (text_start, text_delta,
+    // text_end) are held in order: text_start / text_end forwarded ahead of their
+    // held deltas would reach the consumer out of order. Thinking and other events
+    // pass straight through, so a long reasoning phase is not held back and the
+    // window counts answer text only (review of #101: thinking alone released the
+    // hold before any text arrived, and the markup check was skipped).
     const heldEvents: AssistantMessageEvent[] = [];
+    // The delta as the accumulator reads it: fixtures and some providers send `text`.
+    const deltaOf = (e: AssistantMessageEvent): string => {
+      const fields = e as { delta?: unknown; text?: unknown };
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
+      const value = fields.delta || fields.text;
+      return typeof value === 'string' ? value : '';
+    };
+    const isAnswerTextEvent = (e: AssistantMessageEvent): boolean =>
+      e.type === 'text_start' || e.type === 'text_delta' || e.type === 'text_end';
     let heldChars = 0;
     let heldHead = '';
     const flushHeld = (): void => {
@@ -630,14 +642,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               return 'done';
             }
           }
-          if (holdActive && event.type !== 'start') {
+          if (holdActive && isAnswerTextEvent(event)) {
             heldEvents.push(event);
-            if (event.type === 'text_delta' || event.type === 'thinking_delta') {
-              const delta = event.delta;
+            if (event.type === 'text_delta') {
+              const delta = deltaOf(event);
               heldChars += delta.length;
-              if (event.type === 'text_delta' && heldHead.length < HELD_HEAD_CHARS) {
-                heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
-              }
+              if (heldHead.length < HELD_HEAD_CHARS) heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
             }
             // Window full and the opening is not markup: release it. A markup
             // opening stays held until the stream ends, when the verdict drops it.
@@ -652,7 +662,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
         // Whatever was held is forwarded before the failure is classified:
         // before the hold existed this content had already reached the proxy,
         // and dropping it here would be an unrelated behaviour change.
-        flushHeld();
+        try {
+          flushHeld();
+        } catch {
+          // The proxy refused the forward: nothing more can reach the consumer, and
+          // the failure below is classified as before.
+        }
         const message = err instanceof Error ? err.message : textOf(err);
         if ((err as any)?.name === 'AbortError') {
           // Upstream cancellation (the caller aborted) — the same meaning as a

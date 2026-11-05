@@ -493,8 +493,8 @@ export function isOverflowDeltaText(text: string): boolean {
  * Wire markers that mean "this is a tool call, but it arrived as text".
  *
  * FORMAT markers only — never model names (ADR-0025 §9). Each entry is a
- * prefix the answer must START with (after leading whitespace and markdown
- * fences), because a model that prints its tool call instead of emitting one
+ * prefix the answer must START with (after leading whitespace; a markdown
+ * fence is prose, not the opening), because a model that prints its tool call instead of emitting one
  * opens with the marker; the same string mid-sentence is ordinary prose.
  *
  * The generic `<*_function_call>` shape is deliberate: the 2026-11-05
