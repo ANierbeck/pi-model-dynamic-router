@@ -782,7 +782,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
       m.throughput_tps = m.throughput_tps * (1 - α) + tps * α;
     }
     m.tps_samples = (m.tps_samples ?? 0) + 1;
-    if (!cache.benchmarks) cache.benchmarks = {};
+    cache.benchmarks ??= {};
     cache.benchmarks[ref] = m.throughput_tps;
   }
   m.samples = (m.samples ?? 0) + 1;

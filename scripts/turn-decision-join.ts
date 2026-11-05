@@ -32,7 +32,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, stripRouterNarration } from '../src/utils.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 
 export interface SessionTurn {
   session: string;
@@ -235,4 +235,4 @@ function main(): void {
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith('turn-decision-join.ts')) main();
+if (invokedDirectly(import.meta.url)) main();

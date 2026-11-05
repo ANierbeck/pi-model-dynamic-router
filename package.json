@@ -52,7 +52,8 @@
     "dist/model-map.yaml",
     "skills/",
     "PI.md",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -65,7 +66,9 @@
     "@earendil-works/pi-coding-agent": "^1.5.0",
     "@earendil-works/pi-tui": "^1.5.0",
     "@eslint/js": "^10.0.1",
+    "@stryker-mutator/api": "10.0.0",
     "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/instrumenter": "10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.9.2",
@@ -77,6 +80,7 @@
     "eslint-config-prettier": "^10.1.8",
     "execa": "^9.6.1",
     "prettier": "^3.8.4",
+    "typed-inject": "5.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12",
     "yaml": "^2.9.1"

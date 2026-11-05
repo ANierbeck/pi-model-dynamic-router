@@ -167,7 +167,7 @@ export function extractGdpvalScores(html: string): Record<string, number> {
           if (m.shortName && scores[m.shortName] === undefined) scores[m.shortName] = m.gdpval;
           if (m.name) {
             const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-            if (scores[nameKey] === undefined) scores[nameKey] = m.gdpval;
+            scores[nameKey] ??= m.gdpval;
           }
         }
       }
@@ -766,9 +766,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             rt.cache.gdpval_scores = rt.cache.gdpval_scores ?? {};
             for (const [slug, score] of Object.entries(ollamaGdpvalEstimates)) {
               // Don't overwrite an existing authoritative score
-              if (rt.cache.gdpval_scores[slug] === undefined) {
-                rt.cache.gdpval_scores[slug] = score;
-              }
+              rt.cache.gdpval_scores[slug] ??= score;
             }
             // A2: this only mutated cache.gdpval_scores, NOT metrics.ts's
             // in-memory `gdpval` map that lookupGdp()/resolveSlug() actually

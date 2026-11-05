@@ -38,6 +38,9 @@ const STRAY_FILES = ['router-config.dynamic.json.bak-20261022-ghosts', 'scratch.
 // Release gate (owner 2026-10-29, hygiene Phase 2 Step 3a): the only skill
 // directories allowed in the tarball. Adding one is a deliberate act.
 const SHIPPED_SKILLS = ['content-based-router', 'router-login'];
+// Top-level docs that ship. README links to the CHANGELOG's migration section,
+// so the two travel together; TODO.md is repo-only.
+const SHIPPED_DOCS = ['PI.md', 'README.md', 'CHANGELOG.md'];
 
 describe('npm package contents', () => {
   let tmpDir: string | undefined;
@@ -108,6 +111,33 @@ describe('npm package contents', () => {
       .sort();
     expect(dirs).toEqual([...SHIPPED_SKILLS].sort());
   });
+
+  it('top-level docs in the tarball are exactly PI.md, README.md, CHANGELOG.md', () => {
+    // README.md tells the reader to use "the CHANGELOG's combined migration
+    // section" for the pre-1.7.0 upgrade — a reference that dangles when the
+    // tarball ships README.md without CHANGELOG.md. The doc allowlist is
+    // pinned here so a new top-level doc is a deliberate act.
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-docs-'));
+    fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(tmpDir, 'package.json'));
+    for (const rel of BUILD_OUTPUTS) {
+      const file = path.join(tmpDir, 'dist', rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{}');
+    }
+    for (const doc of [...SHIPPED_DOCS, 'TODO.md']) {
+      fs.writeFileSync(path.join(tmpDir, doc), '# x\n');
+    }
+
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const files: string[] = JSON.parse(out)[0].files.map((f: { path: string }) => f.path);
+    const docs = files.filter((f) => !f.includes('/') && f.endsWith('.md')).sort();
+
+    expect(docs).toEqual([...SHIPPED_DOCS].sort());
+  }, 30_000);
 
   it('BUILD_OUTPUTS stays in sync with the files the build script produces (merge review 2026-11-01)', () => {
     // The allowlist in package.json `files` and this test's BUILD_OUTPUTS are

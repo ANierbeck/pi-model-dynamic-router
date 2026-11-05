@@ -308,7 +308,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
         rt.updateMetrics(factualRef, ms, tpsTok > 0 ? tpsTok : tok, ms);
         rt.recordOk(factualRef);
         // Log usage
-        if (!rt.cache.usage_log) rt.cache.usage_log = [];
+        rt.cache.usage_log ??= [];
         rt.cache.usage_log.push(usageEntry ?? { ref: factualRef, tokens: tok, ts: Date.now() });
         // Trim log to last 30 days
         const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;

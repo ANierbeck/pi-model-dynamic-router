@@ -53,7 +53,7 @@ raises `plansMissingFromIndex` — both pinned, so neither can grow.
 | [`2026-10-29-repo-hygiene.md`](2026-10-29-repo-hygiene.md) | Repo hygiene: clean up the layout and stop redundancy from | done (2026-11-04) | A repository where every file has one obvious home and one owner, and wh | docs/plans/2026-09-20-consolidate-tests |
 | [`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md) | Laya sidecar distribution: give every user a classifier th | in progress |  |  |
 
-| [`2026-11-04-orchestrator-mutation-triage.md`](2026-11-04-orchestrator-mutation-triage.md) | Mutation triage of the stream orchestrator after the Laya merge | in progress (slice 1 done) |  |  |
+| [`2026-11-04-orchestrator-mutation-triage.md`](2026-11-04-orchestrator-mutation-triage.md) | Mutation triage of the stream orchestrator after the Laya merge | in progress (slice 1 done, slice 2 recheck done 2026-11-05, triage open) |  |  |
  [`2026-11-04-virtual-models-routing.md`](2026-11-04-virtual-models-routing.md) | Route through Pi's Virtual Models: evaluate whether the router's own turn-state machine can go | proposed |  |  |
 | [`2026-11-04-lint-gate.md`](2026-11-04-lint-gate.md) | Lint Gate Implementation Plan | in progress (gate live, burn-down open) | ESLint is installed but never runs: no `lint` script, no CI step, and the configured ruleset reports 1224 findings (862 errors) in 65 files — the release checklist line "No linting errors" is unsatisfiable |  |
 | [`candidates_consolidation.md`](candidates_consolidation.md) | Test Consolidation — Candidate Analysis | done — analysis for the consolidation |  |  |
