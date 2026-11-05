@@ -197,6 +197,48 @@ describe('repeated test blocks', () => {
     expect(r.repeatedBlocks.length).toBe(1);
   });
 
+  it('does not count a window made only of import/export scaffolding (Prettier round, plan step 2)', () => {
+    // After the one-time reformat the import headers normalise, so many test
+    // files share the SAME 6-line import window — that is not a copy-pasted
+    // test body. Multi-line imports (the shape Prettier produces past
+    // printWidth 100) must be recognised through their continuation lines.
+    const header = [
+      "import { describe, it, expect, vi } from 'vitest';",
+      "import {",
+      "  drainStream,",
+      "  makeExtensionContext,",
+      "  someVeryLongHelperNameThatPushesTheImportPast100Chars,",
+      "} from './helpers/extension-harness.ts';",
+    ].join('\n');
+    // Only the header is shared; the bodies differ, as in real test files.
+    const r = analyze({
+      ...empty(),
+      tests: ['a', 'b', 'c'].map((n) => ({
+        path: `test/${n}.test.ts`,
+        text: `${header}\ndescribe('${n}', () => {\nit('case ${n}', () => { expect(${n.length}).toBe(1); });\n});\n`,
+      })),
+    });
+    expect(r.repeatedBlocks).toEqual([]);
+  });
+
+  it('still counts a real repeated set-up that follows an import header', () => {
+    const header = "import { describe, it, expect } from 'vitest';\nimport fs from 'node:fs';\nimport os from 'node:os';\n";
+    const setup = [
+      'const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "router-rlwait-"));',
+      'fs.mkdirSync(path.join(tmpDir, ".pi"), { recursive: true });',
+      'fs.writeFileSync(path.join(tmpDir, ".pi", "router-config.json"), JSON.stringify(cfgOverride));',
+      'const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(tmpDir);',
+      'const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);',
+      'writeNoOpScanCache(scanCachePath);',
+    ].join('\n');
+    const body = `${header}${setup}\nit('a', () => { expect(1).toBe(1); });\n`;
+    const r = analyze({
+      ...empty(),
+      tests: ['a', 'b', 'c'].map((n) => ({ path: `test/${n}.test.ts`, text: body })),
+    });
+    expect(r.repeatedBlocks.length).toBe(1);
+  });
+
   it('ignores blocks made of trivial lines (closing braces, short statements)', () => {
     const trivial = '});\n});\n});\n});\n});\n});\n});\n';
     const r = analyze({

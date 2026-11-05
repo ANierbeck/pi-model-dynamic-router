@@ -1,0 +1,43 @@
+# Prettier scope (docs/plans/2026-11-05-prettier-formatting.md, owner decision
+# 1a): the code — src/, test/, scripts/, index.ts, eslint.config.js. Everything
+# else in this file is deliberately NOT formatted. The npm scripts
+# (format / format:check) pass the scope explicitly; this file additionally
+# keeps editor integrations and a manual `prettier --check .` on scope.
+
+# Build and state output
+dist/
+coverage/
+reports/
+.stryker-tmp/
+
+# Local-only trees (never shipped)
+archive/
+.worktrees/
+
+# Machine data
+docs/mutation-data/
+
+# Historical documents — AGENTS.md §12 forbids editing an ADR, and a plan is
+# history once committed; the research notes are measurements, not prose to
+# reflow
+docs/adr/
+docs/plans/
+docs/research/
+CHANGELOG.md
+
+# Shipped documentation (owner decision 1b not chosen)
+*.md
+docs/
+skills/
+spikes/
+.github/
+
+# Data files, not code (owner decision 1c not chosen)
+*.yaml
+*.yml
+model-map.yaml
+router-config.json
+router-defaults.yaml
+stryker.config.json
+tsconfig.json
+package-lock.json

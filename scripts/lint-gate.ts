@@ -51,20 +51,27 @@ export type PrePushLintPlan = { run: true } | { run: false; reason: string };
  * @param stdin git's pre-push input: "<local ref> <local sha> <remote ref> <remote sha>" per line
  * @param head  `git rev-parse HEAD`
  * @param dirty lint-input paths from `git status --porcelain`
+ * @param subject which gate is asking — only the skip wording changes; the
+ *                decision is identical for the lint and the format gate
  */
-export function prePushLintPlan(stdin: string, head: string, dirty: readonly string[]): PrePushLintPlan {
+export function prePushLintPlan(
+  stdin: string,
+  head: string,
+  dirty: readonly string[],
+  subject: 'lint' | 'format' = 'lint'
+): PrePushLintPlan {
   const pushed = stdin
     .split('\n')
     .map((l) => l.trim().split(/\s+/)[1] ?? '')
     .filter((sha) => sha !== '' && !ZERO_SHA.test(sha));
-  if (pushed.length === 0) return { run: false, reason: 'nothing to lint (delete-only push)' };
+  if (pushed.length === 0) return { run: false, reason: `nothing to ${subject} (delete-only push)` };
   if (pushed.some((sha) => sha !== head)) {
-    return { run: false, reason: 'a pushed ref is not the checked-out HEAD; CI lints the pushed commit' };
+    return { run: false, reason: `a pushed ref is not the checked-out HEAD; CI ${subject}s the pushed commit` };
   }
   if (dirty.length > 0) {
     return {
       run: false,
-      reason: `uncommitted changes in lint inputs (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? ', ...' : ''}); CI lints the pushed commit`,
+      reason: `uncommitted changes in ${subject} inputs (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? ', ...' : ''}); CI ${subject}s the pushed commit`,
     };
   }
   return { run: true };
@@ -75,14 +82,19 @@ export function prePushLintPlan(stdin: string, head: string, dirty: readonly str
  * rest is read from `root`. Exported so the git-status parsing (renames,
  * untracked files, pathspec) is tested against real repositories.
  */
-export function prePushPlanFromGit(root: string, stdin: string): PrePushLintPlan {
+export function prePushPlanFromGit(
+  root: string,
+  stdin: string,
+  inputs: readonly string[] = LINT_INPUTS,
+  subject: 'lint' | 'format' = 'lint'
+): PrePushLintPlan {
   const git = (...args: string[]): string =>
     execFileSync('git', args, { cwd: root, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ...LINT_INPUTS)
+  const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ...inputs)
     .split('\n')
     .filter((l) => l.trim() !== '')
     .map((l) => l.slice(3));
-  return prePushLintPlan(stdin, git('rev-parse', 'HEAD').trim(), dirty);
+  return prePushLintPlan(stdin, git('rev-parse', 'HEAD').trim(), dirty, subject);
 }
 
 /** Aggregate ESLint results into canonical (file, rule) counts. */
