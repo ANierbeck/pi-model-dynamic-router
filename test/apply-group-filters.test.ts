@@ -96,7 +96,6 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       expect(out).toContain('openrouter/paid-model');
       expect(out).toContain('ollama/qwen3.5');
     });
-  });
 
     // Pins for the matcher's edges (review of #102). A lone `*` is a catch-all,
     // an empty entry matches nothing, globs are case-insensitive (the same
@@ -122,6 +121,14 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       const g: Group = { method: 'best', exclude_models: ['OPENROUTER/PAID-MODEL'] } as any;
       expect(applyGroupFilters(REFS, g, CFG)).toContain('openrouter/paid-model');
     });
+
+    // `?` is a literal here: only `*` is a wildcard. As a regex quantifier it
+    // would also match the ref without the `l` (review of #102).
+    it('treats ? as a literal character in a glob', () => {
+      const g: Group = { method: 'best', exclude_models: ['openrouter/paid-model?*'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toContain('openrouter/paid-model');
+    });
+  });
 
   describe('min_gdpval', () => {
     it('strict positive threshold drops unscored models (no fallback)', () => {

@@ -29,7 +29,7 @@ export function globMatcher(pattern: string): (ref: string) => boolean {
   const re = new RegExp(
     '^' +
       pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
         .replace(/\*/g, '.*') +
       '$',
     'i'
