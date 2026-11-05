@@ -111,7 +111,7 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
     const before = Number(r[1]);
     const after = Number(r[3]);
     k.delegation.replaced++;
-    bump(k.delegation.byTool, r[2]!);
+    bump(k.delegation.byTool, r[2]);
     k.delegation.charsIn += before;
     k.delegation.charsOut += after;
     if (after >= before) k.delegation.inflated++;
@@ -124,10 +124,10 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
     else k.readBlocks.size++;
     return;
   }
-  if ((r = /^\[router\] All \d+ candidate\(s\) failed/.exec(body))) { k.allCandidatesFailed++; return; }
+  if (/^\[router\] All \d+ candidate\(s\) failed/.test(body)) { k.allCandidatesFailed++; return; }
   if ((r = /^\[router\] \S+ blocked for \d+ days?: ([\w-]+)/.exec(body))) {
     k.blocklist.blocked++;
-    bump(k.blocklist.byReason, r[1]!);
+    bump(k.blocklist.byReason, r[1]);
     return;
   }
   if (/^\[router\] \S+ answered after its blocklist entry expired/.test(body)) { k.blocklist.cleared++; return; }
@@ -139,14 +139,14 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
   if (body.includes('rejects structured output (501)')) { k.classifier.noSchema501++; return; }
   if (body.startsWith('[classifier] Fallback model also failed')) { k.classifier.fallbackFailed++; return; }
   if ((r = /^\[router\] (\S+) — (.+?)(?:, trying \S+ …)?$/.exec(body))) {
-    const reason = hopReason(r[2]!);
+    const reason = hopReason(r[2]);
     k.hops.failures++;
     bump(k.hops.byReason, reason);
-    bump(k.hops.byModel, r[1]!);
+    bump(k.hops.byModel, r[1]);
     return;
   }
   if ((r = /^([a-z_]+) → [a-z_]+\s{2}\S/.exec(body))) {
-    bump(k.classifier.byCategory, r[1]!);
+    bump(k.classifier.byCategory, r[1]);
   }
 }
 

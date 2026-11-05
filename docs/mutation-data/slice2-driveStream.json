@@ -1,0 +1,5467 @@
+[
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 683,
+  "id": "466",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 684,
+  "id": "467",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 686,
+  "id": "468",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/drive-stream-never-rejects.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 687,
+  "id": "470",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 687,
+  "id": "471",
+  "mutatorName": "LogicalOperator",
+  "replacement": "(groupName ?? label) && '?'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 687,
+  "id": "473",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 687,
+  "id": "472",
+  "mutatorName": "LogicalOperator",
+  "replacement": "groupName && label",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 692,
+  "id": "474",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/drive-stream-never-rejects.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 694,
+  "id": "476",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 695,
+  "id": "478",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 695,
+  "id": "479",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 707,
+  "id": "480",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/drive-stream-never-rejects.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 709,
+  "id": "481",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 709,
+  "id": "482",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 709,
+  "id": "483",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 711,
+  "id": "484",
+  "mutatorName": "ArrayDeclaration",
+  "replacement": "[\"Stryker was here\"]",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 712,
+  "id": "485",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 713,
+  "id": "487",
+  "mutatorName": "ObjectLiteral",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 721,
+  "id": "488",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 738,
+  "id": "489",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 739,
+  "id": "491",
+  "mutatorName": "EqualityOperator",
+  "replacement": "j <= candidates.length",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 739,
+  "id": "492",
+  "mutatorName": "EqualityOperator",
+  "replacement": "j >= candidates.length",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 739,
+  "id": "493",
+  "mutatorName": "UpdateOperator",
+  "replacement": "j--",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 739,
+  "id": "490",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 739,
+  "id": "494",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 741,
+  "id": "496",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 741,
+  "id": "495",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 742,
+  "id": "498",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 742,
+  "id": "497",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 743,
+  "id": "500",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 743,
+  "id": "501",
+  "mutatorName": "LogicalOperator",
+  "replacement": "r.startsWith('ollama/') || isOllamaProbablyDown()",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 743,
+  "id": "502",
+  "mutatorName": "MethodExpression",
+  "replacement": "r.endsWith('ollama/')",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 743,
+  "id": "503",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 743,
+  "id": "499",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 745,
+  "id": "504",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 745,
+  "id": "505",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 745,
+  "id": "506",
+  "mutatorName": "EqualityOperator",
+  "replacement": "planOutputBudget({\n  windowTokens: w,\n  inputTokens: planningTokens,\n  requestedOutput: undefined\n}).kind !== 'skip'",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 745,
+  "id": "507",
+  "mutatorName": "ObjectLiteral",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 745,
+  "id": "508",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 751,
+  "id": "510",
+  "mutatorName": "EqualityOperator",
+  "replacement": "i <= candidates.length",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 751,
+  "id": "512",
+  "mutatorName": "UpdateOperator",
+  "replacement": "i--",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 751,
+  "id": "509",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 751,
+  "id": "511",
+  "mutatorName": "EqualityOperator",
+  "replacement": "i >= candidates.length",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 751,
+  "id": "513",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 753,
+  "id": "514",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 753,
+  "id": "515",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 753,
+  "id": "516",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 754,
+  "id": "518",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 764,
+  "id": "519",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 764,
+  "id": "521",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 764,
+  "id": "520",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 765,
+  "id": "522",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 766,
+  "id": "523",
+  "mutatorName": "MethodExpression",
+  "replacement": "Math.min(0, Math.ceil((st.until - Date.now()) / 1000))",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 766,
+  "id": "524",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "(st.until - Date.now()) * 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 766,
+  "id": "525",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "st.until + Date.now()",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 767,
+  "id": "527",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 768,
+  "id": "528",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "529",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "530",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/ollama-fallback-skip-when-down.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "531",
+  "mutatorName": "LogicalOperator",
+  "replacement": "ref.startsWith('ollama/') || !(await isOllamaAvailable())",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "532",
+  "mutatorName": "MethodExpression",
+  "replacement": "ref.endsWith('ollama/')",
+  "result": "killed",
+  "killer": "test/ollama-fallback-skip-when-down.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "533",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/ollama-fallback-skip-when-down.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "534",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "await isOllamaAvailable()",
+  "result": "killed",
+  "killer": "test/ollama-fallback-skip-when-down.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 777,
+  "id": "535",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/ollama-fallback-skip-when-down.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 778,
+  "id": "537",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 782,
+  "id": "538",
+  "mutatorName": "ObjectLiteral",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 783,
+  "id": "539",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 783,
+  "id": "540",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 783,
+  "id": "541",
+  "mutatorName": "EqualityOperator",
+  "replacement": "preflight.kind !== 'skip'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 783,
+  "id": "542",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 783,
+  "id": "543",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 784,
+  "id": "545",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 785,
+  "id": "546",
+  "mutatorName": "UpdateOperator",
+  "replacement": "contextOverflowSkips--",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 797,
+  "id": "547",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 798,
+  "id": "550",
+  "mutatorName": "LogicalOperator",
+  "replacement": "err.message && err",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 798,
+  "id": "548",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 798,
+  "id": "549",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 800,
+  "id": "551",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "isExpectedError",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 800,
+  "id": "553",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 800,
+  "id": "552",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 800,
+  "id": "555",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 801,
+  "id": "556",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 808,
+  "id": "558",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 812,
+  "id": "559",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 812,
+  "id": "560",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 812,
+  "id": "561",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 812,
+  "id": "562",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 813,
+  "id": "564",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 816,
+  "id": "565",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "target",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 816,
+  "id": "566",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 816,
+  "id": "567",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 816,
+  "id": "568",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 817,
+  "id": "569",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 818,
+  "id": "571",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 818,
+  "id": "572",
+  "mutatorName": "EqualityOperator",
+  "replacement": "openFailureText !== undefined",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 818,
+  "id": "573",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 818,
+  "id": "570",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 823,
+  "id": "574",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 823,
+  "id": "575",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 823,
+  "id": "576",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 824,
+  "id": "578",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 829,
+  "id": "579",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 830,
+  "id": "581",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 831,
+  "id": "582",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/subcall-scope-isolation.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 833,
+  "id": "583",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 834,
+  "id": "584",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 842,
+  "id": "587",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 842,
+  "id": "586",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 842,
+  "id": "585",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 843,
+  "id": "588",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 844,
+  "id": "589",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 847,
+  "id": "590",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 847,
+  "id": "592",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'aborted'",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 847,
+  "id": "591",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-failure-termination.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 847,
+  "id": "593",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/stream-failure-termination.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "596",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.reason === 'provider_error' || result.detail",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "597",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "594",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "595",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "598",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'provider_error'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "600",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 848,
+  "id": "599",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 850,
+  "id": "601",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 850,
+  "id": "602",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 850,
+  "id": "603",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'rate_limit_exceeded'",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 850,
+  "id": "604",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 850,
+  "id": "605",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 851,
+  "id": "607",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 851,
+  "id": "606",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.detail && ''",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 854,
+  "id": "611",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 854,
+  "id": "609",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 854,
+  "id": "610",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.detail && ''",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 855,
+  "id": "612",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 856,
+  "id": "614",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 868,
+  "id": "615",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 868,
+  "id": "616",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 868,
+  "id": "617",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 870,
+  "id": "618",
+  "mutatorName": "LogicalOperator",
+  "replacement": "ctx.limitFreeDayCap?.(candidates, untilMs) && 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 870,
+  "id": "619",
+  "mutatorName": "OptionalChaining",
+  "replacement": "ctx.limitFreeDayCap(candidates, untilMs)",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 872,
+  "id": "621",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 873,
+  "id": "622",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 876,
+  "id": "623",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 877,
+  "id": "625",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 877,
+  "id": "624",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 880,
+  "id": "627",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 895,
+  "id": "628",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 895,
+  "id": "630",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.resetAtMs || Number.isFinite(result.resetAtMs)",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 895,
+  "id": "629",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 896,
+  "id": "631",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "result.resetAtMs + Date.now()",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 897,
+  "id": "632",
+  "mutatorName": "UnaryOperator",
+  "replacement": "+1",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "638",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "640",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "641",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "634",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "633",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "636",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "637",
+  "mutatorName": "LogicalOperator",
+  "replacement": "waitMaxMs > 0 && !rateLimitWaitUsed || resetInMs > 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "639",
+  "mutatorName": "LogicalOperator",
+  "replacement": "waitMaxMs > 0 || !rateLimitWaitUsed",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "642",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs <= 0",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "643",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "rateLimitWaitUsed",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 898,
+  "id": "635",
+  "mutatorName": "LogicalOperator",
+  "replacement": "waitMaxMs > 0 && !rateLimitWaitUsed && resetInMs > 0 || resetInMs <= waitMaxMs",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "645",
+  "mutatorName": "EqualityOperator",
+  "replacement": "resetInMs >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "648",
+  "mutatorName": "EqualityOperator",
+  "replacement": "resetInMs < waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "646",
+  "mutatorName": "EqualityOperator",
+  "replacement": "resetInMs <= 0",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "647",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "649",
+  "mutatorName": "EqualityOperator",
+  "replacement": "resetInMs > waitMaxMs",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "644",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 899,
+  "id": "650",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 900,
+  "id": "651",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 901,
+  "id": "652",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "resetInMs * 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 903,
+  "id": "654",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 907,
+  "id": "656",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 909,
+  "id": "657",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "resetInMs - 2000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 911,
+  "id": "658",
+  "mutatorName": "ArrowFunction",
+  "replacement": "() => undefined",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 912,
+  "id": "659",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "retryTarget",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 912,
+  "id": "660",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 912,
+  "id": "661",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 912,
+  "id": "662",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 913,
+  "id": "663",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 913,
+  "id": "665",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 913,
+  "id": "664",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 914,
+  "id": "666",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 915,
+  "id": "667",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 922,
+  "id": "669",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 922,
+  "id": "670",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 922,
+  "id": "668",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 923,
+  "id": "671",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 924,
+  "id": "672",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 927,
+  "id": "674",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 927,
+  "id": "676",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 927,
+  "id": "673",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 927,
+  "id": "675",
+  "mutatorName": "EqualityOperator",
+  "replacement": "retryResult.reason !== 'aborted'",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "677",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "678",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "679",
+  "mutatorName": "LogicalOperator",
+  "replacement": "retryResult.reason === 'provider_error' || retryResult.detail",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "680",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "681",
+  "mutatorName": "EqualityOperator",
+  "replacement": "retryResult.reason !== 'provider_error'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "682",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 931,
+  "id": "683",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 934,
+  "id": "684",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 935,
+  "id": "686",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 938,
+  "id": "688",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 940,
+  "id": "689",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 941,
+  "id": "690",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "retrySucceeded",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 941,
+  "id": "691",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 941,
+  "id": "692",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 941,
+  "id": "693",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 942,
+  "id": "694",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 948,
+  "id": "695",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 949,
+  "id": "696",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 949,
+  "id": "697",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 950,
+  "id": "699",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 953,
+  "id": "700",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 953,
+  "id": "702",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'context_overflow'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 953,
+  "id": "701",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 953,
+  "id": "703",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 953,
+  "id": "704",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 958,
+  "id": "706",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 958,
+  "id": "707",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 958,
+  "id": "705",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 959,
+  "id": "708",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 961,
+  "id": "710",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 968,
+  "id": "711",
+  "mutatorName": "LogicalOperator",
+  "replacement": "errInfo?.requestedTokens && contextTokens",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 968,
+  "id": "712",
+  "mutatorName": "OptionalChaining",
+  "replacement": "errInfo.requestedTokens",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 969,
+  "id": "713",
+  "mutatorName": "MethodExpression",
+  "replacement": "candidates.slice(i + 1)",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 969,
+  "id": "714",
+  "mutatorName": "MethodExpression",
+  "replacement": "candidates",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 969,
+  "id": "716",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 969,
+  "id": "715",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/runtime-overflow-detection.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "717",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "720",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "cw",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "722",
+  "mutatorName": "EqualityOperator",
+  "replacement": "cw >= minNeeded",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "718",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "719",
+  "mutatorName": "LogicalOperator",
+  "replacement": "!cw && cw > minNeeded",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "721",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 971,
+  "id": "723",
+  "mutatorName": "EqualityOperator",
+  "replacement": "cw <= minNeeded",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 975,
+  "id": "725",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 975,
+  "id": "727",
+  "mutatorName": "EqualityOperator",
+  "replacement": "largerCandidates.length <= 0",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 975,
+  "id": "728",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 975,
+  "id": "726",
+  "mutatorName": "EqualityOperator",
+  "replacement": "largerCandidates.length >= 0",
+  "result": "killed",
+  "killer": "test/runtime-overflow-detection.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 975,
+  "id": "724",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/runtime-overflow-detection.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 982,
+  "id": "730",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 986,
+  "id": "731",
+  "mutatorName": "ArrayDeclaration",
+  "replacement": "[]",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 987,
+  "id": "732",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 987,
+  "id": "733",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 987,
+  "id": "734",
+  "mutatorName": "LogicalOperator",
+  "replacement": "groupName && ref",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 990,
+  "id": "737",
+  "mutatorName": "LogicalOperator",
+  "replacement": "errInfo?.actualContextWindow.toLocaleString() && '?'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 990,
+  "id": "739",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 990,
+  "id": "738",
+  "mutatorName": "OptionalChaining",
+  "replacement": "errInfo.actualContextWindow",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 990,
+  "id": "736",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1000,
+  "id": "741",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1001,
+  "id": "743",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1004,
+  "id": "745",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1006,
+  "id": "746",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/runtime-overflow-detection.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1007,
+  "id": "747",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1012,
+  "id": "749",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1012,
+  "id": "751",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1012,
+  "id": "752",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1012,
+  "id": "748",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1012,
+  "id": "750",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'repetition_loop'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1013,
+  "id": "754",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1013,
+  "id": "755",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.detail && 'stuck repeating output'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1013,
+  "id": "756",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1014,
+  "id": "758",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1015,
+  "id": "759",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1016,
+  "id": "760",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1016,
+  "id": "761",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1019,
+  "id": "763",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1019,
+  "id": "764",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.detail && 'loop detected'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1019,
+  "id": "765",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1023,
+  "id": "766",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1023,
+  "id": "768",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'truncated_length'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1023,
+  "id": "769",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1023,
+  "id": "767",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1023,
+  "id": "770",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1024,
+  "id": "772",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1025,
+  "id": "774",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1026,
+  "id": "775",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1027,
+  "id": "776",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1027,
+  "id": "777",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1030,
+  "id": "779",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1039,
+  "id": "781",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1039,
+  "id": "780",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1039,
+  "id": "782",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1040,
+  "id": "783",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1041,
+  "id": "785",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "789",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "791",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "787",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "786",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "790",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason === 'provider_error'",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1049,
+  "id": "788",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.reason !== 'provider_error' || ctx.observeProviderFailure(ref, String(result.reason), result.detail)",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1051,
+  "id": "792",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1052,
+  "id": "793",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1054,
+  "id": "794",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1055,
+  "id": "796",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1055,
+  "id": "795",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/free-tier-daily-cap.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1056,
+  "id": "798",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1056,
+  "id": "800",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1056,
+  "id": "797",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1056,
+  "id": "799",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'stall_timeout'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1057,
+  "id": "801",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1058,
+  "id": "803",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1058,
+  "id": "805",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1058,
+  "id": "802",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1058,
+  "id": "804",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'provider_error'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1059,
+  "id": "806",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1059,
+  "id": "807",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1059,
+  "id": "808",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1062,
+  "id": "810",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1069,
+  "id": "811",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1070,
+  "id": "812",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1075,
+  "id": "813",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1075,
+  "id": "814",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-watchdog-integration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1075,
+  "id": "815",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-watchdog-integration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1076,
+  "id": "816",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/provider-watchdog-integration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1078,
+  "id": "818",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1078,
+  "id": "820",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1078,
+  "id": "817",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1078,
+  "id": "819",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'empty_timeout'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1079,
+  "id": "821",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1080,
+  "id": "823",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1080,
+  "id": "825",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1080,
+  "id": "822",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1080,
+  "id": "824",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'stall_timeout'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1081,
+  "id": "826",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1082,
+  "id": "827",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1082,
+  "id": "828",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1082,
+  "id": "829",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'provider_error'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1082,
+  "id": "830",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1083,
+  "id": "833",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1083,
+  "id": "831",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1083,
+  "id": "832",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1084,
+  "id": "834",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1084,
+  "id": "835",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1084,
+  "id": "836",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'stream_threw'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1084,
+  "id": "837",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1085,
+  "id": "838",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1085,
+  "id": "839",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1085,
+  "id": "840",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1086,
+  "id": "841",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1087,
+  "id": "842",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1088,
+  "id": "843",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1088,
+  "id": "844",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1089,
+  "id": "846",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1090,
+  "id": "847",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1092,
+  "id": "848",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1093,
+  "id": "849",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1097,
+  "id": "851",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1098,
+  "id": "852",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1098,
+  "id": "853",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1098,
+  "id": "854",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1098,
+  "id": "855",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1099,
+  "id": "856",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "i - 1",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1100,
+  "id": "857",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1100,
+  "id": "858",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1101,
+  "id": "860",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1102,
+  "id": "861",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1106,
+  "id": "863",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1106,
+  "id": "862",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "attemptSucceeded",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1106,
+  "id": "864",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1106,
+  "id": "865",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/stream-abandon-and-text-scan.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1111,
+  "id": "866",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/provider-watchdog-integration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1116,
+  "id": "867",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1116,
+  "id": "869",
+  "mutatorName": "EqualityOperator",
+  "replacement": "allErrors.length >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1116,
+  "id": "868",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1116,
+  "id": "870",
+  "mutatorName": "EqualityOperator",
+  "replacement": "allErrors.length <= 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1117,
+  "id": "872",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1117,
+  "id": "873",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed || groupName",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1117,
+  "id": "874",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1117,
+  "id": "871",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "unconfirmed",
+  "rejected": [
+   "test/classifier-replay.test.ts"
+  ]
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1118,
+  "id": "875",
+  "mutatorName": "LogicalOperator",
+  "replacement": "visitedGroups && new Set<string>()",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1119,
+  "id": "876",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1121,
+  "id": "878",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1121,
+  "id": "879",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1121,
+  "id": "877",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/subcall-scope-isolation.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1123,
+  "id": "880",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1123,
+  "id": "881",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1123,
+  "id": "882",
+  "mutatorName": "OptionalChaining",
+  "replacement": "fb?.candidates.length",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1123,
+  "id": "883",
+  "mutatorName": "OptionalChaining",
+  "replacement": "fb.candidates",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1123,
+  "id": "884",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1124,
+  "id": "886",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1127,
+  "id": "887",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1127,
+  "id": "888",
+  "mutatorName": "LogicalOperator",
+  "replacement": "label && groupName",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "891",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed && contextOverflowSkips > 0 || contextOverflowSkips === allErrors.length",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "892",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "894",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "895",
+  "mutatorName": "EqualityOperator",
+  "replacement": "contextOverflowSkips >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "897",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "889",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "890",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "893",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed || contextOverflowSkips > 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "896",
+  "mutatorName": "EqualityOperator",
+  "replacement": "contextOverflowSkips <= 0",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "899",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1135,
+  "id": "898",
+  "mutatorName": "EqualityOperator",
+  "replacement": "contextOverflowSkips !== allErrors.length",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1138,
+  "id": "901",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1139,
+  "id": "902",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "906",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "909",
+  "mutatorName": "EqualityOperator",
+  "replacement": "candidates.length >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "908",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "911",
+  "mutatorName": "MethodExpression",
+  "replacement": "candidates.some(r => ctx.isBreakerOpen(r))",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "903",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "905",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed && candidates.length > 0 || candidates.every(r => ctx.isBreakerOpen(r))",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "907",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed || candidates.length > 0",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "904",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "910",
+  "mutatorName": "EqualityOperator",
+  "replacement": "candidates.length <= 0",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1153,
+  "id": "912",
+  "mutatorName": "ArrowFunction",
+  "replacement": "() => undefined",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1154,
+  "id": "913",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1154,
+  "id": "914",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1154,
+  "id": "915",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1157,
+  "id": "916",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1158,
+  "id": "917",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "921",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "923",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "919",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "920",
+  "mutatorName": "LogicalOperator",
+  "replacement": "st.open && st.until !== undefined || st.until < soonestUntil",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "924",
+  "mutatorName": "EqualityOperator",
+  "replacement": "st.until === undefined",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "925",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "926",
+  "mutatorName": "EqualityOperator",
+  "replacement": "st.until <= soonestUntil",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "927",
+  "mutatorName": "EqualityOperator",
+  "replacement": "st.until >= soonestUntil",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "928",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "918",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1161,
+  "id": "922",
+  "mutatorName": "LogicalOperator",
+  "replacement": "st.open || st.until !== undefined",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1166,
+  "id": "929",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1166,
+  "id": "930",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1166,
+  "id": "931",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1167,
+  "id": "932",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1169,
+  "id": "934",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1169,
+  "id": "935",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "(soonestUntil - Date.now()) * 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1169,
+  "id": "936",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "soonestUntil + Date.now()",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1173,
+  "id": "938",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "940",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "941",
+  "mutatorName": "LogicalOperator",
+  "replacement": "ctx.isLimited(probeRef) && waitMaxMs > 0 || probeSecs * 1000 <= waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "942",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "944",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "945",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "946",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs <= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "947",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "948",
+  "mutatorName": "EqualityOperator",
+  "replacement": "probeSecs * 1000 < waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "949",
+  "mutatorName": "EqualityOperator",
+  "replacement": "probeSecs * 1000 > waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "950",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "probeSecs / 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "951",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "939",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1180,
+  "id": "943",
+  "mutatorName": "LogicalOperator",
+  "replacement": "ctx.isLimited(probeRef) || waitMaxMs > 0",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1183,
+  "id": "953",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1185,
+  "id": "954",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "probeSecs * 1000 - 2000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1185,
+  "id": "955",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "probeSecs / 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1187,
+  "id": "956",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1189,
+  "id": "957",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1191,
+  "id": "959",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1192,
+  "id": "961",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1193,
+  "id": "963",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1196,
+  "id": "964",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "probeTarget",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1196,
+  "id": "965",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1196,
+  "id": "966",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1196,
+  "id": "967",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1197,
+  "id": "968",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1197,
+  "id": "969",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1197,
+  "id": "970",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1198,
+  "id": "971",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1199,
+  "id": "972",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1206,
+  "id": "974",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1206,
+  "id": "975",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1206,
+  "id": "973",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1207,
+  "id": "976",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1208,
+  "id": "977",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1211,
+  "id": "979",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1211,
+  "id": "981",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1211,
+  "id": "978",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1211,
+  "id": "980",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'aborted'",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "982",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "983",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "984",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.reason === 'provider_error' || result.detail",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "985",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "986",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'provider_error'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "987",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1212,
+  "id": "988",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1215,
+  "id": "990",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/provider-breaker-orchestration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1216,
+  "id": "991",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1217,
+  "id": "992",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1218,
+  "id": "993",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1220,
+  "id": "995",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1221,
+  "id": "996",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1222,
+  "id": "998",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1223,
+  "id": "1000",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1224,
+  "id": "1001",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1225,
+  "id": "1002",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "probeSucceeded",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1225,
+  "id": "1003",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1225,
+  "id": "1004",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1225,
+  "id": "1005",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1226,
+  "id": "1006",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1007",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1009",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed && !allBehindBreaker || candidates.every(r => ctx.isLimited(r))",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1010",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1011",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allFailed || !allBehindBreaker",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1013",
+  "mutatorName": "MethodExpression",
+  "replacement": "candidates.some(r => ctx.isLimited(r))",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1008",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1012",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "allBehindBreaker",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1256,
+  "id": "1014",
+  "mutatorName": "ArrowFunction",
+  "replacement": "() => undefined",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1015",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1018",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1017",
+  "mutatorName": "LogicalOperator",
+  "replacement": "allInCooldownNow || candidates.length > 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1019",
+  "mutatorName": "EqualityOperator",
+  "replacement": "candidates.length >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1016",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1020",
+  "mutatorName": "EqualityOperator",
+  "replacement": "candidates.length <= 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1257,
+  "id": "1021",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1260,
+  "id": "1022",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1262,
+  "id": "1025",
+  "mutatorName": "EqualityOperator",
+  "replacement": "secs <= bestSecs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1262,
+  "id": "1024",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1262,
+  "id": "1026",
+  "mutatorName": "EqualityOperator",
+  "replacement": "secs >= bestSecs",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1262,
+  "id": "1027",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1262,
+  "id": "1023",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/rate-limit-wait.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1264,
+  "id": "1028",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1264,
+  "id": "1029",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1264,
+  "id": "1030",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1033",
+  "mutatorName": "LogicalOperator",
+  "replacement": "waitMaxMs > 0 || bestSecs * 1000 <= waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1034",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1037",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1035",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1038",
+  "mutatorName": "EqualityOperator",
+  "replacement": "bestSecs * 1000 < waitMaxMs",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1040",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "bestSecs / 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1032",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1031",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-routing-cache-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1036",
+  "mutatorName": "EqualityOperator",
+  "replacement": "waitMaxMs <= 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1039",
+  "mutatorName": "EqualityOperator",
+  "replacement": "bestSecs * 1000 > waitMaxMs",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1276,
+  "id": "1041",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1278,
+  "id": "1043",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1282,
+  "id": "1045",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1284,
+  "id": "1046",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "bestSecs * 1000 - 2000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1284,
+  "id": "1047",
+  "mutatorName": "ArithmeticOperator",
+  "replacement": "bestSecs / 1000",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1285,
+  "id": "1048",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1287,
+  "id": "1050",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1291,
+  "id": "1052",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1294,
+  "id": "1053",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/subcall-scope-isolation.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1296,
+  "id": "1054",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1298,
+  "id": "1055",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1299,
+  "id": "1057",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1302,
+  "id": "1058",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "target",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1302,
+  "id": "1059",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "unconfirmed",
+  "rejected": [
+   "test/dynamic-config-prune-e2e.test.ts",
+   "test/laya-chain.test.ts"
+  ]
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1302,
+  "id": "1060",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "unconfirmed",
+  "rejected": [
+   "test/overflow-try-larger.test.ts"
+  ]
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1302,
+  "id": "1061",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "unconfirmed",
+  "rejected": [
+   "test/delegation.test.ts"
+  ]
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1303,
+  "id": "1063",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1303,
+  "id": "1064",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1303,
+  "id": "1062",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-session-misc-pins.test.ts",
+  "rejected": [
+   "test/delegation.test.ts"
+  ]
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1304,
+  "id": "1065",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1305,
+  "id": "1066",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1312,
+  "id": "1069",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1312,
+  "id": "1068",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1312,
+  "id": "1067",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1313,
+  "id": "1070",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1314,
+  "id": "1071",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1317,
+  "id": "1073",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1317,
+  "id": "1075",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1317,
+  "id": "1072",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1317,
+  "id": "1074",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'aborted'",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1077",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1078",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.reason === 'provider_error' || result.detail",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1079",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1080",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'provider_error'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1081",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1082",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1318,
+  "id": "1076",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1319,
+  "id": "1083",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1320,
+  "id": "1087",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1320,
+  "id": "1085",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1320,
+  "id": "1088",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1320,
+  "id": "1084",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1320,
+  "id": "1086",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'context_overflow'",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1321,
+  "id": "1090",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1324,
+  "id": "1092",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1326,
+  "id": "1093",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1327,
+  "id": "1094",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1096",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1097",
+  "mutatorName": "LogicalOperator",
+  "replacement": "result.reason === 'repetition_loop' && result.reason === 'truncated_length'",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1099",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'repetition_loop'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1102",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'truncated_length'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1101",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1095",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1098",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1100",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1103",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1332,
+  "id": "1104",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1333,
+  "id": "1105",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1107",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1108",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1110",
+  "mutatorName": "EqualityOperator",
+  "replacement": "result.reason !== 'repetition_loop'",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1109",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1113",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1111",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1336,
+  "id": "1112",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1338,
+  "id": "1114",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1340,
+  "id": "1116",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1340,
+  "id": "1117",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1340,
+  "id": "1115",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1342,
+  "id": "1119",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1342,
+  "id": "1121",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1342,
+  "id": "1118",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1342,
+  "id": "1120",
+  "mutatorName": "EqualityOperator",
+  "replacement": "reasonTxt !== 'rate_limit_exceeded'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1343,
+  "id": "1122",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1344,
+  "id": "1124",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1344,
+  "id": "1126",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1344,
+  "id": "1123",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1344,
+  "id": "1125",
+  "mutatorName": "EqualityOperator",
+  "replacement": "reasonTxt !== 'stall_timeout'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1345,
+  "id": "1127",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1346,
+  "id": "1128",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1346,
+  "id": "1129",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1346,
+  "id": "1130",
+  "mutatorName": "EqualityOperator",
+  "replacement": "reasonTxt !== 'provider_error'",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1346,
+  "id": "1131",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1347,
+  "id": "1134",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1347,
+  "id": "1132",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1347,
+  "id": "1133",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1350,
+  "id": "1136",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1353,
+  "id": "1137",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1355,
+  "id": "1138",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1356,
+  "id": "1139",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1357,
+  "id": "1141",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1358,
+  "id": "1142",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1359,
+  "id": "1143",
+  "mutatorName": "BooleanLiteral",
+  "replacement": "collapseSucceeded",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1359,
+  "id": "1144",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1359,
+  "id": "1145",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1359,
+  "id": "1146",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1362,
+  "id": "1147",
+  "mutatorName": "CallExpression",
+  "replacement": ";",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1369,
+  "id": "1148",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1369,
+  "id": "1150",
+  "mutatorName": "EqualityOperator",
+  "replacement": "allErrors.length >= 0",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1369,
+  "id": "1149",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1369,
+  "id": "1151",
+  "mutatorName": "EqualityOperator",
+  "replacement": "allErrors.length <= 0",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1369,
+  "id": "1152",
+  "mutatorName": "BlockStatement",
+  "replacement": "{}",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1370,
+  "id": "1155",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1370,
+  "id": "1154",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1370,
+  "id": "1153",
+  "mutatorName": "ArrowFunction",
+  "replacement": "() => undefined",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1371,
+  "id": "1156",
+  "mutatorName": "MethodExpression",
+  "replacement": "allErrors.every(({\n  message\n}) => isOverflowErrorText(message) || isOverflowDeltaText(message))",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1371,
+  "id": "1157",
+  "mutatorName": "ArrowFunction",
+  "replacement": "() => undefined",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1371,
+  "id": "1159",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "false",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1371,
+  "id": "1160",
+  "mutatorName": "LogicalOperator",
+  "replacement": "isOverflowErrorText(message) && isOverflowDeltaText(message)",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1371,
+  "id": "1158",
+  "mutatorName": "ConditionalExpression",
+  "replacement": "true",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1372,
+  "id": "1161",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1373,
+  "id": "1162",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"Stryker was here!\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1374,
+  "id": "1163",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1375,
+  "id": "1165",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1375,
+  "id": "1168",
+  "mutatorName": "StringLiteral",
+  "replacement": "\"\"",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1375,
+  "id": "1166",
+  "mutatorName": "LogicalOperator",
+  "replacement": "(groupName ?? label) && '?'",
+  "result": "survived"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1375,
+  "id": "1167",
+  "mutatorName": "LogicalOperator",
+  "replacement": "groupName && label",
+  "result": "killed",
+  "killer": "test/cooldown-collapse-retried-narration.test.ts"
+ },
+ {
+  "file": "src/stream-orchestrator.ts",
+  "line": 1379,
+  "id": "1170",
+  "mutatorName": "StringLiteral",
+  "replacement": "``",
+  "result": "killed",
+  "killer": "test/consolidated-stream-error-pins.test.ts"
+ }
+]

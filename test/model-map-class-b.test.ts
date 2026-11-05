@@ -23,7 +23,7 @@ import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Config, Cache } from '../src/types.ts';
 
-/** Remove /* block *​/ and // line comments so only executable code remains. */
+/** Strip block and line comments so only executable code remains. */
 function stripComments(source: string): string {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, '')

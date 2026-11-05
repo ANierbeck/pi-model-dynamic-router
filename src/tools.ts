@@ -11,7 +11,7 @@ import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import * as metricsModule from './metrics.ts';
-import { splitRef } from './utils.ts';
+import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import * as fs from 'node:fs';
@@ -35,6 +35,14 @@ interface ToolDeps {
   readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
   readonly router: Router;
 }
+
+/**
+ * Tool bodies in this file are synchronous (`rt.load()` and the config work
+ * are sync); the tool contract still requires `execute` to return a Promise.
+ * Wrapping the result is what makes that explicit — an `async` keyword with
+ * nothing to await only hides it.
+ */
+const syncResult = <T>(value: T): Promise<T> => Promise.resolve(value);
 
 export function createTools(rt: ToolDeps) {
   // ── Tools ──────────────────────────────────────────────────────────────
@@ -127,7 +135,7 @@ export function createTools(rt: ToolDeps) {
           'Model group name: planning, design, code_complex, standard, simple, or any custom group',
       }),
     }) as any,
-    async execute(_id: string, params: { group: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
+    execute(_id: string, params: { group: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
       rt.load();
       const name = params.group.toLowerCase(),
         res = rt.resolve(name);
@@ -137,7 +145,7 @@ export function createTools(rt: ToolDeps) {
         );
       const { provider, modelId } = splitRef(res.selected);
       const table = res.candidates.map((r, i) => rt.fmtModel(r, i, i === 0)).join('\n');
-      return {
+      return syncResult({
         content: [
           {
             type: 'text',
@@ -151,7 +159,7 @@ export function createTools(rt: ToolDeps) {
           modelId,
           candidates: res.candidates,
         },
-      };
+      });
     },
   });
 
@@ -166,7 +174,7 @@ export function createTools(rt: ToolDeps) {
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
     }) as any,
-    async execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
+    execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
       rt.load();
       const e = rt.cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval;
@@ -196,9 +204,9 @@ export function createTools(rt: ToolDeps) {
         // future load() on this install (roborev reviews of 7b58045 and
         // e99265a). Losing one metrics update is strictly the lesser harm.
         routerLog(
-          `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err}`
+          `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err instanceof Error ? err.message : textOf(err)}`
         );
-        return {
+        return syncResult({
           content: [
             {
               type: 'text' as const,
@@ -206,7 +214,7 @@ export function createTools(rt: ToolDeps) {
             },
           ],
           details: { model_ref: p.model_ref, metrics: e },
-        };
+        });
       }
       const existingEntry = base.model_metrics?.[p.model_ref] ?? {};
       base.model_metrics = {
@@ -219,10 +227,10 @@ export function createTools(rt: ToolDeps) {
       if (existingMetrics) {
         Object.assign(existingMetrics, e, { last_updated: Date.now() });
       }
-      return {
+      return syncResult({
         content: [{ type: 'text', text: `Updated ${p.model_ref}: ${JSON.stringify(e)}` }],
         details: { model_ref: p.model_ref, metrics: e },
-      };
+      });
     },
   });
 }

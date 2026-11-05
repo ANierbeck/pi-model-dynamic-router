@@ -84,6 +84,50 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       expect(out).not.toContain('ollama/qwen3.5');
       expect(out).toContain('openrouter/qwen3-4b:free');
     });
+
+    // Glob entries, the same matcher as the global exclude.models. Needed
+    // because the free tier is a SUFFIX (`…:free`), which the family-prefix
+    // agent gate cannot see, and a global rule would also remove free models
+    // from `simple`, where they belong.
+    it('drops glob patterns (e.g. every `:free` tier) and keeps the rest', () => {
+      const g: Group = { method: 'best', exclude_models: ['*:free'] } as any;
+      const out = applyGroupFilters(REFS, g, CFG);
+      expect(out).not.toContain('openrouter/qwen3-4b:free');
+      expect(out).toContain('openrouter/paid-model');
+      expect(out).toContain('ollama/qwen3.5');
+    });
+
+    // Pins for the matcher's edges (review of #102). A lone `*` is a catch-all,
+    // an empty entry matches nothing, globs are case-insensitive (the same
+    // matcher as exclude.models), and exact entries stay case-sensitive.
+    it('a lone `*` drops every model in the group', () => {
+      const g: Group = { method: 'best', exclude_models: ['*'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toEqual([]);
+    });
+
+    it('an empty entry drops nothing', () => {
+      const plain = applyGroupFilters(REFS, { method: 'best' } as any, CFG);
+      const g: Group = { method: 'best', exclude_models: [''] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toEqual(plain);
+    });
+
+    it('a glob matches case-insensitively', () => {
+      const g: Group = { method: 'best', exclude_models: ['*:FREE'] } as any;
+      const out = applyGroupFilters(REFS, g, CFG);
+      expect(out).not.toContain('openrouter/qwen3-4b:free');
+    });
+
+    it('an exact entry stays case-sensitive', () => {
+      const g: Group = { method: 'best', exclude_models: ['OPENROUTER/PAID-MODEL'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toContain('openrouter/paid-model');
+    });
+
+    // `?` is a literal here: only `*` is a wildcard. As a regex quantifier it
+    // would also match the ref without the `l` (review of #102).
+    it('treats ? as a literal character in a glob', () => {
+      const g: Group = { method: 'best', exclude_models: ['openrouter/paid-model?*'] } as any;
+      expect(applyGroupFilters(REFS, g, CFG)).toContain('openrouter/paid-model');
+    });
   });
 
   describe('min_gdpval', () => {

@@ -250,7 +250,7 @@ function formatLocalHm(ms: number): string {
       if (c.startsWith('openrouter/') && c.endsWith(':free')) refs.add(c);
     }
     for (const m of d.cache.available_models ?? []) {
-      if (m && m.provider === 'openrouter' && String(m.id).endsWith(':free')) {
+      if (m?.provider === 'openrouter' && String(m.id).endsWith(':free')) {
         refs.add(`${m.provider}/${m.id}`);
       }
     }

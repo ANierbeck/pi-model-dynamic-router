@@ -159,3 +159,20 @@ describe('formatLedger', () => {
     expect(JSON.parse(text)).toEqual(l);
   });
 });
+
+describe('backfillLedger — empty ledger cells', () => {
+  // cellText(null) used to be String(null) → "null" (and undefined → "undefined"),
+  // so a blank cell produced a diagnostic that names a file or id that never
+  // existed. A blank cell is now the empty string, and the error says so.
+  it('names a blank file cell as an empty string, not "null"', () => {
+    const report = { files: {} };
+    const ledger: Ledger = { columns: ['file', 'id'], rows: [[null, '7']] };
+    expect(() => backfillLedger(report, ledger)).toThrow(/ledger row #7 is not in the report/);
+  });
+
+  it('names a missing id cell as an empty string, not "undefined"', () => {
+    const report = { files: {} };
+    const ledger: Ledger = { columns: ['file', 'id'], rows: [['src/a.ts', undefined as unknown as string]] };
+    expect(() => backfillLedger(report, ledger)).toThrow(/ledger row src\/a\.ts# is not in the report/);
+  });
+});

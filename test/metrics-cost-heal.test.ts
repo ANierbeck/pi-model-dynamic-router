@@ -45,7 +45,6 @@ import {
   effCost,
   lookupPrice,
 } from '../src/metrics.ts';
-import type { Config, Cache } from '../src/types.ts';
 
 // A fake pi modelRegistry implementing the public methods the router uses.
 function makeRegistry(models: Array<{

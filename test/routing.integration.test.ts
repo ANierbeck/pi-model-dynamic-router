@@ -6,11 +6,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Router } from '../src/routing.js';
 import { RateLimitManager } from '../src/rate-limit.js';
-import { DiscoveryManager } from '../src/discovery.js';
 import * as metricsModule from '../src/metrics.js';
 import { CacheManager } from '../src/cache.js';
 import type { Config, Cache } from '../src/types.js';
-import { PROVIDER_MAP } from '../src/providers.js';
 
 // Real configuration for tests
 const testConfig: Config = {
@@ -84,7 +82,6 @@ const rateLimitManager = new RateLimitManager(
 );
 
 // DiscoveryManager erstellen
-const discoveryManager = new DiscoveryManager(testConfig, cache);
 
 // Router erstellen
 const router = new Router(

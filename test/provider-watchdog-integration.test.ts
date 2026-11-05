@@ -132,6 +132,9 @@ describe('driveStream feeds the local-provider watchdog', () => {
           // Wedged daemon: accepts the request, never produces a token.
           return (async function* () {
             await new Promise((r) => setTimeout(r, 2_000));
+            // A wedged daemon emits nothing at all: the stream ends without a
+            // single event, which is exactly the behavior under test.
+            yield* [];
           })();
         }
         return (async function* () {

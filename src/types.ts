@@ -1,7 +1,6 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
-import type { Model } from '@earendil-works/pi-ai';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 
@@ -130,6 +129,11 @@ export interface Group {
    */
   min_context_length?: number;
   exclude_providers?: string[];
+  /**
+   * Model refs to drop from this group. Each entry is an exact ref, or a glob
+   * where `*` matches any run of characters (same matcher as `exclude.models`).
+   * Use a glob for a whole tier, e.g. `"*:free"`.
+   */
   exclude_models?: string[];
   /**
    * Per-group cache-aware compaction settings (Phase 5b): each field wins

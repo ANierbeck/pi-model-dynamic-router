@@ -8,9 +8,13 @@
 // (scripts/hardcoded-model-baseline.json) and the redundancy report
 // (scripts/redundancy-baseline.json). See docs/plans/2026-11-04-lint-gate.md.
 //
-// Usage: node scripts/lint-gate.ts [--write]
-//   --write  regenerate the baseline from the current findings
+// Usage: node scripts/lint-gate.ts [--write | --pre-push]
+//   --write     regenerate the baseline from the current findings
+//   --pre-push  git hook mode (.githooks/pre-push): reads git's ref list on
+//               stdin and skips with a notice when the working tree is not
+//               what is being pushed (see prePushLintPlan)
 import { ESLint } from 'eslint';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { invokedDirectly } from './lib/cli.ts';
@@ -29,7 +33,57 @@ export interface LintBaseline {
 
 const BASELINE_PATH = 'scripts/lint-baseline.json';
 const TARGETS = ['src', 'index.ts', 'scripts', 'test'];
+/** Paths whose uncommitted state changes the lint verdict. */
+const LINT_INPUTS = [...TARGETS, 'eslint.config.js', 'tsconfig.json', 'package.json'];
 const SEP = '\u0000';
+const ZERO_SHA = /^0+$/;
+
+export type PrePushLintPlan = { run: true } | { run: false; reason: string };
+
+/**
+ * Whether the pre-push hook should run the gate. ESLint lints the working
+ * tree, git pushes commits; they only agree when every pushed ref is the
+ * checked-out HEAD and the lint inputs carry no uncommitted or untracked
+ * changes. Otherwise the local verdict would be about code that is not being
+ * pushed, so the hook skips with a reason and CI — which lints exactly the
+ * pushed commit — decides.
+ *
+ * @param stdin git's pre-push input: "<local ref> <local sha> <remote ref> <remote sha>" per line
+ * @param head  `git rev-parse HEAD`
+ * @param dirty lint-input paths from `git status --porcelain`
+ */
+export function prePushLintPlan(stdin: string, head: string, dirty: readonly string[]): PrePushLintPlan {
+  const pushed = stdin
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/)[1] ?? '')
+    .filter((sha) => sha !== '' && !ZERO_SHA.test(sha));
+  if (pushed.length === 0) return { run: false, reason: 'nothing to lint (delete-only push)' };
+  if (pushed.some((sha) => sha !== head)) {
+    return { run: false, reason: 'a pushed ref is not the checked-out HEAD; CI lints the pushed commit' };
+  }
+  if (dirty.length > 0) {
+    return {
+      run: false,
+      reason: `uncommitted changes in lint inputs (${dirty.slice(0, 3).join(', ')}${dirty.length > 3 ? ', ...' : ''}); CI lints the pushed commit`,
+    };
+  }
+  return { run: true };
+}
+
+/**
+ * The plan for a real checkout: `stdin` is git's ref list for the hook, the
+ * rest is read from `root`. Exported so the git-status parsing (renames,
+ * untracked files, pathspec) is tested against real repositories.
+ */
+export function prePushPlanFromGit(root: string, stdin: string): PrePushLintPlan {
+  const git = (...args: string[]): string =>
+    execFileSync('git', args, { cwd: root, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ...LINT_INPUTS)
+    .split('\n')
+    .filter((l) => l.trim() !== '')
+    .map((l) => l.slice(3));
+  return prePushLintPlan(stdin, git('rev-parse', 'HEAD').trim(), dirty);
+}
 
 /** Aggregate ESLint results into canonical (file, rule) counts. */
 /** Entries --write must not baseline: a parse error (`fatal`) is never accepted as known. */
@@ -100,6 +154,13 @@ export function compareLintFindingsToBaseline(found: LintEntry[], baseline: Lint
 async function main(): Promise<void> {
   const root = process.cwd();
   const write = process.argv.includes('--write');
+  if (process.argv.includes('--pre-push')) {
+    const plan = prePushPlanFromGit(root, readFileSync(0, 'utf-8'));
+    if (!plan.run) {
+      console.error(`lint gate (pre-push): skipped, ${plan.reason}`);
+      return;
+    }
+  }
   const results = await new ESLint({ cwd: root }).lintFiles(TARGETS);
   const found = toEntries(results, root);
   const total = found.reduce((sum, entry) => sum + entry.count, 0);

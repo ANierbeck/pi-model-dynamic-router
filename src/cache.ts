@@ -365,8 +365,8 @@ export class CacheManager {
     for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
     // A reset is a WIPE: remove both files so the merge-on-save paths have
     // nothing to resurrect, then persist the (now empty) state fresh.
-    try { fs.rmSync(this.cachePath, { force: true }); } catch {}
-    if (this.projectPath) try { fs.rmSync(this.projectPath, { force: true }); } catch {}
+    try { fs.rmSync(this.cachePath, { force: true }); } catch { /* best effort: a locked or already-gone file must not block the wipe */ }
+    if (this.projectPath) try { fs.rmSync(this.projectPath, { force: true }); } catch { /* best effort, see above */ }
     this.saveCache();
   }
 
@@ -408,7 +408,7 @@ export class CacheManager {
    * Adds a new entry to the usage log
    */
   addUsageLogEntry(ref: string, tokens: number): void {
-    if (!this.cache.usage_log) this.cache.usage_log = [];
+    this.cache.usage_log ??= [];
     this.cache.usage_log.push({ ref, tokens, ts: Date.now() });
     // Trim log to last 30 days
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;

@@ -34,7 +34,7 @@ export const UNHEALTHY_AT = 2;
 
 function store(cache: Cache): Record<string, HealthRecord> {
   const c = cache as Cache & { model_health?: Record<string, HealthRecord> };
-  if (!c.model_health) c.model_health = {};
+  c.model_health ??= {};
   return c.model_health;
 }
 
@@ -66,7 +66,7 @@ function isStale(rec: HealthRecord | undefined): boolean {
  */
 export function failureStreak(cache: Cache, ref: string): number {
   const rec = store(cache)[ref];
-  return isStale(rec) ? 0 : rec!.fails;
+  return isStale(rec) ? 0 : rec.fails;
 }
 
 /**

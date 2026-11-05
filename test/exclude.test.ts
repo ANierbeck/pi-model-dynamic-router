@@ -4,7 +4,6 @@
 import { describe, it, expect } from 'vitest';
 import { isExcluded, applyExcludes, type ExcludeContext } from '../src/exclude.js';
 import type { Config, Cache } from '../src/types.js';
-import { PROVIDER_MAP } from '../src/providers.js';
 
 function ctx(rules: any, cfgOverrides: Partial<Config> = {}, cacheOverrides: Partial<Cache> = {}): ExcludeContext {
   const cfg: Config = {

@@ -84,7 +84,7 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     // Add budget info for subscription providers
     const budgetInfo = d.cache.budget_cache?.[prov];
     let budgetStr = '';
-    if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
+    if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
       const now = Date.now();
       if (now < budgetInfo.window_reset) {
         const remaining = budgetInfo.remaining_tokens;

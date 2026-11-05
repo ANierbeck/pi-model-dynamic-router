@@ -35,9 +35,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
-import { routerLog, errorLog } from './logger.ts';
+import { errorLog } from './logger.ts';
 import { CAPABILITY_COLUMNS, isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
-import { norm, baseTokens, splitRef } from './utils.ts';
+import { norm, baseTokens, splitRef, textOf } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
 
@@ -97,7 +97,7 @@ export function loadModelMap(extDir: string): void {
     // so ALL model-map overrides silently stop working and every model falls
     // through to the lossy token-set + LLM fallback. Log loudly so this is
     // never silent again.
-    errorLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : String(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
+    errorLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : textOf(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
     modelMap = {};
     modelMapWildcards = [];
     modelMapVersion++;
@@ -447,7 +447,7 @@ export function lookupContextWindow(ref: string): number | null {
   if (slashIdx > 0 && modelRegistry) {
     try {
       const registryModel = findRegistryModel(ref.slice(0, slashIdx), ref.slice(slashIdx + 1));
-      const registryCw = (registryModel as any)?.contextWindow;
+      const registryCw = (registryModel)?.contextWindow;
       if (typeof registryCw === 'number' && registryCw > 0) return registryCw;
     } catch {
       // Degraded registry (e.g. harness without a full mock) — fall through
@@ -782,7 +782,7 @@ export function updateMetrics(ref: string, latMs: number, tokens: number, durMs:
       m.throughput_tps = m.throughput_tps * (1 - α) + tps * α;
     }
     m.tps_samples = (m.tps_samples ?? 0) + 1;
-    if (!cache.benchmarks) cache.benchmarks = {};
+    cache.benchmarks ??= {};
     cache.benchmarks[ref] = m.throughput_tps;
   }
   m.samples = (m.samples ?? 0) + 1;

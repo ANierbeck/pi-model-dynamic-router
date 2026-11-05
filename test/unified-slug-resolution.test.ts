@@ -23,7 +23,6 @@ import {
   setModelMap,
   setLlmMatches,
 } from '../src/metrics.js';
-import type { Config, Cache } from '../src/types.js';
 
 beforeEach(() => {
   setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });

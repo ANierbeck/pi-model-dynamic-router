@@ -165,6 +165,7 @@ describe('tool_result delegation', () => {
   it('the scope does not leak: after a failing sub-call the next stream records again', async () => {
     const w = world();
     const failing = vi.fn(async function* () {
+      yield* []; // no event: the sub-call fails before its first token
       throw new Error('429 rate-limited upstream');
     } as any) as any;
     await delegation(w, failing).run();

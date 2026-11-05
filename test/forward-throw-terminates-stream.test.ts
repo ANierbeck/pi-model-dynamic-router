@@ -104,7 +104,7 @@ describe('driveStream: forwarding exception must not hang the stream', () => {
           (provider === healthyModel.provider && modelId === healthyModel.id)
             ? { ...brokenModel, provider, id: modelId }
             : null,
-        getApiKeyForProvider: async (provider: string) => 'sk-test',
+        getApiKeyForProvider: async (_provider: string) => 'sk-test',
         runtime: { streamSimple },
       };
       const ctx: any = { modelRegistry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };

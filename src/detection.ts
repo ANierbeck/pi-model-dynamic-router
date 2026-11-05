@@ -449,7 +449,12 @@ export function sanitizeForLog(text: string): string {
     )
     // Terminal control sequences (Sourcery PR #74): a provider body could
     // carry ANSI escapes; a log viewed in a terminal must not be spoofable.
+    // Control characters are the POINT of these two patterns (the router
+    // strips terminal escape sequences so a provider body cannot spoof a
+    // log line); no-control-regex has no option to allow them in ESLint 10.
+    // eslint-disable-next-line no-control-regex
     .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .trim();
   return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
@@ -482,6 +487,57 @@ export function isOverflowErrorText(text: string): boolean {
 export function isOverflowDeltaText(text: string): boolean {
   const lower = text.toLowerCase();
   return TEXT_DELTA_OVERFLOW_PATTERNS.some((p) => lower.includes(p));
+}
+
+/**
+ * Wire markers that mean "this is a tool call, but it arrived as text".
+ *
+ * FORMAT markers only — never model names (ADR-0025 §9). Each entry is a
+ * prefix the answer must START with (after leading whitespace; a markdown
+ * fence is prose, not the opening), because a model that prints its tool call instead of emitting one
+ * opens with the marker; the same string mid-sentence is ordinary prose.
+ *
+ * The generic `<*_function_call>` shape is deliberate: the 2026-11-05
+ * incident's dialect (`<dots_function_call>`) was invented by the harness
+ * around the model, not by any provider spec, so a fixed list of known
+ * dialects would miss the next one.
+ */
+export const TOOL_MARKUP_PREFIXES: readonly string[] = [
+  '<tool_call',
+  '<function_call',
+  '<|tool_call',
+  '[TOOL_CALLS]',
+  'tool_call:',
+];
+
+/** Matches `<anything_function_call>` / `<anything_tool_call>` at the start. */
+const GENERIC_TOOL_MARKUP_RE = /^<[a-z0-9_.-]*(?:function|tool)_call[s]?\b/i;
+
+/**
+ * Leading whitespace only. A markdown fence is NOT stripped: an answer that
+ * opens with a fenced code block is prose that may show a tool call as an
+ * example (the owner's own answers discuss this router's wire formats), so the
+ * fence itself must not turn the answer into a failure. The incident's dialect
+ * was not fenced.
+ */
+function stripAnswerOpening(text: string): string {
+  return text.trimStart();
+}
+
+/**
+ * True if the answer OPENS with tool-call markup, i.e. the model printed a
+ * tool call as prose instead of emitting a tool-call event.
+ *
+ * Only meaningful when the request carried tools: without tools, the same
+ * text is a legitimate answer. Callers gate on that; this function does not
+ * know about the request.
+ */
+export function isToolCallMarkupText(text: string): boolean {
+  const head = stripAnswerOpening(text);
+  if (!head) return false;
+  const lower = head.toLowerCase();
+  if (TOOL_MARKUP_PREFIXES.some((p) => lower.startsWith(p.toLowerCase()))) return true;
+  return GENERIC_TOOL_MARKUP_RE.test(head);
 }
 
 /**

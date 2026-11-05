@@ -123,7 +123,7 @@ const REQUEST_TEXT = /does not support tools|support tool use/i;
  * brace never closed), so after a failed parse we re-close up to a few open
  * braces and retry. Returns undefined when nothing JSON-shaped is found.
  */
-function tryParseJsonObject(s: string): any | undefined {
+function tryParseJsonObject(s: string): Record<string, any> | undefined {
   const start = s.indexOf('{');
   if (start < 0) return undefined;
   let body = s.slice(start, s.lastIndexOf('}') + 1);
@@ -159,7 +159,9 @@ function parseBody(text: string): { message: string; routingStep?: string; ineli
         message,
         routingStep: typeof meta.failed_routing_step === 'string' ? meta.failed_routing_step : undefined,
         ineligibility: Array.isArray(meta.ineligibility_reasons)
-          ? meta.ineligibility_reasons.map((r: { reason?: unknown }) => String(r?.reason ?? ''))
+          ? meta.ineligibility_reasons.map((r: { reason?: unknown }) =>
+              typeof r?.reason === 'string' ? r.reason : ''
+            )
           : [],
       };
     } catch {

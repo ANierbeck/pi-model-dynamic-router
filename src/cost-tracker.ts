@@ -98,7 +98,7 @@ export class CostTracker {
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost =
       price && price.input !== 'unknown' && price.output !== 'unknown'
-        ? (inputTokens * (price.input as number) + outputTokens * (price.output as number)) / 1_000_000
+        ? (inputTokens * (price.input) + outputTokens * (price.output)) / 1_000_000
         : 0;
 
     // Update metrics
@@ -111,7 +111,7 @@ export class CostTracker {
     // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
     this.metrics.costByModel[modelRef] = (this.metrics.costByModel[modelRef] || 0) + cost;
-    if (!this.metrics.tokensByModel) this.metrics.tokensByModel = {};
+    this.metrics.tokensByModel ??= {};
     const tok = this.metrics.tokensByModel[modelRef] ?? { in: 0, out: 0 };
     tok.in += inputTokens;
     tok.out += outputTokens;

@@ -20,7 +20,7 @@ export function arg(name: string, argv: string[] = process.argv.slice(2)): strin
   const eq = argv.find((a) => a.startsWith(`--${name}=`));
   if (eq !== undefined) return eq.slice(name.length + 3);
   const i = argv.indexOf(`--${name}`);
-  if (i >= 0 && i + 1 < argv.length && !argv[i + 1]!.startsWith('--')) return argv[i + 1];
+  if (i >= 0 && i + 1 < argv.length && !argv[i + 1].startsWith('--')) return argv[i + 1];
   return undefined;
 }
 
@@ -52,7 +52,7 @@ export function invokedDirectly(moduleUrl: string): boolean {
 export function offsetOf(source: string, line: number, column: number): number {
   const lines = source.split('\n');
   let off = 0;
-  for (let i = 0; i < line - 1; i++) off += lines[i]!.length + 1;
+  for (let i = 0; i < line - 1; i++) off += lines[i].length + 1;
   return off + column - 1;
 }
 
