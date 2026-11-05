@@ -16,7 +16,7 @@ import { PROVIDER_MAP } from './providers.ts';
 import { explainBestRanking } from './rank-explain.ts';
 import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, hasCapabilityData, lookupContextWindow } from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
-import { isExcluded } from './exclude.ts';
+import { isExcluded, globMatcher } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { demoteUnhealthy, isUnhealthy } from './model-health.ts';
@@ -201,7 +201,7 @@ function admitsZeroCostGroup(ref: string, isFree: boolean, cfg: Config): boolean
  *
  * Filter order (matters for correctness, not just performance):
  *   1. exclude_providers  — drop whole providers (group-level override)
- *   2. exclude_models     — drop exact model refs (group-level override)
+ *   2. exclude_models     — drop model refs: exact, or glob (`*` = any run, as in exclude.models)
  *   3. dedup (optional)   — same-slug clusters before the gates
  *   3b. agent-capability tier — curated non-agent families (see
  *       src/agent-capability.ts) drop out of EVERY group; the prompt
@@ -267,7 +267,8 @@ export function applyGroupFilters(
   }
   // 2. exclude_models
   if (g.exclude_models?.length) {
-    c = gate('exclude_models', ref => !g.exclude_models!.includes(ref));
+    const excluded = g.exclude_models.map((p): ((ref: string) => boolean) => (p.includes('*') ? globMatcher(p) : (ref: string): boolean => ref === p));
+    c = gate('exclude_models', ref => !excluded.some((matches) => matches(ref)));
   }
   // 3. Same-provider same-slug dedup — BEFORE the quality/cost/context
   //    gates (2026-09-20). The gates must act on the CANONICAL cluster
