@@ -16,8 +16,14 @@ import { CacheManager } from '../src/cache.ts';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { stripProvider, setConfig, setPiRegisteredProviders, getPiRegisteredProviders } from '../src/metrics.ts';
+import {
+  stripProvider,
+  setConfig,
+  setPiRegisteredProviders,
+  getPiRegisteredProviders,
+} from '../src/metrics.ts';
 import type { Config } from '../src/types.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 // ── F8: isScanCacheValid rejects a fresh-but-empty cache ──────────────────
 
@@ -30,7 +36,7 @@ describe('F8: isScanCacheValid rejects a fresh-but-empty cache', () => {
     cm = new CacheManager(tmpDir);
   });
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    rmTmpDir(tmpDir);
   });
 
   it('rejects a cache with no lastScanTimestamp (unchanged — always was false)', () => {
@@ -95,7 +101,11 @@ describe('F11: stripProvider recognizes pi-registered providers', () => {
   });
 
   it('strips a cfg.providers provider (unchanged)', () => {
-    const cfg: Config = { model_groups: {}, model_metrics: {}, providers: { 'my-provider': { keys: [] } } } as any;
+    const cfg: Config = {
+      model_groups: {},
+      model_metrics: {},
+      providers: { 'my-provider': { keys: [] } },
+    } as any;
     setConfig(cfg);
     expect(stripProvider('my-provider/some-model')).toBe('some-model');
   });
@@ -127,7 +137,11 @@ describe('F11: stripProvider recognizes pi-registered providers', () => {
 
   it('F11: all three sources are checked (PROVIDER_MAP OR cfg OR pi-registry)', () => {
     // A provider in cfg.providers but not PROVIDER_MAP nor pi-registry still strips.
-    const cfg: Config = { model_groups: {}, model_metrics: {}, providers: { 'cfg-only': { keys: [] } } } as any;
+    const cfg: Config = {
+      model_groups: {},
+      model_metrics: {},
+      providers: { 'cfg-only': { keys: [] } },
+    } as any;
     setConfig(cfg);
     setPiRegisteredProviders(['pi-only']);
     expect(stripProvider('cfg-only/model')).toBe('model');

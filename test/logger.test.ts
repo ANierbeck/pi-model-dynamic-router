@@ -89,7 +89,8 @@ describe('rotation', () => {
     const dir = path.dirname(logPath());
     const files = fs.readdirSync(dir).sort();
     expect(files).toEqual(['router.log', 'router.log.1', 'router.log.2']);
-    for (const f of files) expect(fs.statSync(path.join(dir, f)).size).toBeLessThanOrEqual(200 + 120);
+    for (const f of files)
+      expect(fs.statSync(path.join(dir, f)).size).toBeLessThanOrEqual(200 + 120);
     expect(read()).toContain('line 39');
     expect(read(path.join(dir, 'router.log.1'))).not.toContain('line 39');
   });
@@ -132,7 +133,9 @@ describe('rotation', () => {
     fs.mkdirSync(`${logPath()}.1`);
     fs.writeFileSync(path.join(`${logPath()}.1`, 'blocker'), '');
     for (let i = 0; i < 5; i++) routerLog(`[router] line ${i}`);
-    const failures = read().split('\n').filter((l) => l.includes('log rotation failed'));
+    const failures = read()
+      .split('\n')
+      .filter((l) => l.includes('log rotation failed'));
     expect(failures).toHaveLength(1);
     expect(read()).toContain('line 4');
   });

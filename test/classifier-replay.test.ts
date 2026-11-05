@@ -21,7 +21,12 @@ const dir = () => mkdtempSync(join(tmpdir(), 'replay-'));
 
 const sessionLine = (obj: unknown) => JSON.stringify(obj);
 const userMsg = (ts: string, text: string, extra: Record<string, unknown> = {}) =>
-  sessionLine({ type: 'message', timestamp: ts, message: { role: 'user', content: [{ type: 'text', text }] }, ...extra });
+  sessionLine({
+    type: 'message',
+    timestamp: ts,
+    message: { role: 'user', content: [{ type: 'text', text }] },
+    ...extra,
+  });
 
 describe('session backfill reader', () => {
   it('extracts user messages in order, skipping everything else', () => {
@@ -30,12 +35,22 @@ describe('session backfill reader', () => {
     writeFileSync(
       f,
       [
-        sessionLine({ type: 'session', version: 1, id: 's1', timestamp: '2026-10-08T10:00:00Z', cwd: '/x' }),
+        sessionLine({
+          type: 'session',
+          version: 1,
+          id: 's1',
+          timestamp: '2026-10-08T10:00:00Z',
+          cwd: '/x',
+        }),
         sessionLine({ type: 'model_change', timestamp: '2026-10-08T10:00:01Z' }),
         userMsg('2026-10-08T10:00:02Z', 'Fix the flaky test in provider-breaker'),
-        sessionLine({ type: 'message', timestamp: '2026-10-08T10:00:03Z', message: { role: 'assistant', content: [{ type: 'text', text: 'on it' }] } }),
+        sessionLine({
+          type: 'message',
+          timestamp: '2026-10-08T10:00:03Z',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'on it' }] },
+        }),
         userMsg('2026-10-08T10:01:00Z', 'Und jetzt bitte die Doku dazu'),
-      ].join('\n') + '\n',
+      ].join('\n') + '\n'
     );
     const prompts = extractSessionPrompts([f]);
     expect(prompts.map((p) => p.text)).toEqual([
@@ -57,20 +72,26 @@ describe('session backfill reader', () => {
           sessionLine({
             type: 'message',
             timestamp: '2026-10-08T10:00:00Z',
-            message: { role: 'user', content: [
-              { type: 'text', text: 'part one ' },
-              { type: 'text', text: 'part two' },
-            ] },
+            message: {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'part one ' },
+                { type: 'text', text: 'part two' },
+              ],
+            },
           }),
           sessionLine({
             type: 'message',
             timestamp: '2026-10-08T10:00:01Z',
-            message: { role: 'user', content: [
-              { type: 'file', path: '/tmp/review-prompt.md' },
-              { type: 'text', text: 'You are a code reviewer' },
-            ] },
+            message: {
+              role: 'user',
+              content: [
+                { type: 'file', path: '/tmp/review-prompt.md' },
+                { type: 'text', text: 'You are a code reviewer' },
+              ],
+            },
           }),
-        ].join('\n') + '\n',
+        ].join('\n') + '\n'
     );
     const prompts = extractSessionPrompts([f]);
     expect(prompts[0].text).toBe('part one part two');
@@ -82,7 +103,10 @@ describe('session backfill reader', () => {
   it('skips malformed lines without failing the whole file', () => {
     const d = dir();
     const f = join(d, 'b.jsonl');
-    writeFileSync(f, ['not json at all', userMsg('2026-10-08T10:00:00Z', 'survives'), ''].join('\n') + '\n');
+    writeFileSync(
+      f,
+      ['not json at all', userMsg('2026-10-08T10:00:00Z', 'survives'), ''].join('\n') + '\n'
+    );
     expect(extractSessionPrompts([f]).map((p) => p.text)).toEqual(['survives']);
     rmSync(d, { recursive: true, force: true });
   });
@@ -94,12 +118,29 @@ describe('decision-log corpus', () => {
     const f = join(d, 'decisions.jsonl');
     const rec = (over: Record<string, unknown>) =>
       JSON.stringify({
-        v: 1, ts: '2026-10-08T10:00:00Z', proc: 'p/1', stage: 'llm-cloud',
-        answered_by: 'cloud:a/b', chain: [], cache_origin: null,
+        v: 1,
+        ts: '2026-10-08T10:00:00Z',
+        proc: 'p/1',
+        stage: 'llm-cloud',
+        answered_by: 'cloud:a/b',
+        chain: [],
+        cache_origin: null,
         raw: { category: 'code_complex', confidence: 0.8, reason: null },
         final: { category: 'code_complex', group: 'tactical', hint: null, reason: null },
-        steps: [], ms: 500,
-        input: { chars: 30, words: 5, sha: 'abc123def456', text: { prompt: 'please refactor the retry loop now' }, context: { hasContextBlock: false, lastCategory: null, isCompaction: false, hasHistory: false } },
+        steps: [],
+        ms: 500,
+        input: {
+          chars: 30,
+          words: 5,
+          sha: 'abc123def456',
+          text: { prompt: 'please refactor the retry loop now' },
+          context: {
+            hasContextBlock: false,
+            lastCategory: null,
+            isCompaction: false,
+            hasHistory: false,
+          },
+        },
         ...over,
       });
     writeFileSync(
@@ -108,14 +149,32 @@ describe('decision-log corpus', () => {
         rec({}),
         'garbage {',
         rec({ input: { chars: 1, words: 1, sha: '000', text: null, context: {} } }),
-        rec({ final: { category: 'design', group: 'planning', hint: null, reason: null }, input: { chars: 20, words: 3, sha: 'bbb', text: { prompt: 'design the new api surface' }, context: { hasContextBlock: false, lastCategory: null, isCompaction: false, hasHistory: false } } }),
-      ].join('\n') + '\n',
+        rec({
+          final: { category: 'design', group: 'planning', hint: null, reason: null },
+          input: {
+            chars: 20,
+            words: 3,
+            sha: 'bbb',
+            text: { prompt: 'design the new api surface' },
+            context: {
+              hasContextBlock: false,
+              lastCategory: null,
+              isCompaction: false,
+              hasHistory: false,
+            },
+          },
+        }),
+      ].join('\n') + '\n'
     );
     const records = readDecisionRecords([f]);
     expect(records).toHaveLength(3);
     const corpus = buildCorpus({ records });
     expect(corpus).toHaveLength(2);
-    expect(corpus[0]).toMatchObject({ prompt: 'please refactor the retry loop now', knownCategory: 'code_complex', knownGroup: 'tactical' });
+    expect(corpus[0]).toMatchObject({
+      prompt: 'please refactor the retry loop now',
+      knownCategory: 'code_complex',
+      knownGroup: 'tactical',
+    });
     rmSync(d, { recursive: true, force: true });
   });
 
@@ -130,15 +189,35 @@ describe('decision-log corpus', () => {
     // observation writes (same schema, stage differs).
     const obs = (stage: string, sha: string) =>
       JSON.stringify({
-        v: 1, ts: '2026-10-29T10:00:00Z', proc: 'p/1', stage, answered_by: 'laya:x/y', chain: [], cache_origin: null,
+        v: 1,
+        ts: '2026-10-29T10:00:00Z',
+        proc: 'p/1',
+        stage,
+        answered_by: 'laya:x/y',
+        chain: [],
+        cache_origin: null,
         raw: { category: 'code_complex', confidence: 0.8, reason: null },
         final: { category: 'code_complex', group: 'code_complex', hint: null, reason: null },
-        steps: [], ms: 5,
-        input: { chars: 3, words: 1, sha, text: { prompt: 'ok do it now please' }, context: { hasContextBlock: false, lastCategory: null, isCompaction: false, hasHistory: false } },
+        steps: [],
+        ms: 5,
+        input: {
+          chars: 3,
+          words: 1,
+          sha,
+          text: { prompt: 'ok do it now please' },
+          context: {
+            hasContextBlock: false,
+            lastCategory: null,
+            isCompaction: false,
+            hasHistory: false,
+          },
+        },
       });
     writeFileSync(
       f,
-      [obs('observation', 'obs1'), obs('observation-comparator', 'obs2'), obs('pool', 'obs3')].join('\n') + '\n',
+      [obs('observation', 'obs1'), obs('observation-comparator', 'obs2'), obs('pool', 'obs3')].join(
+        '\n'
+      ) + '\n'
     );
     const corpus = buildCorpus({ records: readDecisionRecords([f]) });
     expect(corpus).toHaveLength(0);
@@ -151,13 +230,35 @@ describe('decision-log corpus', () => {
     writeFileSync(
       f,
       JSON.stringify({
-        v: 1, ts: '2026-10-08T10:00:00Z', proc: 'p/1', stage: 'llm-cloud', answered_by: null, chain: [], cache_origin: null,
-        raw: null, final: { category: 'planning', group: 'planning', hint: null, reason: null }, steps: [], ms: 1,
-        input: { chars: 9, words: 2, sha: 'x', text: { prompt: 'and then?', previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' }, context: {} },
-      }) + '\n',
+        v: 1,
+        ts: '2026-10-08T10:00:00Z',
+        proc: 'p/1',
+        stage: 'llm-cloud',
+        answered_by: null,
+        chain: [],
+        cache_origin: null,
+        raw: null,
+        final: { category: 'planning', group: 'planning', hint: null, reason: null },
+        steps: [],
+        ms: 1,
+        input: {
+          chars: 9,
+          words: 2,
+          sha: 'x',
+          text: {
+            prompt: 'and then?',
+            previousUserMessage: 'plan the rollout',
+            lastAssistantSnippet: 'Here is the plan',
+          },
+          context: {},
+        },
+      }) + '\n'
     );
     const [item] = buildCorpus({ records: readDecisionRecords([f]) });
-    expect(item.context).toEqual({ previousUserMessage: 'plan the rollout', lastAssistantSnippet: 'Here is the plan' });
+    expect(item.context).toEqual({
+      previousUserMessage: 'plan the rollout',
+      lastAssistantSnippet: 'Here is the plan',
+    });
     rmSync(d, { recursive: true, force: true });
   });
 
@@ -166,11 +267,23 @@ describe('decision-log corpus', () => {
     const f = join(d, 'decisions.jsonl');
     const rec = (cat: string, prompt: string) =>
       JSON.stringify({
-        v: 1, ts: '2026-10-08T10:00:00Z', proc: 'p/1', stage: 'llm-cloud', answered_by: null, chain: [], cache_origin: null,
-        raw: null, final: { category: cat, group: 'tactical', hint: null, reason: null }, steps: [], ms: 1,
+        v: 1,
+        ts: '2026-10-08T10:00:00Z',
+        proc: 'p/1',
+        stage: 'llm-cloud',
+        answered_by: null,
+        chain: [],
+        cache_origin: null,
+        raw: null,
+        final: { category: cat, group: 'tactical', hint: null, reason: null },
+        steps: [],
+        ms: 1,
         input: { chars: prompt.length, words: 1, sha: 'x', text: { prompt }, context: {} },
       });
-    writeFileSync(f, [rec('code_complex', 'dupe prompt'), rec('simple', 'dupe prompt')].join('\n') + '\n');
+    writeFileSync(
+      f,
+      [rec('code_complex', 'dupe prompt'), rec('simple', 'dupe prompt')].join('\n') + '\n'
+    );
     const corpus = buildCorpus({ records: readDecisionRecords([f]) });
     expect(corpus).toHaveLength(1);
     expect(corpus[0].knownCategory).toBe('code_complex');
@@ -183,9 +296,33 @@ describe('replay against a candidate endpoint', () => {
   let server: Server;
   let url = '';
   const corpus = [
-    { prompt: 'refactor the retry loop', knownCategory: 'code_complex', knownGroup: 'tactical', source: 'dec', ts: '2026-10-08T10:00:00Z', hasAttachment: false, duplicates: 0 },
-    { prompt: 'hallo', knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: '2026-10-08T10:00:01Z', hasAttachment: false, duplicates: 0 },
-    { prompt: 'banana phone', knownCategory: 'design', knownGroup: 'planning', source: 'dec', ts: '2026-10-08T10:00:02Z', hasAttachment: false, duplicates: 0 },
+    {
+      prompt: 'refactor the retry loop',
+      knownCategory: 'code_complex',
+      knownGroup: 'tactical',
+      source: 'dec',
+      ts: '2026-10-08T10:00:00Z',
+      hasAttachment: false,
+      duplicates: 0,
+    },
+    {
+      prompt: 'hallo',
+      knownCategory: 'simple',
+      knownGroup: 'operational',
+      source: 'dec',
+      ts: '2026-10-08T10:00:01Z',
+      hasAttachment: false,
+      duplicates: 0,
+    },
+    {
+      prompt: 'banana phone',
+      knownCategory: 'design',
+      knownGroup: 'planning',
+      source: 'dec',
+      ts: '2026-10-08T10:00:02Z',
+      hasAttachment: false,
+      duplicates: 0,
+    },
   ];
 
   beforeAll(async () => {
@@ -198,9 +335,11 @@ describe('replay against a candidate endpoint', () => {
           res.writeHead(code, { 'content-type': 'application/json' });
           res.end(JSON.stringify(o));
         };
-        if (prompt === 'refactor the retry loop') reply({ category: 'code_complex', confidence: 0.9 });
+        if (prompt === 'refactor the retry loop')
+          reply({ category: 'code_complex', confidence: 0.9 });
         else if (prompt === 'hallo') reply({ category: 'simple', confidence: 0.7 });
-        else if (prompt === 'banana phone') reply({ category: 'banana', confidence: 0.9 }); // invalid category
+        else if (prompt === 'banana phone')
+          reply({ category: 'banana', confidence: 0.9 }); // invalid category
         else if (prompt === 'boom') reply({ category: 'error' }, 500);
         else reply({});
       });
@@ -227,8 +366,18 @@ describe('replay against a candidate endpoint', () => {
 
   it('an endpoint error on one item is counted, not fatal', async () => {
     const result = await replayAgainstEndpoint(
-      [{ prompt: 'boom', knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: 't', hasAttachment: false, duplicates: 0 }],
-      { endpoint: url },
+      [
+        {
+          prompt: 'boom',
+          knownCategory: 'simple',
+          knownGroup: 'operational',
+          source: 'dec',
+          ts: 't',
+          hasAttachment: false,
+          duplicates: 0,
+        },
+      ],
+      { endpoint: url }
     );
     expect(result.errors).toBe(1);
     expect(result.disagreements).toHaveLength(0);
@@ -248,8 +397,18 @@ describe('replay against a candidate endpoint', () => {
     await new Promise<void>((r) => probe.listen(0, r));
     const u = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
     await replayAgainstEndpoint(
-      [{ prompt: 'contract probe', knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: 't', hasAttachment: false, duplicates: 0 }],
-      { endpoint: u },
+      [
+        {
+          prompt: 'contract probe',
+          knownCategory: 'simple',
+          knownGroup: 'operational',
+          source: 'dec',
+          ts: 't',
+          hasAttachment: false,
+          duplicates: 0,
+        },
+      ],
+      { endpoint: u }
     );
     expect(seen.method).toBe('POST');
     expect(seen.url).toBe('/classify');
@@ -270,16 +429,30 @@ describe('replay against a candidate endpoint', () => {
     });
     await new Promise<void>((r) => probe.listen(0, r));
     const u = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`;
-    const base = { knownCategory: 'simple', knownGroup: 'operational', source: 'dec', ts: 't', hasAttachment: false, duplicates: 0 };
+    const base = {
+      knownCategory: 'simple',
+      knownGroup: 'operational',
+      source: 'dec',
+      ts: 't',
+      hasAttachment: false,
+      duplicates: 0,
+    };
     await replayAgainstEndpoint(
       [
-        { ...base, prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+        {
+          ...base,
+          prompt: 'with ctx',
+          context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' },
+        },
         { ...base, prompt: 'without ctx' },
       ],
-      { endpoint: u, concurrency: 1 },
+      { endpoint: u, concurrency: 1 }
     );
     expect(seen).toEqual([
-      { prompt: 'with ctx', context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' } },
+      {
+        prompt: 'with ctx',
+        context: { previousUserMessage: 'prev', lastAssistantSnippet: 'snip' },
+      },
       { prompt: 'without ctx' },
     ]);
     await new Promise<void>((r) => probe.close(r));

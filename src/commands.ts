@@ -23,9 +23,18 @@ import {
   type ClassificationSourceInfo,
   type ClassificationCounts,
 } from './content-classifier.ts';
-import { LAYA_DEFAULT_ENDPOINT, getLastProbeError, layaAvailabilityState, type LayaAvailabilityState } from './laya-classifier.ts';
+import {
+  LAYA_DEFAULT_ENDPOINT,
+  getLastProbeError,
+  layaAvailabilityState,
+  type LayaAvailabilityState,
+} from './laya-classifier.ts';
 import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
-import { localClassifierPins, resolveLocalClassifierChain, type LocalClassifierChain } from './classifier-local-probe.ts';
+import {
+  localClassifierPins,
+  resolveLocalClassifierChain,
+  type LocalClassifierChain,
+} from './classifier-local-probe.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -36,7 +45,12 @@ import { formatErrorsReport } from './session-errors.ts';
 import { splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
-import { openUserConfigStore, readConfigLayers, validateExcludePattern, type ConfigLayerView } from './user-config-store.ts';
+import {
+  openUserConfigStore,
+  readConfigLayers,
+  validateExcludePattern,
+  type ConfigLayerView,
+} from './user-config-store.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
@@ -59,23 +73,30 @@ interface CommandDeps {
   readonly cfgPath: string;
   readonly costMux: (prov: string) => number;
   readonly curModel: string;
-  readonly effCost: (ref: string) => number | "unknown";
+  readonly effCost: (ref: string) => number | 'unknown';
   readonly fmtModel: (ref: string, i: number, sel: boolean) => string;
   readonly formatBlocklist: () => string;
   readonly getM: (ref: string) => Metrics;
-  readonly getTopModels: (groupName: string, n: number) => { models: { ref: string; limited: boolean; rank: number; why?: string; }[]; total: number; };
+  readonly getTopModels: (
+    groupName: string,
+    n: number
+  ) => { models: { ref: string; limited: boolean; rank: number; why?: string }[]; total: number };
   readonly getUsage: (ref: string, days: number) => number;
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
   readonly load: () => void;
-  readonly lookupPrice: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
+  readonly lookupPrice: (
+    ref: string
+  ) => { input: number | 'unknown'; output: number | 'unknown' } | null;
   /** PAYG list price for DISPLAY — shows would-cost even when routing
    * prices the model via the subscription rule (see metrics.lookupListPrice).
    * Falls back to lookupPrice/effCost. */
-  readonly lookupListPrice?: (ref: string) => { input: number | "unknown"; output: number | "unknown"; } | null;
+  readonly lookupListPrice?: (
+    ref: string
+  ) => { input: number | 'unknown'; output: number | 'unknown' } | null;
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;
-  readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
+  readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly router: Router;
   readonly scan: (force?: boolean) => Promise<void>;
   sessionCtx: any;
@@ -100,9 +121,7 @@ export function costColumnFor(
     return `$${typeof price.input === 'number' ? price.input.toFixed(1) : '?'}/$${typeof price.output === 'number' ? price.output.toFixed(1) : '?'}`;
   }
   const cost = tools.effCost(ref);
-  return cost !== 'unknown' && typeof cost === 'number'
-    ? `$${cost.toFixed(1)}`
-    : 'unknown';
+  return cost !== 'unknown' && typeof cost === 'number' ? `$${cost.toFixed(1)}` : 'unknown';
 }
 
 /**
@@ -160,7 +179,9 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         : `cloud (${probedCount} probed)`
     );
   }
-  const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string => Boolean(m));
+  const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string =>
+    Boolean(m)
+  );
   // Review N2, 2026-10-07: an empty head list AFTER a probe is honest about
   // the result — "none qualified" — and names the recovery paths; "none yet"
   // stays correct only while no probe ever ran.
@@ -191,8 +212,16 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   if (counts && counts.total > 0) {
     const byFreq = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]);
     const pct = (n: number) => Math.round((n / counts.total) * 100);
-    lines.push(`│ Today: ${counts.total} classified — ${byFreq(counts.bySource).map(([k, n]) => `${k} ${n}`).join(', ')}`);
-    lines.push(`│ Categories: ${byFreq(counts.byCategory).map(([k, n]) => `${k} ${n} (${pct(n)}%)`).join(', ')}`);
+    lines.push(
+      `│ Today: ${counts.total} classified — ${byFreq(counts.bySource)
+        .map(([k, n]) => `${k} ${n}`)
+        .join(', ')}`
+    );
+    lines.push(
+      `│ Categories: ${byFreq(counts.byCategory)
+        .map(([k, n]) => `${k} ${n} (${pct(n)}%)`)
+        .join(', ')}`
+    );
   }
   return lines;
 }
@@ -211,14 +240,23 @@ const CONFIG_USAGE_LINES = [
  * the shipped default — measurement only (Phase 5a), no hints, no
  * auto-compaction.
  */
-function compactionStateLine(cfg: { context_budget?: { enabled?: boolean; soft_tokens?: number; hard_tokens?: number; cache_ttl_s?: number } }): string {
+function compactionStateLine(cfg: {
+  context_budget?: {
+    enabled?: boolean;
+    soft_tokens?: number;
+    hard_tokens?: number;
+    cache_ttl_s?: number;
+  };
+}): string {
   const b = cfg.context_budget;
   const enabled = b?.enabled ? 'on' : 'off';
   const bits: string[] = [];
   if (b && (b.soft_tokens ?? 0) > 0) bits.push(`soft ${b.soft_tokens} tok`);
   if (b && (b.hard_tokens ?? 0) > 0) bits.push(`hard ${b.hard_tokens} tok`);
   if (b && (b.cache_ttl_s ?? 0) > 0) bits.push(`ttl ${b.cache_ttl_s}s`);
-  const detail = bits.length ? ` (${bits.join(', ')})` : ' (no soft_tokens/hard_tokens configured — triggers disarmed)';
+  const detail = bits.length
+    ? ` (${bits.join(', ')})`
+    : ' (no soft_tokens/hard_tokens configured — triggers disarmed)';
   return `Compaction (context_budget): ${enabled}${detail}`;
 }
 
@@ -248,7 +286,10 @@ function setCompaction(rt: CommandDeps, on: boolean): string {
  * own allDiscoveredRefs() is post-exclude, so a rule already in effect would
  * always count 0 matches against it.
  */
-function rawDiscoveredRefs(rt: CommandDeps, ctx: { modelRegistry?: { getAvailable(): Array<{ provider: string; id: string }> } }): string[] {
+function rawDiscoveredRefs(
+  rt: CommandDeps,
+  ctx: { modelRegistry?: { getAvailable(): Array<{ provider: string; id: string }> } }
+): string[] {
   const refs = new Set(rt.router.allDiscoveredRefs());
   for (const m of ctx.modelRegistry?.getAvailable() ?? []) refs.add(`${m.provider}/${m.id}`);
   for (const m of rt.cache.available_models ?? []) refs.add(`${m.provider}/${m.id}`);
@@ -258,12 +299,17 @@ function rawDiscoveredRefs(rt: CommandDeps, ctx: { modelRegistry?: { getAvailabl
 
 /** How many of `refs` a single exclude rule drops (the rule alone, not the union). */
 function countMatches(rt: CommandDeps, rule: ExcludeRules, refs: string[]): number {
-  return refs.filter((ref) => isExcluded(ref, { rules: rule, cfg: rt.cfg, cache: rt.cache })).length;
+  return refs.filter((ref) => isExcluded(ref, { rules: rule, cfg: rt.cfg, cache: rt.cache }))
+    .length;
 }
 
 /** `/router config` (bare): sources with origin, every exclude rule with origin + match count, hints. */
 function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: string[]): string {
-  const lines: string[] = ['Router config', '', 'Sources (later layers override earlier ones; exclude lists are unioned):'];
+  const lines: string[] = [
+    'Router config',
+    '',
+    'Sources (later layers override earlier ones; exclude lists are unioned):',
+  ];
   for (const l of layers) {
     const note = l.error ? ` (unusable: ${l.error})` : l.present ? '' : ' (not present)';
     lines.push(`  ${l.origin.padEnd(8)} ${l.path}${note}`);
@@ -283,11 +329,14 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
   }
   if (!any) lines.push('  (none)');
   lines.push('', compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES);
-  lines.push('Shipped and project entries cannot be removed with unexclude — only user-layer entries can.');
+  lines.push(
+    'Shipped and project entries cannot be removed with unexclude — only user-layer entries can.'
+  );
   return lines.join('\n');
 }
 
-const SCAN_CYCLE_NOTE = 'The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.';
+const SCAN_CYCLE_NOTE =
+  'The live pipeline applies it from the next turn; it takes full effect at the next scan cycle for persisted group lists.';
 
 /**
  * A bare name (no "/" and no "*") can never match a model ref — exclude.models
@@ -298,7 +347,11 @@ function isBareProviderName(pattern: string): boolean {
 }
 
 /** `/router config exclude <pattern>` — validate, persist to the user layer, apply live. */
-function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], pattern: string): string {
+function excludePattern(
+  rt: CommandDeps,
+  ctx: Parameters<typeof rawDiscoveredRefs>[1],
+  pattern: string
+): string {
   if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
   const invalid = validateExcludePattern(pattern);
   if (invalid) return invalid;
@@ -317,7 +370,8 @@ function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRef
   const config = store.read().config;
   const kind = bareProvider ? 'providers' : 'models';
   const current = userExcludeList(config, kind);
-  if (current.includes(pattern)) return `"${pattern}" is already in the user config's exclude list.`;
+  if (current.includes(pattern))
+    return `"${pattern}" is already in the user config's exclude list.`;
 
   const matches = countMatches(rt, { [kind]: [pattern] }, refs);
   const next = [...current, pattern];
@@ -326,7 +380,10 @@ function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRef
 
   // Immediate in-memory effect, then the authoritative re-read (same path as
   // session_start) so the running router sees exactly what the next start will.
-  rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: [...new Set([...(rt.cfg.exclude?.[kind] ?? []), pattern])] };
+  rt.cfg.exclude = {
+    ...rt.cfg.exclude,
+    [kind]: [...new Set([...(rt.cfg.exclude?.[kind] ?? []), pattern])],
+  };
   rt.load();
   return [
     `Excluded ${bareProvider ? `provider "${pattern}"` : `"${pattern}"`} — it matches ${matches} discovered model(s) right now.`,
@@ -341,7 +398,10 @@ function excludePattern(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRef
  * exclude.models, so a provider-level exclusion in another layer produced
  * a misleading "not in any exclude list" / missing "still excluded" note.
  */
-function coveringProviderRuleKind(layer: ConfigLayerView, pattern: string): 'providers' | 'paid_models_from' | null {
+function coveringProviderRuleKind(
+  layer: ConfigLayerView,
+  pattern: string
+): 'providers' | 'paid_models_from' | null {
   const prov = pattern.split('/')[0];
   const covers = (entries: string[] | undefined) =>
     (entries ?? []).some((e) => e === prov || (e.includes('*') && globMatcher(e)(prov)));
@@ -363,7 +423,10 @@ function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: s
   );
 
   // A bare provider name lives in exclude.providers; everything else in exclude.models.
-  const kind = isBareProviderName(pattern) && (user.exclude.providers ?? []).includes(pattern) ? 'providers' : 'models';
+  const kind =
+    isBareProviderName(pattern) && (user.exclude.providers ?? []).includes(pattern)
+      ? 'providers'
+      : 'models';
   const current = user.exclude[kind] ?? [];
   if (!current.includes(pattern)) {
     if (others.length === 0) return `"${pattern}" is not in any exclude list.`;
@@ -375,25 +438,39 @@ function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: s
     return `"${pattern}" is not in any models exclude list, but "${pattern.split('/')[0]}" models stay excluded by the ${first.origin} layer (exclude.${coverKind}).`;
   }
 
-  const res = openUserConfigStore().applyDelta({ exclude: { [kind]: current.filter((p) => p !== pattern) } });
+  const res = openUserConfigStore().applyDelta({
+    exclude: { [kind]: current.filter((p) => p !== pattern) },
+  });
   if (!res.ok) return res.error;
 
   if (others.length === 0 && rt.cfg.exclude?.[kind]) {
-    rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: rt.cfg.exclude[kind].filter((p) => p !== pattern) };
+    rt.cfg.exclude = {
+      ...rt.cfg.exclude,
+      [kind]: rt.cfg.exclude[kind].filter((p) => p !== pattern),
+    };
   }
   rt.load();
-  const still = others.length ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.` : '';
+  const still = others.length
+    ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.`
+    : '';
   return `Removed "${pattern}" from the user config (${res.written}).${still} ${SCAN_CYCLE_NOTE}`;
 }
 
-function userExcludeList(config: Record<string, unknown> | undefined, kind: 'models' | 'providers'): string[] {
+function userExcludeList(
+  config: Record<string, unknown> | undefined,
+  kind: 'models' | 'providers'
+): string[] {
   const exclude = config?.exclude as Record<string, unknown> | undefined;
   const list = exclude?.[kind];
   return Array.isArray(list) ? list.filter((p): p is string => typeof p === 'string') : [];
 }
 
 /** `/router config ...` — returns the text to show. */
-function handleConfigCommand(rt: CommandDeps, ctx: Parameters<typeof rawDiscoveredRefs>[1], rest: string): string {
+function handleConfigCommand(
+  rt: CommandDeps,
+  ctx: Parameters<typeof rawDiscoveredRefs>[1],
+  rest: string
+): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = () => readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
   if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
@@ -416,46 +493,95 @@ export function createCommands(rt: CommandDeps) {
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
-        { value: 'scan', label: 'scan', description: 'Re-discover models, re-scrape GDPval, regenerate config' },
-        { value: 'cost', label: 'cost', description: 'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate' },
-        { value: 'errors', label: 'errors', description: 'Main-session stream failures — headline count matches the status-line ⚠N err exactly' },
-        { value: 'errors 30', label: 'errors <n>', description: 'Show up to <n> entries (default 15, max 50)' },
-        { value: 'blocklist', label: 'blocklist', description: 'Show models blocked after permanent provider failures' },
-        { value: 'blocklist clear', label: 'blocklist clear', description: 'Unblock all models, or one: blocklist clear <provider/model>' },
-        { value: 'cooldowns', label: 'cooldowns', description: 'Show active rate-limit cooldowns (ref, remaining, hits)' },
-        { value: 'cooldowns clear', label: 'cooldowns clear', description: 'Clear all cooldowns + model-health streaks (incident relief, no restart needed)' },
-        { value: 'config', label: 'config', description: 'Show config sources, exclude rules (with origin) and how many models each matches' },
-        { value: 'config exclude', label: 'config exclude <ref|glob|provider>', description: 'Exclude a model/glob/provider from routing (saved to the user config, live without restart)' },
-        { value: 'config unexclude', label: 'config unexclude <ref|glob|provider>', description: 'Remove an exclusion from the user config' },
-        { value: 'config compaction', label: 'config compaction on|off', description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)' },
+        {
+          value: 'scan',
+          label: 'scan',
+          description: 'Re-discover models, re-scrape GDPval, regenerate config',
+        },
+        {
+          value: 'cost',
+          label: 'cost',
+          description:
+            'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate',
+        },
+        {
+          value: 'errors',
+          label: 'errors',
+          description:
+            'Main-session stream failures — headline count matches the status-line ⚠N err exactly',
+        },
+        {
+          value: 'errors 30',
+          label: 'errors <n>',
+          description: 'Show up to <n> entries (default 15, max 50)',
+        },
+        {
+          value: 'blocklist',
+          label: 'blocklist',
+          description: 'Show models blocked after permanent provider failures',
+        },
+        {
+          value: 'blocklist clear',
+          label: 'blocklist clear',
+          description: 'Unblock all models, or one: blocklist clear <provider/model>',
+        },
+        {
+          value: 'cooldowns',
+          label: 'cooldowns',
+          description: 'Show active rate-limit cooldowns (ref, remaining, hits)',
+        },
+        {
+          value: 'cooldowns clear',
+          label: 'cooldowns clear',
+          description:
+            'Clear all cooldowns + model-health streaks (incident relief, no restart needed)',
+        },
+        {
+          value: 'config',
+          label: 'config',
+          description:
+            'Show config sources, exclude rules (with origin) and how many models each matches',
+        },
+        {
+          value: 'config exclude',
+          label: 'config exclude <ref|glob|provider>',
+          description:
+            'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
+        },
+        {
+          value: 'config unexclude',
+          label: 'config unexclude <ref|glob|provider>',
+          description: 'Remove an exclusion from the user config',
+        },
+        {
+          value: 'config compaction',
+          label: 'config compaction on|off',
+          description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
+        },
       ];
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
         const desc = rt.cfg.model_groups?.[g]?.description;
-        return desc
-          ? { value: g, label: g, description: desc }
-          : { value: g, label: g };
+        return desc ? { value: g, label: g, description: desc } : { value: g, label: g };
       });
       const all = [...subcommands, ...groupNames];
       const prefix = argumentPrefix.toLowerCase();
-      const filtered = prefix
-        ? all.filter((a) => a.value.toLowerCase().startsWith(prefix))
-        : all;
+      const filtered = prefix ? all.filter((a) => a.value.toLowerCase().startsWith(prefix)) : all;
       return filtered.length ? filtered : null;
     },
     handler: async (args, ctx) => {
       rt.load();
       const arg = args?.trim();
-      
+
       // Temporarily set session context so allDiscoveredRefs() can access modelRegistry
       // This allows /router command to show models from Pi's registry even outside a session
       const previousSessionCtx = rt.sessionCtx;
-      
+
       try {
         if (ctx.modelRegistry) {
           rt.sessionCtx = ctx;
           rt.router.setSessionCtx(ctx);
         }
-        
+
         if (arg === 'config' || arg?.startsWith('config ')) {
           ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
           return;
@@ -498,9 +624,21 @@ export function createCommands(rt: CommandDeps) {
                 const d7 = metricsModule.getUsageAll(7);
                 const d30 = metricsModule.getUsageAll(30);
                 const c30 = metricsModule.getCacheUsageAll(30);
-                const out: Record<string, { d1: number; d7: number; d30: number; cacheRead30: number }> = {};
-                for (const ref of new Set([...Object.keys(d1), ...Object.keys(d7), ...Object.keys(d30)])) {
-                  out[ref] = { d1: d1[ref] ?? 0, d7: d7[ref] ?? 0, d30: d30[ref] ?? 0, cacheRead30: c30[ref]?.cacheRead ?? 0 };
+                const out: Record<
+                  string,
+                  { d1: number; d7: number; d30: number; cacheRead30: number }
+                > = {};
+                for (const ref of new Set([
+                  ...Object.keys(d1),
+                  ...Object.keys(d7),
+                  ...Object.keys(d30),
+                ])) {
+                  out[ref] = {
+                    d1: d1[ref] ?? 0,
+                    d7: d7[ref] ?? 0,
+                    d30: d30[ref] ?? 0,
+                    cacheRead30: c30[ref]?.cacheRead ?? 0,
+                  };
                 }
                 return out;
               },
@@ -536,10 +674,14 @@ export function createCommands(rt: CommandDeps) {
           const target = arg.slice('blocklist clear'.length).trim() || undefined;
           const removed = clearBlocklist(rt.cache, target);
           rt.cacheManager.saveCache(rt.cache);
-          routerLog(`[router] blocklist cleared manually (${target ?? 'all'}): ${removed} block(s) removed`);
+          routerLog(
+            `[router] blocklist cleared manually (${target ?? 'all'}): ${removed} block(s) removed`
+          );
           ctx.ui.notify(
             target
-              ? removed ? `Unblocked ${target}.` : `${target} was not blocked.`
+              ? removed
+                ? `Unblocked ${target}.`
+                : `${target} was not blocked.`
               : `Blocklist cleared (${removed} model(s)).`,
             'info'
           );
@@ -612,178 +754,185 @@ export function createCommands(rt: CommandDeps) {
           return;
         }
 
-      // Overview with table
-      const lines: string[] = ['Model Router', ''];
-      lines.push(
-        'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
-        '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
-        'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
-        ''
-      );
-
-      // Group tables with top 5 models (3 available + up to 2 limited)
-      for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
-        const n = 5;
-        const { models: topModels, total } = rt.getTopModels(groupName, n);
-        const method =
-          g.method === 'pipeline'
-            ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
-            : g.method === 'best'
-              ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
-              : g.method === 'tiered'
-                ? g.min_gdpval != null
-                  ? `tiered ≥${g.min_gdpval}`
-                  : `tiered ≥${g.min_gdpval_pct ?? 0}%`
-                : g.method === 'dynamic'
-                  ? 'dynamic (content-based)'
-                  : g.method;
-        const active = rt.curModel && rt.allDiscoveredRefs().includes(rt.curModel);
-        const activeMarker = active ? ' ◀' : '';
-
-
-        // Add fallback groups info if present
-        const fallbackInfo = g.fallback_groups && g.fallback_groups.length > 0 
-          ? ` (\u2192 ${g.fallback_groups.join(' \u2192 ')})`
-          : '';
-
-        // Group header
-        lines.push(`┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`);
-
-        if (topModels.length === 0 && g.method === 'dynamic') {
-          lines.push('│ Routes per prompt via content classification:');
-          formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
-          // Honest classifier state (2026-10-02 owner finding): the old block
-          // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
-          // was doing the actual work whenever Ollama is down. Show the backend
-          // that last classified plus the live chain state instead.
-          lines.push(
-            ...formatClassifierStatus({
-              group: g,
-              last: getLastClassificationSource(),
-              probedCount: getCachedFallbackModels(rt.cache).length,
-              ollamaUp: await isOllamaAvailable(),
-              localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
-              localProbed: Array.isArray(rt.cache.classifier_local_models),
-              counts: getClassificationCounts(),
-              ...(rt.cfg.classifier_laya?.enabled
-                ? {
-                    laya: {
-                      checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
-                      endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
-                      confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
-                      // same safe reading as the chain: only an explicit 'active' decides
-                      mode: rt.cfg.classifier_laya.mode === 'active' ? ('active' as const) : ('shadow' as const),
-                      state: layaAvailabilityState(),
-                      probeError: getLastProbeError() ?? undefined,
-                    },
-                  }
-                : {}),
-            })
-          );
-        } else if (topModels.length === 0) {
-          lines.push('│ (no models configured)');
-        } else {
-          // Name column: the longest shown ref, capped so the table fits a standard terminal
-          const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
-          const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
-            const m = rt.getM(ref);
-            const prov = ref.split('/')[0];
-            const budgetInfo = rt.cache.budget_cache?.[prov];
-            let budget = '';
-            if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
-              if (Date.now() < budgetInfo.window_reset) {
-                const windowType = budgetInfo.window_type ?? 'monthly';
-                budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
-              }
-            }
-            return {
-              rank,
-              ref,
-              // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
-              gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
-              // Measured in this process or explicitly configured by the user
-              // (src/overview-table.ts displayMetricsFor — placeholders dash).
-              ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
-              price: costColumnFor(ref, rt),
-              usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
-              budget,
-              limited,
-              limitSecs: limited ? rt.limitSecs(ref) : 0,
-              costMux: rt.costMux(prov),
-              current: rt.curModel === ref,
-              ...(why ? { why } : {}),
-            };
-          });
-          lines.push(...formatOverviewTable(rows, MW));
-        }
-        // Footer: show total count if more than shown
-        if (total > n) {
-          lines.push(`│    … +${total - n} more (sorted by ${g.method})`);
-        }
-        lines.push('│');
-      }
-
-      // Rate-limited summary
-      const rl = [...rt.rateLimitManager.getLimits().keys()].filter((r) => rt.isLimited(r));
-      if (rl.length) {
-        lines.push('├─ Rate Limited '.padEnd(72, '─'));
-        for (const r of rl) {
-          const { provider, modelId } = splitRef(r);
-          lines.push(`│ ⛔ ${provider}/${modelId} (${rt.limitSecs(r)}s remaining)`);
-        }
-      }
-
-      // Refused automatic scan (scan sanity check 3)
-      const refusal = rt.cache.scan_sanity_refusal;
-      if (refusal) {
-        lines.push('├─ Scan '.padEnd(72, '─'));
+        // Overview with table
+        const lines: string[] = ['Model Router', ''];
         lines.push(
-          `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
-            'Accepted if a settled scan agrees; /router scan accepts it now.'
+          'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
+          '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
+          'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
+          ''
         );
-      }
 
-      // Provider circuit breaker (ADR-0026, generalizes ADR-0016's
-      // local-only watchdog line): one line per open breaker — ANY provider,
-      // cloud included — with the remaining skip time and the persisted
-      // trip/avoided-hop counters (plan D6/D7). Providers whose breaker
-      // closed still show their telemetry: it is the tuning evidence that
-      // survives restarts. The fix hint is generic per provider class
-      // (ADR-0025 class A): local → restart the daemon, cloud → check the
-      // provider/extension.
-      {
-        const stats = rt.cache.provider_breaker_stats ?? {};
-        const openByProvider = new Map(openBreakers(rt.cache).map((b) => [b.provider, b.until]));
-        const providers = [...new Set([...Object.keys(stats), ...openByProvider.keys()])].sort();
-        if (providers.length > 0) {
-          lines.push('├─ Provider breaker '.padEnd(72, '─'));
-          for (const provider of providers) {
-            const st = stats[provider];
-            const counters = st ? `, ${st.trips} trip(s), ${st.avoided_hops} hop(s) avoided` : '';
-            const until = openByProvider.get(provider);
-            if (until !== undefined) {
-              const secs = Math.max(0, Math.ceil((until - Date.now()) / 1000));
-              const hint = isLocalProviderName(provider)
-                ? wedgeFixHint(provider)
-                : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
-              lines.push(`│ ⚠ ${provider} looks wedged — skipped for ${secs}s${counters}. Fix: ${hint}.`);
-            } else {
-              lines.push(`│ ⏱ ${provider}: breaker closed${counters}.`);
+        // Group tables with top 5 models (3 available + up to 2 limited)
+        for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
+          const n = 5;
+          const { models: topModels, total } = rt.getTopModels(groupName, n);
+          const method =
+            g.method === 'pipeline'
+              ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
+              : g.method === 'best'
+                ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
+                : g.method === 'tiered'
+                  ? g.min_gdpval != null
+                    ? `tiered ≥${g.min_gdpval}`
+                    : `tiered ≥${g.min_gdpval_pct ?? 0}%`
+                  : g.method === 'dynamic'
+                    ? 'dynamic (content-based)'
+                    : g.method;
+          const active = rt.curModel && rt.allDiscoveredRefs().includes(rt.curModel);
+          const activeMarker = active ? ' ◀' : '';
+
+          // Add fallback groups info if present
+          const fallbackInfo =
+            g.fallback_groups && g.fallback_groups.length > 0
+              ? ` (\u2192 ${g.fallback_groups.join(' \u2192 ')})`
+              : '';
+
+          // Group header
+          lines.push(
+            `┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`
+          );
+
+          if (topModels.length === 0 && g.method === 'dynamic') {
+            lines.push('│ Routes per prompt via content classification:');
+            formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
+            // Honest classifier state (2026-10-02 owner finding): the old block
+            // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
+            // was doing the actual work whenever Ollama is down. Show the backend
+            // that last classified plus the live chain state instead.
+            lines.push(
+              ...formatClassifierStatus({
+                group: g,
+                last: getLastClassificationSource(),
+                probedCount: getCachedFallbackModels(rt.cache).length,
+                ollamaUp: await isOllamaAvailable(),
+                localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
+                localProbed: Array.isArray(rt.cache.classifier_local_models),
+                counts: getClassificationCounts(),
+                ...(rt.cfg.classifier_laya?.enabled
+                  ? {
+                      laya: {
+                        checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
+                        endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
+                        confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
+                        // same safe reading as the chain: only an explicit 'active' decides
+                        mode:
+                          rt.cfg.classifier_laya.mode === 'active'
+                            ? ('active' as const)
+                            : ('shadow' as const),
+                        state: layaAvailabilityState(),
+                        probeError: getLastProbeError() ?? undefined,
+                      },
+                    }
+                  : {}),
+              })
+            );
+          } else if (topModels.length === 0) {
+            lines.push('│ (no models configured)');
+          } else {
+            // Name column: the longest shown ref, capped so the table fits a standard terminal
+            const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
+            const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
+              const m = rt.getM(ref);
+              const prov = ref.split('/')[0];
+              const budgetInfo = rt.cache.budget_cache?.[prov];
+              let budget = '';
+              if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
+                if (Date.now() < budgetInfo.window_reset) {
+                  const windowType = budgetInfo.window_type ?? 'monthly';
+                  budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
+                }
+              }
+              return {
+                rank,
+                ref,
+                // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
+                gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
+                // Measured in this process or explicitly configured by the user
+                // (src/overview-table.ts displayMetricsFor — placeholders dash).
+                ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
+                price: costColumnFor(ref, rt),
+                usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
+                budget,
+                limited,
+                limitSecs: limited ? rt.limitSecs(ref) : 0,
+                costMux: rt.costMux(prov),
+                current: rt.curModel === ref,
+                ...(why ? { why } : {}),
+              };
+            });
+            lines.push(...formatOverviewTable(rows, MW));
+          }
+          // Footer: show total count if more than shown
+          if (total > n) {
+            lines.push(`│    … +${total - n} more (sorted by ${g.method})`);
+          }
+          lines.push('│');
+        }
+
+        // Rate-limited summary
+        const rl = [...rt.rateLimitManager.getLimits().keys()].filter((r) => rt.isLimited(r));
+        if (rl.length) {
+          lines.push('├─ Rate Limited '.padEnd(72, '─'));
+          for (const r of rl) {
+            const { provider, modelId } = splitRef(r);
+            lines.push(`│ ⛔ ${provider}/${modelId} (${rt.limitSecs(r)}s remaining)`);
+          }
+        }
+
+        // Refused automatic scan (scan sanity check 3)
+        const refusal = rt.cache.scan_sanity_refusal;
+        if (refusal) {
+          lines.push('├─ Scan '.padEnd(72, '─'));
+          lines.push(
+            `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
+              'Accepted if a settled scan agrees; /router scan accepts it now.'
+          );
+        }
+
+        // Provider circuit breaker (ADR-0026, generalizes ADR-0016's
+        // local-only watchdog line): one line per open breaker — ANY provider,
+        // cloud included — with the remaining skip time and the persisted
+        // trip/avoided-hop counters (plan D6/D7). Providers whose breaker
+        // closed still show their telemetry: it is the tuning evidence that
+        // survives restarts. The fix hint is generic per provider class
+        // (ADR-0025 class A): local → restart the daemon, cloud → check the
+        // provider/extension.
+        {
+          const stats = rt.cache.provider_breaker_stats ?? {};
+          const openByProvider = new Map(openBreakers(rt.cache).map((b) => [b.provider, b.until]));
+          const providers = [...new Set([...Object.keys(stats), ...openByProvider.keys()])].sort();
+          if (providers.length > 0) {
+            lines.push('├─ Provider breaker '.padEnd(72, '─'));
+            for (const provider of providers) {
+              const st = stats[provider];
+              const counters = st ? `, ${st.trips} trip(s), ${st.avoided_hops} hop(s) avoided` : '';
+              const until = openByProvider.get(provider);
+              if (until !== undefined) {
+                const secs = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+                const hint = isLocalProviderName(provider)
+                  ? wedgeFixHint(provider)
+                  : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
+                lines.push(
+                  `│ ⚠ ${provider} looks wedged — skipped for ${secs}s${counters}. Fix: ${hint}.`
+                );
+              } else {
+                lines.push(`│ ⏱ ${provider}: breaker closed${counters}.`);
+              }
             }
           }
         }
-      }
 
-      // Learned blocklist summary (details: /router blocklist)
-      const blocked = activeBlocks(rt.cache);
-      if (blocked.length) {
-        lines.push('├─ Blocked (permanent provider failures) '.padEnd(72, '─'));
-        lines.push(`│ 🚫 ${blocked.length} model(s) — see /router blocklist`);
-      }
+        // Learned blocklist summary (details: /router blocklist)
+        const blocked = activeBlocks(rt.cache);
+        if (blocked.length) {
+          lines.push('├─ Blocked (permanent provider failures) '.padEnd(72, '─'));
+          lines.push(`│ 🚫 ${blocked.length} model(s) — see /router blocklist`);
+        }
 
-      lines.push('└' + '─'.repeat(71));
-      lines.push('', '/router <group> | scan | cost | blocklist');
-      ctx.ui.notify(lines.join('\n'), 'info');
+        lines.push('└' + '─'.repeat(71));
+        lines.push('', '/router <group> | scan | cost | blocklist');
+        ctx.ui.notify(lines.join('\n'), 'info');
       } finally {
         // Always restore previous session context
         rt.sessionCtx = previousSessionCtx;

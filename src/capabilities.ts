@@ -37,7 +37,10 @@ const extractors = new Map<string, CapabilityExtractor>();
  * @param extractor called with the raw parsed model entry; returns the
  *   normalized capabilities, or undefined to defer to defaults.
  */
-export function registerCapabilityExtractor(provider: string, extractor: CapabilityExtractor): void {
+export function registerCapabilityExtractor(
+  provider: string,
+  extractor: CapabilityExtractor
+): void {
   extractors.set(provider, extractor);
 }
 
@@ -46,7 +49,10 @@ export function registerCapabilityExtractor(provider: string, extractor: Capabil
  * Returns undefined if no extractor is registered for the provider (caller
  * falls back to conservative defaults) or the extractor declines.
  */
-export function extractCapabilities(provider: string, raw: RawModelEntry): ModelCapabilities | undefined {
+export function extractCapabilities(
+  provider: string,
+  raw: RawModelEntry
+): ModelCapabilities | undefined {
   const ex = extractors.get(provider);
   return ex ? ex(raw) : undefined;
 }
@@ -54,7 +60,12 @@ export function extractCapabilities(provider: string, raw: RawModelEntry): Model
 // ── Built-in extractors for known provider response shapes ──────────────
 
 /** Build a ModelCapabilities, omitting undefined fields (for exactOptionalPropertyTypes). */
-function caps(vision?: boolean, reasoning?: boolean, contextWindow?: number, maxTokens?: number): ModelCapabilities {
+function caps(
+  vision?: boolean,
+  reasoning?: boolean,
+  contextWindow?: number,
+  maxTokens?: number
+): ModelCapabilities {
   const out: ModelCapabilities = {};
   if (vision !== undefined) out.vision = vision;
   if (reasoning !== undefined) out.reasoning = reasoning;
@@ -73,7 +84,7 @@ registerCapabilityExtractor('mistral', (e) => {
   return caps(
     c?.vision === true ? true : false,
     c?.reasoning === true ? true : false,
-    typeof e.max_context_length === 'number' ? e.max_context_length : undefined,
+    typeof e.max_context_length === 'number' ? e.max_context_length : undefined
   );
 });
 registerCapabilityExtractor('mistral-zai', (e) => {
@@ -81,7 +92,7 @@ registerCapabilityExtractor('mistral-zai', (e) => {
   return caps(
     c?.vision === true ? true : false,
     c?.reasoning === true ? true : false,
-    typeof e.max_context_length === 'number' ? e.max_context_length : undefined,
+    typeof e.max_context_length === 'number' ? e.max_context_length : undefined
   );
 });
 
@@ -96,7 +107,7 @@ registerCapabilityExtractor('openrouter', (e) => {
   return caps(
     inputModalities.some((m) => m === 'image') ? true : false,
     reasoning?.mandatory === true || reasoning?.default_enabled === true ? true : false,
-    typeof e.context_length === 'number' ? e.context_length : undefined,
+    typeof e.context_length === 'number' ? e.context_length : undefined
   );
 });
 
@@ -120,12 +131,8 @@ registerCapabilityExtractor('ollama', (e) => {
   const modelInfo = (e.model_info as Record<string, unknown> | undefined) ?? {};
   const ctxKey = Object.keys(modelInfo).find((k) => k.endsWith('.context_length'));
   const contextWindow =
-    ctxKey && typeof modelInfo[ctxKey] === 'number' ? (modelInfo[ctxKey]) : undefined;
-  const out = caps(
-    vision ? true : false,
-    reasoningFromCaps ? true : false,
-    contextWindow,
-  );
+    ctxKey && typeof modelInfo[ctxKey] === 'number' ? modelInfo[ctxKey] : undefined;
+  const out = caps(vision ? true : false, reasoningFromCaps ? true : false, contextWindow);
   // Classifier derivation (ADR-0025 C1): which local models can generate
   // text, and how big they are. An absent capabilities array (only
   // /api/tags answered) leaves completion/embedding unknown, not false.

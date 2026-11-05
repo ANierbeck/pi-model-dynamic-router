@@ -67,19 +67,25 @@ describe('resolveLocalProvider', () => {
   });
 
   it('prefers the size Ollama reported over the one in the id', () => {
-    expect(pick(ollamaModel('tagless:latest', { parameterSizeB: 8 }), ollamaModel('a:2b'))).toBe('tagless:latest');
+    expect(pick(ollamaModel('tagless:latest', { parameterSizeB: 8 }), ollamaModel('a:2b'))).toBe(
+      'tagless:latest'
+    );
   });
 
   it('never picks an embedding-only or non-completion model', () => {
-    expect(pick(ollamaModel('a:9b', { embedding: true }), ollamaModel('b:9b', { completion: false }), ollamaModel('z:2b'))).toBe('z:2b');
+    expect(
+      pick(
+        ollamaModel('a:9b', { embedding: true }),
+        ollamaModel('b:9b', { completion: false }),
+        ollamaModel('z:2b')
+      )
+    ).toBe('z:2b');
   });
 
   it('works with LM Studio instead of Ollama (provider-agnostic)', () => {
     const deps = makeDeps({
       cache: {
-        available_models: [
-          { id: 'qwen2.5-7b', provider: 'lm-studio', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'qwen2.5-7b', provider: 'lm-studio', cost_per_m: 0 }],
       },
     });
     const result = resolveLocalProvider(deps);
@@ -91,9 +97,7 @@ describe('resolveLocalProvider', () => {
   it('returns null when no local provider has discovered models', () => {
     const deps = makeDeps({
       cache: {
-        available_models: [
-          { id: 'mistral-medium-3.5', provider: 'mistral', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'mistral-medium-3.5', provider: 'mistral', cost_per_m: 0 }],
       },
     });
     expect(resolveLocalProvider(deps)).toBeNull();
@@ -130,9 +134,7 @@ describe('callLocalLlm', () => {
   it('calls the local provider endpoint when a local model is available', async () => {
     const deps = makeDeps({
       cache: {
-        available_models: [
-          { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 }],
       },
     });
     (globalThis.fetch as any).mockResolvedValueOnce({
@@ -151,9 +153,7 @@ describe('callLocalLlm', () => {
   it('uses OpenAI chat/completions format for the local call', async () => {
     const deps = makeDeps({
       cache: {
-        available_models: [
-          { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 }],
       },
     });
     (globalThis.fetch as any).mockResolvedValueOnce({
@@ -163,9 +163,7 @@ describe('callLocalLlm', () => {
 
     await callLocalLlm('hello', deps);
     const body = JSON.parse((globalThis.fetch as any).mock.calls[0][1].body);
-    expect(body.messages).toEqual([
-      { role: 'user', content: 'hello' },
-    ]);
+    expect(body.messages).toEqual([{ role: 'user', content: 'hello' }]);
     expect(body.model).toBe('gemma4:latest');
     expect(body.stream).toBe(false);
   });
@@ -212,9 +210,7 @@ describe('callLocalLlm', () => {
         },
       } as Config,
       cache: {
-        available_models: [
-          { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 }],
       },
     });
     (globalThis.fetch as any)
@@ -246,7 +242,10 @@ describe('callLocalLlm', () => {
     });
     (globalThis.fetch as any)
       .mockResolvedValueOnce({ ok: false, status: 429, text: async () => 'rate limited' })
-      .mockResolvedValueOnce({ ok: true, json: async () => ollamaChatResponse('second-model-wins') });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ollamaChatResponse('second-model-wins'),
+      });
 
     const result = await callLocalLlm('test', deps);
     expect(result).toBe('second-model-wins');
@@ -286,9 +285,7 @@ describe('callLocalLlm', () => {
   it('passes the prompt through as the user message, not system', async () => {
     const deps = makeDeps({
       cache: {
-        available_models: [
-          { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 },
-        ],
+        available_models: [{ id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0 }],
       },
     });
     (globalThis.fetch as any).mockResolvedValueOnce({

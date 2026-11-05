@@ -51,7 +51,11 @@ export const WEDGE_COOLDOWN_MS = BREAKER_COOLDOWN_LADDER_MS[0];
  * Call it right after a failure was reported as newly opening the breaker,
  * which is true for every re-open too, not just the first.
  */
-export function wedgeCooldownText(cache: Cache | undefined, provider: string, tuning?: BreakerTuning): string {
+export function wedgeCooldownText(
+  cache: Cache | undefined,
+  provider: string,
+  tuning?: BreakerTuning
+): string {
   const ladder = tuning?.cooldownMs ?? BREAKER_COOLDOWN_LADDER_MS;
   const step = Math.min(Math.max(breakerState(cache, provider).tripCount, 1), ladder.length) - 1;
   return `${Math.round(ladder[step] / 60_000)} min`;
@@ -84,6 +88,10 @@ export function recordLocalSuccess(cache: Cache, ref: string): void {
   recordProviderSuccess(cache, ref);
 }
 
-export function isProviderWedged(cache: Cache | undefined, provider: string, now: number = Date.now()): boolean {
+export function isProviderWedged(
+  cache: Cache | undefined,
+  provider: string,
+  now: number = Date.now()
+): boolean {
   return isLocal(provider) && isProviderOpen(cache, provider, now);
 }

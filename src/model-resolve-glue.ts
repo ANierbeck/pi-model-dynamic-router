@@ -19,7 +19,7 @@ interface ModelResolveGlueDeps {
   readonly cache: Cache;
   readonly costMux: (prov: string) => number;
   readonly discoveryManager: DiscoveryManager;
-  readonly effCost: (ref: string) => number | "unknown";
+  readonly effCost: (ref: string) => number | 'unknown';
   readonly getM: (ref: string) => Metrics;
   readonly isLimited: (ref: string) => boolean;
   readonly limitSecs: (ref: string) => number;
@@ -44,7 +44,10 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     return d.router.allDiscoveredRefs();
   }
 
-  function resolve(name: string, opts?: { logPool?: boolean }): { selected: string; candidates: string[] } | null {
+  function resolve(
+    name: string,
+    opts?: { logPool?: boolean }
+  ): { selected: string; candidates: string[] } | null {
     const res = d.router.resolve(name);
     if (res?.pool && opts?.logPool) d.logPool?.(res.pool);
     return res;
@@ -59,8 +62,6 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
   function resolveForStream(name: string): { selected: string; candidates: string[] } | null {
     return resolve(name, { logPool: true });
   }
-
-
 
   // ── Format ─────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
     const rl = d.isLimited(ref) ? ` ⛔${d.limitSecs(ref)}s` : '';
     const cost = d.effCost(ref);
     const costStr = cost === 'unknown' ? 'unknown' : cost.toFixed(3);
-    
+
     // Add budget info for subscription providers
     const budgetInfo = d.cache.budget_cache?.[prov];
     let budgetStr = '';
@@ -92,7 +93,7 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
         budgetStr = ` bud:${Math.round(remaining)}${windowType.substring(0, 1)}`;
       }
     }
-    
+
     return `${i + 1}. ${ref}  gdp:${m.gdpval}  tps:${Math.round(m.throughput_tps)}  eff:$${costStr}/M  [${billing}${muxS}]${rl}${budgetStr}${sel ? ' ←' : ''}`;
   }
 

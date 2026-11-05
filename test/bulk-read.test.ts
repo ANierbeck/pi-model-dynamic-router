@@ -18,12 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  countLines,
-  checkReadBlock,
-  executeBulkRead,
-  buildBulkReadPrompt,
-} from '../src/bulk-read';
+import { countLines, checkReadBlock, executeBulkRead, buildBulkReadPrompt } from '../src/bulk-read';
 import { delegationSettings, isTargetedReadInput } from '../src/delegation';
 import type { Config } from '../src/types';
 
@@ -116,8 +111,12 @@ describe('checkReadBlock', () => {
 
   it('targeted reads (offset/limit) pass even on huge files', () => {
     const p = bigFile(5000);
-    expect(checkReadBlock({ toolName: 'read', input: { path: p, offset: 100 } }, cfg)).toBeUndefined();
-    expect(checkReadBlock({ toolName: 'read', input: { path: p, limit: 20 } }, cfg)).toBeUndefined();
+    expect(
+      checkReadBlock({ toolName: 'read', input: { path: p, offset: 100 } }, cfg)
+    ).toBeUndefined();
+    expect(
+      checkReadBlock({ toolName: 'read', input: { path: p, limit: 20 } }, cfg)
+    ).toBeUndefined();
   });
 
   it('small files pass (below threshold the delegation overhead exceeds savings)', () => {
@@ -139,7 +138,9 @@ describe('checkReadBlock', () => {
 
   it('non-read tools pass (bash is guarded by the shrinker, not the block)', () => {
     const p = bigFile(400);
-    expect(checkReadBlock({ toolName: 'bash', input: { command: `cat ${p}` } }, cfg)).toBeUndefined();
+    expect(
+      checkReadBlock({ toolName: 'bash', input: { command: `cat ${p}` } }, cfg)
+    ).toBeUndefined();
     expect(checkReadBlock({ toolName: 'edit', input: {} }, cfg)).toBeUndefined();
   });
 
@@ -188,7 +189,10 @@ describe('executeBulkRead', () => {
       for (const e of events) yield e;
     });
     return {
-      ctx: { modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } }, signal: undefined },
+      ctx: {
+        modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } },
+        signal: undefined,
+      },
       streamSimple,
     };
   };
@@ -197,7 +201,10 @@ describe('executeBulkRead', () => {
     { type: 'text_start', contentIndex: 0 },
     { type: 'text_delta', delta: text },
     { type: 'text_end', content: text },
-    { type: 'message_end', usage: { input: 4200, output: 90, totalTokens: 4290, cost: { total: 0.0002 } } },
+    {
+      type: 'message_end',
+      usage: { input: 4200, output: 90, totalTokens: 4290, cost: { total: 0.0002 } },
+    },
   ];
 
   const writeFile = (name: string, text: string) => {
@@ -209,7 +216,9 @@ describe('executeBulkRead', () => {
   it('reads files from disk, asks the group, returns the answer — raw content never in output', async () => {
     const a = writeFile('a.ts', 'export function alpha() { return 1; }');
     const b = writeFile('b.ts', 'export function beta() { return 2; }');
-    const { ctx, streamSimple } = makeCtx(summaryEvents('• a.ts: alpha() returns 1\n• b.ts: beta() returns 2'));
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents('• a.ts: alpha() returns 1\n• b.ts: beta() returns 2')
+    );
     const out = await executeBulkRead(
       { question: 'What do these files export?', paths: [a, b] },
       ctx,
@@ -223,12 +232,19 @@ describe('executeBulkRead', () => {
     // ride along into the expensive model's context.
     expect(text).not.toContain('export function');
     // Nested usage accounting rides on the result.
-    expect(out.usage).toEqual({ input: 4200, output: 90, totalTokens: 4290, cost: { total: 0.0002 } });
+    expect(out.usage).toEqual({
+      input: 4200,
+      output: 90,
+      totalTokens: 4290,
+      cost: { total: 0.0002 },
+    });
   });
 
   it('wraps each file in XML tags with its path (shunt: clear boundaries)', async () => {
     const a = writeFile('a.ts', 'ALPHA_CONTENT_MARKER');
-    const { ctx, streamSimple } = makeCtx(summaryEvents('A summary long enough to pass every trust check we have.'));
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents('A summary long enough to pass every trust check we have.')
+    );
     await executeBulkRead({ question: 'q?', paths: [a] }, ctx, cfg, () => {});
     const call = streamSimple.mock.calls[0];
     const prompt = JSON.stringify(call[1]);
@@ -248,7 +264,9 @@ describe('executeBulkRead', () => {
 
   it('an empty paths list throws (nothing to answer from)', async () => {
     const { ctx, streamSimple } = makeCtx(summaryEvents('unused'));
-    await expect(executeBulkRead({ question: 'q?', paths: [] }, ctx, cfg, () => {})).rejects.toThrow();
+    await expect(
+      executeBulkRead({ question: 'q?', paths: [] }, ctx, cfg, () => {})
+    ).rejects.toThrow();
     expect(streamSimple).not.toHaveBeenCalled();
   });
 
@@ -260,15 +278,17 @@ describe('executeBulkRead', () => {
         signal: undefined,
       },
     };
-    await expect(executeBulkRead({ question: 'q?', paths: [a] }, ctx as any, cfg, () => {})).rejects.toThrow(
-      /bulk_reader/
-    );
+    await expect(
+      executeBulkRead({ question: 'q?', paths: [a] }, ctx as any, cfg, () => {})
+    ).rejects.toThrow(/bulk_reader/);
   });
 
   it('caps total raw chars sent to the summarizer (max_raw_chars protects the sub-call prompt)', async () => {
     const a = writeFile('a.txt', 'y'.repeat(40000));
     const b = writeFile('b.txt', 'z'.repeat(40000));
-    const { ctx, streamSimple } = makeCtx(summaryEvents('A summary long enough to pass every trust check we have.'));
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents('A summary long enough to pass every trust check we have.')
+    );
     await executeBulkRead({ question: 'q?', paths: [a, b] }, ctx, cfg, () => {});
     const call = streamSimple.mock.calls[0];
     const prompt = String((call[1] as any).messages[0].content);
@@ -282,7 +302,9 @@ describe('executeBulkRead', () => {
     const a = writeFile('a.ts', 'content');
     const { ctx, streamSimple } = makeCtx(summaryEvents('unused'));
     const disabled = { model_groups: {}, delegation: { enabled: false } } as Config;
-    await expect(executeBulkRead({ question: 'q?', paths: [a] }, ctx, disabled, () => {})).rejects.toThrow();
+    await expect(
+      executeBulkRead({ question: 'q?', paths: [a] }, ctx, disabled, () => {})
+    ).rejects.toThrow();
     expect(streamSimple).not.toHaveBeenCalled();
   });
 });

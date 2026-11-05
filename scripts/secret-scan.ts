@@ -57,7 +57,8 @@ export function scanPatch(patch: string): Finding[] {
     if (!raw.startsWith('+') || !file || SKIP_PATHS.has(file)) continue;
     const line = raw.slice(1);
     for (const { name, re } of FORBIDDEN) {
-      if (re.test(line)) findings.push({ commit, file, pattern: name, line: line.trim().slice(0, 160) });
+      if (re.test(line))
+        findings.push({ commit, file, pattern: name, line: line.trim().slice(0, 160) });
     }
   }
   return findings;
@@ -68,7 +69,7 @@ export function scanRange(revs: string[], cwd: string = process.cwd()): Finding[
   const patch = execFileSync(
     'git',
     ['log', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--format=commit %H', ...revs],
-    { cwd, encoding: 'utf-8', maxBuffer: 512 * 1024 * 1024 },
+    { cwd, encoding: 'utf-8', maxBuffer: 512 * 1024 * 1024 }
   );
   return scanPatch(patch);
 }
@@ -104,26 +105,33 @@ function runGitleaks(revs: string[], cwd: string, required: boolean): boolean {
       console.error('secret-scan: gitleaks is required here but not installed');
       return false;
     }
-    console.error('secret-scan: gitleaks not installed — generic credential scan skipped (brew install gitleaks)');
+    console.error(
+      'secret-scan: gitleaks not installed — generic credential scan skipped (brew install gitleaks)'
+    );
     return true;
   }
   const r = spawnSync(
     'gitleaks',
     ['git', '--no-banner', '--redact', '--exit-code', '1', '--log-opts', revs.join(' '), '.'],
-    { cwd, encoding: 'utf-8' },
+    { cwd, encoding: 'utf-8' }
   );
   if (r.status === 0) return true;
   console.error(r.stdout + r.stderr);
-  console.error('secret-scan: gitleaks reported a possible credential (false positive? add its fingerprint to .gitleaksignore)');
+  console.error(
+    'secret-scan: gitleaks reported a possible credential (false positive? add its fingerprint to .gitleaksignore)'
+  );
   return false;
 }
 
 function report(findings: Finding[]): void {
-  console.error(`secret-scan: ${findings.length} forbidden reference(s) in the commits being published:`);
-  for (const f of findings) console.error(`  ${f.commit.slice(0, 7)} ${f.file} [${f.pattern}] ${f.line}`);
+  console.error(
+    `secret-scan: ${findings.length} forbidden reference(s) in the commits being published:`
+  );
+  for (const f of findings)
+    console.error(`  ${f.commit.slice(0, 7)} ${f.file} [${f.pattern}] ${f.line}`);
   console.error(
     'Fix the content in the offending commit(s) (e.g. git rebase -i) and push again. ' +
-      'Do not bypass with --no-verify: on a public repository a push is a publication.',
+      'Do not bypass with --no-verify: on a public repository a push is a publication.'
   );
 }
 

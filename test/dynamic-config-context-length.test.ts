@@ -54,7 +54,7 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const byRef = new Map(enriched.map((m) => [m.ref, m]));
     expect(byRef.get('mistral/small-ctx')?.contextWindow).toBe(8_000);
@@ -67,13 +67,15 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const g: Group = { method: 'best' };
     const filtered = filterModelsForGroup(models, g, CFG);
-    expect(filtered.map((m) => m.ref).sort()).toEqual(
-      ['mistral/big-ctx', 'mistral/no-ctx', 'mistral/small-ctx'],
-    );
+    expect(filtered.map((m) => m.ref).sort()).toEqual([
+      'mistral/big-ctx',
+      'mistral/no-ctx',
+      'mistral/small-ctx',
+    ]);
   });
 
   it('filterModelsForGroup is a no-op when min_context_length is 0', () => {
@@ -81,13 +83,15 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const g: Group = { method: 'best', min_context_length: 0 };
     const filtered = filterModelsForGroup(models, g, CFG);
-    expect(filtered.map((m) => m.ref).sort()).toEqual(
-      ['mistral/big-ctx', 'mistral/no-ctx', 'mistral/small-ctx'],
-    );
+    expect(filtered.map((m) => m.ref).sort()).toEqual([
+      'mistral/big-ctx',
+      'mistral/no-ctx',
+      'mistral/small-ctx',
+    ]);
   });
 
   it('filterModelsForGroup drops models below the threshold', () => {
@@ -95,7 +99,7 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const g: Group = { method: 'best', min_context_length: 100_000 };
     const filtered = filterModelsForGroup(models, g, CFG);
@@ -107,15 +111,12 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const g: Group = { method: 'best', min_context_length: 5_000 };
     // small-ctx (8k) passes; big-ctx (256k) passes; no-ctx (unknown) is dropped.
     const filtered = filterModelsForGroup(models, g, CFG);
-    expect(filtered.map((m) => m.ref).sort()).toEqual([
-      'mistral/big-ctx',
-      'mistral/small-ctx',
-    ]);
+    expect(filtered.map((m) => m.ref).sort()).toEqual(['mistral/big-ctx', 'mistral/small-ctx']);
   });
 
   it('filterModelsForGroup drops everything when no model meets the threshold', () => {
@@ -123,7 +124,7 @@ describe('persist path: buildModelsWithMetadata → filterModelsForGroup (min_co
       ['mistral/small-ctx', 'mistral/big-ctx', 'mistral/no-ctx'],
       CFG,
       new Set(),
-      STATIC_REFS,
+      STATIC_REFS
     );
     const g: Group = { method: 'best', min_context_length: 1_000_000 };
     const filtered = filterModelsForGroup(models, g, CFG);

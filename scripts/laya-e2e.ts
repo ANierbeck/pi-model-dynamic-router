@@ -27,7 +27,9 @@ import { arg } from './lib/cli.ts';
 
 const checkpoint = arg('checkpoint');
 if (!checkpoint) {
-  console.error('usage: npx tsx scripts/laya-e2e.ts --checkpoint <repo@rev> [--mode active|shadow] [--endpoint <base url>]');
+  console.error(
+    'usage: npx tsx scripts/laya-e2e.ts --checkpoint <repo@rev> [--mode active|shadow] [--endpoint <base url>]'
+  );
   process.exit(2);
 }
 const mode = arg('mode') === 'shadow' ? 'shadow' : 'active';
@@ -37,7 +39,12 @@ const cfg = {
   model_groups: {},
   model_metrics: {},
   classifier_log: { enabled: true, store_text: 'none' },
-  classifier_laya: { enabled: true, checkpoint, mode, ...(arg('endpoint') ? { endpoint: arg('endpoint') } : {}) },
+  classifier_laya: {
+    enabled: true,
+    checkpoint,
+    mode,
+    ...(arg('endpoint') ? { endpoint: arg('endpoint') } : {}),
+  },
 } as unknown as Config;
 validateClassifierLaya(cfg); // the real validator fills the defaults, like a real config load
 
@@ -45,13 +52,30 @@ console.log(`classifier_laya: ${JSON.stringify(cfg.classifier_laya)}`);
 console.log(`state before first use: ${layaAvailabilityState()}`);
 
 const cases: Array<[string, string, Record<string, string>?]> = [
-  ['EN design', 'Design the module boundaries and the data flow for a new billing service that has to support multi-tenant invoicing.'],
-  ['DE design', 'Entwirf die Modulgrenzen und den Datenfluss für einen neuen Abrechnungsdienst mit Mandantenfähigkeit.'],
+  [
+    'EN design',
+    'Design the module boundaries and the data flow for a new billing service that has to support multi-tenant invoicing.',
+  ],
+  [
+    'DE design',
+    'Entwirf die Modulgrenzen und den Datenfluss für einen neuen Abrechnungsdienst mit Mandantenfähigkeit.',
+  ],
   ['DE trivial', 'Was bedeutet das Kürzel API?'],
   ['EN code_simple', 'Rename the variable `cnt` to `count` in utils.ts'],
   ['HINT', 'HINT: use group strategic\nplease review this module'],
-  ['with context', 'und wie sieht das für die Rechnungsstellung aus?', { previousUserMessage: 'Wir bauen einen Abrechnungsdienst', lastAssistantSnippet: 'Ich schlage drei Module vor' }],
-  ['long (6 kB)', 'Please analyse this log and tell me what is wrong: ' + 'ERROR connection reset by peer at worker-3 while flushing batch\n'.repeat(100)],
+  [
+    'with context',
+    'und wie sieht das für die Rechnungsstellung aus?',
+    {
+      previousUserMessage: 'Wir bauen einen Abrechnungsdienst',
+      lastAssistantSnippet: 'Ich schlage drei Module vor',
+    },
+  ],
+  [
+    'long (6 kB)',
+    'Please analyse this log and tell me what is wrong: ' +
+      'ERROR connection reset by peer at worker-3 while flushing batch\n'.repeat(100),
+  ],
 ];
 
 for (const [name, text, context] of cases) {
@@ -59,18 +83,31 @@ for (const [name, text, context] of cases) {
   // The real result type, not a Record<string, unknown>: the verdict is a
   // category or a hint, and both are strings (a bare String() of an unknown
   // would print "[object Object]" if the shape ever changed).
-  const r = await classifyPrompt(text, { cfg, model: 'none', timeoutMs: 500, context: context ?? {} });
+  const r = await classifyPrompt(text, {
+    cfg,
+    model: 'none',
+    timeoutMs: 500,
+    context: context ?? {},
+  });
   const verdict = 'category' in r ? r.category : `${r.hintType}:${r.hintTarget}`;
-  console.log(`${name.padEnd(15)} -> ${verdict.padEnd(18)} via ${getLastClassificationSource()?.source}  ${Date.now() - t0}ms`);
+  console.log(
+    `${name.padEnd(15)} -> ${verdict.padEnd(18)} via ${getLastClassificationSource()?.source}  ${Date.now() - t0}ms`
+  );
 }
 
-console.log(`state after use: ${layaAvailabilityState()}${getLastProbeError() ? ` (${getLastProbeError()})` : ''}`);
+console.log(
+  `state after use: ${layaAvailabilityState()}${getLastProbeError() ? ` (${getLastProbeError()})` : ''}`
+);
 const log = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 if (existsSync(log)) {
   console.log('decision log (what Laya said vs what was decided):');
   for (const line of readFileSync(log, 'utf8').trim().split('\n')) {
     const rec = JSON.parse(line);
-    const l = rec.laya ? `${rec.laya.category} ${rec.laya.confidence} acted=${rec.laya.acted} ${rec.laya.ms}ms` : '-';
-    console.log(`  stage=${String(rec.stage).padEnd(9)} final=${rec.final.category ?? rec.final.hint?.target}  laya: ${l}`);
+    const l = rec.laya
+      ? `${rec.laya.category} ${rec.laya.confidence} acted=${rec.laya.acted} ${rec.laya.ms}ms`
+      : '-';
+    console.log(
+      `  stage=${String(rec.stage).padEnd(9)} final=${rec.final.category ?? rec.final.hint?.target}  laya: ${l}`
+    );
   }
 }

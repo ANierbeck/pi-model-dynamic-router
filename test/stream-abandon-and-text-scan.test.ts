@@ -27,23 +27,25 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
-import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { drainStream, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+
+import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import {
+  drainStream,
+  parkStateFiles,
+  routerStatePaths,
+  makePiCtx,
+} from './helpers/extension-harness.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
+import { testModelCost } from './helpers/stream-fixtures.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-abandon-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir(configOverride, 'router-abandon-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -54,10 +56,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -94,17 +93,33 @@ function makeRegistry(modelsByRef: Record<string, any>) {
 
 function textEvents(text: string, stopReason = 'stop'): AssistantMessageEvent[] {
   return [
-    { type: 'text_delta', contentIndex: 0, delta: text, partial: { role: 'assistant', content: [{ type: 'text', text }], stopReason } } as any,
-    { type: 'done', reason: stopReason, message: { role: 'assistant', content: [{ type: 'text', text }], stopReason } } as any,
+    {
+      type: 'text_delta',
+      contentIndex: 0,
+      delta: text,
+      partial: { role: 'assistant', content: [{ type: 'text', text }], stopReason },
+    } as any,
+    {
+      type: 'done',
+      reason: stopReason,
+      message: { role: 'assistant', content: [{ type: 'text', text }], stopReason },
+    } as any,
   ];
 }
 
-const scripted = (events: AssistantMessageEvent[]): StreamScript => () =>
-  (async function* () { for (const ev of events) yield ev; })();
+const scripted =
+  (events: AssistantMessageEvent[]): StreamScript =>
+  () =>
+    (async function* () {
+      for (const ev of events) yield ev;
+    })();
 
 const model = (provider: string, id: string) => ({
-  provider, id, api: `${provider}-api`,
-  contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+  provider,
+  id,
+  api: `${provider}-api`,
+  contextWindow: 1_000_000,
+  cost: testModelCost(),
 });
 
 const baseCfg = {
@@ -121,22 +136,22 @@ const baseCfg = {
 };
 
 async function runGroupStream(defaultExport: any, registry: any) {
-  const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-  const pi: any = {
-    registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-    setModel: vi.fn(async () => true),
-    on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-  };
+  const { pi, onHandlers } = makePiCtx();
   defaultExport(pi);
   const ctx: any = { modelRegistry: registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
   await onHandlers['session_start']?.({}, ctx);
   await flushBackgroundScan();
   const context: any = { messages: [{ role: 'user', content: 'explain the limit handling' }] };
-  return drainStream(defaultExport.groupStream({ provider: 'standard', id: 'standard' }, context, {}));
+  return drainStream(
+    defaultExport.groupStream({ provider: 'standard', id: 'standard' }, context, {})
+  );
 }
 
 const joinedText = (events: AssistantMessageEvent[]) =>
-  events.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta ?? '').join('');
+  events
+    .filter((e: any) => e.type === 'text_delta')
+    .map((e: any) => e.delta ?? '')
+    .join('');
 
 describe('consumeWithDetection: model prose is never scanned for rate-limit words', () => {
   it('an answer that talks about rate limits, quotas and "3 out of 5" streams through untouched', async () => {
@@ -168,12 +183,19 @@ describe('consumeWithDetection: model prose is never scanned for rate-limit word
         'p2/second-model': model('p2', 'second-model'),
       });
       // Shape emitted by pi-claude-bridge describeRateLimitFailure().
-      mock.scripts['p1/first-model'] = [scripted([
-        {
-          type: 'error', reason: 'error',
-          error: { stopReason: 'error', errorMessage: "Claude rate limit (five_hour): You're out of extra usage · resets 6:30pm" },
-        } as any,
-      ])];
+      mock.scripts['p1/first-model'] = [
+        scripted([
+          {
+            type: 'error',
+            reason: 'error',
+            error: {
+              stopReason: 'error',
+              errorMessage:
+                "Claude rate limit (five_hour): You're out of extra usage · resets 6:30pm",
+            },
+          } as any,
+        ]),
+      ];
       mock.scripts['p2/second-model'] = [scripted(textEvents('served by the fallback'))];
 
       const events = await runGroupStream(defaultExport, mock.registry);
@@ -191,7 +213,8 @@ describe('consumeWithDetection: text overflow scan only looks at the start of an
         'p1/first-model': model('p1', 'first-model'),
         'p2/second-model': model('p2', 'second-model'),
       });
-      const prose = 'Compaction analysis. '.repeat(30) +
+      const prose =
+        'Compaction analysis. '.repeat(30) +
         'Mistral answered "prompt is too long" because the estimate undercounted tool results. Done.';
       mock.scripts['p1/first-model'] = [scripted(textEvents(prose))];
       mock.scripts['p2/second-model'] = [scripted(textEvents('SHOULD NEVER BE SERVED'))];
@@ -210,7 +233,9 @@ describe('consumeWithDetection: text overflow scan only looks at the start of an
         'p1/first-model': model('p1', 'first-model'),
         'p2/second-model': model('p2', 'second-model'),
       });
-      mock.scripts['p1/first-model'] = [scripted(textEvents('Error: prompt is too long: 93022 tokens > 32768 maximum'))];
+      mock.scripts['p1/first-model'] = [
+        scripted(textEvents('Error: prompt is too long: 93022 tokens > 32768 maximum')),
+      ];
       mock.scripts['p2/second-model'] = [scripted(textEvents('served by the larger model'))];
 
       const events = await runGroupStream(defaultExport, mock.registry);
@@ -234,9 +259,15 @@ describe('driveStream: abandoned candidates are cancelled', () => {
         'p1/first-model': model('p1', 'first-model'),
         'p2/second-model': model('p2', 'second-model'),
       });
-      mock.scripts['p1/first-model'] = [scripted([
-        { type: 'error', reason: 'error', error: { errorMessage: 'upstream connection reset' } } as any,
-      ])];
+      mock.scripts['p1/first-model'] = [
+        scripted([
+          {
+            type: 'error',
+            reason: 'error',
+            error: { errorMessage: 'upstream connection reset' },
+          } as any,
+        ]),
+      ];
       mock.scripts['p2/second-model'] = [scripted(textEvents('ok from second', 'toolUse'))];
 
       await runGroupStream(defaultExport, mock.registry);
@@ -254,7 +285,8 @@ describe('driveStream: abandoned candidates are cancelled', () => {
   }, 30_000);
 
   it('after an empty-response timeout the abandoned stream is aborted and its late events never reach the output', async () => {
-    await withIsolatedRouter({ ...baseCfg, empty_response_timeout_ms: 300, reasoning_empty_response_timeout_ms: 300 },
+    await withIsolatedRouter(
+      { ...baseCfg, empty_response_timeout_ms: 300, reasoning_empty_response_timeout_ms: 300 },
       async (defaultExport) => {
         const mock = makeRegistry({
           'p1/first-model': model('p1', 'first-model'),
@@ -264,23 +296,45 @@ describe('driveStream: abandoned candidates are cancelled', () => {
         // Silent until aborted (or 3s), then emits late content + a terminal
         // event — exactly what a still-running provider does after the router
         // has already moved on.
-        mock.scripts['p1/first-model'] = [(signal) => (async function* () {
-          await new Promise<void>((resolve) => {
-            const t = setTimeout(resolve, 3_000);
-            signal?.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
-          });
-          lateEventsEmitted = true;
-          yield { type: 'text_delta', contentIndex: 0, delta: 'LATE GHOST TEXT', partial: {} } as any;
-          yield signal?.aborted
-            ? ({ type: 'error', reason: 'aborted', error: { stopReason: 'aborted' } } as any)
-            : ({ type: 'done', reason: 'stop', message: { role: 'assistant', content: [], stopReason: 'stop' } } as any);
-        })()];
-        mock.scripts['p2/second-model'] = [(signal) => (async function* () {
-          // Stay open long enough for the ghost to fire if it were not aborted.
-          await new Promise((r) => setTimeout(r, 50));
-          for (const ev of textEvents('second model answer')) yield ev;
-          void signal;
-        })()];
+        mock.scripts['p1/first-model'] = [
+          (signal) =>
+            (async function* () {
+              await new Promise<void>((resolve) => {
+                const t = setTimeout(resolve, 3_000);
+                signal?.addEventListener(
+                  'abort',
+                  () => {
+                    clearTimeout(t);
+                    resolve();
+                  },
+                  { once: true }
+                );
+              });
+              lateEventsEmitted = true;
+              yield {
+                type: 'text_delta',
+                contentIndex: 0,
+                delta: 'LATE GHOST TEXT',
+                partial: {},
+              } as any;
+              yield signal?.aborted
+                ? ({ type: 'error', reason: 'aborted', error: { stopReason: 'aborted' } } as any)
+                : ({
+                    type: 'done',
+                    reason: 'stop',
+                    message: { role: 'assistant', content: [], stopReason: 'stop' },
+                  } as any);
+            })(),
+        ];
+        mock.scripts['p2/second-model'] = [
+          (signal) =>
+            (async function* () {
+              // Stay open long enough for the ghost to fire if it were not aborted.
+              await new Promise((r) => setTimeout(r, 50));
+              for (const ev of textEvents('second model answer')) yield ev;
+              void signal;
+            })(),
+        ];
 
         const events = await runGroupStream(defaultExport, mock.registry);
 
@@ -290,6 +344,7 @@ describe('driveStream: abandoned candidates are cancelled', () => {
         expect(joinedText(events)).not.toContain('LATE GHOST TEXT');
         // The ghost's aborted terminal must not end the user's stream as "aborted".
         expect(events.find((e: any) => e.type === 'error')).toBeUndefined();
-      });
+      }
+    );
   }, 30_000);
 });

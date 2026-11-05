@@ -2,7 +2,11 @@
 // Unit tests for HINT classification — deterministic path and LLM fallback
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { classifyPrompt, classifyStatically, detectHintDirectly } from '../src/content-classifier.js';
+import {
+  classifyPrompt,
+  classifyStatically,
+  detectHintDirectly,
+} from '../src/content-classifier.js';
 import type { ClassificationResult, HintClassificationResult } from '../src/content-classifier.js';
 import { localModelCache } from './helpers/local-model-cache.ts';
 import { resolveShortModelName } from '../src/utils.js';
@@ -44,7 +48,9 @@ describe('detectHintDirectly()', () => {
       expect(r?.hintType).toBe('model');
       expect(r?.hintTarget).toBe('mistral-zai/glm-5-2');
       // German verb, model name containing a colon, trailing prose
-      expect(detectHintDirectly('HINT nutze gemma4:12b-mlx bitte weiter')?.hintTarget).toBe('gemma4:12b-mlx');
+      expect(detectHintDirectly('HINT nutze gemma4:12b-mlx bitte weiter')?.hintTarget).toBe(
+        'gemma4:12b-mlx'
+      );
     });
 
     it('still recognizes HINT with a colon (unchanged)', () => {
@@ -194,7 +200,9 @@ describe('HINT Classification', () => {
 
     it('detects model hint (german) without calling LLM', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      const result = await classifyPrompt('HINT: nutze mistral-medium-3.5 und analysiere diesen Code');
+      const result = await classifyPrompt(
+        'HINT: nutze mistral-medium-3.5 und analysiere diesen Code'
+      );
       expect(result).toHaveProperty('hintType', 'model');
       expect(result).toHaveProperty('hintTarget', 'mistral-medium-3.5');
       expect(vi.mocked(callOllama)).not.toHaveBeenCalled();
@@ -243,18 +251,20 @@ describe('HINT Classification', () => {
   describe('Normale Klassifizierung (kein HINT)', () => {
     it('classifies normal requests without HINT', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
+
       // Mock response ohne HINT
       vi.mocked(callOllama).mockResolvedValue(
         JSON.stringify({
           category: 'code_complex',
           reason: 'Complex coding task',
-          confidence: 0.95
+          confidence: 0.95,
         })
       );
 
-      const result = await classifyPrompt('Refactor this complex function', { cache: localModelCache() });
-      
+      const result = await classifyPrompt('Refactor this complex function', {
+        cache: localModelCache(),
+      });
+
       // Sollte normale ClassificationResult sein
       expect(result).toHaveProperty('category', 'code_complex');
       expect(result).not.toHaveProperty('hintType');
@@ -263,17 +273,19 @@ describe('HINT Classification', () => {
 
     it('classifies simple requests', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
+
       vi.mocked(callOllama).mockResolvedValue(
         JSON.stringify({
           category: 'simple',
           reason: 'Simple question',
-          confidence: 0.9
+          confidence: 0.9,
         })
       );
 
-      const result = await classifyPrompt('What is the capital of France?', { cache: localModelCache() });
-      
+      const result = await classifyPrompt('What is the capital of France?', {
+        cache: localModelCache(),
+      });
+
       expect(result).toHaveProperty('category', 'simple');
       expect(result).toHaveProperty('confidence', 0.9);
     });
@@ -282,16 +294,16 @@ describe('HINT Classification', () => {
   describe('Static Classification Fallback', () => {
     it('falls back to static classification when LLM fails', async () => {
       const { callOllama } = await import('../src/ollama-utils.js');
-      
+
       // Mock callOllama to throw error
       vi.mocked(callOllama).mockRejectedValue(new Error('Ollama not available'));
 
       // Use a prompt that classifyStatically maps to 'simple' (not 'fallback')
-      const result = await classifyPrompt('What is the capital of France?', { 
+      const result = await classifyPrompt('What is the capital of France?', {
         allowStaticFallback: true,
         cache: localModelCache(),
       });
-      
+
       // Should use static classification
       // "What is the capital of France?" is classified as 'simple' by classifyStatically
       const staticResult = classifyStatically('What is the capital of France?');
@@ -306,9 +318,9 @@ describe('HINT Classification', () => {
         reason: 'User specified model via HINT',
         confidence: 1.0,
         hintType: 'model',
-        hintTarget: 'mistral-medium-3.5'
+        hintTarget: 'mistral-medium-3.5',
       };
-      
+
       // Should have no category field
       expect(hintResult).not.toHaveProperty('category');
       expect(hintResult.hintType).toBe('model');
@@ -319,9 +331,9 @@ describe('HINT Classification', () => {
       const normalResult: ClassificationResult = {
         category: 'code_complex',
         reason: 'Complex task',
-        confidence: 0.95
+        confidence: 0.95,
       };
-      
+
       expect(normalResult).toHaveProperty('category', 'code_complex');
       expect(normalResult).not.toHaveProperty('hintType');
       expect(normalResult).not.toHaveProperty('hintTarget');

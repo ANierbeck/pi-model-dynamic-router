@@ -24,7 +24,14 @@ import {
   staticGroupsFingerprint,
   type ModelWithMetadata,
 } from '../src/dynamic-config.ts';
-import { setConfig, setCache, setGdpval, setModelMap, setMetrics, calculateScore } from '../src/metrics.ts';
+import {
+  setConfig,
+  setCache,
+  setGdpval,
+  setModelMap,
+  setMetrics,
+  calculateScore,
+} from '../src/metrics.ts';
 import type { Config, Group } from '../src/types.ts';
 
 const baseCfg: Config = {
@@ -155,7 +162,13 @@ describe('buildModelsWithMetadata', () => {
 describe('filterModelsForGroup', () => {
   const models: ModelWithMetadata[] = [
     { ref: 'payg/cheap', gdpval: 300, cost: 1, price: { input: 1, output: 1 }, isFreeModel: false },
-    { ref: 'payg/expensive', gdpval: 800, cost: 20, price: { input: 20, output: 20 }, isFreeModel: false },
+    {
+      ref: 'payg/expensive',
+      gdpval: 800,
+      cost: 20,
+      price: { input: 20, output: 20 },
+      isFreeModel: false,
+    },
     { ref: 'payg/free', gdpval: 400, cost: 0, price: { input: 0, output: 0 }, isFreeModel: true },
     { ref: 'sub/subscribed', gdpval: 900, cost: 'unknown', price: null, isFreeModel: false },
     // Local daemon model: $0 variable cost, but PROVIDER_MAP labels ollama
@@ -254,15 +267,16 @@ describe('sortModelsForGroup', () => {
 
     // score_by briefcase: b wins on the column (2100 > 1000) despite lower gdpval.
     const byColumn = sortModelsForGroup(
-      models, { method: 'best', score_by: 'briefcase' }, cfg, calculateScore
+      models,
+      { method: 'best', score_by: 'briefcase' },
+      cfg,
+      calculateScore
     );
     expect(byColumn.map((m) => m.ref)).toEqual(['payg/b', 'payg/a']);
 
     // NO score_by: gdpval order, even when the group NAME is a column name —
     // the name must never leak into column selection.
-    const byNameTrap = sortModelsForGroup(
-      models, { method: 'best' }, cfg, calculateScore
-    );
+    const byNameTrap = sortModelsForGroup(models, { method: 'best' }, cfg, calculateScore);
     expect(byNameTrap.map((m) => m.ref)).toEqual(['payg/a', 'payg/b']);
   });
 
@@ -276,7 +290,7 @@ describe('sortModelsForGroup', () => {
     expect(sorted.map((m) => m.ref)).toEqual(['payg/high', 'payg/low']);
   });
 
-  it("score_by column: unprofiled models rank after profiled ones (PR #75 review)", () => {
+  it('score_by column: unprofiled models rank after profiled ones (PR #75 review)', () => {
     // The generated router-config.dynamic.json must get the same order the
     // live router produces: never mix an unprofiled model into a capability
     // column ranking via calculateScore's gdpval fallback (1600 gdpval vs
@@ -290,7 +304,12 @@ describe('sortModelsForGroup', () => {
       { ref: 'payg/u', gdpval: 1600, cost: 1, price: null, isFreeModel: false },
       { ref: 'payg/p', gdpval: 900, cost: 1, price: null, isFreeModel: false },
     ];
-    const sorted = sortModelsForGroup(models, { method: 'best', score_by: 'coding' }, cfg, calculateScore);
+    const sorted = sortModelsForGroup(
+      models,
+      { method: 'best', score_by: 'coding' },
+      cfg,
+      calculateScore
+    );
     expect(sorted.map((m) => m.ref)).toEqual(['payg/p', 'payg/u']);
   });
 
@@ -381,7 +400,10 @@ describe('collectGroupModels', () => {
     setGdpval({ pricey: 600, free: 600 });
     const cfg = {
       ...baseCfg,
-      providers: { ...baseCfg.providers, payg: { ...baseCfg.providers?.payg, free_models: ['payg/free'] } },
+      providers: {
+        ...baseCfg.providers,
+        payg: { ...baseCfg.providers?.payg, free_models: ['payg/free'] },
+      },
       model_metrics: { 'payg/pricey': { cost_per_m: 50 } },
     };
     setConfig(cfg);

@@ -6,7 +6,6 @@ import { splitRef } from './utils.ts';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
-
 // ── Shared cooldown check (single source of truth) ─────────────────────────
 //
 // Both RateLimitManager (the owner of the state) and routing.ts's Router
@@ -187,7 +186,9 @@ export class RateLimitManager {
         ref,
         secs: Math.ceil((limit.cooldown_until - now) / 1000),
         hits: limit.hits,
-        ...(limit.resetAtMs && Number.isFinite(limit.resetAtMs) ? { resetAtMs: limit.resetAtMs } : {}),
+        ...(limit.resetAtMs && Number.isFinite(limit.resetAtMs)
+          ? { resetAtMs: limit.resetAtMs }
+          : {}),
       });
     }
     out.sort((a, b) => a.secs - b.secs);
@@ -211,7 +212,11 @@ export class RateLimitManager {
     // counts, so the escalation schedule keeps advancing (see
     // rate-limit-cooldown.test.ts, "must not shorten a longer cooldown").
     if (prev && prev.cooldown_until > until) {
-      this.limits.set(ref, { cooldown_until: prev.cooldown_until, backoff_ms: prev.backoff_ms, hits });
+      this.limits.set(ref, {
+        cooldown_until: prev.cooldown_until,
+        backoff_ms: prev.backoff_ms,
+        hits,
+      });
       return;
     }
     this.limits.set(ref, { cooldown_until: until, backoff_ms: ms, hits });
@@ -266,5 +271,4 @@ export class RateLimitManager {
   updateCache(newCache: Cache): void {
     this.cache = newCache;
   }
-
 }

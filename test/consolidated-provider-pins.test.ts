@@ -6,13 +6,22 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { drainStream , routerStatePaths} from './helpers/extension-harness.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
-import { withRouterEnv } from './helpers/router-env.ts';
 
+import path from 'node:path';
+import {
+  writeNoOpScanCache,
+  removeNoOpScanCache,
+  flushBackgroundScan,
+  removeNoOpScanCacheDefault,
+} from './helpers/noop-scan-cache.ts';
+import {
+  drainStream,
+  routerStatePaths,
+  startSession,
+  makePiCtx,
+} from './helpers/extension-harness.ts';
+import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, withRouterEnv, rmTmpDir, teardownBoot } from './helpers/router-env.ts';
 describe('free-model-on-demand-registration', () => {
   /**
    * Integration test: statically-configured free models (cfg.providers[provider]
@@ -26,7 +35,6 @@ describe('free-model-on-demand-registration', () => {
    * to the next non-free model (claude-sonnet-5) on every turn.
    */
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
@@ -38,14 +46,19 @@ describe('free-model-on-demand-registration', () => {
     let hadCache = false;
     return withRouterEnv(fn, {
       config: configOverride,
+      seedScanCache: false,
+      parkState: [],
+      disableNetwork: true,
       beforeImport: () => {
         hadDyn = fs.existsSync(dynamicConfigPath);
         hadCache = fs.existsSync(scanCachePath);
         if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
         if (hadCache) fs.renameSync(scanCachePath, cacheBak);
+        writeNoOpScanCache(scanCachePath);
       },
       teardown: () => {
         if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+        removeNoOpScanCache(scanCachePath);
         if (hadCache) fs.renameSync(cacheBak, scanCachePath);
       },
     });
@@ -69,28 +82,24 @@ describe('free-model-on-demand-registration', () => {
           gdpval_builtin: { 'openrouter/test-vendor/fixture-model:free': 900 },
         },
         async (defaultExport, tmpDir) => {
-          const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
           const registerProviderCalls: any[] = [];
-          const pi: any = {
-            registerTool: vi.fn(),
-            registerCommand: vi.fn(),
+          let openrouterRegistered = false;
+          const { pi, onHandlers } = makePiCtx({
             registerProvider: vi.fn((name: string, opts: any) => {
               registerProviderCalls.push({ name, opts });
-              // Mirror how Pi's real registry makes the model findable after
-              // registration: once openrouter is registered with the free
-              // model id, find() should return it.
               if (name === 'openrouter' && Array.isArray(opts?.models)) {
                 openrouterRegistered = true;
               }
             }),
-            setModel: vi.fn(async () => true),
-            on: vi.fn((event: string, handler: any) => {
-              onHandlers[event] = handler;
-            }),
-          };
+          });
           defaultExport(pi);
 
-          const freeModel = { provider: 'openrouter', id: 'test-vendor/fixture-model:free', api: 'openai-completions', contextWindow: 128_000 };
+          const freeModel = {
+            provider: 'openrouter',
+            id: 'test-vendor/fixture-model:free',
+            api: 'openai-completions',
+            contextWindow: 128_000,
+          };
           // The model registry starts with the free model NOT findable (it's
           // not registered yet). After tryStream's on-demand registration
           // calls pi.registerProvider, the registry must find it — simulate
@@ -99,7 +108,6 @@ describe('free-model-on-demand-registration', () => {
           const modelsByRef: Record<string, any> = {
             'openrouter/test-vendor/fixture-model:free': freeModel,
           };
-          let openrouterRegistered = false;
           const modelRegistry = {
             getAvailable: () => [freeModel],
             find: (provider: string, modelId: string) => {
@@ -109,19 +117,20 @@ describe('free-model-on-demand-registration', () => {
               return null;
             },
             getApiKeyForProvider: async () => 'sk-or-test-fake-key',
-            runtime: { streamSimple: vi.fn(() => (async function* () {
-              yield { type: 'text_delta', delta: 'glm free model ok' };
-              yield doneEvent();
-            })()) },
+            runtime: {
+              streamSimple: vi.fn(() =>
+                (async function* () {
+                  yield { type: 'text_delta', delta: 'glm free model ok' };
+                  yield doneEvent();
+                })()
+              ),
+            },
           };
           // Hook: pi.registerProvider now flips openrouterRegistered in the
           // mock defined above (combined with the push), so subsequent find()
           // calls succeed — mirrors how Pi's real registry makes the model
           // findable after registration.
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
-
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'hi' }] };
           const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
@@ -150,7 +159,10 @@ describe('free-model-on-demand-registration', () => {
           free_models: [],
           providers: {
             openrouter: {
-              free_models: ['openrouter/test-vendor/fixture-model:free', 'openrouter/some-paid-model'],
+              free_models: [
+                'openrouter/test-vendor/fixture-model:free',
+                'openrouter/some-paid-model',
+              ],
               keys: [{ key: 'sk-or-test-fake-key' }],
             },
           },
@@ -182,8 +194,18 @@ describe('free-model-on-demand-registration', () => {
           // can find the paid model, but NOT the free model yet (find returns
           // null for the free ref until it's explicitly registered, which the
           // Ü1 guard must prevent from happening).
-          const paidModel = { provider: 'openrouter', id: 'some-paid-model', api: 'openai-completions', contextWindow: 128_000 };
-          const freeModel = { provider: 'openrouter', id: 'test-vendor/fixture-model:free', api: 'openai-completions', contextWindow: 128_000 };
+          const paidModel = {
+            provider: 'openrouter',
+            id: 'some-paid-model',
+            api: 'openai-completions',
+            contextWindow: 128_000,
+          };
+          const freeModel = {
+            provider: 'openrouter',
+            id: 'test-vendor/fixture-model:free',
+            api: 'openai-completions',
+            contextWindow: 128_000,
+          };
           const modelRegistry = {
             getAvailable: () => [paidModel, freeModel],
             // Paid model is findable (already registered); free model is NOT
@@ -212,10 +234,7 @@ describe('free-model-on-demand-registration', () => {
               }),
             },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
-
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
           // The free model is NOT findable (not in the provider's registered
           // models list), so tryStream's on-demand guard fires — but it must
           // see openrouter as already registered and bail (not overwrite).
@@ -245,7 +264,6 @@ describe('free-model-on-demand-registration', () => {
   });
 });
 
-
 describe('register-group-providers-label', () => {
   /**
    * Regression test: registerGroupProviders() used to call resolve() for
@@ -260,27 +278,29 @@ describe('register-group-providers-label', () => {
    * do ("auto-classify") instead of the resolve() result.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const dynamicConfigPath = path.join(
+    process.env.PI_ROUTER_STATE_DIR!,
+    'router-config.dynamic.json'
+  );
   const dynamicConfigBackupPath = `${dynamicConfigPath}.label-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
   describe('registerGroupProviders(): dynamic-method group labeling', () => {
     it('labels the dynamic group "auto-classify" instead of the misleading "→ none"', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-label-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           model_groups: {
             standard: { fallback_groups: [], min_gdpval: 0 },
             dynamic: { method: 'dynamic', fallback_groups: [] },
           },
-        })
+        },
+        'router-label-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-      if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+      if (fs.existsSync(dynamicConfigPath))
+        fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
       try {
@@ -298,7 +318,9 @@ describe('register-group-providers-label', () => {
         };
         defaultExport(pi);
 
-        const dynamicCall = registerProvider.mock.calls.find((call: any[]) => call[0] === 'dynamic');
+        const dynamicCall = registerProvider.mock.calls.find(
+          (call: any[]) => call[0] === 'dynamic'
+        );
         expect(dynamicCall).toBeDefined();
         const models = dynamicCall![1].models;
 
@@ -315,25 +337,27 @@ describe('register-group-providers-label', () => {
         // (or "none" if genuinely nothing resolved — that's the honest state
         // for a static group, unlike the dynamic group's classifier-at-runtime
         // design).
-        const standardCall = registerProvider.mock.calls.find((call: any[]) => call[0] === 'standard');
+        const standardCall = registerProvider.mock.calls.find(
+          (call: any[]) => call[0] === 'standard'
+        );
         expect(standardCall).toBeDefined();
         const standardEntry = standardCall![1].models.find((m: any) => m.id === 'standard');
         expect(standardEntry.name).toMatch(/^standard → /);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        rmTmpDir(tmpDir);
         // Flush any (currently nonexistent, but structurally possible) late
         // background-scan saveCache() BEFORE restoring the real cache — the
         // exact race flushBackgroundScan exists for (final v1.6.0 review minor #7).
         await flushBackgroundScan();
-        removeNoOpScanCache(scanCachePath);
+        removeNoOpScanCacheDefault();
 
-        if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+        if (fs.existsSync(dynamicConfigBackupPath))
+          fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       }
     });
   });
 });
-
 
 describe('register-group-providers-u1-guard', () => {
   /**
@@ -356,23 +380,14 @@ describe('register-group-providers-u1-guard', () => {
    * already registered.
    */
 
-  const scanCachePath = path.join(
-    process.env.PI_ROUTER_STATE_DIR!,
-    '.cache',
-    'scan-cache.json'
-  );
+  const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     registeredProviderIds: string[],
     fn: (registerProviderCalls: any[], onHandlers: Record<string, any>, ctx: any) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-u1-guard-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpDir, '.pi', 'router-config.json'),
-      JSON.stringify(configOverride)
-    );
+    const { tmpDir } = bootProjectDir(configOverride, 'router-u1-guard-');
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
     writeNoOpScanCache(scanCachePath);
 
@@ -396,13 +411,7 @@ describe('register-group-providers-u1-guard', () => {
       };
       defaultExport(pi);
 
-      const paidModel = {
-        provider: 'paid-cloud-provider',
-        id: 'paid-model',
-        api: 'openai-completions',
-        contextWindow: 1_000_000,
-        cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-      };
+      const paidModel = paidCloudModel();
       const modelRegistry = {
         getAvailable: () => [paidModel],
         find: (_p: string, modelId: string) => (modelId === 'paid-model' ? paidModel : null),
@@ -418,8 +427,8 @@ describe('register-group-providers-u1-guard', () => {
       await fn(registerProviderCalls, onHandlers, ctx);
     } finally {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
+      rmTmpDir(tmpDir);
+      removeNoOpScanCacheDefault();
     }
   }
 
@@ -445,17 +454,13 @@ describe('register-group-providers-u1-guard', () => {
     });
 
     it('keeps refusing the builtin-named group across the session_start re-register', async () => {
-      await withIsolatedRouter(
-        baseConfig,
-        [],
-        async (registerProviderCalls, onHandlers, ctx) => {
-          for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
-          await flushBackgroundScan();
-          const registeredNames = registerProviderCalls.map((c) => c.name);
-          expect(registeredNames).toContain('standard');
-          expect(registeredNames).not.toContain('openai');
-        }
-      );
+      await withIsolatedRouter(baseConfig, [], async (registerProviderCalls, onHandlers, ctx) => {
+        for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
+        await flushBackgroundScan();
+        const registeredNames = registerProviderCalls.map((c) => c.name);
+        expect(registeredNames).toContain('standard');
+        expect(registeredNames).not.toContain('openai');
+      });
     });
 
     it('still RE-registers its own groups at session_start even though they now appear in getRegisteredProviderIds', async () => {
@@ -486,7 +491,6 @@ describe('register-group-providers-u1-guard', () => {
     });
   });
 });
-
 
 describe('mistral-zai-ghost-purge', () => {
   /**
@@ -539,9 +543,7 @@ describe('mistral-zai-ghost-purge', () => {
     process.env.PI_ROUTER_STATE_DIR = stateDir;
     const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
     const scanCachePath = path.join(stateDir, '.cache', 'scan-cache.json');
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ghost-purge-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
+    const { tmpDir } = bootProjectDir(configOverride, 'router-ghost-purge-');
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.ghost-purge-bak`;
@@ -580,10 +582,11 @@ describe('mistral-zai-ghost-purge', () => {
       await fn(mod.default as any, tmpDir);
     } finally {
       process.env.PI_ROUTER_STATE_DIR = fileStateDir;
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
+      teardownBoot({
+        cwdSpy,
+        tmpDir,
+        dynRestore: { bak: dynBak, path: dynamicConfigPath, had: hadDyn },
+      });
       if (hadCache) fs.renameSync(cacheBak, scanCachePath);
     }
   }

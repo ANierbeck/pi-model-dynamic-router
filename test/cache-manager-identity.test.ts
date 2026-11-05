@@ -13,7 +13,10 @@ import { CacheManager } from '../src/cache.ts';
 function manager() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cache-identity-'));
   fs.mkdirSync(path.join(dir, '.cache'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.cache', 'scan-cache.json'), JSON.stringify({ available_models: [] }));
+  fs.writeFileSync(
+    path.join(dir, '.cache', 'scan-cache.json'),
+    JSON.stringify({ available_models: [] })
+  );
   return { cm: new CacheManager(dir), file: path.join(dir, '.cache', 'scan-cache.json') };
 }
 
@@ -37,7 +40,16 @@ describe('CacheManager shares one cache object with its callers', () => {
   it('a reload after another process wrote merges its additions into the same object', () => {
     const { cm, file } = manager();
     const held = cm.loadCache();
-    held.model_blocklist = { 'mine/blocked': { reason: 'r', code: 404, signature: 's', first_seen: 1, last_seen: 1, occurrences: 1 } };
+    held.model_blocklist = {
+      'mine/blocked': {
+        reason: 'r',
+        code: 404,
+        signature: 's',
+        first_seen: 1,
+        last_seen: 1,
+        occurrences: 1,
+      },
+    };
     cm.saveCache(held);
     held.exhausted_keys = { 'mistral/k1': 42 }; // unsaved
     // Another Pi process adds its own block and saves the file.
@@ -67,7 +79,7 @@ describe('CacheManager shares one cache object with its callers', () => {
     expect(onDisk.lastScanTimestamp).toBe(1234);
   });
 
-  it('a manager rebuilt on reload adopts the caller\'s in-memory object', () => {
+  it("a manager rebuilt on reload adopts the caller's in-memory object", () => {
     const { cm } = manager();
     const live = cm.loadCache();
     live.classifier_fallback_models = ['unsaved/in-memory'];

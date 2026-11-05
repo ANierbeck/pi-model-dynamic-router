@@ -16,7 +16,13 @@ import { StreamOrchestrator } from '../src/stream-orchestrator.ts';
 
 vi.mock('../src/logger.ts', async (orig) => {
   const actual = await orig<typeof import('../src/logger.ts')>();
-  return { ...actual, appendRawLog: vi.fn(), routerLog: vi.fn(), warnLog: vi.fn(), errorLog: vi.fn() };
+  return {
+    ...actual,
+    appendRawLog: vi.fn(),
+    routerLog: vi.fn(),
+    warnLog: vi.fn(),
+    errorLog: vi.fn(),
+  };
 });
 
 /** A context whose very first call inside driveStream throws. */
@@ -50,7 +56,14 @@ describe('driveStream never rejects', () => {
     const orch = new StreamOrchestrator(throwingCtx());
     const proxy = createAssistantMessageEventStream();
     await expect(
-      orch.driveStream(proxy, ['mistral/glm'], { messages: [] } as any, undefined, undefined, 'standard'),
+      orch.driveStream(
+        proxy,
+        ['mistral/glm'],
+        { messages: [] } as any,
+        undefined,
+        undefined,
+        'standard'
+      )
     ).resolves.toBeUndefined();
     const events = await drain(proxy);
     const err = events.find((e) => e.type === 'error');
@@ -69,7 +82,7 @@ describe('driveStream never rejects', () => {
       const stream = orch.groupStream(
         { provider: 'router', id: 'standard', api: 'openai-completions' } as any,
         { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
-        undefined,
+        undefined
       );
       const events = await drain(stream as AsyncIterable<any>);
       expect(events.some((e) => e.type === 'error')).toBe(true);
@@ -104,7 +117,7 @@ describe('driveStream never rejects', () => {
       const stream = orch.groupStream(
         { provider: 'router', id: 'dynamic', api: 'openai-completions' } as any,
         { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
-        undefined,
+        undefined
       );
       const events = await drain(stream as AsyncIterable<any>);
       const err = events.find((e) => e.type === 'error');

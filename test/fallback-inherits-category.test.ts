@@ -24,11 +24,12 @@ vi.mock('../src/ollama-utils.ts', () => ({
 // only the LLM-said-'fallback' path is under test.
 // Unique per call: identical context-free prompts hit the classification cache.
 let promptSeq = 0;
-const continuation = () => `okay then please carry on with whatever remains of that list from before #${++promptSeq}`;
+const continuation = () =>
+  `okay then please carry on with whatever remains of that list from before #${++promptSeq}`;
 
 function llmSays(category: string, confidence = 0.9): void {
   vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
-    JSON.stringify({ category, reason: 'mocked', confidence }),
+    JSON.stringify({ category, reason: 'mocked', confidence })
   );
 }
 
@@ -41,16 +42,24 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('design turn, then a confident LLM "continue" → routes to the design group, not standard', async () => {
     llmSays('continue');
-    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
     expect('category' in result && result.category).toBe('design');
-    expect(getGroupForCategory((result as { category: string }).category)).toBe(getGroupForCategory('design'));
+    expect(getGroupForCategory((result as { category: string }).category)).toBe(
+      getGroupForCategory('design')
+    );
     expect(getGroupForCategory('design')).not.toBe(getGroupForCategory('continue'));
     expect(result.reason).toContain('inherit');
   });
 
   it('counts the inherited category, not the raw fallback', async () => {
     llmSays('continue');
-    await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
+    await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
     const counts = getClassificationCounts();
     expect(counts.byCategory.design).toBe(1);
     expect(counts.byCategory.continue).toBeUndefined();
@@ -58,7 +67,8 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('inherits on the static path too (LLM unavailable, static classifier says fallback)', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
-    const result = await classifyPrompt(continuation(), { cache: localModelCache(),
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
       allowStaticFallback: true,
       context: { lastCategory: 'planning' },
     });
@@ -67,7 +77,10 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('inherits when the classifier is unavailable and static fallback is disabled', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
-    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
     expect('category' in result && result.category).toBe('design');
   });
 
@@ -80,7 +93,10 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
 
   it('a concrete (non-fallback) classification is never replaced by the previous category', async () => {
     llmSays('simple');
-    const result = await classifyPrompt(continuation(), { cache: localModelCache(), context: { lastCategory: 'design' } });
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
     expect('category' in result && result.category).toBe('simple');
   });
 
@@ -93,7 +109,8 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
   });
 
   it('a compaction turn is never overridden by inheritance', async () => {
-    const result = await classifyPrompt(continuation(), { cache: localModelCache(),
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
       context: { lastCategory: 'design', isCompaction: true },
     });
     expect('category' in result && result.category).toBe('code_complex');

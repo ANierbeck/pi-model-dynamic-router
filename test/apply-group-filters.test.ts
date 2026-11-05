@@ -21,18 +21,18 @@ import * as metricsModule from '../src/metrics.ts';
 import type { Config, Group } from '../src/types.ts';
 
 const REFS = [
-  'openrouter/qwen3-4b:free',     // payg, scored 400, cost 0
-  'openrouter/paid-model',        // payg, scored 1000, cost 0.05
-  'mistral/devstral-2512',        // subscription (billing), scored 585, unknown OpenRouter price
-  'mistral/mistral-medium-2604',  // subscription, scored 933, unknown price
-  'ollama/qwen3.5',               // local, scored 400, cost 0
-  'unscored/unknown-model',       // payg, unscored (lookupGdp null)
+  'openrouter/qwen3-4b:free', // payg, scored 400, cost 0
+  'openrouter/paid-model', // payg, scored 1000, cost 0.05
+  'mistral/devstral-2512', // subscription (billing), scored 585, unknown OpenRouter price
+  'mistral/mistral-medium-2604', // subscription, scored 933, unknown price
+  'ollama/qwen3.5', // local, scored 400, cost 0
+  'unscored/unknown-model', // payg, unscored (lookupGdp null)
 ];
 
 const SCORES: Record<string, number> = {
   'qwen3-4b': 400,
   'paid-model': 1000,
-  'devstral': 585,
+  devstral: 585,
   'mistral-medium-3-5': 933,
   'qwen3.5': 400,
 };
@@ -65,7 +65,9 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
     it('drops all models from listed providers', () => {
       const g: Group = { method: 'best', exclude_providers: ['openrouter', 'mistral'] } as any;
       const out = applyGroupFilters(REFS, g, CFG);
-      expect(out.every(r => !r.startsWith('openrouter/') && !r.startsWith('mistral/'))).toBe(true);
+      expect(out.every((r) => !r.startsWith('openrouter/') && !r.startsWith('mistral/'))).toBe(
+        true
+      );
       expect(out).toContain('ollama/qwen3.5');
     });
 
@@ -78,7 +80,10 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
 
   describe('exclude_models', () => {
     it('drops exact model refs', () => {
-      const g: Group = { method: 'best', exclude_models: ['openrouter/paid-model', 'ollama/qwen3.5'] } as any;
+      const g: Group = {
+        method: 'best',
+        exclude_models: ['openrouter/paid-model', 'ollama/qwen3.5'],
+      } as any;
       const out = applyGroupFilters(REFS, g, CFG);
       expect(out).not.toContain('openrouter/paid-model');
       expect(out).not.toContain('ollama/qwen3.5');
@@ -138,7 +143,7 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       const out = applyGroupFilters(REFS, g, CFG);
       expect(out).not.toContain('unscored/unknown-model');
       expect(out).toContain('mistral/mistral-medium-2604'); // 933
-      expect(out).toContain('openrouter/paid-model');        // 1000
+      expect(out).toContain('openrouter/paid-model'); // 1000
     });
 
     it('min_gdpval <= 0 is "no gate" — unscored models pass', () => {
@@ -160,8 +165,8 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
     it('keeps unknown-cost subscription/local models under a positive cap (sunk cost)', () => {
       const g: Group = { method: 'best', max_cost: 1 } as any;
       const out = applyGroupFilters(REFS, g, CFG);
-      expect(out.some(r => r.startsWith('mistral/'))).toBe(true);
-      expect(out.some(r => r.startsWith('ollama/'))).toBe(true);
+      expect(out.some((r) => r.startsWith('mistral/'))).toBe(true);
+      expect(out.some((r) => r.startsWith('ollama/'))).toBe(true);
     });
 
     // Regression (ADR-0010): a cloud subscription model resolves to effCost 0
@@ -170,8 +175,8 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
     it('max_cost: 0 admits local models but keeps cloud subscription models out', () => {
       const g: Group = { method: 'best', max_cost: 0 } as any;
       const out = applyGroupFilters(REFS, g, CFG);
-      expect(out.some(r => r.startsWith('ollama/'))).toBe(true);
-      expect(out.some(r => r.startsWith('mistral/'))).toBe(false);
+      expect(out.some((r) => r.startsWith('ollama/'))).toBe(true);
+      expect(out.some((r) => r.startsWith('mistral/'))).toBe(false);
     });
 
     it('drops unknown-cost pay_per_token models (genuinely unknown price)', () => {
@@ -187,7 +192,7 @@ describe('applyGroupFilters — shared method-independent pipeline (A1)', () => 
       const g: Group = { method: 'best', max_cost_per_m: 0.01 } as any;
       const out = applyGroupFilters(REFS, g, CFG);
       // mistral has unknown prices → dropped even though subscription
-      expect(out.every(r => !r.startsWith('mistral/'))).toBe(true);
+      expect(out.every((r) => !r.startsWith('mistral/'))).toBe(true);
     });
   });
 

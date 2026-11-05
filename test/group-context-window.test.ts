@@ -32,7 +32,9 @@ const lookup = (ref: string) => WINDOWS[ref] ?? null;
 describe('virtualGroupContextWindow()', () => {
   it('caps large candidate windows at 250k', () => {
     expect(VIRTUAL_GROUP_CONTEXT_CAP).toBe(250_000);
-    expect(virtualGroupContextWindow(['claude-bridge/claude-opus-5-5', 'mistral/zai-glm-5-3'], lookup)).toBe(250_000);
+    expect(
+      virtualGroupContextWindow(['claude-bridge/claude-opus-5-5', 'mistral/zai-glm-5-3'], lookup)
+    ).toBe(250_000);
   });
 
   it('uses the real max window when every candidate is below the cap', () => {
@@ -72,7 +74,9 @@ describe('registerGroupProviders(): contextWindow of the virtual models', () => 
       groupStream: vi.fn() as any,
       pi: { registerProvider } as any,
       resolve: (name: string) =>
-        candidatesByGroup[name] ? { selected: candidatesByGroup[name][0], candidates: candidatesByGroup[name] } : null,
+        candidatesByGroup[name]
+          ? { selected: candidatesByGroup[name][0], candidates: candidatesByGroup[name] }
+          : null,
       sessionCtx: null,
       contextWindow: lookup,
     });
@@ -81,7 +85,7 @@ describe('registerGroupProviders(): contextWindow of the virtual models', () => 
       Object.fromEntries(
         registerProvider.mock.calls
           .find((c: any[]) => c[0] === group)![1]
-          .models.map((m: any) => [m.id, m.contextWindow]),
+          .models.map((m: any) => [m.id, m.contextWindow])
       );
     return windowsOf;
   }

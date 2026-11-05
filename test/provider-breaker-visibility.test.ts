@@ -26,7 +26,8 @@ import type { Cache } from '../src/types.ts';
 
 const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-breaker-volatile-'));
 const globalCache = () => path.join(stateDir, '.cache', 'scan-cache.json');
-const readJson = (p: string): any => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : {});
+const readJson = (p: string): any =>
+  fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf-8')) : {};
 beforeEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
 afterAll(() => fs.rmSync(stateDir, { recursive: true, force: true }));
 
@@ -36,7 +37,9 @@ function cacheWithOpenBreaker(): Cache {
   const t0 = Date.now() - 5_000;
   recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, t0);
   recordProviderFailure(cache, 'cloud-a/m2', 'empty_response', undefined, t0 + 1);
-  expect(recordProviderFailure(cache, 'cloud-a/m3', 'empty_response', undefined, t0 + 2)).toBe(true);
+  expect(recordProviderFailure(cache, 'cloud-a/m3', 'empty_response', undefined, t0 + 2)).toBe(
+    true
+  );
   recordBreakerSkip(cache, 'cloud-a');
   recordBreakerSkip(cache, 'cloud-a');
   expect(isProviderOpen(cache, 'cloud-a', t0 + 3)).toBe(true);
@@ -72,10 +75,15 @@ describe('breaker state is volatile, stats persist (plan D7)', () => {
   it('a provider_breaker key written by an older version is ignored on load and merge, never resurrected', () => {
     // Pre-D7 cache file: an open breaker survived on disk.
     fs.mkdirSync(path.dirname(globalCache()), { recursive: true });
-    fs.writeFileSync(globalCache(), JSON.stringify({
-      provider_breaker: { 'cloud-a': { evidence: {}, open_until: Date.now() + 600_000, trip_count: 1 } },
-      provider_breaker_stats: { 'cloud-a': { trips: 1, avoided_hops: 0 } },
-    }));
+    fs.writeFileSync(
+      globalCache(),
+      JSON.stringify({
+        provider_breaker: {
+          'cloud-a': { evidence: {}, open_until: Date.now() + 600_000, trip_count: 1 },
+        },
+        provider_breaker_stats: { 'cloud-a': { trips: 1, avoided_hops: 0 } },
+      })
+    );
 
     const mgr = new CacheManager(stateDir);
     const cache = mgr.getCache();
@@ -100,7 +108,11 @@ describe('breaker state is volatile, stats persist (plan D7)', () => {
  */
 async function runRouterCommand(cache: Cache, arg: string): Promise<string> {
   let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
-  const pi = { registerCommand: (name: string, def: any) => { if (name === 'router') handler = def.handler; } };
+  const pi = {
+    registerCommand: (name: string, def: any) => {
+      if (name === 'router') handler = def.handler;
+    },
+  };
   const rt: any = {
     pi,
     cache,

@@ -44,8 +44,18 @@ const SHIPPED_CONFIG: Config = JSON.parse(readFileSync('router-config.json', 'ut
 const testConfig: Config = {
   ...SHIPPED_CONFIG,
   model_metrics: {
-    'openrouter/inclusionai/ling-3.1-flash': { cost_per_m: 0, gdpval: 1617.9, throughput_tps: 100, avg_latency_ms: 500 },
-    'mistral/zai-glm-5-3': { cost_per_m: 0, gdpval: 1650.73, throughput_tps: 60, avg_latency_ms: 1200 },
+    'openrouter/inclusionai/ling-3.1-flash': {
+      cost_per_m: 0,
+      gdpval: 1617.9,
+      throughput_tps: 100,
+      avg_latency_ms: 500,
+    },
+    'mistral/zai-glm-5-3': {
+      cost_per_m: 0,
+      gdpval: 1650.73,
+      throughput_tps: 60,
+      avg_latency_ms: 1200,
+    },
   },
   gdpval_builtin: {
     'ling-3-1-flash': 1617.9,

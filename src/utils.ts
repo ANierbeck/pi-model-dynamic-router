@@ -137,7 +137,9 @@ export function textOf(value: unknown): string {
 }
 
 /** The `role: 'user'` messages that are real user turns (memory-extension blocks excluded). */
-export function realUserMessages<T extends { role?: string; content?: unknown }>(messages: readonly T[]): T[] {
+export function realUserMessages<T extends { role?: string; content?: unknown }>(
+  messages: readonly T[]
+): T[] {
   return messages.filter((m) => m.role === 'user' && !isMemoryContextText(messageText(m.content)));
 }
 
@@ -175,7 +177,10 @@ export function baseTokens(s: string): Set<string> {
  * contain dots (e.g. `mistral-medium-3.5`) keep their exact-match priority.
  */
 export function normalizeHintName(name: string): string {
-  return name.toLowerCase().replace(/[._\s]+/g, '-').replace(/-+/g, '-');
+  return name
+    .toLowerCase()
+    .replace(/[._\s]+/g, '-')
+    .replace(/-+/g, '-');
 }
 
 /**
@@ -190,10 +195,7 @@ export function hintTargetMatches(target: string, ref: string): boolean {
   return normalizeHintName(modelId) === normalizeHintName(target);
 }
 
-export function resolveShortModelName(
-  target: string,
-  allDiscoveredRefs: string[]
-): string | null {
+export function resolveShortModelName(target: string, allDiscoveredRefs: string[]): string | null {
   if (target.includes('/')) return target;
   // Exact match keeps first priority — never regress exact lookups.
   const match = allDiscoveredRefs.find(
@@ -209,14 +211,14 @@ export function resolveShortModelName(
   return fuzzyMatch ?? null;
 }
 
-
-
 /**
  * Wraps an async function so its runs never overlap: each call starts after
  * the previous one settled (resolved or rejected). Every caller still gets
  * its own run's result or error.
  */
-export function serialized<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => Promise<void> {
+export function serialized<A extends unknown[]>(
+  fn: (...args: A) => Promise<void>
+): (...args: A) => Promise<void> {
   let queue: Promise<void> = Promise.resolve();
   return (...args: A) => {
     const run = queue.then(() => fn(...args));

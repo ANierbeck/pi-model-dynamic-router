@@ -32,17 +32,29 @@ const FORBIDDEN_IN_SRC: { pattern: RegExp; why: string }[] = [
   { pattern: /pass\s+ls/, why: 'pass-store discovery was removed (ADR-0022)' },
   { pattern: /parsePassTree/, why: 'pass-store discovery was removed (ADR-0022)' },
   { pattern: /passPatterns/, why: 'pass-store discovery was removed (ADR-0022)' },
-  { pattern: /loadAuthFile|loadAuth\b|saveAuth/, why: 'the router never touches Pi credential stores' },
+  {
+    pattern: /loadAuthFile|loadAuth\b|saveAuth/,
+    why: 'the router never touches Pi credential stores',
+  },
   { pattern: /authKey/, why: 'auth.json key routing was removed (ADR-0022)' },
   { pattern: /resolveKeyRef|resolveKeyValue/, why: 'parallel key resolution was removed; ask pi' },
   { pattern: /discoverKeys/, why: 'key discovery was removed; pi owns keys (ADR-0022)' },
   { pattern: /discoveredProviders/, why: 'key discovery was removed (ADR-0022)' },
-  { pattern: /activeKeyIndex/, why: 'multi-key rotation was removed; one key per provider, from pi' },
+  {
+    pattern: /activeKeyIndex/,
+    why: 'multi-key rotation was removed; one key per provider, from pi',
+  },
   { pattern: /execSync/, why: 'the router no longer executes key commands (ADR-0022)' },
   { pattern: /child_process/, why: 'the router executes no commands for keys (ADR-0022)' },
-  { pattern: /process\.env\.[A-Z_]*KEY/, why: 'the router reads no API keys from the environment (ADR-0022)' },
+  {
+    pattern: /process\.env\.[A-Z_]*KEY/,
+    why: 'the router reads no API keys from the environment (ADR-0022)',
+  },
   { pattern: /envVar/, why: 'router-side env key discovery was removed (ADR-0022)' },
-  { pattern: /modelsUrl|authHeader|modelFilter/, why: 'cloud catalog scanning was removed (ADR-0022/0021)' },
+  {
+    pattern: /modelsUrl|authHeader|modelFilter/,
+    why: 'cloud catalog scanning was removed (ADR-0022/0021)',
+  },
 ];
 
 function listSourceFiles(dir: string): string[] {
@@ -69,7 +81,9 @@ describe('the router never touches auth.json or resolves keys itself (ADR-0022)'
         const text = fs.readFileSync(f, 'utf-8');
         if (pattern.test(text)) offenders.push(path.relative(repoRoot, f));
       }
-      expect(offenders, `pattern /${pattern.source}/ found in: ${offenders.join(', ')}`).toEqual([]);
+      expect(offenders, `pattern /${pattern.source}/ found in: ${offenders.join(', ')}`).toEqual(
+        []
+      );
     });
   }
 });

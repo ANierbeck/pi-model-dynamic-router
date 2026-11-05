@@ -90,7 +90,11 @@ export function sessionErrors(cache: Cache): SessionError[] {
  * This is the number shown in the footer (⚠N err) and the headline of
  * `/router errors` — the correlation anchor.
  */
-export function countSessionErrorsSince(cache: Cache, sessionStartTs: number, pid?: number): number {
+export function countSessionErrorsSince(
+  cache: Cache,
+  sessionStartTs: number,
+  pid?: number
+): number {
   return sessionErrors(cache).filter(
     (e) => e.ts >= sessionStartTs && (pid === undefined || e.pid === undefined || e.pid === pid)
   ).length;
@@ -140,7 +144,10 @@ export function formatErrorsReport(
     );
   }
   const omitted = sessionEntries.length - showSession.length;
-  if (omitted > 0) lines.push(`  … ${omitted} older session error(s) omitted (raise the limit: /router errors ${limit + omitted})`);
+  if (omitted > 0)
+    lines.push(
+      `  … ${omitted} older session error(s) omitted (raise the limit: /router errors ${limit + omitted})`
+    );
   if (older.length > 0) {
     lines.push('');
     lines.push(`--- outside this session (persisted history, ${older.length}) ---`);

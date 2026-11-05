@@ -14,7 +14,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { vi } from 'vitest';
 import { parkStateFiles, routerStatePaths } from './extension-harness.ts';
-import { removeNoOpScanCache, writeNoOpScanCache } from './noop-scan-cache.ts';
+import {
+  removeNoOpScanCache,
+  removeNoOpScanCacheDefault,
+  writeNoOpScanCache,
+} from './noop-scan-cache.ts';
 
 export interface RouterEnvOptions {
   /** Written to .pi/router-config.json. Default {} (the shipped defaults). */
@@ -47,8 +51,11 @@ export interface RouterEnvOptions {
  * Boot the extension in a throwaway HOME and tear it down afterwards.
  * `fn` receives the freshly imported extension default export and the tmpDir.
  */
- 
-export async function withRouterEnv(fn: (defaultExport: any, tmpDir: string) => Promise<void>, options: RouterEnvOptions = {}): Promise<void> {
+
+export async function withRouterEnv(
+  fn: (defaultExport: any, tmpDir: string) => Promise<void>,
+  options: RouterEnvOptions = {}
+): Promise<void> {
   const {
     config = {},
     tmpPrefix = 'router-test-',
@@ -70,13 +77,14 @@ export async function withRouterEnv(fn: (defaultExport: any, tmpDir: string) => 
   }
   const originalFetch = globalThis.fetch;
   if (disableNetwork) {
-    const msg = typeof disableNetwork === 'string' ? disableNetwork : 'network disabled during test';
+    const msg =
+      typeof disableNetwork === 'string' ? disableNetwork : 'network disabled during test';
     globalThis.fetch = (() => Promise.reject(new Error(msg))) as typeof fetch;
   }
   try {
     beforeImport?.(tmpDir);
     vi.resetModules();
-     
+
     const mod: any = await import('../../index.ts');
     await fn(mod.default, tmpDir);
   } finally {
@@ -87,4 +95,89 @@ export async function withRouterEnv(fn: (defaultExport: any, tmpDir: string) => 
     restoreState();
     if (seedScanCache) removeNoOpScanCache(scanCachePath);
   }
+}
+
+/**
+ * The throwaway-project part of the boot (files that hand-roll their setup
+ * instead of withRouterEnv): mkdtemp + .pi/ + router-config.json + a cwd
+ * spy. Returns everything the caller needs to undo it.
+ */
+export function bootProjectDir(
+  config: Record<string, unknown>,
+  tmpPrefix = 'router-test-'
+): {
+  tmpDir: string;
+
+  cwdSpy: any;
+} {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), tmpPrefix));
+  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(config));
+
+  const cwdSpy: any = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  return { tmpDir, cwdSpy };
+}
+
+/**
+ * Run fn with the dynamic config (router-config.dynamic.json) renamed away
+ * for the duration, so a test can assert regeneration from scratch. The
+ * scan cache is seeded with a no-op. Used by the hand-rolled runners that
+ * still need their own import sequence.
+ */
+export async function withFreshDynamicConfig(
+  fn: (mod: any) => Promise<void>,
+  suffix = 'test-bak'
+): Promise<void> {
+  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
+  const dynBak = `${dynamicConfigPath}.${suffix}`;
+  const hadDyn = fs.existsSync(dynamicConfigPath);
+  if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
+  writeNoOpScanCache(scanCachePath);
+  try {
+    vi.resetModules();
+
+    const mod: any = await import('../../index.ts');
+    await fn(mod);
+  } finally {
+    removeNoOpScanCache(scanCachePath);
+    if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
+  }
+}
+
+/** Remove a bootProjectDir/withRouterEnv tmp dir (the afterEach/finally line ~15 files spelled out). */
+export function rmTmpDir(tmpDir: string): void {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+/**
+ * The standard teardown after a hand-rolled boot: restore cwd, remove the
+ * tmp dir, flush a possible late background-scan save (the race
+ * flushBackgroundScan exists for), then remove the no-op scan cache.
+ */
+export async function teardownRouterEnv(cwdSpy: any, tmpDir: string): Promise<void> {
+  const { scanCachePath } = routerStatePaths();
+  cwdSpy.mockRestore();
+  rmTmpDir(tmpDir);
+  const { flushBackgroundScan } = await import('./noop-scan-cache.ts');
+  await flushBackgroundScan();
+  removeNoOpScanCache(scanCachePath);
+}
+
+interface TeardownBootOptions {
+  cwdSpy: any;
+  tmpDir: string;
+  /** parkStateFiles restore fn, when the boot parked state. */
+  restoreState?: () => void;
+  /** dynamic-config restore: { bak, path, had } — renamed away during the run. */
+  dynRestore?: { bak: string; path: string; had: boolean };
+}
+
+/** The standard teardown after a hand-rolled boot (mockRestore + rmTmpDir + restores + cache removal). */
+export function teardownBoot(options: TeardownBootOptions): void {
+  const { cwdSpy, tmpDir, restoreState, dynRestore } = options;
+  cwdSpy.mockRestore();
+  rmTmpDir(tmpDir);
+  if (dynRestore?.had) fs.renameSync(dynRestore.bak, dynRestore.path);
+  restoreState?.();
+  removeNoOpScanCacheDefault();
 }

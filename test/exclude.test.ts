@@ -5,15 +5,16 @@ import { describe, it, expect } from 'vitest';
 import { isExcluded, applyExcludes, type ExcludeContext } from '../src/exclude.js';
 import type { Config, Cache } from '../src/types.js';
 
-function ctx(rules: any, cfgOverrides: Partial<Config> = {}, cacheOverrides: Partial<Cache> = {}): ExcludeContext {
+function ctx(
+  rules: any,
+  cfgOverrides: Partial<Config> = {},
+  cacheOverrides: Partial<Cache> = {}
+): ExcludeContext {
   const cfg: Config = {
     providers: {
       openrouter: {
         billing: 'pay_per_token',
-        free_models: [
-          'openrouter/qwen/qwen3-4b:free',
-          'openrouter/openai/gpt-4o-mini:free',
-        ],
+        free_models: ['openrouter/qwen/qwen3-4b:free', 'openrouter/openai/gpt-4o-mini:free'],
       },
     },
     model_groups: {},

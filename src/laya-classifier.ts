@@ -24,7 +24,11 @@
 import { warnLog } from './logger.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
 import type { Config } from './types.ts';
-import { buildClassifierLayaQuestion, VALID_CATEGORIES, buildContextBlock } from './classification-prompt.ts';
+import {
+  buildClassifierLayaQuestion,
+  VALID_CATEGORIES,
+  buildContextBlock,
+} from './classification-prompt.ts';
 import { textOf } from './utils.ts';
 
 /** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
@@ -69,9 +73,12 @@ export function layaPromptBudgetChars(budgetTokens: number = LAYA_CONTEXT_BUDGET
 export function truncatePromptForLaya(
   prompt: string,
   context: ClassificationContext | undefined,
-  budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS,
+  budgetTokens: number = LAYA_CONTEXT_BUDGET_TOKENS
 ): string {
-  const contextChars = buildContextBlock(context?.previousUserMessage, context?.lastAssistantSnippet).length;
+  const contextChars = buildContextBlock(
+    context?.previousUserMessage,
+    context?.lastAssistantSnippet
+  ).length;
   const allowed = Math.max(0, layaPromptBudgetChars(budgetTokens) - contextChars);
   if (prompt.length <= allowed) return prompt;
   const chunk = Math.floor((allowed - TRUNCATION_MARKER.length) / 2);
@@ -160,7 +167,12 @@ export async function classifyWithLayaRaw(
   context: ClassificationContext | undefined,
   endpoint: string,
   timeoutMs: number
-): Promise<{ category: string; confidence: number; probabilities: Record<string, number>; ms: number }> {
+): Promise<{
+  category: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  ms: number;
+}> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -189,7 +201,11 @@ export async function classifyWithLayaRaw(
       throw new Error('malformed response: expected {category, confidence, probabilities, ms}');
     }
     const probabilities = raw.probabilities;
-    if (typeof probabilities !== 'object' || Array.isArray(probabilities) || probabilities === null) {
+    if (
+      typeof probabilities !== 'object' ||
+      Array.isArray(probabilities) ||
+      probabilities === null
+    ) {
       throw new Error('malformed response: probabilities must be an object');
     }
     return {
@@ -220,7 +236,8 @@ export function validLayaDistribution(p: unknown): Record<string, number> | unde
   if (entries.length !== VALID_CATEGORIES.length) return undefined;
   for (const [label, prob] of entries) {
     if (!VALID_CATEGORIES.includes(label as never)) return undefined;
-    if (typeof prob !== 'number' || !Number.isFinite(prob) || prob < 0 || prob > 1) return undefined;
+    if (typeof prob !== 'number' || !Number.isFinite(prob) || prob < 0 || prob > 1)
+      return undefined;
   }
   return p as Record<string, number>;
 }
@@ -247,7 +264,11 @@ function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult 
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2);
   const reason = top.map(([c, p]) => `${c} (${(p * 100).toFixed(0)}%)`).join('; ');
-  return { category: answer.category as ClassificationResult['category'], reason, confidence: answer.confidence };
+  return {
+    category: answer.category as ClassificationResult['category'],
+    reason,
+    confidence: answer.confidence,
+  };
 }
 
 /**
@@ -258,7 +279,7 @@ function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult 
 export async function classifyWithLayaDetailed(
   prompt: string,
   context: ClassificationContext | undefined,
-  options: { cfg?: Config; checkpoint: string },
+  options: { cfg?: Config; checkpoint: string }
 ): Promise<{ answer: LayaAnswer; result: ClassificationResult | null } | null> {
   const cfg = options.cfg?.classifier_laya;
   if (!cfg?.enabled) return null;
@@ -269,7 +290,9 @@ export async function classifyWithLayaDetailed(
     answer = await classifyWithLayaRaw(prompt, context, cfg.endpoint!, cfg.timeout_ms!);
   } catch (err) {
     markUnavailable(err instanceof Error ? err.message : textOf(err));
-    warnLog(`[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : textOf(err)}; stage disabled`);
+    warnLog(
+      `[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : textOf(err)}; stage disabled`
+    );
     return null;
   }
   return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };
@@ -283,7 +306,7 @@ export async function classifyWithLayaDetailed(
 export async function classifyWithLaya(
   prompt: string,
   context: ClassificationContext | undefined,
-  options: { cfg?: Config; checkpoint: string },
+  options: { cfg?: Config; checkpoint: string }
 ): Promise<ClassificationResult | null> {
   return (await classifyWithLayaDetailed(prompt, context, options))?.result ?? null;
 }

@@ -64,9 +64,13 @@ export function prePushLintPlan(
     .split('\n')
     .map((l) => l.trim().split(/\s+/)[1] ?? '')
     .filter((sha) => sha !== '' && !ZERO_SHA.test(sha));
-  if (pushed.length === 0) return { run: false, reason: `nothing to ${subject} (delete-only push)` };
+  if (pushed.length === 0)
+    return { run: false, reason: `nothing to ${subject} (delete-only push)` };
   if (pushed.some((sha) => sha !== head)) {
-    return { run: false, reason: `a pushed ref is not the checked-out HEAD; CI ${subject}s the pushed commit` };
+    return {
+      run: false,
+      reason: `a pushed ref is not the checked-out HEAD; CI ${subject}s the pushed commit`,
+    };
   }
   if (dirty.length > 0) {
     return {
@@ -106,7 +110,10 @@ export function refusedBaselineEntries(found: readonly LintEntry[]): LintEntry[]
 export function toEntries(results: ESLint.LintResult[], root: string): LintEntry[] {
   const counts = new Map<string, number>();
   for (const result of results) {
-    const file = result.filePath.slice(root.length + 1).split('\\').join('/');
+    const file = result.filePath
+      .slice(root.length + 1)
+      .split('\\')
+      .join('/');
     for (const message of result.messages) {
       // A real parse error has `fatal: true` and no ruleId; an unused
       // eslint-disable directive also has no ruleId but is NOT fatal. Bucketing
@@ -117,15 +124,19 @@ export function toEntries(results: ESLint.LintResult[], root: string): LintEntry
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
-  return [...counts.entries()]
-    .map(([key, count]) => {
-      const [file, rule] = key.split(SEP);
-      return { file, rule, count };
-    })
-    // UTF-16 code-unit order, matching Array.prototype.sort() on strings — the
-    // canonical check in test/lint-baseline.test.ts uses exactly that, and
-    // localeCompare orders differently (a_b before a-b).
-    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.rule < b.rule ? -1 : a.rule > b.rule ? 1 : 0));
+  return (
+    [...counts.entries()]
+      .map(([key, count]) => {
+        const [file, rule] = key.split(SEP);
+        return { file, rule, count };
+      })
+      // UTF-16 code-unit order, matching Array.prototype.sort() on strings — the
+      // canonical check in test/lint-baseline.test.ts uses exactly that, and
+      // localeCompare orders differently (a_b before a-b).
+      .sort((a, b) =>
+        a.file < b.file ? -1 : a.file > b.file ? 1 : a.rule < b.rule ? -1 : a.rule > b.rule ? 1 : 0
+      )
+  );
 }
 
 /**
@@ -149,7 +160,7 @@ export function compareLintFindingsToBaseline(found: LintEntry[], baseline: Lint
       // unchecked it would silently hand out headroom for a future regression.
       violations.push(
         `BASELINE entry is stale and must be LOWERED: ${entry.rule} in ${entry.file} ` +
-          `(baseline ${allowed}, found ${entry.count})`,
+          `(baseline ${allowed}, found ${entry.count})`
       );
     }
     remaining.delete(key);
@@ -157,7 +168,7 @@ export function compareLintFindingsToBaseline(found: LintEntry[], baseline: Lint
   for (const [key, count] of remaining) {
     const [file, rule] = key.split(SEP);
     violations.push(
-      `BASELINE entry is stale and must be REMOVED: ${rule} in ${file} (${count}, no findings left)`,
+      `BASELINE entry is stale and must be REMOVED: ${rule} in ${file} (${count}, no findings left)`
     );
   }
   return violations;

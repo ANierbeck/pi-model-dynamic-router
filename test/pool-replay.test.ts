@@ -8,10 +8,32 @@ import { targetLayout, targetGroupFor } from '../scripts/pool-replay.ts';
 
 const shipped = {
   model_groups: {
-    scout: { method: 'tiered', billing_preference: 'cloud_first', max_cost: 0, min_gdpval: 0, fallback_groups: ['fallback'] },
-    operational: { method: 'tiered', min_gdpval: 300, max_cost: 2.0, fallback_groups: ['standard', 'scout'] },
-    tactical: { method: 'best', min_gdpval: 1630, max_gdpval: 1700, score_by: 'coding', fallback_groups: ['strategic'] },
-    planning: { method: 'best', min_gdpval: 1700, score_by: 'briefcase', fallback_groups: ['strategic', 'tactical'] },
+    scout: {
+      method: 'tiered',
+      billing_preference: 'cloud_first',
+      max_cost: 0,
+      min_gdpval: 0,
+      fallback_groups: ['fallback'],
+    },
+    operational: {
+      method: 'tiered',
+      min_gdpval: 300,
+      max_cost: 2.0,
+      fallback_groups: ['standard', 'scout'],
+    },
+    tactical: {
+      method: 'best',
+      min_gdpval: 1630,
+      max_gdpval: 1700,
+      score_by: 'coding',
+      fallback_groups: ['strategic'],
+    },
+    planning: {
+      method: 'best',
+      min_gdpval: 1700,
+      score_by: 'briefcase',
+      fallback_groups: ['strategic', 'tactical'],
+    },
     strategic: { method: 'best', min_gdpval: 700 },
     standard: { method: 'tiered', min_gdpval: 500, max_cost: 5.0 },
     dynamic: { method: 'dynamic' },
@@ -22,24 +44,39 @@ describe('targetLayout', () => {
   const t = targetLayout(shipped);
 
   it('ships exactly the five category groups plus dynamic', () => {
-    expect(Object.keys(t.model_groups).sort()).toEqual(['code_complex', 'design', 'planning', 'simple', 'standard', 'dynamic'].sort());
+    expect(Object.keys(t.model_groups).sort()).toEqual(
+      ['code_complex', 'design', 'planning', 'simple', 'standard', 'dynamic'].sort()
+    );
   });
 
-  it('standard is operational\'s definition (the old standard group is replaced)', () => {
-    expect(t.model_groups.standard).toEqual({ ...shipped.model_groups.operational, fallback_groups: [] });
+  it("standard is operational's definition (the old standard group is replaced)", () => {
+    expect(t.model_groups.standard).toEqual({
+      ...shipped.model_groups.operational,
+      fallback_groups: [],
+    });
   });
 
-  it('simple is scout\'s definition: the equivalence note found them identical', () => {
+  it("simple is scout's definition: the equivalence note found them identical", () => {
     expect(t.model_groups.simple).toEqual({ ...shipped.model_groups.scout, fallback_groups: [] });
   });
 
-  it('code_complex is tactical\'s definition', () => {
-    expect(t.model_groups.code_complex).toEqual({ ...shipped.model_groups.tactical, fallback_groups: [] });
+  it("code_complex is tactical's definition", () => {
+    expect(t.model_groups.code_complex).toEqual({
+      ...shipped.model_groups.tactical,
+      fallback_groups: [],
+    });
   });
 
   it('planning keeps the 1700 floor; design is planning with the 1600 floor (D5)', () => {
-    expect(t.model_groups.planning).toEqual({ ...shipped.model_groups.planning, fallback_groups: [] });
-    expect(t.model_groups.design).toEqual({ ...shipped.model_groups.planning, min_gdpval: 1600, fallback_groups: [] });
+    expect(t.model_groups.planning).toEqual({
+      ...shipped.model_groups.planning,
+      fallback_groups: [],
+    });
+    expect(t.model_groups.design).toEqual({
+      ...shipped.model_groups.planning,
+      min_gdpval: 1600,
+      fallback_groups: [],
+    });
   });
 
   it('keeps dynamic as it is', () => {

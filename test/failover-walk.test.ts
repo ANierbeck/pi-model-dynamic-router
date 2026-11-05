@@ -5,7 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { walkDecisions, type WalkDecision } from '../scripts/failover-walk.ts';
 
-const ISO = (sec: number) => new Date(Date.parse('2026-10-22T10:00:00.000Z') + sec * 1000).toISOString();
+const ISO = (sec: number) =>
+  new Date(Date.parse('2026-10-22T10:00:00.000Z') + sec * 1000).toISOString();
 const POOL = (sec: number, proc: string, group: string, refs: string[]) =>
   `${ISO(sec)}  [${proc}] [routing] group=${group} method=tiered candidates: ${refs
     .map((r, i) => `${i + 1}. ${r} gdp=1 cost=0`)
@@ -24,12 +25,22 @@ const dec = (sec: number, proc: string, group: string | null): WalkDecision => (
 });
 
 describe('walkDecisions — one row per routed decision', () => {
-  it.each(['observation', 'observation-comparator', 'comparator'])('does not count a %s record as a routed decision', (stage) => {
-    const lines = [POOL(0, 'p/1', 'standard', ['a/one']), TRY(0.1, 'p/1', 'a/one'), DONE(0.5, 'p/1', 'a/one')];
-    const rows = walkDecisions(lines, [dec(0, 'p/1', 'standard'), { ...dec(1, 'p/1', 'planning'), stage }]);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].group).toBe('standard');
-  });
+  it.each(['observation', 'observation-comparator', 'comparator'])(
+    'does not count a %s record as a routed decision',
+    (stage) => {
+      const lines = [
+        POOL(0, 'p/1', 'standard', ['a/one']),
+        TRY(0.1, 'p/1', 'a/one'),
+        DONE(0.5, 'p/1', 'a/one'),
+      ];
+      const rows = walkDecisions(lines, [
+        dec(0, 'p/1', 'standard'),
+        { ...dec(1, 'p/1', 'planning'), stage },
+      ]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].group).toBe('standard');
+    }
+  );
 
   it('lists the attempts up to the first success and flags a failover away from the first choice', () => {
     const lines = [
@@ -50,7 +61,11 @@ describe('walkDecisions — one row per routed decision', () => {
   });
 
   it('counts a first-choice success as no failover', () => {
-    const lines = [POOL(0, 'p/1', 'simple', ['x/free']), TRY(0.1, 'p/1', 'x/free'), DONE(0.5, 'p/1', 'x/free')];
+    const lines = [
+      POOL(0, 'p/1', 'simple', ['x/free']),
+      TRY(0.1, 'p/1', 'x/free'),
+      DONE(0.5, 'p/1', 'x/free'),
+    ];
     const [row] = walkDecisions(lines, [dec(0, 'p/1', 'simple')]);
     expect(row).toMatchObject({ attempts: ['x/free'], success: 'x/free', erstwahl: 'x/free' });
   });
@@ -80,7 +95,11 @@ describe('walkDecisions — one row per routed decision', () => {
   });
 
   it('marks a turn without any success as no-success, with the attempts it made', () => {
-    const lines = [POOL(0, 'p/1', 'planning', ['a/one', 'a/two']), TRY(0.1, 'p/1', 'a/one'), FAIL(0.2, 'p/1', 'a/one', 'a/two')];
+    const lines = [
+      POOL(0, 'p/1', 'planning', ['a/one', 'a/two']),
+      TRY(0.1, 'p/1', 'a/one'),
+      FAIL(0.2, 'p/1', 'a/one', 'a/two'),
+    ];
     const [row] = walkDecisions(lines, [dec(0, 'p/1', 'planning')]);
     expect(row).toMatchObject({ outcome: 'no-success', attempts: ['a/one'] });
   });
@@ -97,19 +116,33 @@ describe('walkDecisions — one row per routed decision', () => {
   });
 
   it('prefers the pool logged during the turn over an earlier one', () => {
-    const lines = [POOL(-600, 'p/1', 'simple', ['a/old']), POOL(0, 'p/1', 'simple', ['b/now']), TRY(0.1, 'p/1', 'b/now'), DONE(0.4, 'p/1', 'b/now')];
+    const lines = [
+      POOL(-600, 'p/1', 'simple', ['a/old']),
+      POOL(0, 'p/1', 'simple', ['b/now']),
+      TRY(0.1, 'p/1', 'b/now'),
+      DONE(0.4, 'p/1', 'b/now'),
+    ];
     const [row] = walkDecisions(lines, [dec(0, 'p/1', 'simple')]);
     expect(row).toMatchObject({ erstwahl: 'b/now', erstwahlSource: 'turn' });
   });
 
   it('ignores a pool line older than thirty minutes', () => {
-    const lines = [POOL(-1900, 'p/1', 'simple', ['a/stale']), TRY(0.1, 'p/1', 'a/stale'), DONE(0.4, 'p/1', 'a/stale')];
+    const lines = [
+      POOL(-1900, 'p/1', 'simple', ['a/stale']),
+      TRY(0.1, 'p/1', 'a/stale'),
+      DONE(0.4, 'p/1', 'a/stale'),
+    ];
     const [row] = walkDecisions(lines, [dec(0, 'p/1', 'simple')]);
     expect(row).toMatchObject({ erstwahl: null, erstwahlSource: null });
   });
 
   it('takes the first attempt as the observed first choice, whatever the pool log says', () => {
-    const lines = [TRY(0.1, 'p/1', 'a/one'), FAIL(0.2, 'p/1', 'a/one', 'a/two'), TRY(0.3, 'p/1', 'a/two'), DONE(0.6, 'p/1', 'a/two')];
+    const lines = [
+      TRY(0.1, 'p/1', 'a/one'),
+      FAIL(0.2, 'p/1', 'a/one', 'a/two'),
+      TRY(0.3, 'p/1', 'a/two'),
+      DONE(0.6, 'p/1', 'a/two'),
+    ];
     const [row] = walkDecisions(lines, [dec(0, 'p/1', 'simple')]);
     expect(row).toMatchObject({ firstAttempt: 'a/one', erstwahl: null });
   });

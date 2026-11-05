@@ -11,13 +11,10 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { routerStatePaths } from './helpers/extension-harness.ts';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { routerStatePaths, startSession } from './helpers/extension-harness.ts';
+import { writeNoOpScanCache, removeNoOpScanCacheDefault } from './helpers/noop-scan-cache.ts';
 import { doneEvent } from './helpers/stream-fixtures.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -41,7 +38,8 @@ async function runGroup(options: Record<string, unknown>, text: string) {
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
   fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-  if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, `${dynamicConfigPath}.reserve-bak`);
+  if (fs.existsSync(dynamicConfigPath))
+    fs.renameSync(dynamicConfigPath, `${dynamicConfigPath}.reserve-bak`);
   writeNoOpScanCache(scanCachePath);
   try {
     vi.resetModules();
@@ -49,9 +47,13 @@ async function runGroup(options: Record<string, unknown>, text: string) {
     const defaultExport = mod.default as any;
     const onHandlers: Record<string, any> = {};
     const pi: any = {
-      registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
+      registerTool: vi.fn(),
+      registerCommand: vi.fn(),
+      registerProvider: vi.fn(),
       setModel: vi.fn(async () => true),
-      on: vi.fn((e: string, h: any) => { onHandlers[e] = h; }),
+      on: vi.fn((e: string, h: any) => {
+        onHandlers[e] = h;
+      }),
     };
     defaultExport(pi);
 
@@ -70,21 +72,23 @@ async function runGroup(options: Record<string, unknown>, text: string) {
       getApiKeyForProvider: async () => null,
       runtime: { streamSimple },
     };
-    const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-    await onHandlers['session_start']?.({}, ctx);
-    await flushBackgroundScan();
+    await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
     const groupModel = { provider: 'standard', id: 'standard' };
     const context: any = { messages: [{ role: 'user', content: text }], tools: [] };
     const events = await drain(defaultExport.groupStream(groupModel, context, options));
-    const answer = events.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta ?? '').join('');
+    const answer = events
+      .filter((e: any) => e.type === 'text_delta')
+      .map((e: any) => e.delta ?? '')
+      .join('');
     return { streamSimple, answer };
   } finally {
     cwdSpy.mockRestore();
     vi.restoreAllMocks();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    removeNoOpScanCache(scanCachePath);
-    if (fs.existsSync(`${dynamicConfigPath}.reserve-bak`)) fs.renameSync(`${dynamicConfigPath}.reserve-bak`, dynamicConfigPath);
+    rmTmpDir(tmpDir);
+    removeNoOpScanCacheDefault();
+    if (fs.existsSync(`${dynamicConfigPath}.reserve-bak`))
+      fs.renameSync(`${dynamicConfigPath}.reserve-bak`, dynamicConfigPath);
   }
 }
 
@@ -94,7 +98,7 @@ describe('driveStream: requested output counts against the window', () => {
     // but not together with a 165 880-token output reservation.
     const { streamSimple, answer } = await runGroup(
       { maxTokens: 165_880 },
-      'x'.repeat(185_000 * 4),
+      'x'.repeat(185_000 * 4)
     );
     const smallCalls = streamSimple.mock.calls.filter((c: any[]) => c[0]?.id === 'small');
     expect(smallCalls.length).toBe(1);
@@ -110,7 +114,7 @@ describe('driveStream: requested output counts against the window', () => {
     // ~260 000 tokens of input: below the window on its own, but no room for output.
     const { streamSimple, answer } = await runGroup(
       { maxTokens: 165_880 },
-      'x'.repeat(260_000 * 4),
+      'x'.repeat(260_000 * 4)
     );
     const smallCalls = streamSimple.mock.calls.filter((c: any[]) => c[0]?.id === 'small');
     expect(smallCalls.length).toBe(0);

@@ -1,14 +1,18 @@
 // test/classifier.test.ts
 // Unit tests for content-sensitive classification (without Ollama)
 
-import { describe, it, beforeEach, expect, vi } from "vitest";
-import { classifyPrompt, CATEGORY_TO_GROUP, classifyStatically } from "../src/content-classifier.js";
-import * as ollamaUtils from "../src/ollama-utils";
-import { localModelCache } from "./helpers/local-model-cache.ts";
+import { describe, it, beforeEach, expect, vi } from 'vitest';
+import {
+  classifyPrompt,
+  CATEGORY_TO_GROUP,
+  classifyStatically,
+} from '../src/content-classifier.js';
+import * as ollamaUtils from '../src/ollama-utils';
+import { localModelCache } from './helpers/local-model-cache.ts';
 
 // ── Mock for Ollama calls (for unit tests) ────────────────────────────────
 
-vi.mock("../src/ollama-utils", () => ({
+vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
   // Daemon probed as reachable so the mocked Ollama path stays exercised.
   isOllamaAvailable: vi.fn(async () => true),
@@ -16,7 +20,7 @@ vi.mock("../src/ollama-utils", () => ({
 
 // ── Test cases ───────────────────────────────────────────────────────────
 
-describe("classifyPrompt (Unit Tests)", () => {
+describe('classifyPrompt (Unit Tests)', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
@@ -25,93 +29,102 @@ describe("classifyPrompt (Unit Tests)", () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "code_simple", "reason": "Simple text replacement", "confidence": 0.95}'
     );
-    
-    const result = await classifyPrompt("Replace 'foo' with 'bar' in line 42", { cache: localModelCache() });
-    expect(result.category).toBe("code_simple");
-    expect(result.reason).toContain("Simple text replacement");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("simple");
+
+    const result = await classifyPrompt("Replace 'foo' with 'bar' in line 42", {
+      cache: localModelCache(),
+    });
+    expect(result.category).toBe('code_simple');
+    expect(result.reason).toContain('Simple text replacement');
+    expect(CATEGORY_TO_GROUP[result.category]).toBe('simple');
   });
 
   it("classifies complex code changes as 'code_complex'", async () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "code_complex", "reason": "Refactoring required", "confidence": 0.9}'
     );
-    
-    const result = await classifyPrompt("Optimize this 200-line function for performance", { cache: localModelCache() });
-    expect(result.category).toBe("code_complex");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("code_complex");
+
+    const result = await classifyPrompt('Optimize this 200-line function for performance', {
+      cache: localModelCache(),
+    });
+    expect(result.category).toBe('code_complex');
+    expect(CATEGORY_TO_GROUP[result.category]).toBe('code_complex');
   });
 
   it("classifies design questions as 'design'", async () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "design", "reason": "Architecture design", "confidence": 0.85}'
     );
-    
-    const result = await classifyPrompt("Design an event-sourcing architecture", { cache: localModelCache() });
-    expect(result.category).toBe("design");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("design");
+
+    const result = await classifyPrompt('Design an event-sourcing architecture', {
+      cache: localModelCache(),
+    });
+    expect(result.category).toBe('design');
+    expect(CATEGORY_TO_GROUP[result.category]).toBe('design');
   });
 
   it("classifies unclear requests as 'continue'", async () => {
     vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
       '{"category": "continue", "reason": "Unclear request", "confidence": 0.3}'
     );
-    
-    const result = await classifyPrompt("Make this better", { cache: localModelCache() });
-    expect(result.category).toBe("continue");
-    expect(CATEGORY_TO_GROUP[result.category]).toBe("standard"); // D6 default
+
+    const result = await classifyPrompt('Make this better', { cache: localModelCache() });
+    expect(result.category).toBe('continue');
+    expect(CATEGORY_TO_GROUP[result.category]).toBe('standard'); // D6 default
   });
 
-  it("handles Ollama errors with allowStaticFallback=false (default)", async () => {
-    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
-    
-    const result = await classifyPrompt("Some request", { cache: localModelCache() });
-    expect(result.category).toBe("continue");
-    expect(result.reason).toBe("Ollama unavailable, static classifier disabled");
+  it('handles Ollama errors with allowStaticFallback=false (default)', async () => {
+    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('Ollama not running'));
+
+    const result = await classifyPrompt('Some request', { cache: localModelCache() });
+    expect(result.category).toBe('continue');
+    expect(result.reason).toBe('Ollama unavailable, static classifier disabled');
   });
 
-  it("handles Ollama errors with allowStaticFallback=true", async () => {
-    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error("Ollama not running"));
-    
-    const result = await classifyPrompt("Explain something", { allowStaticFallback: true, cache: localModelCache() });
-    expect(result.category).toBe("simple");
-    expect(result.reason).toBe("Simple question - simple classification");
-  });
+  it('handles Ollama errors with allowStaticFallback=true', async () => {
+    vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('Ollama not running'));
 
-
-
-  it("validates the JSON format of the Ollama response", async () => {
-    vi.mocked(ollamaUtils.callOllama).mockResolvedValue('{"category": "invalid_category", "reason": "test"}');
-    
-    // Should fall back to fallback, since "invalid_category" is not allowed
-    const result = await classifyPrompt("Test", { cache: localModelCache() });
-    expect(result.category).toBe("continue");
-  });
-
-  it("inherits category for short prompts with context", async () => {
-    const result = await classifyPrompt("Yes", { 
-      context: { lastCategory: "code_complex" } 
+    const result = await classifyPrompt('Explain something', {
+      allowStaticFallback: true,
+      cache: localModelCache(),
     });
-    expect(result.category).toBe("code_complex");
-    expect(result.reason).toContain("Short prompt");
+    expect(result.category).toBe('simple');
+    expect(result.reason).toBe('Simple question - simple classification');
+  });
+
+  it('validates the JSON format of the Ollama response', async () => {
+    vi.mocked(ollamaUtils.callOllama).mockResolvedValue(
+      '{"category": "invalid_category", "reason": "test"}'
+    );
+
+    // Should fall back to fallback, since "invalid_category" is not allowed
+    const result = await classifyPrompt('Test', { cache: localModelCache() });
+    expect(result.category).toBe('continue');
+  });
+
+  it('inherits category for short prompts with context', async () => {
+    const result = await classifyPrompt('Yes', {
+      context: { lastCategory: 'code_complex' },
+    });
+    expect(result.category).toBe('code_complex');
+    expect(result.reason).toContain('Short prompt');
   });
 
   // ── Static Classification Tests ────────────────────────────────────────────
 
-  describe("classifyStatically", () => {
+  describe('classifyStatically', () => {
     it("classifies 'List TODOs' as 'continue'", () => {
-      const result = classifyStatically("List TODOs");
-      expect(result.category).toBe("continue");
+      const result = classifyStatically('List TODOs');
+      expect(result.category).toBe('continue');
     });
 
     it("classifies 'Show me the file' as 'continue'", () => {
-      const result = classifyStatically("Show me the file");
-      expect(result.category).toBe("continue");
+      const result = classifyStatically('Show me the file');
+      expect(result.category).toBe('continue');
     });
 
     it("classifies 'List files' as 'continue'", () => {
-      const result = classifyStatically("List files");
-      expect(result.category).toBe("continue");
+      const result = classifyStatically('List files');
+      expect(result.category).toBe('continue');
     });
 
     // Restored design intent (regression 2026-09-26): a literal backspace
@@ -121,78 +134,77 @@ describe("classifyPrompt (Unit Tests)", () => {
     // the 0x08 is fixed, so the original trivial expectation (3bcd99f)
     // applies again.
     it("classifies 'What is in this file?' as 'simple'", () => {
-      const result = classifyStatically("What is in this file?");
-      expect(result.category).toBe("simple");
+      const result = classifyStatically('What is in this file?');
+      expect(result.category).toBe('simple');
     });
 
-
     it("classifies 'Explain briefly' as 'simple'", () => {
-      const result = classifyStatically("Explain briefly how this works");
-      expect(result.category).toBe("simple");
-      expect(result.reason).toContain("simple classification");
+      const result = classifyStatically('Explain briefly how this works');
+      expect(result.category).toBe('simple');
+      expect(result.reason).toContain('simple classification');
     });
 
     it("classifies 'Summarize this' as 'simple'", () => {
-      const result = classifyStatically("Summarize this document");
-      expect(result.category).toBe("simple");
+      const result = classifyStatically('Summarize this document');
+      expect(result.category).toBe('simple');
     });
 
     it("classifies 'What does this do?' as 'simple'", () => {
-      const result = classifyStatically("What does this function do?");
-      expect(result.category).toBe("simple");
+      const result = classifyStatically('What does this function do?');
+      expect(result.category).toBe('simple');
     });
 
     it("classifies 'Fix syntax error' as 'code_simple'", () => {
-      const result = classifyStatically("Fix syntax error in line 5");
-      expect(result.category).toBe("code_simple");
-      expect(result.reason).toContain("code_simple classification");
+      const result = classifyStatically('Fix syntax error in line 5');
+      expect(result.category).toBe('code_simple');
+      expect(result.reason).toContain('code_simple classification');
     });
 
     it("classifies 'Explain this concept' as 'simple'", () => {
-      const result = classifyStatically("Explain this concept in detail");
-      expect(result.category).toBe("simple");
-      expect(result.reason).toContain("simple classification");
+      const result = classifyStatically('Explain this concept in detail');
+      expect(result.category).toBe('simple');
+      expect(result.reason).toContain('simple classification');
     });
 
     it("classifies 'Refactor this function' as 'code_complex'", () => {
-      const result = classifyStatically("Refactor this 200-line function for performance");
-      expect(result.category).toBe("code_complex");
-      expect(result.reason).toContain("code_complex classification");
+      const result = classifyStatically('Refactor this 200-line function for performance');
+      expect(result.category).toBe('code_complex');
+      expect(result.reason).toContain('code_complex classification');
     });
 
     it("classifies 'Design an architecture' as 'code_complex'", () => {
-      const result = classifyStatically("Design an architecture for this system");
-      expect(result.category).toBe("code_complex");
-      expect(result.reason).toContain("code_complex classification");
+      const result = classifyStatically('Design an architecture for this system');
+      expect(result.category).toBe('code_complex');
+      expect(result.reason).toContain('code_complex classification');
     });
 
     it("classifies 'Create a roadmap' as 'planning'", () => {
-      const result = classifyStatically("Create a roadmap for this project");
-      expect(result.category).toBe("planning");
-      expect(result.reason).toContain("planning classification");
+      const result = classifyStatically('Create a roadmap for this project');
+      expect(result.category).toBe('planning');
+      expect(result.reason).toContain('planning classification');
     });
 
     it("classifies 'What could we do about X?' as 'standard'", () => {
-      const result = classifyStatically("What could we do about this problem?");
-      expect(result.category).toBe("standard");
-      expect(result.reason).toContain("standard classification");
+      const result = classifyStatically('What could we do about this problem?');
+      expect(result.category).toBe('standard');
+      expect(result.reason).toContain('standard classification');
     });
 
     it("classifies unknown requests as 'continue'", () => {
-      const result = classifyStatically("Some completely unknown request with no keywords");
-      expect(result.category).toBe("continue");
-      expect(result.reason).toContain("Could not classify");
+      const result = classifyStatically('Some completely unknown request with no keywords');
+      expect(result.category).toBe('continue');
+      expect(result.reason).toContain('Could not classify');
     });
 
     it.each([
-      ["what is in this file?", "simple", "Simple lookup"],
-      ["please explain this briefly", "simple", "Simple question"],
-      ["fix the typo in the import line of that code file", "code_simple", ""],
-      ["refactor the whole parser for edge cases", "code_complex", "Complex code task"],
-      ["plan the roadmap for next quarter", "planning", ""],
-      ["brainstorm some ideas for the launch", "standard", "Open-ended"],
-      ["xqzwk unrelated gibberish", "continue", "Could not classify"],
-    ])("alternate phrasing %j → %s", (prompt, category, reason) => {
+      ['what is in this file?', 'simple', 'Simple lookup'],
+      ['please explain this briefly', 'simple', 'Simple question'],
+      ['fix the typo in the import line of that code file', 'code_simple', ''],
+      ['refactor the whole parser for edge cases', 'code_complex', 'Complex code task'],
+      ['plan the roadmap for next quarter', 'planning', ''],
+      ['brainstorm some ideas for the launch', 'standard', 'Open-ended'],
+      ['xqzwk unrelated gibberish', 'continue', 'Could not classify'],
+    ])('alternate phrasing %j → %s', (prompt, category, reason) => {
       const result = classifyStatically(prompt);
       expect(result.category).toBe(category);
       expect(result.reason).toContain(reason);

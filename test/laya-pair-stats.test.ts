@@ -35,7 +35,10 @@ function laya(o: Opts): PairLogRecord {
   return {
     ts: at(o.ts ?? 0),
     stage: 'laya',
-    raw: o.category === null ? null : { category: o.category, confidence: o.conf ?? 0.9, reason: 'LEAK-LAYA-REASON' },
+    raw:
+      o.category === null
+        ? null
+        : { category: o.category, confidence: o.conf ?? 0.9, reason: 'LEAK-LAYA-REASON' },
     prev: o.prev === undefined ? null : { category: o.prev, group: null },
     final: { category: o.category, group: o.group ?? null },
     ms: o.ms ?? 100,
@@ -48,7 +51,10 @@ function cmp(o: Opts): PairLogRecord {
   return {
     ts: at(o.ts ?? 15),
     stage: 'comparator',
-    raw: o.category === null ? null : { category: o.category, confidence: 1, reason: 'LEAK-CMP-REASON' },
+    raw:
+      o.category === null
+        ? null
+        : { category: o.category, confidence: 1, reason: 'LEAK-CMP-REASON' },
     prev: o.prev === undefined ? null : { category: o.prev, group: null },
     final: { category: o.category, group: o.group ?? null },
     ms: o.ms ?? 900,
@@ -107,7 +113,7 @@ describe('pairRecords', () => {
         laya({ sha: 's1', category: 'design', ts: 0 }),
         cmp({ sha: 's1', category: 'design', ts: 600 }),
       ],
-      300_000,
+      300_000
     );
     expect(pairs).toHaveLength(0);
     expect(unpairedLaya).toBe(1);
@@ -182,7 +188,14 @@ describe('observedGroupMap', () => {
 });
 
 describe('summarizePairs', () => {
-  const groupOf = { simple: 'scout', code_simple: 'simple', standard: 'operational', design: 'planning', planning: 'planning', code_complex: 'tactical' };
+  const groupOf = {
+    simple: 'scout',
+    code_simple: 'simple',
+    standard: 'operational',
+    design: 'planning',
+    planning: 'planning',
+    code_complex: 'tactical',
+  };
   const records: PairLogRecord[] = [
     // 1 agree (design = design)
     laya({ sha: 'a', category: 'design', conf: 0.97, ts: 0, ms: 100 }),
@@ -224,7 +237,7 @@ describe('summarizePairs', () => {
         { laya: 'design', chain: 'planning', n: 1 },
         { laya: 'code_complex', chain: 'standard', n: 1 },
         { laya: 'code_complex', chain: 'continue', n: 1 },
-      ]),
+      ])
     );
     expect(s.confusion).toHaveLength(3);
   });
@@ -246,7 +259,10 @@ describe('summarizePairs', () => {
   });
 
   it('excludes pairs without a category from the agreement counts', () => {
-    const p = pairRecords([laya({ sha: 'z', category: 'design' }), cmp({ sha: 'z', category: null })]).pairs;
+    const p = pairRecords([
+      laya({ sha: 'z', category: 'design' }),
+      cmp({ sha: 'z', category: null }),
+    ]).pairs;
     const t = summarizePairs(p, groupOf);
     expect(t.n).toBe(1);
     expect(t.noAnswer).toBe(1);
@@ -272,11 +288,14 @@ describe('formatPairReport', () => {
     cmp({ sha: 'a', category: 'planning' }),
     laya({ sha: 'u', category: 'design', ts: 500 }),
   ]);
-  const text = formatPairReport(summarizePairs(pairs, { design: 'planning', planning: 'planning' }), {
-    file: '/x/log.jsonl',
-    unpairedLaya,
-    orphanComparators,
-  });
+  const text = formatPairReport(
+    summarizePairs(pairs, { design: 'planning', planning: 'planning' }),
+    {
+      file: '/x/log.jsonl',
+      unpairedLaya,
+      orphanComparators,
+    }
+  );
 
   it('names the numbers a reader needs', () => {
     expect(text).toContain('Laya vs comparator');
@@ -291,7 +310,11 @@ describe('formatPairReport', () => {
       laya({ sha: 'q', category: 'design' }),
       cmp({ sha: 'q', category: 'Fix the login bug in my private project please' }),
     ]).pairs;
-    const t = formatPairReport(summarizePairs(p, {}), { file: '/x', unpairedLaya: 0, orphanComparators: 0 });
+    const t = formatPairReport(summarizePairs(p, {}), {
+      file: '/x',
+      unpairedLaya: 0,
+      orphanComparators: 0,
+    });
     expect(t).toContain('(other)');
     expect(t).not.toContain('login');
     expect(t).not.toContain('private');
@@ -308,9 +331,17 @@ describe('laya-pair-stats CLI', () => {
   it('prints the report for a log file and handles a missing file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'laya-pairs-'));
     const file = join(dir, 'log.jsonl');
-    writeFileSync(file, [laya({ sha: 'a', category: 'design' }), cmp({ sha: 'a', category: 'design' })].map((r) => JSON.stringify(r)).join('\n') + '\n');
+    writeFileSync(
+      file,
+      [laya({ sha: 'a', category: 'design' }), cmp({ sha: 'a', category: 'design' })]
+        .map((r) => JSON.stringify(r))
+        .join('\n') + '\n'
+    );
     const run = (f: string) =>
-      spawnSync('npx', ['tsx', 'scripts/laya-pair-stats.ts', `--file=${f}`], { cwd: process.cwd(), encoding: 'utf8' });
+      spawnSync('npx', ['tsx', 'scripts/laya-pair-stats.ts', `--file=${f}`], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      });
     const ok = run(file);
     const missing = run(join(dir, 'nope.jsonl'));
     rmSync(dir, { recursive: true, force: true });

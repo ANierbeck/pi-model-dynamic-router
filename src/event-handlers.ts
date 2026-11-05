@@ -66,7 +66,6 @@ interface EventHandlerDeps {
 }
 
 export function createEventHandlers(rt: EventHandlerDeps) {
-
   rt.pi.on('session_start', (ev, ctx) => {
     rt.sessionCtx = ctx;
     rt.router.setSessionCtx(ctx);
@@ -75,7 +74,9 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       const piAiPath = fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'));
       const providerIds = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
       debugLog(`[diag] pi-ai resolved from: ${piAiPath}`);
-      debugLog(`[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`);
+      debugLog(
+        `[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`
+      );
       // F11 (2026-09-02): publish pi's registered provider IDs to the metrics
       // module so stripProvider() recognizes pi-managed providers (pi-claude,
       // claude-bridge, extension providers) the router has no static
@@ -108,7 +109,12 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // drop the main session's errors from the status count. 'reload' keeps the
     // anchor: the session continues, its errors stay counted.
     const startReason = (ev as any)?.reason;
-    if (!rt.sessionAnchorInit || startReason === 'new' || startReason === 'resume' || startReason === 'fork') {
+    if (
+      !rt.sessionAnchorInit ||
+      startReason === 'new' ||
+      startReason === 'resume' ||
+      startReason === 'fork'
+    ) {
       rt.sessionStart = Date.now();
       rt.sessionAnchorInit = true;
     }
@@ -127,9 +133,9 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       };
     }
     rt.updateErrorStatusLine();
-    
+
     rt.escalation.reset();
-    
+
     rt.registerGroupModels(ctx);
     // scan() swallows per-provider failures by design, but a top-level
     // throw (e.g. from checkScanSanity or saveCache) must not disappear
@@ -156,9 +162,13 @@ export function createEventHandlers(rt: EventHandlerDeps) {
           // resolved model (lastDynamicModel, updated by driveStream on every
           // successful stream) instead of the static virtual model id.
           const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
-          const isGroupModel = groupBase ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase) : false;
+          const isGroupModel = groupBase
+            ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase)
+            : false;
           const grp = isGroupModel ? groupBase! : ref ? rt.detectGroup(ref) : null;
-          const m = ref ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref) : null;
+          const m = ref
+            ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref)
+            : null;
           const modelDisplay =
             isGroupModel && rt.lastDynamicModel
               ? rt.lastDynamicModel
@@ -201,7 +211,9 @@ export function createEventHandlers(rt: EventHandlerDeps) {
           );
           const br = fd.getGitBranch();
           const brS = br ? theme.fg('accent', `⎇ ${br}`) : '';
-          const rlN = [...rt.rateLimitManager.getLimits().keys()].filter((r) => rt.isLimited(r)).length;
+          const rlN = [...rt.rateLimitManager.getLimits().keys()].filter((r) =>
+            rt.isLimited(r)
+          ).length;
           const rlS = rlN > 0 ? theme.fg('error', `⛔${rlN}`) : '';
           // Session error counter (review C1): this footer REPLACES pi's
           // built-in footer — the only renderer of ctx.ui.setStatus extension
@@ -224,7 +236,6 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       };
     });
   });
-
 
   rt.pi.on('model_select', (ev) => {
     if (ev.source !== 'restore') rt.activeGroup = null;
@@ -258,21 +269,22 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     if (!rt.curModel || !rt.turnStart) return;
     const ms = Date.now() - rt.turnStart,
       msg = ev.message;
-    
+
     // ── Session Escalation Logic ────────────────────────────────────────
     if (msg?.role === 'user' || msg?.role === 'assistant') {
-      const content = typeof msg.content === 'string'
-        ? msg.content
-        : (msg.content ?? [])
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text)
-            .join('');
+      const content =
+        typeof msg.content === 'string'
+          ? msg.content
+          : (msg.content ?? [])
+              .filter((b: any) => b.type === 'text')
+              .map((b: any) => b.text)
+              .join('');
       rt.escalation.recordTurn(
         msg.role === 'user' ? content : '',
         msg.role === 'assistant' ? content : ''
       );
     }
-    
+
     // ── Metrics & Usage Logging ─────────────────────────────────────────
     if (msg?.role === 'assistant') {
       // Factual stream ref of THIS turn (review I1): curModel stays the

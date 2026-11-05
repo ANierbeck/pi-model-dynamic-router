@@ -39,11 +39,15 @@ const GLM_SLUGS = ['glm-4', 'glm-4-6'];
 
 describe('matchSlug: -latest resolves to the NEWEST version of the family', () => {
   it('multi-version family picks the newest (mistral-small-latest → mistral-small-3-2)', () => {
-    expect(matchSlug('mistral/mistral-small-latest', MISTRAL_FAMILY_SLUGS)).toBe('mistral-small-3-2');
+    expect(matchSlug('mistral/mistral-small-latest', MISTRAL_FAMILY_SLUGS)).toBe(
+      'mistral-small-3-2'
+    );
   });
 
   it('single-version family still matches (mistral-medium-latest → mistral-medium-3-5)', () => {
-    expect(matchSlug('mistral/mistral-medium-latest', MISTRAL_FAMILY_SLUGS)).toBe('mistral-medium-3-5');
+    expect(matchSlug('mistral/mistral-medium-latest', MISTRAL_FAMILY_SLUGS)).toBe(
+      'mistral-medium-3-5'
+    );
   });
 
   it('zai-glm-latest → zai-glm-5-3 regardless of slug iteration order', () => {
@@ -63,7 +67,9 @@ describe('matchSlug: -latest resolves to the NEWEST version of the family', () =
 // full GDPval slug list (more distractors).
 describe('matchSlug: dated snapshots resolve as version-less aliases', () => {
   it('MMDD form: mistral-medium-0426 → mistral-medium-3-5', () => {
-    expect(matchSlug('mistral/mistral-medium-0426', MISTRAL_FAMILY_SLUGS)).toBe('mistral-medium-3-5');
+    expect(matchSlug('mistral/mistral-medium-0426', MISTRAL_FAMILY_SLUGS)).toBe(
+      'mistral-medium-3-5'
+    );
   });
 
   it('MMDD form with leading zero (deepseek-r1-0528) is date-like, not a version', () => {

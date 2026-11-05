@@ -12,12 +12,17 @@
  * parallel within 75ms (~55GB RAM demand).
  */
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+
+import { writeNoOpScanCache } from './helpers/noop-scan-cache.ts';
+import {
+  drainStream,
+  makeExtensionContext,
+  parkStateFiles,
+  routerStatePaths,
+  startSession,
+} from './helpers/extension-harness.ts';
+import { doneEvent, testModelCost } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
 
 // These tests exercise the CONCURRENCY machinery, not local availability.
 // The driveStream availability guard (2026-10-03) skips ollama/* candidates
@@ -32,15 +37,11 @@ vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-local-conc-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir(configOverride, 'router-local-conc-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -51,10 +52,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any, tmpDir);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -77,9 +75,27 @@ describe('driveStream: local-stream concurrency limit', () => {
         const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
-        const bigModel = { provider: 'ollama', id: 'big-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
-        const otherBigModel = { provider: 'ollama', id: 'other-big-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
-        const cloudModel = { provider: 'cloud', id: 'fallback-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
+        const bigModel = {
+          provider: 'ollama',
+          id: 'big-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const otherBigModel = {
+          provider: 'ollama',
+          id: 'other-big-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const cloudModel = {
+          provider: 'cloud',
+          id: 'fallback-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
         const modelsByRef: Record<string, any> = {
           'ollama/big-model': bigModel,
           'ollama/other-big-model': otherBigModel,
@@ -113,13 +129,12 @@ describe('driveStream: local-stream concurrency limit', () => {
         });
         const modelRegistry = {
           getAvailable: () => [bigModel, otherBigModel, cloudModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // Launch 3 groupStream calls in parallel (simulating subagent fan-out).
         // With limit=1, only 1 ollama stream should be open at any instant;
@@ -166,8 +181,20 @@ describe('driveStream: local-stream concurrency limit', () => {
         const { ctx: pi, onHandlers } = makeExtensionContext();
         defaultExport(pi);
 
-        const throwingModel = { provider: 'ollama', id: 'throwing-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
-        const nextModel = { provider: 'ollama', id: 'next-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } };
+        const throwingModel = {
+          provider: 'ollama',
+          id: 'throwing-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const nextModel = {
+          provider: 'ollama',
+          id: 'next-model',
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
         const modelsByRef: Record<string, any> = {
           'ollama/throwing-model': throwingModel,
           'ollama/next-model': nextModel,
@@ -186,13 +213,12 @@ describe('driveStream: local-stream concurrency limit', () => {
         });
         const modelRegistry = {
           getAvailable: () => [throwingModel, nextModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // First call: throwing-model throws synchronously. If the slot
         // leaked, the second call's next-model would soft-fail with

@@ -25,15 +25,66 @@ export function doneEvent(overrides: DoneEventOverrides = {}): Record<string, un
   return {
     type: 'done',
     reason: 'stop',
-    message:
-      message ??
-      {
-        role: 'assistant',
-        content: [],
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        stopReason: 'stop',
-        timestamp: Date.now(),
-      },
+    message: message ?? {
+      role: 'assistant',
+      content: [],
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    },
     ...rest,
   };
+}
+
+/**
+ * The standard priced-model cost fixture (input 0.1 / output 0.2) used by
+ * ~5 test files' model literals.
+ */
+export function testModelCost(): {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+} {
+  return { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 };
+}
+
+/** The standard zeroed Cache literal (~10 files spell the same fields out). */
+
+export function emptyCache(): any {
+  return {
+    available_models: [],
+    gdpval_scores: {},
+    model_score_cache: {},
+    openrouter_pricing: {},
+    usage_log: [],
+    benchmarks: {},
+    budget_cache: {},
+    gdpval_scraped: true,
+    lastScanTimestamp: Date.now(),
+  };
+}
+
+/**
+ * The standard paid-cloud model fixture (provider 'paid-cloud-provider',
+ * id 'paid-model', 1M context, testModelCost()) — ~5 files spell the same
+ * literal. Overrides merge on top.
+ */
+export function paidCloudModel(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    provider: 'paid-cloud-provider',
+    id: 'paid-model',
+    api: 'openai-completions',
+    contextWindow: 1_000_000,
+    cost: testModelCost(),
+    ...overrides,
+  };
+}
+
+/**
+ * The hermetic scan-cache flags (fresh timestamp, gdpval scraped) — the
+ * two lines ~8 files repeat inside larger cache literals.
+ */
+export function hermeticCacheFlags(): { gdpval_scraped: boolean; lastScanTimestamp: number } {
+  return { gdpval_scraped: true, lastScanTimestamp: Date.now() };
 }

@@ -38,16 +38,18 @@ import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 
-
-import { makeExtensionContext , routerStatePaths} from './helpers/extension-harness.ts';
+import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
+  removeNoOpScanCacheDefault,
 } from './helpers/noop-scan-cache.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
+import { testModelCost } from './helpers/stream-fixtures.ts';
 
-async function drainStream(stream: AsyncIterable<AssistantMessageEvent>): Promise<AssistantMessageEvent[]> {
+async function drainStream(
+  stream: AsyncIterable<AssistantMessageEvent>
+): Promise<AssistantMessageEvent[]> {
   const events: AssistantMessageEvent[] = [];
   for await (const ev of stream) events.push(ev);
   return events;
@@ -90,7 +92,7 @@ function makeScriptedRegistry(modelsByRef: Record<string, any>) {
     calls.push(found.ref);
     const script = scripts[found.ref] ?? [];
     const idx = calls.filter((c) => c === found.ref).length - 1;
-    const events = idx < script.length ? script[idx] : script[script.length - 1] ?? [];
+    const events = idx < script.length ? script[idx] : (script[script.length - 1] ?? []);
     return (async function* () {
       for (const ev of events) yield ev;
     })();
@@ -169,7 +171,7 @@ function cloudModel(provider: string, id: string) {
     id,
     api: 'openai-completions',
     contextWindow: 1_000_000,
-    cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+    cost: testModelCost(),
   };
 }
 
@@ -208,31 +210,31 @@ async function driveCollapseScenario(
   let hadCache = false;
   await withRouterEnv(
     async (defaultExport: any, tmpDir) => {
-    const { ctx: pi, onHandlers } = makeExtensionContext();
-    defaultExport(pi);
+      const { ctx: pi, onHandlers } = makeExtensionContext();
+      defaultExport(pi);
 
-    const mock = makeScriptedRegistry({
-      'lim-provider/lim-model': cloudModel('lim-provider', 'lim-model'),
-      'sec-provider/sec-model': cloudModel('sec-provider', 'sec-model'),
-    });
-    // First call of BOTH models: reset-free rate-limit error. Every later
-    // call (the collapse retry) serves the scenario's retry script.
-    mock.scripts['lim-provider/lim-model'] = [rateLimitNoResetEvents(), retryEvents()];
-    mock.scripts['sec-provider/sec-model'] = [rateLimitNoResetEvents(), retryEvents()];
+      const mock = makeScriptedRegistry({
+        'lim-provider/lim-model': cloudModel('lim-provider', 'lim-model'),
+        'sec-provider/sec-model': cloudModel('sec-provider', 'sec-model'),
+      });
+      // First call of BOTH models: reset-free rate-limit error. Every later
+      // call (the collapse retry) serves the scenario's retry script.
+      mock.scripts['lim-provider/lim-model'] = [rateLimitNoResetEvents(), retryEvents()];
+      mock.scripts['sec-provider/sec-model'] = [rateLimitNoResetEvents(), retryEvents()];
 
-    const ctx: any = { modelRegistry: mock.registry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-    await onHandlers['session_start']?.({}, ctx);
-    await flushBackgroundScan();
+      const ctx: any = { modelRegistry: mock.registry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+      await onHandlers['session_start']?.({}, ctx);
+      await flushBackgroundScan();
 
-    const events = await drainStream(
-      defaultExport.groupStream(
-        { provider: 'standard', id: 'standard' },
-        { messages: [{ role: 'user', content: 'do work' }] },
-        {}
-      )
-    );
+      const events = await drainStream(
+        defaultExport.groupStream(
+          { provider: 'standard', id: 'standard' },
+          { messages: [{ role: 'user', content: 'do work' }] },
+          {}
+        )
+      );
 
-    assert({ text: allText(events), errText: streamErrorText(events), calls: mock.calls });
+      assert({ text: allText(events), errText: streamErrorText(events), calls: mock.calls });
     },
     {
       config: cfg,
@@ -246,7 +248,7 @@ async function driveCollapseScenario(
       },
       teardown: () => {
         if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-        removeNoOpScanCache(scanCachePath);
+        removeNoOpScanCacheDefault();
         if (hadCache) fs.renameSync(cacheBak, scanCachePath);
       },
     }
@@ -254,54 +256,42 @@ async function driveCollapseScenario(
 }
 
 describe('cooldown-collapse: retried-result narrations (B3 / mutation R3)', () => {
-  it(
-    'collapse WAITS for the shortest cooldown and narrates a truncated_length retry',
-    async () => {
-      await driveCollapseScenario(truncatingEvents, ({ text, errText, calls }) => {
-        // The WAIT branch fired — the force-retry narration ("All models in
-        // cooldown, retrying ...") must NOT have. This is the branch-
-        // distinctive assertion the existing collapse test was missing (its
-        // 'All models in cooldown' prefix matched BOTH narrations).
-        expect(text).toContain('All models in cooldown — waiting');
-        expect(text).not.toContain('All models in cooldown, retrying');
-        // The retried stream ended with done.reason 'length' — the collapse
-        // block's retried-narration printed the truncation notice.
-        expect(text).toContain('output truncated at max tokens (task incomplete)');
-        // The turn still ends in the aggregate failure event.
-        expect(errText).toContain('candidate(s) failed');
-        // 2 cascade attempts (one per model) + exactly ONE collapse retry.
-        expect(calls).toHaveLength(3);
-      });
-    },
-    30_000
-  );
+  it('collapse WAITS for the shortest cooldown and narrates a truncated_length retry', async () => {
+    await driveCollapseScenario(truncatingEvents, ({ text, errText, calls }) => {
+      // The WAIT branch fired — the force-retry narration ("All models in
+      // cooldown, retrying ...") must NOT have. This is the branch-
+      // distinctive assertion the existing collapse test was missing (its
+      // 'All models in cooldown' prefix matched BOTH narrations).
+      expect(text).toContain('All models in cooldown — waiting');
+      expect(text).not.toContain('All models in cooldown, retrying');
+      // The retried stream ended with done.reason 'length' — the collapse
+      // block's retried-narration printed the truncation notice.
+      expect(text).toContain('output truncated at max tokens (task incomplete)');
+      // The turn still ends in the aggregate failure event.
+      expect(errText).toContain('candidate(s) failed');
+      // 2 cascade attempts (one per model) + exactly ONE collapse retry.
+      expect(calls).toHaveLength(3);
+    });
+  }, 30_000);
 
-  it(
-    'narrates a repetition_loop retry as "stuck in a repetition loop"',
-    async () => {
-      await driveCollapseScenario(repetitionEvents, ({ text, errText }) => {
-        expect(text).toContain('All models in cooldown — waiting');
-        expect(text).toContain('stuck in a repetition loop');
-        // The repetition-side narration, not the truncation one.
-        expect(text).not.toContain('output truncated at max tokens');
-        expect(errText).toContain('candidate(s) failed');
-      });
-    },
-    30_000
-  );
+  it('narrates a repetition_loop retry as "stuck in a repetition loop"', async () => {
+    await driveCollapseScenario(repetitionEvents, ({ text, errText }) => {
+      expect(text).toContain('All models in cooldown — waiting');
+      expect(text).toContain('stuck in a repetition loop');
+      // The repetition-side narration, not the truncation one.
+      expect(text).not.toContain('output truncated at max tokens');
+      expect(errText).toContain('candidate(s) failed');
+    });
+  }, 30_000);
 
-  it(
-    'a rate_limit_exceeded retry does NOT print the repetition/truncation narration',
-    async () => {
-      await driveCollapseScenario(rateLimitNoResetEvents, ({ text, errText }) => {
-        expect(text).toContain('All models in cooldown — waiting');
-        // The else branch owns rate-limit retries — the repetition/
-        // truncation narration block must not fire for them.
-        expect(text).not.toContain('output truncated at max tokens');
-        expect(text).not.toContain('stuck in a repetition loop');
-        expect(errText).toContain('candidate(s) failed');
-      });
-    },
-    30_000
-  );
+  it('a rate_limit_exceeded retry does NOT print the repetition/truncation narration', async () => {
+    await driveCollapseScenario(rateLimitNoResetEvents, ({ text, errText }) => {
+      expect(text).toContain('All models in cooldown — waiting');
+      // The else branch owns rate-limit retries — the repetition/
+      // truncation narration block must not fire for them.
+      expect(text).not.toContain('output truncated at max tokens');
+      expect(text).not.toContain('stuck in a repetition loop');
+      expect(errText).toContain('candidate(s) failed');
+    });
+  }, 30_000);
 });

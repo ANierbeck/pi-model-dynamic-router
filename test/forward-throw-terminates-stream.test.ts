@@ -21,13 +21,19 @@ import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
-import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+
+import {
+  drainStream,
+  makeExtensionContext,
+  routerStatePaths,
+} from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
+  removeNoOpScanCacheDefault,
 } from './helpers/noop-scan-cache.ts';
+import { bootProjectDir, rmTmpDir } from './helpers/router-env.ts';
+import { testModelCost } from './helpers/stream-fixtures.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -36,7 +42,6 @@ vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   return { ...actual, isOllamaAvailable: vi.fn(async () => false) };
 });
 
-
 // First candidate streams content, then terminates with a MALFORMED done
 // event (no `message`) — the exact shape that makes pi-ai 1.4.0's push()
 // throw. The second candidate is healthy and must serve the turn.
@@ -44,28 +49,31 @@ const brokenModel = {
   provider: 'cloud-a',
   id: 'malformed-done',
   api: 'openai-completions',
-  contextWindow: 1_000_000, cost: { input: 0.05, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000_000,
+  cost: { input: 0.05, output: 0.1, cacheRead: 0, cacheWrite: 0 },
 };
 const healthyModel = {
   provider: 'cloud-b',
   id: 'healthy-model',
   api: 'openai-completions',
-  contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000_000,
+  cost: testModelCost(),
 };
 
 const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
 
 describe('driveStream: forwarding exception must not hang the stream', () => {
   it('a candidate whose terminal done event fails to forward is a soft failure — the next candidate serves and the stream terminates', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-fwd-throw-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({
-      free_models: [],
-      providers: { openrouter: { free_models: [] } },
-      model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-      // Same gdpval for both: cost order puts the broken candidate first.
-      gdpval_builtin: { 'malformed-done': 900, 'healthy-model': 900 },
-    }));
+    const { tmpDir } = bootProjectDir(
+      {
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        // Same gdpval for both: cost order puts the broken candidate first.
+        gdpval_builtin: { 'malformed-done': 900, 'healthy-model': 900 },
+      },
+      'router-fwd-throw-'
+    );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.fwd-throw-bak`;
@@ -138,14 +146,12 @@ describe('driveStream: forwarding exception must not hang the stream', () => {
       expect(tried).toContain('malformed-done');
       expect(tried).toContain('healthy-model');
       // The stream really terminated with a terminal event.
-      const terminal = drained.events.filter(
-        (e: any) => e.type === 'done' || e.type === 'error'
-      );
+      const terminal = drained.events.filter((e: any) => e.type === 'done' || e.type === 'error');
       expect(terminal.length).toBeGreaterThan(0);
     } finally {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
+      rmTmpDir(tmpDir);
+      removeNoOpScanCacheDefault();
       if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
     }
   }, 20000);

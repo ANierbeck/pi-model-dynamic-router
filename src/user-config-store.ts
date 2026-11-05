@@ -61,7 +61,10 @@ function userConfigPath(agentDir: string): string {
  * Parse a JSON file that must hold an object. Missing file → config undefined
  * without an error; unreadable, unparseable or non-object → an error.
  */
-function readObjectFile(file: string): { config: Record<string, unknown> | undefined; error?: string } {
+function readObjectFile(file: string): {
+  config: Record<string, unknown> | undefined;
+  error?: string;
+} {
   if (!fs.existsSync(file)) return { config: undefined };
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -70,7 +73,10 @@ function readObjectFile(file: string): { config: Record<string, unknown> | undef
     }
     return { config: parsed as Record<string, unknown> };
   } catch (err) {
-    return { config: undefined, error: `${file} is unreadable: ${err instanceof Error ? err.message : textOf(err)}` };
+    return {
+      config: undefined,
+      error: `${file} is unreadable: ${err instanceof Error ? err.message : textOf(err)}`,
+    };
   }
 }
 
@@ -100,17 +106,21 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
 
       const next: Record<string, unknown> = { ...(existing.config ?? {}) };
       if (delta.exclude?.models || delta.exclude?.providers) {
-        const exclude = next.exclude && typeof next.exclude === 'object' && !Array.isArray(next.exclude)
-          ? { ...(next.exclude as Record<string, unknown>) }
-          : {};
+        const exclude =
+          next.exclude && typeof next.exclude === 'object' && !Array.isArray(next.exclude)
+            ? { ...(next.exclude as Record<string, unknown>) }
+            : {};
         if (delta.exclude.models) exclude.models = delta.exclude.models;
         if (delta.exclude.providers) exclude.providers = delta.exclude.providers;
         next.exclude = exclude;
       }
       if (delta.context_budget) {
-        const budget = next.context_budget && typeof next.context_budget === 'object' && !Array.isArray(next.context_budget)
-          ? { ...(next.context_budget as Record<string, unknown>) }
-          : {};
+        const budget =
+          next.context_budget &&
+          typeof next.context_budget === 'object' &&
+          !Array.isArray(next.context_budget)
+            ? { ...(next.context_budget as Record<string, unknown>) }
+            : {};
         Object.assign(budget, delta.context_budget);
         next.context_budget = budget;
       }
@@ -124,7 +134,10 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
         fs.renameSync(tmp, file);
       } catch (err) {
         fs.rmSync(tmp, { force: true });
-        return { ok: false, error: `Not written — ${err instanceof Error ? err.message : textOf(err)}` };
+        return {
+          ok: false,
+          error: `Not written — ${err instanceof Error ? err.message : textOf(err)}`,
+        };
       }
       return { ok: true, written: file };
     },
@@ -147,7 +160,11 @@ export interface ConfigLayerView {
  * user → project, the loader's order), each with its own exclude rules.
  * Read-only: for display and un-exclude origin lookups only.
  */
-export function readConfigLayers(opts: { extDir: string; cwd: string; agentDir?: string }): ConfigLayerView[] {
+export function readConfigLayers(opts: {
+  extDir: string;
+  cwd: string;
+  agentDir?: string;
+}): ConfigLayerView[] {
   const sources: Array<[ConfigOrigin, string]> = [
     ['shipped', path.join(opts.extDir, 'router-config.json')],
     ['user', userConfigPath(opts.agentDir ?? piAgentDir())],
@@ -162,7 +179,7 @@ export function readConfigLayers(opts: { extDir: string; cwd: string; agentDir?:
       path: file,
       present,
       ...(error ? { error } : {}),
-      exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? (rules) : {},
+      exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : {},
     };
   });
 }

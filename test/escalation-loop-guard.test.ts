@@ -40,7 +40,9 @@ describe('detectLoopWithLLM — Ollama availability guard', () => {
 
   it('still calls the LLM when the daemon is reachable', async () => {
     vi.mocked(isOllamaAvailable).mockResolvedValue(true);
-    vi.mocked(callOllama).mockResolvedValue('{"shouldEscalate": false, "reason": "No loop detected"}');
+    vi.mocked(callOllama).mockResolvedValue(
+      '{"shouldEscalate": false, "reason": "No loop detected"}'
+    );
 
     const result = await detectLoopWithLLM(history, { model: 'ollama/gemma2:2b' });
 
@@ -51,7 +53,9 @@ describe('detectLoopWithLLM — Ollama availability guard', () => {
 
   it('escalates on a genuine LLM loop verdict when the daemon is up', async () => {
     vi.mocked(isOllamaAvailable).mockResolvedValue(true);
-    vi.mocked(callOllama).mockResolvedValue('{"shouldEscalate": true, "reason": "same prompt twice"}');
+    vi.mocked(callOllama).mockResolvedValue(
+      '{"shouldEscalate": true, "reason": "same prompt twice"}'
+    );
 
     const result = await detectLoopWithLLM(history, { model: 'ollama/gemma2:2b' });
 

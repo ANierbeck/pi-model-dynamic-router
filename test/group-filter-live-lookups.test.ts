@@ -30,7 +30,10 @@ const baseMetrics = {
   'fp/tagged:free': { gdpval: 500, cost_per_m: 5 },
 };
 
-function useWorld(cfgPatch: Record<string, unknown>, cachePatch: Record<string, unknown> = {}): Config {
+function useWorld(
+  cfgPatch: Record<string, unknown>,
+  cachePatch: Record<string, unknown> = {}
+): Config {
   const cfg = { model_groups: {}, model_metrics: baseMetrics, ...cfgPatch } as any as Config;
   const cache = { available_models: [], ...cachePatch } as any as Cache;
   metricsModule.setConfig(cfg);
@@ -49,7 +52,11 @@ describe('live isFree — free_models membership', () => {
       providers: { fp: { billing: 'pay_per_token', free_models: ['fp/prefixed', 'bare-one'] } },
     });
     const refs = ['fp/prefixed', 'fp/bare-one', 'fp/tagged:free', 'fp/other'];
-    expect(applyGroupFilters(refs, zeroCostGroup, cfg)).toEqual(['fp/prefixed', 'fp/bare-one', 'fp/tagged:free']);
+    expect(applyGroupFilters(refs, zeroCostGroup, cfg)).toEqual([
+      'fp/prefixed',
+      'fp/bare-one',
+      'fp/tagged:free',
+    ]);
   });
 
   it('a mid-string :free (not the terminal tag) does not make a ref free (Sourcery PR #74)', () => {
@@ -63,10 +70,18 @@ describe('live isFree — free_models membership', () => {
   });
 
   it('only a prefixed entry matches when the bare id is not listed (and vice versa)', () => {
-    const prefixedOnly = useWorld({ providers: { fp: { billing: 'pay_per_token', free_models: ['fp/prefixed'] } } });
-    expect(applyGroupFilters(['fp/prefixed', 'fp/bare-one'], zeroCostGroup, prefixedOnly)).toEqual(['fp/prefixed']);
-    const bareOnly = useWorld({ providers: { fp: { billing: 'pay_per_token', free_models: ['bare-one'] } } });
-    expect(applyGroupFilters(['fp/prefixed', 'fp/bare-one'], zeroCostGroup, bareOnly)).toEqual(['fp/bare-one']);
+    const prefixedOnly = useWorld({
+      providers: { fp: { billing: 'pay_per_token', free_models: ['fp/prefixed'] } },
+    });
+    expect(applyGroupFilters(['fp/prefixed', 'fp/bare-one'], zeroCostGroup, prefixedOnly)).toEqual([
+      'fp/prefixed',
+    ]);
+    const bareOnly = useWorld({
+      providers: { fp: { billing: 'pay_per_token', free_models: ['bare-one'] } },
+    });
+    expect(applyGroupFilters(['fp/prefixed', 'fp/bare-one'], zeroCostGroup, bareOnly)).toEqual([
+      'fp/bare-one',
+    ]);
   });
 
   it('an empty list frees nothing', () => {
@@ -88,12 +103,16 @@ describe('live isFree — free_models membership', () => {
 describe('billing defaults of an undeclared provider', () => {
   it('unknown cost + undeclared provider + positive cap → dropped (pay_per_token default), no crash', () => {
     const cfg = useWorld({});
-    expect(applyGroupFilters(['zz/unpriced'], { method: 'best', max_cost: 1 } as Group, cfg)).toEqual([]);
+    expect(
+      applyGroupFilters(['zz/unpriced'], { method: 'best', max_cost: 1 } as Group, cfg)
+    ).toEqual([]);
   });
 
   it('unknown cost + declared subscription provider + positive cap → kept (sunk cost)', () => {
     const cfg = useWorld({ providers: { zz: { billing: 'subscription' } } });
-    expect(applyGroupFilters(['zz/unpriced'], { method: 'best', max_cost: 1 } as Group, cfg)).toEqual(['zz/unpriced']);
+    expect(
+      applyGroupFilters(['zz/unpriced'], { method: 'best', max_cost: 1 } as Group, cfg)
+    ).toEqual(['zz/unpriced']);
   });
 });
 
@@ -152,25 +171,45 @@ describe('top_k: 0 means no limit', () => {
   });
 
   it('a pipeline step with top_k 0 keeps every candidate', () => {
-    const r = router({ p: { method: 'pipeline', pipeline: [{ method: 'max_gdpval', top_k: 0 }, { method: 'min_cost' }] } }).resolve('p');
+    const r = router({
+      p: {
+        method: 'pipeline',
+        pipeline: [{ method: 'max_gdpval', top_k: 0 }, { method: 'min_cost' }],
+      },
+    }).resolve('p');
     expect(r!.candidates).toEqual(['tk/c', 'tk/a', 'tk/b']);
   });
 
   it('the display pipeline step with top_k 0 (not last) keeps every candidate', () => {
-    const top = router({ p: { method: 'pipeline', pipeline: [{ method: 'max_gdpval', top_k: 0 }, { method: 'min_cost' }] } }).getTopModels('p', 10);
+    const top = router({
+      p: {
+        method: 'pipeline',
+        pipeline: [{ method: 'max_gdpval', top_k: 0 }, { method: 'min_cost' }],
+      },
+    }).getTopModels('p', 10);
     expect(top.models.map((m) => m.ref)).toEqual(['tk/c', 'tk/a', 'tk/b']);
   });
 
   it('a non-pipeline group ignores a stray pipeline field (live and display)', () => {
-    const groups = { s: { method: 'min_cost', pipeline: [{ method: 'max_gdpval', top_k: 1 }] } as Group };
+    const groups = {
+      s: { method: 'min_cost', pipeline: [{ method: 'max_gdpval', top_k: 1 }] } as Group,
+    };
     expect(router(groups).resolve('s')!.candidates).toEqual(['tk/c', 'tk/a', 'tk/b']);
-    expect(router(groups).getTopModels('s', 10).models.map((m) => m.ref)).toEqual(['tk/c', 'tk/a', 'tk/b']);
+    expect(
+      router(groups)
+        .getTopModels('s', 10)
+        .models.map((m) => m.ref)
+    ).toEqual(['tk/c', 'tk/a', 'tk/b']);
   });
 });
 
 describe('allDiscoveredRefs — malformed free_models', () => {
   it('a non-array free_models value contributes nothing (not its characters)', () => {
-    const cfg = { model_groups: {}, model_metrics: {}, providers: { weird: { free_models: 'abc' } } } as any as Config;
+    const cfg = {
+      model_groups: {},
+      model_metrics: {},
+      providers: { weird: { free_models: 'abc' } },
+    } as any as Config;
     const cache = { available_models: [] } as any as Cache;
     const refs = new Router(cfg, cache, new Map()).allDiscoveredRefs();
     expect(refs).toEqual([]);

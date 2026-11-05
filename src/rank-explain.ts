@@ -73,14 +73,24 @@ export function explainBestRanking(input: ExplainInput): Map<string, string> {
     // Ranked ahead of the top-scoring model although it scores lower: the window's price rule did it.
     const mine = costOf(ref);
     const theirs = costOf(top);
-    const why = mine === 'unknown' || theirs === 'unknown' ? '' : mine < theirs ? ', cheaper' : mine === theirs ? ', same price' : '';
+    const why =
+      mine === 'unknown' || theirs === 'unknown'
+        ? ''
+        : mine < theirs
+          ? ', cheaper'
+          : mine === theirs
+            ? ', same price'
+            : '';
     out.set(ref, `${base}, in window${why}`);
   }
   return out;
 }
 
 /** Header text of a `best` group: the real sort key and the window, not a fixed "gdpval". */
-export function describeBestMethod(scoreBy: string | undefined, window: number | undefined): string {
+export function describeBestMethod(
+  scoreBy: string | undefined,
+  window: number | undefined
+): string {
   const column = isCapabilityColumn(scoreBy) ? scoreBy : 'gdpval';
   const w = window && window > 0 ? ` · ${Number((window * 100).toFixed(1))}% window` : '';
   return `best by ${column}${w}`;

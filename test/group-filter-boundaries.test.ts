@@ -66,7 +66,11 @@ describe('applyGroupFilters — no gate configured', () => {
 
 describe('applyGroupFilters — thresholds are inclusive', () => {
   it('min_gdpval keeps a ref scoring exactly the floor', () => {
-    const out = run(['cheap/at', 'cheap/below'], { min_gdpval: 500 }, { 'cheap/at': { gdp: 500 }, 'cheap/below': { gdp: 499.9 } });
+    const out = run(
+      ['cheap/at', 'cheap/below'],
+      { min_gdpval: 500 },
+      { 'cheap/at': { gdp: 500 }, 'cheap/below': { gdp: 499.9 } }
+    );
     expect(out).toEqual(['cheap/at']);
   });
 
@@ -74,23 +78,35 @@ describe('applyGroupFilters — thresholds are inclusive', () => {
     const out = run(
       ['cheap/top', 'cheap/at', 'cheap/below'],
       { min_gdpval_pct: 50 },
-      { 'cheap/top': { gdp: 1000 }, 'cheap/at': { gdp: 500 }, 'cheap/below': { gdp: 499 } },
+      { 'cheap/top': { gdp: 1000 }, 'cheap/at': { gdp: 500 }, 'cheap/below': { gdp: 499 } }
     );
     expect(out).toEqual(['cheap/top', 'cheap/at']);
   });
 
   it('max_gdpval keeps a ref scoring exactly the cap', () => {
-    const out = run(['cheap/at', 'cheap/above'], { max_gdpval: 900 }, { 'cheap/at': { gdp: 900 }, 'cheap/above': { gdp: 900.1 } });
+    const out = run(
+      ['cheap/at', 'cheap/above'],
+      { max_gdpval: 900 },
+      { 'cheap/at': { gdp: 900 }, 'cheap/above': { gdp: 900.1 } }
+    );
     expect(out).toEqual(['cheap/at']);
   });
 
   it('max_gdpval fails an UNSCORED ref (strict null-fails, not null -> 0)', () => {
-    const out = run(['cheap/scored', 'cheap/unscored'], { max_gdpval: 900 }, { 'cheap/scored': { gdp: 800 } });
+    const out = run(
+      ['cheap/scored', 'cheap/unscored'],
+      { max_gdpval: 900 },
+      { 'cheap/scored': { gdp: 800 } }
+    );
     expect(out).toEqual(['cheap/scored']);
   });
 
   it('max_cost keeps a priced ref costing exactly the cap', () => {
-    const out = run(['cheap/at', 'cheap/above'], { max_cost: 2 }, { 'cheap/at': { cost: 2 }, 'cheap/above': { cost: 2.5 } });
+    const out = run(
+      ['cheap/at', 'cheap/above'],
+      { max_cost: 2 },
+      { 'cheap/at': { cost: 2 }, 'cheap/above': { cost: 2.5 } }
+    );
     expect(out).toEqual(['cheap/at']);
   });
 
@@ -98,25 +114,38 @@ describe('applyGroupFilters — thresholds are inclusive', () => {
     const out = run(
       ['cheap/at', 'cheap/above'],
       { max_cost_per_m: 3 },
-      { 'cheap/at': { price: { input: 3, output: 9 } }, 'cheap/above': { price: { input: 3.5, output: 9 } } },
+      {
+        'cheap/at': { price: { input: 3, output: 9 } },
+        'cheap/above': { price: { input: 3.5, output: 9 } },
+      }
     );
     expect(out).toEqual(['cheap/at']);
   });
 
   it('min_context_length keeps a ref with exactly the required window', () => {
-    const out = run(['cheap/at', 'cheap/below'], { min_context_length: 128000 }, { 'cheap/at': { cw: 128000 }, 'cheap/below': { cw: 127999 } });
+    const out = run(
+      ['cheap/at', 'cheap/below'],
+      { min_context_length: 128000 },
+      { 'cheap/at': { cw: 128000 }, 'cheap/below': { cw: 127999 } }
+    );
     expect(out).toEqual(['cheap/at']);
   });
 });
 
 describe('applyGroupFilters — max_cost > 0 unknown/free handling', () => {
   it('a free ref passes even when its cost is unknown (pay_per_token provider)', () => {
-    const out = run(['cheap/free'], { max_cost: 1 }, { 'cheap/free': { free: true, cost: 'unknown' } });
+    const out = run(
+      ['cheap/free'],
+      { max_cost: 1 },
+      { 'cheap/free': { free: true, cost: 'unknown' } }
+    );
     expect(out).toEqual(['cheap/free']);
   });
 
   it('a priced pay_per_token ref under the cap is kept', () => {
-    expect(run(['cheap/priced'], { max_cost: 1 }, { 'cheap/priced': { cost: 0.5 } })).toEqual(['cheap/priced']);
+    expect(run(['cheap/priced'], { max_cost: 1 }, { 'cheap/priced': { cost: 0.5 } })).toEqual([
+      'cheap/priced',
+    ]);
   });
 
   it('unknown cost: subscription is kept (sunk cost), pay_per_token is dropped', () => {
@@ -156,7 +185,9 @@ describe('applyGroupFilters — dedup opt-in', () => {
 
   it('dedup requested with a function applies it and reports only the dropped refs', () => {
     const dropped: Array<[string, string]> = [];
-    const out = applyGroupFilters(refs, g, CFG, true, dropFirst, lookups({}), (ref, gate) => dropped.push([ref, gate]));
+    const out = applyGroupFilters(refs, g, CFG, true, dropFirst, lookups({}), (ref, gate) =>
+      dropped.push([ref, gate])
+    );
     expect(out).toEqual(['cheap/b']);
     expect(dropped).toEqual([['cheap/a', 'dedup']]);
   });
@@ -173,31 +204,59 @@ describe('applyGroupFilters — onDrop names the gate that removed the ref', () 
     'cheap/small-ctx': { gdp: 600, cost: 1, price: { input: 1, output: 1 }, cw: 1000 },
   };
 
-  const dropsFor = (g: Partial<Group>, refs: string[], cfg: Config = CFG): Array<[string, string]> => {
+  const dropsFor = (
+    g: Partial<Group>,
+    refs: string[],
+    cfg: Config = CFG
+  ): Array<[string, string]> => {
     const dropped: Array<[string, string]> = [];
-    applyGroupFilters(refs, { method: 'best', ...g } as Group, cfg, false, undefined, lookups(rows), (r, gate) => dropped.push([r, gate]));
+    applyGroupFilters(
+      refs,
+      { method: 'best', ...g } as Group,
+      cfg,
+      false,
+      undefined,
+      lookups(rows),
+      (r, gate) => dropped.push([r, gate])
+    );
     return dropped;
   };
 
   it('exclude_providers / exclude_models', () => {
-    expect(dropsFor({ exclude_providers: ['banned'] }, ['cheap/ok', 'banned/prov'])).toEqual([['banned/prov', 'exclude_providers']]);
-    expect(dropsFor({ exclude_models: ['cheap/ok'] }, ['cheap/ok'])).toEqual([['cheap/ok', 'exclude_models']]);
+    expect(dropsFor({ exclude_providers: ['banned'] }, ['cheap/ok', 'banned/prov'])).toEqual([
+      ['banned/prov', 'exclude_providers'],
+    ]);
+    expect(dropsFor({ exclude_models: ['cheap/ok'] }, ['cheap/ok'])).toEqual([
+      ['cheap/ok', 'exclude_models'],
+    ]);
   });
 
   it('non_agent', () => {
     const cfg = { ...CFG, non_agent_model_prefixes: ['tiny'] } as Config;
-    expect(dropsFor({}, ['cheap/tiny-model', 'cheap/ok'], cfg)).toEqual([['cheap/tiny-model', 'non_agent']]);
+    expect(dropsFor({}, ['cheap/tiny-model', 'cheap/ok'], cfg)).toEqual([
+      ['cheap/tiny-model', 'non_agent'],
+    ]);
   });
 
   it('min_gdpval / min_gdpval_pct / max_gdpval', () => {
-    expect(dropsFor({ min_gdpval: 500 }, ['cheap/low-gdp'])).toEqual([['cheap/low-gdp', 'min_gdpval']]);
-    expect(dropsFor({ min_gdpval_pct: 90 }, ['cheap/high-gdp', 'cheap/low-gdp'])).toEqual([['cheap/low-gdp', 'min_gdpval_pct']]);
-    expect(dropsFor({ max_gdpval: 900 }, ['cheap/high-gdp'])).toEqual([['cheap/high-gdp', 'max_gdpval']]);
+    expect(dropsFor({ min_gdpval: 500 }, ['cheap/low-gdp'])).toEqual([
+      ['cheap/low-gdp', 'min_gdpval'],
+    ]);
+    expect(dropsFor({ min_gdpval_pct: 90 }, ['cheap/high-gdp', 'cheap/low-gdp'])).toEqual([
+      ['cheap/low-gdp', 'min_gdpval_pct'],
+    ]);
+    expect(dropsFor({ max_gdpval: 900 }, ['cheap/high-gdp'])).toEqual([
+      ['cheap/high-gdp', 'max_gdpval'],
+    ]);
   });
 
   it('max_cost / max_cost_per_m / min_context_length', () => {
     expect(dropsFor({ max_cost: 5 }, ['cheap/pricey'])).toEqual([['cheap/pricey', 'max_cost']]);
-    expect(dropsFor({ max_cost_per_m: 5 }, ['cheap/pricey'])).toEqual([['cheap/pricey', 'max_cost_per_m']]);
-    expect(dropsFor({ min_context_length: 100000 }, ['cheap/small-ctx'])).toEqual([['cheap/small-ctx', 'min_context_length']]);
+    expect(dropsFor({ max_cost_per_m: 5 }, ['cheap/pricey'])).toEqual([
+      ['cheap/pricey', 'max_cost_per_m'],
+    ]);
+    expect(dropsFor({ min_context_length: 100000 }, ['cheap/small-ctx'])).toEqual([
+      ['cheap/small-ctx', 'min_context_length'],
+    ]);
   });
 });

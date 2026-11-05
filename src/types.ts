@@ -1,7 +1,6 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
-
 // ── Core Types ────────────────────────────────────────────────────────────
 
 /**
@@ -222,7 +221,7 @@ export interface ProviderConfig {
    */
   keys?: ProviderKey[];
   free_models?: string[];
-  cost_per_m?: number;  // Cost per million tokens (for subscription providers)
+  cost_per_m?: number; // Cost per million tokens (for subscription providers)
 }
 
 /** User-tunable knobs of the provider circuit breaker (Config.provider_breaker, plan D8). */
@@ -533,7 +532,10 @@ export interface Cache {
    * Same additive-merge lifecycle as gdpval_scores: setCache merges,
    * absent column = null (gdpval fallback), never 0.
    */
-  capability_profiles?: Record<string, { gdpval?: number; briefcase?: number; coding?: number; reasoning?: number }>;
+  capability_profiles?: Record<
+    string,
+    { gdpval?: number; briefcase?: number; coding?: number; reasoning?: number }
+  >;
 
   /**
    * Per-slug PROVENANCE from the Artificial Analysis scrape (Task-0
@@ -562,12 +564,16 @@ export interface Cache {
   // docs/adr/0003-reject-live-subscription-usage-api.md). The field and the
   // hasBudget()/filterByBudget() logic that reads it stay in place as a hook
   // a future local-usage-log-based tracker could populate.
-  budget_cache?: Record<string, { // provider → budget info
-    remaining_tokens?: number;
-    window_type?: 'hourly' | 'daily' | 'monthly';
-    window_reset?: number; // timestamp when window resets
-    last_checked?: number; // timestamp of last check
-  }>;
+  budget_cache?: Record<
+    string,
+    {
+      // provider → budget info
+      remaining_tokens?: number;
+      window_type?: 'hourly' | 'daily' | 'monthly';
+      window_reset?: number; // timestamp when window resets
+      last_checked?: number; // timestamp of last check
+    }
+  >;
   /** LLM-assisted model→gdpval-slug matches (3rd-tier fallback in lookupGdp). */
   model_score_cache?: Record<string, string>;
   /**
@@ -601,24 +607,30 @@ export interface Cache {
    * known-permanent signature, keyed by "provider/id" ref. Entries expire
    * after BLOCKLIST_TTL_MS (7 days) from last_seen; see src/model-blocklist.ts.
    */
-  model_blocklist?: Record<string, {
-    reason: string;
-    code: number;
-    signature: string;
-    first_seen: number;
-    last_seen: number;
-    occurrences: number;
-  }>;
+  model_blocklist?: Record<
+    string,
+    {
+      reason: string;
+      code: number;
+      signature: string;
+      first_seen: number;
+      last_seen: number;
+      occurrences: number;
+    }
+  >;
   /**
    * Tier-2 failure streaks (ADR-0008): consecutive failures per ref with the
    * same unknown signature, reset by a success or a different signature.
    */
-  model_failure_streaks?: Record<string, {
-    signature: string;
-    count: number;
-    first_seen: number;
-    last_seen: number;
-  }>;
+  model_failure_streaks?: Record<
+    string,
+    {
+      signature: string;
+      count: number;
+      first_seen: number;
+      last_seen: number;
+    }
+  >;
   /**
    * Provider circuit breaker (provider-breaker.ts), keyed by provider id:
    * counting evidence per distinct model ref (timestamp + D1 evidence kind),
@@ -629,21 +641,27 @@ export interface Cache {
    * a restart is the standard remedy for a wedged provider and must never
    * re-open a breaker the restart just fixed.
    */
-  provider_breaker?: Record<string, {
-    evidence: Record<string, { at: number; kind: string }>;
-    open_until?: number;
-    trip_count: number;
-  }>;
+  provider_breaker?: Record<
+    string,
+    {
+      evidence: Record<string, { at: number; kind: string }>;
+      open_until?: number;
+      trip_count: number;
+    }
+  >;
   /**
    * Persisted breaker telemetry (plan D7): trips, last trip time and
    * avoided hops per provider — the tuning evidence that outlives the
    * volatile open state above. Survives restarts.
    */
-  provider_breaker_stats?: Record<string, {
-    trips: number;
-    avoided_hops: number;
-    last_trip_at?: number;
-  }>;
+  provider_breaker_stats?: Record<
+    string,
+    {
+      trips: number;
+      avoided_hops: number;
+      last_trip_at?: number;
+    }
+  >;
   /**
    * Verified-working cloud models for the classifier's cloud fallback.
    * Populated by probeAndCache() at scan time (a quality probe with real
@@ -835,5 +853,8 @@ export interface CostMetrics {
   requestsByModel: Record<string, number>;
   costByModel: Record<string, number>;
   /** Per-model token split for the /router cost report (audit depth, 2026-09-27). */
-  tokensByModel?: Record<string, { in: number; out: number; cacheRead?: number; cacheWrite?: number }>;
+  tokensByModel?: Record<
+    string,
+    { in: number; out: number; cacheRead?: number; cacheWrite?: number }
+  >;
 }

@@ -20,6 +20,10 @@ import { Router } from '../src/routing.ts';
 import { selectClassifierCandidates } from '../src/classifier-fallback-probe.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Config, Cache } from '../src/types.ts';
+import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
+import { hermeticCacheFlags } from './helpers/stream-fixtures.ts';
+import { makePiCtx } from './helpers/extension-harness.ts';
 
 /** Score-only phantom: a gdpval slug with no registry or cache entry. */
 const PHANTOM_SLUG = 'phantom-score-only-model';
@@ -32,7 +36,8 @@ function makeRegistry(models: Array<{ provider: string; id: string }>) {
     cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
   }));
   return {
-    find: (provider: string, modelId: string) => all.find((m) => m.provider === provider && m.id === modelId),
+    find: (provider: string, modelId: string) =>
+      all.find((m) => m.provider === provider && m.id === modelId),
     getAvailable: () => all,
     getRegisteredProviderIds: () => [...new Set(all.map((m) => m.provider))],
     hasConfiguredAuth: () => true,
@@ -58,8 +63,7 @@ describe('class B pin 1: allDiscoveredRefs() never admits a score-only model', (
     usage_log: [],
     benchmarks: {},
     budget_cache: {},
-    gdpval_scraped: true,
-    lastScanTimestamp: Date.now(),
+    ...hermeticCacheFlags(),
     models_cached: '',
   } as any;
 
@@ -71,7 +75,9 @@ describe('class B pin 1: allDiscoveredRefs() never admits a score-only model', (
 
   it('registry path: the real model is admitted, the gdpval_builtin phantom is not', () => {
     const router = new Router(cfg, cache, new Map());
-    router.setSessionCtx({ modelRegistry: makeRegistry([{ provider: 'healthy-provider', id: 'model-a' }]) } as any);
+    router.setSessionCtx({
+      modelRegistry: makeRegistry([{ provider: 'healthy-provider', id: 'model-a' }]),
+    } as any);
 
     const refs = router.allDiscoveredRefs();
 
@@ -147,16 +153,12 @@ async function startRouterWithPhantomBuiltin() {
   const dynamicPath = path.join(stateDir, 'router-config.dynamic.json');
   const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
   fs.rmSync(dynamicPath, { force: true });
-  fs.writeFileSync(
-    cachePath,
-    JSON.stringify({
-      lastScanTimestamp: Date.now(),
-      gdpval_scraped: true,
-      models_cached: new Date().toISOString(),
-      available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
-      gdpval_scores: { 'model-a': 800, [PHANTOM_SLUG]: 950 },
-    })
-  );
+  writeScanCacheFixture(cachePath, {
+    gdpval_scraped: true,
+    models_cached: new Date().toISOString(),
+    available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
+    gdpval_scores: { 'model-a': 800, [PHANTOM_SLUG]: 950 },
+  });
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-class-b-'));
   // The project config adds the phantom to the annotation table only.
   fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
@@ -170,31 +172,31 @@ async function startRouterWithPhantomBuiltin() {
   const cleanup = () => {
     cwdSpy.mockRestore();
     globalThis.fetch = originalFetch;
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    rmTmpDir(tmpDir);
     fs.rmSync(dynamicPath, { force: true });
   };
   try {
     vi.resetModules();
     const mod = await import('../index.ts');
-    const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-    (mod.default as any)({
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerProvider: vi.fn(),
-      setModel: vi.fn(async () => true),
-      on: vi.fn((event: string, handler: any) => {
-        onHandlers[event] = handler;
-      }),
-    });
-    const model = { provider: 'healthy-provider', id: 'model-a', api: 'openai-completions', contextWindow: 128_000,
-      cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 } };
+    const { pi, onHandlers } = makePiCtx();
+    (mod.default as any)(pi);
+    const model = {
+      provider: 'healthy-provider',
+      id: 'model-a',
+      api: 'openai-completions',
+      contextWindow: 128_000,
+      cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+    };
     const modelRegistry = {
       getAvailable: () => [model],
       find: (p: string, id: string) => (p === model.provider && id === model.id ? model : null),
       getApiKeyForProvider: async () => 'k',
       runtime: { streamSimple: vi.fn() },
     };
-    await onHandlers['session_start']?.({}, { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } });
+    await onHandlers['session_start']?.(
+      {},
+      { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } }
+    );
     return { dynamicPath, cleanup };
   } catch (e) {
     cleanup();
@@ -208,8 +210,8 @@ describe('class B pin 3: persisted dynamic group lists never contain a score-onl
     try {
       expect(await waitFor(() => fs.existsSync(dynamicPath))).toBe(true);
       const dynamic = JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'));
-      const persisted: string[] = Object.values(dynamic.model_groups ?? {}).flatMap(
-        (g: any) => (Array.isArray(g?.models) ? g.models : [])
+      const persisted: string[] = Object.values(dynamic.model_groups ?? {}).flatMap((g: any) =>
+        Array.isArray(g?.models) ? g.models : []
       );
 
       expect(persisted).toContain('healthy-provider/model-a');

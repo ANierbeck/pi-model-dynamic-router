@@ -59,7 +59,10 @@ describe('nightly mutation testing', () => {
     const cfg = readJson('stryker.config.json');
     expect(cfg.incremental).toBe(true);
     expect(typeof cfg.incrementalFile).toBe('string');
-    const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
+    const wf = fs.readFileSync(
+      path.join(repoRoot, '.github/workflows/mutation-nightly.yml'),
+      'utf8'
+    );
     const cacheStep = wf.slice(wf.indexOf('actions/cache'));
     expect(cacheStep).toContain(`path: ${cfg.incrementalFile}`);
     // The cache must be re-saved every night: a fixed key is immutable in
@@ -72,7 +75,10 @@ describe('nightly mutation testing', () => {
   });
 
   it('the job budget covers a full cold run (~75 min locally, ~100 min both modules)', () => {
-    const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
+    const wf = fs.readFileSync(
+      path.join(repoRoot, '.github/workflows/mutation-nightly.yml'),
+      'utf8'
+    );
     const m = wf.match(/timeout-minutes:\s*(\d+)/);
     expect(m).not.toBeNull();
     expect(Number(m![1])).toBeGreaterThanOrEqual(240);
@@ -84,7 +90,10 @@ describe('nightly mutation testing', () => {
   });
 
   it('nightly workflow triggers on schedule and dispatch, never on PRs', () => {
-    const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
+    const wf = fs.readFileSync(
+      path.join(repoRoot, '.github/workflows/mutation-nightly.yml'),
+      'utf8'
+    );
     expect(wf).toMatch(/schedule:/);
     expect(wf).toMatch(/workflow_dispatch:/);
     expect(wf).not.toMatch(/pull_request:/);
@@ -95,7 +104,10 @@ describe('nightly mutation testing', () => {
   });
 
   it('keeps the report artifact for the maximum retention window (triage happens days later)', () => {
-    const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/mutation-nightly.yml'), 'utf8');
+    const wf = fs.readFileSync(
+      path.join(repoRoot, '.github/workflows/mutation-nightly.yml'),
+      'utf8'
+    );
     const m = wf.match(/retention-days:\s*(\d+)/);
     expect(m, 'upload step must set retention-days explicitly').not.toBeNull();
     expect(Number(m![1])).toBeGreaterThanOrEqual(90);
@@ -106,6 +118,8 @@ describe('nightly mutation testing', () => {
     expect(gitignore).toMatch(/\.stryker-tmp/);
     const pkg = readJson('package.json');
     const shipped: string[] = pkg.files ?? [];
-    expect(shipped.some((f: string) => f.includes('.stryker') || f.startsWith('reports'))).toBe(false);
+    expect(shipped.some((f: string) => f.includes('.stryker') || f.startsWith('reports'))).toBe(
+      false
+    );
   });
 });

@@ -37,7 +37,10 @@ describe('Pi runtime carries async context into provider.streamSimple', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'subcall-host-'));
     try {
       fs.writeFileSync(path.join(dir, 'auth.json'), '{}');
-      const runtime = await ModelRuntime.create({ authPath: path.join(dir, 'auth.json'), modelsPath: null });
+      const runtime = await ModelRuntime.create({
+        authPath: path.join(dir, 'auth.json'),
+        modelsPath: null,
+      });
       const registry = new ModelRegistry(runtime);
       const seen: boolean[] = [];
       registry.registerProvider('probe', {
@@ -45,7 +48,15 @@ describe('Pi runtime carries async context into provider.streamSimple', () => {
         apiKey: 'x',
         api: 'openai-completions',
         models: [
-          { id: 'm', name: 'm', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 },
+          {
+            id: 'm',
+            name: 'm',
+            reasoning: false,
+            input: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1000,
+            maxTokens: 100,
+          },
         ],
         streamSimple: () => {
           seen.push(inSubCall());
@@ -74,8 +85,8 @@ describe('Pi runtime carries async context into provider.streamSimple', () => {
         als.run(id, async () => {
           await new Promise((r) => setTimeout(r, id === 'a' ? 5 : 1));
           out.push(`${id}:${als.getStore()}`);
-        }),
-      ),
+        })
+      )
     );
     expect(out.sort()).toEqual(['a:a', 'b:b']);
   });

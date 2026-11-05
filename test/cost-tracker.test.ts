@@ -127,7 +127,8 @@ describe('CostTracker', () => {
 
       expect(consoleWarnSpy).not.toHaveBeenCalled();
       expect(mockRouterLog).toHaveBeenCalledWith(
-        '[cost-tracker] No price info for model', 'unknown/model'
+        '[cost-tracker] No price info for model',
+        'unknown/model'
       );
 
       consoleWarnSpy.mockRestore();

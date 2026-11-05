@@ -32,7 +32,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as metricsModule from '../src/metrics.ts';
 import { applyGroupFilters, Router } from '../src/routing.ts';
 import { normalizeModelId } from '../src/slug-matcher.ts';
-import { collapseSameSlugClusters, filterModelsForGroup, ModelWithMetadata } from '../src/dynamic-config.ts';
+import {
+  collapseSameSlugClusters,
+  filterModelsForGroup,
+  ModelWithMetadata,
+} from '../src/dynamic-config.ts';
 import type { Config, Group, Cache } from '../src/types.ts';
 
 /** GDPval scrape excerpt with the duplicate-spelling artifacts. */

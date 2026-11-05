@@ -70,7 +70,13 @@ describe('CostTracker.formatCostReport', () => {
 
     const report = tracker.formatCostReport({
       billingTier: (ref) =>
-        ref.startsWith('claude-bridge') ? 1 : ref.startsWith('ollama') ? 2 : ref.startsWith('mistral') ? 1 : 3,
+        ref.startsWith('claude-bridge')
+          ? 1
+          : ref.startsWith('ollama')
+            ? 2
+            : ref.startsWith('mistral')
+              ? 1
+              : 3,
       windowsAll: () => ({}),
       price: (ref) => mockLookupPrice(ref as string) ?? undefined,
     });

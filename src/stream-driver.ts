@@ -86,7 +86,11 @@ export function pushStreamError(
  * properties of undefined (reading 'role')". Emitting all three event types
  * (not just text_delta) matches what a real streamed text block looks like.
  */
-export function pushRouterInfo(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
+export function pushRouterInfo(
+  proxy: AssistantMessageEventStream,
+  text: string,
+  contentIndex: number = 0
+): void {
   const partial: AssistantMessage = {
     role: 'assistant',
     content: [{ type: 'text', text }],
@@ -116,7 +120,11 @@ export function pushRouterInfo(proxy: AssistantMessageEventStream, text: string,
  * live). Use this instead of pushRouterInfo for any message that announces
  * a candidate outcome (selected, failed, rate-limited, falling back).
  */
-export function pushRouterInfoLogged(proxy: AssistantMessageEventStream, text: string, contentIndex: number = 0): void {
+export function pushRouterInfoLogged(
+  proxy: AssistantMessageEventStream,
+  text: string,
+  contentIndex: number = 0
+): void {
   routerLog(text.replace(/^>\s*/, '').trim());
   pushRouterInfo(proxy, text, contentIndex);
 }

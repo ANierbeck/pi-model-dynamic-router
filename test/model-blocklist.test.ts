@@ -24,7 +24,8 @@ const GUARDRAIL =
   '404: {"message":"0 endpoints out of 1 requested are available matching your guardrail restrictions and data policy. We removed them for the following reasons (an endpoint may have matched multiple reasons):\\nFree model training violation (guardrail): 1 endpoint excluded","code":404,"metadata":{"input_endpoint_count":1,"ineligibility_reasons":[{"reason":"free-model-training-violation-by-guardrail","endpoint_count":1}],"failed_routing_step":"Filter by Guardrails"}}';
 const GUARDRAIL_OLD =
   '404: {"message":"No endpoints available matching your guardrail restrictions and data policy. Configure: https://openrouter.ai/settings/privacy","code":404}';
-const DECOMMISSIONED = '404: {"message":"No endpoints found for nex-agi/nex-n2.5-pro:free.","code":404}';
+const DECOMMISSIONED =
+  '404: {"message":"No endpoints found for nex-agi/nex-n2.5-pro:free.","code":404}';
 const FREE_RETIRED =
   '404: {"message":"This model is unavailable for free. The paid version is available now - use this slug instead: z-ai/glm-5.2","code":404}';
 const TOOL_USE =
@@ -108,8 +109,12 @@ describe('classifyFailure — Tier-1 signature catalogue', () => {
   });
 
   it('only applies OpenRouter signatures to OpenRouter refs', () => {
-    expect(classifyFailure('ollama/qwen3:8b', '404: {"error":"model \\"qwen3:8b\\" not found, try pulling it first"}').verdict)
-      .not.toBe('permanent');
+    expect(
+      classifyFailure(
+        'ollama/qwen3:8b',
+        '404: {"error":"model \\"qwen3:8b\\" not found, try pulling it first"}'
+      ).verdict
+    ).not.toBe('permanent');
     expect(classifyFailure('mistral/some-model', DECOMMISSIONED).verdict).not.toBe('permanent');
   });
 
@@ -122,7 +127,13 @@ describe('model blocklist state (cache.model_blocklist)', () => {
   it('blocks on the first permanent failure and records reason, code and timestamps', () => {
     const cache: Cache = {};
     const entry = recordBlocklistFailure(cache, OR, AGENTIC, 1_000);
-    expect(entry).toMatchObject({ reason: 'agentic-harness-gate', code: 403, first_seen: 1_000, last_seen: 1_000, occurrences: 1 });
+    expect(entry).toMatchObject({
+      reason: 'agentic-harness-gate',
+      code: 403,
+      first_seen: 1_000,
+      last_seen: 1_000,
+      occurrences: 1,
+    });
     expect(isBlocked(cache, OR, 1_001)).toBe(true);
     expect(cache.model_blocklist?.[OR]).toBeDefined();
   });
@@ -160,7 +171,12 @@ describe('model blocklist state (cache.model_blocklist)', () => {
   it('activeBlocks lists unexpired entries with time to the next re-probe', () => {
     const cache: Cache = {};
     recordBlocklistFailure(cache, OR, AGENTIC, 0);
-    recordBlocklistFailure(cache, 'openrouter/liquid/lfm-2.5-2.6b:free', GUARDRAIL, -BLOCKLIST_TTL_MS);
+    recordBlocklistFailure(
+      cache,
+      'openrouter/liquid/lfm-2.5-2.6b:free',
+      GUARDRAIL,
+      -BLOCKLIST_TTL_MS
+    );
     const active = activeBlocks(cache, 100);
     expect(active.map((b) => b.ref)).toEqual([OR]);
     expect(active[0].reprobeInMs).toBe(BLOCKLIST_TTL_MS - 100);
@@ -191,21 +207,34 @@ describe('runtime filter: Router.allDiscoveredRefs drops blocked models', () => 
 
 // ── Tier 2 (ADR-0008): unknown signatures ──────────────────────────────────
 
-const UNKNOWN_400 = '400: {"message":"Invalid request: unsupported parameter \'reasoning_effort\'","code":400}';
-const UNKNOWN_400_OTHER = '400: {"message":"Invalid request: context must start with a user turn","code":400}';
+const UNKNOWN_400 =
+  '400: {"message":"Invalid request: unsupported parameter \'reasoning_effort\'","code":400}';
+const UNKNOWN_400_OTHER =
+  '400: {"message":"Invalid request: context must start with a user turn","code":400}';
 const HOUR = 60 * 60_000;
 const T2 = 'openrouter/vendor/flaky-model';
 
-function failTimes(cache: Cache, ref: string, text: string, times: number, start: number, stepMs: number) {
+function failTimes(
+  cache: Cache,
+  ref: string,
+  text: string,
+  times: number,
+  start: number,
+  stepMs: number
+) {
   let last: ReturnType<typeof recordBlocklistFailure> = null;
-  for (let i = 0; i < times; i++) last = recordBlocklistFailure(cache, ref, text, start + i * stepMs);
+  for (let i = 0; i < times; i++)
+    last = recordBlocklistFailure(cache, ref, text, start + i * stepMs);
   return last;
 }
 
 describe('classifyFailure — unknown vs known-transient', () => {
   it('marks an unmatched 4xx as unknown with a stable, id-free signature', () => {
     const a = classifyFailure(T2, UNKNOWN_400);
-    const b = classifyFailure(T2, UNKNOWN_400.replace("'reasoning_effort'", "'reasoning_effort'  "));
+    const b = classifyFailure(
+      T2,
+      UNKNOWN_400.replace("'reasoning_effort'", "'reasoning_effort'  ")
+    );
     expect(a.verdict).toBe('unknown');
     expect(a.signature).toBe(b.signature);
     expect(classifyFailure(T2, UNKNOWN_400_OTHER).signature).not.toBe(a.signature);
@@ -237,7 +266,9 @@ describe('classifyFailure — unknown vs known-transient', () => {
   });
 
   it('treats "does not support tools" from any provider as request-dependent', () => {
-    expect(classifyFailure('openrouter/x/y', '400: {"message":"x does not support tools"}').verdict).toBe('request');
+    expect(
+      classifyFailure('openrouter/x/y', '400: {"message":"x does not support tools"}').verdict
+    ).toBe('request');
   });
 
   it('leaves a Mistral "Invalid model" 400 as unknown (Tier-2 candidate)', () => {
@@ -294,7 +325,14 @@ describe('Tier 2 promotion', () => {
   it('never promotes local providers (daemon trouble, not a model property)', () => {
     const cache: Cache = {};
     const local = 'ollama/qwen3:8b';
-    failTimes(cache, local, '404: {"error":"model \\"qwen3:8b\\" not found, try pulling it first"}', 10, 0, HOUR / 2);
+    failTimes(
+      cache,
+      local,
+      '404: {"error":"model \\"qwen3:8b\\" not found, try pulling it first"}',
+      10,
+      0,
+      HOUR / 2
+    );
     expect(isBlocked(cache, local, 6 * HOUR)).toBe(false);
   });
 

@@ -9,7 +9,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ESLint } from 'eslint';
-import { compareLintFindingsToBaseline, refusedBaselineEntries, toEntries } from '../scripts/lint-gate.ts';
+import {
+  compareLintFindingsToBaseline,
+  refusedBaselineEntries,
+  toEntries,
+} from '../scripts/lint-gate.ts';
 
 interface LintEntry {
   file: string;
@@ -23,10 +27,10 @@ interface LintBaseline {
 }
 
 /** Total findings the baseline is allowed to hold. Only ever lowered. */
-const CEILING_FINDINGS = 919;
+const CEILING_FINDINGS = 915;
 
 const baseline = JSON.parse(
-  readFileSync(join(process.cwd(), 'scripts/lint-baseline.json'), 'utf8'),
+  readFileSync(join(process.cwd(), 'scripts/lint-baseline.json'), 'utf8')
 ) as LintBaseline;
 
 const total = (entries: LintEntry[]): number => entries.reduce((sum, e) => sum + e.count, 0);
@@ -39,21 +43,22 @@ describe('lint baseline ratchet', () => {
     for (const entry of baseline.entries) {
       expect(
         Number.isInteger(entry.count) && entry.count > 0,
-        `${entry.file} ${entry.rule}: count ${entry.count}`,
+        `${entry.file} ${entry.rule}: count ${entry.count}`
       ).toBe(true);
     }
   });
 
   it('stays at or below the ceiling', () => {
-    expect(total(baseline.entries), 'a cleanup lowers the baseline, never raises it').toBeLessThanOrEqual(
-      CEILING_FINDINGS,
-    );
+    expect(
+      total(baseline.entries),
+      'a cleanup lowers the baseline, never raises it'
+    ).toBeLessThanOrEqual(CEILING_FINDINGS);
   });
 
   it('the ceiling moves with the baseline (no silent headroom)', () => {
     expect(
       total(baseline.entries),
-      'lower scripts/lint-baseline.json and CEILING_FINDINGS in the same change',
+      'lower scripts/lint-baseline.json and CEILING_FINDINGS in the same change'
     ).toBe(CEILING_FINDINGS);
   });
 });
@@ -66,10 +71,14 @@ describe('toEntries', () => {
   it('aggregates per (file, rule) and strips the root prefix with POSIX separators', () => {
     const entries = toEntries(
       [
-        result('/r/src/a.ts', [{ ruleId: 'no-empty' }, { ruleId: 'no-empty' }, { ruleId: 'no-var' }]),
+        result('/r/src/a.ts', [
+          { ruleId: 'no-empty' },
+          { ruleId: 'no-empty' },
+          { ruleId: 'no-var' },
+        ]),
         result('/r/test/b.ts', [{ ruleId: 'no-empty' }]),
       ],
-      '/r',
+      '/r'
     );
     expect(entries).toEqual([
       { file: 'src/a.ts', rule: 'no-empty', count: 2 },
@@ -83,7 +92,7 @@ describe('toEntries', () => {
     // error hide behind a baselined directive warning.
     const entries = toEntries(
       [result('/r/src/a.ts', [{ ruleId: null, fatal: true }, { ruleId: null }])],
-      '/r',
+      '/r'
     );
     expect(entries).toEqual([
       { file: 'src/a.ts', rule: 'eslint-directive', count: 1 },
@@ -95,8 +104,10 @@ describe('toEntries', () => {
     // localeCompare would order a_b before a-b; the canonical test uses
     // Array.prototype.sort(), so the writer must agree with it.
     const entries = toEntries(
-      ['src/a_b.ts', 'src/a-b.ts', 'src/aB.ts', 'src/ab.ts'].map((f) => result(`/r/${f}`, [{ ruleId: 'x' }])),
-      '/r',
+      ['src/a_b.ts', 'src/a-b.ts', 'src/aB.ts', 'src/ab.ts'].map((f) =>
+        result(`/r/${f}`, [{ ruleId: 'x' }])
+      ),
+      '/r'
     );
     expect(entries.map((e) => e.file)).toEqual([
       'src/a-b.ts',
@@ -112,15 +123,15 @@ describe('compareLintFindingsToBaseline', () => {
     expect(
       compareLintFindingsToBaseline(
         [{ file: 'a.ts', rule: 'r', count: 2 }],
-        [{ file: 'a.ts', rule: 'r', count: 2 }],
-      ),
+        [{ file: 'a.ts', rule: 'r', count: 2 }]
+      )
     ).toEqual([]);
   });
 
   it('reports a finding above its baseline entry as NEW', () => {
     const violations = compareLintFindingsToBaseline(
       [{ file: 'a.ts', rule: 'r', count: 3 }],
-      [{ file: 'a.ts', rule: 'r', count: 2 }],
+      [{ file: 'a.ts', rule: 'r', count: 2 }]
     );
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain('NEW r in a.ts: 3 (baseline 2)');
@@ -134,7 +145,7 @@ describe('compareLintFindingsToBaseline', () => {
   it('reports a lowered count as stale, so a cleanup cannot leave headroom', () => {
     const violations = compareLintFindingsToBaseline(
       [{ file: 'a.ts', rule: 'r', count: 1 }],
-      [{ file: 'a.ts', rule: 'r', count: 3 }],
+      [{ file: 'a.ts', rule: 'r', count: 3 }]
     );
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain('stale and must be LOWERED');
@@ -159,6 +170,8 @@ describe('--write refuses to baseline a parse error', () => {
   });
 
   it('refuses nothing when every finding is a rule finding', () => {
-    expect(refusedBaselineEntries([{ file: 'src/b.ts', rule: 'no-unused-vars', count: 2 }] as any)).toEqual([]);
+    expect(
+      refusedBaselineEntries([{ file: 'src/b.ts', rule: 'no-unused-vars', count: 2 }] as any)
+    ).toEqual([]);
   });
 });

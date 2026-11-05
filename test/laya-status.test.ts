@@ -9,7 +9,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
 import { createCommands, formatClassifierStatus } from '../src/commands.ts';
-import { classifyWithLaya, layaAvailabilityState, resetLayaAvailability } from '../src/laya-classifier.ts';
+import {
+  classifyWithLaya,
+  layaAvailabilityState,
+  resetLayaAvailability,
+} from '../src/laya-classifier.ts';
 import * as loggerModule from '../src/logger.ts';
 import type { Group } from '../src/types.ts';
 
@@ -27,7 +31,11 @@ const status = (laya?: Parameters<typeof formatClassifierStatus>[0]['laya']) =>
 const layaLine = (lines: string[]) => lines.find((l) => l.startsWith('│ Laya (')) ?? '';
 const chainLine = (lines: string[]) => lines.find((l) => l.startsWith('│ Chain:')) ?? '';
 
-const base = { checkpoint: 'test/ckpt', endpoint: 'http://127.0.0.1:8089', confidence_threshold: 0.8 };
+const base = {
+  checkpoint: 'test/ckpt',
+  endpoint: 'http://127.0.0.1:8089',
+  confidence_threshold: 0.8,
+};
 
 describe('formatClassifierStatus — Laya line', () => {
   it('is absent when the stage is not configured', () => {
@@ -52,7 +60,9 @@ describe('formatClassifierStatus — Laya line', () => {
   });
 
   it('shows unreachable with the reason', () => {
-    const line = layaLine(status({ ...base, mode: 'active', state: 'down', probeError: 'HTTP 500: boom' }));
+    const line = layaLine(
+      status({ ...base, mode: 'active', state: 'down', probeError: 'HTTP 500: boom' })
+    );
     expect(line).toContain('unreachable');
     expect(line).toContain('HTTP 500: boom');
   });
@@ -77,7 +87,16 @@ describe('layaAvailabilityState', () => {
       req.resume();
       req.on('end', () => {
         res.writeHead(code, { 'content-type': 'application/json' });
-        res.end(code === 200 ? JSON.stringify({ category: 'simple', confidence: 0.9, probabilities: { simple: 0.9 }, ms: 1 }) : 'boom');
+        res.end(
+          code === 200
+            ? JSON.stringify({
+                category: 'simple',
+                confidence: 0.9,
+                probabilities: { simple: 0.9 },
+                ms: 1,
+              })
+            : 'boom'
+        );
       });
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -89,7 +108,16 @@ describe('layaAvailabilityState', () => {
   });
 
   const cfg = () =>
-    ({ classifier_laya: { enabled: true, checkpoint: 'c', endpoint: `http://127.0.0.1:${port}`, timeout_ms: 800, confidence_threshold: 0.8, mode: 'active' } }) as any;
+    ({
+      classifier_laya: {
+        enabled: true,
+        checkpoint: 'c',
+        endpoint: `http://127.0.0.1:${port}`,
+        timeout_ms: 800,
+        confidence_threshold: 0.8,
+        mode: 'active',
+      },
+    }) as any;
 
   it('walks unknown → ok after first use', async () => {
     expect(layaAvailabilityState()).toBe('unknown');
@@ -107,7 +135,11 @@ describe('layaAvailabilityState', () => {
 describe('/router overview (real handler)', () => {
   async function overview(classifier_laya: unknown): Promise<string> {
     let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
-    const pi = { registerCommand: (name: string, def: any) => { if (name === 'router') handler = def.handler; } };
+    const pi = {
+      registerCommand: (name: string, def: any) => {
+        if (name === 'router') handler = def.handler;
+      },
+    };
     const rt: any = {
       pi,
       cache: {},
@@ -130,7 +162,13 @@ describe('/router overview (real handler)', () => {
   beforeEach(() => resetLayaAvailability());
 
   it('shows the Laya line (defaults applied) before the first classification', async () => {
-    const out = await overview({ enabled: true, checkpoint: 'test/ckpt', endpoint: 'http://127.0.0.1:8089', confidence_threshold: 0.8, mode: 'shadow' });
+    const out = await overview({
+      enabled: true,
+      checkpoint: 'test/ckpt',
+      endpoint: 'http://127.0.0.1:8089',
+      confidence_threshold: 0.8,
+      mode: 'shadow',
+    });
     const line = out.split('\n').find((l) => l.startsWith('│ Laya (')) ?? '';
     expect(line).toContain('shadow');
     expect(line).toContain('not probed yet');

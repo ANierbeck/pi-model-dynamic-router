@@ -16,13 +16,13 @@ import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
-import { routerStatePaths } from './helpers/extension-harness.ts';
+import { routerStatePaths, makePiCtx } from './helpers/extension-harness.ts';
 import {
   writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
+  removeNoOpScanCacheDefault,
 } from './helpers/noop-scan-cache.ts';
+import { bootProjectDir, rmTmpDir } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -46,14 +46,15 @@ async function runTurn(
   scripts: Record<string, (model: any) => AsyncIterable<AssistantMessageEvent>>,
   candidates: Array<{ id: string; cost: number }>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-termination-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({
-    free_models: [],
-    providers: { openrouter: { free_models: [] } },
-    model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-    gdpval_builtin: Object.fromEntries(candidates.map((c) => [c.id, 900])),
-  }));
+  const { tmpDir } = bootProjectDir(
+    {
+      free_models: [],
+      providers: { openrouter: { free_models: [] } },
+      model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+      gdpval_builtin: Object.fromEntries(candidates.map((c) => [c.id, 900])),
+    },
+    'router-termination-'
+  );
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
   const dynBak = `${dynamicConfigPath}.termination-bak`;
   const hadDyn = fs.existsSync(dynamicConfigPath);
@@ -64,14 +65,7 @@ async function runTurn(
   try {
     vi.resetModules();
     const mod = await import('../index.ts');
-    const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-    const pi: any = {
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerProvider: vi.fn(),
-      setModel: vi.fn(async () => true),
-      on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-    };
+    const { pi, onHandlers } = makePiCtx();
     mod.default(pi);
 
     const models = candidates.map((c) => ({
@@ -112,8 +106,8 @@ async function runTurn(
   } finally {
     clearTimeout(deadline);
     cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    removeNoOpScanCache(scanCachePath);
+    rmTmpDir(tmpDir);
+    removeNoOpScanCacheDefault();
     if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
   }
 }
@@ -125,12 +119,15 @@ describe('driveStream: failure classification always terminates the stream', () 
         'malformed-abort': async function* () {
           yield { type: 'error', reason: 'aborted' } as any; // no `error` field
         },
-        'healthy': async function* () {
+        healthy: async function* () {
           yield { type: 'text_delta', delta: 'served by the healthy candidate' } as any;
           yield { type: 'done', reason: 'stop', message: DONE_MESSAGE } as any;
         },
       },
-      [{ id: 'malformed-abort', cost: 0.05 }, { id: 'healthy', cost: 0.1 }]
+      [
+        { id: 'malformed-abort', cost: 0.05 },
+        { id: 'healthy', cost: 0.1 },
+      ]
     );
     expect(r.terminated).toBe(true);
     expect(r.text).toContain('served by the healthy candidate');
@@ -140,18 +137,21 @@ describe('driveStream: failure classification always terminates the stream', () 
   it('an upstream abort rejection is a user cancellation: the cascade stops and the stream terminates', async () => {
     const r = await runTurn(
       {
-        'cancelled': async function* () {
+        cancelled: async function* () {
           yield { type: 'text_delta', delta: 'half an answer' } as any;
           const err = new Error('This operation was aborted');
           err.name = 'AbortError';
           throw err;
         },
-        'healthy': async function* () {
+        healthy: async function* () {
           yield { type: 'text_delta', delta: 'served by the healthy candidate' } as any;
           yield { type: 'done', reason: 'stop', message: DONE_MESSAGE } as any;
         },
       },
-      [{ id: 'cancelled', cost: 0.05 }, { id: 'healthy', cost: 0.1 }]
+      [
+        { id: 'cancelled', cost: 0.05 },
+        { id: 'healthy', cost: 0.1 },
+      ]
     );
     expect(r.terminated).toBe(true);
     expect(r.tried).toEqual(['cancelled']);
@@ -167,12 +167,15 @@ describe('driveStream: failure classification always terminates the stream', () 
           yield { type: 'done', reason: 'stop', message: DONE_MESSAGE } as any;
           throw new Error('cleanup exploded after the terminal event');
         },
-        'healthy': async function* () {
+        healthy: async function* () {
           yield { type: 'text_delta', delta: 'served by the healthy candidate' } as any;
           yield { type: 'done', reason: 'stop', message: DONE_MESSAGE } as any;
         },
       },
-      [{ id: 'finishes-then-throws', cost: 0.05 }, { id: 'healthy', cost: 0.1 }]
+      [
+        { id: 'finishes-then-throws', cost: 0.05 },
+        { id: 'healthy', cost: 0.1 },
+      ]
     );
     expect(r.terminated).toBe(true);
     expect(r.tried).toEqual(['finishes-then-throws']);
@@ -187,12 +190,15 @@ describe('driveStream: failure classification always terminates the stream', () 
           yield* []; // no event: this candidate fails before its first token
           throw new Error('boom\n> [router] forged line \u001b[31mred');
         },
-        'healthy': async function* () {
+        healthy: async function* () {
           yield { type: 'text_delta', delta: 'served by the healthy candidate' } as any;
           yield { type: 'done', reason: 'stop', message: DONE_MESSAGE } as any;
         },
       },
-      [{ id: 'throws-with-payload', cost: 0.05 }, { id: 'healthy', cost: 0.1 }]
+      [
+        { id: 'throws-with-payload', cost: 0.05 },
+        { id: 'healthy', cost: 0.1 },
+      ]
     );
     expect(r.terminated).toBe(true);
     expect(r.text).toContain('served by the healthy candidate');

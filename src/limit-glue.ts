@@ -5,10 +5,19 @@
  * Pure code motion; closure state is reached through `d`.
  */
 
-import { isPaidCloudRateLimitFailure, isFreeTierDailyCapText, nextUtcMidnightMs } from './detection.ts';
+import {
+  isPaidCloudRateLimitFailure,
+  isFreeTierDailyCapText,
+  nextUtcMidnightMs,
+} from './detection.ts';
 import { routerLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
-import { recordBlocklistSuccess, activeBlocks, recordBlocklistFailure, formatBlockLogLine } from './model-blocklist.ts';
+import {
+  recordBlocklistSuccess,
+  activeBlocks,
+  recordBlocklistFailure,
+  formatBlockLogLine,
+} from './model-blocklist.ts';
 import { recordModelFailure, recordModelSuccess } from './model-health.ts';
 import { recordProviderSuccess } from './provider-breaker.ts';
 import { recordSessionErrorFromFailure } from './session-errors.ts';
@@ -77,12 +86,17 @@ export function createLimitGlue(d: LimitGlueDeps) {
   /** Text for `/router blocklist`: every active block with reason and re-probe time. */
   function formatBlocklist(): string {
     const blocked = activeBlocks(d.cache);
-    if (!blocked.length) return 'Blocklist: empty — no model has shown a permanent provider failure.';
+    if (!blocked.length)
+      return 'Blocklist: empty — no model has shown a permanent provider failure.';
     const days = (ms: number) => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
-    const lines = [`Blocklist (${blocked.length}) — re-probed automatically when the block expires`, ''];
+    const lines = [
+      `Blocklist (${blocked.length}) — re-probed automatically when the block expires`,
+      '',
+    ];
     for (const { ref, entry, reprobeInMs } of blocked) {
       const code = entry.code ? `HTTP ${entry.code}` : 'no HTTP code';
-      const detail = entry.reason === 'unknown-signature' ? `\n   signature: ${entry.signature}` : '';
+      const detail =
+        entry.reason === 'unknown-signature' ? `\n   signature: ${entry.signature}` : '';
       lines.push(
         `🚫 ${ref}\n   ${entry.reason} (${code}) · since ${new Date(entry.first_seen).toISOString().slice(0, 10)}` +
           ` · seen ${entry.occurrences}× · re-probe in ${days(reprobeInMs)}${detail}`
@@ -187,32 +201,32 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return d.rateLimitManager.limitSecs(ref);
   }
 
-/**
- * Locale-independent duration for narration: "45s", "4m", "2h 05m", "7d".
- * Deterministic by construction (no Intl, no locale digits).
- */
-function humanizeShortDuration(ms: number): string {
-  const s = Math.max(1, Math.round(ms / 1000));
-  if (s < 90) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 90) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 36) return `${h}h ${String(m % 60).padStart(2, '0')}m`;
-  return `${Math.round(h / 24)}d`;
-}
+  /**
+   * Locale-independent duration for narration: "45s", "4m", "2h 05m", "7d".
+   * Deterministic by construction (no Intl, no locale digits).
+   */
+  function humanizeShortDuration(ms: number): string {
+    const s = Math.max(1, Math.round(ms / 1000));
+    if (s < 90) return `${s}s`;
+    const m = Math.round(s / 60);
+    if (m < 90) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 36) return `${h}h ${String(m % 60).padStart(2, '0')}m`;
+    return `${Math.round(h / 24)}d`;
+  }
 
-/**
- * Locale-independent local wall-clock "HH:MM" (live finding 2026-10-03:
- * toLocaleString() rendered de-DE on one machine and en-US on another, and
- * the bare local time next to the UTC log timestamp read like a two-hour
- * gap when it was two minutes). Manual formatting is stable across hosts.
- */
-function formatLocalHm(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+  /**
+   * Locale-independent local wall-clock "HH:MM" (live finding 2026-10-03:
+   * toLocaleString() rendered de-DE on one machine and en-US on another, and
+   * the bare local time next to the UTC log timestamp read like a two-hour
+   * gap when it was two minutes). Manual formatting is stable across hosts.
+   */
+  function formatLocalHm(ms: number): string {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
 
-/**
+  /**
    * Builds the reset/backoff suffix for a rate-limit router-info
    * message. Prefers the parsed provider reset time (resetAtMs) when
    * available — the accurate case. Otherwise falls back to the router's own
@@ -228,7 +242,8 @@ function formatLocalHm(ms: number): string {
     // provider reset fabricates a time the provider never sent (claude-bridge
     // empty responses, live finding 2026-10-03: "resets 10/3/2026, 12:23:53
     // PM" — the bridge said nothing of the sort).
-    if (resetAtMs) return ` (resets in ${humanizeShortDuration(resetAtMs - Date.now())}, at ${formatLocalHm(resetAtMs)})`;
+    if (resetAtMs)
+      return ` (resets in ${humanizeShortDuration(resetAtMs - Date.now())}, at ${formatLocalHm(resetAtMs)})`;
     const secs = limitSecs(ref);
     if (secs <= 0) return '';
     return ` (backing off ${humanizeShortDuration(secs * 1000)}, until ${formatLocalHm(Date.now() + secs * 1000)})`;
@@ -269,7 +284,9 @@ function formatLocalHm(ms: number): string {
 
   // ── Price lookup (OpenRouter as oracle) ─────────────────────────────────
 
-  function lookupPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+  function lookupPrice(
+    ref: string
+  ): { input: number | 'unknown'; output: number | 'unknown' } | null {
     return metricsModule.lookupPrice(ref);
   }
 
@@ -279,5 +296,21 @@ function formatLocalHm(ms: number): string {
     return metricsModule.effCost(ref);
   }
 
-  return { getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage };
+  return {
+    getM,
+    costMux,
+    isLimited,
+    limitSecs,
+    effCost,
+    clearLimit,
+    recordOk,
+    observeFailure,
+    recordStreamFailure,
+    formatResetMsg,
+    limitFreeDayCap,
+    updateMetrics,
+    lookupPrice,
+    formatBlocklist,
+    getUsage,
+  };
 }

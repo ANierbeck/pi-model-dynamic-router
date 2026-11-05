@@ -97,6 +97,8 @@ describe('isStreamableRef — free-model refs require a configured provider', ()
       ...unconfigured,
       hasRegistryModel: () => true,
     };
-    expect(isStreamableRef('openrouter/qwen/qwen-2.5-7b-instruct:free', knownButUnconfigured)).toBe(false);
+    expect(isStreamableRef('openrouter/qwen/qwen-2.5-7b-instruct:free', knownButUnconfigured)).toBe(
+      false
+    );
   });
 });

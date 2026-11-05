@@ -20,24 +20,24 @@
  *    candidate list.
  */
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+
+import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import {
+  drainStream,
+  makeExtensionContext,
+  parkStateFiles,
+  routerStatePaths,
+} from './helpers/extension-harness.ts';
+import { doneEvent, testModelCost } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow2-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir(configOverride, 'router-overflow2-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -48,11 +48,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any, tmpDir);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
-
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -75,7 +71,8 @@ describe('estimateContextTokens: array message content', () => {
           provider: 'small-ctx-provider',
           id: 'claude-sonnet-4-6',
           api: 'small-api',
-          contextWindow: 8_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8_000,
+          cost: testModelCost(),
         };
         const modelRegistry = {
           getAvailable: () => [smallCtxModel],
@@ -85,7 +82,7 @@ describe('estimateContextTokens: array message content', () => {
         };
         const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
         await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+        await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
         // Array-shaped content, as Pi sends for tool turns. The old
@@ -133,13 +130,15 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 262_144,
+          cost: testModelCost(),
         };
         const streamSimple = vi.fn(() => {
           return (async function* () {
             yield {
               type: 'text_delta',
-              delta: 'Prompt contains 300000 tokens, too large for model with 262144 maximum context length',
+              delta:
+                'Prompt contains 300000 tokens, too large for model with 262144 maximum context length',
             };
             yield doneEvent();
           })();
@@ -152,7 +151,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         };
         const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
         await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+        await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'hi' }] };
@@ -184,7 +183,8 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 262_144,
+          cost: testModelCost(),
         };
         const streamSimple = vi.fn(() => (async function* () {})());
         const modelRegistry = {
@@ -195,7 +195,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         };
         const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
         await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+        await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'hi' }] };
@@ -233,7 +233,8 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
           provider: 'mistral',
           id: 'mistral-medium-3.5',
           api: 'mistral-conversations',
-          contextWindow: 262_144, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 262_144,
+          cost: testModelCost(),
         };
         const streamSimple = vi.fn(() => {
           return (async function* () {
@@ -255,7 +256,7 @@ describe('driveStream: runtime overflow detection (provider-reported)', () => {
         };
         const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
         await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+        await flushBackgroundScan();
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'hi' }] };

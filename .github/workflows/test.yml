@@ -30,6 +30,13 @@ jobs:
     - name: Lint (ratcheting baseline)
       run: npm run lint
 
+    # Format gate (docs/plans/2026-11-05-prettier-formatting.md, owner
+    # decision 3: CI and pre-push hook). Same reasoning as the lint gate:
+    # `test` is already a required check, so the gate bites here without a
+    # ruleset change.
+    - name: Check formatting (Prettier)
+      run: npm run format:check
+
     - name: Check test coverage
       run: npm run test:coverage
 

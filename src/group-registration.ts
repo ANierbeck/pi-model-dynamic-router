@@ -12,7 +12,12 @@ import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { buildOllamaProviderModels } from './ollama-context.ts';
 import { PI_BUILTIN_PROVIDER_IDS } from './providers.ts';
 import type { Cache, Config, Metrics } from './types.ts';
-import type { Model, Context, SimpleStreamOptions, AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import type {
+  Model,
+  Context,
+  SimpleStreamOptions,
+  AssistantMessageEventStream,
+} from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 /**
@@ -25,9 +30,13 @@ interface GroupRegistrationDeps {
   readonly cache: Cache;
   readonly cfg: Config;
   readonly getM: (ref: string) => Metrics;
-  readonly groupStream: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
+  readonly groupStream: (
+    model: Model<any>,
+    context: Context,
+    options?: SimpleStreamOptions
+  ) => AssistantMessageEventStream;
   readonly pi: ExtensionAPI;
-  readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
+  readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly sessionCtx: any;
   /** Real context window of a model ref (registry first, scan cache second), or null if unknown. */
   readonly contextWindow: (ref: string) => number | null;
@@ -64,10 +73,16 @@ export const VIRTUAL_GROUP_WINDOW_FLOOR = 32_768;
  * for the current context, so the group can carry whatever its biggest
  * member can. Pi's 128k default when no candidate window is known.
  */
-export function virtualGroupContextWindow(refs: readonly string[], lookup: (ref: string) => number | null): number {
+export function virtualGroupContextWindow(
+  refs: readonly string[],
+  lookup: (ref: string) => number | null
+): number {
   const known = refs.map(lookup).filter((cw): cw is number => typeof cw === 'number' && cw > 0);
   if (known.length === 0) return PI_DEFAULT_CONTEXT_WINDOW;
-  return Math.max(VIRTUAL_GROUP_WINDOW_FLOOR, Math.min(VIRTUAL_GROUP_CONTEXT_CAP, Math.max(...known)));
+  return Math.max(
+    VIRTUAL_GROUP_WINDOW_FLOOR,
+    Math.min(VIRTUAL_GROUP_CONTEXT_CAP, Math.max(...known))
+  );
 }
 
 export function createGroupRegistration(rt: GroupRegistrationDeps) {
@@ -97,7 +112,8 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
       if (res) resolvedByGroup.set(groupName, res);
     }
     const staticCandidates = new Set<string>();
-    for (const res of resolvedByGroup.values()) for (const ref of res.candidates) staticCandidates.add(ref);
+    for (const res of resolvedByGroup.values())
+      for (const ref of res.candidates) staticCandidates.add(ref);
 
     for (const [groupName, groupCfg] of Object.entries(rt.cfg.model_groups)) {
       // `method: 'dynamic'` groups never resolve here — resolve() always
@@ -140,13 +156,15 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         continue;
       }
 
-      const res = isDynamicGroup ? null : resolvedByGroup.get(groupName) ?? null;
+      const res = isDynamicGroup ? null : (resolvedByGroup.get(groupName) ?? null);
       const resolvedRef = res?.selected ?? 'none';
       const contextWindow = virtualGroupContextWindow(
         isDynamicGroup ? [...staticCandidates] : (res?.candidates ?? []),
-        rt.contextWindow,
+        rt.contextWindow
       );
-      const label = isDynamicGroup ? `${groupName} → auto-classify` : `${groupName} → ${resolvedRef}`;
+      const label = isDynamicGroup
+        ? `${groupName} → auto-classify`
+        : `${groupName} → ${resolvedRef}`;
 
       (rt.pi as any).registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
@@ -163,15 +181,19 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             contextWindow,
             maxTokens: 64_000,
           },
-          ...(isDynamicGroup ? [{
-            id: `${groupName}:use-static`,
-            name: `${groupName} → auto-classify (static fallback allowed)`,
-            reasoning: true,
-            input: ['text', 'image'] as any,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            contextWindow,
-            maxTokens: 64_000,
-          }] : []),
+          ...(isDynamicGroup
+            ? [
+                {
+                  id: `${groupName}:use-static`,
+                  name: `${groupName} → auto-classify (static fallback allowed)`,
+                  reasoning: true,
+                  input: ['text', 'image'] as any,
+                  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                  contextWindow,
+                  maxTokens: 64_000,
+                },
+              ]
+            : []),
         ],
       });
       registeredGroupProviderNames.add(groupName);
@@ -261,8 +283,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
     //   - if the registry already knows every scanned model, NOTHING is
     //     registered (idempotent — models.json stays the sole overlay).
     try {
-      const ollamaModels = (rt.cache.available_models ?? [])
-        .filter((m) => m.provider === 'ollama');
+      const ollamaModels = (rt.cache.available_models ?? []).filter((m) => m.provider === 'ollama');
       if (ollamaModels.length > 0) {
         // Pi's current Ollama models: models.json and/or a prior
         // registration. getAll() is chat-only (ADR-0019) — fine here:
@@ -314,7 +335,9 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             api: 'openai-completions',
             models: providerModels,
           });
-          routerLog(`[router] Registered Ollama with real contextWindow (+ num_ctx metadata) for ${providerModels.length} model(s) (Pi did not know Ollama)`);
+          routerLog(
+            `[router] Registered Ollama with real contextWindow (+ num_ctx metadata) for ${providerModels.length} model(s) (Pi did not know Ollama)`
+          );
         } else if (newScanModels.length > 0) {
           // MERGE: round-trip pi-known models AS-IS (ADR-0019 field
           // allow-list — applyExtension would otherwise drop the
@@ -340,10 +363,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
             ...(m.providerOptions !== undefined ? { providerOptions: m.providerOptions } : {}),
           }));
-          const providerModels = [
-            ...existingModels,
-            ...buildOllamaProviderModels(newScanModels),
-          ];
+          const providerModels = [...existingModels, ...buildOllamaProviderModels(newScanModels)];
           (rt.pi as any).registerProvider('ollama', {
             name: 'Ollama (local)',
             baseUrl: 'http://localhost:11434/v1',
@@ -351,7 +371,9 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
             api: 'openai-completions',
             models: providerModels,
           });
-          routerLog(`[router] Merged Ollama registration: kept ${existingModels.length} pi-known model(s), added ${newScanModels.length} scan-only model(s)`);
+          routerLog(
+            `[router] Merged Ollama registration: kept ${existingModels.length} pi-known model(s), added ${newScanModels.length} scan-only model(s)`
+          );
         }
         // else: the registry already knows every scanned model — register
         // NOTHING (pre-fix this re-registered and wiped models.json).

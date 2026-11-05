@@ -43,7 +43,11 @@ describe('textOf', () => {
   });
 
   it('falls back to the object tag when toJSON throws', () => {
-    const hostile = { toJSON() { throw new Error('nope'); } };
+    const hostile = {
+      toJSON() {
+        throw new Error('nope');
+      },
+    };
     expect(textOf(hostile)).toBe('[object Object]');
   });
 

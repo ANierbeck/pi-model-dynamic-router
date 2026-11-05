@@ -9,21 +9,48 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DYNAMIC_CONFIG_RESYNC_KEYS } from '../src/dynamic-config.ts';
-import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
+import {
+  flushBackgroundScan,
+  writeScanCacheFixture,
+  removeNoOpScanCacheDefault,
+} from './helpers/noop-scan-cache.ts';
+import { writeNoOpScanCache } from './helpers/noop-scan-cache.ts';
 import { beforeEach } from 'vitest';
 import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';
 import { afterEach } from 'vitest';
 import { applyGroupFilters } from '../src/routing.ts';
-import { buildModelsWithMetadata, buildStaticFreeModelsLookup, filterModelsForGroup } from '../src/dynamic-config.ts';
-import { setConfig, setCache, setGdpval, setModelMap, setMetrics, setModelRegistry, getModelRegistry } from '../src/metrics.ts';
+import {
+  buildModelsWithMetadata,
+  buildStaticFreeModelsLookup,
+  filterModelsForGroup,
+} from '../src/dynamic-config.ts';
+import {
+  setConfig,
+  setCache,
+  setGdpval,
+  setModelMap,
+  setMetrics,
+  setModelRegistry,
+  getModelRegistry,
+} from '../src/metrics.ts';
 import type { Group } from '../src/types.ts';
 import { test, beforeAll, afterAll } from 'vitest';
 import { lookupGdp } from '../src/metrics.js';
-import { drainStream, makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+import {
+  makeSessionCtx,
+  drainStream,
+  makeExtensionContext,
+  routerStatePaths,
+} from './helpers/extension-harness.ts';
+import {
+  doneEvent,
+  paidCloudModel,
+  testModelCost,
+  hermeticCacheFlags,
+} from './helpers/stream-fixtures.ts';
+import { bootProjectDir, rmTmpDir, teardownBoot } from './helpers/router-env.ts';
 
 describe('cache-session-reload', () => {
   // test/cache-session-reload.test.ts
@@ -33,26 +60,22 @@ describe('cache-session-reload', () => {
   // re-read was lost, and the next save overwrote what another Pi process had
   // written in the meantime (e.g. a blocklist entry).
 
-
   describe('session_start re-reads the scan cache into the shared object', () => {
     it('sees a blocklist entry another process wrote between two sessions', async () => {
       const stateDir = process.env.PI_ROUTER_STATE_DIR!;
       const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
-      fs.writeFileSync(
-        cachePath,
-        JSON.stringify({
-          lastScanTimestamp: Date.now(),
-          dynamic_config_expected: false,
-          gdpval_scraped: true,
-          models_cached: new Date().toISOString(),
-          available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
-          gdpval_scores: { 'model-a': 800 },
-        })
-      );
+      writeScanCacheFixture(cachePath, {
+        dynamic_config_expected: false,
+        gdpval_scraped: true,
+        models_cached: new Date().toISOString(),
+        available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
+        gdpval_scores: { 'model-a': 800 },
+      });
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cache-reload-'));
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
       const originalFetch = globalThis.fetch;
-      globalThis.fetch = (() => Promise.reject(new Error('network disabled in test'))) as typeof fetch;
+      globalThis.fetch = (() =>
+        Promise.reject(new Error('network disabled in test'))) as typeof fetch;
       try {
         vi.resetModules();
         const mod = await import('../index.ts');
@@ -69,8 +92,13 @@ describe('cache-session-reload', () => {
             onHandlers[event] = handler;
           }),
         });
-        const model = { provider: 'healthy-provider', id: 'model-a', api: 'openai-completions', contextWindow: 128_000,
-          cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 } };
+        const model = {
+          provider: 'healthy-provider',
+          id: 'model-a',
+          api: 'openai-completions',
+          contextWindow: 128_000,
+          cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+        };
         const modelRegistry = {
           getAvailable: () => [model],
           find: (p: string, id: string) => (p === model.provider && id === model.id ? model : null),
@@ -86,7 +114,14 @@ describe('cache-session-reload', () => {
         const onDisk = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
         const now = Date.now();
         onDisk.model_blocklist = {
-          'other/blocked-model': { reason: 'decommissioned', code: 404, signature: 'x', first_seen: now, last_seen: now, occurrences: 1 },
+          'other/blocked-model': {
+            reason: 'decommissioned',
+            code: 404,
+            signature: 'x',
+            first_seen: now,
+            last_seen: now,
+            occurrences: 1,
+          },
         };
         fs.writeFileSync(cachePath, JSON.stringify(onDisk));
 
@@ -97,12 +132,11 @@ describe('cache-session-reload', () => {
       } finally {
         cwdSpy.mockRestore();
         globalThis.fetch = originalFetch;
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        rmTmpDir(tmpDir);
       }
     });
   });
 });
-
 
 describe('dynamic-config-resync-keys', () => {
   /**
@@ -252,7 +286,11 @@ describe('dynamic-config-resync-keys', () => {
         // only this iteration's key differs, plus the model_groups marker that
         // makes load() accept it as a valid dynamic config.
         const staleDynamic: Record<string, unknown> = {
-          _dynamic: { generated_at: new Date(0).toISOString(), source: 'router scan', model_count: 1 },
+          _dynamic: {
+            generated_at: new Date(0).toISOString(),
+            source: 'router scan',
+            model_count: 1,
+          },
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         };
         for (const k of DYNAMIC_CONFIG_RESYNC_KEYS) staleDynamic[k] = STALE_VALUES[k];
@@ -262,19 +300,15 @@ describe('dynamic-config-resync-keys', () => {
         // us), one scored model so the forced regeneration has something to
         // write, cached LLM match so populateLlmMatches early-returns.
         fs.mkdirSync(path.dirname(scanCachePath), { recursive: true });
-        fs.writeFileSync(
-          scanCachePath,
-          JSON.stringify({
-            lastScanTimestamp: Date.now(),
-            gdpval_scraped: true,
-            models_cached: new Date().toISOString(),
-            dynamic_config_expected: true,
-            available_models: [{ id: 'paid-model', provider: 'paid-cloud-provider', cost_per_m: 0 }],
-            gdpval_scores: { 'paid-model-scored': 1000 },
-            model_score_cache: { 'paid-cloud-provider/paid-model': 'paid-model-scored' },
-            openrouter_pricing: {},
-          })
-        );
+        writeScanCacheFixture(scanCachePath, {
+          gdpval_scraped: true,
+          models_cached: new Date().toISOString(),
+          dynamic_config_expected: true,
+          available_models: [{ id: 'paid-model', provider: 'paid-cloud-provider', cost_per_m: 0 }],
+          gdpval_scores: { 'paid-model-scored': 1000 },
+          model_score_cache: { 'paid-cloud-provider/paid-model': 'paid-model-scored' },
+          openrouter_pricing: {},
+        });
 
         // Network stays off for the whole test (gdpval scrape + any probe).
         const originalFetch = globalThis.fetch;
@@ -301,13 +335,7 @@ describe('dynamic-config-resync-keys', () => {
           };
           defaultExport(pi);
 
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000,
-            cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelRegistry = {
             getAvailable: () => [paidModel],
             find: (_p: string, modelId: string) => (modelId === 'paid-model' ? paidModel : null),
@@ -339,7 +367,7 @@ describe('dynamic-config-resync-keys', () => {
         } finally {
           globalThis.fetch = originalFetch;
           cwdSpy.mockRestore();
-          fs.rmSync(tmpDir, { recursive: true, force: true });
+          rmTmpDir(tmpDir);
           fs.rmSync(dynamicConfigPath, { force: true });
           fs.rmSync(scanCachePath, { force: true });
           if (hadDyn) fs.renameSync(`${dynamicConfigPath}${bakSuffix}`, dynamicConfigPath);
@@ -349,7 +377,6 @@ describe('dynamic-config-resync-keys', () => {
     });
   }
 });
-
 
 describe('dynamic-config-staleness', () => {
   /**
@@ -372,15 +399,12 @@ describe('dynamic-config-staleness', () => {
 
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-
   async function withStaleDynamicConfig(
     staleDynamicConfig: Record<string, unknown>,
     projectOverride: Record<string, unknown>,
     fn: (defaultExport: any) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-staleness-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(projectOverride));
+    const { tmpDir } = bootProjectDir(projectOverride, 'router-staleness-');
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.staleness-bak`;
@@ -403,10 +427,10 @@ describe('dynamic-config-staleness', () => {
       await fn(mod.default as any);
     } finally {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
       fs.rmSync(dynamicConfigPath, { force: true });
       if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
+      removeNoOpScanCacheDefault();
 
       if (hadCache) fs.renameSync(cacheBak, scanCachePath);
     }
@@ -416,7 +440,11 @@ describe('dynamic-config-staleness', () => {
     it('excludes a model per the static override even though the persisted dynamic file has no exclude rule', async () => {
       await withStaleDynamicConfig(
         {
-          _dynamic: { generated_at: new Date(0).toISOString(), source: 'router scan', model_count: 0 },
+          _dynamic: {
+            generated_at: new Date(0).toISOString(),
+            source: 'router scan',
+            model_count: 0,
+          },
           model_groups: {
             standard: { method: 'tiered', min_gdpval: 0, fallback_groups: [] },
             dynamic: { method: 'dynamic', min_gdpval: 0, fallback_groups: [] },
@@ -443,8 +471,16 @@ describe('dynamic-config-staleness', () => {
           // here. 'test-provider' is also not in PROVIDER_MAP, so isRefUsable()
           // doesn't require a mocked API key.
           const models: Record<string, any> = {
-            'test-provider/blocked-model-x': { provider: 'test-provider', id: 'blocked-model-x', contextWindow: 128_000 },
-            'test-provider/good-model-y': { provider: 'test-provider', id: 'good-model-y', contextWindow: 128_000 },
+            'test-provider/blocked-model-x': {
+              provider: 'test-provider',
+              id: 'blocked-model-x',
+              contextWindow: 128_000,
+            },
+            'test-provider/good-model-y': {
+              provider: 'test-provider',
+              id: 'good-model-y',
+              contextWindow: 128_000,
+            },
           };
           const streamSimple = vi.fn(() => (async function* () {})()); // always empty — driveStream tries every candidate
           const modelRegistry = {
@@ -455,13 +491,15 @@ describe('dynamic-config-staleness', () => {
           };
           const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
           await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+          await flushBackgroundScan();
 
           // A model-type HINT with an unresolvable target routes straight to the
           // auto-appended-fallback-candidates code path, which is where
           // cfg.exclude is applied.
           const groupModel = { provider: 'dynamic', id: 'dynamic' };
-          const context: any = { messages: [{ role: 'user', content: 'HINT: some-unresolvable-model' }] };
+          const context: any = {
+            messages: [{ role: 'user', content: 'HINT: some-unresolvable-model' }],
+          };
 
           await drainStream(defaultExport.groupStream(groupModel, context, {}));
 
@@ -477,7 +515,11 @@ describe('dynamic-config-staleness', () => {
     it('uses the static override timeout, not the stale value baked into the dynamic file', async () => {
       await withStaleDynamicConfig(
         {
-          _dynamic: { generated_at: new Date(0).toISOString(), source: 'router scan', model_count: 0 },
+          _dynamic: {
+            generated_at: new Date(0).toISOString(),
+            source: 'router scan',
+            model_count: 0,
+          },
           model_groups: { standard: { method: 'tiered', min_gdpval: 0, fallback_groups: [] } },
           model_metrics: {},
           // Stale timeout so long it would never abort a 500ms-delayed stream —
@@ -524,7 +566,7 @@ describe('dynamic-config-staleness', () => {
           };
           const ctx: any = { modelRegistry, cwd: '/tmp', ui: { setFooter: vi.fn() } };
           await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+          await flushBackgroundScan();
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'hi' }] };
@@ -543,7 +585,6 @@ describe('dynamic-config-staleness', () => {
   });
 });
 
-
 describe('get-top-models-total', () => {
   // test/get-top-models-total.test.ts
   // Regression + feature tests for the "…+N more" display footer in /router status.
@@ -558,7 +599,6 @@ describe('get-top-models-total', () => {
   // The footer should show the total count *after* the same filters/sorts/dedup that
   // produce the top-N slice (i.e., the count of models that would be shown if the user
   // asked for all).
-
 
   beforeEach(() => {
     metricsModule.setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
@@ -590,7 +630,10 @@ describe('get-top-models-total', () => {
       const router = makeRouter(cfg, {});
       // Stub the entire getTopModels to return a predictable shape
       // @ts-expect-error override private method
-      router.getTopModels = (_groupName: string, _n: number) => ({ models: [{ ref: 'a', limited: false, rank: 0 }], total: 7 });
+      router.getTopModels = (_groupName: string, _n: number) => ({
+        models: [{ ref: 'a', limited: false, rank: 0 }],
+        total: 7,
+      });
       const { models: top, total } = router.getTopModels('testgroup', 5);
       expect(top.length).toBe(1);
       expect(total).toBe(7);
@@ -639,13 +682,11 @@ describe('get-top-models-total', () => {
   });
 });
 
-
 describe('group-filter-parity', () => {
   // test/group-filter-parity.test.ts
   // ADR-0010: the persist path (filterModelsForGroup, fed with precomputed
   // per-model values) and the live path (applyGroupFilters, reading the
   // metrics module) must admit the same models for the same data.
-
 
   const cfg: Config = {
     model_groups: {},
@@ -684,8 +725,15 @@ describe('group-filter-parity', () => {
     setModelMap({}, []);
     setMetrics({});
     setGdpval({
-      cheap: 400, expensive: 900, 'listed-free': 500, 'tagged': 450, 'tagged:free': 450,
-      mystery: 600, unpriced: 800, 'local-model': 300, 'scan-zero-alias': 700,
+      cheap: 400,
+      expensive: 900,
+      'listed-free': 500,
+      tagged: 450,
+      'tagged:free': 450,
+      mystery: 600,
+      unpriced: 800,
+      'local-model': 300,
+      'scan-zero-alias': 700,
     });
     setCache({
       available_models: [
@@ -717,15 +765,25 @@ describe('group-filter-parity', () => {
     it.each(GROUPS)('%s', (_name, g) => {
       const { staticFreeModelsLookup } = buildStaticFreeModelsLookup(cfg);
       const meta = buildModelsWithMetadata(REFS, cfg, staticFreeModelsLookup, new Set());
-      const persist = filterModelsForGroup(meta, g, cfg).map((m) => m.ref).sort();
-      const live = applyGroupFilters(meta.map((m) => m.ref), g, cfg).sort();
+      const persist = filterModelsForGroup(meta, g, cfg)
+        .map((m) => m.ref)
+        .sort();
+      const live = applyGroupFilters(
+        meta.map((m) => m.ref),
+        g,
+        cfg
+      ).sort();
       expect(persist).toEqual(live);
     });
 
     it('treats a scan-$0 model with a registry price as priced, not free (registry-first)', () => {
       expect(applyGroupFilters(REFS, GROUPS[0][1], cfg)).not.toContain('payg/scan-zero-alias');
-      expect(applyGroupFilters(REFS, { method: 'best', max_cost: 1 }, cfg)).not.toContain('payg/scan-zero-alias');
-      expect(applyGroupFilters(REFS, { method: 'best', max_cost_per_m: 1 }, cfg)).not.toContain('payg/scan-zero-alias');
+      expect(applyGroupFilters(REFS, { method: 'best', max_cost: 1 }, cfg)).not.toContain(
+        'payg/scan-zero-alias'
+      );
+      expect(applyGroupFilters(REFS, { method: 'best', max_cost_per_m: 1 }, cfg)).not.toContain(
+        'payg/scan-zero-alias'
+      );
     });
 
     it('keeps the unpriced cloud subscription model out of $0 and per-million-capped groups', () => {
@@ -736,7 +794,6 @@ describe('group-filter-parity', () => {
     });
   });
 });
-
 
 describe('max-cost-filter', () => {
   // test/max-cost-filter.test.ts
@@ -750,7 +807,6 @@ describe('max-cost-filter', () => {
   // Fix: Models with unknown cost are now INCLUDED if their provider is not
   // pay_per_token (i.e. subscription or local). For pay_per_token providers,
   // unknown cost means we genuinely don't know the price → exclude to be safe.
-
 
   function makeRouter(cfg: Config, cache: Cache): Router {
     metricsModule.setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {} });
@@ -773,7 +829,7 @@ describe('max-cost-filter', () => {
       { id: 'qwen3.5', provider: 'ollama', cost_per_m: 0 },
     ],
     gdpval_scores: {
-      'devstral': 585,
+      devstral: 585,
       'mistral-medium-3-5': 933,
       'qwen3-4b': 400,
       'nemotron-ultra': 1162,
@@ -789,8 +845,7 @@ describe('max-cost-filter', () => {
     usage_log: [],
     benchmarks: {},
     budget_cache: {},
-    gdpval_scraped: true,
-    lastScanTimestamp: Date.now(),
+    ...hermeticCacheFlags(),
     models_cached: '',
   } as any;
 
@@ -848,7 +903,6 @@ describe('max-cost-filter', () => {
   });
 });
 
-
 describe('router-cache-refresh', () => {
   // test/router-cache-refresh.test.ts
   // Regression guard: the Router must follow index.ts's cache reassignments.
@@ -859,7 +913,6 @@ describe('router-cache-refresh', () => {
   // notified, so it kept reading the object it was constructed with — every
   // cache-derived decision (discovered models, exclude lookups, dedup, model
   // health) silently operated on stale data for the rest of the session.
-
 
   const CFG: Config = {
     model_groups: {
@@ -938,7 +991,6 @@ describe('router-cache-refresh', () => {
   });
 });
 
-
 describe('orchestrator-router-context-freshness', () => {
   /**
    * Regression test for the "running in circles" / self-contradictory
@@ -980,14 +1032,11 @@ describe('orchestrator-router-context-freshness', () => {
 
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
   ) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ctx-freshness-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
+    const { tmpDir } = bootProjectDir(configOverride, 'router-ctx-freshness-');
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
     const dynBak = `${dynamicConfigPath}.ctx-freshness-bak`;
@@ -1004,10 +1053,11 @@ describe('orchestrator-router-context-freshness', () => {
       const mod = await import('../index.ts');
       await fn(mod.default as any, tmpDir);
     } finally {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
+      teardownBoot({
+        cwdSpy,
+        tmpDir,
+        dynRestore: { bak: dynBak, path: dynamicConfigPath, had: hadDyn },
+      });
       if (hadCache) fs.renameSync(cacheBak, scanCachePath);
     }
   }
@@ -1028,12 +1078,7 @@ describe('orchestrator-router-context-freshness', () => {
           // StreamOrchestrator, capturing whatever `router` is at this point.
           defaultExport(pi);
 
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelsByRef: Record<string, any> = {
             'paid-cloud-provider/paid-model': paidModel,
           };
@@ -1058,7 +1103,7 @@ describe('orchestrator-router-context-freshness', () => {
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+          const ctx: any = makeSessionCtx({ modelRegistry, cwd: tmpDir });
           // session_start calls load() a SECOND time (site #2) — this is what
           // reassigns router/rateLimitManager/cacheManager to new instances
           // AFTER StreamOrchestrator already captured the old ones. Every real
@@ -1115,7 +1160,6 @@ describe('orchestrator-router-context-freshness', () => {
   });
 });
 
-
 describe('sticky-model-regression', () => {
   /**
    * Regression test for the "sticky model" bug (introduced in commit 818621a,
@@ -1146,11 +1190,13 @@ describe('sticky-model-regression', () => {
   // Move both aside for the duration of this test so it exercises real dynamic
   // discovery (allDiscoveredRefs()) purely from the mocked modelRegistry,
   // deterministically.
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const dynamicConfigPath = path.join(
+    process.env.PI_ROUTER_STATE_DIR!,
+    'router-config.dynamic.json'
+  );
   const dynamicConfigBackupPath = `${dynamicConfigPath}.regression-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
   const scanCacheBackupPath = `${scanCachePath}.regression-test-bak`;
-
 
   describe('Sticky model regression (driveStream must never call pi.setModel)', () => {
     let mod: typeof import('../index.ts');
@@ -1161,7 +1207,6 @@ describe('sticky-model-regression', () => {
     let hadCache: boolean;
 
     beforeEach(async () => {
-
       hadDyn = fs.existsSync(dynamicConfigPath);
       if (hadDyn) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
       hadCache = fs.existsSync(scanCachePath);
@@ -1194,10 +1239,10 @@ describe('sticky-model-regression', () => {
 
     afterEach(() => {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
       // Remove the no-op scan-cache (hadCache reflects the ORIGINAL file,
       // restored below if it existed).
-      removeNoOpScanCache(scanCachePath);
+      removeNoOpScanCacheDefault();
       if (hadDyn) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       if (hadCache) fs.renameSync(scanCacheBackupPath, scanCachePath);
     });
@@ -1228,13 +1273,13 @@ describe('sticky-model-regression', () => {
           provider: 'fake-provider-a',
           id: 'claude-sonnet-4-6',
           api: 'fake-api',
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         },
         'fake-provider-b/claude-opus-4-6': {
           provider: 'fake-provider-b',
           id: 'claude-opus-4-6',
           api: 'fake-api',
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         },
       };
 
@@ -1260,7 +1305,7 @@ describe('sticky-model-regression', () => {
         ui: { setFooter: vi.fn() },
       };
       await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+      await flushBackgroundScan();
 
       const groupModel = { provider: 'standard', id: 'standard' };
       const context: any = { messages: [{ role: 'user', content: 'hello' }] };
@@ -1279,7 +1324,6 @@ describe('sticky-model-regression', () => {
   });
 });
 
-
 describe('routing', () => {
   describe('lookupGdp built-in tests', () => {
     beforeAll(() => {
@@ -1287,12 +1331,12 @@ describe('routing', () => {
         model_groups: {},
         model_metrics: {},
         gdpval_builtin: {
-          "mistral-medium-3-5": 665,
-          "magistral-small": 669,
-          "magistral-medium": 665,
-          "devstral": 585,
-          "codestral-latest": 520
-        }
+          'mistral-medium-3-5': 665,
+          'magistral-small': 669,
+          'magistral-medium': 665,
+          devstral: 585,
+          'codestral-latest': 520,
+        },
       });
     });
 
@@ -1301,18 +1345,18 @@ describe('routing', () => {
     });
 
     test('lookupGdp returns correct built-in score for magistral-small (>= 600 threshold)', () => {
-      const score = lookupGdp("magistral-small");
+      const score = lookupGdp('magistral-small');
       expect(score).toBeGreaterThanOrEqual(600);
     });
 
     test('lookupGdp returns exact built-in score for mistral-medium-3-5 (=== 665)', () => {
-      const score = lookupGdp("mistral-medium-3-5");
+      const score = lookupGdp('mistral-medium-3-5');
       expect(score).toBeGreaterThanOrEqual(600);
       expect(score).toBe(665);
     });
 
     test('lookupGdp returns correct built-in score for mistral/mistral-medium-3.5', () => {
-      const score = lookupGdp("mistral/mistral-medium-3.5");
+      const score = lookupGdp('mistral/mistral-medium-3.5');
       expect(score).toBeGreaterThanOrEqual(600);
     });
   });

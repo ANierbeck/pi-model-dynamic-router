@@ -33,11 +33,26 @@ function rec(slug: string, fields: Record<string, number | null>): string {
 
 const PAGE = [
   '{"slug":"gdpval-aa","initialModels":[',
-  rec('opus-like', { intelligenceIndex: 58.4, omniscience: 48.1, hleDiamond: 0.679, briefcaseElo: 1800.51 }),
+  rec('opus-like', {
+    intelligenceIndex: 58.4,
+    omniscience: 48.1,
+    hleDiamond: 0.679,
+    briefcaseElo: 1800.51,
+  }),
   ',',
-  rec('sonnet-like', { intelligenceIndex: 54.2, omniscience: 30.5, hleDiamond: 0.533, briefcaseElo: 1813.57 }),
+  rec('sonnet-like', {
+    intelligenceIndex: 54.2,
+    omniscience: 30.5,
+    hleDiamond: 0.533,
+    briefcaseElo: 1813.57,
+  }),
   ',',
-  rec('no-hle-diamond', { intelligenceIndex: 59.4, omniscience: 53.5, hleDiamond: null, briefcaseElo: 1610.19 }),
+  rec('no-hle-diamond', {
+    intelligenceIndex: 59.4,
+    omniscience: 53.5,
+    hleDiamond: null,
+    briefcaseElo: 1610.19,
+  }),
   ',',
   rec('no-intelligence-index', { omniscience: 53.5, hleDiamond: 0.6, briefcaseElo: 1500 }),
   ',',
@@ -113,9 +128,21 @@ const CONFIG = {
     planning: { method: 'best', min_gdpval: 1700, score_by: 'reasoning', fallback_groups: [] },
   },
   model_metrics: {
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 2.0e-6, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-haiku-5-5': { cost_per_m: 1.0e-6, throughput_tps: 100, avg_latency_ms: 1000 },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 2.0e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 1.5e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-haiku-5-5': {
+      cost_per_m: 1.0e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
   },
   providers: {},
   gdpval_builtin: { 'claude-opus-5-5': 1900, 'claude-sonnet-5-5': 1844, 'claude-haiku-5-5': 1720 },
@@ -137,12 +164,20 @@ describe('ranking by the reasoning column', () => {
     metricsModule.setConfig(CONFIG);
     metricsModule.setCache({ available_models: [], capability_profiles: PROFILES } as any);
     metricsModule.setModelRegistry({ find: () => undefined } as any);
-    router = new RoutingRouter(CONFIG, { available_models: [], capability_profiles: PROFILES } as any, new Map());
+    router = new RoutingRouter(
+      CONFIG,
+      { available_models: [], capability_profiles: PROFILES } as any,
+      new Map()
+    );
   });
 
   it('lookupCapability resolves the column; absent is null, never 0', () => {
-    expect(metricsModule.lookupCapability('claude-bridge/claude-opus-5-5', 'reasoning')).toBe(56.02);
-    expect(metricsModule.lookupCapability('claude-bridge/claude-haiku-5-5', 'reasoning')).toBeNull();
+    expect(metricsModule.lookupCapability('claude-bridge/claude-opus-5-5', 'reasoning')).toBe(
+      56.02
+    );
+    expect(
+      metricsModule.lookupCapability('claude-bridge/claude-haiku-5-5', 'reasoning')
+    ).toBeNull();
   });
 
   it('calculateScore uses the column when present and the GDPval fallback when not', () => {
@@ -158,9 +193,13 @@ describe('ranking by the reasoning column', () => {
 
   it('ranks a model without the column after every profiled one', () => {
     const sorted = router.sortBy(
-      ['claude-bridge/claude-haiku-5-5', 'claude-bridge/claude-sonnet-5-5', 'claude-bridge/claude-opus-5-5'],
+      [
+        'claude-bridge/claude-haiku-5-5',
+        'claude-bridge/claude-sonnet-5-5',
+        'claude-bridge/claude-opus-5-5',
+      ],
       'best',
-      'reasoning',
+      'reasoning'
     );
     expect(sorted).toEqual([
       'claude-bridge/claude-opus-5-5',

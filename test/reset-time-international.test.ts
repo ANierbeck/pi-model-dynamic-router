@@ -109,8 +109,12 @@ describe('safety pins (unchanged contract — green at birth, deliberately)', ()
   it('plain GMT / UTC / MESZ still resolve (the lookahead must not eat the named zones)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-04T08:00:00Z'));
-    expect(parseResetAtMs('resets Oct 5, 2026, 12:37:00 PM GMT')).toBe(Date.parse('2026-10-05T12:37:00Z'));
-    expect(parseResetAtMs('resets 5. Okt. 2026, 12:37:00 MESZ')).toBe(Date.parse('2026-10-05T10:37:00Z'));
+    expect(parseResetAtMs('resets Oct 5, 2026, 12:37:00 PM GMT')).toBe(
+      Date.parse('2026-10-05T12:37:00Z')
+    );
+    expect(parseResetAtMs('resets 5. Okt. 2026, 12:37:00 MESZ')).toBe(
+      Date.parse('2026-10-05T10:37:00Z')
+    );
   });
 
   it('a nonsensical offset is rejected', () => {

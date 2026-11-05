@@ -33,13 +33,20 @@ function cacheWith(...models: ReturnType<typeof ollama>[]): Cache {
 
 /** Answers every probe case with an accepted category (case-aware, like the cloud probe test). */
 function goodReply(prompt: string): string {
-  if (prompt.includes('What is in this file?')) return JSON.stringify({ category: 'simple', reason: 'r', confidence: 0.9 });
-  if (prompt.includes('Fix the typo in line 3')) return JSON.stringify({ category: 'code_simple', reason: 'r', confidence: 0.9 });
+  if (prompt.includes('What is in this file?'))
+    return JSON.stringify({ category: 'simple', reason: 'r', confidence: 0.9 });
+  if (prompt.includes('Fix the typo in line 3'))
+    return JSON.stringify({ category: 'code_simple', reason: 'r', confidence: 0.9 });
   return JSON.stringify({ category: 'simple', reason: 'r', confidence: 0.9 });
 }
 
-function deps(impl: (model: string, prompt: string) => Promise<string>): LocalProbeDeps & { callOllama: ReturnType<typeof vi.fn> } {
-  return { callOllama: vi.fn(async (m: string, p: string) => impl(m, p)), isAvailable: async () => true };
+function deps(
+  impl: (model: string, prompt: string) => Promise<string>
+): LocalProbeDeps & { callOllama: ReturnType<typeof vi.fn> } {
+  return {
+    callOllama: vi.fn(async (m: string, p: string) => impl(m, p)),
+    isAvailable: async () => true,
+  };
 }
 
 describe('selectLocalClassifierCandidates — derivation from the registry', () => {
@@ -55,7 +62,11 @@ describe('selectLocalClassifierCandidates — derivation from the registry', () 
 
   it('sorts size-unknown models after sized ones, by name', () => {
     const cache = cacheWith(ollama('zeta:latest'), ollama('alpha:latest'), ollama('foo:3b'));
-    expect(selectLocalClassifierCandidates(cache, cfg)).toEqual(['foo:3b', 'alpha:latest', 'zeta:latest']);
+    expect(selectLocalClassifierCandidates(cache, cfg)).toEqual([
+      'foo:3b',
+      'alpha:latest',
+      'zeta:latest',
+    ]);
   });
 
   it('breaks size ties by name (deterministic)', () => {
@@ -68,13 +79,18 @@ describe('selectLocalClassifierCandidates — derivation from the registry', () 
       ollama('emb:1b', { embedding: true }),
       ollama('noncompl:2b', { completion: false }),
       ollama('chat:3b', { completion: true }),
-      ollama('unknown:4b'),
+      ollama('unknown:4b')
     );
     expect(selectLocalClassifierCandidates(cache, cfg)).toEqual(['chat:3b', 'unknown:4b']);
   });
 
   it('ignores non-local providers entirely', () => {
-    const cache = { available_models: [{ id: 'cloud-x:1b', provider: 'openrouter', cost_per_m: 0 }, ollama('foo:3b')] } as Cache;
+    const cache = {
+      available_models: [
+        { id: 'cloud-x:1b', provider: 'openrouter', cost_per_m: 0 },
+        ollama('foo:3b'),
+      ],
+    } as Cache;
     expect(selectLocalClassifierCandidates(cache, cfg)).toEqual(['foo:3b']);
   });
 
@@ -133,7 +149,9 @@ describe('probeLocalClassifierCandidates — verified, persisted chain', () => {
 
   it('rejects a model that misclassifies a probe case (quality, not reachability)', async () => {
     const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b'));
-    const d = deps(async (m, p) => (m === 'foo:3b' ? '{"category":"design","reason":"r","confidence":0.9}' : goodReply(p)));
+    const d = deps(async (m, p) =>
+      m === 'foo:3b' ? '{"category":"design","reason":"r","confidence":0.9}' : goodReply(p)
+    );
     expect(await probeLocalClassifierCandidates(cfg, cache, d)).toEqual(['bar:9b']);
   });
 
@@ -148,7 +166,9 @@ describe('probeLocalClassifierCandidates — verified, persisted chain', () => {
   });
 
   it('bounds the probe: stops once enough working models are found', async () => {
-    const cache = cacheWith(...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n, i) => ollama(`${n}:${i + 1}b`)));
+    const cache = cacheWith(
+      ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n, i) => ollama(`${n}:${i + 1}b`))
+    );
     const d = deps(async (_m, p) => goodReply(p));
     const working = await probeLocalClassifierCandidates(cfg, cache, d);
     expect(working.length).toBeLessThanOrEqual(3);
@@ -198,7 +218,11 @@ describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU 
 
   it('re-probes when forced (an explicit /router scan)', async () => {
     const cache = cacheWith(ollama('foo:3b'));
-    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    await probeLocalClassifierCandidates(
+      cfg,
+      cache,
+      deps(async (_m, p) => goodReply(p))
+    );
     const again = deps(async (_m, p) => goodReply(p));
     await probeLocalClassifierCandidates(cfg, cache, again, undefined, { force: true });
     expect(calls(again)).toBeGreaterThan(0);
@@ -206,7 +230,11 @@ describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU 
 
   it('re-probes when the candidate set changed (a model was pulled or removed)', async () => {
     const cache = cacheWith(ollama('foo:3b'));
-    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    await probeLocalClassifierCandidates(
+      cfg,
+      cache,
+      deps(async (_m, p) => goodReply(p))
+    );
     cache.available_models!.push(ollama('bar:9b'));
     const again = deps(async (_m, p) => goodReply(p));
     expect(await probeLocalClassifierCandidates(cfg, cache, again)).toEqual(['foo:3b', 'bar:9b']);
@@ -217,8 +245,13 @@ describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU 
     // Review M1: a model marked 501 during the probe drops out of the NEXT
     // candidate set — the fingerprint must match that set, or every later
     // scan re-burns GPU time on the survivors.
-    const cache = cacheWith(ollama('bad:1b', { completion: true }), ollama('ok:2b', { completion: true }));
-    const first = deps((m, p) => (m === 'bad:1b' ? Promise.reject(new Error(NO_SCHEMA_501)) : Promise.resolve(goodReply(p))));
+    const cache = cacheWith(
+      ollama('bad:1b', { completion: true }),
+      ollama('ok:2b', { completion: true })
+    );
+    const first = deps((m, p) =>
+      m === 'bad:1b' ? Promise.reject(new Error(NO_SCHEMA_501)) : Promise.resolve(goodReply(p))
+    );
     await probeLocalClassifierCandidates(cfg, cache, first);
     expect(cache.classifier_local_probe!.candidates).toEqual(['ok:2b']);
 
@@ -229,7 +262,11 @@ describe('probeLocalClassifierCandidates — re-probe policy (a probe costs GPU 
 
   it('re-probes once the previous probe is older than the TTL', async () => {
     const cache = cacheWith(ollama('foo:3b'));
-    await probeLocalClassifierCandidates(cfg, cache, deps(async (_m, p) => goodReply(p)));
+    await probeLocalClassifierCandidates(
+      cfg,
+      cache,
+      deps(async (_m, p) => goodReply(p))
+    );
     cache.classifier_local_probe!.at = Date.now() - 25 * 60 * 60_000;
     const again = deps(async (_m, p) => goodReply(p));
     await probeLocalClassifierCandidates(cfg, cache, again);
@@ -241,20 +278,38 @@ describe('resolveLocalClassifierChain — pin › probed list › provisional �
   it('uses the probed list heads', () => {
     const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b'));
     cache.classifier_local_models = ['bar:9b', 'foo:3b'];
-    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({ primary: 'bar:9b', fallback: 'foo:3b' });
+    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({
+      primary: 'bar:9b',
+      fallback: 'foo:3b',
+    });
   });
 
   it('user pins win per slot and are never duplicated into the derived slot', () => {
     const cache = cacheWith(ollama('foo:3b'), ollama('bar:9b'));
     cache.classifier_local_models = ['foo:3b', 'bar:9b'];
-    expect(resolveLocalClassifierChain(cache, cfg, { model: 'pin:1b' })).toEqual({ primary: 'pin:1b', fallback: 'foo:3b' });
-    expect(resolveLocalClassifierChain(cache, cfg, { fallbackModel: 'pin:1b' })).toEqual({ primary: 'foo:3b', fallback: 'pin:1b' });
-    expect(resolveLocalClassifierChain(cache, cfg, { model: 'foo:3b' })).toEqual({ primary: 'foo:3b', fallback: 'bar:9b' });
+    expect(resolveLocalClassifierChain(cache, cfg, { model: 'pin:1b' })).toEqual({
+      primary: 'pin:1b',
+      fallback: 'foo:3b',
+    });
+    expect(resolveLocalClassifierChain(cache, cfg, { fallbackModel: 'pin:1b' })).toEqual({
+      primary: 'foo:3b',
+      fallback: 'pin:1b',
+    });
+    expect(resolveLocalClassifierChain(cache, cfg, { model: 'foo:3b' })).toEqual({
+      primary: 'foo:3b',
+      fallback: 'bar:9b',
+    });
   });
 
   it('provisional: before the first probe, the smallest completion-capable model leads', () => {
-    const cache = cacheWith(ollama('bar:9b', { completion: true }), ollama('foo:3b', { completion: true }));
-    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({ primary: 'foo:3b', fallback: 'bar:9b' });
+    const cache = cacheWith(
+      ollama('bar:9b', { completion: true }),
+      ollama('foo:3b', { completion: true })
+    );
+    expect(resolveLocalClassifierChain(cache, cfg)).toEqual({
+      primary: 'foo:3b',
+      fallback: 'bar:9b',
+    });
   });
 
   it('none: no local models and no pins leaves both slots empty', () => {
@@ -263,7 +318,9 @@ describe('resolveLocalClassifierChain — pin › probed list › provisional �
   });
 
   it('a single local model yields a primary and no fallback', () => {
-    expect(resolveLocalClassifierChain(cacheWith(ollama('foo:3b', { completion: true })), cfg)).toEqual({ primary: 'foo:3b' });
+    expect(
+      resolveLocalClassifierChain(cacheWith(ollama('foo:3b', { completion: true })), cfg)
+    ).toEqual({ primary: 'foo:3b' });
   });
 
   it('an EMPTY probed list is final: no fallback to provisional (probed-and-nothing-qualified)', () => {
@@ -271,7 +328,10 @@ describe('resolveLocalClassifierChain — pin › probed list › provisional �
     // that just failed the probe (timeout / misclassification / HINT trap).
     // Re-admitting them would burn the 45s primary timeout on every prompt
     // or let a known-bad judge decide.
-    const cache = cacheWith(ollama('foo:3b', { completion: true }), ollama('bar:9b', { completion: true }));
+    const cache = cacheWith(
+      ollama('foo:3b', { completion: true }),
+      ollama('bar:9b', { completion: true })
+    );
     cache.classifier_local_models = []; // probe ran; nothing qualified
     expect(resolveLocalClassifierChain(cache, cfg)).toEqual({});
   });

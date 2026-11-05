@@ -14,15 +14,34 @@ const ESCALATION_GROUPS: EscalationLevel[] = ['standard', 'code_complex', 'plann
 // ── Internal helpers ───────────────────────────────────────────────────────
 
 function extractErrorKeywords(text: string): string[] {
-  const keywords = ['error', 'failed', 'wrong', 'incorrect', 'not working', 'does not work', 'broken', 'issue', 'problem'];
+  const keywords = [
+    'error',
+    'failed',
+    'wrong',
+    'incorrect',
+    'not working',
+    'does not work',
+    'broken',
+    'issue',
+    'problem',
+  ];
   const lower = text.toLowerCase();
-  return keywords.filter(kw => lower.includes(kw));
+  return keywords.filter((kw) => lower.includes(kw));
 }
 
 function extractUserCorrections(text: string): string[] {
-  const corrections = ['again', 'still', 'once more', 'try again', 'nochmal', 'immer noch', 'wieder', 'erneut'];
+  const corrections = [
+    'again',
+    'still',
+    'once more',
+    'try again',
+    'nochmal',
+    'immer noch',
+    'wieder',
+    'erneut',
+  ];
   const lower = text.toLowerCase();
-  return corrections.filter(c => lower.includes(c));
+  return corrections.filter((c) => lower.includes(c));
 }
 
 /**
@@ -83,11 +102,17 @@ export async function detectLoopWithLLM(
   // path in recordTurn is the whole detection, and the daemon is not touched.
   const modelRef = options.model;
   if (!modelRef) {
-    return { shouldEscalate: false, reason: 'No local model available, using rule-based detection' };
+    return {
+      shouldEscalate: false,
+      reason: 'No local model available, using rule-based detection',
+    };
   }
 
   const historyText = history
-    .map((t, i) => `Turn ${i + 1}:\nUser: ${t.prompt.slice(0, 200)}\nAssistant: ${t.response.slice(0, 200)}`)
+    .map(
+      (t, i) =>
+        `Turn ${i + 1}:\nUser: ${t.prompt.slice(0, 200)}\nAssistant: ${t.response.slice(0, 200)}`
+    )
     .join('\n\n');
   const prompt = LOOP_DETECTION_PROMPT_TEMPLATE.replace('{{history}}', historyText);
 
@@ -101,7 +126,9 @@ export async function detectLoopWithLLM(
 
   try {
     const ollamaModel = modelRef.startsWith('ollama/') ? modelRef.slice(7) : modelRef;
-    const response = await callOllama(ollamaModel, prompt, { timeoutMs: options.timeoutMs ?? 10_000 });
+    const response = await callOllama(ollamaModel, prompt, {
+      timeoutMs: options.timeoutMs ?? 10_000,
+    });
     try {
       return JSON.parse(response) as { shouldEscalate: boolean; reason: string };
     } catch {
@@ -230,7 +257,9 @@ export class SessionEscalation {
             // see a call-local flag reset to its default and wrongly permit
             // the LLM path to stack a second escalation on top of this one.
             this._streakEscalatedPending = true;
-            routerLog(`[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`);
+            routerLog(
+              `[escalation] Streak-based escalation (${STREAK_THRESHOLD} consecutive frustration signals). Upgraded from ${prev} to ${this._level}`
+            );
           }
         }
       } else {
@@ -258,7 +287,8 @@ export class SessionEscalation {
    */
   private _checkAndEscalate(): void {
     const recent = this._history.slice(-2);
-    const model = typeof this._classifierModel === 'function' ? this._classifierModel() : this._classifierModel;
+    const model =
+      typeof this._classifierModel === 'function' ? this._classifierModel() : this._classifierModel;
     if (!model) return; // no derived local model: rule-based detection only
 
     if (!this._llmInFlight) {
@@ -274,7 +304,7 @@ export class SessionEscalation {
       const levelAtCallTime = this._level;
       const sessionAtCallTime = this._sessionId;
       detectLoopWithLLM(recent, { model, timeoutMs: 8_000 })
-        .then(result => {
+        .then((result) => {
           this._llmInFlight = false;
           if (
             result.shouldEscalate &&
@@ -289,7 +319,7 @@ export class SessionEscalation {
             }
           }
         })
-        .catch(err => {
+        .catch((err) => {
           this._llmInFlight = false;
           warnLog('[escalation] LLM loop detection failed', err);
         });

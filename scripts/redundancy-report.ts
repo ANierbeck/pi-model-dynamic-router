@@ -71,14 +71,22 @@ export interface Counts {
  * English words this project uses for other things (failover, a trivial
  * prompt); the retired category `fallback` is covered by `fallback group`.
  */
-export const STALE_NAMES = ['strategic', 'operational', 'scout', 'tactical', 'fallback group', 'exploration'] as const;
+export const STALE_NAMES = [
+  'strategic',
+  'operational',
+  'scout',
+  'tactical',
+  'fallback group',
+  'exploration',
+] as const;
 
 /**
  * A line that explicitly marks the name as history is documentation, not a
  * stale claim: "the pre-v2 categories X and Y were removed" is exactly what a
  * shipped doc should say. Only current-state claims are findings.
  */
-const HISTORY_MARKER = /\b(?:pre-v2|were removed|was removed|are removed|no longer|retired|dropped)\b/i;
+const HISTORY_MARKER =
+  /\b(?:pre-v2|were removed|was removed|are removed|no longer|retired|dropped)\b/i;
 
 /** Historical documents are never edited for tidiness (AGENTS.md §12). */
 const HISTORICAL = ['docs/adr/', 'docs/plans/', 'docs/research/', 'CHANGELOG.md'];
@@ -154,7 +162,10 @@ function findRepeatedBlocks(tests: TextFile[]): Report['repeatedBlocks'] {
   const filesOf = new Map<string, Set<string>>();
   const windowsOf = new Map<string, string[]>();
   for (const f of tests) {
-    const lines = f.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const lines = f.text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     const scaffold = importScaffoldMask(lines);
     const keys: string[] = [];
     for (let i = 0; i + BLOCK_LINES <= lines.length; i++) {
@@ -182,7 +193,13 @@ function findRepeatedBlocks(tests: TextFile[]): Report['repeatedBlocks'] {
     });
   }
   return [...starts.entries()]
-    .map(([key, files]) => ({ files, preview: key.split('\n').reduce((a, b) => (b.length > a.length ? b : a)).slice(0, 90) }))
+    .map(([key, files]) => ({
+      files,
+      preview: key
+        .split('\n')
+        .reduce((a, b) => (b.length > a.length ? b : a))
+        .slice(0, 90),
+    }))
     .sort((a, b) => b.files - a.files || a.preview.localeCompare(b.preview));
 }
 
@@ -240,7 +257,9 @@ const STATUS_LINE = /^\*{0,2}status\b/im;
 function hasStatusField(text: string): boolean {
   const lines = text.split('\n');
   const firstSection = lines.findIndex((l) => l.startsWith('## '));
-  return lines.slice(0, firstSection === -1 ? lines.length : firstSection).some((l) => STATUS_LINE.test(l));
+  return lines
+    .slice(0, firstSection === -1 ? lines.length : firstSection)
+    .some((l) => STATUS_LINE.test(l));
 }
 
 export function analyze(input: AnalyzeInput): Report {
@@ -256,8 +275,14 @@ export function analyze(input: AnalyzeInput): Report {
     .map((t) => t.path)
     .sort();
   const staleNames = findStaleNames(docs, input.shipped.map(toPosix));
-  const rootOutsideAllowlist = input.rootFiles.filter((f) => f.tracked && !allow.has(f.path)).map((f) => f.path).sort();
-  const rootUntracked = input.rootFiles.filter((f) => !f.tracked && !allow.has(f.path)).map((f) => f.path).sort();
+  const rootOutsideAllowlist = input.rootFiles
+    .filter((f) => f.tracked && !allow.has(f.path))
+    .map((f) => f.path)
+    .sort();
+  const rootUntracked = input.rootFiles
+    .filter((f) => !f.tracked && !allow.has(f.path))
+    .map((f) => f.path)
+    .sort();
   const plansWithoutStatus = plans
     .filter((p) => !p.path.endsWith('/README.md') && !hasStatusField(p.text))
     .map((p) => p.path)
@@ -326,7 +351,12 @@ export const ROOT_ALLOWLIST = [
 /** Windows separators would never match the forward-slash shipped/historical paths. */
 const toPosix = (p: string): string => p.split('\\').join('/');
 
-function walk(dir: string, root: string, accept: (p: string) => boolean, skip: Set<string>): TextFile[] {
+function walk(
+  dir: string,
+  root: string,
+  accept: (p: string) => boolean,
+  skip: Set<string>
+): TextFile[] {
   const out: TextFile[] = [];
   // A shipped entry may name a directory this checkout does not have (a
   // synthetic test tree, a partial checkout) — that is not an error.
@@ -338,7 +368,8 @@ function walk(dir: string, root: string, accept: (p: string) => boolean, skip: S
     // file content into the report (Sourcery 2026-11-03).
     if (lstatSync(full).isSymbolicLink()) continue;
     if (statSync(full).isDirectory()) out.push(...walk(full, root, accept, skip));
-    else if (accept(full)) out.push({ path: toPosix(relative(root, full)), text: readFileSync(full, 'utf8') });
+    else if (accept(full))
+      out.push({ path: toPosix(relative(root, full)), text: readFileSync(full, 'utf8') });
   }
   return out;
 }
@@ -346,22 +377,32 @@ function walk(dir: string, root: string, accept: (p: string) => boolean, skip: S
 export function collectInput(root: string): AnalyzeInput {
   const skip = new Set(['node_modules', 'dist', '.git', '.worktrees', '.cache', 'archive']);
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { files?: string[] };
-  const shipped = [...(pkg.files ?? []).filter((f) => !f.startsWith('!') && !f.startsWith('dist/')), 'README.md'];
-  const tracked = new Set(execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n'));
+  const shipped = [
+    ...(pkg.files ?? []).filter((f) => !f.startsWith('!') && !f.startsWith('dist/')),
+    'README.md',
+  ];
+  const tracked = new Set(
+    execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n')
+  );
   const rootFiles = readdirSync(root)
     .filter((n) => statSync(join(root, n)).isFile())
     .map((n) => ({ path: n, tracked: tracked.has(n) }));
   const ts = (p: string) => p.endsWith('.ts');
   const md = (p: string) => p.endsWith('.md');
   const docs: TextFile[] = [
-    ...rootFiles.filter((f) => f.path.endsWith('.md')).map((f) => ({ path: f.path, text: readFileSync(join(root, f.path), 'utf8') })),
+    ...rootFiles
+      .filter((f) => f.path.endsWith('.md'))
+      .map((f) => ({ path: f.path, text: readFileSync(join(root, f.path), 'utf8') })),
     ...walk(join(root, 'docs'), root, md, skip),
     ...walk(join(root, 'skills'), root, md, skip),
     // Any OTHER shipped directory or file: a doc that ships must be analyzed,
     // wherever it lives, or its stale names escape the gate (Sourcery
     // 2026-11-03). docs/ and skills/ are covered above; dist/ is build output.
     ...shipped
-      .filter((entry) => !entry.startsWith('docs/') && !entry.startsWith('skills/') && !entry.startsWith('dist/'))
+      .filter(
+        (entry) =>
+          !entry.startsWith('docs/') && !entry.startsWith('skills/') && !entry.startsWith('dist/')
+      )
       .flatMap((entry) =>
         entry.endsWith('/')
           ? walk(join(root, entry), root, md, skip)
@@ -386,7 +427,12 @@ export function collectInput(root: string): AnalyzeInput {
 }
 
 const topList = (title: string, rows: string[], total: number): string[] =>
-  rows.length === 0 ? [`${title}: none`] : [`${title} (top ${Math.min(10, rows.length)} of ${total}):`, ...rows.slice(0, 10).map((r) => `  ${r}`)];
+  rows.length === 0
+    ? [`${title}: none`]
+    : [
+        `${title} (top ${Math.min(10, rows.length)} of ${total}):`,
+        ...rows.slice(0, 10).map((r) => `  ${r}`),
+      ];
 
 export function formatRedundancyReport(r: Report): string {
   const c = r.counts;
@@ -400,12 +446,28 @@ export function formatRedundancyReport(r: Report): string {
     `  repeated ${BLOCK_LINES}-line test blocks (>= ${BLOCK_MIN_FILES} files) : ${c.repeatedBlocks}`,
     `  test files mocking ollama-utils   : ${c.ollamaMockFiles}`,
     '',
-    ...topList('Stale names', r.staleNames.map((s) => `${s.path}:${s.line} ${s.name}`), c.staleNames),
+    ...topList(
+      'Stale names',
+      r.staleNames.map((s) => `${s.path}:${s.line} ${s.name}`),
+      c.staleNames
+    ),
     ...topList('Root outside allowlist', r.rootOutsideAllowlist, c.rootOutsideAllowlist),
-    ...topList('Duplicate functions', r.duplicateFunctions.map((d) => `${d.name} x${d.paths.length}: ${d.paths.join(', ')}`), c.duplicateFunctions),
-    ...topList('Repeated blocks', r.repeatedBlocks.map((b) => `${b.files} files: ${b.preview}`), c.repeatedBlocks),
+    ...topList(
+      'Duplicate functions',
+      r.duplicateFunctions.map((d) => `${d.name} x${d.paths.length}: ${d.paths.join(', ')}`),
+      c.duplicateFunctions
+    ),
+    ...topList(
+      'Repeated blocks',
+      r.repeatedBlocks.map((b) => `${b.files} files: ${b.preview}`),
+      c.repeatedBlocks
+    ),
     ...topList('Plans without status', r.plansWithoutStatus, c.plansWithoutStatus),
-    ...topList('Plans missing from docs/plans/README.md', r.plansMissingFromIndex, c.plansMissingFromIndex),
+    ...topList(
+      'Plans missing from docs/plans/README.md',
+      r.plansMissingFromIndex,
+      c.plansMissingFromIndex
+    ),
     ...topList('Test files mocking ollama-utils', r.ollamaMockFiles, c.ollamaMockFiles),
     ...topList('Untracked root leftovers', r.rootUntracked, r.rootUntracked.length),
   ].join('\n');
@@ -416,7 +478,9 @@ export function formatRedundancyReport(r: Report): string {
  * tracked files mention its name. Capped like the report.
  */
 export function formatRootInventory(root: string): string {
-  const tracked = new Set(execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n'));
+  const tracked = new Set(
+    execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n')
+  );
   const files = readdirSync(root).filter((n) => statSync(join(root, n)).isFile());
   const mentions = new Map<string, number>();
   for (const rel of tracked) {
@@ -432,12 +496,10 @@ export function formatRootInventory(root: string): string {
       if (text.includes(name)) mentions.set(name, (mentions.get(name) ?? 0) + 1);
     }
   }
-  const rows = files
-    .sort()
-    .map((name) => {
-      const size = statSync(join(root, name)).size;
-      return `${name} | ${tracked.has(name) ? 'tracked' : 'untracked'} | ${size} B | ${mentions.get(name) ?? 0} inbound`;
-    });
+  const rows = files.sort().map((name) => {
+    const size = statSync(join(root, name)).size;
+    return `${name} | ${tracked.has(name) ? 'tracked' : 'untracked'} | ${size} B | ${mentions.get(name) ?? 0} inbound`;
+  });
   return ['Root inventory (file | state | size | inbound references):', ...rows].join('\n');
 }
 
@@ -448,7 +510,11 @@ function main(): void {
     return;
   }
   const report = analyze(collectInput(root));
-  console.log(process.argv.includes('--json') ? JSON.stringify(report.counts, null, 2) : formatRedundancyReport(report));
+  console.log(
+    process.argv.includes('--json')
+      ? JSON.stringify(report.counts, null, 2)
+      : formatRedundancyReport(report)
+  );
 }
 
 if (invokedDirectly(import.meta.url)) main();

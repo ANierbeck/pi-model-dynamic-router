@@ -27,10 +27,15 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkReadBlock, isExpensiveModelRef, resolveReadBlockStreamRef } from '../src/bulk-read.ts';
+import {
+  checkReadBlock,
+  isExpensiveModelRef,
+  resolveReadBlockStreamRef,
+} from '../src/bulk-read.ts';
 import { delegationSettings } from '../src/delegation.ts';
 import { Router } from '../src/routing.ts';
 import type { Config } from '../src/types.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 // ── fixtures ────────────────────────────────────────────────────────────
 
@@ -47,7 +52,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  rmTmpDir(tmpDir);
 });
 
 /** Active-config shape as materialized by the scan (dynamic config):
@@ -196,31 +201,43 @@ describe('checkReadBlock expensive-model escalation', () => {
   });
 
   it('cheap models keep the size-only behavior: small file passes', () => {
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), CHEAP_LOCAL);
-    expect(out).to.equal(undefined);
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), CHEAP_FREE)).to.equal(
-      undefined
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeCfg(),
+      CHEAP_LOCAL
     );
+    expect(out).to.equal(undefined);
+    expect(
+      checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), CHEAP_FREE)
+    ).to.equal(undefined);
   });
 
   it('cheap models still get size-blocked on large files (regression guard)', () => {
-    const out = checkReadBlock({ toolName: 'read', input: { path: largeFile } }, makeCfg(), CHEAP_LOCAL);
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: largeFile } },
+      makeCfg(),
+      CHEAP_LOCAL
+    );
     expect(out?.block).to.equal(true);
     expect((out as any)?.expensive).to.not.equal(true);
     expect(out?.reason).to.include('block threshold');
   });
 
   it('unknown / empty curModel falls back to size-only blocking (fail-open)', () => {
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), undefined)).to.equal(
-      undefined
-    );
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), '')).to.equal(
-      undefined
-    );
+    expect(
+      checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), undefined)
+    ).to.equal(undefined);
+    expect(
+      checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), '')
+    ).to.equal(undefined);
   });
 
   it('non-read tools pass even for expensive models (bash is Layer 3 territory)', () => {
-    const out = checkReadBlock({ toolName: 'bash', input: { command: 'cat x' } }, makeCfg(), EXPENSIVE_GROUP_MEMBER);
+    const out = checkReadBlock(
+      { toolName: 'bash', input: { command: 'cat x' } },
+      makeCfg(),
+      EXPENSIVE_GROUP_MEMBER
+    );
     expect(out).to.equal(undefined);
   });
 
@@ -281,15 +298,26 @@ describe('checkReadBlock live group resolver (live bug 2026-09-26)', () => {
   it('live resolver blocks an expensive member when cfg has NO materialized lists (the live bug, fixed)', () => {
     const liveRefs = (group: string): string[] =>
       group === 'planning' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeStaticCfg(),
+      EXPENSIVE_GROUP_MEMBER,
+      liveRefs
+    );
     expect(out?.block).to.equal(true);
     expect(out?.expensive).to.equal(true);
     expect(out?.reason).to.match(/expensive models/i);
   });
 
   it('live resolver blocks a member resolved via the second expensive group (code_complex)', () => {
-    const liveRefs = (group: string): string[] => (group === 'code_complex' ? ['mistral/zai-glm-5-2'] : []);
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), 'mistral/zai-glm-5-2', liveRefs);
+    const liveRefs = (group: string): string[] =>
+      group === 'code_complex' ? ['mistral/zai-glm-5-2'] : [];
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeStaticCfg(),
+      'mistral/zai-glm-5-2',
+      liveRefs
+    );
     expect(out?.block).to.equal(true);
     expect(out?.expensive).to.equal(true);
   });
@@ -298,34 +326,78 @@ describe('checkReadBlock live group resolver (live bug 2026-09-26)', () => {
     // This is exactly the pre-fix production state that the HINT group
     // test exposed — kept as a guard so nothing silently over-blocks when
     // no resolver is available (e.g. pure-cfg callers, old tests).
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER);
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeStaticCfg(),
+      EXPENSIVE_GROUP_MEMBER
+    );
     expect(out).to.equal(undefined);
   });
 
   it('resolver that throws or returns junk fails open (never blocks)', () => {
-    const throwing = (): string[] => { throw new Error('boom'); };
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, throwing)).to.equal(undefined);
+    const throwing = (): string[] => {
+      throw new Error('boom');
+    };
+    expect(
+      checkReadBlock(
+        { toolName: 'read', input: { path: smallFile } },
+        makeStaticCfg(),
+        EXPENSIVE_GROUP_MEMBER,
+        throwing
+      )
+    ).to.equal(undefined);
     const junk = (): string[] => undefined as unknown as string[];
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, junk)).to.equal(undefined);
+    expect(
+      checkReadBlock(
+        { toolName: 'read', input: { path: smallFile } },
+        makeStaticCfg(),
+        EXPENSIVE_GROUP_MEMBER,
+        junk
+      )
+    ).to.equal(undefined);
   });
 
   it('resolver without the ref does not block (cheap member passes)', () => {
     const liveRefs = (group: string): string[] =>
       group === 'planning' ? ['mistral/zai-glm-5-3', 'pi-claude/claude-sonnet-5'] : [];
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_LOCAL, liveRefs)).to.equal(undefined);
-    expect(checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeStaticCfg(), CHEAP_FREE, liveRefs)).to.equal(undefined);
+    expect(
+      checkReadBlock(
+        { toolName: 'read', input: { path: smallFile } },
+        makeStaticCfg(),
+        CHEAP_LOCAL,
+        liveRefs
+      )
+    ).to.equal(undefined);
+    expect(
+      checkReadBlock(
+        { toolName: 'read', input: { path: smallFile } },
+        makeStaticCfg(),
+        CHEAP_FREE,
+        liveRefs
+      )
+    ).to.equal(undefined);
   });
 
   it('targeted reads are never blocked, even for live-resolved expensive members', () => {
-    const liveRefs = (group: string): string[] => (group === 'planning' ? [EXPENSIVE_GROUP_MEMBER] : []);
-    const withOffset = checkReadBlock({ toolName: 'read', input: { path: smallFile, offset: 1, limit: 5 } }, makeStaticCfg(), EXPENSIVE_GROUP_MEMBER, liveRefs);
+    const liveRefs = (group: string): string[] =>
+      group === 'planning' ? [EXPENSIVE_GROUP_MEMBER] : [];
+    const withOffset = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile, offset: 1, limit: 5 } },
+      makeStaticCfg(),
+      EXPENSIVE_GROUP_MEMBER,
+      liveRefs
+    );
     expect(withOffset).to.equal(undefined);
   });
 
   it('resolver and cfg check are OR-combined (cfg list still blocks without a resolver)', () => {
     // Backwards compatibility for pure-cfg callers (existing tests, scan
     // snapshots WITH materialized lists): the cfg path stays authoritative.
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), EXPENSIVE_GROUP_MEMBER);
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeCfg(),
+      EXPENSIVE_GROUP_MEMBER
+    );
     expect(out?.block).to.equal(true);
     expect(out?.expensive).to.equal(true);
   });
@@ -410,7 +482,11 @@ describe('Router turn driver pin', () => {
     // The read that WOULD have slipped through with the live ref alone:
     // smallFile is 20 lines, far below block_lines 350, so only the
     // expensive-model escalation can block it.
-    const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), streamRef);
+    const out = checkReadBlock(
+      { toolName: 'read', input: { path: smallFile } },
+      makeCfg(),
+      streamRef
+    );
     expect(out).toBeDefined();
     expect(out?.expensive).to.equal(true);
   });

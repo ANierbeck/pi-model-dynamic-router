@@ -31,14 +31,24 @@ function main(argv: string[]): number {
   const [report, file, lineArg, mutator, nthArg] = argv.slice(0, sep < 0 ? argv.length : sep);
   const tests = sep < 0 ? [] : argv.slice(sep + 1);
   if (!report || !file || !lineArg || !mutator || tests.length === 0) {
-    process.stderr.write('usage: node scripts/mutation-apply.ts <mutation.json> <file> <line> <mutatorName> [nth] -- <vitest files...>\n');
+    process.stderr.write(
+      'usage: node scripts/mutation-apply.ts <mutation.json> <file> <line> <mutatorName> [nth] -- <vitest files...>\n'
+    );
     return 2;
   }
-  const entry = (JSON.parse(readFileSync(report, 'utf8')) as { files: Record<string, { source: string; mutants: Mutant[] }> }).files[file];
-  const matches = entry.mutants.filter((m) => m.location.start.line === Number(lineArg) && m.mutatorName === mutator);
+  const entry = (
+    JSON.parse(readFileSync(report, 'utf8')) as {
+      files: Record<string, { source: string; mutants: Mutant[] }>;
+    }
+  ).files[file];
+  const matches = entry.mutants.filter(
+    (m) => m.location.start.line === Number(lineArg) && m.mutatorName === mutator
+  );
   const mutant = matches[Number(nthArg ?? 0)];
   if (!mutant) {
-    process.stderr.write(`no ${mutator} mutant on ${file}:${lineArg} (nth ${nthArg ?? 0}, ${matches.length} found)\n`);
+    process.stderr.write(
+      `no ${mutator} mutant on ${file}:${lineArg} (nth ${nthArg ?? 0}, ${matches.length} found)\n`
+    );
     return 2;
   }
   if (execFileSync('git', ['status', '--porcelain', '--', file]).toString().trim()) {
@@ -50,18 +60,34 @@ function main(argv: string[]): number {
   const end = offsetOf(current, mutant.location.end.line, mutant.location.end.column);
   const original = current.slice(start, end);
   const embedded = entry.source;
-  if (embedded.slice(offsetOf(embedded, mutant.location.start.line, mutant.location.start.column), offsetOf(embedded, mutant.location.end.line, mutant.location.end.column)) !== original) {
+  if (
+    embedded.slice(
+      offsetOf(embedded, mutant.location.start.line, mutant.location.start.column),
+      offsetOf(embedded, mutant.location.end.line, mutant.location.end.column)
+    ) !== original
+  ) {
     process.stderr.write('ABORT: working tree differs from the mutated source at this range\n');
     return 2;
   }
-  process.stdout.write(`mutant ${mutant.id} (${mutator}) ${file}:${lineArg}: ${JSON.stringify(original.slice(0, 80))} -> ${JSON.stringify((mutant.replacement ?? '').slice(0, 80))}\n`);
+  process.stdout.write(
+    `mutant ${mutant.id} (${mutator}) ${file}:${lineArg}: ${JSON.stringify(original.slice(0, 80))} -> ${JSON.stringify((mutant.replacement ?? '').slice(0, 80))}\n`
+  );
   writeFileSync(file, current.slice(0, start) + (mutant.replacement ?? '') + current.slice(end));
   // Ctrl-C during the synchronous test run skips `finally`; restore on signals too.
   const restore = () => execFileSync('git', ['checkout', '-q', '--', file]);
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { restore(); process.exit(130); });
+  for (const sig of ['SIGINT', 'SIGTERM'] as const)
+    process.on(sig, () => {
+      restore();
+      process.exit(130);
+    });
   try {
-    const run = spawnSync('npx', ['vitest', 'run', '--silent=true', ...tests], { encoding: 'utf8' });
-    const tail = (run.stdout + run.stderr).split('\n').filter((l) => /Tests |Test Files /.test(l)).join(' | ');
+    const run = spawnSync('npx', ['vitest', 'run', '--silent=true', ...tests], {
+      encoding: 'utf8',
+    });
+    const tail = (run.stdout + run.stderr)
+      .split('\n')
+      .filter((l) => /Tests |Test Files /.test(l))
+      .join(' | ');
     // A run that printed no summary (CLI error) must not read as a kill.
     const verdict = !tail ? 'ERROR (no vitest summary)' : run.status === 0 ? 'SURVIVED' : 'KILLED';
     process.stdout.write(`${verdict}: ${tail}\n`);

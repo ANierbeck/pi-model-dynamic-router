@@ -33,7 +33,12 @@ function runPrettier(mode: '--check' | '--write'): void {
 
 function main(): void {
   if (process.argv.includes('--pre-push')) {
-    const plan = prePushPlanFromGit(process.cwd(), readFileSync(0, 'utf-8'), PRE_PUSH_DIRTY_INPUTS, 'format');
+    const plan = prePushPlanFromGit(
+      process.cwd(),
+      readFileSync(0, 'utf-8'),
+      PRE_PUSH_DIRTY_INPUTS,
+      'format'
+    );
     if (!plan.run) {
       console.error(`format gate (pre-push): skipped, ${plan.reason}`);
       return;

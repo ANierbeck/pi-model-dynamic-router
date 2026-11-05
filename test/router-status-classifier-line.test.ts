@@ -22,7 +22,11 @@ vi.mock('../src/ollama-utils', () => {
 });
 
 import { callOllama } from '../src/ollama-utils';
-import { classifyPrompt, getLastClassificationSource, type ClassificationSourceInfo } from '../src/content-classifier.ts';
+import {
+  classifyPrompt,
+  getLastClassificationSource,
+  type ClassificationSourceInfo,
+} from '../src/content-classifier.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
 import type { Group } from '../src/types.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
@@ -52,7 +56,9 @@ beforeEach(() => {
 describe('getLastClassificationSource — who actually classified', () => {
   it('records the local Ollama model after a local classification', async () => {
     vi.mocked(callOllama).mockResolvedValue(VALID_JSON);
-    await classifyPrompt('read the file src/utils.ts and summarize it', { cache: localModelCache('foo:3b') });
+    await classifyPrompt('read the file src/utils.ts and summarize it', {
+      cache: localModelCache('foo:3b'),
+    });
     expect(getLastClassificationSource()?.source).toBe('ollama:foo:3b');
   });
 
@@ -61,7 +67,10 @@ describe('getLastClassificationSource — who actually classified', () => {
     const result = await classifyPrompt('please structure the module list carefully for us', {
       allowCloudFallback: true,
       cfg: { model_groups: {} } as any,
-      cache: { classifier_fallback_models: ['mistral/ministral-3b-latest'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+      cache: {
+        classifier_fallback_models: ['mistral/ministral-3b-latest'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+      } as any,
       completeSimple: vi.fn(async () => ({
         content: [{ type: 'text', text: VALID_JSON }],
         stopReason: 'stop',
@@ -107,7 +116,9 @@ describe('formatClassifierStatus — honest /router status lines', () => {
       localChain: { primary: 'foo:3b', fallback: 'bar:9b' },
       localProbed: true,
     });
-    expect(lines.some((l) => l.includes('cloud:mistral/ministral-3b-latest (last used)'))).toBe(true);
+    expect(lines.some((l) => l.includes('cloud:mistral/ministral-3b-latest (last used)'))).toBe(
+      true
+    );
     // The chain must reflect execution order: cloud BEFORE Ollama (cloud-first
     // 2026-09-27), and Ollama must be reported as down, not silently claimed.
     const chain = lines.find((l) => l.includes('Chain:')) ?? '';

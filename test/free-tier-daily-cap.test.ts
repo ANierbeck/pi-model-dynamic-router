@@ -22,14 +22,11 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import { routerStatePaths } from './helpers/extension-harness.ts';
+import { routerStatePaths, makeSessionCtx } from './helpers/extension-harness.ts';
 import path from 'node:path';
-import {
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { doneEvent, testModelCost } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
-
 
 async function drainStream(stream: any) {
   const events: any[] = [];
@@ -83,12 +80,18 @@ describe('ollama-utils: sync availability peek', () => {
   // shared between these tests, so the "daemon up" case must run BEFORE a
   // down-probe poisons the cache for the rest of the TTL window.
   it('isOllamaProbablyDown is false when the daemon answered', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ models: [] }),
-      text: async () => '',
-    } as any)));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => ({ models: [] }),
+            text: async () => '',
+          }) as any
+      )
+    );
     try {
       const ollama = await import('../src/ollama-utils.ts');
       expect(await ollama.isOllamaAvailable()).toBe(true);
@@ -99,7 +102,12 @@ describe('ollama-utils: sync availability peek', () => {
   });
 
   it('isOllamaProbablyDown reflects the last cached probe result without probing', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED (mock)'); }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('ECONNREFUSED (mock)');
+      })
+    );
     try {
       const ollama = await import('../src/ollama-utils.ts');
       expect(await ollama.isOllamaAvailable()).toBe(false);
@@ -150,8 +158,11 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
         defaultExport(pi);
 
         const mk = (provider: string, id: string) => ({
-          provider, id, api: 'openai-completions', contextWindow: 1_000_000,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider,
+          id,
+          api: 'openai-completions',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         });
         const freeA = mk('openrouter', 'free-a:free');
         const freeB = mk('openrouter', 'free-b:free');
@@ -182,11 +193,12 @@ describe('driveStream: OpenRouter free-tier daily cap is account-wide', () => {
         });
         const modelRegistry = {
           getAvailable: () => [freeA, freeB, paid],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => 'test-key',
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        const ctx: any = makeSessionCtx({ modelRegistry, cwd: tmpDir });
         for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
         await flushBackgroundScan();
 
@@ -262,8 +274,11 @@ describe('driveStream: "trying X" narration lookahead', () => {
         defaultExport(pi);
 
         const mk = (id: string, contextWindow: number) => ({
-          provider: 'mistral', id, api: 'openai-completions', contextWindow,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'mistral',
+          id,
+          api: 'openai-completions',
+          contextWindow,
+          cost: testModelCost(),
         });
         // tiny-model's window (2) is below the estimated context of the
         // turn (≈3 tokens from 'do the thing', chars/4 estimate) → the
@@ -291,11 +306,12 @@ describe('driveStream: "trying X" narration lookahead', () => {
         });
         const modelRegistry = {
           getAvailable: () => [rl, tiny, ok],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => 'test-key',
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
+        const ctx: any = makeSessionCtx({ modelRegistry, cwd: tmpDir });
         for (const h of onHandlers['session_start'] ?? []) await h({}, ctx);
         await flushBackgroundScan();
 

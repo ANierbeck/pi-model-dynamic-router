@@ -96,7 +96,20 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // test flip from pass to fail once the suite ran on/after 2026-08-30.
     const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const day = in3days.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
     const text = `Warning: [rate-limit] Claude five_hour rate limit hit — resets ${day}. ${mon}. ${year}, 17:00:00 MESZ`;
@@ -110,7 +123,20 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // Use a date within 7 days (the sanity cap).
     const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const day = in3days.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
     // UTC (not EST/etc.) since roborev job 354 restricted TZ_OFFSET_HOURS to
@@ -151,7 +177,20 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // standard escalating backoff instead.
     const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const day = in3days.getDate();
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
     const ms = parseResetAtMs(`resets ${day}. ${mon}. ${year}, 12:00:00 EST`);
@@ -162,7 +201,20 @@ describe('parseResetAtMs — extracts reset timestamps from rate-limit messages'
     // Use a date within 7 days (the sanity cap) with single-digit day and hour.
     const in3days = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
     const day = in3days.getDate(); // single-digit possible
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     const mon = months[in3days.getMonth()];
     const year = in3days.getFullYear();
     const hour = in3days.getHours(); // single-digit possible
@@ -254,18 +306,58 @@ describe('isPaidCloudRateLimitFailure — single source of truth for the hard-co
     // a bare "422 status code (no body)" — a request-shaped client error,
     // NOT a rate limit. Blanket-escalating it put each model on a 24h hard
     // cooldown and caused the constant model hopping.
-    expect(isPaidCloudRateLimitFailure('mistral/mistral-medium-3-5', 'provider_error', '422 status code (no body)')).toBe(false);
-    expect(isPaidCloudRateLimitFailure('mistral/codestral-2508', 'provider_error', 'Provider finish_reason: error')).toBe(false);
-    expect(isPaidCloudRateLimitFailure('mistral/magistral-small-latest', 'provider_error')).toBe(false);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'mistral/mistral-medium-3-5',
+        'provider_error',
+        '422 status code (no body)'
+      )
+    ).toBe(false);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'mistral/codestral-2508',
+        'provider_error',
+        'Provider finish_reason: error'
+      )
+    ).toBe(false);
+    expect(isPaidCloudRateLimitFailure('mistral/magistral-small-latest', 'provider_error')).toBe(
+      false
+    );
     // HTTP 429/402 (word-boundary — "14293" must NOT match) and rate-limit
     // wording ARE rate-limit-shaped.
-    expect(isPaidCloudRateLimitFailure('mistral/small', 'provider_error', '429 too many requests')).toBe(true);
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', '402 payment required')).toBe(true);
+    expect(
+      isPaidCloudRateLimitFailure('mistral/small', 'provider_error', '429 too many requests')
+    ).toBe(true);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'openrouter/some-paid-model',
+        'provider_error',
+        '402 payment required'
+      )
+    ).toBe(true);
     // A mid-string :free (Sourcery PR #74) is NOT free: the paid hard-cooldown
     // path must recognize a 429 on such a ref instead of skipping it.
-    expect(isPaidCloudRateLimitFailure('openrouter/vendor/x:free-v2', 'provider_error', '429 too many requests')).toBe(true);
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'rate limit reached')).toBe(true);
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'provider_error', 'context 14293 tokens billed')).toBe(false);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'openrouter/vendor/x:free-v2',
+        'provider_error',
+        '429 too many requests'
+      )
+    ).toBe(true);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'openrouter/some-paid-model',
+        'provider_error',
+        'rate limit reached'
+      )
+    ).toBe(true);
+    expect(
+      isPaidCloudRateLimitFailure(
+        'openrouter/some-paid-model',
+        'provider_error',
+        'context 14293 tokens billed'
+      )
+    ).toBe(false);
   });
 
   it('does NOT flag a free-suffixed model, even on a rate-limit-shaped reason', () => {
@@ -279,8 +371,12 @@ describe('isPaidCloudRateLimitFailure — single source of truth for the hard-co
   });
 
   it('does NOT flag a paid cloud model for a non-rate-limit-shaped reason', () => {
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'context_overflow')).toBe(false);
-    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'repetition_loop')).toBe(false);
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'context_overflow')).toBe(
+      false
+    );
+    expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'repetition_loop')).toBe(
+      false
+    );
     expect(isPaidCloudRateLimitFailure('openrouter/some-paid-model', 'aborted')).toBe(false);
   });
 });
@@ -291,7 +387,12 @@ describe('parseResetAtMs — informal "Npm (Zone/City)" format (Claude Code CLI 
   // checks the displayed wall-clock hour/minute match what was requested.
   function wallClockIn(ms: number, timeZone: string): { hour: number; minute: number } {
     const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', { timeZone, hour12: false, hour: '2-digit', minute: '2-digit' })
+      new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      })
         .formatToParts(new Date(ms))
         .map((p) => [p.type, p.value])
     );
@@ -299,7 +400,8 @@ describe('parseResetAtMs — informal "Npm (Zone/City)" format (Claude Code CLI 
   }
 
   it('parses "your session limit resets 7pm (Europe/Berlin)" to a future timestamp with the correct wall-clock hour', () => {
-    const text = "You've hit your monthly spend limit · raise it at claude.ai/settings/usage · your session limit resets 7pm (Europe/Berlin)";
+    const text =
+      "You've hit your monthly spend limit · raise it at claude.ai/settings/usage · your session limit resets 7pm (Europe/Berlin)";
     const ms = parseResetAtMs(text);
     expect(ms).toBeDefined();
     expect(ms!).toBeGreaterThan(Date.now());
@@ -326,7 +428,14 @@ describe('parseResetAtMs — informal "Npm (Zone/City)" format (Claude Code CLI 
     // past timestamp today.
     const nowBerlin = wallClockIn(Date.now(), 'Europe/Berlin');
     const pastHour = (nowBerlin.hour + 23) % 24; // 1 hour before "now", wrapping
-    const ampm = pastHour === 0 ? '12am' : pastHour < 12 ? `${pastHour}am` : pastHour === 12 ? '12pm' : `${pastHour - 12}pm`;
+    const ampm =
+      pastHour === 0
+        ? '12am'
+        : pastHour < 12
+          ? `${pastHour}am`
+          : pastHour === 12
+            ? '12pm'
+            : `${pastHour - 12}pm`;
     const ms = parseResetAtMs(`resets ${ampm} (Europe/Berlin)`);
     expect(ms).toBeDefined();
     expect(ms!).toBeGreaterThan(Date.now());
@@ -356,7 +465,9 @@ describe('isToolCallMarkupText — a tool call printed as prose (I4)', () => {
   });
 
   it('does not match through a leading markdown fence (a fenced example is prose)', () => {
-    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.')).toBe(false);
+    expect(
+      isToolCallMarkupText('```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.')
+    ).toBe(false);
     expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>')).toBe(false);
   });
 

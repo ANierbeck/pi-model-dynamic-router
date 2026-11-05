@@ -87,76 +87,73 @@ describe('getTopModels — deduplicates aliases of the same underlying model', (
     expect(mistralEntry?.ref).toBe('mistral/mistral-medium-3.5');
   });
 
-describe('coalesceBySlug — clusters cross-provider same-slug entries together', () => {
-  // Shared setup: 3 providers for glm-5-2 + 1 unrelated model (different slug).
-  const coalesceConfig: Config = {
-    model_groups: { tactical: { method: 'best', min_gdpval: 0 } },
-    model_metrics: {},
-    providers: {
-      mistral: { billing: 'pay_per_token' },
-      'mistral-zai': { billing: 'pay_per_token' },
-      openrouter: { billing: 'pay_per_token' },
-    },
-    gdpval_builtin: { 'glm-5-2': 1497.55, 'other-model': 500 },
-  };
-  const coalesceCache: Cache = {
-    available_models: [
-      { id: 'zai-glm-5-2', provider: 'mistral', cost_per_m: 0 },
-      { id: 'zai-glm-5-2', provider: 'mistral-zai', cost_per_m: 0 },
-      { id: 'glm-5.2:free', provider: 'openrouter', cost_per_m: 0 },
-      { id: 'other-model', provider: 'mistral', cost_per_m: 0 },
-    ],
-  };
-  beforeAll(() => {
-    metricsModule.setConfig(coalesceConfig);
-    // Explicit model-map entries for all refs so resolveSlug() returns the
-    // expected slug even without wildcards (the real model-map.yaml has no
-    // wildcard for openrouter/z-ai/*, so free-tier refs from available_models
-    // that don't appear in free_models need explicit mapping here).
-    // NOTE: model-map keys are matched AFTER stripProvider() strips the
-    // provider prefix, so keys are bare model-IDs, NOT "provider/id".
-    // mapLookup() strips "openrouter/" from "openrouter/glm-5.2:free" → looks
-    // up key "glm-5.2:free" (not "openrouter/glm-5.2:free").
-    metricsModule.setModelMap(
-      {
-        'mistral/zai-glm-5-2': 'glm-5-2',
-        'mistral-zai/zai-glm-5-2': 'glm-5-2',
-        // Stripped key: stripProvider("openrouter/glm-5.2:free") = "glm-5.2:free"
-        'glm-5.2:free': 'glm-5-2',
-        'mistral/other-model': 'other-model',
+  describe('coalesceBySlug — clusters cross-provider same-slug entries together', () => {
+    // Shared setup: 3 providers for glm-5-2 + 1 unrelated model (different slug).
+    const coalesceConfig: Config = {
+      model_groups: { tactical: { method: 'best', min_gdpval: 0 } },
+      model_metrics: {},
+      providers: {
+        mistral: { billing: 'pay_per_token' },
+        'mistral-zai': { billing: 'pay_per_token' },
+        openrouter: { billing: 'pay_per_token' },
       },
-      []
-    );
-    metricsModule.setCache(coalesceCache);
+      gdpval_builtin: { 'glm-5-2': 1497.55, 'other-model': 500 },
+    };
+    const coalesceCache: Cache = {
+      available_models: [
+        { id: 'zai-glm-5-2', provider: 'mistral', cost_per_m: 0 },
+        { id: 'zai-glm-5-2', provider: 'mistral-zai', cost_per_m: 0 },
+        { id: 'glm-5.2:free', provider: 'openrouter', cost_per_m: 0 },
+        { id: 'other-model', provider: 'mistral', cost_per_m: 0 },
+      ],
+    };
+    beforeAll(() => {
+      metricsModule.setConfig(coalesceConfig);
+      // Explicit model-map entries for all refs so resolveSlug() returns the
+      // expected slug even without wildcards (the real model-map.yaml has no
+      // wildcard for openrouter/z-ai/*, so free-tier refs from available_models
+      // that don't appear in free_models need explicit mapping here).
+      // NOTE: model-map keys are matched AFTER stripProvider() strips the
+      // provider prefix, so keys are bare model-IDs, NOT "provider/id".
+      // mapLookup() strips "openrouter/" from "openrouter/glm-5.2:free" → looks
+      // up key "glm-5.2:free" (not "openrouter/glm-5.2:free").
+      metricsModule.setModelMap(
+        {
+          'mistral/zai-glm-5-2': 'glm-5-2',
+          'mistral-zai/zai-glm-5-2': 'glm-5-2',
+          // Stripped key: stripProvider("openrouter/glm-5.2:free") = "glm-5.2:free"
+          'glm-5.2:free': 'glm-5-2',
+          'mistral/other-model': 'other-model',
+        },
+        []
+      );
+      metricsModule.setCache(coalesceCache);
+    });
+
+    const router = new Router(coalesceConfig, coalesceCache, new Map());
+
+    it('collapses cross-provider same-slug entries to ONE row in the display', () => {
+      const { models: top } = router.getTopModels('tactical', 10);
+      // coalesceBySlug clusters all glm-5-2 variants into one slot — the display
+      // shows "which models are available", not "which providers offer this model".
+      // The routing path keeps all variants internally for correct failover.
+      const refs = top.map((m) => m.ref);
+      const glmRefs = refs.filter((r) => r.includes('glm-5-2') || r.includes('glm-5.2'));
+      expect(glmRefs.length).toBe(1); // collapsed to ONE row per model
+      // The single survivor is the best-ranked variant (by sortBy 'max_gdpval',
+      // stable sort preserves input order on ties).
+      // Plus one other-model entry → total = 2.
+      expect(top.length).toBe(2);
+    });
+
+    it('the best-ranked model (highest GDPval) appears first in the display', () => {
+      const { models: top } = router.getTopModels('tactical', 10);
+      // glm-5-2 (1497.55) ranks above other-model (500) → glm-5-2 is first.
+      // After collapse, top[0] is the single best glm-5-2 row.
+      expect(top[0].ref).toMatch(/glm-5-2/);
+      expect(top.length).toBe(2); // glm-5-2 + other-model
+    });
   });
-
-  const router = new Router(coalesceConfig, coalesceCache, new Map());
-
-
-  it('collapses cross-provider same-slug entries to ONE row in the display', () => {
-    const { models: top } = router.getTopModels('tactical', 10);
-    // coalesceBySlug clusters all glm-5-2 variants into one slot — the display
-    // shows "which models are available", not "which providers offer this model".
-    // The routing path keeps all variants internally for correct failover.
-    const refs = top.map((m) => m.ref);
-    const glmRefs = refs.filter(
-      (r) => r.includes('glm-5-2') || r.includes('glm-5.2')
-    );
-    expect(glmRefs.length).toBe(1); // collapsed to ONE row per model
-    // The single survivor is the best-ranked variant (by sortBy 'max_gdpval',
-    // stable sort preserves input order on ties).
-    // Plus one other-model entry → total = 2.
-    expect(top.length).toBe(2);
-  });
-
-  it('the best-ranked model (highest GDPval) appears first in the display', () => {
-    const { models: top } = router.getTopModels('tactical', 10);
-    // glm-5-2 (1497.55) ranks above other-model (500) → glm-5-2 is first.
-    // After collapse, top[0] is the single best glm-5-2 row.
-    expect(top[0].ref).toMatch(/glm-5-2/);
-    expect(top.length).toBe(2); // glm-5-2 + other-model
-  });
-});
 
   it('prefers an explicit version name over -latest', () => {
     // mistral-medium-3.5 (explicit version, score 2) must win over
@@ -256,9 +253,7 @@ describe('resolveGroup — failover ordering', () => {
         (r) => !r.includes('glm-5-2') && !r.includes('glm-5.2')
       );
       const glmSlice = candidates.slice(0, firstOtherIdx < 0 ? candidates.length : firstOtherIdx);
-      const allGlm = glmSlice.every(
-        (r) => r.includes('glm-5-2') || r.includes('glm-5.2')
-      );
+      const allGlm = glmSlice.every((r) => r.includes('glm-5-2') || r.includes('glm-5.2'));
       expect(allGlm).toBe(true);
       // All three glm-5-2 variants must be in the list.
       const glmCount = candidates.filter(

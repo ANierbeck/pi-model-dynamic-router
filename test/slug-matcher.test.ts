@@ -14,22 +14,63 @@ import { buildMatchPromptWithCandidates } from '../src/model-matcher.js';
 
 // The GDPval slugs from the real cache
 const GDPVAL_SLUGS = [
-  'claude-opus-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-3-5-sonnet',
-  'claude-3-5-haiku', 'claude-3-sonnet', 'claude-3-haiku', 'claude-4-5-sonnet',
+  'claude-opus-5',
+  'claude-fable-5',
+  'claude-sonnet-5',
+  'claude-3-5-sonnet',
+  'claude-3-5-haiku',
+  'claude-3-sonnet',
+  'claude-3-haiku',
+  'claude-4-5-sonnet',
   'claude-4-sonnet',
-  'glm-5-2', 'glm-52', 'glm-4',
-  'grok-4-6', 'grok-46',
-  'gpt-5-6-luna', 'gpt-5-6-sol', 'gpt-5-6-terra', 'gpt-56-luna', 'gpt-56-sol',
-  'kimi-k3', 'muse-spark-1-2', 'muse-spark-12',
-  'deepseek-v4-pro', 'deepseek-v4-pro-0813',
-  'qwen3-8-max', 'qwen38-max', 'qwen3', 'qwen3-5',
-  'gemini-3-7-flash', 'gemini-37-flash', 'gemini-3-5-flash-lite', 'gemini-35-flash-lite',
-  'minimax-m3', 'motif-3', 'inkling', 'solar-open2-250b',
-  'mistral-medium-3-5', 'mistral-small-3-1', 'mistral-small-3-2', 'mistral-nemo',
-  'magistral-medium', 'magistral-small', 'devstral', 'codestral-latest',
-  'gemma2-2b', 'gemma2-9b', 'gemma3-12b', 'gemma3-27b', 'gemma4-12b', 'gemma4-27b',
-  'granite4', 'llama3-1', 'llama3-2', 'llama3-3',
-  'ornith-9b', 'nemotron-3-ultra', 'nvidia-nemotron-3-ultra-550b-a55b',
+  'glm-5-2',
+  'glm-52',
+  'glm-4',
+  'grok-4-6',
+  'grok-46',
+  'gpt-5-6-luna',
+  'gpt-5-6-sol',
+  'gpt-5-6-terra',
+  'gpt-56-luna',
+  'gpt-56-sol',
+  'kimi-k3',
+  'muse-spark-1-2',
+  'muse-spark-12',
+  'deepseek-v4-pro',
+  'deepseek-v4-pro-0813',
+  'qwen3-8-max',
+  'qwen38-max',
+  'qwen3',
+  'qwen3-5',
+  'gemini-3-7-flash',
+  'gemini-37-flash',
+  'gemini-3-5-flash-lite',
+  'gemini-35-flash-lite',
+  'minimax-m3',
+  'motif-3',
+  'inkling',
+  'solar-open2-250b',
+  'mistral-medium-3-5',
+  'mistral-small-3-1',
+  'mistral-small-3-2',
+  'mistral-nemo',
+  'magistral-medium',
+  'magistral-small',
+  'devstral',
+  'codestral-latest',
+  'gemma2-2b',
+  'gemma2-9b',
+  'gemma3-12b',
+  'gemma3-27b',
+  'gemma4-12b',
+  'gemma4-27b',
+  'granite4',
+  'llama3-1',
+  'llama3-2',
+  'llama3-3',
+  'ornith-9b',
+  'nemotron-3-ultra',
+  'nvidia-nemotron-3-ultra-550b-a55b',
 ];
 
 describe('stripProviderPrefix', () => {
@@ -231,11 +272,7 @@ describe('buildMatchPromptWithCandidates', () => {
   ];
 
   it('only includes per-model candidates (not all slugs)', () => {
-    const prompt = buildMatchPromptWithCandidates(
-      ['mistral-zai/zai-glm-5-2'],
-      gdpvalEntries,
-      5
-    );
+    const prompt = buildMatchPromptWithCandidates(['mistral-zai/zai-glm-5-2'], gdpvalEntries, 5);
     // Should contain glm-5-2 as candidate
     expect(prompt).toContain('slug: "glm-5-2"');
     // Should NOT contain glm-4 as a candidate (it may appear in rules text)

@@ -33,12 +33,13 @@ beforeAll(() => {
       'bar-latest': 'bar',
       'bar-preview': 'bar',
     },
-    [],
+    []
   );
 });
 
 const router = () => new Router(cfg, cache, new Map());
-const pref = (id: string, slug: string | null) => (router() as any).modelVariantPreference(id, slug) as number;
+const pref = (id: string, slug: string | null) =>
+  (router() as any).modelVariantPreference(id, slug) as number;
 
 describe('modelVariantPreference — the ladder, number by number', () => {
   it('canonical (normalized id equals the slug) is 4, even spelled with dots', () => {
@@ -86,7 +87,8 @@ describe('modelVariantPreference — the ladder, number by number', () => {
 });
 
 describe('isBetterModelVariant', () => {
-  const better = (ref: string, than: string) => (router() as any).isBetterModelVariant(ref, than) as boolean;
+  const better = (ref: string, than: string) =>
+    (router() as any).isBetterModelVariant(ref, than) as boolean;
 
   it('judges the model id, not the provider-qualified ref (canonical beats dated)', () => {
     expect(better('mistral/foo-3-5', 'mistral/foo-2604')).toBe(true);
@@ -103,7 +105,9 @@ describe('dedupByModelIdentity — three variants of one model', () => {
   const dedup = (refs: string[]) => (router() as any).dedupByModelIdentity(refs) as string[];
 
   it('keeps the best variant even when it only shows up third (stale-existing bookkeeping)', () => {
-    expect(dedup(['mistral/foo-latest', 'mistral/foo-2604', 'mistral/foo-3-5'])).toEqual(['mistral/foo-3-5']);
+    expect(dedup(['mistral/foo-latest', 'mistral/foo-2604', 'mistral/foo-3-5'])).toEqual([
+      'mistral/foo-3-5',
+    ]);
   });
 
   it('replaces in place when the incumbent sits at a later index', () => {
@@ -118,7 +122,10 @@ describe('dedupByModelIdentity — three variants of one model', () => {
   });
 
   it('the same slug under DIFFERENT providers is not a duplicate', () => {
-    expect(dedup(['mistral/foo-latest', 'openrouter/foo-latest'])).toEqual(['mistral/foo-latest', 'openrouter/foo-latest']);
+    expect(dedup(['mistral/foo-latest', 'openrouter/foo-latest'])).toEqual([
+      'mistral/foo-latest',
+      'openrouter/foo-latest',
+    ]);
   });
 });
 
@@ -126,16 +133,22 @@ describe('pickSlugClusterRepresentatives', () => {
   const never = () => false;
 
   it('canonical beats alias when both are available', () => {
-    expect(pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-3-5'], never)).toEqual(['mistral/foo-3-5']);
+    expect(
+      pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-3-5'], never)
+    ).toEqual(['mistral/foo-3-5']);
   });
 
   it('an available alias beats a LIMITED canonical (availability outranks canonicity)', () => {
     const limited = (r: string) => r === 'mistral/foo-3-5';
-    expect(pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-3-5'], limited)).toEqual(['mistral/foo-latest']);
+    expect(
+      pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-3-5'], limited)
+    ).toEqual(['mistral/foo-latest']);
   });
 
   it('an available later ref beats a limited earlier one', () => {
     const limited = (r: string) => r === 'mistral/foo-latest';
-    expect(pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-2604'], limited)).toEqual(['mistral/foo-2604']);
+    expect(
+      pickSlugClusterRepresentatives(['mistral/foo-latest', 'mistral/foo-2604'], limited)
+    ).toEqual(['mistral/foo-2604']);
   });
 });

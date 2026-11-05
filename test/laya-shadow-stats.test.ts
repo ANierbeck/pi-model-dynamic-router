@@ -33,8 +33,8 @@ describe('laya-shadow-stats', () => {
     const out = run([]);
     expect(out).toContain('Laya shadow statistics');
     expect(out).toContain('Laya invocations across 6 classifications');
-    expect(out).toContain('33.3 %');  // 2 agree of 6
-    expect(out).toContain('66.7 %');  // 4 disagree of 6
+    expect(out).toContain('33.3 %'); // 2 agree of 6
+    expect(out).toContain('66.7 %'); // 4 disagree of 6
     expect(out).toContain('would have decided): 4 of 6');
     expect(out).toContain('Avg confidence: agree 97.0 | disagree 64.8');
     expect(out).toContain('≥ 0.95=2 0.90-0.95=1 < 0.70=2 0.80-0.90=1');
@@ -69,10 +69,14 @@ describe('laya-shadow-stats', () => {
   }, 30_000);
 
   it('exits 0 with a friendly hint when the log file does not exist', () => {
-    const out = spawnSync('npx', ['tsx', 'scripts/laya-shadow-stats.ts', '--file=/tmp/nonexistent-laya-stats.jsonl'], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-    });
+    const out = spawnSync(
+      'npx',
+      ['tsx', 'scripts/laya-shadow-stats.ts', '--file=/tmp/nonexistent-laya-stats.jsonl'],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+      }
+    );
     expect(out.status).toBe(0);
     expect(out.stdout).toContain('No decision log yet');
   }, 30_000);

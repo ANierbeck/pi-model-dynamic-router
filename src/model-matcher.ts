@@ -58,8 +58,8 @@ export function buildMatchPromptWithCandidates(
   gdpvalEntries: GdpvalEntry[],
   maxKCandidates: number = 5
 ): string {
-  const gdpvalMap = new Map(gdpvalEntries.map(g => [g.slug, g]));
-  const allSlugs = gdpvalEntries.map(g => g.slug);
+  const gdpvalMap = new Map(gdpvalEntries.map((g) => [g.slug, g]));
+  const allSlugs = gdpvalEntries.map((g) => g.slug);
 
   // For each model, get its top-K candidates
   const perModel: { modelId: string; candidates: GdpvalEntry[] }[] = [];
@@ -73,23 +73,26 @@ export function buildMatchPromptWithCandidates(
       perModel.push({
         modelId: id,
         candidates: slugs
-          .map(s => gdpvalMap.get(s))
+          .map((s) => gdpvalMap.get(s))
           .filter((g): g is GdpvalEntry => g !== undefined),
       });
     }
   }
 
   // Build the per-model block
-  const perModelBlock = perModel.map(({ modelId, candidates }) => {
-    const cands = candidates
-      .map(g => `  - slug: "${g.slug}"  (display: "${g.label}", score: ${g.score})`)
-      .join('\n');
-    return `- Model ID: "${modelId}"\n  Candidates:\n${cands}`;
-  }).join('\n\n');
+  const perModelBlock = perModel
+    .map(({ modelId, candidates }) => {
+      const cands = candidates
+        .map((g) => `  - slug: "${g.slug}"  (display: "${g.label}", score: ${g.score})`)
+        .join('\n');
+      return `- Model ID: "${modelId}"\n  Candidates:\n${cands}`;
+    })
+    .join('\n\n');
 
-  const noCandidatesBlock = noCandidates.length > 0
-    ? `\n\n# Models with no algorithmic candidates ( OMIT these — no match possible)\n${noCandidates.map(m => `- ${m}`).join('\n')}`
-    : '';
+  const noCandidatesBlock =
+    noCandidates.length > 0
+      ? `\n\n# Models with no algorithmic candidates ( OMIT these — no match possible)\n${noCandidates.map((m) => `- ${m}`).join('\n')}`
+      : '';
 
   return `You are a model-name matcher. For each model ID, VERIFY which candidate slug refers to the SAME model, or OMIT if unsure.
 
@@ -126,7 +129,19 @@ ${perModelBlock || '(no models with candidates)'}${noCandidatesBlock}
  */
 const MODEL_FAMILIES: { tokens: string[]; family: string }[] = [
   { tokens: ['claude', 'opus', 'sonnet', 'haiku', 'fable'], family: 'anthropic' },
-  { tokens: ['mistral', 'magistral', 'ministral', 'codestral', 'devstral', 'pixtral', 'voxtral', 'nemo'], family: 'mistral' },
+  {
+    tokens: [
+      'mistral',
+      'magistral',
+      'ministral',
+      'codestral',
+      'devstral',
+      'pixtral',
+      'voxtral',
+      'nemo',
+    ],
+    family: 'mistral',
+  },
   { tokens: ['gpt', 'openai'], family: 'openai' },
   { tokens: ['gemini', 'gemma'], family: 'google' },
   { tokens: ['llama'], family: 'meta' },
@@ -185,10 +200,7 @@ export function isPlausibleMatch(modelId: string, slug: string): boolean {
  *   hallucination guard. The LLM cannot inject a fabricated slug.
  * - Never throws: returns {} on any parse failure (fail-safe).
  */
-export function parseMatchResponse(
-  raw: string,
-  validSlugs: Set<string>
-): Record<string, string> {
+export function parseMatchResponse(raw: string, validSlugs: Set<string>): Record<string, string> {
   const jsonStr = extractJsonObject(raw);
   if (!jsonStr) return {};
 
@@ -219,7 +231,10 @@ function extractJsonObject(raw: string): string | null {
   let s = raw.trim();
 
   // Strip a leading ```json or ``` fence and trailing fence.
-  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  s = s
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
 
   // If fenced content remains mid-string, grab the first {...} block.
   const start = s.indexOf('{');

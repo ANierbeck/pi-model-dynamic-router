@@ -47,11 +47,13 @@ import {
 } from '../src/metrics.ts';
 
 // A fake pi modelRegistry implementing the public methods the router uses.
-function makeRegistry(models: Array<{
-  provider: string;
-  id: string;
-  cost: { input: number; output: number };
-}>): any {
+function makeRegistry(
+  models: Array<{
+    provider: string;
+    id: string;
+    cost: { input: number; output: number };
+  }>
+): any {
   const all = models.map((m) => ({ provider: m.provider, id: m.id, cost: m.cost }));
   return {
     find: (provider: string, modelId: string) =>
@@ -73,14 +75,16 @@ beforeEach(() => {
 
 describe('resolveCostPerM — registry price wins over blanket-zero', () => {
   it('subscription-billed model with registry price is NOT read as "free"', () => {
-    setModelRegistry(makeRegistry([
-      { provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([{ provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } }])
+    );
     // Real-world case: mistral is a subscription provider (Le Chat), but the
     // model has a real registry price. Old chain: subscription branch zeroed
     // it BEFORE the registry was asked → cost_per_m 0 → "free".
     setConfig({
-      model_groups: {}, model_metrics: {}, gdpval_builtin: {},
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
       providers: { mistral: { billing: 'subscription' } },
     } as any);
 
@@ -89,11 +93,13 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
   });
 
   it('effCost applies SUB_DISCOUNT (0.5) to a registry-priced subscription model → 0.7, not 0', () => {
-    setModelRegistry(makeRegistry([
-      { provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([{ provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } }])
+    );
     setConfig({
-      model_groups: {}, model_metrics: {}, gdpval_builtin: {},
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
       providers: { mistral: { billing: 'subscription' } },
     } as any);
 
@@ -109,7 +115,9 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
     // on the rule path (review M2: a uniform rule cost for cfg-declared and
     // PROVIDER_MAP-only subscription providers alike).
     setConfig({
-      model_groups: {}, model_metrics: {}, gdpval_builtin: {},
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
       providers: { mistral: { billing: 'subscription' } },
     } as any);
 
@@ -129,9 +137,9 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
     // "free" is ambiguous downstream, so the chain defers to the free/local/
     // subscription detection. A payg provider without any free-signal
     // therefore resolves 'unknown', exactly as before this change.
-    setModelRegistry(makeRegistry([
-      { provider: 'openrouter', id: 'some-model', cost: { input: 0, output: 0 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([{ provider: 'openrouter', id: 'some-model', cost: { input: 0, output: 0 } }])
+    );
 
     const ref = 'openrouter/some-model';
     expect(getM(ref).cost_per_m).toBe('unknown');
@@ -139,9 +147,7 @@ describe('resolveCostPerM — registry price wins over blanket-zero', () => {
 
   it('free model via cache-discovered 0 / :free tag stays free', () => {
     setCache({
-      available_models: [
-        { provider: 'openrouter', id: 'glm-5-2:free', cost_per_m: 0 },
-      ],
+      available_models: [{ provider: 'openrouter', id: 'glm-5-2:free', cost_per_m: 0 }],
     } as any);
 
     const ref = 'openrouter/glm-5-2:free';
@@ -165,9 +171,11 @@ describe('getM — placeholder healing on the early-return path', () => {
 
     // Phase 2: registry becomes available (session_start) → the SAME cached
     // entry must heal to the real price on the next getM call.
-    setModelRegistry(makeRegistry([
-      { provider: 'pi-claude', id: 'claude-sonnet-5', cost: { input: 2, output: 10 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([
+        { provider: 'pi-claude', id: 'claude-sonnet-5', cost: { input: 2, output: 10 } },
+      ])
+    );
     expect(getM(ref).cost_per_m).toBe(2);
     // pi-claude is not subscription-billed here → no SUB_DISCOUNT.
     expect(effCost(ref)).toBe(2);
@@ -175,7 +183,9 @@ describe('getM — placeholder healing on the early-return path', () => {
 
   it('stale scan placeholder 0 heals to the registry price', () => {
     setConfig({
-      model_groups: {}, model_metrics: {}, gdpval_builtin: {},
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
       providers: { mistral: { billing: 'subscription' } },
     } as any);
 
@@ -184,9 +194,11 @@ describe('getM — placeholder healing on the early-return path', () => {
     expect(getM(ref).cost_per_m).toBe(0);
 
     // Phase 2: registry published with the real price → placeholder heals.
-    setModelRegistry(makeRegistry([
-      { provider: 'mistral', id: 'placeholder-heal-x', cost: { input: 1.4, output: 4.4 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([
+        { provider: 'mistral', id: 'placeholder-heal-x', cost: { input: 1.4, output: 4.4 } },
+      ])
+    );
     expect(getM(ref).cost_per_m).toBe(1.4);
     expect(effCost(ref)).toBe(0.7); // 1.4 × SUB_DISCOUNT
   });
@@ -198,7 +210,8 @@ describe('getM — placeholder healing on the early-return path', () => {
     // calls. The broken healing compared against the chain result and
     // clobbered 1.4 → 0, letting the model sneak through max_cost: 0.
     setConfig({
-      model_groups: {}, gdpval_builtin: {},
+      model_groups: {},
+      gdpval_builtin: {},
       model_metrics: { 'mistral/zai-glm-5-3': { cost_per_m: 1.4 } },
       providers: { mistral: { billing: 'subscription' } },
     } as any);
@@ -212,7 +225,8 @@ describe('getM — placeholder healing on the early-return path', () => {
 
   it('user config cost_per_m override (non-zero) is preserved across calls', () => {
     setConfig({
-      model_groups: {}, gdpval_builtin: {},
+      model_groups: {},
+      gdpval_builtin: {},
       model_metrics: { 'custom/model': { cost_per_m: 0.5 } },
       providers: {},
     } as any);
@@ -224,11 +238,12 @@ describe('getM — placeholder healing on the early-return path', () => {
   });
 
   it('user config cost_per_m = 0 does not pin "free" — registry wins (0 means "unpriced")', () => {
-    setModelRegistry(makeRegistry([
-      { provider: 'custom', id: 'model', cost: { input: 1.2, output: 3.0 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([{ provider: 'custom', id: 'model', cost: { input: 1.2, output: 3.0 } }])
+    );
     setConfig({
-      model_groups: {}, gdpval_builtin: {},
+      model_groups: {},
+      gdpval_builtin: {},
       model_metrics: { 'custom/model': { cost_per_m: 0 } },
       providers: {},
     } as any);
@@ -243,9 +258,9 @@ describe('getM — placeholder healing on the early-return path', () => {
 
 describe('lookupPrice — registry-first (regression guard)', () => {
   it('uses registry cost when available', () => {
-    setModelRegistry(makeRegistry([
-      { provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } },
-    ]));
+    setModelRegistry(
+      makeRegistry([{ provider: 'mistral', id: 'zai-glm-5-3', cost: { input: 1.4, output: 4.4 } }])
+    );
     expect(lookupPrice('mistral/zai-glm-5-3')).toEqual({ input: 1.4, output: 4.4 });
   });
 });

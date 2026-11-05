@@ -34,7 +34,14 @@ interface BlocklistEntry {
   occurrences: number;
 }
 
-function block(cache: Cache, ref: string, reason: string, code: number, signature: string, now: number): BlocklistEntry {
+function block(
+  cache: Cache,
+  ref: string,
+  reason: string,
+  code: number,
+  signature: string,
+  now: number
+): BlocklistEntry {
   cache.model_blocklist ??= {};
   const prev = cache.model_blocklist[ref];
   const entry: BlocklistEntry = {
@@ -97,7 +104,11 @@ export function formatBlockLogLine(ref: string, entry: BlocklistEntry): string {
   return `[router] ${ref} blocked for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, signature ${entry.signature}, seen ${entry.occurrences}×)`;
 }
 
-export function isBlocked(cache: Cache | undefined, ref: string, now: number = Date.now()): boolean {
+export function isBlocked(
+  cache: Cache | undefined,
+  ref: string,
+  now: number = Date.now()
+): boolean {
   const entry = cache?.model_blocklist?.[ref];
   return entry !== undefined && now - entry.last_seen < BLOCKLIST_TTL_MS;
 }
@@ -137,6 +148,10 @@ export function activeBlocks(
 ): Array<{ ref: string; entry: BlocklistEntry; reprobeInMs: number }> {
   return Object.entries(cache.model_blocklist ?? {})
     .filter(([, e]) => now - e.last_seen < BLOCKLIST_TTL_MS)
-    .map(([ref, entry]) => ({ ref, entry, reprobeInMs: BLOCKLIST_TTL_MS - (now - entry.last_seen) }))
+    .map(([ref, entry]) => ({
+      ref,
+      entry,
+      reprobeInMs: BLOCKLIST_TTL_MS - (now - entry.last_seen),
+    }))
     .sort((a, b) => a.ref.localeCompare(b.ref));
 }

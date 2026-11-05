@@ -15,7 +15,11 @@ vi.mock('../src/ollama-utils', () => ({
 }));
 
 import { callOllama } from '../src/ollama-utils';
-import { classifyPrompt, getClassificationCounts, resetClassificationCounts } from '../src/content-classifier.ts';
+import {
+  classifyPrompt,
+  getClassificationCounts,
+  resetClassificationCounts,
+} from '../src/content-classifier.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
 import type { Group } from '../src/types.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
@@ -34,7 +38,9 @@ afterEach(() => {
 describe('classification counters (Phase 0 step 2)', () => {
   it('counts each classification by coarse source and by category', async () => {
     vi.mocked(callOllama).mockResolvedValue(json('code_complex'));
-    await classifyPrompt('refactor the stream orchestrator into three modules, counter probe one', { cache: localModelCache() });
+    await classifyPrompt('refactor the stream orchestrator into three modules, counter probe one', {
+      cache: localModelCache(),
+    });
     await classifyPrompt('yes do it', { context: { lastCategory: 'design' } });
     await classifyPrompt('HINT: use mistral/zai-glm-5-3 please fix the failing test');
 
@@ -64,7 +70,10 @@ describe('classification counters (Phase 0 step 2)', () => {
 
 describe('formatClassifierStatus renders the day counters', () => {
   const group = {
-    name: 'dynamic', method: 'dynamic', models: [], classifier_cloud_fallback: true,
+    name: 'dynamic',
+    method: 'dynamic',
+    models: [],
+    classifier_cloud_fallback: true,
   } as unknown as Group;
 
   it('shows sources and categories, most frequent first', () => {
@@ -89,7 +98,10 @@ describe('formatClassifierStatus renders the day counters', () => {
 
   it('omits the counter lines before the first classification of the day', () => {
     const lines = formatClassifierStatus({
-      group, last: null, probedCount: 1, ollamaUp: false,
+      group,
+      last: null,
+      probedCount: 1,
+      ollamaUp: false,
       counts: { day: '2026-10-06', total: 0, bySource: {}, byCategory: {} },
     });
     expect(lines.some((l) => l.includes('Today:'))).toBe(false);
@@ -117,9 +129,15 @@ describe('classification counters under overlapping calls (review 2026-10-06, mi
     // "last source" read after the await would credit both to one source.
     let releaseA: (v: string) => void = () => {};
     vi.mocked(callOllama).mockImplementation(
-      () => new Promise<string>((res) => { releaseA = res; })
+      () =>
+        new Promise<string>((res) => {
+          releaseA = res;
+        })
     );
-    const a = classifyPrompt('refactor the stream orchestrator into three modules, overlap probe a', { cache: localModelCache() });
+    const a = classifyPrompt(
+      'refactor the stream orchestrator into three modules, overlap probe a',
+      { cache: localModelCache() }
+    );
     // Let A reach its (pending) Ollama call.
     await new Promise((r) => setTimeout(r, 0));
     // A's answer arrives and, in the same tick, B (momentum) starts and

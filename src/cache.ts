@@ -45,8 +45,6 @@ const INSTANCE_KEYS = ['session_errors', 'usage_log'] as const;
  */
 const VOLATILE_KEYS = ['provider_breaker'] as const;
 
-
-
 /** Atomic JSON write: temp file in the same directory, then rename. */
 function writeJsonAtomic(file: string, data: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -138,7 +136,9 @@ export class CacheManager {
    */
   constructor(stateDir: string, existing?: Cache, projectDir?: string) {
     this.cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
-    this.projectPath = projectDir ? path.join(projectDir, '.pi', 'cache', 'router-state.json') : null;
+    this.projectPath = projectDir
+      ? path.join(projectDir, '.pi', 'cache', 'router-state.json')
+      : null;
     if (existing) {
       this.cache = existing;
     } else {
@@ -195,7 +195,8 @@ export class CacheManager {
       return this.cache;
     }
     const disk = this.readFromDisk();
-    if (known === undefined && Object.keys(this.cache).length === 0) Object.assign(this.cache, disk);
+    if (known === undefined && Object.keys(this.cache).length === 0)
+      Object.assign(this.cache, disk);
     else mergeExternal(this.cache, disk);
     lastSync.set(this.cache, state);
     this.loadInstanceState();
@@ -365,8 +366,17 @@ export class CacheManager {
     for (const key of Object.keys(this.cache)) delete (this.cache as Record<string, unknown>)[key];
     // A reset is a WIPE: remove both files so the merge-on-save paths have
     // nothing to resurrect, then persist the (now empty) state fresh.
-    try { fs.rmSync(this.cachePath, { force: true }); } catch { /* best effort: a locked or already-gone file must not block the wipe */ }
-    if (this.projectPath) try { fs.rmSync(this.projectPath, { force: true }); } catch { /* best effort, see above */ }
+    try {
+      fs.rmSync(this.cachePath, { force: true });
+    } catch {
+      /* best effort: a locked or already-gone file must not block the wipe */
+    }
+    if (this.projectPath)
+      try {
+        fs.rmSync(this.projectPath, { force: true });
+      } catch {
+        /* best effort, see above */
+      }
     this.saveCache();
   }
 
@@ -415,8 +425,6 @@ export class CacheManager {
     this.cache.usage_log = this.cache.usage_log.filter((e) => e.ts > cutoff);
     this.saveCache();
   }
-
-
 
   /**
    * Updates the cost mux values in the cache

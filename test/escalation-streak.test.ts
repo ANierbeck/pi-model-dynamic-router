@@ -113,7 +113,7 @@ describe('SessionEscalation — streak-based escalation', () => {
     expect(esc.level).toBe('code_complex');
   });
 
-  it('is NOT driven by frustration/error keywords in the router\'s own assistant-side fallback text', () => {
+  it("is NOT driven by frustration/error keywords in the router's own assistant-side fallback text", () => {
     const esc = new SessionEscalation();
     // The assistant's response can legitimately contain router-injected
     // fallback narration like "... error: ..." or "... failed, trying ..."

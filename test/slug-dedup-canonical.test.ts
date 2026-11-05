@@ -55,7 +55,11 @@ describe('pickSlugClusterRepresentatives (live-path dedup)', () => {
     // Rank order (input) deliberately puts the alias first — the cluster
     // representative must still be the canonical versioned ref.
     const reps = pickSlugClusterRepresentatives(
-      ['mistral/mistral-medium-latest', 'mistral/mistral-medium-3.5', 'mistral/mistral-medium-2604'],
+      [
+        'mistral/mistral-medium-latest',
+        'mistral/mistral-medium-3.5',
+        'mistral/mistral-medium-2604',
+      ],
       () => false
     );
     expect(reps).toEqual(['mistral/mistral-medium-3.5']);
@@ -114,12 +118,11 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       withMeta('mistral/mistral-medium-latest', 933),
       withMeta('mistral/mistral-medium-2604', 933),
     ];
-    const result = collectGroupModels(
-      { min_gdpval: 0, fallback_groups: [] },
-      [],
-      sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any
-    );
+    const result = collectGroupModels({ min_gdpval: 0, fallback_groups: [] }, [], sorted, {
+      model_groups: {},
+      model_metrics: {},
+      providers: {},
+    } as any);
     expect(result).toEqual(['mistral/mistral-medium-3.5']);
   });
 
@@ -128,12 +131,11 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       withMeta('mistral/zai-glm-5-3', 1645),
       withMeta('mistral/mistral-medium-3.5', 933),
     ];
-    const result = collectGroupModels(
-      { min_gdpval: 0, fallback_groups: [] },
-      [],
-      sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any
-    );
+    const result = collectGroupModels({ min_gdpval: 0, fallback_groups: [] }, [], sorted, {
+      model_groups: {},
+      model_metrics: {},
+      providers: {},
+    } as any);
     expect(result).toEqual(['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5']);
   });
 
@@ -143,12 +145,11 @@ describe('collectGroupModels (persist-path dedup by slug)', () => {
       withMeta('mistral/mistral-small-latest', 478),
       withMeta('mistral/mistral-small-3-2', 478),
     ];
-    const result = collectGroupModels(
-      { min_gdpval: 0, fallback_groups: [] },
-      [],
-      sorted,
-      { model_groups: {}, model_metrics: {}, providers: {} } as any
-    );
+    const result = collectGroupModels({ min_gdpval: 0, fallback_groups: [] }, [], sorted, {
+      model_groups: {},
+      model_metrics: {},
+      providers: {},
+    } as any);
     expect(result).toEqual(['mistral/mistral-small-3-2']);
   });
 

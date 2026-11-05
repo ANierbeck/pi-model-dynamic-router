@@ -14,11 +14,15 @@ import { prePushPlanFromGit } from '../scripts/lint-gate.ts';
 
 const ZERO = '0'.repeat(40);
 const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
+  execFileSync(
+    'git',
+    ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args],
+    {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  ).trim();
 
 /** git's pre-push stdin for pushing `localSha` to a new remote branch. */
 const pushOf = (localSha: string): string => `refs/heads/x ${localSha} refs/heads/x ${ZERO}\n`;

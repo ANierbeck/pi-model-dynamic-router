@@ -53,7 +53,7 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
   it('off by default: a model without the value stays in the pool', async () => {
     const { routing, cfg } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: PLANNING },
+      { planning: PLANNING }
     );
     const kept = routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], PLANNING as any, cfg);
     expect(kept).toContain(NEWCOMER);
@@ -63,40 +63,62 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
     const group = { ...PLANNING, require_score_column: true };
     const { routing, cfg } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group },
+      { planning: group }
     );
     const dropped: Array<[string, string]> = [];
-    const kept = routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], group as any, cfg, false, undefined, undefined, (r, g) => dropped.push([r, g]));
+    const kept = routing.applyGroupFilters(
+      [OPUS, SONNET, NEWCOMER],
+      group as any,
+      cfg,
+      false,
+      undefined,
+      undefined,
+      (r, g) => dropped.push([r, g])
+    );
     expect(kept).toEqual([OPUS, SONNET]);
     expect(dropped).toEqual([[NEWCOMER, 'require_score_column']]);
   });
 
-  it('on: the column is the group\'s own — a briefcase-only value does not satisfy a reasoning group', async () => {
+  it("on: the column is the group's own — a briefcase-only value does not satisfy a reasoning group", async () => {
     const group = { ...PLANNING, require_score_column: true };
     const { routing, cfg } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-newcomer-9': { briefcase: 1700 } },
-      { planning: group },
+      { planning: group }
     );
     expect(routing.applyGroupFilters([OPUS, NEWCOMER], group as any, cfg)).toEqual([OPUS]);
   });
 
   it('on, but NO model anywhere has the column: the gate stands down', async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { routing, cfg } = await fresh({ 'claude-opus-5-5': { briefcase: 1800 } }, { planning: group });
+    const { routing, cfg } = await fresh(
+      { 'claude-opus-5-5': { briefcase: 1800 } },
+      { planning: group }
+    );
     expect(routing.applyGroupFilters([OPUS, SONNET], group as any, cfg)).toEqual([OPUS, SONNET]);
   });
 
   it('on, with a gdpval group (no capability column): nothing to require, nothing dropped', async () => {
-    const group = { method: 'best', min_gdpval: 1700, require_score_column: true, fallback_groups: [] };
-    const { routing, cfg } = await fresh({ 'claude-opus-5-5': { reasoning: 56 } }, { standard: group });
-    expect(routing.applyGroupFilters([OPUS, NEWCOMER], group as any, cfg)).toEqual([OPUS, NEWCOMER]);
+    const group = {
+      method: 'best',
+      min_gdpval: 1700,
+      require_score_column: true,
+      fallback_groups: [],
+    };
+    const { routing, cfg } = await fresh(
+      { 'claude-opus-5-5': { reasoning: 56 } },
+      { standard: group }
+    );
+    expect(routing.applyGroupFilters([OPUS, NEWCOMER], group as any, cfg)).toEqual([
+      OPUS,
+      NEWCOMER,
+    ]);
   });
 
   it('the live router resolves planning to the profiled models only', async () => {
     const group = { ...PLANNING, require_score_column: true };
     const { routing, cfg } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group },
+      { planning: group }
     );
     const cache = {
       available_models: [
@@ -104,7 +126,10 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
         { provider: 'claude-bridge', id: 'claude-sonnet-5-5' },
         { provider: 'claude-bridge', id: 'claude-newcomer-9' },
       ],
-      capability_profiles: { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
+      capability_profiles: {
+        'claude-opus-5-5': { reasoning: 56 },
+        'claude-sonnet-5-5': { reasoning: 46 },
+      },
     } as any;
     const res = new routing.Router(cfg, cache, new Map()).resolve('planning');
     expect(res?.candidates).not.toContain(NEWCOMER);
@@ -122,16 +147,20 @@ describe('require_score_column in the persist path (generated dynamic config)', 
     const group = { ...PLANNING, require_score_column: true };
     const { dyn, cfg } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group },
+      { planning: group }
     );
-    const kept = dyn.filterModelsForGroup([model(OPUS, 1900), model(SONNET, 1950), model(NEWCOMER, 2000)], group as any, cfg);
+    const kept = dyn.filterModelsForGroup(
+      [model(OPUS, 1900), model(SONNET, 1950), model(NEWCOMER, 2000)],
+      group as any,
+      cfg
+    );
     expect(kept.map((m: any) => m.ref)).toEqual([OPUS, SONNET]);
   });
 
   it('sortModelsForGroup ranks by reasoning with unprofiled models last', async () => {
     const { dyn, cfg, metrics } = await fresh(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: PLANNING },
+      { planning: PLANNING }
     );
     // GDPval order is the REVERSE of the expected one (newcomer > sonnet >
     // opus), so only the column can produce [opus, sonnet, newcomer].
@@ -139,12 +168,11 @@ describe('require_score_column in the persist path (generated dynamic config)', 
       [model(NEWCOMER, 2000), model(SONNET, 1950), model(OPUS, 1900)],
       PLANNING as any,
       cfg,
-      metrics.calculateScore,
+      metrics.calculateScore
     );
     expect(sorted.map((m: any) => m.ref)).toEqual([OPUS, SONNET, NEWCOMER]);
   });
 });
-
 
 // ── min_score: a floor on the group's own capability column ───────────────
 // Owner decision 2026-10-31: GDPval alone let a fast "Flash" model into
@@ -166,7 +194,15 @@ describe('min_score (floor on the score_by column)', () => {
     const g = group({ min_score: 35 });
     const { routing, cfg } = await fresh(PROFILES, { planning: g });
     const dropped: Array<[string, string]> = [];
-    const kept = routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg, false, undefined, undefined, (r, n) => dropped.push([r, n]));
+    const kept = routing.applyGroupFilters(
+      [OPUS, SONNET, NEWCOMER],
+      g as any,
+      cfg,
+      false,
+      undefined,
+      undefined,
+      (r, n) => dropped.push([r, n])
+    );
     expect(kept).toEqual([OPUS, SONNET]);
     expect(dropped).toEqual([[NEWCOMER, 'min_score']]);
   });
@@ -174,7 +210,10 @@ describe('min_score (floor on the score_by column)', () => {
   it('a value exactly at the floor passes (>=, like min_gdpval)', async () => {
     const g = group({ min_score: 46 });
     const { routing, cfg } = await fresh(PROFILES, { planning: g });
-    expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([OPUS, SONNET]);
+    expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
+      OPUS,
+      SONNET,
+    ]);
   });
 
   it('a model WITHOUT a value fails a positive floor (null fails, like min_gdpval)', async () => {
@@ -188,7 +227,10 @@ describe('min_score (floor on the score_by column)', () => {
     // require_score_column only drops unprofiled models from admission.
     const g = group({ min_score: 35, require_score_column: false });
     const { routing, cfg } = await fresh(PROFILES, { planning: g });
-    expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([OPUS, SONNET]);
+    expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
+      OPUS,
+      SONNET,
+    ]);
   });
 
   it('the generated path applies the min_score floor BEFORE sorting (filter → sort pipeline order)', async () => {
@@ -210,7 +252,7 @@ describe('min_score (floor on the score_by column)', () => {
     const filtered = dyn.filterModelsForGroup(
       [model(NEWCOMER, 2000), model(SONNET, 1950), model(OPUS, 1900)],
       g as any,
-      cfg,
+      cfg
     );
     const sorted = dyn.sortModelsForGroup(filtered, g as any, cfg, metrics.calculateScore);
     expect(sorted.map((m: any) => m.ref)).toEqual([OPUS, SONNET]);
@@ -220,13 +262,20 @@ describe('min_score (floor on the score_by column)', () => {
     for (const extra of [{}, { min_score: 0 }]) {
       const g = group(extra);
       const { routing, cfg } = await fresh(PROFILES, { planning: g });
-      expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([OPUS, SONNET, NEWCOMER]);
+      expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
+        OPUS,
+        SONNET,
+        NEWCOMER,
+      ]);
     }
   });
 
   it('stands down while NO model has a value for the column (no scrape yet)', async () => {
     const g = group({ min_score: 35 });
-    const { routing, cfg } = await fresh({ 'claude-opus-5-5': { briefcase: 1800 } }, { planning: g });
+    const { routing, cfg } = await fresh(
+      { 'claude-opus-5-5': { briefcase: 1800 } },
+      { planning: g }
+    );
     expect(routing.applyGroupFilters([OPUS, SONNET], g as any, cfg)).toEqual([OPUS, SONNET]);
   });
 
@@ -247,9 +296,16 @@ describe('min_score (floor on the score_by column)', () => {
       ],
       capability_profiles: PROFILES,
     } as any;
-    expect(new routing.Router(cfg, cache, new Map()).resolve('planning')?.candidates).not.toContain(NEWCOMER);
-    const m = (ref: string, gdpval: number) => ({ ref, gdpval, cost: 1, price: null, contextWindow: 1_000_000, isFreeModel: false }) as any;
-    const kept = dyn.filterModelsForGroup([m(OPUS, 1900), m(SONNET, 1950), m(NEWCOMER, 2000)], g as any, cfg);
+    expect(new routing.Router(cfg, cache, new Map()).resolve('planning')?.candidates).not.toContain(
+      NEWCOMER
+    );
+    const m = (ref: string, gdpval: number) =>
+      ({ ref, gdpval, cost: 1, price: null, contextWindow: 1_000_000, isFreeModel: false }) as any;
+    const kept = dyn.filterModelsForGroup(
+      [m(OPUS, 1900), m(SONNET, 1950), m(NEWCOMER, 2000)],
+      g as any,
+      cfg
+    );
     expect(kept.map((x: any) => x.ref)).toEqual([OPUS, SONNET]);
   });
 });
@@ -259,10 +315,20 @@ describe('detectGroup respects the score-column gates (PR #80 round)', () => {
 
   it('a model below the planning score floor is not labelled planning', async () => {
     const g = { ...PLANNING, require_score_column: true, min_score: 35 };
-    const groups = { planning: g, standard: { method: 'tiered', min_gdpval: 300, fallback_groups: [] } };
-    const profiles = { 'claude-opus-5-5': { reasoning: 58 }, 'claude-newcomer-9': { reasoning: 19.5 } };
+    const groups = {
+      planning: g,
+      standard: { method: 'tiered', min_gdpval: 300, fallback_groups: [] },
+    };
+    const profiles = {
+      'claude-opus-5-5': { reasoning: 58 },
+      'claude-newcomer-9': { reasoning: 19.5 },
+    };
     const { routing, cfg } = await fresh(profiles, groups);
-    const router = new routing.Router(cfg, { available_models: [], capability_profiles: profiles } as any, new Map());
+    const router = new routing.Router(
+      cfg,
+      { available_models: [], capability_profiles: profiles } as any,
+      new Map()
+    );
     expect(router.detectGroup(OPUS)).toBe('planning');
     // GDPval 2000 clears planning's 1700 floor, but the model is unmeasured
     // enough to be refused from the pool: the label must follow the pool.

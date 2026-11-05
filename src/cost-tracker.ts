@@ -29,7 +29,7 @@ export class CostTracker {
     this.metrics = this.createEmptyMetrics();
     this.startTime = new Date();
     this.logFilePath = logFilePath;
-    
+
     // Daily summary at midnight
     this.scheduleDailySummary();
   }
@@ -98,7 +98,7 @@ export class CostTracker {
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost =
       price && price.input !== 'unknown' && price.output !== 'unknown'
-        ? (inputTokens * (price.input) + outputTokens * (price.output)) / 1_000_000
+        ? (inputTokens * price.input + outputTokens * price.output) / 1_000_000
         : 0;
 
     // Update metrics
@@ -106,7 +106,8 @@ export class CostTracker {
     this.metrics.totalInputTokens += inputTokens;
     this.metrics.totalOutputTokens += outputTokens;
     this.metrics.totalCacheReadTokens = (this.metrics.totalCacheReadTokens ?? 0) + cacheReadTokens;
-    this.metrics.totalCacheWriteTokens = (this.metrics.totalCacheWriteTokens ?? 0) + cacheWriteTokens;
+    this.metrics.totalCacheWriteTokens =
+      (this.metrics.totalCacheWriteTokens ?? 0) + cacheWriteTokens;
 
     // Per model
     this.metrics.requestsByModel[modelRef] = (this.metrics.requestsByModel[modelRef] || 0) + 1;
@@ -121,7 +122,9 @@ export class CostTracker {
 
     // Debug log (optional)
     if (process.env.DEBUG_COST_TRACKER === 'true') {
-      routerLog(`[cost-tracker] ${modelRef}: $${cost.toFixed(6)} (in: ${inputTokens}, out: ${outputTokens})`);
+      routerLog(
+        `[cost-tracker] ${modelRef}: $${cost.toFixed(6)} (in: ${inputTokens}, out: ${outputTokens})`
+      );
     }
   }
 
@@ -174,8 +177,9 @@ export class CostTracker {
       ...Object.entries(this.metrics.costByModel)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
-        .map(([model, cost]) => 
-          `  ${model}: $${cost.toFixed(6)} (${this.metrics.requestsByModel[model]} requests)`
+        .map(
+          ([model, cost]) =>
+            `  ${model}: $${cost.toFixed(6)} (${this.metrics.requestsByModel[model]} requests)`
         ),
       `==========================`,
     ].join('\n');
@@ -263,20 +267,24 @@ export class CostTracker {
       (a, b) => (win[b]?.d30 ?? 0) - (win[a]?.d30 ?? 0)
     );
     if (winRefs.length > 0) {
-      lines.push(``, `--- Windows (usage_log; ≈ = blended-price estimate, cache reads excluded) ---`);
+      lines.push(
+        ``,
+        `--- Windows (usage_log; ≈ = blended-price estimate, cache reads excluded) ---`
+      );
       lines.push(
         `${'Model'.padEnd(28)} ${'1d'.padStart(7)} ${'7d'.padStart(9)} ${'30d'.padStart(9)} ${'Cache30d'.padStart(8)}  ≈30d`
       );
       for (const ref of winRefs) {
         const w = win[ref] ?? { d1: 0, d7: 0, d30: 0 };
-        const cacheShare = w.d30 > 0 && w.cacheRead30 ? `${Math.round((w.cacheRead30 / w.d30) * 100)}%` : '-';
+        const cacheShare =
+          w.d30 > 0 && w.cacheRead30 ? `${Math.round((w.cacheRead30 / w.d30) * 100)}%` : '-';
         const price = deps.price(ref);
         // Cache reads are billed far below list price, so the blended list
         // estimate covers only the non-cacheRead tokens (Phase 5a).
         const billable = Math.max(0, w.d30 - (w.cacheRead30 ?? 0));
         const est =
           price && w.d30 > 0
-            ? `≈$${((billable * (price.input + price.output) / 2) / 1_000_000).toFixed(4)}`
+            ? `≈$${((billable * (price.input + price.output)) / 2 / 1_000_000).toFixed(4)}`
             : '-';
         lines.push(
           `${ref.slice(0, 28).padEnd(28)} ${fmtK(w.d1).padStart(7)} ${fmtK(w.d7).padStart(9)} ${fmtK(w.d30).padStart(9)} ${cacheShare.padStart(8)}  ${est}`
@@ -307,7 +315,10 @@ export class CostTracker {
     // Write to file if path is specified
     if (this.logFilePath) {
       try {
-        fs.appendFileSync(this.logFilePath, `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`);
+        fs.appendFileSync(
+          this.logFilePath,
+          `\n${new Date().toISOString()} - Cost Tracker Summary\n${summary}\n`
+        );
       } catch {
         // Ignore errors during writing
       }
@@ -334,11 +345,15 @@ export class CostTracker {
    */
   getSummaryJson(): string {
     const uptime = new Date().getTime() - this.startTime.getTime();
-    return JSON.stringify({
-      timestamp: new Date().toISOString(),
-      uptimeMs: uptime,
-      metrics: this.metrics,
-    }, null, 2);
+    return JSON.stringify(
+      {
+        timestamp: new Date().toISOString(),
+        uptimeMs: uptime,
+        metrics: this.metrics,
+      },
+      null,
+      2
+    );
   }
 }
 

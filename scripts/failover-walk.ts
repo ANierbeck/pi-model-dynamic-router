@@ -67,7 +67,13 @@ export function parseWalkEvents(lines: string[]): Event[] {
   for (const line of lines) {
     const pool = parseRoutingLine(line);
     if (pool) {
-      out.push({ kind: 'pool', ts: pool.ts, proc: pool.proc, group: pool.group, first: pool.candidates[0]?.ref ?? null });
+      out.push({
+        kind: 'pool',
+        ts: pool.ts,
+        proc: pool.proc,
+        group: pool.group,
+        first: pool.candidates[0]?.ref ?? null,
+      });
       continue;
     }
     const m = line.match(LINE);
@@ -96,17 +102,26 @@ export function walkDecisions(lines: string[], decisions: WalkDecision[]): WalkR
     const group = d.group as string;
     const next = routed.find((o) => o.proc === d.proc && o.ts > d.ts);
     const end = next ? next.ts : d.ts + MAX_WINDOW_MS;
-    const own = events.filter((e) => e.proc === d.proc && e.ts >= d.ts - POOL_LEAD_MS && e.ts < end);
-    const pool = own.find((e) => e.kind === 'pool' && e.group === group && e.ts >= d.ts - POOL_LEAD_MS);
+    const own = events.filter(
+      (e) => e.proc === d.proc && e.ts >= d.ts - POOL_LEAD_MS && e.ts < end
+    );
+    const pool = own.find(
+      (e) => e.kind === 'pool' && e.group === group && e.ts >= d.ts - POOL_LEAD_MS
+    );
     const earlier = pool
       ? undefined
       : events
-          .filter((e): e is Extract<Event, { kind: 'pool' }> => e.kind === 'pool' && e.proc === d.proc && e.group === group)
+          .filter(
+            (e): e is Extract<Event, { kind: 'pool' }> =>
+              e.kind === 'pool' && e.proc === d.proc && e.group === group
+          )
           .filter((e) => e.ts < d.ts - POOL_LEAD_MS && e.ts >= d.ts - POOL_STALE_MS)
           .pop();
     const chosen = pool ?? earlier;
     const done = own.find((e) => e.kind === 'done' && e.ts >= d.ts);
-    const tries = own.filter((e): e is Extract<Event, { kind: 'try' }> => e.kind === 'try' && e.ts >= d.ts);
+    const tries = own.filter(
+      (e): e is Extract<Event, { kind: 'try' }> => e.kind === 'try' && e.ts >= d.ts
+    );
     const walk = done ? tries.filter((e) => e.ts <= done.ts) : tries;
     rows.push({
       ts: d.ts,
@@ -125,9 +140,30 @@ export function walkDecisions(lines: string[], decisions: WalkDecision[]): WalkR
 
 /** Per-group summary: how often the first choice served the turn, and how far the walk went. */
 export function summarizeWalk(rows: WalkRow[]) {
-  const groups: Record<string, { turns: number; success: number; firstChoiceServed: number; firstAttemptFailed: number; noPool: number; poolEarlier: number; maxAttempts: number; attemptsSum: number }> = {};
+  const groups: Record<
+    string,
+    {
+      turns: number;
+      success: number;
+      firstChoiceServed: number;
+      firstAttemptFailed: number;
+      noPool: number;
+      poolEarlier: number;
+      maxAttempts: number;
+      attemptsSum: number;
+    }
+  > = {};
   for (const r of rows) {
-    const g = (groups[r.group] ??= { turns: 0, success: 0, firstChoiceServed: 0, firstAttemptFailed: 0, noPool: 0, poolEarlier: 0, maxAttempts: 0, attemptsSum: 0 });
+    const g = (groups[r.group] ??= {
+      turns: 0,
+      success: 0,
+      firstChoiceServed: 0,
+      firstAttemptFailed: 0,
+      noPool: 0,
+      poolEarlier: 0,
+      maxAttempts: 0,
+      attemptsSum: 0,
+    });
     g.turns++;
     g.attemptsSum += r.attempts.length;
     g.maxAttempts = Math.max(g.maxAttempts, r.attempts.length);
@@ -155,10 +191,12 @@ function main(): void {
     .map((row) => ({ ts: row.ts, proc: row.proc!, group: row.group, stage: row.stage }));
   const rows = walkDecisions(lines, decisions);
   console.log(`bounds: since=${arg('since') ?? '-'} until=${arg('until') ?? '-'}`);
-  console.log(`routed turns=${rows.length} success=${rows.filter((r) => r.outcome === 'success').length}`);
+  console.log(
+    `routed turns=${rows.length} success=${rows.filter((r) => r.outcome === 'success').length}`
+  );
   for (const [g, s] of Object.entries(summarizeWalk(rows))) {
     console.log(
-      `  ${g.padEnd(14)} turns=${s.turns} success=${s.success} firstChoiceServed=${s.firstChoiceServed} firstAttemptFailed=${s.firstAttemptFailed} noPool=${s.noPool} poolEarlier=${s.poolEarlier} attempts(avg/max)=${(s.attemptsSum / s.turns).toFixed(2)}/${s.maxAttempts}`,
+      `  ${g.padEnd(14)} turns=${s.turns} success=${s.success} firstChoiceServed=${s.firstChoiceServed} firstAttemptFailed=${s.firstAttemptFailed} noPool=${s.noPool} poolEarlier=${s.poolEarlier} attempts(avg/max)=${(s.attemptsSum / s.turns).toFixed(2)}/${s.maxAttempts}`
     );
   }
 }

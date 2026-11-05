@@ -40,7 +40,9 @@ const NOW = new Date(2026, 9, 7, 12, 0, 0).getTime();
 const SOFT = 300_000;
 const HARD = 800_000;
 
-function ctxFixture(overrides: Partial<Record<'tokens' | 'contextWindow' | 'percent', number | null>> = {}) {
+function ctxFixture(
+  overrides: Partial<Record<'tokens' | 'contextWindow' | 'percent', number | null>> = {}
+) {
   return {
     tokens: 500_000,
     contextWindow: 1_000_000,
@@ -114,13 +116,29 @@ describe('decideCompaction', () => {
   });
 
   it('absent context_budget / no thresholds → none (default off: measurement only, no hints)', () => {
-    expect(decideCompaction(undefined, 900_000, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW)).toEqual({ action: 'none' });
-    expect(decideCompaction({ enabled: true }, 900_000, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW)).toEqual({ action: 'none' });
-    expect(decideCompaction({ enabled: false, soft_tokens: SOFT }, 200_000, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW)).toEqual({ action: 'none' });
+    expect(
+      decideCompaction(undefined, 900_000, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW)
+    ).toEqual({ action: 'none' });
+    expect(
+      decideCompaction({ enabled: true }, 900_000, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW)
+    ).toEqual({ action: 'none' });
+    expect(
+      decideCompaction(
+        { enabled: false, soft_tokens: SOFT },
+        200_000,
+        { cacheShare: 0.1, ts: NOW - 60_000 },
+        NOW
+      )
+    ).toEqual({ action: 'none' });
   });
 
   it('unknown context tokens (right after compaction) → none', () => {
-    const d = decideCompaction({ enabled: true, soft_tokens: SOFT }, null, { cacheShare: 0.1, ts: NOW - 60_000 }, NOW);
+    const d = decideCompaction(
+      { enabled: true, soft_tokens: SOFT },
+      null,
+      { cacheShare: 0.1, ts: NOW - 60_000 },
+      NOW
+    );
     expect(d).toEqual({ action: 'none' });
   });
 
@@ -133,19 +151,31 @@ describe('decideCompaction', () => {
   });
 
   it('no recorded step yet (fresh/resumed session) counts as cold — nothing was paid into a cache', () => {
-    const d = decideCompaction({ enabled: true, soft_tokens: SOFT }, 500_000, { cacheShare: null, ts: null }, NOW);
+    const d = decideCompaction(
+      { enabled: true, soft_tokens: SOFT },
+      500_000,
+      { cacheShare: null, ts: null },
+      NOW
+    );
     expect(d).toEqual({ action: 'compact', reason: 'cold-over-soft' });
   });
 
   it('a recent step with unknown cache share is NOT cold (conservative: no cache info, no idle gap)', () => {
-    const d = decideCompaction({ enabled: true, soft_tokens: SOFT }, 500_000, { cacheShare: null, ts: NOW - 60_000 }, NOW);
+    const d = decideCompaction(
+      { enabled: true, soft_tokens: SOFT },
+      500_000,
+      { cacheShare: null, ts: NOW - 60_000 },
+      NOW
+    );
     expect(d).toEqual({ action: 'none' });
   });
 
   it('isCacheCold: a cache share below the miss threshold is a miss', () => {
     expect(CACHE_MISS_SHARE_THRESHOLD).toBeGreaterThan(0);
     expect(CACHE_MISS_SHARE_THRESHOLD).toBeLessThan(1);
-    expect(isCacheCold({}, { cacheShare: CACHE_MISS_SHARE_THRESHOLD - 0.01, ts: NOW }, NOW)).toBe(true);
+    expect(isCacheCold({}, { cacheShare: CACHE_MISS_SHARE_THRESHOLD - 0.01, ts: NOW }, NOW)).toBe(
+      true
+    );
     expect(isCacheCold({}, { cacheShare: CACHE_MISS_SHARE_THRESHOLD, ts: NOW }, NOW)).toBe(false);
   });
 });
@@ -162,7 +192,10 @@ describe('lastStepCacheState', () => {
   });
 
   it('an entry without cacheRead counts as a full miss (share 0)', () => {
-    expect(lastStepCacheState([{ ref: 'a/x', tokens: 100, ts: NOW }])).toEqual({ cacheShare: 0, ts: NOW });
+    expect(lastStepCacheState([{ ref: 'a/x', tokens: 100, ts: NOW }])).toEqual({
+      cacheShare: 0,
+      ts: NOW,
+    });
   });
 
   it('an empty log is the "no step yet" state', () => {
@@ -201,7 +234,10 @@ describe('resolveContextBudget', () => {
   });
 
   it('no context_budget anywhere → undefined (feature off)', () => {
-    const bare = { model_groups: { tactical: { method: 'best' } }, model_metrics: {} } as any as Config;
+    const bare = {
+      model_groups: { tactical: { method: 'best' } },
+      model_metrics: {},
+    } as any as Config;
     expect(resolveContextBudget(bare, 'tactical')).toBeUndefined();
   });
 });
@@ -210,12 +246,13 @@ describe('resolveContextBudget', () => {
 
 describe('runContextCompaction', () => {
   const cfg = (budget: Config['context_budget']) =>
-    ({ model_groups: {}, model_metrics: {}, context_budget: budget } as any as Config);
+    ({ model_groups: {}, model_metrics: {}, context_budget: budget }) as any as Config;
 
   it('compact decision calls ctx.compact() (fire and forget)', () => {
     const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
     runContextCompaction({
-      ctx, cfg: cfg({ enabled: true, soft_tokens: SOFT }),
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT }),
       activeGroup: null,
       usageLog: [{ ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 }],
       state: { lastHintAt: 0 },
@@ -226,7 +263,8 @@ describe('runContextCompaction', () => {
   it('warm-cache-over-soft leaves the session alone', () => {
     const { ctx, compact, notify } = fakeCtx(ctxFixture({ tokens: 500_000 }));
     runContextCompaction({
-      ctx, cfg: cfg({ enabled: true, soft_tokens: SOFT }),
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT }),
       activeGroup: null,
       usageLog: [{ ref: 'a/x', tokens: 1000, cacheRead: 990, ts: Date.now() - 60_000 }],
       state: { lastHintAt: 0 },
@@ -240,7 +278,8 @@ describe('runContextCompaction', () => {
     const state: CompactionRunState = { lastHintAt: 0 };
     const call = () =>
       runContextCompaction({
-        ctx, cfg: cfg({ enabled: false, soft_tokens: SOFT }),
+        ctx,
+        cfg: cfg({ enabled: false, soft_tokens: SOFT }),
         activeGroup: null,
         usageLog: [{ ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 }],
         state,
@@ -257,7 +296,8 @@ describe('runContextCompaction', () => {
   it('no configured thresholds → no compact, no hint (default off)', () => {
     const { ctx, compact, notify } = fakeCtx(ctxFixture({ tokens: 500_000 }));
     runContextCompaction({
-      ctx, cfg: cfg(undefined),
+      ctx,
+      cfg: cfg(undefined),
       activeGroup: null,
       usageLog: [{ ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 }],
       state: { lastHintAt: 0 },
@@ -269,7 +309,8 @@ describe('runContextCompaction', () => {
   it('getContextUsage returning nothing (right after a compaction) is a no-op', () => {
     const { ctx, compact } = fakeCtx(ctxFixture({ tokens: null }));
     runContextCompaction({
-      ctx, cfg: cfg({ enabled: true, soft_tokens: SOFT }),
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT }),
       activeGroup: null,
       usageLog: [{ ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 }],
       state: { lastHintAt: 0 },
@@ -286,7 +327,7 @@ describe('turn_start wiring (Phase 5b)', () => {
     const compact = vi.fn();
     const notify = vi.fn();
     const rt: any = {
-      pi: { on: (name: string, fn: any) => ((handlers[name] ??= []).push(fn)) },
+      pi: { on: (name: string, fn: any) => (handlers[name] ??= []).push(fn) },
       cache: { usage_log: usageLog },
       cfg,
       activeGroup: null,
@@ -313,8 +354,12 @@ describe('turn_start wiring (Phase 5b)', () => {
     model_metrics: {},
     context_budget: { enabled: true, soft_tokens: SOFT },
   } as any as Config;
-  const coldLog: UsageLogEntry[] = [{ ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 }];
-  const warmLog: UsageLogEntry[] = [{ ref: 'a/x', tokens: 1000, cacheRead: 990, ts: Date.now() - 60_000 }];
+  const coldLog: UsageLogEntry[] = [
+    { ref: 'a/x', tokens: 1000, cacheRead: 10, ts: Date.now() - 60_000 },
+  ];
+  const warmLog: UsageLogEntry[] = [
+    { ref: 'a/x', tokens: 1000, cacheRead: 990, ts: Date.now() - 60_000 },
+  ];
 
   it('cold + over-soft: turn_start triggers ctx.compact() at the turn boundary', async () => {
     const h = harness(enabledCfg, coldLog);
@@ -351,7 +396,13 @@ describe('turn_start wiring (Phase 5b)', () => {
     await h.handlers['tool_result'][0]({ tool: 'read', content: [] }, h.sessionCtx);
     // turn_end: metrics/logging, but never compacts.
     await h.handlers['turn_end'][0](
-      { message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], usage: { input: 1, output: 1, cost: { total: 0 } } } },
+      {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input: 1, output: 1, cost: { total: 0 } },
+        },
+      },
       h.sessionCtx
     );
     expect(h.compact).not.toHaveBeenCalled();
@@ -373,7 +424,9 @@ describe('turn_start wiring (Phase 5b)', () => {
     expect(h.notify).toHaveBeenCalledTimes(1); // hint, not compact
     // And a globally-off budget with a group override ON compacts.
     const cfg2 = {
-      model_groups: { tactical: { method: 'best', context_budget: { enabled: true, soft_tokens: SOFT } } },
+      model_groups: {
+        tactical: { method: 'best', context_budget: { enabled: true, soft_tokens: SOFT } },
+      },
       model_metrics: {},
       context_budget: { enabled: false },
     } as any as Config;

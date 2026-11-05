@@ -75,7 +75,10 @@ export function markNoSchema(cache: Cache | undefined, model: string): void {
 // ── Candidate selection ─────────────────────────────────────────────────────
 
 /** Parameter count in billions: what Ollama reported, else the `<n>b` tag in the id. */
-export function parameterSizeB(model: { id: string; capabilities?: { parameterSizeB?: number } }): number | undefined {
+export function parameterSizeB(model: {
+  id: string;
+  capabilities?: { parameterSizeB?: number };
+}): number | undefined {
   const reported = model.capabilities?.parameterSizeB;
   if (typeof reported === 'number') return reported;
   const m = /(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)b(?![A-Za-z0-9])/i.exec(model.id);
@@ -83,7 +86,9 @@ export function parameterSizeB(model: { id: string; capabilities?: { parameterSi
 }
 
 /** Embedding-only and non-completion models can never answer a chat prompt; unknown capability stays eligible. */
-export function isCompletionCapable(model: { capabilities?: { completion?: boolean; embedding?: boolean } }): boolean {
+export function isCompletionCapable(model: {
+  capabilities?: { completion?: boolean; embedding?: boolean };
+}): boolean {
   return model.capabilities?.embedding !== true && model.capabilities?.completion !== false;
 }
 
@@ -135,10 +140,13 @@ export async function probeLocalClassifierCandidates(
   cache: Cache,
   deps: LocalProbeDeps,
   onLog?: (msg: string) => void,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean } = {}
 ): Promise<string[]> {
   const log = onLog ?? (() => {});
-  const candidates = selectLocalClassifierCandidates(cache, cfg).slice(0, MAX_LOCAL_PROBE_CANDIDATES);
+  const candidates = selectLocalClassifierCandidates(cache, cfg).slice(
+    0,
+    MAX_LOCAL_PROBE_CANDIDATES
+  );
   const previous = cache.classifier_local_probe;
   if (
     !opts.force &&
@@ -151,11 +159,15 @@ export async function probeLocalClassifierCandidates(
   }
   if (candidates.length === 0) {
     cache.classifier_local_models = [];
-    log('[classifier-local-probe] no local classifier candidates (no completion-capable Ollama model)');
+    log(
+      '[classifier-local-probe] no local classifier candidates (no completion-capable Ollama model)'
+    );
     return [];
   }
   if (isProviderWedged(cache, 'ollama') || (deps.isAvailable && !(await deps.isAvailable()))) {
-    log('[classifier-local-probe] Ollama unreachable or wedged — keeping the previous local classifier list');
+    log(
+      '[classifier-local-probe] Ollama unreachable or wedged — keeping the previous local classifier list'
+    );
     return cache.classifier_local_models ?? [];
   }
   log(`[classifier-local-probe] probing ${candidates.length} local candidate(s)`);
@@ -167,7 +179,9 @@ export async function probeLocalClassifierCandidates(
     for (const tc of PROBE_CASES) {
       const prompt = buildClassificationPrompt(tc.prompt, tc.contextBlock ?? '');
       try {
-        const raw = await deps.callOllama(model, prompt, { timeoutMs: LOCAL_CLASSIFIER_TIMEOUT_MS });
+        const raw = await deps.callOllama(model, prompt, {
+          timeoutMs: LOCAL_CLASSIFIER_TIMEOUT_MS,
+        });
         const verdict = judgeProbeReply(raw, tc);
         if (!verdict.ok) {
           failReason = `${tc.name}: ${verdict.reason}`;
@@ -196,8 +210,13 @@ export async function probeLocalClassifierCandidates(
   // so it must drop out of the fingerprint too — otherwise every later scan
   // sees a "changed" candidate set and re-burns GPU time on the survivors
   // (review M1, 2026-10-07).
-  cache.classifier_local_probe = { at: Date.now(), candidates: candidates.filter((m) => !isMarkedNoSchema(cache, m)) };
-  log(`[classifier-local-probe] ${working.length} working local model(s) cached: ${working.join(', ') || '(none)'}`);
+  cache.classifier_local_probe = {
+    at: Date.now(),
+    candidates: candidates.filter((m) => !isMarkedNoSchema(cache, m)),
+  };
+  log(
+    `[classifier-local-probe] ${working.length} working local model(s) cached: ${working.join(', ') || '(none)'}`
+  );
   return working;
 }
 
@@ -208,7 +227,7 @@ export async function probeLocalClassifierCandidates(
  * `classifier_fallback`, no shipped value), as bare Ollama model names.
  */
 export function localClassifierPins(
-  group: { classifier_model?: string; classifier_fallback?: string } | undefined,
+  group: { classifier_model?: string; classifier_fallback?: string } | undefined
 ): { model?: string; fallbackModel?: string } {
   const bare = (ref: string) => ref.replace(/^ollama\//, '');
   return {
@@ -240,7 +259,7 @@ export interface LocalClassifierChain {
 export function resolveLocalClassifierChain(
   cache: Cache | undefined,
   cfg: Config | undefined,
-  pins: { model?: string; fallbackModel?: string } = {},
+  pins: { model?: string; fallbackModel?: string } = {}
 ): LocalClassifierChain {
   const probedList = cache?.classifier_local_models;
   // Provisional order (only when NO probe ever ran — review N4: not computed
@@ -251,7 +270,9 @@ export function resolveLocalClassifierChain(
   const pool = Array.isArray(probedList)
     ? probedList.filter((m) => !isMarkedNoSchema(cache, m))
     : (cache ? selectLocalClassifierCandidates(cache, cfg) : []).filter((id) => {
-        const m = (cache!.available_models ?? []).find((x) => x.provider === 'ollama' && x.id === id);
+        const m = (cache!.available_models ?? []).find(
+          (x) => x.provider === 'ollama' && x.id === id
+        );
         return m?.capabilities?.completion === true;
       });
   const primary = pins.model ?? pool.find((m) => m !== pins.fallbackModel);

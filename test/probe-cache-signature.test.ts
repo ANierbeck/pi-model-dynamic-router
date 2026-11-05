@@ -12,7 +12,11 @@
 // stale list for a signature-less cache).
 
 import { describe, it, expect } from 'vitest';
-import { getCachedFallbackModels, hasProbedFallback, PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import {
+  getCachedFallbackModels,
+  hasProbedFallback,
+  PROBE_SIGNATURE,
+} from '../src/classifier-fallback-probe.ts';
 
 const STALE_CACHE: any = {
   // Written by a probe of the OLD taxonomy: a model list but no signature.
@@ -45,7 +49,10 @@ describe('classifier-fallback probe cache signature', () => {
   });
 
   it('no cache at all stays "not probed" (empty list is valid once signed)', () => {
-    const empty: any = { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE };
+    const empty: any = {
+      classifier_fallback_models: [],
+      classifier_fallback_probe_sig: PROBE_SIGNATURE,
+    };
     expect(hasProbedFallback(empty)).toBe(true);
     expect(getCachedFallbackModels(empty)).toEqual([]);
   });

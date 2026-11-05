@@ -82,7 +82,10 @@ describe('Router.resolve carries the decision-time pool', () => {
   });
 
   it('flags unhealthy candidates', () => {
-    const unhealthyCache = { ...cache, model_health: { 'provx/bbb': { fails: 2, last_fail: Date.now() } } } as any;
+    const unhealthyCache = {
+      ...cache,
+      model_health: { 'provx/bbb': { fails: 2, last_fail: Date.now() } },
+    } as any;
     metricsModule.setCache(unhealthyCache);
     try {
       const router = new Router(testConfig, unhealthyCache, new Map());
@@ -105,7 +108,11 @@ describe('Router.resolve carries the decision-time pool', () => {
 
 describe('the pool record', () => {
   it('buildPoolRecord: version, stage pool, ts, proc tag, passthrough pool', () => {
-    const rec = buildPoolRecord({ group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] });
+    const rec = buildPoolRecord({
+      group: 'bestish',
+      method: 'best',
+      candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }],
+    });
     expect(rec.v).toBe(DECISION_LOG_VERSION);
     expect(rec.stage).toBe('pool');
     expect(rec.ts).toEqual(expect.any(String));
@@ -120,7 +127,10 @@ describe('the pool record', () => {
   it('writePoolRecord appends to the same jsonl as the decision records', () => {
     const home = mkdtempSync(join(tmpdir(), 'pool-rec-'));
     try {
-      writePoolRecord(buildPoolRecord({ group: 'bestish', method: 'best', candidates: [] }), home, { maxBytes: 20 * 1024 * 1024, keep: 3 });
+      writePoolRecord(buildPoolRecord({ group: 'bestish', method: 'best', candidates: [] }), home, {
+        maxBytes: 20 * 1024 * 1024,
+        keep: 3,
+      });
       const lines = readFileSync(decisionLogPath(home), 'utf8').trim().split('\n');
       expect(lines).toHaveLength(1);
       expect(JSON.parse(lines[0]).stage).toBe('pool');
@@ -131,14 +141,21 @@ describe('the pool record', () => {
 
   it('fail-open: an unwritable location never throws', () => {
     expect(() =>
-      writePoolRecord(buildPoolRecord({ group: 'g', method: 'best', candidates: [] }), '/nonexistent/home', { maxBytes: 1, keep: 1 }),
+      writePoolRecord(
+        buildPoolRecord({ group: 'g', method: 'best', candidates: [] }),
+        '/nonexistent/home',
+        { maxBytes: 1, keep: 1 }
+      )
     ).not.toThrow();
   });
 
   it('readDecisions skips pool records (no input.sha — nothing to join)', () => {
     const home = mkdtempSync(join(tmpdir(), 'pool-rec-'));
     try {
-      writePoolRecord(buildPoolRecord({ group: 'bestish', method: 'best', candidates: [] }), home, { maxBytes: 20 * 1024 * 1024, keep: 3 });
+      writePoolRecord(buildPoolRecord({ group: 'bestish', method: 'best', candidates: [] }), home, {
+        maxBytes: 20 * 1024 * 1024,
+        keep: 3,
+      });
       expect(readDecisions(decisionLogPath(home), {})).toEqual([]);
     } finally {
       rmSync(home, { recursive: true, force: true });
@@ -176,7 +193,11 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
       resolve: () => ({
         selected: 'provx/aaa',
         candidates: ['provx/aaa'],
-        pool: { group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] },
+        pool: {
+          group: 'bestish',
+          method: 'best',
+          candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }],
+        },
       }),
     });
     expect(glue.resolve('bestish')).toMatchObject({ selected: 'provx/aaa' });
@@ -192,7 +213,11 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
       resolve: () => ({
         selected: 'provx/aaa',
         candidates: ['provx/aaa'],
-        pool: { group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] },
+        pool: {
+          group: 'bestish',
+          method: 'best',
+          candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }],
+        },
       }),
     });
     glue.resolve('bestish');
@@ -206,7 +231,11 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
       resolve: () => ({
         selected: 'provx/aaa',
         candidates: ['provx/aaa'],
-        pool: { group: 'bestish', method: 'best', candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }] },
+        pool: {
+          group: 'bestish',
+          method: 'best',
+          candidates: [{ ref: 'provx/aaa', gdp: 300, cost: 2, flags: [] }],
+        },
       }),
     });
     expect(glue.resolve('bestish', { logPool: true })).toMatchObject({ selected: 'provx/aaa' });
@@ -218,7 +247,9 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
     const { glue, pools } = glueDeps({ resolve: () => null });
     expect(glue.resolve('dyno')).toBeNull();
     expect(pools).toHaveLength(0);
-    const { glue: g2, pools: p2 } = glueDeps({ resolve: () => ({ selected: 'x/y', candidates: ['x/y'] }) });
+    const { glue: g2, pools: p2 } = glueDeps({
+      resolve: () => ({ selected: 'x/y', candidates: ['x/y'] }),
+    });
     g2.resolve('whatever');
     expect(p2).toHaveLength(0);
   });

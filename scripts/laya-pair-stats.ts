@@ -53,10 +53,17 @@ export const DEFAULT_WINDOW_MS = 5 * 60_000;
  * the same `input.sha` that follows it within `windowMs`. A repeated prompt
  * (same sha) pairs in order; every comparator is used at most once.
  */
-export function pairRecords(records: PairLogRecord[], windowMs: number = DEFAULT_WINDOW_MS): PairingResult {
+export function pairRecords(
+  records: PairLogRecord[],
+  windowMs: number = DEFAULT_WINDOW_MS
+): PairingResult {
   const time = (r: PairLogRecord) => Date.parse(r.ts);
-  const layas = records.filter((r) => r.stage === 'laya' && r.laya?.acted).sort((a, b) => time(a) - time(b));
-  const comparators = records.filter((r) => r.stage === 'comparator').sort((a, b) => time(a) - time(b));
+  const layas = records
+    .filter((r) => r.stage === 'laya' && r.laya?.acted)
+    .sort((a, b) => time(a) - time(b));
+  const comparators = records
+    .filter((r) => r.stage === 'comparator')
+    .sort((a, b) => time(a) - time(b));
 
   const bySha = new Map<string, PairLogRecord[]>();
   for (const c of comparators) {
@@ -143,7 +150,15 @@ export interface PairSummary {
 const BUCKETS = ['≥ 0.95', '0.90-0.95', '0.80-0.90', '0.70-0.80', '< 0.70'] as const;
 
 function bucketOf(c: number): (typeof BUCKETS)[number] {
-  return c >= 0.95 ? '≥ 0.95' : c >= 0.9 ? '0.90-0.95' : c >= 0.8 ? '0.80-0.90' : c >= 0.7 ? '0.70-0.80' : '< 0.70';
+  return c >= 0.95
+    ? '≥ 0.95'
+    : c >= 0.9
+      ? '0.90-0.95'
+      : c >= 0.8
+        ? '0.80-0.90'
+        : c >= 0.7
+          ? '0.70-0.80'
+          : '< 0.70';
 }
 
 function median(xs: number[]): number {
@@ -240,7 +255,7 @@ function rate(k: number, n: number): string {
 
 export function formatPairReport(
   s: PairSummary,
-  meta: { file: string; unpairedLaya: number; orphanComparators: number },
+  meta: { file: string; unpairedLaya: number; orphanComparators: number }
 ): string {
   const answered = s.n - s.noAnswer;
   const lines: string[] = [];
@@ -249,14 +264,22 @@ export function formatPairReport(
     `  ${plural(s.n, 'pair', 'pairs')} joined by input.sha` +
       ` (${plural(meta.unpairedLaya, 'laya record', 'laya records')} without comparator,` +
       ` ${plural(meta.orphanComparators, 'comparator record', 'comparator records')} without laya,` +
-      ` ${s.noAnswer} without a category on one side)`,
+      ` ${s.noAnswer} without a category on one side)`
   );
-  lines.push(`\n  Category agreement (continue resolved with the previous category): ${rate(s.categoryAgree, answered)}`);
-  lines.push(`  Group agreement (observed category -> group map): ${rate(s.groupAgree, s.groupKnown)}`);
+  lines.push(
+    `\n  Category agreement (continue resolved with the previous category): ${rate(s.categoryAgree, answered)}`
+  );
+  lines.push(
+    `  Group agreement (observed category -> group map): ${rate(s.groupAgree, s.groupKnown)}`
+  );
 
   lines.push('\n  Per Laya category (resolved):');
-  for (const [cat, t] of Object.entries(s.byLayaCategory).sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))) {
-    lines.push(`    ${label(cat).padEnd(13)} n=${String(t.n).padStart(3)}  agree ${pct(t.agree, t.n)}`);
+  for (const [cat, t] of Object.entries(s.byLayaCategory).sort(
+    (a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0])
+  )) {
+    lines.push(
+      `    ${label(cat).padEnd(13)} n=${String(t.n).padStart(3)}  agree ${pct(t.agree, t.n)}`
+    );
   }
 
   lines.push('\n  Disagreements (Laya → chain):');
@@ -273,12 +296,14 @@ export function formatPairReport(
 
   lines.push(
     `\n  Raw continue answers: both ${s.continue.both} | Laya only ${s.continue.layaOnly}` +
-      ` | chain only ${s.continue.chainOnly} | neither ${s.continue.neither}`,
+      ` | chain only ${s.continue.chainOnly} | neither ${s.continue.neither}`
   );
-  lines.push(`  Median latency: Laya ${s.latency.layaMedianMs} ms | chain (background) ${s.latency.chainMedianMs} ms`);
+  lines.push(
+    `  Median latency: Laya ${s.latency.layaMedianMs} ms | chain (background) ${s.latency.chainMedianMs} ms`
+  );
   lines.push(
     '\n  Agreement is not accuracy: the chain is a second opinion, not the truth.' +
-      ' Truth comes from owner labels (live_label.py).\n',
+      ' Truth comes from owner labels (live_label.py).\n'
   );
   return lines.join('\n');
 }
@@ -301,7 +326,13 @@ function main(): void {
     throw err;
   }
   const { pairs, unpairedLaya, orphanComparators } = pairRecords(records, windowSec * 1000);
-  console.log(formatPairReport(summarizePairs(pairs, observedGroupMap(records)), { file, unpairedLaya, orphanComparators }));
+  console.log(
+    formatPairReport(summarizePairs(pairs, observedGroupMap(records)), {
+      file,
+      unpairedLaya,
+      orphanComparators,
+    })
+  );
 }
 
 if (invokedDirectly(import.meta.url)) main();

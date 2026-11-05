@@ -42,13 +42,26 @@ async function stopGlobalServer(): Promise<void> {
 
 describe('laya-classifier', () => {
   const ENDPOINT = (p: number) => `http://127.0.0.1:${p}`; // base URL, like the shipped default
-  const okResponse = { category: 'simple', confidence: 0.5, probabilities: { simple: 0.5, standard: 0.3, code_complex: 0.1, code_simple: 0.05, continue: 0.05 }, ms: 10 };
+  const okResponse = {
+    category: 'simple',
+    confidence: 0.5,
+    probabilities: {
+      simple: 0.5,
+      standard: 0.3,
+      code_complex: 0.1,
+      code_simple: 0.05,
+      continue: 0.05,
+    },
+    ms: 10,
+  };
 
-  async function startServer(mode: 'ok' | 'refused' | 'timeout' | 'http500' | 'malformed'): Promise<number> {
+  async function startServer(
+    mode: 'ok' | 'refused' | 'timeout' | 'http500' | 'malformed'
+  ): Promise<number> {
     return withMutex(async () => {
       const server = http.createServer((req, res) => {
         let body = '';
-        req.on('data', chunk => (body += chunk));
+        req.on('data', (chunk) => (body += chunk));
         req.on('end', () => {
           // Strict like the real wrapper: anything but POST /classify is a 404.
           if (req.method !== 'POST' || req.url !== '/classify') {
@@ -56,7 +69,11 @@ describe('laya-classifier', () => {
             res.end('not found');
             return;
           }
-          try { JSON.parse(body); } catch { /* a non-JSON body is one of the cases under test */ }
+          try {
+            JSON.parse(body);
+          } catch {
+            /* a non-JSON body is one of the cases under test */
+          }
           if (mode === 'timeout') {
             // never respond -> client AbortError
             return;
@@ -103,7 +120,15 @@ describe('laya-classifier', () => {
     // source; parity is asserted by the classification tests below — here we
     // confirm it is constructible, non-empty, and in head order.
     expect(instructions).toContain("Classify the user's request");
-    expect(criteria).toEqual(['simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'continue']);
+    expect(criteria).toEqual([
+      'simple',
+      'code_simple',
+      'standard',
+      'code_complex',
+      'design',
+      'planning',
+      'continue',
+    ]);
   });
 
   it('probes successfully and marks the stage available', async () => {
@@ -118,8 +143,23 @@ describe('laya-classifier', () => {
     const p = await startServer('ok');
     await classifier.probeLaya(ENDPOINT(p), 3000);
     expect(classifier.isLayaAvailable()).toBe(true);
-    const res = await classifier.classifyWithLaya('fix the typo', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), timeout_ms: 500, confidence_threshold: 0.4 } } as any, checkpoint: 'x/y' });
-    expect(res).toEqual({ category: 'simple', confidence: 0.5, reason: expect.stringContaining('simple') });
+    const res = await classifier.classifyWithLaya('fix the typo', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(p),
+          timeout_ms: 500,
+          confidence_threshold: 0.4,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
+    expect(res).toEqual({
+      category: 'simple',
+      confidence: 0.5,
+      reason: expect.stringContaining('simple'),
+    });
   });
 
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
@@ -128,7 +168,17 @@ describe('laya-classifier', () => {
     expect(probeResult).toBe(false);
     expect(classifier.isLayaAvailable()).toBe(false);
     expect(classifier.getLastProbeError()).toBeTruthy();
-    const res = await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: 'http://127.0.0.1:9999', timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    const res = await classifier.classifyWithLaya('hello', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: 'http://127.0.0.1:9999',
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     expect(res).toBeNull();
   });
 
@@ -139,7 +189,17 @@ describe('laya-classifier', () => {
     expect(probeResult).toBe(false);
     expect(classifier.isLayaAvailable()).toBe(false);
     expect(classifier.getLastProbeError()).toBe('classify request timed out after 500ms');
-    const res = await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(port), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    const res = await classifier.classifyWithLaya('hello', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(port),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     expect(res).toBeNull();
   });
 
@@ -149,7 +209,17 @@ describe('laya-classifier', () => {
     const probeResult = await classifier.probeLaya(ENDPOINT(port), 500);
     expect(probeResult).toBe(false);
     expect(classifier.isLayaAvailable()).toBe(false);
-    const res = await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(port), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    const res = await classifier.classifyWithLaya('hello', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(port),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     expect(res).toBeNull();
   });
 
@@ -159,7 +229,17 @@ describe('laya-classifier', () => {
     const probeResult = await classifier.probeLaya(ENDPOINT(port), 500);
     expect(probeResult).toBe(false);
     expect(classifier.isLayaAvailable()).toBe(false);
-    const res = await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(port), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    const res = await classifier.classifyWithLaya('hello', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(port),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     expect(res).toBeNull();
   });
 
@@ -171,10 +251,40 @@ describe('laya-classifier', () => {
     // switch to a failing endpoint — first classify failure fires warnLog
     await stopGlobalServer();
     const p2 = await startServer('http500');
-    await classifier.classifyWithLaya('hello', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p2), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    await classifier.classifyWithLaya('hello', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(p2),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     // ... repeated classify failures within the TTL do not log again
-    await classifier.classifyWithLaya('a', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p2), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
-    await classifier.classifyWithLaya('b', undefined, { cfg: { classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p2), timeout_ms: 500 } } as any, checkpoint: 'x/y' });
+    await classifier.classifyWithLaya('a', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(p2),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
+    await classifier.classifyWithLaya('b', undefined, {
+      cfg: {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: ENDPOINT(p2),
+          timeout_ms: 500,
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
     expect(warnSpy).toHaveBeenCalledOnce();
   });
 

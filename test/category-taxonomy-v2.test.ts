@@ -9,16 +9,18 @@
 // Red-first: these pins were observed failing against the pre-migration code.
 
 import { describe, it, expect } from 'vitest';
-import {
-  VALID_CATEGORIES,
-  CLASSIFICATION_PROMPT,
-} from '../src/classification-prompt.ts';
-import {
-  CATEGORY_TO_GROUP,
-  classifyStatically,
-} from '../src/content-classifier.ts';
+import { VALID_CATEGORIES, CLASSIFICATION_PROMPT } from '../src/classification-prompt.ts';
+import { CATEGORY_TO_GROUP, classifyStatically } from '../src/content-classifier.ts';
 
-const SEVEN = ['simple', 'code_simple', 'standard', 'code_complex', 'design', 'planning', 'continue'];
+const SEVEN = [
+  'simple',
+  'code_simple',
+  'standard',
+  'code_complex',
+  'design',
+  'planning',
+  'continue',
+];
 
 describe('v2 taxonomy: category set', () => {
   it('VALID_CATEGORIES is exactly the seven v2 categories', () => {
@@ -65,7 +67,9 @@ describe('v2 taxonomy: static keyword classifier', () => {
 describe('v2 taxonomy: production prompt is the validated v2-r3 prompt', () => {
   it('carries the decision procedure (Step 1 new act / Step 2 continue)', () => {
     expect(CLASSIFICATION_PROMPT).toContain('Step 1 - Does the request open a NEW act');
-    expect(CLASSIFICATION_PROMPT).toContain('Step 2 - If instead the request only keeps the CURRENT act moving');
+    expect(CLASSIFICATION_PROMPT).toContain(
+      'Step 2 - If instead the request only keeps the CURRENT act moving'
+    );
   });
 
   it('defines the continue category and the mechanical-execution clause', () => {

@@ -23,8 +23,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import {
+  writeNoOpScanCache,
+  flushBackgroundScan,
+  removeNoOpScanCacheDefault,
+} from './helpers/noop-scan-cache.ts';
 import { drainStream, makeExtensionContext } from './helpers/extension-harness.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
+import { testModelCost } from './helpers/stream-fixtures.ts';
 
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
@@ -62,7 +68,7 @@ async function bootHarness(opts: HarnessOptions) {
       rate_limit_wait_max_ms: 0,
       model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
       gdpval_builtin: { 'first-model': 1400, 'second-model': 900 },
-    }),
+    })
   );
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
   writeNoOpScanCache(scanCachePath);
@@ -79,7 +85,7 @@ async function bootHarness(opts: HarnessOptions) {
     id,
     api: 'openai-completions',
     contextWindow: 1_000_000,
-    cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+    cost: testModelCost(),
   });
   const models = [mkModel('first-model'), mkModel('second-model')];
   const streamSimple = vi.fn((model: any) => {
@@ -102,8 +108,8 @@ async function bootHarness(opts: HarnessOptions) {
 
   const cleanup = () => {
     cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    removeNoOpScanCache(scanCachePath);
+    rmTmpDir(tmpDir);
+    removeNoOpScanCacheDefault();
   };
 
   return { stream, cleanup, streamSimple };
@@ -112,7 +118,9 @@ async function bootHarness(opts: HarnessOptions) {
 const USER_TURN = { messages: [{ role: 'user', content: 'do the thing' }] };
 const WITH_TOOLS = {
   messages: [{ role: 'user', content: 'do the thing' }],
-  tools: [{ name: 'read', description: 'read a file', parameters: { type: 'object', properties: {} } }],
+  tools: [
+    { name: 'read', description: 'read a file', parameters: { type: 'object', properties: {} } },
+  ],
 };
 
 describe('I4: tool-call markup printed as text', () => {
@@ -122,7 +130,10 @@ describe('I4: tool-call markup printed as text', () => {
         'first-model': async function* () {
           // Exactly the observed shape: the tool call as prose, no tool-call
           // event, and the stream terminates normally.
-          yield { type: 'text_delta', delta: '<dots_function_call>\n<invoke name="edit">\n</dots_function_call>' };
+          yield {
+            type: 'text_delta',
+            delta: '<dots_function_call>\n<invoke name="edit">\n</dots_function_call>',
+          };
           yield { type: 'done', reason: 'stop', message: doneMessage('toolUse') };
         },
         'second-model': async function* () {
@@ -189,7 +200,11 @@ describe('I4: tool-call markup printed as text', () => {
         'first-model': async function* () {
           yield { type: 'toolcall_start', contentIndex: 0, partial: {} } as any;
           yield { type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"a"}' } as any;
-          yield { type: 'toolcall_end', contentIndex: 0, toolCall: { id: 't1', name: 'read', arguments: {} } } as any;
+          yield {
+            type: 'toolcall_end',
+            contentIndex: 0,
+            toolCall: { id: 't1', name: 'read', arguments: {} },
+          } as any;
           yield { type: 'done', reason: 'stop', message: doneMessage('toolUse') };
         },
       },
@@ -291,7 +306,12 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
           yield { type: 'thinking_delta', contentIndex: 1, delta: 'hmm', partial: {} } as any;
           yield { type: 'thinking_end', contentIndex: 1, content: 'hmm', partial: {} } as any;
           yield { type: 'text_delta', contentIndex: 0, delta: 'ANSWER', partial: {} } as any;
-          yield { type: 'text_end', contentIndex: 0, content: 'Let me check…ANSWER', partial: {} } as any;
+          yield {
+            type: 'text_end',
+            contentIndex: 0,
+            content: 'Let me check…ANSWER',
+            partial: {},
+          } as any;
           yield { type: 'done', reason: 'stop', message: doneMessage() };
         },
       },
@@ -301,7 +321,9 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
       // The model's own answer text opened first (the router narration is a
       // separate earlier text block, so key on the model's delta, not on the
       // first text event overall).
-      const firstText = events.findIndex((e: any) => e.type === 'text_delta' && String(e.delta ?? '').includes('Let me check'));
+      const firstText = events.findIndex(
+        (e: any) => e.type === 'text_delta' && String(e.delta ?? '').includes('Let me check')
+      );
       const firstThinking = events.findIndex((e: any) => e.type === 'thinking_start');
       expect(firstText).toBeGreaterThanOrEqual(0);
       // The thinking block followed the answer text, so it must reach the
@@ -331,7 +353,12 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
           yield { type: 'thinking_end', contentIndex: 0, content: thought, partial: {} } as any;
           yield { type: 'text_start', contentIndex: 1, partial: {} } as any;
           for (let i = 0; i < markup.length; i += 90) {
-            yield { type: 'text_delta', contentIndex: 1, delta: markup.slice(i, i + 90), partial: {} } as any;
+            yield {
+              type: 'text_delta',
+              contentIndex: 1,
+              delta: markup.slice(i, i + 90),
+              partial: {},
+            } as any;
           }
           yield { type: 'text_end', contentIndex: 1, content: markup, partial: {} } as any;
           yield { type: 'done', reason: 'stop', message: doneMessage('toolUse') };
@@ -360,7 +387,13 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
           yield {
             type: 'error',
             reason: 'aborted',
-            error: { role: 'assistant', content: [], stopReason: 'aborted', errorMessage: 'Aborted', timestamp: Date.now() },
+            error: {
+              role: 'assistant',
+              content: [],
+              stopReason: 'aborted',
+              errorMessage: 'Aborted',
+              timestamp: Date.now(),
+            },
           };
         },
       },
@@ -378,8 +411,18 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
       bodies: {
         'first-model': async function* () {
           yield { type: 'text_start', contentIndex: 0, partial: {} } as any;
-          yield { type: 'text_delta', contentIndex: 0, delta: 'Here is the answer: 42.', partial: {} } as any;
-          yield { type: 'text_end', contentIndex: 0, content: 'Here is the answer: 42.', partial: {} } as any;
+          yield {
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: 'Here is the answer: 42.',
+            partial: {},
+          } as any;
+          yield {
+            type: 'text_end',
+            contentIndex: 0,
+            content: 'Here is the answer: 42.',
+            partial: {},
+          } as any;
           yield { type: 'done', reason: 'stop', message: doneMessage() };
         },
       },
@@ -388,7 +431,9 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
       const events = await harness.stream(WITH_TOOLS);
       // The router's own narration is text too; only the block around the answer counts.
       const seq = events.filter((e) => String(e.type).startsWith('text_'));
-      const at = seq.findIndex((e) => e.type === 'text_delta' && String(e.delta).includes('Here is the answer'));
+      const at = seq.findIndex(
+        (e) => e.type === 'text_delta' && String(e.delta).includes('Here is the answer')
+      );
       expect(at).toBeGreaterThan(0);
       expect(seq[at - 1].type).toBe('text_start');
       expect(seq[at + 1].type).toBe('text_end');
@@ -401,7 +446,10 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
     const harness = await bootHarness({
       bodies: {
         'first-model': async function* () {
-          yield { type: 'text_delta', delta: '```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.' };
+          yield {
+            type: 'text_delta',
+            delta: '```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.',
+          };
           yield { type: 'done', reason: 'stop', message: doneMessage() };
         },
       },

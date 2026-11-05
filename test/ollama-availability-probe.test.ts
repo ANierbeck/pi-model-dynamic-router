@@ -16,8 +16,7 @@ describe('isOllamaAvailable (Ollama daemon reachability probe)', () => {
     vi.useRealTimers();
   });
 
-  const loadProbe = () =>
-    import('../src/ollama-utils.ts').then((m) => m.isOllamaAvailable);
+  const loadProbe = () => import('../src/ollama-utils.ts').then((m) => m.isOllamaAvailable);
 
   it('returns false when fetch rejects (ECONNREFUSED)', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));

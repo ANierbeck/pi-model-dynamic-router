@@ -20,12 +20,24 @@ const report = {
     'src/metrics.ts': {
       language: 'typescript',
       source: '',
-      mutants: [mutant('Killed'), mutant('Killed'), mutant('Survived'), mutant('Timeout'), mutant('Ignored')],
+      mutants: [
+        mutant('Killed'),
+        mutant('Killed'),
+        mutant('Survived'),
+        mutant('Timeout'),
+        mutant('Ignored'),
+      ],
     },
     'src/routing.ts': {
       language: 'typescript',
       source: '',
-      mutants: [mutant('Killed'), mutant('Survived'), mutant('Survived'), mutant('NoCoverage'), mutant('CompileError')],
+      mutants: [
+        mutant('Killed'),
+        mutant('Survived'),
+        mutant('Survived'),
+        mutant('NoCoverage'),
+        mutant('CompileError'),
+      ],
     },
   },
 };

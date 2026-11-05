@@ -25,7 +25,12 @@ const NO_SCHEMA_501 = 'Ollama HTTP 501: {"error":"structured output is unavailab
 
 // capabilities.completion: the provisional (pre-probe) path only admits
 // models the scan has EXPLICITLY seen answering completions (review M7).
-const ollama = (id: string) => ({ id, provider: 'ollama', cost_per_m: 0, capabilities: { completion: true } });
+const ollama = (id: string) => ({
+  id,
+  provider: 'ollama',
+  cost_per_m: 0,
+  capabilities: { completion: true },
+});
 const cacheWith = (...ids: string[]): Cache => ({ available_models: ids.map(ollama) }) as Cache;
 const calledModels = () => vi.mocked(callOllama).mock.calls.map((c) => c[0]);
 
@@ -63,7 +68,9 @@ describe('classifyPrompt — local models come from the derived chain', () => {
   });
 
   it('a 501 on the derived primary marks it and moves to the derived fallback', async () => {
-    vi.mocked(callOllama).mockRejectedValueOnce(new Error(NO_SCHEMA_501)).mockResolvedValueOnce(VALID);
+    vi.mocked(callOllama)
+      .mockRejectedValueOnce(new Error(NO_SCHEMA_501))
+      .mockResolvedValueOnce(VALID);
     const cache = cacheWith('foo:3b', 'bar:9b');
     await classifyPrompt(prompt('501'), { cache });
     expect(calledModels()).toEqual(['foo:3b', 'bar:9b']);
@@ -72,16 +79,25 @@ describe('classifyPrompt — local models come from the derived chain', () => {
 
   it('with a single local model there is no fallback hop to the same model', async () => {
     vi.mocked(callOllama).mockRejectedValue(new Error('timeout'));
-    await classifyPrompt(prompt('single'), { cache: cacheWith('foo:3b'), allowStaticFallback: true });
+    await classifyPrompt(prompt('single'), {
+      cache: cacheWith('foo:3b'),
+      allowStaticFallback: true,
+    });
     expect(calledModels()).toEqual(['foo:3b']);
   });
 
   it('no local models: the cloud leg answers first, with no Ollama availability hop', async () => {
-    const completeSimple = vi.fn(async () => ({ content: [{ type: 'text', text: VALID }], stopReason: 'stop' }));
+    const completeSimple = vi.fn(async () => ({
+      content: [{ type: 'text', text: VALID }],
+      stopReason: 'stop',
+    }));
     const r = await classifyPrompt(prompt('no-local-cloud'), {
       allowCloudFallback: true,
       cfg: { model_groups: {} } as any,
-      cache: { classifier_fallback_models: ['acme/judge-1'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as Cache,
+      cache: {
+        classifier_fallback_models: ['acme/judge-1'],
+        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+      } as Cache,
       completeSimple,
       findModel: () => ({}),
     });
@@ -92,7 +108,10 @@ describe('classifyPrompt — local models come from the derived chain', () => {
   });
 
   it('no local models and cloud failing: no Ollama hop either, static classifier answers', async () => {
-    const r = await classifyPrompt(prompt('no-local-static'), { cache: {} as Cache, allowStaticFallback: true });
+    const r = await classifyPrompt(prompt('no-local-static'), {
+      cache: {} as Cache,
+      allowStaticFallback: true,
+    });
     expect(r.category).toBeTruthy();
     expect(isOllamaAvailable).not.toHaveBeenCalled();
     expect(callOllama).not.toHaveBeenCalled();
@@ -132,15 +151,22 @@ describe('SessionEscalation / detectLoopWithLLM — no model, no LLM leg', () =>
 describe('formatClassifierStatus — derived heads, no shipped defaults', () => {
   const group = { name: 'dynamic', method: 'dynamic', models: [] } as unknown as Group;
   const chainLine = (input: Partial<Parameters<typeof formatClassifierStatus>[0]>) =>
-    formatClassifierStatus({ group, last: null, probedCount: 0, ollamaUp: true, ...input }).find((l) => l.includes('Chain:')) ?? '';
+    formatClassifierStatus({ group, last: null, probedCount: 0, ollamaUp: true, ...input }).find(
+      (l) => l.includes('Chain:')
+    ) ?? '';
 
   it('shows the derived heads', () => {
-    const line = chainLine({ localChain: { primary: 'foo:3b', fallback: 'bar:9b' }, localProbed: true });
+    const line = chainLine({
+      localChain: { primary: 'foo:3b', fallback: 'bar:9b' },
+      localProbed: true,
+    });
     expect(line).toContain('Ollama (up: foo:3b → bar:9b)');
   });
 
   it('marks provisional (unprobed) heads', () => {
-    expect(chainLine({ localChain: { primary: 'foo:3b' }, localProbed: false })).toContain('foo:3b (unprobed)');
+    expect(chainLine({ localChain: { primary: 'foo:3b' }, localProbed: false })).toContain(
+      'foo:3b (unprobed)'
+    );
   });
 
   it('says "none yet" when nothing is derived, and never prints the old defaults', () => {

@@ -20,14 +20,24 @@ const T_MS = Date.parse(T);
 describe('parseRoutingLine', () => {
   it('reads the timestamp, process, group, method and the ranked candidates with their columns', () => {
     const r = parseRoutingLine(
-      line(T, 'tactical', '1. claude-bridge/claude-sonnet-5-5 gdp=1837.82 cost=0.000002 score=1909 | 2. mistral/zai-glm-5-3 gdp=1650.73 cost=1.4 score=1771 [paced]'),
+      line(
+        T,
+        'tactical',
+        '1. claude-bridge/claude-sonnet-5-5 gdp=1837.82 cost=0.000002 score=1909 | 2. mistral/zai-glm-5-3 gdp=1650.73 cost=1.4 score=1771 [paced]'
+      )
     )!;
     expect(r.ts).toBe(T_MS);
     expect(r.proc).toBe('proj/2559');
     expect(r.group).toBe('tactical');
     expect(r.method).toBe('best');
     expect(r.candidates).toEqual([
-      { ref: 'claude-bridge/claude-sonnet-5-5', gdp: 1837.82, cost: 0.000002, score: 1909, flags: [] },
+      {
+        ref: 'claude-bridge/claude-sonnet-5-5',
+        gdp: 1837.82,
+        cost: 0.000002,
+        score: 1909,
+        flags: [],
+      },
       { ref: 'mistral/zai-glm-5-3', gdp: 1650.73, cost: 1.4, score: 1771, flags: ['paced'] },
     ]);
   });
@@ -55,7 +65,9 @@ describe('firstChoiceAsOf — the pool in effect at the decision time', () => {
   // so the pool in effect is the last line of that group and process at or before the decision.
   const at = (sec: number) => Date.parse(`2026-10-27T14:00:00.000Z`) + sec * 1000;
   const L = (sec: number, group: string, proc: string, pool: string) =>
-    parseRoutingLine(`${new Date(at(sec)).toISOString()}  [${proc}] [routing] group=${group} method=best candidates: ${pool} || excluded: (none)`)!;
+    parseRoutingLine(
+      `${new Date(at(sec)).toISOString()}  [${proc}] [routing] group=${group} method=best candidates: ${pool} || excluded: (none)`
+    )!;
 
   const lines: RoutingLine[] = [
     L(0, 'planning', 'proj/2559', '1. claude-bridge/claude-sonnet-5-5 gdp=1837.82 cost=0.000002'),

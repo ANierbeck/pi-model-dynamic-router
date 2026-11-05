@@ -64,7 +64,9 @@ const OPENROUTER_SIGNATURES: readonly Signature[] = [
     code: 403,
     reason: 'agentic-harness-gate',
     verdict: 'permanent',
-    matches: (m, step) => /only available on agentic harnesses/i.test(m) || step === 'Gate Free Endpoints by Agentic Harness',
+    matches: (m, step) =>
+      /only available on agentic harnesses/i.test(m) ||
+      step === 'Gate Free Endpoints by Agentic Harness',
   },
   {
     code: 404,
@@ -97,8 +99,18 @@ const OPENROUTER_SIGNATURES: readonly Signature[] = [
 // rate-limit wording), so these signatures can never trigger a 24h
 // cooldown on their own.
 const MISTRAL_SIGNATURES: readonly Signature[] = [
-  { code: 422, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },
-  { code: 403, reason: 'quota-no-body', verdict: 'transient', matches: (m) => /status code \(no body\)/i.test(m) },
+  {
+    code: 422,
+    reason: 'quota-no-body',
+    verdict: 'transient',
+    matches: (m) => /status code \(no body\)/i.test(m),
+  },
+  {
+    code: 403,
+    reason: 'quota-no-body',
+    verdict: 'transient',
+    matches: (m) => /status code \(no body\)/i.test(m),
+  },
 ];
 
 const SIGNATURES_BY_PROVIDER: Record<string, readonly Signature[]> = {
@@ -111,7 +123,8 @@ const SIGNATURES_BY_PROVIDER: Record<string, readonly Signature[]> = {
 // provider and heal when the user fixes the key, so they must never block
 // individual models — a per-model block would outlive the fix (review
 // 2026-09-27).
-const ACCOUNT_TEXT = /invalid api key|incorrect api key|unauthori[sz]ed|authentication|user not found|no auth credentials|api key (?:is )?(?:missing|expired|revoked)/i;
+const ACCOUNT_TEXT =
+  /invalid api key|incorrect api key|unauthori[sz]ed|authentication|user not found|no auth credentials|api key (?:is )?(?:missing|expired|revoked)/i;
 
 // Request-dependent wording from any provider: the model works without tools.
 const REQUEST_TEXT = /does not support tools|support tool use/i;
@@ -137,7 +150,11 @@ function tryParseJsonObject(s: string): Record<string, any> | undefined {
   return undefined;
 }
 
-function parseBody(text: string): { message: string; routingStep?: string; ineligibility: string[] } {
+function parseBody(text: string): {
+  message: string;
+  routingStep?: string;
+  ineligibility: string[];
+} {
   const start = text.indexOf('{');
   if (start >= 0) {
     try {
@@ -157,7 +174,8 @@ function parseBody(text: string): { message: string; routingStep?: string; ineli
       }
       return {
         message,
-        routingStep: typeof meta.failed_routing_step === 'string' ? meta.failed_routing_step : undefined,
+        routingStep:
+          typeof meta.failed_routing_step === 'string' ? meta.failed_routing_step : undefined,
         ineligibility: Array.isArray(meta.ineligibility_reasons)
           ? meta.ineligibility_reasons.map((r: { reason?: unknown }) =>
               typeof r?.reason === 'string' ? r.reason : ''
@@ -177,12 +195,28 @@ function parseBody(text: string): { message: string; routingStep?: string; ineli
 // ADR's asymmetry says not to block without confidence.
 const TRANSIENT_TEXT = new RegExp(
   [
-    'timeout', 'timed out', 'econnreset', 'econnrefused', 'etimedout', 'enotfound', 'eai_again',
-    'fetch failed', 'socket hang up', 'network', 'connection error', 'overloaded',
-    'temporarily unavailable', 'service unavailable', 'provider returned error',
-    'finish_reason: error', 'stopped with: error', 'ended without a finish reason',
+    'timeout',
+    'timed out',
+    'econnreset',
+    'econnrefused',
+    'etimedout',
+    'enotfound',
+    'eai_again',
+    'fetch failed',
+    'socket hang up',
+    'network',
+    'connection error',
+    'overloaded',
+    'temporarily unavailable',
+    'service unavailable',
+    'provider returned error',
+    'finish_reason: error',
+    'stopped with: error',
+    'ended without a finish reason',
     'error injected into sse stream',
-  ].map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+  ]
+    .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
   'i'
 );
 
@@ -211,16 +245,31 @@ export function classifyFailure(ref: string, text: string): FailureClassificatio
   if (signatures && code !== undefined) {
     for (const sig of signatures) {
       if (sig.code === code && sig.matches(message, routingStep, ineligibility)) {
-        return { verdict: sig.verdict, reason: sig.reason, code, signature: `${code}:${sig.reason}` };
+        return {
+          verdict: sig.verdict,
+          reason: sig.reason,
+          code,
+          signature: `${code}:${sig.reason}`,
+        };
       }
     }
   }
 
   if (code === 401 || ACCOUNT_TEXT.test(text)) {
-    return { verdict: 'transient', reason: 'account-auth', ...(code !== undefined ? { code } : {}), signature: 'transient' };
+    return {
+      verdict: 'transient',
+      reason: 'account-auth',
+      ...(code !== undefined ? { code } : {}),
+      signature: 'transient',
+    };
   }
   if (REQUEST_TEXT.test(text)) {
-    return { verdict: 'request', reason: 'no-tool-support', ...(code !== undefined ? { code } : {}), signature: 'request:no-tool-support' };
+    return {
+      verdict: 'request',
+      reason: 'no-tool-support',
+      ...(code !== undefined ? { code } : {}),
+      signature: 'request:no-tool-support',
+    };
   }
   if (
     code === 429 ||
@@ -230,7 +279,11 @@ export function classifyFailure(ref: string, text: string): FailureClassificatio
     isAbortLikeText(text) ||
     TRANSIENT_TEXT.test(text)
   ) {
-    return { verdict: 'transient', ...(code !== undefined ? { code } : {}), signature: 'transient' };
+    return {
+      verdict: 'transient',
+      ...(code !== undefined ? { code } : {}),
+      signature: 'transient',
+    };
   }
   return {
     verdict: 'unknown',

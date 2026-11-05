@@ -70,7 +70,10 @@ describe('extractCapabilities — OpenRouter shape', () => {
   // min_context_length (regression: bulk_reader/code_writer showed only
   // Mistral models because OpenRouter entries had no contextWindow).
   it('leaves contextWindow undefined when context_length is missing', () => {
-    const c = extractCapabilities('openrouter', { id: 'some/model-no-ctx', architecture: { input_modalities: ['text'] } });
+    const c = extractCapabilities('openrouter', {
+      id: 'some/model-no-ctx',
+      architecture: { input_modalities: ['text'] },
+    });
     expect(c).toBeDefined();
     expect(c!.contextWindow).toBeUndefined();
   });
@@ -147,8 +150,14 @@ describe('extractCapabilities — unknown provider', () => {
 
 describe('extractCapabilities — Ollama classifier-derivation fields (ADR-0025 C1)', () => {
   it('records completion/embedding from the /api/show capabilities array', () => {
-    expect(extractCapabilities('ollama', { capabilities: ['completion', 'tools'] })).toMatchObject({ completion: true, embedding: false });
-    expect(extractCapabilities('ollama', { capabilities: ['embedding'] })).toMatchObject({ completion: false, embedding: true });
+    expect(extractCapabilities('ollama', { capabilities: ['completion', 'tools'] })).toMatchObject({
+      completion: true,
+      embedding: false,
+    });
+    expect(extractCapabilities('ollama', { capabilities: ['embedding'] })).toMatchObject({
+      completion: false,
+      embedding: true,
+    });
   });
 
   it('leaves completion/embedding undefined when no capabilities array was reported (unknown ≠ false)', () => {
@@ -158,9 +167,20 @@ describe('extractCapabilities — Ollama classifier-derivation fields (ADR-0025 
   });
 
   it('parses details.parameter_size into billions (B and M suffixes)', () => {
-    expect(extractCapabilities('ollama', { capabilities: ['completion'], details: { parameter_size: '12.2B' } })?.parameterSizeB).toBe(12.2);
-    expect(extractCapabilities('ollama', { details: { parameter_size: '270M' } })?.parameterSizeB).toBeCloseTo(0.27);
-    expect(extractCapabilities('ollama', { details: { parameter_size: 'unknown' } })?.parameterSizeB).toBeUndefined();
-    expect(extractCapabilities('ollama', { capabilities: ['completion'] })?.parameterSizeB).toBeUndefined();
+    expect(
+      extractCapabilities('ollama', {
+        capabilities: ['completion'],
+        details: { parameter_size: '12.2B' },
+      })?.parameterSizeB
+    ).toBe(12.2);
+    expect(
+      extractCapabilities('ollama', { details: { parameter_size: '270M' } })?.parameterSizeB
+    ).toBeCloseTo(0.27);
+    expect(
+      extractCapabilities('ollama', { details: { parameter_size: 'unknown' } })?.parameterSizeB
+    ).toBeUndefined();
+    expect(
+      extractCapabilities('ollama', { capabilities: ['completion'] })?.parameterSizeB
+    ).toBeUndefined();
   });
 });

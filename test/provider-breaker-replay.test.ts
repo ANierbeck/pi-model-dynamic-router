@@ -44,7 +44,11 @@ interface Fixture {
 }
 
 function loadFixture(name: string): Fixture {
-  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'provider-breaker-replay');
+  const dir = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    'fixtures',
+    'provider-breaker-replay'
+  );
   return JSON.parse(readFileSync(path.join(dir, name), 'utf-8')) as Fixture;
 }
 
@@ -54,7 +58,10 @@ function loadFixture(name: string): Fixture {
  * many failures landed inside an already-open window of their provider —
  * the hops the pre-flight skip would have avoided.
  */
-function replay(fixture: Fixture): { trips: { provider: string; at: number }[]; avoidedHops: number } {
+function replay(fixture: Fixture): {
+  trips: { provider: string; at: number }[];
+  avoidedHops: number;
+} {
   const cache: Cache = {};
   const trips: { provider: string; at: number }[] = [];
   let avoidedHops = 0;
@@ -82,8 +89,12 @@ describe('provider-breaker replay of the real router.log windows (plan Phase 4 g
     for (const ev of fixture.events.filter((e) => e.kind)) {
       recordProviderFailure(cache, ev.ref, ev.kind as never, ev.detail, ev.ts);
     }
-    expect(isProviderOpen(cache, 'mistral', fixture.events[fixture.events.length - 1].ts)).toBe(false);
-    expect(isProviderOpen(cache, 'claude-bridge', fixture.events[fixture.events.length - 1].ts)).toBe(false);
+    expect(isProviderOpen(cache, 'mistral', fixture.events[fixture.events.length - 1].ts)).toBe(
+      false
+    );
+    expect(
+      isProviderOpen(cache, 'claude-bridge', fixture.events[fixture.events.length - 1].ts)
+    ).toBe(false);
   });
 
   it('the 2026-10-04 08:31 bridge cascade trips on the third distinct model and skips the rest of the walk', () => {

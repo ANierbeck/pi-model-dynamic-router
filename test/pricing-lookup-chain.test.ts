@@ -43,7 +43,12 @@ const testConfig: Config = {
   model_groups: {},
   model_metrics: {
     'cfgx/costly': { gdpval: 100, throughput_tps: 10, avg_latency_ms: 100, cost_per_m: 3 },
-    'cfgx/unknown-cost': { gdpval: 100, throughput_tps: 10, avg_latency_ms: 100, cost_per_m: 'unknown' },
+    'cfgx/unknown-cost': {
+      gdpval: 100,
+      throughput_tps: 10,
+      avg_latency_ms: 100,
+      cost_per_m: 'unknown',
+    },
     'provx/str-cost': { gdpval: 100, throughput_tps: 10, avg_latency_ms: 100, cost_per_m: 7 },
   },
   providers: {

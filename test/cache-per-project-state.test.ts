@@ -27,7 +27,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CacheManager } from '../src/cache.ts';
-import { pushSessionError, countSessionErrorsSince, SESSION_ERROR_CAP } from '../src/session-errors.ts';
+import {
+  pushSessionError,
+  countSessionErrorsSince,
+  SESSION_ERROR_CAP,
+} from '../src/session-errors.ts';
 import type { Cache } from '../src/types.ts';
 
 // Per-run unique dir: a FIXED shared path raced with any concurrent run of
@@ -52,7 +56,9 @@ describe('CacheManager: per-project instance state', () => {
     const mgr = new CacheManager(stateDir, undefined, projectDir);
     const cache = mgr.getCache();
     pushSessionError(cache, {
-      ts: Date.now(), ref: 'mistral/x', reason: 'rate_limit_exceeded',
+      ts: Date.now(),
+      ref: 'mistral/x',
+      reason: 'rate_limit_exceeded',
       consequence: 'trying next',
     });
     (cache as any).available_models = [{ provider: 'mistral', id: 'x' }];
@@ -128,13 +134,16 @@ describe('CacheManager: per-project instance state', () => {
     expect((mgr2.getCache().session_errors ?? []).map((e) => e.ts)).toEqual([1, 2, 3]);
   });
 
-  it('merges another process\'s global writes instead of clobbering them (merge-on-save)', () => {
+  it("merges another process's global writes instead of clobbering them (merge-on-save)", () => {
     const mgr = new CacheManager(stateDir, undefined, projectDir);
     mgr.getCache().models_cached = 'mine';
     mgr.saveCache();
 
     // Another process writes between our load and our next save.
-    fs.writeFileSync(globalCache(), JSON.stringify({ ...readJson(globalCache()), gdpval_scraped: true }, null, 2));
+    fs.writeFileSync(
+      globalCache(),
+      JSON.stringify({ ...readJson(globalCache()), gdpval_scraped: true }, null, 2)
+    );
 
     mgr.getCache().models_cached = 'mine-2';
     mgr.saveCache();
@@ -143,7 +152,7 @@ describe('CacheManager: per-project instance state', () => {
     expect(onDisk.gdpval_scraped).toBe(true); // other process's addition survives
   });
 
-  it('does not lose another process\'s project-state entries on save', () => {
+  it("does not lose another process's project-state entries on save", () => {
     const mgr = new CacheManager(stateDir, undefined, projectDir);
     mgr.getCache().session_errors = [];
     mgr.saveCache();
@@ -154,7 +163,10 @@ describe('CacheManager: per-project instance state', () => {
     fs.writeFileSync(projectState(), JSON.stringify(disk, null, 2));
 
     pushSessionError(mgr.getCache(), {
-      ts: 99, ref: 'a/b', reason: 'r2', consequence: 'c2',
+      ts: 99,
+      ref: 'a/b',
+      reason: 'r2',
+      consequence: 'c2',
     });
     mgr.saveCache();
     const merged = readJson(projectState()).session_errors as any[];
@@ -175,9 +187,12 @@ describe('CacheManager: per-project instance state', () => {
 
   it('loads instance data from the project file, global data from the scan cache', () => {
     fs.mkdirSync(path.dirname(projectState()), { recursive: true });
-    fs.writeFileSync(projectState(), JSON.stringify({
-      session_errors: [{ ts: 7, ref: 'a/b', reason: 'r', consequence: 'c', pid: 1 }],
-    }));
+    fs.writeFileSync(
+      projectState(),
+      JSON.stringify({
+        session_errors: [{ ts: 7, ref: 'a/b', reason: 'r', consequence: 'c', pid: 1 }],
+      })
+    );
     fs.mkdirSync(path.dirname(globalCache()), { recursive: true });
     fs.writeFileSync(globalCache(), JSON.stringify({ models_cached: 'g' }));
 

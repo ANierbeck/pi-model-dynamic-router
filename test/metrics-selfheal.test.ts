@@ -12,13 +12,7 @@
 // gdpval from cache.gdpval_scores when gdpval is empty.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  lookupGdp,
-  setConfig,
-  setCache,
-  setGdpval,
-  setModelMap,
-} from '../src/metrics.js';
+import { lookupGdp, setConfig, setCache, setGdpval, setModelMap } from '../src/metrics.js';
 import type { Cache } from '../src/types.js';
 
 beforeEach(() => {

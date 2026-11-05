@@ -22,7 +22,8 @@ export interface RoutingLine {
   candidates: PoolCandidate[];
 }
 
-const LINE = /^(\S+)\s+\[([^\]]+)\]\s+\[routing\] group=(\S+) method=(\S+) candidates: (.*?) \|\| excluded: (.*)$/;
+const LINE =
+  /^(\S+)\s+\[([^\]]+)\]\s+\[routing\] group=(\S+) method=(\S+) candidates: (.*?) \|\| excluded: (.*)$/;
 
 function parseCandidate(part: string): PoolCandidate | null {
   const tokens = part.trim().split(/\s+/);
@@ -77,7 +78,12 @@ export type PoolState =
  * a line only when the group's pool changes, so the latest line is the state
  * until the next change.
  */
-export function firstChoiceAsOf(lines: RoutingLine[], group: string, proc: string, at: number): PoolState {
+export function firstChoiceAsOf(
+  lines: RoutingLine[],
+  group: string,
+  proc: string,
+  at: number
+): PoolState {
   let latest: RoutingLine | null = null;
   for (const l of lines) {
     if (l.group !== group || l.proc !== proc || l.ts > at) continue;

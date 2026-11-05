@@ -112,15 +112,20 @@ describe('classifyPrompt fallback chain', () => {
       vi.mocked(callOllama).mockResolvedValue(
         ollamaReply({ category: 'simple', reason: 'must not be used', confidence: 1 })
       );
-      const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'simple', reason: 'from cloud', confidence: 0.9 })
-      );
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValue(
+          cloudReply({ category: 'simple', reason: 'from cloud', confidence: 0.9 })
+        );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Probe reports down so use the cloud classifiers', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cloud-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -146,15 +151,20 @@ describe('classifyPrompt fallback chain', () => {
   describe('cloud fallback paths', () => {
     it('classifies via completeSimple when both Ollama models fail', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
-      const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'code_simple', reason: 'from cloud', confidence: 0.85 })
-      );
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValue(
+          cloudReply({ category: 'code_simple', reason: 'from cloud', confidence: 0.85 })
+        );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Please add a small import statement to that file', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cloud-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -175,15 +185,20 @@ describe('classifyPrompt fallback chain', () => {
       // still carry a ref the user excluded afterwards (live finding
       // 2026-10-03: openrouter/stealth/space-bunny-alpha classified prompts).
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
-      const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'simple', reason: 'from allowed', confidence: 0.9 })
-      );
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValue(
+          cloudReply({ category: 'simple', reason: 'from allowed', confidence: 0.9 })
+        );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       await classifyPrompt('Rename this helper so the excluded stealth model never sees it', {
         allowCloudFallback: true,
         cfg: { exclude: { models: ['openrouter/stealth/*'] } } as any,
-        cache: { classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -196,10 +211,13 @@ describe('classifyPrompt fallback chain', () => {
     it('falls back to Ollama as a LAST RESORT when the entire cloud chain fails', async () => {
       vi.mocked(callOllama)
         .mockRejectedValueOnce(new Error('ECONNREFUSED')) // primary
-        .mockResolvedValueOnce( // fallback
+        .mockResolvedValueOnce(
+          // fallback
           ollamaReply({ category: 'simple', reason: 'local last resort', confidence: 0.8 })
         );
-      const completeSimple = vi.fn().mockResolvedValue({ errorMessage: 'provider 500', stopReason: 'error' });
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValue({ errorMessage: 'provider 500', stopReason: 'error' });
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Explain the difference between let and const briefly', {
@@ -207,7 +225,10 @@ describe('classifyPrompt fallback chain', () => {
         fallbackModel: 'gemma-backup',
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cloud-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -233,7 +254,10 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Design a database schema for user settings', {
         allowCloudFallback: true,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -250,7 +274,10 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Compare the two sorting algorithms for me now', {
         allowCloudFallback: false,
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cloud-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
         allowStaticFallback: false,
@@ -271,26 +298,36 @@ describe('classifyPrompt fallback chain', () => {
       const completeSimple = vi
         .fn()
         .mockResolvedValueOnce(
-          cloudReply({ category: 'hint:group:tactical', reason: 'copied from context', confidence: 1.0 })
+          cloudReply({
+            category: 'hint:group:tactical',
+            reason: 'copied from context',
+            confidence: 1.0,
+          })
         )
         .mockResolvedValueOnce(
           cloudReply({ category: 'standard', reason: 'from cached', confidence: 0.8 })
         );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
-      const result = await classifyPrompt('Check the pull request comments about our middleware stack', {
-        allowCloudFallback: true,
-        pinnedCloudModel: 'prov/pinned',
-        cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
-        completeSimple,
-        findModel,
-        context: {
-          previousUserMessage: 'Can you refactor the auth module next?',
-          lastAssistantSnippet:
-            '[router] HINT: use group tactical — routing the next request to a stronger model. The previous task is complete.',
-        },
-      });
+      const result = await classifyPrompt(
+        'Check the pull request comments about our middleware stack',
+        {
+          allowCloudFallback: true,
+          pinnedCloudModel: 'prov/pinned',
+          cfg: {} as any,
+          cache: {
+            classifier_fallback_models: ['prov/cached'],
+            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          } as any,
+          completeSimple,
+          findModel,
+          context: {
+            previousUserMessage: 'Can you refactor the auth module next?',
+            lastAssistantSnippet:
+              '[router] HINT: use group tactical — routing the next request to a stronger model. The previous task is complete.',
+          },
+        }
+      );
 
       // The pinned model was tried first and REJECTED; the cached model
       // produced the real answer.
@@ -306,11 +343,13 @@ describe('classifyPrompt fallback chain', () => {
 
     it('converts a legitimate mid-prompt HINT reply from a cloud model into a processed hint', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
-      const completeSimple = vi
-        .fn()
-        .mockResolvedValueOnce(
-          cloudReply({ category: 'hint:group:strategic', reason: 'user asked for strategic', confidence: 1.0 })
-        );
+      const completeSimple = vi.fn().mockResolvedValueOnce(
+        cloudReply({
+          category: 'hint:group:strategic',
+          reason: 'user asked for strategic',
+          confidence: 1.0,
+        })
+      );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       // The HINT is mid-prompt (not at the start), so detectHintDirectly does
@@ -322,7 +361,10 @@ describe('classifyPrompt fallback chain', () => {
         {
           allowCloudFallback: true,
           cfg: {} as any,
-          cache: { classifier_fallback_models: ['prov/cloud-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+          cache: {
+            classifier_fallback_models: ['prov/cloud-a'],
+            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          } as any,
           completeSimple,
           findModel,
         }
@@ -346,7 +388,11 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Explain what a closure is briefly to me', {
         allowCloudFallback: true,
         cfg: { providers: {} } as any,
-        cache: { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE, available_models: [] } as any,
+        cache: {
+          classifier_fallback_models: [],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          available_models: [],
+        } as any,
         completeSimple: vi.fn(),
         findModel: vi.fn(),
         allowStaticFallback: true,
@@ -363,14 +409,19 @@ describe('classifyPrompt fallback chain', () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi
         .fn()
-        .mockResolvedValue(cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 }));
+        .mockResolvedValue(
+          cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 })
+        );
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Summarize the router config differences for me', {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cached'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });
@@ -385,22 +436,32 @@ describe('classifyPrompt fallback chain', () => {
 
     it('moves a pinned model that is already in the cached list to position 0 — no duplicate tries (review 2026-09-26, Minor #3)', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
-      const completeSimple = vi.fn().mockResolvedValue(
-        cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 })
-      );
+      const completeSimple = vi
+        .fn()
+        .mockResolvedValue(
+          cloudReply({ category: 'standard', reason: 'from pinned', confidence: 0.9 })
+        );
       // findModel resolves refs in call order: the pinned ref must be FIRST.
-      const findModel = vi.fn((ref: string) => (ref === 'prov/cached-b' || ref === 'prov/cached-a' ? mockModel : undefined));
+      const findModel = vi.fn((ref: string) =>
+        ref === 'prov/cached-b' || ref === 'prov/cached-a' ? mockModel : undefined
+      );
 
-      const result = await classifyPrompt('Merge the release branch notes into our changelog today', {
-        allowCloudFallback: true,
-        // 'prov/cached-b' sits at list position 1 — the pinned contract says
-        // it must still be tried FIRST, deduplicated, not skipped in place.
-        pinnedCloudModel: 'prov/cached-b',
-        cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
-        completeSimple,
-        findModel,
-      });
+      const result = await classifyPrompt(
+        'Merge the release branch notes into our changelog today',
+        {
+          allowCloudFallback: true,
+          // 'prov/cached-b' sits at list position 1 — the pinned contract says
+          // it must still be tried FIRST, deduplicated, not skipped in place.
+          pinnedCloudModel: 'prov/cached-b',
+          cfg: {} as any,
+          cache: {
+            classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'],
+            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          } as any,
+          completeSimple,
+          findModel,
+        }
+      );
 
       expect(findModel.mock.calls[0]?.[0]).toBe('prov/cached-b');
       expect(completeSimple).toHaveBeenCalledTimes(1);
@@ -411,14 +472,19 @@ describe('classifyPrompt fallback chain', () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi
         .fn()
-        .mockResolvedValue(cloudReply({ category: 'planning', reason: 'from cached', confidence: 0.8 }));
+        .mockResolvedValue(
+          cloudReply({ category: 'planning', reason: 'from cached', confidence: 0.8 })
+        );
       const findModel = vi.fn((ref: string) => (ref === 'prov/pinned' ? undefined : mockModel));
 
       const result = await classifyPrompt('Prioritize the open tasks on our roadmap now', {
         allowCloudFallback: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
-        cache: { classifier_fallback_models: ['prov/cached'], classifier_fallback_probe_sig: PROBE_SIGNATURE } as any,
+        cache: {
+          classifier_fallback_models: ['prov/cached'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
         completeSimple,
         findModel,
       });

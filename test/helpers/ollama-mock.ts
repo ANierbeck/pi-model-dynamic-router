@@ -28,17 +28,24 @@ export interface OllamaMockOptions {
   /** Whether the daemon probe answers. Default true. */
   available?: boolean;
   /** Replaces the whole callOllama mock (plain vi.fn(), mockRejectedValue, ...). */
-   
+
   callOllama?: any;
   /** Extra module exports (isOllamaWedged, isOllamaProbablyDown, ...). */
-   
+
   extra?: Record<string, any>;
 }
 
 /** The mocked ollama-utils module: a classifying callOllama plus the daemon probe. */
- 
+
 export function ollamaMockModule(options: OllamaMockOptions = {}): Record<string, any> {
-  const { category = 'simple', reason = 'test', confidence = 0.9, available = true, callOllama, extra = {} } = options;
+  const {
+    category = 'simple',
+    reason = 'test',
+    confidence = 0.9,
+    available = true,
+    callOllama,
+    extra = {},
+  } = options;
   return {
     callOllama: callOllama ?? vi.fn(async () => JSON.stringify({ category, reason, confidence })),
     isOllamaAvailable: vi.fn(async () => available),
@@ -52,13 +59,11 @@ export function ollamaMockModule(options: OllamaMockOptions = {}): Record<string
  * daemon probe returns undefined, i.e. "down"); pass `overrides` for the
  * variants (an async probe, extra exports).
  */
- 
+
 export function ollamaMockPatched(
-   
   actual: Record<string, any>,
-   
+
   overrides: Record<string, any> = {}
-   
 ): Record<string, any> {
   return { ...actual, callOllama: vi.fn(), isOllamaAvailable: vi.fn(), ...overrides };
 }

@@ -40,7 +40,11 @@ const testConfig: Config = {
     // resolve their cost via the chain (registry / :free / unknown).
     'pi-claude/claude-sonnet-5': { gdpval: 1603, throughput_tps: 100, avg_latency_ms: 1000 },
     'pi-claude/claude-opus-unknown': { gdpval: 2000, throughput_tps: 100, avg_latency_ms: 1000 },
-    'openrouter/ling-3.0-flash-fin:free': { gdpval: 1092, throughput_tps: 100, avg_latency_ms: 1000 },
+    'openrouter/ling-3.0-flash-fin:free': {
+      gdpval: 1092,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
     'openrouter/glm-5.2:free': { gdpval: 1497, throughput_tps: 100, avg_latency_ms: 1000 },
     'openai/gpt-4': { gdpval: 980, throughput_tps: 15, avg_latency_ms: 150 },
     // Static trivial/simple-style local model for mixed pools.

@@ -34,17 +34,20 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Config, Cache } from '../src/types.ts';
+import { hermeticCacheFlags } from './helpers/stream-fixtures.ts';
 
 // A fake pi modelRegistry implementing the two public methods the router uses:
 //   - find(provider, modelId) → Model | undefined  (Model.cost is required)
 //   - getAvailable() → Model[]
 // We type it as `any` because the router never imports Pi's registry type —
 // it only calls the documented public methods.
-function makeRegistry(models: Array<{
-  provider: string;
-  id: string;
-  cost: { input: number; output: number };
-}>): any {
+function makeRegistry(
+  models: Array<{
+    provider: string;
+    id: string;
+    cost: { input: number; output: number };
+  }>
+): any {
   const all = models.map((m) => ({ provider: m.provider, id: m.id, cost: m.cost }));
   return {
     find: (provider: string, modelId: string) =>
@@ -98,8 +101,7 @@ const BASE_CACHE: Cache = {
   usage_log: [],
   benchmarks: {},
   budget_cache: {},
-  gdpval_scraped: true,
-  lastScanTimestamp: Date.now(),
+  ...hermeticCacheFlags(),
   models_cached: '',
 } as any;
 
@@ -266,7 +268,7 @@ describe('registryCost :free-suffix matching', () => {
     expect(price).toEqual({ input: 0.2, output: 0.8 });
   });
 
-  it('effCost for a :free ref without a cache entry is not \'unknown\' (regression)', () => {
+  it("effCost for a :free ref without a cache entry is not 'unknown' (regression)", () => {
     // The bug: z-ai/glm-5.2:free was NOT in cache.available_models, so getM
     // fell to 'unknown' and effCost returned 'unknown'. With the stripped-id
     // retry, registryCost finds the {0,0} entry, returns null (free), and

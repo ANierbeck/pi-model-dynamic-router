@@ -19,7 +19,13 @@ import { routerLog, appendRawLog, warnLog } from '../src/logger.ts';
 
 vi.mock('../src/logger.ts', async (orig) => {
   const actual = await orig<typeof import('../src/logger.ts')>();
-  return { ...actual, appendRawLog: vi.fn(), routerLog: vi.fn(), warnLog: vi.fn(), errorLog: vi.fn() };
+  return {
+    ...actual,
+    appendRawLog: vi.fn(),
+    routerLog: vi.fn(),
+    warnLog: vi.fn(),
+    errorLog: vi.fn(),
+  };
 });
 
 type Resolution = { candidates: string[]; selected: string };
@@ -65,9 +71,18 @@ function world(o: Opts) {
   const registry = o.noRegistry
     ? undefined
     : {
-        find: vi.fn((p: string, id: string) => (known.has(`${p}/${id}`) ? { provider: p, id } : undefined)),
-        getAvailable: vi.fn(() => (o.available ?? []).map((r) => ({ provider: r.split('/')[0], id: r.slice(r.indexOf('/') + 1) }))),
-        getApiKeyForProvider: vi.fn(async (p: string) => ((o.keyed ?? []).includes(p) ? 'key' : null)),
+        find: vi.fn((p: string, id: string) =>
+          known.has(`${p}/${id}`) ? { provider: p, id } : undefined
+        ),
+        getAvailable: vi.fn(() =>
+          (o.available ?? []).map((r) => ({
+            provider: r.split('/')[0],
+            id: r.slice(r.indexOf('/') + 1),
+          }))
+        ),
+        getApiKeyForProvider: vi.fn(async (p: string) =>
+          (o.keyed ?? []).includes(p) ? 'key' : null
+        ),
         runtime: { streamSimple: () => ({}), completeSimple: vi.fn(() => 'completed') },
       };
   const cleared: string[] = [];
@@ -94,18 +109,27 @@ function world(o: Opts) {
     isLimited: (r: string) => (o.limited ?? []).includes(r),
     clearLimit: (r: string) => cleared.push(r),
     lookupGdp: (r: string) => o.gdp?.[r] ?? null,
-    getGroupForCategory: (category: string) => (category === 'standard' ? 'standard' : 'code_complex'),
+    getGroupForCategory: (category: string) =>
+      category === 'standard' ? 'standard' : 'code_complex',
     classifyPrompt,
   };
   const orch = new StreamOrchestrator(ctx);
   const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
   const messages = o.messages ?? [{ role: 'user', content: 'please do the thing', timestamp: 1 }];
   const open = async () => {
-    orch.groupStream({ provider: 'router', id: 'dynamic', api: 'openai-completions' } as any, { messages } as any, undefined);
+    orch.groupStream(
+      { provider: 'router', id: 'dynamic', api: 'openai-completions' } as any,
+      { messages } as any,
+      undefined
+    );
     await vi.waitFor(() => expect(drive).toHaveBeenCalled());
     // driveStream(proxy, candidates, context, options, label, groupName, ...)
     const a = drive.mock.calls[0] as unknown as any[];
-    return { candidates: a[1] as string[], label: a[4] as string | undefined, group: a[5] as string | undefined };
+    return {
+      candidates: a[1] as string[],
+      label: a[4] as string | undefined,
+      group: a[5] as string | undefined,
+    };
   };
   return { ctx, cleared, classifyPrompt, drive, open, registry };
 }
@@ -122,7 +146,10 @@ describe('HINT: <group>', () => {
   };
 
   it('hands the group plus its fallback groups (deduplicated, in order) to driveStream, labelled and grouped', async () => {
-    const w = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: res });
+    const w = world({
+      classification: { hintType: 'group', hintTarget: 'planning' },
+      resolvable: res,
+    });
     const d = await w.open();
 
     // planning's own candidates first; then standard's (minus the duplicate glm), NOT simple's:
@@ -135,7 +162,10 @@ describe('HINT: <group>', () => {
 
   it('skips a fallback group that does not resolve and keeps the rest', async () => {
     const w = world({
-      groups: { ...DEFAULT_GROUPS, planning: { method: 'best', fallback_groups: ['gone', 'standard'] } },
+      groups: {
+        ...DEFAULT_GROUPS,
+        planning: { method: 'best', fallback_groups: ['gone', 'standard'] },
+      },
       classification: { hintType: 'group', hintTarget: 'planning' },
       resolvable: res,
     });
@@ -144,7 +174,10 @@ describe('HINT: <group>', () => {
   });
 
   it('a group without fallback_groups uses only its own candidates', async () => {
-    const w = world({ classification: { hintType: 'group', hintTarget: 'simple' }, resolvable: res });
+    const w = world({
+      classification: { hintType: 'group', hintTarget: 'simple' },
+      resolvable: res,
+    });
     // `simple` has no fallback_groups in DEFAULT_GROUPS
     const d = await w.open();
     expect(d.candidates).toEqual(['openrouter/free', 'mistral/large']);
@@ -159,7 +192,9 @@ describe('HINT: <group>', () => {
     const d = await w.open();
     expect(d.label).toBe('standard → standard');
     expect(d.group).toBe('standard');
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('HINT group not found: nonexistent'));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining('HINT group not found: nonexistent')
+    );
   });
 
   it('a HINT that names the dynamic group itself falls through and says so', async () => {
@@ -169,7 +204,9 @@ describe('HINT: <group>', () => {
     });
     const d = await w.open();
     expect(d.label).toBe('standard → standard');
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('HINT targets the dynamic group itself'));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining('HINT targets the dynamic group itself')
+    );
     expect(routerLog).not.toHaveBeenCalledWith(expect.stringContaining('HINT group not found'));
   });
 });
@@ -202,7 +239,9 @@ describe('HINT: <model> — matching', () => {
       known: ['mistral/zai-glm-5-3', 'openrouter/z-ai/zai-glm-5-3'],
     });
     const d = await w.open();
-    expect(d.candidates).toEqual(expect.arrayContaining(['mistral/zai-glm-5-3', 'openrouter/z-ai/zai-glm-5-3']));
+    expect(d.candidates).toEqual(
+      expect.arrayContaining(['mistral/zai-glm-5-3', 'openrouter/z-ai/zai-glm-5-3'])
+    );
     expect(d.candidates).not.toContain('mistral/other');
   });
 
@@ -227,7 +266,9 @@ describe('HINT: <model> — matching', () => {
     });
     const d = await w.open();
     expect(d.label).toBe('standard → standard');
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('HINT model "zai-glm-5-2" not found'));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining('HINT model "zai-glm-5-2" not found')
+    );
   });
 
   it('asks the registry per known provider when the discovered pool does not list the model, normalizing the name as a second try', async () => {
@@ -260,7 +301,7 @@ describe('HINT: <model> — matching', () => {
     expect([...perProvider.values()].every((n) => n === 1)).toBe(true);
   });
 
-  it('falls back to a scan of every group\'s top models when neither pool nor registry knows the name', async () => {
+  it("falls back to a scan of every group's top models when neither pool nor registry knows the name", async () => {
     const w = world({
       ...base,
       classification: { hintType: 'model', hintTarget: 'hidden-model' },
@@ -272,7 +313,9 @@ describe('HINT: <model> — matching', () => {
     (w.registry!.find as any).mockImplementation(() => undefined);
     const d = await w.open();
     expect(d.candidates[0]).toBe('mistral/hidden-model');
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('resolved "hidden-model" to "mistral/hidden-model" via group scan'));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining('resolved "hidden-model" to "mistral/hidden-model" via group scan')
+    );
   });
 
   it('survives a group whose top-model lookup throws', async () => {
@@ -326,12 +369,24 @@ describe('HINT: <model> — ordering, limits and the fallback tail', () => {
       classification: { hintType: 'model', hintTarget: 'shared-model' },
       discovered: ['openrouter/shared-model', 'mistral/shared-model', 'claude-bridge/shared-model'],
       known: ['openrouter/shared-model', 'mistral/shared-model', 'claude-bridge/shared-model'],
-      gdp: { 'openrouter/shared-model': 900, 'mistral/shared-model': 500, 'claude-bridge/shared-model': 700 },
+      gdp: {
+        'openrouter/shared-model': 900,
+        'mistral/shared-model': 500,
+        'claude-bridge/shared-model': 700,
+      },
     });
     const d = await w.open();
     // usable: claude-bridge (no PROVIDER_MAP entry → carries its own auth) 700, mistral 500; unusable: openrouter 900
-    expect(d.candidates.slice(0, 3)).toEqual(['claude-bridge/shared-model', 'mistral/shared-model', 'openrouter/shared-model']);
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('skipping unusable refs (no handler/credentials): openrouter/shared-model'));
+    expect(d.candidates.slice(0, 3)).toEqual([
+      'claude-bridge/shared-model',
+      'mistral/shared-model',
+      'openrouter/shared-model',
+    ]);
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'skipping unusable refs (no handler/credentials): openrouter/shared-model'
+      )
+    );
   });
 
   it('a fully qualified hint that matches and is usable goes first even against a higher gdpval sibling', async () => {
@@ -392,8 +447,30 @@ describe('HINT: <model> — ordering, limits and the fallback tail', () => {
 
   it('appends at most five usable fallback models after the hinted ones, best gdpval first, skipping blocked, excluded and duplicates', async () => {
     // deliberately NOT in gdpval order: the sort is what puts a..e first
-    const available = ['mistral/f', 'mistral/m', 'mistral/c', 'mistral/blocked', 'mistral/e', 'mistral/excluded', 'mistral/a', 'openrouter/nokey', 'mistral/d', 'mistral/b'];
-    const gdp: Record<string, number> = { 'mistral/a': 60, 'mistral/b': 50, 'mistral/c': 40, 'mistral/d': 30, 'mistral/e': 20, 'mistral/f': 10, 'mistral/blocked': 999, 'mistral/excluded': 998, 'openrouter/nokey': 997, 'mistral/m': 5 };
+    const available = [
+      'mistral/f',
+      'mistral/m',
+      'mistral/c',
+      'mistral/blocked',
+      'mistral/e',
+      'mistral/excluded',
+      'mistral/a',
+      'openrouter/nokey',
+      'mistral/d',
+      'mistral/b',
+    ];
+    const gdp: Record<string, number> = {
+      'mistral/a': 60,
+      'mistral/b': 50,
+      'mistral/c': 40,
+      'mistral/d': 30,
+      'mistral/e': 20,
+      'mistral/f': 10,
+      'mistral/blocked': 999,
+      'mistral/excluded': 998,
+      'openrouter/nokey': 997,
+      'mistral/m': 5,
+    };
     const w = world({
       keyed: ['mistral'],
       classification: { hintType: 'model', hintTarget: 'mistral/m' },
@@ -405,8 +482,19 @@ describe('HINT: <model> — ordering, limits and the fallback tail', () => {
       cache: { model_blocklist: { 'mistral/blocked': { last_seen: Date.now() } } },
     });
     const d = await w.open();
-    expect(d.candidates).toEqual(['mistral/m', 'mistral/a', 'mistral/b', 'mistral/c', 'mistral/d', 'mistral/e']);
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('HINT fallback candidates: mistral/a, mistral/b, mistral/c, mistral/d, mistral/e'));
+    expect(d.candidates).toEqual([
+      'mistral/m',
+      'mistral/a',
+      'mistral/b',
+      'mistral/c',
+      'mistral/d',
+      'mistral/e',
+    ]);
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'HINT fallback candidates: mistral/a, mistral/b, mistral/c, mistral/d, mistral/e'
+      )
+    );
   });
 
   it('models without a known gdpval sort last in the fallback tail (treated as 0)', async () => {
@@ -438,13 +526,19 @@ describe('HINT: <model> — ordering, limits and the fallback tail', () => {
 
   it('without an exclude config nothing is filtered out of the tail', async () => {
     const available = ['mistral/m', 'mistral/other'];
-    const w = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: available, available });
+    const w = world({
+      keyed: ['mistral'],
+      classification: { hintType: 'model', hintTarget: 'mistral/m' },
+      discovered: ['mistral/m'],
+      known: available,
+      available,
+    });
     const d = await w.open();
     expect(d.candidates).toEqual(['mistral/m', 'mistral/other']);
   });
 });
 
-describe('HINT: <model> — start group follows the hinted model\'s gdpval (D2)', () => {
+describe("HINT: <model> — start group follows the hinted model's gdpval (D2)", () => {
   const start = async (gdpval: number | undefined) => {
     const w = world({
       keyed: ['mistral'],
@@ -498,14 +592,20 @@ describe('after classification: escalation and target resolution', () => {
   });
 
   it('an escalated level overrides the category and is logged', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: res, escalation: 'planning' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: res,
+      escalation: 'planning',
+    });
     const d = await w.open();
     expect(d.group).toBe('planning');
     expect(d.label).toBe('standard → planning');
-    expect(routerLog).toHaveBeenCalledWith(expect.stringContaining('[escalation] Using escalated group: planning'));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringContaining('[escalation] Using escalated group: planning')
+    );
   });
 
-  it('the target group\'s fallback groups follow its own candidates, deduplicated, one level deep', async () => {
+  it("the target group's fallback groups follow its own candidates, deduplicated, one level deep", async () => {
     const w = world({ classification: { category: 'standard' }, resolvable: res });
     const d = await w.open();
     // standard → fallback simple: its duplicate (mistral/large) is dropped
@@ -513,7 +613,10 @@ describe('after classification: escalation and target resolution', () => {
   });
 
   it('an unresolvable target group falls to simple and reports simple as the group', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { simple: res.simple } });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { simple: res.simple },
+    });
     const d = await w.open();
     expect(d.group).toBe('simple');
     expect(d.candidates).toEqual(['openrouter/free', 'mistral/large']);
@@ -521,7 +624,10 @@ describe('after classification: escalation and target resolution', () => {
 
   it('skips fallback groups that do not resolve', async () => {
     const w = world({
-      groups: { ...DEFAULT_GROUPS, standard: { method: 'best', fallback_groups: ['gone', 'simple'] } },
+      groups: {
+        ...DEFAULT_GROUPS,
+        standard: { method: 'best', fallback_groups: ['gone', 'simple'] },
+      },
       classification: { category: 'standard' },
       resolvable: res,
     });
@@ -530,7 +636,11 @@ describe('after classification: escalation and target resolution', () => {
   });
 
   it('a classification without a category (no hint) does not overwrite the remembered category', async () => {
-    const w = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: res.planning }, lastCategory: 'design' });
+    const w = world({
+      classification: { hintType: 'group', hintTarget: 'planning' },
+      resolvable: { planning: res.planning },
+      lastCategory: 'design',
+    });
     await w.open();
     expect(w.ctx.lastClassifiedCategory).toBe('design');
   });
@@ -547,7 +657,12 @@ describe('classifier call wiring', () => {
   };
 
   it('passes the prompt and the conversation context', async () => {
-    const { args } = await opts({ lastCategory: 'design', lastDynamicModel: 'mistral/glm', limited: ['mistral/glm'], compaction: true });
+    const { args } = await opts({
+      lastCategory: 'design',
+      lastDynamicModel: 'mistral/glm',
+      limited: ['mistral/glm'],
+      compaction: true,
+    });
     expect(args[0]).toBe('please do the thing');
     expect(args[1].context).toMatchObject({
       lastAssistantSnippet: 'last assistant words',
@@ -575,15 +690,30 @@ describe('classifier call wiring', () => {
     expect(plain.args[1].allowStaticFallback).toBe(false);
     expect(plain.args[1].allowCloudFallback).toBe(false);
 
-    const cloud = await opts({ groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic', classifier_cloud_fallback: true } } });
+    const cloud = await opts({
+      groups: {
+        ...DEFAULT_GROUPS,
+        dynamic: { method: 'dynamic', classifier_cloud_fallback: true },
+      },
+    });
     expect(cloud.args[1].allowCloudFallback).toBe(true);
 
-    const truthyButNotTrue = await opts({ groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic', classifier_cloud_fallback: 'yes' as any } } });
+    const truthyButNotTrue = await opts({
+      groups: {
+        ...DEFAULT_GROUPS,
+        dynamic: { method: 'dynamic', classifier_cloud_fallback: 'yes' as any },
+      },
+    });
     expect(truthyButNotTrue.args[1].allowCloudFallback).toBe(false);
   });
 
   it('passes the pinned cloud model through verbatim (provider/id form, not stripped)', async () => {
-    const { args } = await opts({ groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic', classifier_cloud_model: 'mistral/mistral-large-4' } } });
+    const { args } = await opts({
+      groups: {
+        ...DEFAULT_GROUPS,
+        dynamic: { method: 'dynamic', classifier_cloud_model: 'mistral/mistral-large-4' },
+      },
+    });
     expect(args[1].pinnedCloudModel).toBe('mistral/mistral-large-4');
     const none = await opts({});
     expect('pinnedCloudModel' in none.args[1]).toBe(false);
@@ -603,11 +733,15 @@ describe('classifier call wiring', () => {
     expect(args[1].completeSimple({}, {}, {})).toBeUndefined();
   });
 
-  it('completeSimple goes through the registry\'s runtime with the same arguments', async () => {
+  it("completeSimple goes through the registry's runtime with the same arguments", async () => {
     const { w, args } = await opts({});
     const m = { provider: 'x', id: 'y' };
     expect(args[1].completeSimple(m, { messages: [] }, { signal: 1 })).toBe('completed');
-    expect(w.registry!.runtime.completeSimple).toHaveBeenCalledWith(m, { messages: [] }, { signal: 1 });
+    expect(w.registry!.runtime.completeSimple).toHaveBeenCalledWith(
+      m,
+      { messages: [] },
+      { signal: 1 }
+    );
   });
 
   it('hasConfiguredAuth asks the registry when it can, and fails OPEN when the facade lacks the method', async () => {
@@ -629,12 +763,25 @@ describe('classifier call wiring', () => {
 describe('tool follow-up step', () => {
   const messages = [
     { role: 'user', content: 'run it', timestamp: 1 },
-    { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }], timestamp: 2 },
+    {
+      role: 'toolResult',
+      toolCallId: 't1',
+      toolName: 'bash',
+      content: [{ type: 'text', text: 'ok' }],
+      timestamp: 2,
+    },
   ];
-  const simple = { simple: { candidates: ['openrouter/free', 'mistral/large'], selected: 'openrouter/free' } };
+  const simple = {
+    simple: { candidates: ['openrouter/free', 'mistral/large'], selected: 'openrouter/free' },
+  };
 
   it('puts the last model first, then the simple pool without it, and skips classification', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: simple, messages, lastDynamicModel: 'mistral/large' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: simple,
+      messages,
+      lastDynamicModel: 'mistral/large',
+    });
     const d = await w.open();
     expect(d.candidates).toEqual(['mistral/large', 'openrouter/free']);
     expect(d.group).toBe('simple');
@@ -642,41 +789,78 @@ describe('tool follow-up step', () => {
   });
 
   it('asks the hint detector about the extracted prompt (empty string when there is none)', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: simple, messages, lastDynamicModel: 'mistral/large' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: simple,
+      messages,
+      lastDynamicModel: 'mistral/large',
+    });
     await w.open();
     expect(w.ctx.detectHintDirectly).toHaveBeenCalledWith('please do the thing');
 
-    const none = world({ classification: { category: 'standard' }, resolvable: simple, messages, lastDynamicModel: 'mistral/large', prompt: undefined });
+    const none = world({
+      classification: { category: 'standard' },
+      resolvable: simple,
+      messages,
+      lastDynamicModel: 'mistral/large',
+      prompt: undefined,
+    });
     await none.open();
     expect(none.ctx.detectHintDirectly).toHaveBeenCalledWith('');
   });
 
   it('an empty conversation is never a follow-up', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, messages: [], lastDynamicModel: 'mistral/large' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      messages: [],
+      lastDynamicModel: 'mistral/large',
+    });
     await w.open();
     expect(w.classifyPrompt).toHaveBeenCalled();
   });
 
   it('is not a follow-up without a remembered model', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, messages });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      messages,
+    });
     await w.open();
     expect(w.classifyPrompt).toHaveBeenCalled();
   });
 
   it('is not a follow-up when the prompt itself carries a HINT', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, messages, lastDynamicModel: 'mistral/large', hintDirect: true });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      messages,
+      lastDynamicModel: 'mistral/large',
+      hintDirect: true,
+    });
     await w.open();
     expect(w.classifyPrompt).toHaveBeenCalled();
   });
 
   it('is not a follow-up after a plain user message', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, lastDynamicModel: 'mistral/large' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { ...simple, standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      lastDynamicModel: 'mistral/large',
+    });
     await w.open();
     expect(w.classifyPrompt).toHaveBeenCalled();
   });
 
   it('falls to the first non-dynamic group when simple does not resolve', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, messages, lastDynamicModel: 'mistral/large' });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+      messages,
+      lastDynamicModel: 'mistral/large',
+    });
     const d = await w.open();
     expect(d.group).toBe('planning');
     expect(d.candidates).toEqual(['mistral/large', 'claude-bridge/opus']);
@@ -687,20 +871,36 @@ describe('tool follow-up step', () => {
 
 describe('group name parsing', () => {
   it('a :use-static suffix names the group and switches the static fallback on', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } } });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+    });
     w.ctx.cfg.model_groups.dynamic = { method: 'dynamic' };
     const orch = new StreamOrchestrator(w.ctx);
     const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
-    orch.groupStream({ provider: 'router', id: 'dynamic:use-static', api: 'x' } as any, { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any, undefined);
+    orch.groupStream(
+      { provider: 'router', id: 'dynamic:use-static', api: 'x' } as any,
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
+      undefined
+    );
     await vi.waitFor(() => expect(drive).toHaveBeenCalled());
     expect(w.classifyPrompt.mock.calls[0][1].allowStaticFallback).toBe(true);
   });
 
   it('a static group is driven directly with its candidates and its own name', async () => {
-    const w = world({ classification: {}, resolvable: { standard: { candidates: ['mistral/glm', 'mistral/large'], selected: 'mistral/glm' } } });
+    const w = world({
+      classification: {},
+      resolvable: {
+        standard: { candidates: ['mistral/glm', 'mistral/large'], selected: 'mistral/glm' },
+      },
+    });
     const orch = new StreamOrchestrator(w.ctx);
     const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
-    orch.groupStream({ provider: 'router', id: 'standard', api: 'x' } as any, { messages: [] } as any, undefined);
+    orch.groupStream(
+      { provider: 'router', id: 'standard', api: 'x' } as any,
+      { messages: [] } as any,
+      undefined
+    );
     const a = drive.mock.calls[0] as unknown as any[];
     expect(a[1]).toEqual(['mistral/glm', 'mistral/large']);
     expect(a[5]).toBe('standard');
@@ -710,13 +910,25 @@ describe('group name parsing', () => {
   it('a static group that cannot be resolved throws a named error', () => {
     const w = world({ classification: {}, resolvable: {} });
     const orch = new StreamOrchestrator(w.ctx);
-    expect(() => orch.groupStream({ provider: 'router', id: 'standard', api: 'x' } as any, { messages: [] } as any, undefined)).toThrow('No available models for group "standard"');
+    expect(() =>
+      orch.groupStream(
+        { provider: 'router', id: 'standard', api: 'x' } as any,
+        { messages: [] } as any,
+        undefined
+      )
+    ).toThrow('No available models for group "standard"');
   });
 
   it('a name that merely CONTAINS :use-static in the middle is not treated as the suffix', () => {
     const w = world({ classification: {}, resolvable: {} });
     const orch = new StreamOrchestrator(w.ctx);
-    expect(() => orch.groupStream({ provider: 'router', id: 'a:use-static-b', api: 'x' } as any, { messages: [] } as any, undefined)).toThrow('No available models for group "a:use-static-b"');
+    expect(() =>
+      orch.groupStream(
+        { provider: 'router', id: 'a:use-static-b', api: 'x' } as any,
+        { messages: [] } as any,
+        undefined
+      )
+    ).toThrow('No available models for group "a:use-static-b"');
   });
 });
 
@@ -725,7 +937,10 @@ describe('group name parsing', () => {
 describe('classifier wiring — config shapes', () => {
   const res = { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } };
   const named = (cfgDynamic?: any, id = 'auto') => {
-    const groups: Record<string, any> = { standard: { method: 'best' }, simple: { method: 'best' } };
+    const groups: Record<string, any> = {
+      standard: { method: 'best' },
+      simple: { method: 'best' },
+    };
     groups[id] = { method: 'dynamic' };
     if (cfgDynamic) groups.dynamic = cfgDynamic;
     return groups;
@@ -735,7 +950,11 @@ describe('classifier wiring — config shapes', () => {
     w.ctx.cfg.model_groups = o.groups ?? w.ctx.cfg.model_groups;
     const orch = new StreamOrchestrator(w.ctx);
     const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
-    orch.groupStream({ provider: 'router', id, api: 'x' } as any, { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any, undefined);
+    orch.groupStream(
+      { provider: 'router', id, api: 'x' } as any,
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
+      undefined
+    );
     await vi.waitFor(() => expect(drive).toHaveBeenCalled());
     return { w, args: w.classifyPrompt.mock.calls[0] as unknown as [string, any] };
   };
@@ -746,13 +965,29 @@ describe('classifier wiring — config shapes', () => {
     expect('pinnedCloudModel' in args[1]).toBe(false);
   });
 
-  it('passes the user\'s local classifier pins (ollama/ prefix stripped)', async () => {
-    const { args } = await run({ groups: named({ method: 'dynamic', classifier_model: 'ollama/gemma:2b', classifier_fallback: 'qwen:1b' }, 'auto') }, 'auto');
+  it("passes the user's local classifier pins (ollama/ prefix stripped)", async () => {
+    const { args } = await run(
+      {
+        groups: named(
+          {
+            method: 'dynamic',
+            classifier_model: 'ollama/gemma:2b',
+            classifier_fallback: 'qwen:1b',
+          },
+          'auto'
+        ),
+      },
+      'auto'
+    );
     expect(args[1]).toMatchObject({ model: 'gemma:2b', fallbackModel: 'qwen:1b' });
   });
 
   it('an empty prompt reaches the classifier as an empty string', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: res, prompt: undefined });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: res,
+      prompt: undefined,
+    });
     await w.open();
     expect(w.classifyPrompt.mock.calls[0][0]).toBe('');
   });
@@ -815,7 +1050,10 @@ describe('HINT edge cases', () => {
 
   it('two fallback groups that share a candidate contribute it once (HINT group)', async () => {
     const w = world({
-      groups: { ...DEFAULT_GROUPS, planning: { method: 'best', fallback_groups: ['standard', 'simple'] } },
+      groups: {
+        ...DEFAULT_GROUPS,
+        planning: { method: 'best', fallback_groups: ['standard', 'simple'] },
+      },
       classification: { hintType: 'group', hintTarget: 'planning' },
       resolvable: {
         planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
@@ -824,21 +1062,37 @@ describe('HINT edge cases', () => {
       },
     });
     const d = await w.open();
-    expect(d.candidates).toEqual(['claude-bridge/opus', 'mistral/glm', 'mistral/large', 'openrouter/free']);
+    expect(d.candidates).toEqual([
+      'claude-bridge/opus',
+      'mistral/glm',
+      'mistral/large',
+      'openrouter/free',
+    ]);
   });
 
   it('two fallback groups that share a candidate contribute it once (normal routing)', async () => {
     const w = world({
-      groups: { ...DEFAULT_GROUPS, standard: { method: 'best', fallback_groups: ['planning', 'simple'] } },
+      groups: {
+        ...DEFAULT_GROUPS,
+        standard: { method: 'best', fallback_groups: ['planning', 'simple'] },
+      },
       classification: { category: 'standard' },
       resolvable: {
         standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' },
-        planning: { candidates: ['claude-bridge/opus', 'mistral/large'], selected: 'claude-bridge/opus' },
+        planning: {
+          candidates: ['claude-bridge/opus', 'mistral/large'],
+          selected: 'claude-bridge/opus',
+        },
         simple: { candidates: ['openrouter/free', 'mistral/large'], selected: 'openrouter/free' },
       },
     });
     const d = await w.open();
-    expect(d.candidates).toEqual(['mistral/glm', 'claude-bridge/opus', 'mistral/large', 'openrouter/free']);
+    expect(d.candidates).toEqual([
+      'mistral/glm',
+      'claude-bridge/opus',
+      'mistral/large',
+      'openrouter/free',
+    ]);
   });
 
   it('providers known only from the discovered pool or from cfg.providers are asked too', async () => {
@@ -871,49 +1125,95 @@ describe('decision lines (router.log)', () => {
 
   it('a normal routing decision logs a timestamp, the label, the selected ref and the prompt (80 chars, one line)', async () => {
     const long = 'first line\n' + 'x'.repeat(200);
-    const w = world({ classification: { category: 'standard' }, resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, prompt: long });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      prompt: long,
+    });
     await w.open();
     expect(lineOf()).toHaveLength(1);
     const line = lineOf()[0];
-    expect(line).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z {2}standard → standard {2}mistral\/glm {2}"first line x{69}"$/);
+    expect(line).toMatch(
+      /^\d{4}-\d\d-\d\dT[\d:.]+Z {2}standard → standard {2}mistral\/glm {2}"first line x{69}"$/
+    );
   });
 
   it('a group HINT logs without a selected-ref column; a model HINT logs MHINT with the first sibling', async () => {
-    const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: 'pin a group' });
+    const g = world({
+      classification: { hintType: 'group', hintTarget: 'planning' },
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+      prompt: 'pin a group',
+    });
     await g.open();
     expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}"pin a group"$/);
 
     vi.clearAllMocks();
-    const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: 'pin a model' });
+    const m = world({
+      keyed: ['mistral'],
+      classification: { hintType: 'model', hintTarget: 'mistral/m' },
+      discovered: ['mistral/m'],
+      known: ['mistral/m'],
+      prompt: 'pin a model',
+    });
     await m.open();
     expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}"pin a model"$/);
   });
 
   it('HINT lines also cut the prompt at 80 characters and keep it on one line', async () => {
     const long = 'first line\n' + 'x'.repeat(200);
-    const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: long });
+    const g = world({
+      classification: { hintType: 'group', hintTarget: 'planning' },
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+      prompt: long,
+    });
     await g.open();
     expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}"first line x{69}"$/);
 
     vi.clearAllMocks();
-    const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: long });
+    const m = world({
+      keyed: ['mistral'],
+      classification: { hintType: 'model', hintTarget: 'mistral/m' },
+      discovered: ['mistral/m'],
+      known: ['mistral/m'],
+      prompt: long,
+    });
     await m.open();
     expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}"first line x{69}"$/);
   });
 
   it('HINT lines without a prompt log an empty quoted string too', async () => {
-    const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: undefined });
+    const g = world({
+      classification: { hintType: 'group', hintTarget: 'planning' },
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+      prompt: undefined,
+    });
     await g.open();
     expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}""$/);
 
     vi.clearAllMocks();
-    const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: undefined });
+    const m = world({
+      keyed: ['mistral'],
+      classification: { hintType: 'model', hintTarget: 'mistral/m' },
+      discovered: ['mistral/m'],
+      known: ['mistral/m'],
+      prompt: undefined,
+    });
     await m.open();
     expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}""$/);
   });
 
   it('a missing prompt logs as an empty quoted string', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, prompt: undefined });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } },
+      prompt: undefined,
+    });
     await w.open();
     expect(lineOf()[0]).toMatch(/ {2}""$/);
   });
@@ -924,7 +1224,11 @@ describe('total failure', () => {
     const w = world({ classification: { category: 'standard' }, resolvable: {} });
     const orch = new StreamOrchestrator(w.ctx);
     const drive = vi.spyOn(orch, 'driveStream').mockResolvedValue(undefined as never);
-    const stream = orch.groupStream({ provider: 'router', id: 'dynamic', api: 'x' } as any, { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any, undefined);
+    const stream = orch.groupStream(
+      { provider: 'router', id: 'dynamic', api: 'x' } as any,
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] } as any,
+      undefined
+    );
     const events: any[] = [];
     for await (const ev of stream as AsyncIterable<any>) events.push(ev);
     expect(drive).not.toHaveBeenCalled();
@@ -933,12 +1237,20 @@ describe('total failure', () => {
     // The cause is the bare error message: no "Error: " class prefix (String(err) used to add it).
     expect(JSON.stringify(err)).toContain('Dynamic routing failed: No models for dynamic target');
     expect(JSON.stringify(err)).not.toContain('Error: No models');
-    expect(JSON.stringify(err)).toContain('dynamic classification and fallback routing both unavailable');
-    expect(warnLog).toHaveBeenCalledWith(expect.stringContaining('classification failed'), expect.anything());
+    expect(JSON.stringify(err)).toContain(
+      'dynamic classification and fallback routing both unavailable'
+    );
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining('classification failed'),
+      expect.anything()
+    );
   });
 
   it('a classifier that throws falls back to the simple group', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { simple: { candidates: ['openrouter/free'], selected: 'openrouter/free' } } });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: { simple: { candidates: ['openrouter/free'], selected: 'openrouter/free' } },
+    });
     w.classifyPrompt.mockRejectedValue(new Error('classifier down'));
     const d = await w.open();
     expect(d.candidates).toEqual(['openrouter/free']);
@@ -946,7 +1258,12 @@ describe('total failure', () => {
   });
 
   it('with no simple group it falls back to the first non-dynamic group', async () => {
-    const w = world({ classification: { category: 'standard' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } } });
+    const w = world({
+      classification: { category: 'standard' },
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+    });
     w.classifyPrompt.mockRejectedValue(new Error('classifier down'));
     const d = await w.open();
     expect(d.group).toBe('planning');
@@ -976,6 +1293,10 @@ describe('HINT matching against the discovered pool only (registry does not know
       known: ['mistral/shared-model'],
     });
     await w.open();
-    expect(routerLog).toHaveBeenCalledWith(expect.stringMatching(/\(no handler\/credentials\): (a|b)\/shared-model, (a|b)\/shared-model$/));
+    expect(routerLog).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\(no handler\/credentials\): (a|b)\/shared-model, (a|b)\/shared-model$/
+      )
+    );
   });
 });

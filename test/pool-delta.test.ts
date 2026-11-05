@@ -12,7 +12,7 @@ const T0 = Date.parse('2026-10-27T14:00:00.000Z');
 const at = (sec: number) => T0 + sec * 1000;
 const L = (sec: number, group: string, proc: string, pool: string): RoutingLine =>
   parseRoutingLine(
-    `${new Date(at(sec)).toISOString()}  [${proc}] [routing] group=${group} method=best candidates: ${pool} || excluded: (none)`,
+    `${new Date(at(sec)).toISOString()}  [${proc}] [routing] group=${group} method=best candidates: ${pool} || excluded: (none)`
   )!;
 
 describe('universeAsOf — every model the groups showed at decision time', () => {
@@ -25,7 +25,9 @@ describe('universeAsOf — every model the groups showed at decision time', () =
   ];
 
   it('unions the latest line of each group of the process at or before the time', () => {
-    const refs = universeAsOf(lines, 'p/1', at(20)).map((c) => c.ref).sort();
+    const refs = universeAsOf(lines, 'p/1', at(20))
+      .map((c) => c.ref)
+      .sort();
     expect(refs).toEqual(['a/x', 'a/y', 'a/z']);
   });
 
@@ -61,10 +63,20 @@ describe('rankBy — descending score, GDPval breaks ties', () => {
     { ref: 'a/hai', gdp: 1620, cost: 1, flags: [] },
     { ref: 'a/tie', gdp: 1700, cost: 1, flags: [] },
   ];
-  const scores: Record<string, number> = { 'a/glm': 1509, 'a/son': 1823, 'a/hai': 1578, 'a/tie': 1509 };
+  const scores: Record<string, number> = {
+    'a/glm': 1509,
+    'a/son': 1823,
+    'a/hai': 1578,
+    'a/tie': 1509,
+  };
 
   it('orders by the score, not by GDPval', () => {
-    expect(rankBy(pool, (r) => scores[r]).map((c) => c.ref)).toEqual(['a/son', 'a/hai', 'a/tie', 'a/glm']);
+    expect(rankBy(pool, (r) => scores[r]).map((c) => c.ref)).toEqual([
+      'a/son',
+      'a/hai',
+      'a/tie',
+      'a/glm',
+    ]);
   });
 });
 
@@ -90,7 +102,13 @@ describe('diffPools', () => {
   });
 
   it('an empty pool has a null head; empty vs empty is no change', () => {
-    expect(diffPools([], [])).toEqual({ added: [], removed: [], headChanged: false, currentHead: null, targetHead: null });
+    expect(diffPools([], [])).toEqual({
+      added: [],
+      removed: [],
+      headChanged: false,
+      currentHead: null,
+      targetHead: null,
+    });
     expect(diffPools([], ['a']).headChanged).toBe(true);
   });
 });

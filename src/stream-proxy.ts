@@ -7,14 +7,30 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, isToolCallMarkupText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, sanitizeForLog } from './detection.ts';
+import {
+  isAbortLikeText,
+  isRateLimitText,
+  isToolCallMarkupText,
+  parseResetAtMs,
+  isOverflowErrorText,
+  OVERFLOW_TEXT_SCAN_MAX_CHARS,
+  isOverflowDeltaText,
+  sanitizeForLog,
+} from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
 import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-driver.ts';
 import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
-import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEvent, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import {
+  type Model,
+  type Context,
+  type SimpleStreamOptions,
+  type AssistantMessageEvent,
+  type AssistantMessageEventStream,
+  createAssistantMessageEventStream,
+} from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 import type { StreamOrchestrator } from './stream-orchestrator.ts';
 
@@ -42,7 +58,7 @@ interface StreamProxyDeps {
   localStreamsInFlight: number;
   readonly OLLAMA_MAX_CONCURRENT_STREAMS: number;
   readonly registerFreeModelOnDemand: (provider: string, modelId: string) => Promise<boolean>;
-  readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
+  readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly sessionCtx: any;
   skipReasons: Map<string, string>;
   readonly streamOrchestrator: StreamOrchestrator;
@@ -85,7 +101,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // function exists to guard against (host renamed/removed `.runtime` or
     // `.getProvider`). Log distinctly from tryStream's generic "not found"
     // error so it isn't mistaken for an ordinary missing-credentials case.
-    routerLog(`[diag] hostStreamSimple: no runtime.streamSimple or getProvider(${model.provider}).streamSimple on modelRegistry — host interface may have changed`);
+    routerLog(
+      `[diag] hostStreamSimple: no runtime.streamSimple or getProvider(${model.provider}).streamSimple on modelRegistry — host interface may have changed`
+    );
     return null;
   }
 
@@ -156,7 +174,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     let reservedLocalSlot = false;
     if (isLocalProvider(ref)) {
       if (rt.localStreamsInFlight >= localStreamLimit()) {
-        return skip(`local_concurrency_limit (${rt.localStreamsInFlight} of ${localStreamLimit()} local streams in flight)`);
+        return skip(
+          `local_concurrency_limit (${rt.localStreamsInFlight} of ${localStreamLimit()} local streams in flight)`
+        );
       }
       rt.localStreamsInFlight++;
       reservedLocalSlot = true;
@@ -165,7 +185,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
     forgetDebugOnce(`tryStream-skip:${ref}`);
-    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${realModel.api} baseUrl=${realModel.baseUrl ?? 'n/a'}`);
+    debugLog(
+      `[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${realModel.api} baseUrl=${realModel.baseUrl ?? 'n/a'}`
+    );
     const apiKey = await rt.sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
@@ -193,12 +215,17 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     });
     if (budget.kind === 'skip') {
       if (reservedLocalSlot && rt.localStreamsInFlight > 0) rt.localStreamsInFlight--;
-      return skip(`context window ${window} < ${budget.neededTokens} tokens needed (prompt + tools + minimum output)`);
+      return skip(
+        `context window ${window} < ${budget.neededTokens} tokens needed (prompt + tools + minimum output)`
+      );
     }
     if (budget.kind === 'capped') {
-      debugLog(`[router] ${ref} output budget capped ${options?.maxTokens} → ${budget.maxTokens} (window ${window})`);
+      debugLog(
+        `[router] ${ref} output budget capped ${options?.maxTokens} → ${budget.maxTokens} (window ${window})`
+      );
     }
-    const sendOptions = budget.kind === 'capped' ? { ...(options ?? {}), maxTokens: budget.maxTokens } : options;
+    const sendOptions =
+      budget.kind === 'capped' ? { ...(options ?? {}), maxTokens: budget.maxTokens } : options;
 
     // Strip the group's virtual apiKey from options — it must not reach the real provider
     const { apiKey: _drop, ...baseOpts } = sendOptions ?? {};
@@ -273,7 +300,10 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       resolveTimeout = resolve;
     });
     const fireTimeout = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
       resolveTimeout?.('timeout');
     };
     const armTimer = () => {
@@ -282,7 +312,10 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       timer = setTimeout(fireTimeout, ms);
     };
     const clearTimer = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
     };
     // Arm the initial first-token timer.
     armTimer();
@@ -499,7 +532,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               proxy.push({
                 ...(event as any),
                 reason: 'aborted',
-                error: { ...(errObj), stopReason: 'aborted' },
+                error: { ...errObj, stopReason: 'aborted' },
               });
               terminalForwarded = true;
               return 'done';
@@ -570,7 +603,10 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             // whole (short) response, whereas a real answer discussing context
             // windows or compaction — this router's own domain — can contain
             // the same phrases much later and must not be killed for it.
-            if (accumulatedText.length <= OVERFLOW_TEXT_SCAN_MAX_CHARS && isOverflowDeltaText(accumulatedText)) {
+            if (
+              accumulatedText.length <= OVERFLOW_TEXT_SCAN_MAX_CHARS &&
+              isOverflowDeltaText(accumulatedText)
+            ) {
               overflowDetected = true;
               overflowDetail = accumulatedText;
               clearTimer();
@@ -616,7 +652,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
           // overflow / repetition early returns above).
           if ((event as any).type === 'done') {
             const doneReason = String((event as any).reason ?? '');
-            routerLog(`[stream] ${ref} finished (stopReason: ${doneReason}, ${accumulatedText.length} chars)`);
+            routerLog(
+              `[stream] ${ref} finished (stopReason: ${doneReason}, ${accumulatedText.length} chars)`
+            );
             if (doneReason === 'length') {
               truncatedByLength = true;
               clearTimer();
@@ -655,7 +693,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             if (event.type === 'text_delta') {
               const delta = deltaOf(event);
               heldChars += delta.length;
-              if (heldHead.length < HELD_HEAD_CHARS) heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
+              if (heldHead.length < HELD_HEAD_CHARS)
+                heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
             }
             // Window full and the opening is not markup: release it. A markup
             // opening stays held until the stream ends, when the verdict drops it.
@@ -846,7 +885,16 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       // are tracked now.
       // Fire-and-forget by design: driveStream never rejects and always
       // terminates the proxy (see its doc in stream-orchestrator.ts).
-      void rt.streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      void rt.streamOrchestrator.driveStream(
+        proxy,
+        candidates,
+        context,
+        options,
+        undefined,
+        groupName,
+        undefined,
+        sourceModel
+      );
       return proxy;
     }
 

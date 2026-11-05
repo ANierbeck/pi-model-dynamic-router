@@ -16,10 +16,7 @@
 // model-map.yaml regression guard, now exercised against the real pipeline.
 
 import { describe, it, expect } from 'vitest';
-import {
-  parseMatchResponse,
-  type GdpvalEntry,
-} from '../src/model-matcher.js';
+import { parseMatchResponse, type GdpvalEntry } from '../src/model-matcher.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -100,4 +97,3 @@ describe('parseMatchResponse', () => {
     expect(result['invented-model']).toBe('glm-5-2');
   });
 });
-

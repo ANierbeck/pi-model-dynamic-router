@@ -67,7 +67,7 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
     // session_start diagnostics) for the authoritative 'is the provider known'
     // check.
     const registeredProviderIds: string[] =
-      (rt.sessionCtx?.modelRegistry)?.getRegisteredProviderIds?.() ?? [];
+      rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds?.() ?? [];
     if (registeredProviderIds.includes(provider)) return false;
     // 0.99.1 note (ADR-0019): getRegisteredProviderIds() includes every
     // builtin-catalog provider there, so this guard degrades to 'never
@@ -98,7 +98,9 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
         api: def.api,
         models: allFreeModelEntries,
       });
-      routerLog(`[router] On-demand registered ${allFreeModelEntries.length} free model(s) for ${provider} (triggered by ${ref})`);
+      routerLog(
+        `[router] On-demand registered ${allFreeModelEntries.length} free model(s) for ${provider} (triggered by ${ref})`
+      );
       return Boolean(rt.sessionCtx?.modelRegistry.find(provider, modelId));
     } catch (e) {
       warnLog(`[router] On-demand registration failed for ${ref}:`, e);

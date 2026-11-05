@@ -9,7 +9,19 @@
  */
 
 import { DiscoveryManager } from './discovery.ts';
-import { buildStaticFreeModelsLookup, buildModelsWithMetadata, collapseSameSlugClusters, filterModelsForGroup, sortModelsForGroup, collectGroupModels, computeFallbackGroups, resyncDynamicFromStatic, registerRegistryProviderStubs, staticGroupsFingerprint, type StaticContributions } from './dynamic-config.ts';
+import {
+  buildStaticFreeModelsLookup,
+  buildModelsWithMetadata,
+  collapseSameSlugClusters,
+  filterModelsForGroup,
+  sortModelsForGroup,
+  collectGroupModels,
+  computeFallbackGroups,
+  resyncDynamicFromStatic,
+  registerRegistryProviderStubs,
+  staticGroupsFingerprint,
+  type StaticContributions,
+} from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
@@ -131,7 +143,9 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
    * and two overlapping runs (a scan and the settled re-check) would both
    * write router-config.dynamic.json and the cache, the slower one last.
    */
-  const generateDynamicConfig = serialized((force: boolean = false) => generateDynamicConfigNow(force));
+  const generateDynamicConfig = serialized((force: boolean = false) =>
+    generateDynamicConfigNow(force)
+  );
 
   async function generateDynamicConfigNow(force: boolean): Promise<void> {
     try {
@@ -165,34 +179,49 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       const storedGroupsFingerprint = readStoredGroupsFingerprint(rt.stateDir);
       // Fixture caches (dynamic_config_expected: false) own no snapshot and must
       // never be regenerated underneath, same as the missing-file rule above.
-      const groupsDrifted = rt.cache.dynamic_config_expected !== false
-        && storedGroupsFingerprint !== null
-        && storedGroupsFingerprint !== groupsFingerprint;
-      if (!force && !hasNewRegistryRefs && rt.cacheManager.isScanCacheValid(rt.cache) && !dynamicConfigMissing && !groupsDrifted) {
+      const groupsDrifted =
+        rt.cache.dynamic_config_expected !== false &&
+        storedGroupsFingerprint !== null &&
+        storedGroupsFingerprint !== groupsFingerprint;
+      if (
+        !force &&
+        !hasNewRegistryRefs &&
+        rt.cacheManager.isScanCacheValid(rt.cache) &&
+        !dynamicConfigMissing &&
+        !groupsDrifted
+      ) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
       }
       if (!force && dynamicConfigMissing && rt.cacheManager.isScanCacheValid(rt.cache)) {
-        routerLog('[router] Scan cache is valid but router-config.dynamic.json is missing — regenerating it');
+        routerLog(
+          '[router] Scan cache is valid but router-config.dynamic.json is missing — regenerating it'
+        );
       } else if (!force && groupsDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
-        routerLog('[router] Static group settings changed since router-config.dynamic.json was built — regenerating it');
+        routerLog(
+          '[router] Static group settings changed since router-config.dynamic.json was built — regenerating it'
+        );
       }
-      
+
       // 1. Get all available models (from cache)
       const scannedModels = rt.cache.available_models ?? [];
-      
+
       // 2. Load STATIC free_models from config (important for free models!)
       // These models are NOT scanned but taken directly from router-config.json
-      const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(rt.staticCfg);
-      
+      const { staticFreeModels, staticFreeModelsLookup } = buildStaticFreeModelsLookup(
+        rt.staticCfg
+      );
+
       // 2b. Combine all models: static free_models + scanned models + registry refs
       // (group models are now resolved dynamically from allDiscoveredRefs(), no longer static)
-      const allModelRefs = [...new Set([
-        ...staticFreeModels,
-        ...scannedModels.map(m => `${m.provider}/${m.id}`),
-        ...registryRefs,
-      ])];
-      
+      const allModelRefs = [
+        ...new Set([
+          ...staticFreeModels,
+          ...scannedModels.map((m) => `${m.provider}/${m.id}`),
+          ...registryRefs,
+        ]),
+      ];
+
       if (!allModelRefs.length) {
         routerLog('[router] No models available, skipping dynamic config generation');
         return;
@@ -227,11 +256,16 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         const exCtx: ExcludeContext = { rules: rt.staticCfg.exclude, cfg: rt.cfg, cache: rt.cache };
         const excluded: string[] = [];
         effectiveModelRefs = allModelRefs.filter((ref) => {
-          if (isExcluded(ref, exCtx)) { excluded.push(ref); return false; }
+          if (isExcluded(ref, exCtx)) {
+            excluded.push(ref);
+            return false;
+          }
           return true;
         });
         if (excluded.length) {
-          routerLog(`[router] Exclude rules removed ${excluded.length} model(s): ${excluded.slice(0, 15).join(', ')}${excluded.length > 15 ? ' ...' : ''}`);
+          routerLog(
+            `[router] Exclude rules removed ${excluded.length} model(s): ${excluded.slice(0, 15).join(', ')}${excluded.length > 15 ? ' ...' : ''}`
+          );
         }
       }
 
@@ -251,8 +285,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         const streamableCtx = {
           hasRegistryModel: (provider: string, modelId: string) =>
             metricsModule.hasRegistryModel(provider, modelId),
-          isLocalProvider: (provider: string) =>
-            PROVIDER_MAP[provider]?.local === true,
+          isLocalProvider: (provider: string) => PROVIDER_MAP[provider]?.local === true,
           freeModelRefs,
           // Bug 2026-10-06: a free-model ref used to count as streamable on
           // config presence alone. Reach-through to the private ModelRuntime
@@ -261,8 +294,10 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           // this provider" answer — getAvailable()-derived registryRefs
           // already gets this right; only the free-model shortcut didn't ask.
           hasConfiguredAuth: (provider: string) => {
-            const runtime = (rt.sessionCtx?.modelRegistry)?.runtime;
-            return typeof runtime?.hasConfiguredAuth === 'function' ? runtime.hasConfiguredAuth(provider) : true;
+            const runtime = rt.sessionCtx?.modelRegistry?.runtime;
+            return typeof runtime?.hasConfiguredAuth === 'function'
+              ? runtime.hasConfiguredAuth(provider)
+              : true;
           },
         };
         effectiveModelRefs = effectiveModelRefs.filter((ref) =>
@@ -270,7 +305,9 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         );
         const dropped = before - effectiveModelRefs.length;
         if (dropped > 0) {
-          routerLog(`[router] Streamability filter removed ${dropped} unstreamable model ref(s) (not in pi's registry, not local, not configured free models)`);
+          routerLog(
+            `[router] Streamability filter removed ${dropped} unstreamable model ref(s) (not in pi's registry, not local, not configured free models)`
+          );
         }
       }
 
@@ -281,7 +318,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // was loaded yet) nor a mid-turn load() replacement can pollute it
       // (review M1, 2026-10-07).
       registerRegistryProviderStubs(rt.cfg, registryRefs);
-      
+
       // 4. Enrich the models with GDPval and cost
       // All models are now dynamic, no separate static models
       const staticModelRefs = new Set([...staticFreeModels]);
@@ -294,8 +331,13 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // existing two-tier fallback and unscored models are logged + dropped.
       await rt.populateLlmMatches(effectiveModelRefs);
 
-      const modelsWithMetadata = buildModelsWithMetadata(effectiveModelRefs, rt.cfg, staticFreeModelsLookup, staticModelRefs);
-      
+      const modelsWithMetadata = buildModelsWithMetadata(
+        effectiveModelRefs,
+        rt.cfg,
+        staticFreeModelsLookup,
+        staticModelRefs
+      );
+
       if (!modelsWithMetadata.length) {
         routerLog('[router] No models with GDPval scores, skipping dynamic config generation');
         return;
@@ -308,8 +350,12 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       // (isScanCacheValid). Observed 2026-08-22: a scan scored only 13/125
       // models instead of the normal ~60+, silently dropping mistral-medium
       // (933 GDPval) from "code_complex" for hours across many session restarts.
-      const explicitlyMappedRefs = effectiveModelRefs.filter((ref) => typeof metricsModule.mapLookup(ref) === 'string');
-      const explicitlyMappedScoredRefs = explicitlyMappedRefs.filter((ref) => (lookupGdp(ref) ?? 0) > 0);
+      const explicitlyMappedRefs = effectiveModelRefs.filter(
+        (ref) => typeof metricsModule.mapLookup(ref) === 'string'
+      );
+      const explicitlyMappedScoredRefs = explicitlyMappedRefs.filter(
+        (ref) => (lookupGdp(ref) ?? 0) > 0
+      );
       // Compare against the snapshot on disk (check 3), unless the user forced
       // this scan (/router scan) to accept whatever it finds.
       const configFingerprint = rt.dynamicConfigFingerprint(rt.staticCfg);
@@ -320,7 +366,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         if (!force && fs.existsSync(prevPath)) {
           const prev = JSON.parse(fs.readFileSync(prevPath, 'utf-8'))?._dynamic;
           if (typeof prev?.model_count === 'number') previousSurvivorCount = prev.model_count;
-          if (typeof prev?.config_fingerprint === 'string') configChanged = prev.config_fingerprint !== configFingerprint;
+          if (typeof prev?.config_fingerprint === 'string')
+            configChanged = prev.config_fingerprint !== configFingerprint;
         }
       } catch {
         // Unreadable previous snapshot: nothing to protect.
@@ -345,7 +392,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         settled &&
         prevRefusal !== undefined &&
         Date.now() - prevRefusal.at < rt.SCAN_REFUSAL_MAX_AGE_MS &&
-        Math.abs(prevRefusal.survivors - sanity.survivorCount) <= Math.max(1, Math.round(prevRefusal.survivors * 0.1));
+        Math.abs(prevRefusal.survivors - sanity.survivorCount) <=
+          Math.max(1, Math.round(prevRefusal.survivors * 0.1));
       if (sameAsLastRefusal) {
         routerLog(
           `[router] Scan sanity: a settled scan returned the same smaller result (${sanity.survivorCount} models) — accepting it as real`
@@ -389,7 +437,9 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         rt.cacheManager.saveCache(rt.cache);
       }
 
-      routerLog(`[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`);
+      routerLog(
+        `[router] Generating dynamic config with ${modelsWithMetadata.length} models (${staticFreeModels.length} free models)`
+      );
 
       // Collapse same-provider slug clusters ONCE, before the per-group
       // filters: the cost gates must see the canonical cluster
@@ -399,40 +449,52 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
 
       // 5. Generate the dynamic group configuration
       const dynamicGroups: Record<string, any> = {};
-      
+
       for (const [groupName, groupConfig] of Object.entries(rt.staticCfg.model_groups)) {
         // Skip dynamic group (handled separately)
         if (groupConfig.method === 'dynamic') {
           dynamicGroups[groupName] = groupConfig;
           continue;
         }
-        
+
         // 6. Filter models by the group's criteria
         //
         // Same gate rules as the live and display paths (applyGroupFilters,
         // ADR-0010), fed with the per-model values computed above.
         const filteredModels = filterModelsForGroup(clusterRepModels, groupConfig, rt.cfg);
-        
+
         // 7. Sort the models according to the group's method
-        const sortedGroupModels = sortModelsForGroup(filteredModels, groupConfig, rt.cfg, metricsModule.calculateScore);
-        
+        const sortedGroupModels = sortModelsForGroup(
+          filteredModels,
+          groupConfig,
+          rt.cfg,
+          metricsModule.calculateScore
+        );
+
         // 8. Collect models: static first (highest priority), then dynamic additions
-        const finalModels = collectGroupModels(groupConfig, filteredModels, sortedGroupModels, rt.cfg);
+        const finalModels = collectGroupModels(
+          groupConfig,
+          filteredModels,
+          sortedGroupModels,
+          rt.cfg
+        );
         const originalModels = groupConfig.models ?? [];
-        
+
         // Debug logging
         if (groupName === 'simple') {
-          routerLog(`[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`);
+          routerLog(
+            `[router] Group ${groupName}: ${finalModels.length} models (${originalModels.length} static, ${filteredModels.length} dynamic)`
+          );
           routerLog(`[router]   Models: ${finalModels.slice(0, 5).join(', ')}...`);
         }
-        
+
         // Build the dynamic group configuration
         dynamicGroups[groupName] = {
           ...groupConfig,
-          models: finalModels
+          models: finalModels,
         };
       }
-      
+
       // 9. Auto-generate fallback_groups for groups that do not declare
       // their own chain, based on quality ordering.
       // Quality level: max_cost=0 → 0, min_gdpval=N → N, no constraint → 750 (highest).
@@ -465,7 +527,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
           groups_fingerprint: groupsFingerprint,
           // static_contributions is recorded by resyncDynamicFromStatic below
           // (load() already pruned rt.cfg against the previous one).
-        }
+        },
       };
       resyncDynamicFromStatic(dynamicConfig, rt.staticCfg, rt.staticContributions);
 
@@ -502,7 +564,6 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
       rt.cacheManager.saveCache(rt.cache);
 
       routerLog(`[router] Dynamic configuration generated: ${dynamicConfigPath}`);
-      
     } catch (error) {
       errorLog('[router] Error generating dynamic configuration:', error);
     }

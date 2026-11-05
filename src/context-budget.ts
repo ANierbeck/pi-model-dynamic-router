@@ -143,7 +143,9 @@ export function planOutputBudget(input: OutputBudgetInput): OutputBudget {
   if (input.requestedOutput === undefined) {
     // No explicit output budget: the provider applies its own default, which
     // we cannot see. Only the minimum has to fit.
-    return available >= MIN_OUTPUT_TOKENS ? { kind: 'fits' } : { kind: 'skip', neededTokens: minimumNeeded };
+    return available >= MIN_OUTPUT_TOKENS
+      ? { kind: 'fits' }
+      : { kind: 'skip', neededTokens: minimumNeeded };
   }
   if (input.requestedOutput <= available) return { kind: 'fits' };
   if (available >= MIN_OUTPUT_TOKENS) return { kind: 'capped', maxTokens: available };

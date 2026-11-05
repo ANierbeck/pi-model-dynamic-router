@@ -112,7 +112,8 @@ export function checkScanSanity(params: ScanSanityParams): ScanSanityResult {
 
   const explicitlyMappedCount = explicitlyMappedRefs.length;
   const explicitlyMappedScoredCount = explicitlyMappedScoredRefs.length;
-  const explicitMapCoverage = explicitlyMappedCount > 0 ? explicitlyMappedScoredCount / explicitlyMappedCount : 1;
+  const explicitMapCoverage =
+    explicitlyMappedCount > 0 ? explicitlyMappedScoredCount / explicitlyMappedCount : 1;
 
   const result: ScanSanityResult = {
     ok: true,

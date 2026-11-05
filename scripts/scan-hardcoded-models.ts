@@ -48,13 +48,18 @@ export const ALLOWLISTED_SOURCE_FILES: ReadonlySet<string> = new Set([
 /** Shipped source the guard scans: src/**.ts and the root index.ts, minus the class A/B allowlist. */
 export function isScannedSourcePath(relPath: string): boolean {
   if (relPath === 'index.ts') return true;
-  return relPath.startsWith('src/') && relPath.endsWith('.ts') && !ALLOWLISTED_SOURCE_FILES.has(relPath);
+  return (
+    relPath.startsWith('src/') && relPath.endsWith('.ts') && !ALLOWLISTED_SOURCE_FILES.has(relPath)
+  );
 }
 
 const ID_CHARS = 'A-Za-z0-9._:+-';
 // A ref is `provider/model[/more]`; the lookbehind keeps URL and path
 // segments (preceded by '/', '.', ':') from matching mid-string.
-const REF_RE = new RegExp(`(?<![A-Za-z0-9_./:-])[a-z][a-z0-9-]*/[A-Za-z][${ID_CHARS}]*(?:/[A-Za-z0-9][${ID_CHARS}]*)*`, 'g');
+const REF_RE = new RegExp(
+  `(?<![A-Za-z0-9_./:-])[a-z][a-z0-9-]*/[A-Za-z][${ID_CHARS}]*(?:/[A-Za-z0-9][${ID_CHARS}]*)*`,
+  'g'
+);
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,7 +91,10 @@ function findModelLiterals(text: string, opts: SourceScanOptions): string[] {
   // characters ('gemma2:2b', 'mistral-small-'). A bare token ('mistral',
   // 'nemotron') is a provider/family name, not a model.
   if (tokens.length) {
-    const alternation = [...tokens].sort((a, b) => b.length - a.length).map(escapeRe).join('|');
+    const alternation = [...tokens]
+      .sort((a, b) => b.length - a.length)
+      .map(escapeRe)
+      .join('|');
     const familyRe = new RegExp(`(?<![A-Za-z0-9_./-])(?:${alternation})[A-Za-z0-9._:-]+`, 'gi');
     for (const m of text.matchAll(familyRe)) {
       const id = trimId(m[0]);
@@ -130,7 +138,10 @@ export function toBaselineEntries(findings: readonly HardcodedFinding[]): Baseli
  * than the baseline allows (NEW) and per baseline entry found less often
  * than recorded (stale — the baseline only ever shrinks). Empty = clean.
  */
-export function compareToBaseline(findings: readonly HardcodedFinding[], baseline: readonly BaselineEntry[]): string[] {
+export function compareToBaseline(
+  findings: readonly HardcodedFinding[],
+  baseline: readonly BaselineEntry[]
+): string[] {
   const lines = new Map<string, number[]>();
   for (const f of findings) {
     const key = baselineKey(f.file, f.literal);
@@ -181,7 +192,8 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
   const literals: string[] = [];
   const add = (literal: string) => literals.push(`config:${literal}`);
 
-  for (const p of stringsOf(cfgJson.non_agent_model_prefixes)) add(`non_agent_model_prefixes[]=${p}`);
+  for (const p of stringsOf(cfgJson.non_agent_model_prefixes))
+    add(`non_agent_model_prefixes[]=${p}`);
 
   if (isRecord(cfgJson.exclude)) {
     for (const m of stringsOf(cfgJson.exclude.models)) add(`exclude.models[]=${m}`);
@@ -198,7 +210,8 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
     for (const [group, def] of Object.entries(cfgJson.model_groups)) {
       if (!isRecord(def)) continue;
       for (const m of stringsOf(def.models)) add(`model_groups.${group}.models[]=${m}`);
-      for (const m of stringsOf(def.exclude_models)) add(`model_groups.${group}.exclude_models[]=${m}`);
+      for (const m of stringsOf(def.exclude_models))
+        add(`model_groups.${group}.exclude_models[]=${m}`);
       for (const key of ['classifier_model', 'classifier_fallback', 'classifier_cloud_model']) {
         const v = def[key];
         if (typeof v === 'string') add(`model_groups.${group}.${key}=${v}`);
@@ -207,7 +220,8 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
   }
 
   if (isRecord(cfgJson.model_metrics)) {
-    for (const ref of Object.keys(cfgJson.model_metrics)) add(`model_metrics[${JSON.stringify(ref)}]`);
+    for (const ref of Object.keys(cfgJson.model_metrics))
+      add(`model_metrics[${JSON.stringify(ref)}]`);
   }
 
   return literals.map((literal) => ({ file: SHIPPED_CONFIG_FILE, literal, line: 0 }));
@@ -224,14 +238,19 @@ export function scanSourceText(text: string, opts: SourceScanOptions): Hardcoded
   const findings: HardcodedFinding[] = [];
   const visit = (node: ts.Node): void => {
     let content: string | null = null;
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateLiteralToken(node)) {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateLiteralToken(node)
+    ) {
       content = node.text;
     } else if (ts.isRegularExpressionLiteral(node)) {
       content = node.text.slice(1, node.text.lastIndexOf('/'));
     }
     if (content !== null) {
       const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
-      for (const literal of findModelLiterals(content, opts)) findings.push({ file: opts.file, literal, line });
+      for (const literal of findModelLiterals(content, opts))
+        findings.push({ file: opts.file, literal, line });
     }
     ts.forEachChild(node, visit);
   };

@@ -20,7 +20,11 @@ const testConfig: Config = {
     'ollama/qwen3-8-27b': { gdpval: 580, throughput_tps: 35, avg_latency_ms: 600 },
     'openai/gpt-4': { gdpval: 980, throughput_tps: 15, avg_latency_ms: 150 },
     // Free tier-0 fixture for the strict_local ordering tests.
-    'openrouter/ling-3.0-flash-fin:free': { gdpval: 1092, throughput_tps: 100, avg_latency_ms: 1000 },
+    'openrouter/ling-3.0-flash-fin:free': {
+      gdpval: 1092,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
   },
   providers: {
     mistral: { billing: 'subscription' },
@@ -133,10 +137,7 @@ describe('sortByBillingPreference — local_first override', () => {
 
   it('ranks local (Ollama) AHEAD of subscription (Mistral) with local_first', () => {
     const sorted = router.sortByBillingPreference(
-      [
-        'mistral/mistral-medium-latest',
-        'ollama/gemma4:12b-mlx',
-      ],
+      ['mistral/mistral-medium-latest', 'ollama/gemma4:12b-mlx'],
       'local_first'
     );
     expect(sorted[0]).toBe('ollama/gemma4:12b-mlx');
@@ -145,11 +146,7 @@ describe('sortByBillingPreference — local_first override', () => {
 
   it('still ranks payg (OpenAI) last with local_first', () => {
     const sorted = router.sortByBillingPreference(
-      [
-        'openai/gpt-4',
-        'mistral/mistral-medium-latest',
-        'ollama/gemma4:12b-mlx',
-      ],
+      ['openai/gpt-4', 'mistral/mistral-medium-latest', 'ollama/gemma4:12b-mlx'],
       'local_first'
     );
     // local(0.5) < subscription(1) < payg(3) — local first, payg still last
@@ -161,8 +158,8 @@ describe('sortByBillingPreference — local_first override', () => {
   it('within local tier, higher gdpval still wins (tiebreak preserved)', () => {
     const sorted = router.sortByBillingPreference(
       [
-        'ollama/gemma4:12b-mlx',   // gdpval 460
-        'ollama/qwen3-8-27b',      // gdpval 580
+        'ollama/gemma4:12b-mlx', // gdpval 460
+        'ollama/qwen3-8-27b', // gdpval 580
         'mistral/mistral-medium-latest',
       ],
       'local_first'

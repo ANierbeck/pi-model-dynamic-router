@@ -17,7 +17,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { lookupGdp, setConfig, setCache, setGdpval, setModelMap, setLlmMatches } from '../src/metrics.js';
+import {
+  lookupGdp,
+  setConfig,
+  setCache,
+  setGdpval,
+  setModelMap,
+  setLlmMatches,
+} from '../src/metrics.js';
 
 // Load the actual model-map.yaml shipped with the extension.
 // Parse line-by-line (tolerant of duplicate keys, mirroring the router's intent)

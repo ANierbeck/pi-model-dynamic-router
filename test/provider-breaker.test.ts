@@ -24,7 +24,6 @@ const MIN = 60_000;
 // 'cloud-a' / 'cloud-b' are not in PROVIDER_MAP (cloud, N = 3); 'ollama' is
 // the local provider there (N = 2). Locality is the only provider fact used.
 
-
 describe('countsAsProviderEvidence (D1)', () => {
   it('counts empty responses and both timeout kinds without needing a detail', () => {
     expect(countsAsProviderEvidence('empty_response')).toBe(true);
@@ -77,7 +76,9 @@ describe('countsAsProviderEvidence (D1)', () => {
   });
 
   it('lets a 4xx status win over incidental 5xx-shaped wording', () => {
-    expect(countsAsProviderEvidence('provider_error', '400 request id 503 upstream service unavailable')).toBe(false);
+    expect(
+      countsAsProviderEvidence('provider_error', '400 request id 503 upstream service unavailable')
+    ).toBe(false);
   });
 });
 
@@ -85,9 +86,13 @@ describe('trip rule (D2)', () => {
   it('opens a cloud provider only on the third distinct model', () => {
     const cache: Cache = {};
     expect(recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, 0)).toBe(false);
-    expect(recordProviderFailure(cache, 'cloud-a/m2', 'empty_response', undefined, 1_000)).toBe(false);
+    expect(recordProviderFailure(cache, 'cloud-a/m2', 'empty_response', undefined, 1_000)).toBe(
+      false
+    );
     expect(isProviderOpen(cache, 'cloud-a', 1_001)).toBe(false);
-    expect(recordProviderFailure(cache, 'cloud-a/m3', 'empty_response', undefined, 2_000)).toBe(true);
+    expect(recordProviderFailure(cache, 'cloud-a/m3', 'empty_response', undefined, 2_000)).toBe(
+      true
+    );
     expect(isProviderOpen(cache, 'cloud-a', 2_001)).toBe(true);
   });
 
@@ -100,7 +105,8 @@ describe('trip rule (D2)', () => {
 
   it('never trips on one model failing repeatedly', () => {
     const cache: Cache = {};
-    for (let i = 0; i < 10; i++) recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, i * 1_000);
+    for (let i = 0; i < 10; i++)
+      recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, i * 1_000);
     expect(isProviderOpen(cache, 'cloud-a', 20_000)).toBe(false);
     expect(breakerState(cache, 'cloud-a', 20_000).evidence).toEqual(['cloud-a/m1']);
   });
@@ -109,15 +115,27 @@ describe('trip rule (D2)', () => {
     const cache: Cache = {};
     recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, 0);
     recordProviderFailure(cache, 'cloud-a/m2', 'empty_response', undefined, 1_000);
-    expect(recordProviderFailure(cache, 'cloud-a/m3', 'empty_response', undefined, WEDGE_WINDOW_MS + 1_001)).toBe(false);
-    expect(breakerState(cache, 'cloud-a', WEDGE_WINDOW_MS + 1_002).evidence).toEqual(['cloud-a/m3']);
+    expect(
+      recordProviderFailure(
+        cache,
+        'cloud-a/m3',
+        'empty_response',
+        undefined,
+        WEDGE_WINDOW_MS + 1_001
+      )
+    ).toBe(false);
+    expect(breakerState(cache, 'cloud-a', WEDGE_WINDOW_MS + 1_002).evidence).toEqual([
+      'cloud-a/m3',
+    ]);
   });
 
   it('ignores failures that are not provider evidence', () => {
     const cache: Cache = {};
     const detail422 = '422 {"detail":"Extra inputs are not permitted: store"}';
     for (const m of ['m1', 'm2', 'm3', 'm4']) {
-      expect(recordProviderFailure(cache, `cloud-a/${m}`, 'provider_error', detail422, 0)).toBe(false);
+      expect(recordProviderFailure(cache, `cloud-a/${m}`, 'provider_error', detail422, 0)).toBe(
+        false
+      );
     }
     expect(breakerState(cache, 'cloud-a', 1).evidence).toEqual([]);
     expect(isProviderOpen(cache, 'cloud-a', 1)).toBe(false);
@@ -126,7 +144,9 @@ describe('trip rule (D2)', () => {
   it('counts connection-shaped provider errors toward the trip', () => {
     const cache: Cache = {};
     recordProviderFailure(cache, 'ollama/m1', 'provider_error', 'Connection error.', 0);
-    expect(recordProviderFailure(cache, 'ollama/m2', 'provider_error', 'Connection error.', 1)).toBe(true);
+    expect(
+      recordProviderFailure(cache, 'ollama/m2', 'provider_error', 'Connection error.', 1)
+    ).toBe(true);
   });
 
   it('reports "newly opened" only once per open', () => {
@@ -151,7 +171,11 @@ describe('trip rule (D2)', () => {
 
   it('is safe without a cache', () => {
     expect(isProviderOpen(undefined, 'cloud-a', 0)).toBe(false);
-    expect(breakerState(undefined, 'cloud-a', 0)).toEqual({ open: false, tripCount: 0, evidence: [] });
+    expect(breakerState(undefined, 'cloud-a', 0)).toEqual({
+      open: false,
+      tripCount: 0,
+      evidence: [],
+    });
   });
 });
 
@@ -169,7 +193,11 @@ describe('state machine and cooldown ladder (D5)', () => {
     const cache: Cache = {};
     trip(cache, 0);
     const first = BREAKER_COOLDOWN_LADDER_MS[0];
-    expect(breakerState(cache, 'ollama', 100)).toMatchObject({ open: true, until: 1 + first, tripCount: 1 });
+    expect(breakerState(cache, 'ollama', 100)).toMatchObject({
+      open: true,
+      until: 1 + first,
+      tripCount: 1,
+    });
     expect(isProviderOpen(cache, 'ollama', first)).toBe(true);
     expect(isProviderOpen(cache, 'ollama', 1 + first)).toBe(false);
   });
@@ -197,7 +225,9 @@ describe('state machine and cooldown ladder (D5)', () => {
     expect(breakerState(cache, 'ollama', later).tripCount).toBe(0);
 
     // A second distinct model inside the window trips again, at the FIRST step.
-    expect(recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, later + 1)).toBe(true);
+    expect(recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, later + 1)).toBe(
+      true
+    );
     expect(breakerState(cache, 'ollama', later + 1)).toMatchObject({
       until: later + 1 + BREAKER_COOLDOWN_LADDER_MS[0],
       tripCount: 1,
@@ -209,7 +239,9 @@ describe('state machine and cooldown ladder (D5)', () => {
     trip(cache, 0);
     const expiry = 1 + BREAKER_COOLDOWN_LADDER_MS[0];
     const justInside = expiry + WEDGE_WINDOW_MS - 1;
-    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, justInside)).toBe(true);
+    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, justInside)).toBe(
+      true
+    );
     expect(breakerState(cache, 'ollama', justInside)).toMatchObject({
       until: justInside + BREAKER_COOLDOWN_LADDER_MS[1],
       tripCount: 2,
@@ -235,12 +267,21 @@ describe('state machine and cooldown ladder (D5)', () => {
     const t1 = 1 + BREAKER_COOLDOWN_LADDER_MS[0];
     recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, t1);
     recordProviderSuccess(cache, 'ollama/c');
-    expect(breakerState(cache, 'ollama', t1 + 1)).toEqual({ open: false, tripCount: 0, evidence: [] });
+    expect(breakerState(cache, 'ollama', t1 + 1)).toEqual({
+      open: false,
+      tripCount: 0,
+      evidence: [],
+    });
 
     // The next wedge starts at the first step again, and needs fresh evidence.
-    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, t1 + 2)).toBe(false);
+    expect(recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, t1 + 2)).toBe(
+      false
+    );
     expect(recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, t1 + 3)).toBe(true);
-    expect(breakerState(cache, 'ollama', t1 + 3)).toMatchObject({ until: t1 + 3 + BREAKER_COOLDOWN_LADDER_MS[0], tripCount: 1 });
+    expect(breakerState(cache, 'ollama', t1 + 3)).toMatchObject({
+      until: t1 + 3 + BREAKER_COOLDOWN_LADDER_MS[0],
+      tripCount: 1,
+    });
   });
 
   it('a success of one provider leaves another provider open', () => {
@@ -257,7 +298,9 @@ describe('openBreakers (status displays)', () => {
     recordProviderFailure(cache, 'ollama/a', 'empty_timeout', undefined, 0);
     recordProviderFailure(cache, 'ollama/b', 'empty_timeout', undefined, 1);
     recordProviderFailure(cache, 'cloud-a/m1', 'empty_response', undefined, 2);
-    expect(openBreakers(cache, 10)).toEqual([{ provider: 'ollama', until: 1 + BREAKER_COOLDOWN_LADDER_MS[0] }]);
+    expect(openBreakers(cache, 10)).toEqual([
+      { provider: 'ollama', until: 1 + BREAKER_COOLDOWN_LADDER_MS[0] },
+    ]);
     expect(openBreakers(cache, 1 + BREAKER_COOLDOWN_LADDER_MS[0])).toEqual([]);
     expect(openBreakers(undefined, 10)).toEqual([]);
   });
@@ -278,7 +321,8 @@ describe('tuning consistency (Phases 2-4 review M1/M2, red-first)', () => {
     // unfixed implementation pruned with WEDGE_WINDOW_MS regardless of the
     // passed tuning and reported count 1 (observed RED before the fix).
     const cache: Cache = {};
-    for (const m of ['m1', 'm2', 'm3']) recordProviderFailure(cache, `cloud-a/${m}`, 'empty_response', undefined, 0);
+    for (const m of ['m1', 'm2', 'm3'])
+      recordProviderFailure(cache, `cloud-a/${m}`, 'empty_response', undefined, 0);
     const summary = breakerEvidenceSummary(cache, 'cloud-a', 20_000, tunedWindow);
     expect(summary).toBeUndefined();
   });

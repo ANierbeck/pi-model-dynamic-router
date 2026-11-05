@@ -12,7 +12,11 @@ import type { Cache } from '../src/types.ts';
 
 async function renderOverview(cache: Cache): Promise<string> {
   let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
-  const pi = { registerCommand: (name: string, def: any) => { if (name === 'router') handler = def.handler; } };
+  const pi = {
+    registerCommand: (name: string, def: any) => {
+      if (name === 'router') handler = def.handler;
+    },
+  };
   const rt: any = {
     pi,
     cache,
@@ -40,7 +44,9 @@ describe('/router overview wedge line', () => {
     const out = await renderOverview(cache);
     const line = out.split('\n').find((l) => l.includes('looks wedged')) ?? '';
     expect(line).toContain('ollama looks wedged');
-    expect(line).toMatch(new RegExp(`skipped for (${WEDGE_COOLDOWN_MS / 1000}|${WEDGE_COOLDOWN_MS / 1000 - 1})s`));
+    expect(line).toMatch(
+      new RegExp(`skipped for (${WEDGE_COOLDOWN_MS / 1000}|${WEDGE_COOLDOWN_MS / 1000 - 1})s`)
+    );
     expect(line).toContain('pkill ollama');
   });
 

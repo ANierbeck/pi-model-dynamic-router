@@ -14,6 +14,8 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 async function startRouter(existingDynamic: unknown) {
   const stateDir = process.env.PI_ROUTER_STATE_DIR!;
@@ -21,16 +23,12 @@ async function startRouter(existingDynamic: unknown) {
   const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
   fs.rmSync(dynamicPath, { force: true });
   if (existingDynamic) fs.writeFileSync(dynamicPath, JSON.stringify(existingDynamic));
-  fs.writeFileSync(
-    cachePath,
-    JSON.stringify({
-      lastScanTimestamp: Date.now(),
-      gdpval_scraped: true,
-      models_cached: new Date().toISOString(),
-      available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
-      gdpval_scores: { 'model-a': 800 },
-    })
-  );
+  writeScanCacheFixture(cachePath, {
+    gdpval_scraped: true,
+    models_cached: new Date().toISOString(),
+    available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
+    gdpval_scores: { 'model-a': 800 },
+  });
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-stale-fp-'));
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
   const originalFetch = globalThis.fetch;
@@ -64,13 +62,16 @@ async function startRouter(existingDynamic: unknown) {
       getApiKeyForProvider: async () => 'k',
       runtime: { streamSimple: vi.fn() },
     };
-    await onHandlers['session_start']?.({}, { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } });
+    await onHandlers['session_start']?.(
+      {},
+      { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } }
+    );
     return {
       registeredProviders,
       cleanup: () => {
         cwdSpy.mockRestore();
         globalThis.fetch = originalFetch;
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        rmTmpDir(tmpDir);
         fs.rmSync(dynamicPath, { force: true });
       },
     };

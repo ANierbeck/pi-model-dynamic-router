@@ -17,7 +17,7 @@ export function readRouterVersion(): string {
   try {
     // package.json sits one level up from src/ (at the extension root).
     const pkg = JSON.parse(
-      fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf-8'),
+      fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf-8')
     );
     cached = (pkg.version as string) ?? 'unknown';
   } catch {

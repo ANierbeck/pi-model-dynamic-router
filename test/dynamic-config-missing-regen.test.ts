@@ -8,6 +8,9 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
+import { makePiCtx } from './helpers/extension-harness.ts';
 
 async function waitFor(check: () => boolean, ms = 3_000): Promise<boolean> {
   const end = Date.now() + ms;
@@ -28,17 +31,13 @@ async function startRouterWithCache(
   const cachePath = path.join(stateDir, '.cache', 'scan-cache.json');
   fs.rmSync(dynamicPath, { force: true });
   if (existingDynamic) fs.writeFileSync(dynamicPath, JSON.stringify(existingDynamic));
-  fs.writeFileSync(
-    cachePath,
-    JSON.stringify({
-      lastScanTimestamp: Date.now(),
-      gdpval_scraped: true,
-      models_cached: new Date().toISOString(),
-      available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
-      gdpval_scores: { 'model-a': 800 },
-      ...extraCache,
-    })
-  );
+  writeScanCacheFixture(cachePath, {
+    gdpval_scraped: true,
+    models_cached: new Date().toISOString(),
+    available_models: [{ id: 'model-a', provider: 'healthy-provider', cost_per_m: 0.1 }],
+    gdpval_scores: { 'model-a': 800 },
+    ...extraCache,
+  });
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-dyn-missing-'));
   if (projectConfig) {
     fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
@@ -50,31 +49,34 @@ async function startRouterWithCache(
   try {
     vi.resetModules();
     const mod = await import('../index.ts');
-    const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-    (mod.default as any)({
-      registerTool: vi.fn(),
-      registerCommand: vi.fn(),
-      registerProvider: vi.fn(),
-      setModel: vi.fn(async () => true),
-      on: vi.fn((event: string, handler: any) => {
-        onHandlers[event] = handler;
-      }),
-    });
-    const model = { provider: 'healthy-provider', id: 'model-a', api: 'openai-completions', contextWindow: 128_000,
-      cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 } };
+    const { pi, onHandlers } = makePiCtx();
+    (mod.default as any)(pi);
+    const model = {
+      provider: 'healthy-provider',
+      id: 'model-a',
+      api: 'openai-completions',
+      contextWindow: 128_000,
+      cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+    };
     const modelRegistry = {
       getAvailable: () => [model],
       find: (p: string, id: string) => (p === model.provider && id === model.id ? model : null),
       getApiKeyForProvider: async () => 'k',
       runtime: { streamSimple: vi.fn() },
     };
-    await onHandlers['session_start']?.({}, { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } });
-    return { dynamicPath, cleanup: () => {
-      cwdSpy.mockRestore();
-      globalThis.fetch = originalFetch;
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      fs.rmSync(dynamicPath, { force: true });
-    } };
+    await onHandlers['session_start']?.(
+      {},
+      { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } }
+    );
+    return {
+      dynamicPath,
+      cleanup: () => {
+        cwdSpy.mockRestore();
+        globalThis.fetch = originalFetch;
+        rmTmpDir(tmpDir);
+        fs.rmSync(dynamicPath, { force: true });
+      },
+    };
   } catch (e) {
     cwdSpy.mockRestore();
     globalThis.fetch = originalFetch;
@@ -117,7 +119,10 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
       expect(onDisk._dynamic.model_count).toBe(37);
       expect(onDisk._dynamic.generated_at).toBe('2026-09-26T16:50:23.212Z');
       const cacheOnDisk = JSON.parse(
-        fs.readFileSync(path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json'), 'utf-8')
+        fs.readFileSync(
+          path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json'),
+          'utf-8'
+        )
       );
       expect(cacheOnDisk.scan_sanity_refusal).toMatchObject({ previous: 37 });
       expect(cacheOnDisk.scan_sanity_refusal.survivors).toBeLessThan(37 / 2);
@@ -149,10 +154,18 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
   it('a settled scan with the same smaller result accepts it (real shrink, review 2026-09-27)', async () => {
     const refusal = await firstRefusal();
     const { dynamicPath, cleanup } = await startRouterWithCache(
-      { lastScanTimestamp: 0, scan_sanity_refusal: refusal }, GOOD, { scan_settle_ms: 0 }
+      { lastScanTimestamp: 0, scan_sanity_refusal: refusal },
+      GOOD,
+      { scan_settle_ms: 0 }
     );
     try {
-      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count === refusal.survivors)).toBe(true);
+      expect(
+        await waitFor(
+          () =>
+            JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count ===
+            refusal.survivors
+        )
+      ).toBe(true);
       expect(readCache().scan_sanity_refusal).toBeUndefined();
     } finally {
       cleanup();
@@ -161,7 +174,10 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
 
   it('a repeated start-up result is not accepted: an unsettled scan never confirms a shrink', async () => {
     const refusal = await firstRefusal();
-    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0, scan_sanity_refusal: refusal }, GOOD);
+    const { dynamicPath, cleanup } = await startRouterWithCache(
+      { lastScanTimestamp: 0, scan_sanity_refusal: refusal },
+      GOOD
+    );
     try {
       await new Promise((r) => setTimeout(r, 500));
       expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count).toBe(37);
@@ -177,10 +193,17 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
   // it; locally 5/5 green, the audit-documented intermittent was this test).
   // The per-test timeout is raised to match the worst-case wait budget.
   it('after a start-up refusal, one settled re-check in the same session accepts a real shrink', async () => {
-    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0 }, GOOD, { scan_settle_ms: 300 });
+    const { dynamicPath, cleanup } = await startRouterWithCache({ lastScanTimestamp: 0 }, GOOD, {
+      scan_settle_ms: 300,
+    });
     try {
       expect(await waitFor(() => !!readCache().scan_sanity_refusal, 10_000)).toBe(true);
-      expect(await waitFor(() => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count < 37, 10_000)).toBe(true);
+      expect(
+        await waitFor(
+          () => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.model_count < 37,
+          10_000
+        )
+      ).toBe(true);
     } finally {
       cleanup();
     }
@@ -190,7 +213,9 @@ describe('scan sanity: a collapsed scan must not overwrite a good snapshot', () 
     const refusal = await firstRefusal();
     const stale = { ...refusal, at: Date.now() - 25 * 60 * 60_000 };
     const { dynamicPath, cleanup } = await startRouterWithCache(
-      { lastScanTimestamp: 0, scan_sanity_refusal: stale }, GOOD, { scan_settle_ms: 0 }
+      { lastScanTimestamp: 0, scan_sanity_refusal: stale },
+      GOOD,
+      { scan_settle_ms: 0 }
     );
     try {
       await new Promise((r) => setTimeout(r, 500));
@@ -218,11 +243,13 @@ describe('static group settings changed since the snapshot was built', () => {
     };
     const { dynamicPath, cleanup } = await startRouterWithCache({}, legacy);
     try {
-      const regenerated = await waitFor(() =>
-        JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic?.generated_at !== 'LEGACY'
+      const regenerated = await waitFor(
+        () => JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic?.generated_at !== 'LEGACY'
       );
       expect(regenerated).toBe(true);
-      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.groups_fingerprint).toBeTruthy();
+      expect(
+        JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.groups_fingerprint
+      ).toBeTruthy();
     } finally {
       cleanup();
     }
@@ -231,11 +258,19 @@ describe('static group settings changed since the snapshot was built', () => {
   it('leaves a fixture cache marked dynamic_config_expected: false alone, even with a stale fingerprint', async () => {
     // Fixture caches never own a snapshot (see test/helpers/noop-scan-cache.ts):
     // the groups-drift check must not regenerate underneath them.
-    const legacy = { model_groups: { tactical: { method: 'best', min_gdpval: 600 } }, _dynamic: { generated_at: 'LEGACY' } };
-    const { dynamicPath, cleanup } = await startRouterWithCache({ dynamic_config_expected: false }, legacy);
+    const legacy = {
+      model_groups: { tactical: { method: 'best', min_gdpval: 600 } },
+      _dynamic: { generated_at: 'LEGACY' },
+    };
+    const { dynamicPath, cleanup } = await startRouterWithCache(
+      { dynamic_config_expected: false },
+      legacy
+    );
     try {
       await new Promise((r) => setTimeout(r, 500));
-      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.generated_at).toBe('LEGACY');
+      expect(JSON.parse(fs.readFileSync(dynamicPath, 'utf-8'))._dynamic.generated_at).toBe(
+        'LEGACY'
+      );
     } finally {
       cleanup();
     }
@@ -256,7 +291,9 @@ describe('static group settings changed since the snapshot was built', () => {
     const second = await startRouterWithCache({}, fresh);
     try {
       await new Promise((r) => setTimeout(r, 500));
-      expect(JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic.generated_at).toBe('SENTINEL');
+      expect(JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic.generated_at).toBe(
+        'SENTINEL'
+      );
     } finally {
       second.cleanup();
     }

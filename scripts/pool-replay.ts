@@ -22,7 +22,9 @@ const CATEGORY_TARGET: Record<string, string | null> = {
 
 /** Target group for a category (D4, D7); null when the category is not replayed. */
 export function targetGroupFor(category: string): string | null {
-  return Object.prototype.hasOwnProperty.call(CATEGORY_TARGET, category) ? CATEGORY_TARGET[category] : null;
+  return Object.prototype.hasOwnProperty.call(CATEGORY_TARGET, category)
+    ? CATEGORY_TARGET[category]
+    : null;
 }
 
 /**
@@ -49,8 +51,6 @@ export function targetLayout(shipped: Config): Config {
   return { ...shipped, model_groups };
 }
 
-
-
 // ── Route 1 driver: decision-time pools from router.log ───────────────────
 // Calibration: for each matched turn, the first candidate of the routing line
 // of the group the decision was routed to, compared with the model that
@@ -59,7 +59,12 @@ export function targetLayout(shipped: Config): Config {
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parseRoutingLine, firstChoiceAsOf, calibrate, type RoutingLine } from './route-pool-log.ts';
+import {
+  parseRoutingLine,
+  firstChoiceAsOf,
+  calibrate,
+  type RoutingLine,
+} from './route-pool-log.ts';
 import { readSessionTurns, readDecisions, joinTurns, type Bounds } from './turn-decision-join.ts';
 
 function calibrationMain(): void {
@@ -79,23 +84,36 @@ function calibrationMain(): void {
     .filter((l): l is RoutingLine => l !== null);
 
   const joined = joinTurns(readSessionTurns(sessions, bounds), readDecisions(log, bounds));
-  const matched = joined.filter((j) => j.status === 'matched' && j.group !== null && j.category !== 'continue');
+  const matched = joined.filter(
+    (j) => j.status === 'matched' && j.group !== null && j.category !== 'continue'
+  );
 
   // The pool in effect when the decision was made: the latest routing line of
   // that group and process at or before the decision time.
   const rows = matched.map((t) => {
-    const state = t.proc && t.decisionTs !== null
-      ? firstChoiceAsOf(lines, t.group as string, t.proc, t.decisionTs)
-      : { status: 'none' as const, ref: null, lineTs: null };
-    return { category: t.category as string, served: t.served, ref: state.ref, status: state.status };
+    const state =
+      t.proc && t.decisionTs !== null
+        ? firstChoiceAsOf(lines, t.group as string, t.proc, t.decisionTs)
+        : { status: 'none' as const, ref: null, lineTs: null };
+    return {
+      category: t.category as string,
+      served: t.served,
+      ref: state.ref,
+      status: state.status,
+    };
   });
   const c = calibrate(rows);
-  const byStatus = rows.reduce<Record<string, number>>((acc, r) => ({ ...acc, [r.status]: (acc[r.status] ?? 0) + 1 }), {});
+  const byStatus = rows.reduce<Record<string, number>>(
+    (acc, r) => ({ ...acc, [r.status]: (acc[r.status] ?? 0) + 1 }),
+    {}
+  );
 
   console.log(`bounds: since=${since ?? '-'} until=${until ?? '-'}`);
   console.log(`routing lines=${lines.length} matched turns=${matched.length}`);
   console.log(`pool state: ${JSON.stringify(byStatus)}`);
-  console.log(`calibration (pool first choice = served model): agree ${c.agree}/${c.compared} compared, ${c.unmatched} without a pool line`);
+  console.log(
+    `calibration (pool first choice = served model): agree ${c.agree}/${c.compared} compared, ${c.unmatched} without a pool line`
+  );
 }
 
 // ── Step 3 driver: pool content under the target layout ───────────────────
@@ -111,7 +129,14 @@ import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLog } from './lib/decision-log.ts';
 import { arg, invokedDirectly } from './lib/cli.ts';
 
-interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
+interface RawDecision {
+  ts: number;
+  proc: string;
+  stage: string;
+  category: string | null;
+  group: string | null;
+  prevCategory: string | null;
+}
 
 function readRawDecisions(file: string, bounds: Bounds): RawDecision[] {
   // One reader for the log (scripts/lib/decision-log.ts) owns the skipping and
@@ -134,13 +159,16 @@ function tally(xs: string[]): Record<string, number> {
 
 function replayMain(): void {
   const bounds: Bounds = {};
-  const since = arg('since'); const until = arg('until');
+  const since = arg('since');
+  const until = arg('until');
   if (since) bounds.since = Date.parse(since);
   if (until) bounds.until = Date.parse(until);
   const log = arg('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
   const routerLog = arg('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
   const shipped = JSON.parse(readFileSync('router-config.json', 'utf8')) as Config;
-  const cache = JSON.parse(readFileSync(arg('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8'));
+  const cache = JSON.parse(
+    readFileSync(arg('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8')
+  );
   // Billing classification needs the user's provider billing (e.g. a subscription
   // provider); take ONLY the billing fields of the user layer, nothing else.
   const userPath = arg('user-config') ?? join(homedir(), '.pi', 'agent', 'router-config.user.json');
@@ -149,30 +177,52 @@ function replayMain(): void {
     const providers: Record<string, Record<string, unknown>> = { ...(shipped.providers as object) };
     for (const [name, p] of Object.entries(user.providers ?? {})) {
       const { billing, free_models } = p as unknown as Record<string, unknown>;
-      providers[name] = { ...providers[name], ...(billing !== undefined ? { billing } : {}), ...(free_models !== undefined ? { free_models } : {}) };
+      providers[name] = {
+        ...providers[name],
+        ...(billing !== undefined ? { billing } : {}),
+        ...(free_models !== undefined ? { free_models } : {}),
+      };
     }
     (shipped as { providers?: unknown }).providers = providers;
-  } catch { /* no user layer: shipped billing only */ }
-  metrics.setConfig(shipped); metrics.setCache(cache); metrics.setModelRegistry({ find: () => undefined } as any);
-  const designFloor = (targetLayout(shipped).model_groups).design.min_gdpval!;
-  const planningScoreBy = (shipped.model_groups).planning.score_by;
+  } catch {
+    /* no user layer: shipped billing only */
+  }
+  metrics.setConfig(shipped);
+  metrics.setCache(cache);
+  metrics.setModelRegistry({ find: () => undefined } as any);
+  const designFloor = targetLayout(shipped).model_groups.design.min_gdpval!;
+  const planningScoreBy = shipped.model_groups.planning.score_by;
   const score = (ref: string) => metrics.calculateScore(ref, planningScoreBy, shipped);
 
-  const lines: RoutingLine[] = readFileSync(routerLog, 'utf8').split('\n').map(parseRoutingLine).filter((l): l is RoutingLine => l !== null);
+  const lines: RoutingLine[] = readFileSync(routerLog, 'utf8')
+    .split('\n')
+    .map(parseRoutingLine)
+    .filter((l): l is RoutingLine => l !== null);
   const decisions = readRawDecisions(log, bounds);
   const poolAt = (group: string, proc: string, ts: number) =>
-    lines.filter((l) => l.group === group && l.proc === proc && l.ts <= ts).sort((a, b) => b.ts - a.ts)[0];
+    lines
+      .filter((l) => l.group === group && l.proc === proc && l.ts <= ts)
+      .sort((a, b) => b.ts - a.ts)[0];
 
-  console.log(`bounds: since=${since ?? '-'} until=${until ?? '-'}  decisions=${decisions.length}  routing lines=${lines.length}`);
-  console.log(`design floor=${designFloor}, ranking column=${planningScoreBy} (scan-cache profiles as of today, not as of the decision)`);
+  console.log(
+    `bounds: since=${since ?? '-'} until=${until ?? '-'}  decisions=${decisions.length}  routing lines=${lines.length}`
+  );
+  console.log(
+    `design floor=${designFloor}, ranking column=${planningScoreBy} (scan-cache profiles as of today, not as of the decision)`
+  );
 
   // design: planning pool (1700) vs the design pool (floor 1600 over the shown universe)
   const design = decisions.filter((d) => d.category === 'design');
   const dRows = design.map((d) => {
     const cur = poolAt('planning', d.proc, d.ts);
     if (!cur) return null;
-    const target = rankBy(admit(universeAsOf(lines, d.proc, d.ts), designFloor), score).map((c) => c.ref);
-    return diffPools(cur.candidates.map((c) => c.ref), target);
+    const target = rankBy(admit(universeAsOf(lines, d.proc, d.ts), designFloor), score).map(
+      (c) => c.ref
+    );
+    return diffPools(
+      cur.candidates.map((c) => c.ref),
+      target
+    );
   });
   const dOk = dRows.filter((r): r is NonNullable<typeof r> => r !== null);
   console.log(`\n== design: ${design.length} decisions, ${dOk.length} with a planning pool line`);
@@ -189,21 +239,38 @@ function replayMain(): void {
     const cur = poolAt(d.group ?? 'tactical', d.proc, d.ts);
     const tgt = poolAt('operational', d.proc, d.ts);
     if (!cur || !tgt) return null;
-    return { d: diffPools(cur.candidates.map((c) => c.ref), tgt.candidates.map((c) => c.ref)), curHead: cur.candidates[0], tgtHead: tgt.candidates[0] };
+    return {
+      d: diffPools(
+        cur.candidates.map((c) => c.ref),
+        tgt.candidates.map((c) => c.ref)
+      ),
+      curHead: cur.candidates[0],
+      tgtHead: tgt.candidates[0],
+    };
   });
   const cOk = cRows.filter((r): r is NonNullable<typeof r> => r !== null);
   const afterContinue = cont.filter((d) => d.prevCategory === 'continue').length;
-  console.log(`\n== continue: ${cont.length} decisions, ${noPrev.length} without a predecessor (D6 applies), ${afterContinue} after another continue (undecided), ${cOk.length} with both pool lines`);
+  console.log(
+    `\n== continue: ${cont.length} decisions, ${noPrev.length} without a predecessor (D6 applies), ${afterContinue} after another continue (undecided), ${cOk.length} with both pool lines`
+  );
   console.log(`   head changed: ${cOk.filter((r) => r.d.headChanged).length}/${cOk.length}`);
-  console.log(`   current heads (tactical): ${JSON.stringify(tally(cOk.map((r) => String(r.curHead?.ref))))}`);
-  console.log(`   target heads (standard) : ${JSON.stringify(tally(cOk.map((r) => String(r.tgtHead?.ref))))}`);
+  console.log(
+    `   current heads (tactical): ${JSON.stringify(tally(cOk.map((r) => String(r.curHead?.ref))))}`
+  );
+  console.log(
+    `   target heads (standard) : ${JSON.stringify(tally(cOk.map((r) => String(r.tgtHead?.ref))))}`
+  );
   // Billing as the router classifies it (metrics.billingTier), not the list price.
   const TIER = ['free', 'subscription', 'local', 'payg'];
-  const billing = (c?: { ref: string }) => (c ? (TIER[metrics.billingTier(c.ref)] ?? 'unknown') : 'none');
-  console.log(`   head billing today : ${JSON.stringify(tally(cOk.map((r) => billing(r.curHead))))}`);
-  console.log(`   head billing target: ${JSON.stringify(tally(cOk.map((r) => billing(r.tgtHead))))}`);
+  const billing = (c?: { ref: string }) =>
+    c ? (TIER[metrics.billingTier(c.ref)] ?? 'unknown') : 'none';
+  console.log(
+    `   head billing today : ${JSON.stringify(tally(cOk.map((r) => billing(r.curHead))))}`
+  );
+  console.log(
+    `   head billing target: ${JSON.stringify(tally(cOk.map((r) => billing(r.tgtHead))))}`
+  );
 }
-
 
 if (invokedDirectly(import.meta.url)) {
   if (process.argv.includes('--calibrate')) calibrationMain();

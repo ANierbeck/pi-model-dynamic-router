@@ -25,33 +25,28 @@ describe('config-cloud-first-groups', () => {
   // pinned the GPU at 100% when hit as a default path (MLX wedge incidents).
   // A silent revert to strict_local/local_first would reintroduce that load.
 
-
   const cfg = JSON.parse(readFileSync(join(__dirname, '../router-config.json'), 'utf-8'));
 
   describe('router-config.json — cloud-first group billing_preference', () => {
-    it.each(['bulk_reader', 'code_writer'])(
-      '%s uses cloud_first (local always last)',
-      (group) => {
-        expect(cfg.model_groups[group]?.billing_preference).toBe('cloud_first');
-      }
-    );
+    it.each(['bulk_reader', 'code_writer'])('%s uses cloud_first (local always last)', (group) => {
+      expect(cfg.model_groups[group]?.billing_preference).toBe('cloud_first');
+    });
 
-    it.each(['simple'])(
-      '%s uses local_before_payg (local ahead of payg only)',
-      (group) => {
-        expect(cfg.model_groups[group]?.billing_preference).toBe('local_before_payg');
-      }
-    );
+    it.each(['simple'])('%s uses local_before_payg (local ahead of payg only)', (group) => {
+      expect(cfg.model_groups[group]?.billing_preference).toBe('local_before_payg');
+    });
 
     it('no group still uses the old local-biased modes', () => {
       const offenders = Object.entries(cfg.model_groups)
-        .filter(([, g]: [string, any]) => g.billing_preference === 'strict_local' || g.billing_preference === 'local_first')
+        .filter(
+          ([, g]: [string, any]) =>
+            g.billing_preference === 'strict_local' || g.billing_preference === 'local_first'
+        )
         .map(([name]) => name);
       expect(offenders).toEqual([]);
     });
   });
 });
-
 
 describe('config-dynamic-no-fallback-groups', () => {
   // The dynamic group's `fallback_groups` config entry is dead config that
@@ -66,7 +61,6 @@ describe('config-dynamic-no-fallback-groups', () => {
   //   in router-config.json contradicts the code's own design intent.
   // The only observable effect was the "(→ strategic → tactical → …)" suffix in
   // /router status, which implied a fallback cascade that does not exist.
-
 
   const configPath = resolvePath(__dirname, '..', 'router-config.json');
 
@@ -89,7 +83,6 @@ describe('config-dynamic-no-fallback-groups', () => {
     });
   });
 });
-
 
 describe('config-opus-5-5-routable', () => {
   // test/config-opus-5-5-routable.test.ts
@@ -119,11 +112,8 @@ describe('config-opus-5-5-routable', () => {
   // decision 2026-09-27 — Opus 5.5 as the strategic-tier alternative to
   // Sonnet 5.
 
-
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const repoCfg = JSON.parse(
-    readFileSync(join(repoRoot, 'router-config.json'), 'utf-8')
-  ) as Config;
+  const repoCfg = JSON.parse(readFileSync(join(repoRoot, 'router-config.json'), 'utf-8')) as Config;
 
   const OPUS_5_5 = 'claude-bridge/claude-opus-5-5';
 
@@ -134,30 +124,44 @@ describe('config-opus-5-5-routable', () => {
     // the rest, so the model never silently vanishes from cost-capped groups.
     it('has a known cost for opus-5-5 via the subscription rule (no silent unknown-cost exclusion)', () => {
       expect(repoCfg.model_metrics?.[OPUS_5_5]).toBeUndefined();
-      const cfg = { ...repoCfg, providers: { 'claude-bridge': { billing: 'subscription' } } } as Config;
+      const cfg = {
+        ...repoCfg,
+        providers: { 'claude-bridge': { billing: 'subscription' } },
+      } as Config;
       metricsModule.setConfig(cfg);
       metricsModule.setCache({ available_models: [] } as any);
       metricsModule.setModelRegistry({ find: () => undefined } as any);
       const cost = metricsModule.effCost(OPUS_5_5);
-      expect(typeof cost, 'opus-5-5 would silently vanish from every cost-capped group').toBe('number');
+      expect(typeof cost, 'opus-5-5 would silently vanish from every cost-capped group').toBe(
+        'number'
+      );
       expect(cost as number).toBeGreaterThan(0);
     });
 
     it('has a GDPval score ranking it above sonnet-5 (the owner’s intent)', () => {
       const g = repoCfg.gdpval_builtin?.['claude-opus-5-5'];
       const sonnet = repoCfg.gdpval_builtin?.['claude-sonnet-5'];
-      expect(g, 'gdpval_builtin["claude-opus-5-5"] missing — opus-5-5 cannot be ranked').toBeTruthy();
+      expect(
+        g,
+        'gdpval_builtin["claude-opus-5-5"] missing — opus-5-5 cannot be ranked'
+      ).toBeTruthy();
       expect(sonnet).toBeTruthy();
-      expect(g!, 'opus-5-5 should rank above sonnet-5 (1603) as the strategic alternative').toBeGreaterThan(sonnet!);
+      expect(
+        g!,
+        'opus-5-5 should rank above sonnet-5 (1603) as the strategic alternative'
+      ).toBeGreaterThan(sonnet!);
     });
 
     it('is not excluded by the repo-layer exclude rules', () => {
-      const ctx: ExcludeContext = { rules: repoCfg.exclude!, cfg: repoCfg, cache: { available_models: [] } };
+      const ctx: ExcludeContext = {
+        rules: repoCfg.exclude!,
+        cfg: repoCfg,
+        cache: { available_models: [] },
+      };
       expect(isExcluded(OPUS_5_5, ctx), 'repo exclude rules must never match opus-5-5').toBe(false);
     });
   });
 });
-
 
 describe('config-release-log-level', () => {
   // Release gate (owner rule 2026-10-02): every release build ships with the
@@ -166,7 +170,6 @@ describe('config-release-log-level', () => {
   // the effective default for anyone installing the package, so it must be
   // one of the two quiet levels. AGENTS.md §1 references this test as part of
   // the release checklist.
-
 
   const configPath = resolvePath(__dirname, '..', 'router-config.json');
 
@@ -178,7 +181,6 @@ describe('config-release-log-level', () => {
   });
 });
 
-
 describe('pi-agent-dir-auth', () => {
   // test/pi-agent-dir-auth.test.ts
   // PI_CODING_AGENT_DIR-aware agent dir resolution (piAgentDir) is still
@@ -188,7 +190,6 @@ describe('pi-agent-dir-auth', () => {
   // The auth.json part of this file was removed with ADR-0022: the router no
   // longer reads Pi's auth.json at all — pi resolves credentials itself via
   // modelRegistry.getApiKeyForProvider.
-
 
   describe('PI_CODING_AGENT_DIR-aware agent dir', () => {
     it('piAgentDir defaults to ~/.pi/agent', () => {

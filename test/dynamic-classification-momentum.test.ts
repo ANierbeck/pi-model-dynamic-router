@@ -14,18 +14,17 @@
  * called once — on the second, short turn it must be skipped entirely.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { drainStream, makeExtensionContext } from './helpers/extension-harness.ts';
-import {
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { drainStream, makeExtensionContext, startSession } from './helpers/extension-harness.ts';
+
 import { doneEvent } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 vi.mock('../src/ollama-utils.ts', async () =>
-  (await import('./helpers/ollama-mock.ts')).ollamaMockModule({ category: 'code_complex', reason: 'complex refactor' })
+  (await import('./helpers/ollama-mock.ts')).ollamaMockModule({
+    category: 'code_complex',
+    reason: 'complex refactor',
+  })
 );
-
-
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -71,13 +70,12 @@ describe('dynamic classifier: short-prompt momentum wiring (index.ts -> classify
         );
         const modelRegistry = {
           getAvailable: () => [tacticalModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'dynamic', id: 'dynamic' };
 
@@ -93,7 +91,9 @@ describe('dynamic classifier: short-prompt momentum wiring (index.ts -> classify
             },
           ],
         };
-        const turn1Events = await drainStream(defaultExport.groupStream(groupModel, turn1Context, {}));
+        const turn1Events = await drainStream(
+          defaultExport.groupStream(groupModel, turn1Context, {})
+        );
         const turn1Text = turn1Events
           .filter((e: any) => e.type === 'text_delta')
           .map((e: any) => e.delta ?? '')
@@ -113,7 +113,9 @@ describe('dynamic classifier: short-prompt momentum wiring (index.ts -> classify
             { role: 'user', content: 'yes go ahead' },
           ],
         };
-        const turn2Events = await drainStream(defaultExport.groupStream(groupModel, turn2Context, {}));
+        const turn2Events = await drainStream(
+          defaultExport.groupStream(groupModel, turn2Context, {})
+        );
         const turn2Text = turn2Events
           .filter((e: any) => e.type === 'text_delta')
           .map((e: any) => e.delta ?? '')

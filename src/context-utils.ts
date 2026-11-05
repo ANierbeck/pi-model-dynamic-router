@@ -123,7 +123,8 @@ export function createContextUtils(d: ContextUtilsDeps) {
   /** First-token timeout to use for a given model ref. */
   function getEmptyResponseTimeout(ref: string): number {
     const base = d.cfg.empty_response_timeout_ms ?? d.EMPTY_RESPONSE_TIMEOUT_MS;
-    const reasoning = d.cfg.reasoning_empty_response_timeout_ms ?? d.REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
+    const reasoning =
+      d.cfg.reasoning_empty_response_timeout_ms ?? d.REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
     return isReasoningModel(ref) ? reasoning : base;
   }
 
@@ -210,5 +211,15 @@ export function createContextUtils(d: ContextUtilsDeps) {
     return undefined;
   }
 
-  return { estimateContextTokens, getModelContextWindow, updateModelContextWindow, getEmptyResponseTimeout, getStallTimeout, getRateLimitWaitMaxMs, extractLastUserPrompt, extractLastAssistantSnippet, isCompactionTurn };
+  return {
+    estimateContextTokens,
+    getModelContextWindow,
+    updateModelContextWindow,
+    getEmptyResponseTimeout,
+    getStallTimeout,
+    getRateLimitWaitMaxMs,
+    extractLastUserPrompt,
+    extractLastAssistantSnippet,
+    isCompactionTurn,
+  };
 }

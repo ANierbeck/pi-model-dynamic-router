@@ -29,10 +29,18 @@ export interface MutationSummary {
 
 export function summarizeMutationReport(report: unknown): MutationSummary {
   const s: MutationSummary = {
-    total: 0, killed: 0, timedOut: 0, survived: 0, noCoverage: 0, errors: 0, ignored: 0,
-    score: 0, survivorsByFile: {},
+    total: 0,
+    killed: 0,
+    timedOut: 0,
+    survived: 0,
+    noCoverage: 0,
+    errors: 0,
+    ignored: 0,
+    score: 0,
+    survivorsByFile: {},
   };
-  const files = (report as { files?: Record<string, { mutants?: { status?: string }[] }> } | null)?.files;
+  const files = (report as { files?: Record<string, { mutants?: { status?: string }[] }> } | null)
+    ?.files;
   if (!files || typeof files !== 'object') return s;
 
   const undetected: [string, number][] = [];
@@ -41,13 +49,26 @@ export function summarizeMutationReport(report: unknown): MutationSummary {
     for (const m of entry?.mutants ?? []) {
       s.total++;
       switch (m?.status) {
-        case 'Killed': s.killed++; break;
-        case 'Timeout': s.timedOut++; break;
-        case 'Survived': s.survived++; fileUndetected++; break;
-        case 'NoCoverage': s.noCoverage++; fileUndetected++; break;
+        case 'Killed':
+          s.killed++;
+          break;
+        case 'Timeout':
+          s.timedOut++;
+          break;
+        case 'Survived':
+          s.survived++;
+          fileUndetected++;
+          break;
+        case 'NoCoverage':
+          s.noCoverage++;
+          fileUndetected++;
+          break;
         case 'CompileError':
-        case 'RuntimeError': s.errors++; break;
-        default: s.ignored++; // Ignored, Pending, unknown
+        case 'RuntimeError':
+          s.errors++;
+          break;
+        default:
+          s.ignored++; // Ignored, Pending, unknown
       }
     }
     if (fileUndetected) undetected.push([file, fileUndetected]);
@@ -84,7 +105,9 @@ function main(argv: string[]): number {
   try {
     report = JSON.parse(readFileSync(file, 'utf8'));
   } catch (err) {
-    process.stdout.write(`## Nightly mutation testing\n\nNo mutation report at ${file}: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.stdout.write(
+      `## Nightly mutation testing\n\nNo mutation report at ${file}: ${err instanceof Error ? err.message : String(err)}\n`
+    );
     return 0; // report-only: a missing report must not fail the summary step
   }
   process.stdout.write(formatSummary(summarizeMutationReport(report)));

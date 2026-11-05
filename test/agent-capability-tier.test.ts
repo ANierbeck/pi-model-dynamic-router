@@ -45,19 +45,19 @@ export const SHIPPED_PREFIXES = [
 
 // The incident models (all provider variants) + capable controls.
 const NON_AGENT_REFS = [
-  'mistral/mistral-small-2603',            // evening incident: 349 passes floor 300
-  'mistral/mistral-small-latest',          // afternoon incident: 35+ garbage turns
-  'openrouter/mistral/mistral-small-3-2',  // afternoon: classifier's top suggestion (openrouter re-host)
-  'mistral/magistral-small-latest',        // GDPval 665 — passes even tactical 600
-  'mistral/ministral-8b-latest',           // tiny model
-  'mistral/voxtral-small-latest',          // audio model serving text turns
-  'mistral/codestral-2508',                // code-completion family
+  'mistral/mistral-small-2603', // evening incident: 349 passes floor 300
+  'mistral/mistral-small-latest', // afternoon incident: 35+ garbage turns
+  'openrouter/mistral/mistral-small-3-2', // afternoon: classifier's top suggestion (openrouter re-host)
+  'mistral/magistral-small-latest', // GDPval 665 — passes even tactical 600
+  'mistral/ministral-8b-latest', // tiny model
+  'mistral/voxtral-small-latest', // audio model serving text turns
+  'mistral/codestral-2508', // code-completion family
 ];
 const CAPABLE_REFS = [
-  'mistral/zai-glm-5-3',       // owner's workhorse (GDPval 1643)
+  'mistral/zai-glm-5-3', // owner's workhorse (GDPval 1643)
   'mistral/mistral-medium-3-5', // scored 933
-  'openrouter/qwen3-4b:free',  // generic free model
-  'ollama/qwen3.5',            // local
+  'openrouter/qwen3-4b:free', // generic free model
+  'ollama/qwen3.5', // local
 ];
 const REFS = [...NON_AGENT_REFS, ...CAPABLE_REFS];
 
@@ -180,7 +180,12 @@ describe('agent-capability tier — shipped defaults + classifier chain independ
     const shipped = JSON.parse(fs.readFileSync(path.join(repoRoot, 'router-config.json'), 'utf-8'));
     const g: Group = { method: 'best', min_gdpval: 0 } as any;
     // The former shipped families included: nothing may drop them by default.
-    const refs = ['mistral/voxtral-small-latest', 'mistral/codestral-2508', 'acme/ocr-only-1', 'acme/chat-agent-1'];
+    const refs = [
+      'mistral/voxtral-small-latest',
+      'mistral/codestral-2508',
+      'acme/ocr-only-1',
+      'acme/chat-agent-1',
+    ];
     expect(applyGroupFilters(refs, g, makeCfg(shipped.non_agent_model_prefixes))).toEqual(refs);
     expect(applyGroupFilters(refs, g, makeCfg(['ocr-only-']))).toEqual([
       'mistral/voxtral-small-latest',
@@ -190,10 +195,7 @@ describe('agent-capability tier — shipped defaults + classifier chain independ
   });
 
   it('classifier modules do not depend on the tier predicates (classification keeps small models)', () => {
-    const chainModules = [
-      'src/classifier-fallback-probe.ts',
-      'src/content-classifier.ts',
-    ];
+    const chainModules = ['src/classifier-fallback-probe.ts', 'src/content-classifier.ts'];
     for (const rel of chainModules) {
       const src = fs.readFileSync(path.join(repoRoot, rel), 'utf-8');
       expect(src, `${rel} must not import the agent-capability tier`).not.toMatch(
@@ -202,7 +204,6 @@ describe('agent-capability tier — shipped defaults + classifier chain independ
     }
   });
 });
-
 
 // Spike evidence canary (ADR-0025 Phase D, docs/plans/2026-10-06-no-hardcoded-models.md):
 // Pi's per-model surface carries NO tool-calling / agent-capability flag, which
@@ -219,9 +220,12 @@ export function declaresToolCapability(dts: string, interfaces: readonly string[
 
 describe('agent-capability spike canary — Pi exposes no per-model tool-capability flag', () => {
   it('the detector sees a synthetic tool flag (non-vacuous)', () => {
-    const synthetic = 'export interface Model<T> {\n    reasoning: boolean;\n    supportsTools?: boolean;\n}\n';
+    const synthetic =
+      'export interface Model<T> {\n    reasoning: boolean;\n    supportsTools?: boolean;\n}\n';
     expect(declaresToolCapability(synthetic, ['Model'])).toBe(true);
-    expect(declaresToolCapability('export interface Model<T> {\n    reasoning: boolean;\n}\n', ['Model'])).toBe(false);
+    expect(
+      declaresToolCapability('export interface Model<T> {\n    reasoning: boolean;\n}\n', ['Model'])
+    ).toBe(false);
   });
 
   it('pi-ai Model / BaseModel declare no tool or function-calling capability field', () => {
@@ -230,7 +234,8 @@ describe('agent-capability spike canary — Pi exposes no per-model tool-capabil
       for (;;) {
         const candidate = path.join(dir, 'node_modules/@earendil-works/pi-ai/dist/types.d.ts');
         if (fs.existsSync(candidate)) return candidate;
-        if (path.dirname(dir) === dir) throw new Error('@earendil-works/pi-ai types.d.ts not found');
+        if (path.dirname(dir) === dir)
+          throw new Error('@earendil-works/pi-ai types.d.ts not found');
         dir = path.dirname(dir);
       }
     };
