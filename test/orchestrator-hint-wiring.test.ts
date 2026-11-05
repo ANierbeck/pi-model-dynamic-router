@@ -930,6 +930,9 @@ describe('total failure', () => {
     expect(drive).not.toHaveBeenCalled();
     const err = events.find((e) => e.type === 'error');
     expect(JSON.stringify(err)).toContain('Dynamic routing failed');
+    // The cause is the bare error message: no "Error: " class prefix (String(err) used to add it).
+    expect(JSON.stringify(err)).toContain('Dynamic routing failed: No models for dynamic target');
+    expect(JSON.stringify(err)).not.toContain('Error: No models');
     expect(JSON.stringify(err)).toContain('dynamic classification and fallback routing both unavailable');
     expect(warnLog).toHaveBeenCalledWith(expect.stringContaining('classification failed'), expect.anything());
   });
