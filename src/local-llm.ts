@@ -96,7 +96,7 @@ export function resolveLocalProvider(deps: LocalLlmDeps): ResolvedLocalProvider 
     .filter((c) => isCompletionCapable(c.model))
     .map((c) => ({ ...c, size: parameterSizeB(c.model) }));
   if (sized.length === 0) return null;
-  const tier = (size: number | undefined) =>
+  const tier = (size: number | undefined): 0 | 1 | 2 =>
     size === undefined ? 2 : size <= MATCHER_MAX_PARAMS_B ? 0 : 1;
   const chosen = [...sized].sort((a, b) => {
     const ta = tier(a.size);

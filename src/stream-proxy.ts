@@ -299,19 +299,19 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       resolveTimeout = resolve;
     });
-    const fireTimeout = () => {
+    const fireTimeout = (): void => {
       if (timer) {
         clearTimeout(timer);
         timer = null;
       }
       resolveTimeout?.('timeout');
     };
-    const armTimer = () => {
+    const armTimer = (): void => {
       if (timer) clearTimeout(timer);
       const ms = hadContent ? stallMs : timeoutMs;
       timer = setTimeout(fireTimeout, ms);
     };
-    const clearTimer = () => {
+    const clearTimer = (): void => {
       if (timer) {
         clearTimeout(timer);
         timer = null;

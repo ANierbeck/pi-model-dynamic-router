@@ -58,7 +58,7 @@ export function createKpis(): Kpis {
   };
 }
 
-const bump = (m: Record<string, number>, k: string) => {
+const bump = (m: Record<string, number>, k: string): void => {
   m[k] = (m[k] ?? 0) + 1;
 };
 
@@ -182,7 +182,7 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
   }
 }
 
-const top = (m: Record<string, number>, n: number) =>
+const top = (m: Record<string, number>, n: number): [string, number][] =>
   Object.entries(m)
     .sort((a, b) => b[1] - a[1])
     .slice(0, n);
@@ -267,7 +267,7 @@ export function parseSince(value: string, now: number = Date.now()): number {
 }
 
 async function main(argv: string[]): Promise<void> {
-  const arg = (name: string) => {
+  const arg = (name: string): string | undefined => {
     const i = argv.indexOf(name);
     return i >= 0 ? argv[i + 1] : undefined;
   };

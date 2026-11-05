@@ -82,7 +82,7 @@ export function mutantContext(
 ): { original: string; context: string } {
   const lines = source.split('\n');
   const original = source.slice(offset(lines, m.location.start), offset(lines, m.location.end));
-  const at = (n: number) => (n >= 1 && n <= lines.length ? lines[n - 1].trim() : '');
+  const at = (n: number): string => (n >= 1 && n <= lines.length ? lines[n - 1].trim() : '');
   const l = m.location.start.line;
   return { original, context: [at(l - 1), at(l), at(l + 1)].join('\n') };
 }
@@ -99,7 +99,7 @@ function key(
 
 /** Adds (or refreshes) the `original` + `context` columns from the report the ledger was triaged on. */
 export function backfillLedger(report: Report, ledger: Ledger): Ledger {
-  const ci = (c: string) => ledger.columns.indexOf(c);
+  const ci = (c: string): number => ledger.columns.indexOf(c);
   const fileI = ci('file');
   const idI = ci('id');
   const columns = ledger.columns.filter((c) => c !== 'original' && c !== 'context');
@@ -136,7 +136,7 @@ interface Verdict {
 }
 
 function indexLedger(name: string, ledger: Ledger, into: Map<string, Verdict>): void {
-  const ci = (c: string) => ledger.columns.indexOf(c);
+  const ci = (c: string): number => ledger.columns.indexOf(c);
   const [fileI, mutI, repI, origI, ctxI, catI, whyI] = [
     'file',
     'mutator',
@@ -241,7 +241,7 @@ function main(argv: string[]): number {
   const ledgers = ledgerArg.split(',').map((p) => ({ name: p, ledger: readJson(p) as Ledger }));
   const rows = carryOver(readJson(reportPath), ledgers);
   if (outPath) writeFileSync(outPath, JSON.stringify(rows, null, 1) + '\n');
-  const count = (a: string) => rows.filter((r) => r.action === a).length;
+  const count = (a: string): number => rows.filter((r) => r.action === a).length;
   process.stdout.write(
     `${rows.length} undetected: ${count('ledgered')} ledgered, ${count('recheck')} recheck, ${count('triage')} triage\n`
   );

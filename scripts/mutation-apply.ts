@@ -74,7 +74,7 @@ function main(argv: string[]): number {
   );
   writeFileSync(file, current.slice(0, start) + (mutant.replacement ?? '') + current.slice(end));
   // Ctrl-C during the synchronous test run skips `finally`; restore on signals too.
-  const restore = () => execFileSync('git', ['checkout', '-q', '--', file]);
+  const restore = (): NonSharedBuffer => execFileSync('git', ['checkout', '-q', '--', file]);
   for (const sig of ['SIGINT', 'SIGTERM'] as const)
     process.on(sig, () => {
       restore();

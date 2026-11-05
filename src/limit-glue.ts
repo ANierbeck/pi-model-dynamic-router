@@ -49,7 +49,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return metricsModule.getM(ref);
   }
 
-  function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number) {
+  function updateMetrics(ref: string, latMs: number, tokens: number, durMs: number): void {
     metricsModule.updateMetrics(ref, latMs, tokens, durMs);
   }
 
@@ -57,11 +57,11 @@ export function createLimitGlue(d: LimitGlueDeps) {
   // (ADR-0022 removed the multi-key rotation note that used to live here —
   // there is no rotation state left to duplicate.)
 
-  function costMux(prov: string) {
+  function costMux(prov: string): number {
     return d.rateLimitManager.costMux(prov);
   }
 
-  function isLimited(ref: string) {
+  function isLimited(ref: string): boolean {
     return d.rateLimitManager.isLimited(ref);
   }
 
@@ -70,7 +70,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     d.rateLimitManager.recordLimit(ref, resetAtMs);
   }
 
-  function recordOk(ref: string) {
+  function recordOk(ref: string): void {
     d.rateLimitManager.recordOk(ref);
     recordModelSuccess(d.cache, ref);
     // Any success of ANY model of the provider closes its circuit breaker
@@ -88,7 +88,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     const blocked = activeBlocks(d.cache);
     if (!blocked.length)
       return 'Blocklist: empty — no model has shown a permanent provider failure.';
-    const days = (ms: number) => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
+    const days = (ms: number): string => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
     const lines = [
       `Blocklist (${blocked.length}) — re-probed automatically when the block expires`,
       '',
@@ -197,7 +197,7 @@ export function createLimitGlue(d: LimitGlueDeps) {
     return { hardLimited: false };
   }
 
-  function limitSecs(ref: string) {
+  function limitSecs(ref: string): number {
     return d.rateLimitManager.limitSecs(ref);
   }
 

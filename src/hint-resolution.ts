@@ -76,7 +76,7 @@ export async function rankHintCandidates(
   const usable: string[] = [];
   const unusable: string[] = [];
   refs.forEach((ref, i) => (usability[i] ? usable : unusable).push(ref));
-  const byGdpval = (a: string, b: string) => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
+  const byGdpval = (a: string, b: string): number => (lookupGdp(b) ?? 0) - (lookupGdp(a) ?? 0);
   usable.sort(byGdpval);
   unusable.sort(byGdpval);
   if (unusable.length) onUnusable?.(unusable);

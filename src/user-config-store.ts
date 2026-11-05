@@ -85,7 +85,7 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
   return {
     read: () => readObjectFile(file),
 
-    applyDelta(delta) {
+    applyDelta(delta): { ok: true; written: string } | { ok: false; error: string } {
       for (const pattern of delta.exclude?.models ?? []) {
         const problem = validateExcludePattern(pattern);
         if (problem) return { ok: false, error: problem };

@@ -41,7 +41,7 @@ const LEVEL_RANK: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug
 
 // Resolved lazily: the home directory can change between module load and first
 // write (tests isolate it per file).
-const homeLogPath = () => path.join(homedir(), '.pi', 'logs', 'router.log');
+const homeLogPath = (): string => path.join(homedir(), '.pi', 'logs', 'router.log');
 let projectLogPath: string | null = null;
 // Provenance tag for the GLOBAL log (live finding 2026-10-03: concurrent pi
 // instances in different projects interleave there with no way to tell them

@@ -183,7 +183,7 @@ function findRepeatedBlocks(tests: TextFile[]): Report['repeatedBlocks'] {
     }
     windowsOf.set(f.path, keys);
   }
-  const repeated = (key: string) => (filesOf.get(key)?.size ?? 0) >= BLOCK_MIN_FILES;
+  const repeated = (key: string): boolean => (filesOf.get(key)?.size ?? 0) >= BLOCK_MIN_FILES;
   // One block per run of consecutive repeated windows: count the run's start only.
   const starts = new Map<string, number>();
   for (const keys of windowsOf.values()) {
@@ -387,8 +387,8 @@ export function collectInput(root: string): AnalyzeInput {
   const rootFiles = readdirSync(root)
     .filter((n) => statSync(join(root, n)).isFile())
     .map((n) => ({ path: n, tracked: tracked.has(n) }));
-  const ts = (p: string) => p.endsWith('.ts');
-  const md = (p: string) => p.endsWith('.md');
+  const ts = (p: string): boolean => p.endsWith('.ts');
+  const md = (p: string): boolean => p.endsWith('.md');
   const docs: TextFile[] = [
     ...rootFiles
       .filter((f) => f.path.endsWith('.md'))

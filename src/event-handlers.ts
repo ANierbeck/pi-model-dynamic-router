@@ -65,7 +65,7 @@ interface EventHandlerDeps {
   readonly updateMetrics: (ref: string, latMs: number, tokens: number, durMs: number) => void;
 }
 
-export function createEventHandlers(rt: EventHandlerDeps) {
+export function createEventHandlers(rt: EventHandlerDeps): void {
   rt.pi.on('session_start', (ev, ctx) => {
     rt.sessionCtx = ctx;
     rt.router.setSessionCtx(ctx);
@@ -128,7 +128,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // not duplicated by the esbuild double-bundle hazard; the BUFFER state
     // stays in the cache object per project rule.
     if (typeof (ctx.ui as any).setStatus === 'function') {
-      rt.statusUpdater = (key: string, text: string) => {
+      rt.statusUpdater = (key: string, text: string): void => {
         (ctx.ui as any).setStatus(key, text);
       };
     }
@@ -149,11 +149,11 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       const unsub = fd.onBranchChange(() => tui.requestRender());
       const timer = setInterval(() => tui.requestRender(), 30000);
       return {
-        dispose() {
+        dispose(): void {
           unsub();
           clearInterval(timer);
         },
-        invalidate() {},
+        invalidate(): void {},
         render(w: number): string[] {
           const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
           // The router never swaps the session's active model (see driveStream) —

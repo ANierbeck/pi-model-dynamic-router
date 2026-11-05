@@ -166,7 +166,7 @@ function liveGroupFilterLookups(cfg: Config): GroupFilterLookups {
     // Same definition as buildModelsWithMetadata's isFreeModel (persist
     // path). Registry-first via lookupPrice/effCost: a scan placeholder
     // cost_per_m of 0 must not make a registry-priced model "free".
-    isFree: (ref) => {
+    isFree: (ref): boolean => {
       // TERMINAL :free tag only (Sourcery PR #74) — a mid-string `:free`
       // (e.g. vendor/x:free-v2) is a paid variant and must not enter a $0 group.
       if (ref.endsWith(':free') || inFreeModelsList(cfg, ref)) return true;
@@ -779,7 +779,7 @@ export class Router {
   private rankByScore(models: string[], taskType?: string): string[] {
     const s = [...models];
     // Multi-metric scoring for 'best' method
-    const scoreOf = (r: string) => calculateScore(r, taskType, this.cfg);
+    const scoreOf = (r: string): number => calculateScore(r, taskType, this.cfg);
     const sorted = s.sort((a, b) => scoreOf(b) - scoreOf(a));
     // Quality-equivalence window (ADR-0023): candidates within
     // cfg.best_quality_window of the group's best score are EQUALLY
@@ -832,11 +832,12 @@ export class Router {
     // latency, no quota burn), then free remote models, and only then
     // subscription models whose $0 nominal cost hides a hard time/token
     // limit (the pi-claude incident, 2026-09-26).
-    const strictRank = (t: number) => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
+    const strictRank = (t: number): 0 | 1 | 3 | 2 => (t === 2 ? 0 : t === 0 ? 1 : t === 1 ? 2 : 3);
     // cloud_first: free (tier 0) → subscription (tier 1) → payg (tier 3) → local (tier 2) ALWAYS LAST.
     // For bulk_reader/code_writer — the local Ollama daemon is a last-resort fallback, not a default path
     // (2026-09-27, repeated GPU load / MLX-wedge incidents made the local daemon untrusted as a default hop).
-    const cloudFirstRank = (t: number) => (t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3);
+    const cloudFirstRank = (t: number): 0 | 1 | 3 | 2 =>
+      t === 0 ? 0 : t === 1 ? 1 : t === 3 ? 2 : 3;
     // local_before_payg: free (tier 0) → subscription (tier 1) → local (tier 2) → payg (tier 3).
     // For simple — keeps a free local fallback ahead of PAYG spend for the cheapest prompts, without ranking
     // local ahead of free/subscription like the old strict_local did. This IS the tier numbering itself, so it needs
@@ -1146,7 +1147,7 @@ export class Router {
     // fast-path guard is needed (nightly R2: both former guards were
     // equivalent mutants — removing them changed no observable result).
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
-    const isPaced = (ref: string) => paced.has(ref.split('/')[0]);
+    const isPaced = (ref: string): boolean => paced.has(ref.split('/')[0]);
     return [...refs.filter((r) => !isPaced(r)), ...refs.filter(isPaced)];
   }
 
@@ -1200,7 +1201,7 @@ export class Router {
     // on every routed prompt.
     const drops: Array<[string, string]> | null = isDebugEnabled() ? [] : null;
     const onDrop = drops
-      ? (ref: string, gate: string) => {
+      ? (ref: string, gate: string): void => {
           drops.push([ref, gate]);
         }
       : undefined;
@@ -1334,7 +1335,7 @@ export class Router {
     ranked: string[],
     drops: Array<[string, string]>
   ): string {
-    const fmt = (v: number) => String(Number(v.toPrecision(4)));
+    const fmt = (v: number): string => String(Number(v.toPrecision(4)));
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
     const candidates = ranked.map((ref, i) => {
       const gdp = lookupGdp(ref);

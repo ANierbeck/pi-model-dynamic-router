@@ -143,7 +143,7 @@ export function buildCorpus(opts: {
   limit?: number | undefined;
 }): CorpusItem[] {
   const byPrompt = new Map<string, CorpusItem>();
-  const add = (item: CorpusItem) => {
+  const add = (item: CorpusItem): void => {
     const existing = byPrompt.get(item.prompt);
     if (existing) {
       existing.duplicates++;
@@ -251,7 +251,7 @@ export async function replayAgainstEndpoint(
   };
   const queue = [...corpus];
   const workers = Math.max(1, Math.min(opts.concurrency ?? 4, queue.length || 1));
-  const runWorker = async () => {
+  const runWorker = async (): Promise<void> => {
     for (;;) {
       const item = queue.shift();
       if (!item) return;

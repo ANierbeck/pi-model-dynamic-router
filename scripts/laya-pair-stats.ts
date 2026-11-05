@@ -57,7 +57,7 @@ export function pairRecords(
   records: PairLogRecord[],
   windowMs: number = DEFAULT_WINDOW_MS
 ): PairingResult {
-  const time = (r: PairLogRecord) => Date.parse(r.ts);
+  const time = (r: PairLogRecord): number => Date.parse(r.ts);
   const layas = records
     .filter((r) => r.stage === 'laya' && r.laya?.acted)
     .sort((a, b) => time(a) - time(b));

@@ -78,7 +78,7 @@ function validBudget(b: unknown): b is ProviderBudget {
 export function budgetWindowStart(now: number, resetDay: number): number {
   const today = new Date(now);
   // Try this month first: start = <this month> <clamped resetDay> 00:00.
-  const clamp = (y: number, m: number) => {
+  const clamp = (y: number, m: number): number => {
     const last = new Date(y, m + 1, 0).getDate(); // last day of month m
     return new Date(y, m, Math.min(resetDay, last), 0, 0, 0, 0).getTime();
   };

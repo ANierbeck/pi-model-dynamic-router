@@ -265,7 +265,7 @@ export interface ClassificationCounts {
 }
 
 function localDay(now = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number): string => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
@@ -675,7 +675,7 @@ function inheritPreviousCategory(
  */
 function spawnMomentumObservation(prompt: string, options: ClassificationOptions): void {
   const prevCategory = options.context?.lastCategory ?? null;
-  void (async () => {
+  void (async (): Promise<void> => {
     const holder: {
       source: string | null;
       trace: ClassificationTrace;
@@ -940,7 +940,7 @@ async function classifyPromptUncounted(
       m: string,
       t: number,
       attempt: () => Promise<FullClassificationResult>
-    ) => {
+    ): Promise<FullClassificationResult> => {
       const t0 = Date.now();
       const trace = callSource.getStore()?.trace;
       try {
@@ -1309,7 +1309,7 @@ async function classifyPromptUncounted(
     const comparatorStage = callSource.getStore()?.observe
       ? 'observation-comparator'
       : 'comparator';
-    void (async () => {
+    void (async (): Promise<void> => {
       const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean } = {
         source: null,
         trace: newTrace(),

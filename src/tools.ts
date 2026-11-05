@@ -44,7 +44,7 @@ interface ToolDeps {
  */
 const syncResult = <T>(value: T): Promise<T> => Promise.resolve(value);
 
-export function createTools(rt: ToolDeps) {
+export function createTools(rt: ToolDeps): void {
   // ── Tools ──────────────────────────────────────────────────────────────
 
   // bulk_read (shunt Layer 2, ADR-0007 revision 2026-09-20): question-based

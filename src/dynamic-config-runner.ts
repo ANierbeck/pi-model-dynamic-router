@@ -80,7 +80,9 @@ function readStoredGroupsFingerprint(stateDir: string): string | null | undefine
   }
 }
 
-export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
+export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
+  generateDynamicConfig: (force?: boolean) => Promise<void>;
+} {
   /**
    * Generates and persists the dynamic router config (router-config.dynamic.json)
    * from the scanned model set + the static config.
@@ -283,9 +285,9 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps) {
         const before = effectiveModelRefs.length;
         const freeModelRefs = new Set<string>(staticFreeModels);
         const streamableCtx = {
-          hasRegistryModel: (provider: string, modelId: string) =>
+          hasRegistryModel: (provider: string, modelId: string): boolean =>
             metricsModule.hasRegistryModel(provider, modelId),
-          isLocalProvider: (provider: string) => PROVIDER_MAP[provider]?.local === true,
+          isLocalProvider: (provider: string): boolean => PROVIDER_MAP[provider]?.local === true,
           freeModelRefs,
           // Bug 2026-10-06: a free-model ref used to count as streamable on
           // config presence alone. Reach-through to the private ModelRuntime

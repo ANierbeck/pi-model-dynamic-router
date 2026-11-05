@@ -101,7 +101,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
    * --model resolution before session_start fires, and again at
    * session_start (with a registry available) to refresh resolution labels.
    */
-  function registerGroupProviders() {
+  function registerGroupProviders(): void {
     // Dynamic groups route each prompt into one of the static groups, so
     // their window is derived from the union of all static candidates.
     // resolve() is called once per static group here and reused below.

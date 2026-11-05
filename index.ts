@@ -114,7 +114,7 @@ function dynamicConfigFingerprint(c: Config): string {
   return createHash('sha1').update(basis).digest('hex').slice(0, 12);
 }
 
-const defaultExport = function (pi: ExtensionAPI) {
+const defaultExport = function (pi: ExtensionAPI): void {
   const extDir = path.dirname(fileURLToPath(import.meta.url));
   const cfgPath = path.join(extDir, 'router-config.json');
   // Generated state (router-config.dynamic.json, .cache/scan-cache.json)
@@ -453,7 +453,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     },
     // ADR-0022: the router never resolves keys itself — pi does.
     get resolveApiKey() {
-      return async (provider: string) =>
+      return async (provider: string): Promise<string | null> =>
         (await sessionCtx?.modelRegistry?.getApiKeyForProvider?.(provider).catch?.(() => null)) ??
         null;
     },
@@ -740,7 +740,7 @@ const defaultExport = function (pi: ExtensionAPI) {
 
   // ── Config + Cache ─────────────────────────────────────────────────────
 
-  function load() {
+  function load(): void {
     // Log the active version once per process (first load). load() also
     // runs mid-turn from tools (resolve_model_group, update_model_metrics)
     // and on every session_start, so gating on routerVersion===null keeps
@@ -927,14 +927,14 @@ const defaultExport = function (pi: ExtensionAPI) {
     });
   }
 
-  function loadCache() {
+  function loadCache(): void {
     cacheManager.loadCache();
     metricsModule.setCache(cache);
     rateLimitManager.updateCache(cache);
     router?.updateCache(cache);
   }
 
-  function saveCache() {
+  function saveCache(): void {
     cacheManager.saveCache(cache);
   }
 
@@ -959,19 +959,19 @@ const defaultExport = function (pi: ExtensionAPI) {
     // ctx.router.setCurModel (which hits the live Router instance) — the
     // former ctx.curModel field was write-only dead wiring (final v1.6.0
     // review minor #8).
-    get activeGroup() {
+    get activeGroup(): string | null {
       return activeGroup;
     },
     set activeGroup(v) {
       activeGroup = v;
     },
-    get lastDynamicModel() {
+    get lastDynamicModel(): string {
       return lastDynamicModel;
     },
     set lastDynamicModel(v) {
       lastDynamicModel = v;
     },
-    get lastClassifiedCategory() {
+    get lastClassifiedCategory(): ClassificationResult['category'] | undefined {
       return lastClassifiedCategory;
     },
     set lastClassifiedCategory(v) {
@@ -980,10 +980,10 @@ const defaultExport = function (pi: ExtensionAPI) {
     get sessionCtx() {
       return sessionCtx;
     },
-    get cfg() {
+    get cfg(): Config {
       return cfg;
     },
-    get cache() {
+    get cache(): Cache {
       return cache;
     },
     // router/rateLimitManager/cacheManager are all reassigned by load() (F10
@@ -1008,13 +1008,13 @@ const defaultExport = function (pi: ExtensionAPI) {
     // (matching the existing cfg/cache/activeGroup pattern above) make these
     // three always resolve the CURRENT module-level binding, eliminating the
     // whole staleness class instead of patching each load() call site.
-    get router() {
+    get router(): Router {
       return router;
     },
-    get rateLimitManager() {
+    get rateLimitManager(): RateLimitManager {
       return rateLimitManager;
     },
-    get cacheManager() {
+    get cacheManager(): CacheManager {
       return cacheManager;
     },
     escalation,
@@ -1034,7 +1034,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     consumeWithDetection,
     isLocalProvider,
     localStreamLimit: () => localStreamLimit(),
-    releaseLocalSlot: (ref: string) => {
+    releaseLocalSlot: (ref: string): void => {
       if (isLocalProvider(ref) && localStreamsInFlight > 0) localStreamsInFlight--;
     },
     // recordSoftFailure is no longer wired directly: every orchestrator
@@ -1049,7 +1049,7 @@ const defaultExport = function (pi: ExtensionAPI) {
     // (provider_breaker.enabled, default on) is on. Returns true only when
     // this failure newly OPENS the breaker, so the orchestrator narrates
     // once per open.
-    observeProviderFailure: (ref: string, reason: string, detail?: string) => {
+    observeProviderFailure: (ref: string, reason: string, detail?: string): boolean => {
       const kind = reason as ProviderEvidenceKind;
       if (
         kind !== 'empty_response' &&
@@ -1069,7 +1069,7 @@ const defaultExport = function (pi: ExtensionAPI) {
       }
       return newlyOpen;
     },
-    isBreakerOpen: (ref: string) => {
+    isBreakerOpen: (ref: string): boolean => {
       const provider = ref.split('/')[0];
       if (!isProviderOpen(cache, provider)) return false;
       // Local providers keep ADR-0016's always-on watchdog; the kill switch
@@ -1091,10 +1091,10 @@ const defaultExport = function (pi: ExtensionAPI) {
     extractLastAssistantSnippet,
     isCompactionTurn,
     lookupGdp,
-    get skipReasons() {
+    get skipReasons(): Map<string, string> {
       return skipReasons;
     },
-    get localStreamsInFlight() {
+    get localStreamsInFlight(): number {
       return localStreamsInFlight;
     },
   });

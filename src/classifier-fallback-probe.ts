@@ -150,7 +150,7 @@ const VALID_CATEGORY_SET: readonly string[] = VALID_CATEGORIES;
  * (PR #70 review: cached models from an obsolete taxonomy must never be
  * reused). Not cryptographic — it only has to change when the surface does.
  */
-export const PROBE_SIGNATURE: string = (() => {
+export const PROBE_SIGNATURE: string = ((): string => {
   const surface = [
     ...PROBE_CASES.map((c) => `${c.name}|${c.prompt}|${c.accept.join(',')}`),
     VALID_CATEGORIES.join(','),
@@ -295,7 +295,7 @@ export function selectClassifierCandidates(
   //
   // Group candidates by provider, preserving tier order within each provider.
   const byProvider = new Map<string, string[]>();
-  const addProv = (ref: string) => {
+  const addProv = (ref: string): void => {
     const prov = ref.slice(0, ref.indexOf('/'));
     if (!byProvider.has(prov)) byProvider.set(prov, []);
     byProvider.get(prov)!.push(ref);
@@ -360,7 +360,7 @@ export async function probeAndCache(
   onLog?: (msg: string) => void
 ): Promise<string[]> {
   const candidates = selectClassifierCandidates(cfg, cache);
-  const log = onLog ?? (() => {});
+  const log = onLog ?? ((): void => {});
   log(`[classifier-probe] probing ${candidates.length} candidate(s) for fallback availability`);
 
   const working: string[] = [];

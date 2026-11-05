@@ -252,7 +252,7 @@ export function extractGdpvalProvenance(
   let s;
   while ((s = slugRe.exec(normalized))) slugByDisplayName.set(s[2], s[1]);
 
-  const labelKeyOf = (dn: string) =>
+  const labelKeyOf = (dn: string): string =>
     dn
       .toLowerCase()
       .replace(/\s*\(.*?\)\s*/g, '')
@@ -346,7 +346,7 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   let s: RegExpExecArray | null;
   while ((s = slugRe.exec(html))) slugByDisplayName.set(s[2], s[1]);
 
-  const labelKeyOf = (dn: string) =>
+  const labelKeyOf = (dn: string): string =>
     dn
       .toLowerCase()
       .replace(/\s*\(.*?\)\s*/g, '')
@@ -524,7 +524,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       timeoutMs: 90_000, // large models need time; if the local model is too
       // slow it fails and the cloud fallback (free OpenRouter) fires.
     };
-    const callLlm = (prompt: string) => callLocalLlm(prompt, deps);
+    const callLlm = (prompt: string): Promise<string> => callLocalLlm(prompt, deps);
 
     try {
       const result = await matchModelsWithLLMBatched({
@@ -643,7 +643,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
    *     OpenRouter models are NOT pushed to available_models (only their
    *     pricing is recorded) — the router only uses OpenRouter's free tier.
    */
-  async function scan(force = false) {
+  async function scan(force = false): Promise<void> {
     if (rt.scanning) return;
     rt.scanning = true;
     try {
