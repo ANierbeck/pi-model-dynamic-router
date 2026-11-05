@@ -33,12 +33,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as metricsModule from '../src/metrics.ts';
 import type { Cache } from '../src/types.ts';
+import { hermeticCacheFlags } from './helpers/stream-fixtures.ts';
 
-function makeRegistry(models: Array<{
-  provider: string;
-  id: string;
-  cost: { input: number; output: number };
-}>): any {
+function makeRegistry(
+  models: Array<{
+    provider: string;
+    id: string;
+    cost: { input: number; output: number };
+  }>
+): any {
   const all = models.map((m) => ({ provider: m.provider, id: m.id, cost: m.cost }));
   return {
     find: (provider: string, modelId: string) =>
@@ -65,14 +68,18 @@ const BASE_CACHE: Cache = {
   usage_log: [],
   benchmarks: {},
   budget_cache: {},
-  gdpval_scraped: true,
-  lastScanTimestamp: Date.now(),
+  ...hermeticCacheFlags(),
   models_cached: '',
 } as any;
 
 describe('registryCost alias matching (Mistral glm-5-2 / zai-glm-5-2 scenario)', () => {
   beforeEach(() => {
-    metricsModule.setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: {}, providers: {} } as any);
+    metricsModule.setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: {},
+      providers: {},
+    } as any);
     metricsModule.setCache(BASE_CACHE);
     metricsModule.setGdpval({});
     metricsModule.setModelRegistry(ALIAS_REGISTRY);

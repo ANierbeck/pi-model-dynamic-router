@@ -27,10 +27,7 @@ const testConfig: Config = {
     tacticalish: { method: 'best', min_gdpval: 700 },
     pipe: {
       method: 'pipeline',
-      pipeline: [
-        { method: 'max_gdpval', top_k: 2 },
-        { method: 'min_cost' },
-      ],
+      pipeline: [{ method: 'max_gdpval', top_k: 2 }, { method: 'min_cost' }],
     },
     rr: { method: 'roundrobin', models: ['provx/aaa', 'provx/bbb'] },
     mc: { method: 'min_cost_if_all_priced', top_k: 2 },
@@ -63,7 +60,7 @@ beforeAll(() => {
 });
 
 describe('resolveGroup method dispatch (via public resolve)', () => {
-  it("pipeline: step sorts apply, per-step top_k truncates", () => {
+  it('pipeline: step sorts apply, per-step top_k truncates', () => {
     const router = new Router(testConfig, cache, new Map());
     const r = router.resolve('pipe');
     expect(r).not.toBeNull();
@@ -80,7 +77,7 @@ describe('resolveGroup method dispatch (via public resolve)', () => {
     expect(router.resolve('rr')!.selected).toBe('provx/aaa');
   });
 
-  it("min_cost_if_all_priced: sorted by cost, group top_k truncates", () => {
+  it('min_cost_if_all_priced: sorted by cost, group top_k truncates', () => {
     const router = new Router(testConfig, cache, new Map());
     const r = router.resolve('mc');
     expect(r!.candidates).toEqual(['provx/bbb', 'provx/aaa']);
@@ -121,7 +118,7 @@ describe('detectGroup — pinning, dynamic exclusion, threshold order', () => {
     expect(router.detectGroup('provx/aaa')).toBe('tacticalish');
   });
 
-  it("dynamic groups are NOT threshold candidates; highest min_gdpval wins", () => {
+  it('dynamic groups are NOT threshold candidates; highest min_gdpval wins', () => {
     // aaa scores 900. Threshold order (desc): dyno is dynamic (excluded),
     // tacticalish (700) before complexish (400) → 900 >= 700 → tacticalish.
     // The config's OBJECT order (complexish first) is deliberately wrong

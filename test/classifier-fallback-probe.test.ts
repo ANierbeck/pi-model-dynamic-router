@@ -43,7 +43,9 @@ function okReply(category: string) {
   return {
     errorMessage: undefined,
     stopReason: 'stop',
-    content: [{ type: 'text', text: JSON.stringify({ category, reason: 'probe reply', confidence: 0.9 }) }],
+    content: [
+      { type: 'text', text: JSON.stringify({ category, reason: 'probe reply', confidence: 0.9 }) },
+    ],
   };
 }
 
@@ -55,7 +57,8 @@ function goodClassifierMock() {
   return vi.fn(async (_model: any, prompt: any) => {
     const content: string = prompt?.messages?.[0]?.content ?? '';
     if (content.includes('What is in this file?')) return okReply('simple');
-    if (content.includes('Fix the typo in line 3 of the parse function')) return okReply('code_simple');
+    if (content.includes('Fix the typo in line 3 of the parse function'))
+      return okReply('code_simple');
     if (content.includes('Explain what a closure is briefly')) return okReply('simple');
     return okReply('standard');
   });
@@ -97,7 +100,7 @@ describe('selectClassifierCandidates', () => {
       ],
       openrouter_pricing: {
         'openrouter/cheap-unknown': { input: 0, output: 0.05 },
-        'openrouter/cheap-scored': { input: 0, output: 0.10 },
+        'openrouter/cheap-scored': { input: 0, output: 0.1 },
       },
       // Map cheap-scored to a gdpval slug with a low score
       model_score_cache: { 'openrouter/cheap-scored': 'cheap-scored-slug' },
@@ -142,8 +145,12 @@ describe('selectClassifierCandidates', () => {
       },
       model_blocklist: {
         'openrouter/gated-model': {
-          reason: 'agentic-harness-gate', code: 403, signature: '403:agentic-harness-gate',
-          first_seen: Date.now(), last_seen: Date.now(), occurrences: 1,
+          reason: 'agentic-harness-gate',
+          code: 403,
+          signature: '403:agentic-harness-gate',
+          first_seen: Date.now(),
+          last_seen: Date.now(),
+          occurrences: 1,
         },
       },
     };
@@ -259,9 +266,17 @@ describe('selectClassifierCandidates', () => {
     const cache: Cache = {
       available_models: [
         // 5 cheap OpenRouter models (Tier B — real price, no gdpval)
-        ...Array.from({ length: 5 }, (_, i) => ({ id: `or-${i}`, provider: 'openrouter', cost_per_m: 0 })),
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: `or-${i}`,
+          provider: 'openrouter',
+          cost_per_m: 0,
+        })),
         // 5 placeholder-$0 Mistral models (Tier C — no real pricing)
-        ...Array.from({ length: 5 }, (_, i) => ({ id: `mistral-${i}`, provider: 'mistral', cost_per_m: 0 })),
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: `mistral-${i}`,
+          provider: 'mistral',
+          cost_per_m: 0,
+        })),
       ],
       openrouter_pricing: Object.fromEntries(
         Array.from({ length: 5 }, (_, i) => [`openrouter/or-${i}`, { input: 0, output: 0 }])
@@ -364,7 +379,9 @@ describe('probeAndCache', () => {
     const result = await probeAndCache(baseCfg, cache, pctx, (m) => logs.push(m));
     expect(completeSimple).not.toHaveBeenCalled();
     expect(result).not.toContain('openrouter/unconfigured-model');
-    expect(logs.some((l) => l.includes('unconfigured-model') && l.includes('not configured'))).toBe(true);
+    expect(logs.some((l) => l.includes('unconfigured-model') && l.includes('not configured'))).toBe(
+      true
+    );
   });
 
   it('narrates blocklist events from probe failures (block on permanent, never on transient, clear on revival)', async () => {
@@ -424,7 +441,9 @@ describe('probeAndCache', () => {
       code: 404,
     });
     expect(
-      logs.some((l) => l.includes('openrouter/guardrail-dead blocked for 7 days: workspace-guardrail'))
+      logs.some((l) =>
+        l.includes('openrouter/guardrail-dead blocked for 7 days: workspace-guardrail')
+      )
     ).toBe(true);
 
     // Transient signature → never blocked, never narrated as blocked.
@@ -454,7 +473,8 @@ describe('probeAndCache', () => {
     seedMetrics(baseCfg, cache);
 
     const pctx: ProbeContext = {
-      findModel: (ref) => (ref === 'openrouter/registered' ? { provider: 'openrouter', id: 'registered' } : undefined),
+      findModel: (ref) =>
+        ref === 'openrouter/registered' ? { provider: 'openrouter', id: 'registered' } : undefined,
       completeSimple: goodClassifierMock(),
     };
     const result = await probeAndCache(baseCfg, cache, pctx);
@@ -581,7 +601,10 @@ describe('getCachedFallbackModels + hasProbedFallback', () => {
   });
 
   it('returns the cached list when probe has run (even if empty)', () => {
-    const cache: Cache = { classifier_fallback_models: ['openrouter/model-a'], classifier_fallback_probe_sig: PROBE_SIGNATURE };
+    const cache: Cache = {
+      classifier_fallback_models: ['openrouter/model-a'],
+      classifier_fallback_probe_sig: PROBE_SIGNATURE,
+    };
     expect(getCachedFallbackModels(cache)).toEqual(['openrouter/model-a']);
     expect(hasProbedFallback(cache)).toBe(true);
   });
@@ -589,7 +612,10 @@ describe('getCachedFallbackModels + hasProbedFallback', () => {
   it('hasProbedFallback is true even when the probe found nothing (empty array = probe ran)', () => {
     // An empty array is a valid result — means the probe ran but all failed.
     // The classifier should then fall back to selectClassifierCandidates.
-    const cache: Cache = { classifier_fallback_models: [], classifier_fallback_probe_sig: PROBE_SIGNATURE };
+    const cache: Cache = {
+      classifier_fallback_models: [],
+      classifier_fallback_probe_sig: PROBE_SIGNATURE,
+    };
     expect(getCachedFallbackModels(cache)).toEqual([]);
     expect(hasProbedFallback(cache)).toBe(true);
   });
@@ -663,7 +689,12 @@ describe('probeAndCache — quality validation', () => {
   it('a quality failure never feeds the blocklist and resets an existing failure streak (review 2026-09-27)', async () => {
     const cache = makeCache('voxtral');
     cache.model_failure_streaks = {
-      'openrouter/voxtral': { signature: '400:x', count: 4, first_seen: Date.now() - 3_600_000, last_seen: Date.now() },
+      'openrouter/voxtral': {
+        signature: '400:x',
+        count: 4,
+        first_seen: Date.now() - 3_600_000,
+        last_seen: Date.now(),
+      },
     };
     seedMetrics(baseCfg, cache);
     const pctx: ProbeContext = {
@@ -678,7 +709,12 @@ describe('probeAndCache — quality validation', () => {
 
   it('an error stop without text neither blocks nor clears the streak', async () => {
     const cache = makeCache('silent');
-    const streak = { signature: '400:x', count: 4, first_seen: Date.now() - 3_600_000, last_seen: Date.now() };
+    const streak = {
+      signature: '400:x',
+      count: 4,
+      first_seen: Date.now() - 3_600_000,
+      last_seen: Date.now(),
+    };
     cache.model_failure_streaks = { 'openrouter/silent': { ...streak } };
     seedMetrics(baseCfg, cache);
     const pctx: ProbeContext = {
@@ -702,7 +738,9 @@ describe('probeAndCache — quality validation', () => {
       })),
     };
     await probeAndCache(baseCfg, cache, pctx, () => {});
-    expect(cache.model_blocklist?.['openrouter/gated']).toMatchObject({ reason: 'agentic-harness-gate' });
+    expect(cache.model_blocklist?.['openrouter/gated']).toMatchObject({
+      reason: 'agentic-harness-gate',
+    });
   });
 
   it('REJECTS prose replies (no classification JSON at all)', async () => {

@@ -17,8 +17,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { bootProjectDir, rmTmpDir } from './helpers/router-env.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const embeddedCfgPath = path.join(repoRoot, 'router-config.json');
@@ -84,15 +84,8 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
 
     // User layer marker: a value that ONLY exists in the layered runtime cfg.
     // If the tool wrote JSON.stringify(cfg), this leaks into the embedded file.
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-i1-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpDir, '.pi', 'router-config.json'),
-      JSON.stringify({ empty_response_timeout_ms: 777 })
-    );
+    const { tmpDir } = bootProjectDir({ empty_response_timeout_ms: 777 }, 'router-i1-');
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-
-
 
     try {
       vi.resetModules();
@@ -143,7 +136,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
       }
     } finally {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
     }
   });
 
@@ -155,10 +148,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
     // load(). Refusing the persist strictly dominates: one ephemeral
     // metrics update is lost, the shipped config survives.
     const writesBefore = embeddedWrites.length;
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-i1-refuse-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+    const { tmpDir, cwdSpy } = bootProjectDir({}, 'router-i1-refuse-');
 
     try {
       vi.resetModules();
@@ -198,7 +188,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
       failEmbeddedRead.value = false;
       failEmbeddedRead.skip = 0;
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
     }
   });
 
@@ -209,10 +199,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
       // embeddedCfg undefined, skipped the catch and crashed with a
       // TypeError instead of taking the refusal path.
       const writesBefore = embeddedWrites.length;
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-i1-nonobj-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
-      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+      const { tmpDir, cwdSpy } = bootProjectDir({}, 'router-i1-nonobj-');
 
       try {
         vi.resetModules();
@@ -248,7 +235,7 @@ describe('update_model_metrics embedded-file delta write (I1)', () => {
         failEmbeddedRead.skip = 0;
         failEmbeddedRead.returnRaw = undefined;
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        rmTmpDir(tmpDir);
       }
     }
   );

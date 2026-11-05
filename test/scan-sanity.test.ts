@@ -205,7 +205,12 @@ describe('checkScanSanity — regression against the previous snapshot', () => {
   });
 
   it('skips the comparison when the previous snapshot was small or absent', () => {
-    const base = { scannedRefs: refs(1), survivorRefs: refs(1), explicitlyMappedRefs: [], explicitlyMappedScoredRefs: [] };
+    const base = {
+      scannedRefs: refs(1),
+      survivorRefs: refs(1),
+      explicitlyMappedRefs: [],
+      explicitlyMappedScoredRefs: [],
+    };
     expect(checkScanSanity({ ...base, previousSurvivorCount: 8 }).ok).toBe(true);
     expect(checkScanSanity(base).ok).toBe(true);
   });

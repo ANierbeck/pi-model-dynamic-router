@@ -26,7 +26,9 @@ import * as metricsModule from '../src/metrics.ts';
 import type { Cache, Config } from '../src/types.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const shipped = JSON.parse(readFileSync(path.join(REPO_ROOT, 'router-config.json'), 'utf-8')) as Config;
+const shipped = JSON.parse(
+  readFileSync(path.join(REPO_ROOT, 'router-config.json'), 'utf-8')
+) as Config;
 
 const GATED = 'openrouter/vendor/gated-1:free';
 const SIBLING = 'openrouter/vendor/fine-1:free';
@@ -73,7 +75,13 @@ describe('a blocked model burns no further attempts', () => {
   beforeEach(() => {
     cfg = {
       model_groups: {
-        trivial: { description: 't', method: 'min_cost_if_all_priced', max_cost: 0, min_gdpval: 0, fallback_groups: [] },
+        trivial: {
+          description: 't',
+          method: 'min_cost_if_all_priced',
+          max_cost: 0,
+          min_gdpval: 0,
+          fallback_groups: [],
+        },
       },
       providers: { openrouter: { billing: 'pay_per_token' } },
       model_metrics: {},
@@ -109,8 +117,14 @@ describe('a blocked model burns no further attempts', () => {
 
 describe('the exclude machinery stays intact (ADR-0009 union merge)', () => {
   it('a user-layer exclude.models merged over the empty shipped list still excludes', () => {
-    const merged = deepMergeConfig(shipped, { exclude: { models: ['openrouter/vendor/user-pick-1:free'] } } as any);
-    const ctx: ExcludeContext = { rules: merged.exclude!, cfg: merged, cache: { available_models: [] } };
+    const merged = deepMergeConfig(shipped, {
+      exclude: { models: ['openrouter/vendor/user-pick-1:free'] },
+    } as any);
+    const ctx: ExcludeContext = {
+      rules: merged.exclude!,
+      cfg: merged,
+      cache: { available_models: [] },
+    };
     expect(isExcluded('openrouter/vendor/user-pick-1:free', ctx)).toBe(true);
     expect(isExcluded('openrouter/vendor/other-1:free', ctx)).toBe(false);
   });

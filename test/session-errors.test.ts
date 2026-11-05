@@ -36,7 +36,14 @@ describe('recordSessionErrorFromFailure (push-site seam, review I3/I4)', () => {
     const cache = freshCache();
     // (ADR-0022 removed multi-key rotation and the 'key rotated'
     // consequence — a hard limit always means a cooldown now.)
-    recordSessionErrorFromFailure({ cache, ref: 'mistral/zai-glm-5-3', reason: 'rate_limit_exceeded', hardLimited: true, limitSecs: 120, now: T0 });
+    recordSessionErrorFromFailure({
+      cache,
+      ref: 'mistral/zai-glm-5-3',
+      reason: 'rate_limit_exceeded',
+      hardLimited: true,
+      limitSecs: 120,
+      now: T0,
+    });
     expect(sessionErrors(cache)[0].consequence).toBe('cooldown 120s');
   });
 
@@ -78,22 +85,46 @@ describe('persistence round-trip (review I3)', () => {
     fs.writeFileSync(file, JSON.stringify({ available_models: [] }));
     const cm = new CacheManager(dir);
     const cache = cm.loadCache();
-    pushSessionError(cache, { ts: T0, ref: 'mistral/zai-glm-5-3', reason: 'provider_error', detail: 'boom', consequence: 'soft backoff' });
+    pushSessionError(cache, {
+      ts: T0,
+      ref: 'mistral/zai-glm-5-3',
+      reason: 'provider_error',
+      detail: 'boom',
+      consequence: 'soft backoff',
+    });
     cm.saveCache(cache);
 
     // a fresh manager (e.g. next pi process) sees the same persisted entries
     const cm2 = new CacheManager(dir);
     const reloaded = cm2.loadCache();
     expect(reloaded.session_errors).toHaveLength(1);
-    expect(reloaded.session_errors![0]).toEqual({ ts: T0, ref: 'mistral/zai-glm-5-3', reason: 'provider_error', detail: 'boom', consequence: 'soft backoff', pid: process.pid });
+    expect(reloaded.session_errors![0]).toEqual({
+      ts: T0,
+      ref: 'mistral/zai-glm-5-3',
+      reason: 'provider_error',
+      detail: 'boom',
+      consequence: 'soft backoff',
+      pid: process.pid,
+    });
   });
 });
 
 describe('session-errors ring buffer', () => {
   it('pushes entries chronologically and persists via the cache object', () => {
     const cache = freshCache();
-    pushSessionError(cache, { ts: T0, ref: 'mistral/zai-glm-5-3', reason: 'provider_error', detail: '422 status code (no body)', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: T0 + 5_000, ref: 'mistral/mistral-medium-3.5', reason: 'rate_limit_exceeded', consequence: 'cooldown 120s' });
+    pushSessionError(cache, {
+      ts: T0,
+      ref: 'mistral/zai-glm-5-3',
+      reason: 'provider_error',
+      detail: '422 status code (no body)',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: T0 + 5_000,
+      ref: 'mistral/mistral-medium-3.5',
+      reason: 'rate_limit_exceeded',
+      consequence: 'cooldown 120s',
+    });
     const entries = sessionErrors(cache);
     expect(entries).toHaveLength(2);
     expect(entries[0].ref).toBe('mistral/zai-glm-5-3');
@@ -103,7 +134,12 @@ describe('session-errors ring buffer', () => {
   it('caps the buffer at SESSION_ERROR_CAP (FIFO — oldest dropped)', () => {
     const cache = freshCache();
     for (let i = 0; i < SESSION_ERROR_CAP + 10; i++) {
-      pushSessionError(cache, { ts: T0 + i, ref: `m/${i}`, reason: 'provider_error', consequence: 'soft backoff' });
+      pushSessionError(cache, {
+        ts: T0 + i,
+        ref: `m/${i}`,
+        reason: 'provider_error',
+        consequence: 'soft backoff',
+      });
     }
     const entries = sessionErrors(cache);
     expect(entries).toHaveLength(SESSION_ERROR_CAP);
@@ -116,7 +152,12 @@ describe('session-errors ring buffer', () => {
     const cache = freshCache();
     (cache as any).session_errors = 'corrupted';
     expect(() =>
-      pushSessionError(cache, { ts: T0, ref: 'm/a', reason: 'provider_error', consequence: 'soft backoff' })
+      pushSessionError(cache, {
+        ts: T0,
+        ref: 'm/a',
+        reason: 'provider_error',
+        consequence: 'soft backoff',
+      })
     ).not.toThrow();
     expect(Array.isArray(cache.session_errors)).toBe(true);
     expect(sessionErrors(cache)).toHaveLength(1);
@@ -125,7 +166,13 @@ describe('session-errors ring buffer', () => {
   it('trims detail snippets to 120 chars', () => {
     const cache = freshCache();
     const long = 'x'.repeat(300);
-    pushSessionError(cache, { ts: T0, ref: 'm/a', reason: 'provider_error', detail: long, consequence: 'soft backoff' });
+    pushSessionError(cache, {
+      ts: T0,
+      ref: 'm/a',
+      reason: 'provider_error',
+      detail: long,
+      consequence: 'soft backoff',
+    });
     expect(sessionErrors(cache)[0].detail).toHaveLength(120);
   });
 });
@@ -135,11 +182,36 @@ describe('session-errors status correlation', () => {
     const cache = freshCache();
     const sessionStart = T0 + 100;
     // two from an earlier process (persisted history), three this session
-    pushSessionError(cache, { ts: T0, ref: 'm/old1', reason: 'provider_error', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: T0 + 50, ref: 'm/old2', reason: 'provider_error', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: sessionStart, ref: 'm/now1', reason: 'rate_limit_exceeded', consequence: 'cooldown 60s' });
-    pushSessionError(cache, { ts: sessionStart + 10, ref: 'm/now2', reason: 'empty_response', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: sessionStart + 20, ref: 'm/now3', reason: 'provider_error', consequence: 'soft backoff' });
+    pushSessionError(cache, {
+      ts: T0,
+      ref: 'm/old1',
+      reason: 'provider_error',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: T0 + 50,
+      ref: 'm/old2',
+      reason: 'provider_error',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart,
+      ref: 'm/now1',
+      reason: 'rate_limit_exceeded',
+      consequence: 'cooldown 60s',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart + 10,
+      ref: 'm/now2',
+      reason: 'empty_response',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart + 20,
+      ref: 'm/now3',
+      reason: 'provider_error',
+      consequence: 'soft backoff',
+    });
 
     expect(countSessionErrorsSince(cache, sessionStart)).toBe(3);
   });
@@ -149,8 +221,20 @@ describe('formatErrorsReport', () => {
   it("headline ignores a same-project sibling process's post-start entries (pid scoping, review 2026-10-04)", () => {
     const cache = freshCache();
     const sessionStart = T0 + 100;
-    pushSessionError(cache, { ts: sessionStart + 1, ref: 'mistral/own', reason: 'provider_error', detail: 'mine', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: sessionStart + 2, ref: 'mistral/sibling', reason: 'provider_error', detail: 'theirs', consequence: 'soft backoff' });
+    pushSessionError(cache, {
+      ts: sessionStart + 1,
+      ref: 'mistral/own',
+      reason: 'provider_error',
+      detail: 'mine',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart + 2,
+      ref: 'mistral/sibling',
+      reason: 'provider_error',
+      detail: 'theirs',
+      consequence: 'soft backoff',
+    });
     (cache.session_errors as SessionError[])[1].pid = 424242; // other process, same project
 
     // Footer contract: ⚠N == headline == N events — the sibling's entry is
@@ -169,9 +253,27 @@ describe('formatErrorsReport', () => {
   it('headline count matches the status-line count exactly; older entries below a divider', () => {
     const cache = freshCache();
     const sessionStart = T0 + 100;
-    pushSessionError(cache, { ts: T0, ref: 'm/old', reason: 'provider_error', detail: 'old failure', consequence: 'soft backoff' });
-    pushSessionError(cache, { ts: sessionStart + 1, ref: 'mistral/zai-glm-5-3', reason: 'rate_limit_exceeded', detail: 'Too many requests', consequence: 'cooldown 120s' });
-    pushSessionError(cache, { ts: sessionStart + 2, ref: 'mistral/mistral-medium-3.5', reason: 'provider_error', detail: '422 status code (no body)', consequence: 'soft backoff' });
+    pushSessionError(cache, {
+      ts: T0,
+      ref: 'm/old',
+      reason: 'provider_error',
+      detail: 'old failure',
+      consequence: 'soft backoff',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart + 1,
+      ref: 'mistral/zai-glm-5-3',
+      reason: 'rate_limit_exceeded',
+      detail: 'Too many requests',
+      consequence: 'cooldown 120s',
+    });
+    pushSessionError(cache, {
+      ts: sessionStart + 2,
+      ref: 'mistral/mistral-medium-3.5',
+      reason: 'provider_error',
+      detail: '422 status code (no body)',
+      consequence: 'soft backoff',
+    });
 
     const report = formatErrorsReport(cache, sessionStart, 15);
     // headline: exactly the status-line count (2), not the buffer size (3)
@@ -189,7 +291,12 @@ describe('formatErrorsReport', () => {
   it('respects the limit (default 15): newest entries win', () => {
     const cache = freshCache();
     for (let i = 0; i < 20; i++) {
-      pushSessionError(cache, { ts: T0 + i, ref: `m/${String(i).padStart(2, '0')}`, reason: 'provider_error', consequence: 'soft backoff' });
+      pushSessionError(cache, {
+        ts: T0 + i,
+        ref: `m/${String(i).padStart(2, '0')}`,
+        reason: 'provider_error',
+        consequence: 'soft backoff',
+      });
     }
     const report = formatErrorsReport(cache, T0, 5);
     expect(report).toContain('m/19');

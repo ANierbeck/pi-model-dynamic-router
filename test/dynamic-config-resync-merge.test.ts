@@ -31,7 +31,11 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 describe('every shipped top-level config key reaches the live config', () => {
   it('is re-synced, merged, or scan-regenerated (model_groups)', () => {
     const shipped = JSON.parse(fs.readFileSync(path.join(repo, 'router-config.json'), 'utf-8'));
-    const handled = new Set<string>([...DYNAMIC_CONFIG_RESYNC_KEYS, ...DYNAMIC_CONFIG_MERGE_KEYS, 'model_groups']);
+    const handled = new Set<string>([
+      ...DYNAMIC_CONFIG_RESYNC_KEYS,
+      ...DYNAMIC_CONFIG_MERGE_KEYS,
+      'model_groups',
+    ]);
     const unhandled = Object.keys(shipped).filter((k) => !handled.has(k));
     expect(unhandled).toEqual([]);
   });
@@ -51,20 +55,21 @@ describe('resyncDynamicFromStatic', () => {
     model_groups: {},
   } as unknown as Config;
 
-  const staleDynamic = () => ({
-    _dynamic: { generated_at: '2026-10-05T11:00:00.000Z' },
-    model_groups: { tactical: { method: 'best', models: ['a/b'] } },
-    providers: {
-      openrouter: { billing: 'pay_per_token', free_models: ['openrouter/old:free'] },
-      // Scan-added entry (unknown provider auto-registered as subscription).
-      'claude-bridge': { billing: 'subscription' },
-      tactical: { billing: 'subscription' },
-    },
-    model_metrics: {
-      'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6 },
-    },
-    gdpval_builtin: { 'model-x': 900, 'model-y': 800 },
-  }) as unknown as Config;
+  const staleDynamic = () =>
+    ({
+      _dynamic: { generated_at: '2026-10-05T11:00:00.000Z' },
+      model_groups: { tactical: { method: 'best', models: ['a/b'] } },
+      providers: {
+        openrouter: { billing: 'pay_per_token', free_models: ['openrouter/old:free'] },
+        // Scan-added entry (unknown provider auto-registered as subscription).
+        'claude-bridge': { billing: 'subscription' },
+        tactical: { billing: 'subscription' },
+      },
+      model_metrics: {
+        'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6 },
+      },
+      gdpval_builtin: { 'model-x': 900, 'model-y': 800 },
+    }) as unknown as Config;
 
   it('copies re-sync keys wholesale (the missing best_quality_window)', () => {
     const dyn = staleDynamic();
@@ -76,7 +81,10 @@ describe('resyncDynamicFromStatic', () => {
     const dyn = staleDynamic();
     resyncDynamicFromStatic(dyn, staticCfg);
     expect(dyn.providers!.openrouter.free_models).toEqual(['openrouter/new:free']);
-    expect(dyn.providers!['claude-bridge']).toEqual({ billing: 'subscription', cost_per_m: 0.000001 });
+    expect(dyn.providers!['claude-bridge']).toEqual({
+      billing: 'subscription',
+      cost_per_m: 0.000001,
+    });
     expect(dyn.providers!.tactical).toEqual({ billing: 'subscription' });
   });
 

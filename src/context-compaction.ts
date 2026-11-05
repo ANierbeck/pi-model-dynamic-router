@@ -80,10 +80,17 @@ export function lastStepCacheState(usageLog: UsageLogEntry[] | undefined): LastS
  * Conservative when nothing can be judged: a RECENT step with unknown cache
  * share is not cold (no evidence of a miss, no idle gap).
  */
-export function isCacheCold(budget: ContextBudgetConfig, last: LastStepCacheState, now: number): boolean {
+export function isCacheCold(
+  budget: ContextBudgetConfig,
+  last: LastStepCacheState,
+  now: number
+): boolean {
   if (last.ts === null) return true;
   if (last.cacheShare !== null && last.cacheShare < CACHE_MISS_SHARE_THRESHOLD) return true;
-  const ttlMs = typeof budget.cache_ttl_s === 'number' && budget.cache_ttl_s > 0 ? budget.cache_ttl_s * 1000 : undefined;
+  const ttlMs =
+    typeof budget.cache_ttl_s === 'number' && budget.cache_ttl_s > 0
+      ? budget.cache_ttl_s * 1000
+      : undefined;
   if (ttlMs !== undefined && now - last.ts > ttlMs) return true;
   return false;
 }
@@ -137,7 +144,10 @@ export function decideCompaction(
  * session's ACTIVE group at the turn boundary; the upcoming turn's group is
  * classified only later, at prompt time.
  */
-export function resolveContextBudget(cfg: Config, group: string | null): ContextBudgetConfig | undefined {
+export function resolveContextBudget(
+  cfg: Config,
+  group: string | null
+): ContextBudgetConfig | undefined {
   const globalBudget = cfg.context_budget;
   const groupBudget = group ? cfg.model_groups?.[group]?.context_budget : undefined;
   if (!globalBudget && !groupBudget) return undefined;
@@ -174,7 +184,9 @@ export function runContextCompaction(opts: {
   try {
     runContextCompactionInner(opts);
   } catch (err) {
-    warnLog(`[compaction] evaluation failed (fail-open, no compaction): ${err instanceof Error ? err.message : textOf(err)}`);
+    warnLog(
+      `[compaction] evaluation failed (fail-open, no compaction): ${err instanceof Error ? err.message : textOf(err)}`
+    );
   }
 }
 

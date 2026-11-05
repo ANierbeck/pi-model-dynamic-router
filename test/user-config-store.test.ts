@@ -33,7 +33,9 @@ describe('UserConfigStore.applyDelta', () => {
     };
     fs.writeFileSync(userFile, JSON.stringify(existing));
 
-    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { models: ['old/*', 'new/*'] } });
+    const res = openUserConfigStore({ agentDir }).applyDelta({
+      exclude: { models: ['old/*', 'new/*'] },
+    });
 
     expect(res).toEqual({ ok: true, written: userFile });
     const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
@@ -47,16 +49,22 @@ describe('UserConfigStore.applyDelta', () => {
 
   it('creates the user file (and the agent dir) when none exists yet', () => {
     const fresh = path.join(agentDir, 'nested', 'agent');
-    const res = openUserConfigStore({ agentDir: fresh }).applyDelta({ exclude: { models: ['a/b'] } });
+    const res = openUserConfigStore({ agentDir: fresh }).applyDelta({
+      exclude: { models: ['a/b'] },
+    });
     expect(res.ok).toBe(true);
-    expect(JSON.parse(fs.readFileSync(path.join(fresh, 'router-config.user.json'), 'utf-8'))).toEqual({
+    expect(
+      JSON.parse(fs.readFileSync(path.join(fresh, 'router-config.user.json'), 'utf-8'))
+    ).toEqual({
       exclude: { models: ['a/b'] },
     });
   });
 
   it('writes pretty (2-space) JSON and leaves no temp file behind', () => {
     openUserConfigStore({ agentDir }).applyDelta({ exclude: { models: ['a/b'] } });
-    expect(fs.readFileSync(userFile, 'utf-8')).toBe(JSON.stringify({ exclude: { models: ['a/b'] } }, null, 2));
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(
+      JSON.stringify({ exclude: { models: ['a/b'] } }, null, 2)
+    );
     expect(fs.readdirSync(agentDir).sort()).toEqual(['router-config.user.json']);
   });
 
@@ -95,7 +103,9 @@ describe('UserConfigStore.applyDelta', () => {
 
   it('rejects junk patterns without writing', () => {
     fs.writeFileSync(userFile, JSON.stringify({ log_level: 'warn' }));
-    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { models: ['ok/model', 'has space'] } });
+    const res = openUserConfigStore({ agentDir }).applyDelta({
+      exclude: { models: ['ok/model', 'has space'] },
+    });
     expect(res.ok).toBe(false);
     expect(JSON.parse(fs.readFileSync(userFile, 'utf-8'))).toEqual({ log_level: 'warn' });
   });
@@ -134,26 +144,43 @@ describe('UserConfigStore.read', () => {
 describe('UserConfigStore.applyDelta — exclude.providers', () => {
   it('persists provider names next to models without touching other keys', () => {
     const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-store-prov-'));
-    fs.writeFileSync(path.join(agentDir, 'router-config.user.json'), JSON.stringify({ log_level: 'debug', exclude: { models: ['m/*'] } }));
-    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { providers: ['openrouter'] } });
+    fs.writeFileSync(
+      path.join(agentDir, 'router-config.user.json'),
+      JSON.stringify({ log_level: 'debug', exclude: { models: ['m/*'] } })
+    );
+    const res = openUserConfigStore({ agentDir }).applyDelta({
+      exclude: { providers: ['openrouter'] },
+    });
     expect(res.ok).toBe(true);
-    const after = JSON.parse(fs.readFileSync(path.join(agentDir, 'router-config.user.json'), 'utf-8'));
-    expect(after).toEqual({ log_level: 'debug', exclude: { models: ['m/*'], providers: ['openrouter'] } });
+    const after = JSON.parse(
+      fs.readFileSync(path.join(agentDir, 'router-config.user.json'), 'utf-8')
+    );
+    expect(after).toEqual({
+      log_level: 'debug',
+      exclude: { models: ['m/*'], providers: ['openrouter'] },
+    });
   });
 
-  it.each(['', 'has space', 'a/b', '/x', 'semi;colon'])('rejects the provider name %j without writing', (name) => {
-    const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-store-prov-'));
-    const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { providers: [name] } });
-    expect(res.ok).toBe(false);
-    expect(fs.existsSync(path.join(agentDir, 'router-config.user.json'))).toBe(false);
-  });
+  it.each(['', 'has space', 'a/b', '/x', 'semi;colon'])(
+    'rejects the provider name %j without writing',
+    (name) => {
+      const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-store-prov-'));
+      const res = openUserConfigStore({ agentDir }).applyDelta({ exclude: { providers: [name] } });
+      expect(res.ok).toBe(false);
+      expect(fs.existsSync(path.join(agentDir, 'router-config.user.json'))).toBe(false);
+    }
+  );
 });
 
 describe('validateExcludePattern', () => {
-  it.each(['openrouter', 'openrouter/*', 'mistral/model-1.2', 'openrouter/vendor/model:free', '*opus*', 'a/b*c'])(
-    'accepts %s',
-    (p) => expect(validateExcludePattern(p)).toBeUndefined()
-  );
+  it.each([
+    'openrouter',
+    'openrouter/*',
+    'mistral/model-1.2',
+    'openrouter/vendor/model:free',
+    '*opus*',
+    'a/b*c',
+  ])('accepts %s', (p) => expect(validateExcludePattern(p)).toBeUndefined());
 
   it.each(['', ' ', 'has space', '/leading', 'a//b', 'a/b/', 'semi;colon', 'quote"d', 'a\nb'])(
     'rejects %j',
@@ -166,18 +193,33 @@ describe('readConfigLayers (origin view)', () => {
     const extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ext-'));
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cwd-'));
     fs.mkdirSync(path.join(cwd, '.pi'));
-    fs.writeFileSync(path.join(extDir, 'router-config.json'), JSON.stringify({ exclude: { models: ['shipped/*'] } }));
-    fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['user/*'], providers: ['up'] } }));
-    fs.writeFileSync(path.join(cwd, '.pi', 'router-config.json'), JSON.stringify({ exclude: { paid_models_from: ['pp'] } }));
+    fs.writeFileSync(
+      path.join(extDir, 'router-config.json'),
+      JSON.stringify({ exclude: { models: ['shipped/*'] } })
+    );
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ exclude: { models: ['user/*'], providers: ['up'] } })
+    );
+    fs.writeFileSync(
+      path.join(cwd, '.pi', 'router-config.json'),
+      JSON.stringify({ exclude: { paid_models_from: ['pp'] } })
+    );
 
     const layers = readConfigLayers({ extDir, cwd, agentDir });
 
     expect(layers.map((l) => l.origin)).toEqual(['shipped', 'user', 'project']);
-    expect(layers[0]).toMatchObject({ path: path.join(extDir, 'router-config.json'), present: true });
+    expect(layers[0]).toMatchObject({
+      path: path.join(extDir, 'router-config.json'),
+      present: true,
+    });
     expect(layers[0].exclude.models).toEqual(['shipped/*']);
     expect(layers[1]).toMatchObject({ path: userFile, present: true });
     expect(layers[1].exclude).toMatchObject({ models: ['user/*'], providers: ['up'] });
-    expect(layers[2]).toMatchObject({ path: path.join(cwd, '.pi', 'router-config.json'), present: true });
+    expect(layers[2]).toMatchObject({
+      path: path.join(cwd, '.pi', 'router-config.json'),
+      present: true,
+    });
     expect(layers[2].exclude.paid_models_from).toEqual(['pp']);
   });
 
@@ -189,7 +231,14 @@ describe('readConfigLayers (origin view)', () => {
 
     const layers = readConfigLayers({ extDir, cwd, agentDir });
 
-    expect(layers.find((l) => l.origin === 'project')).toMatchObject({ present: false, exclude: {} });
-    expect(layers.find((l) => l.origin === 'user')).toMatchObject({ present: true, exclude: {}, error: expect.any(String) });
+    expect(layers.find((l) => l.origin === 'project')).toMatchObject({
+      present: false,
+      exclude: {},
+    });
+    expect(layers.find((l) => l.origin === 'user')).toMatchObject({
+      present: true,
+      exclude: {},
+      error: expect.any(String),
+    });
   });
 });

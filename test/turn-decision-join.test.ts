@@ -29,7 +29,12 @@ import {
 const T0 = Date.parse('2026-10-26T10:00:00.000Z');
 const at = (sec: number) => T0 + sec * 1000;
 
-const turn = (session: string, sec: number, sha: string, served: string | null = 'p/m'): SessionTurn => ({
+const turn = (
+  session: string,
+  sec: number,
+  sha: string,
+  served: string | null = 'p/m'
+): SessionTurn => ({
   session,
   ts: at(sec),
   sha,
@@ -54,7 +59,10 @@ describe('promptSha', () => {
 
 describe('joinTurns — matching', () => {
   it('matches a turn to the single decision with the same hash shortly after it', () => {
-    const [j] = joinTurns([turn('s', 0, 'aaa')], [decision(1, 'aaa', { category: 'planning', group: 'planning' })]);
+    const [j] = joinTurns(
+      [turn('s', 0, 'aaa')],
+      [decision(1, 'aaa', { category: 'planning', group: 'planning' })]
+    );
     expect(j.status).toBe('matched');
     expect(j.category).toBe('planning');
     expect(j.group).toBe('planning');
@@ -77,20 +85,26 @@ describe('joinTurns — matching', () => {
     expect(j.status).toBe('unmatched');
   });
 
-  it.each(['observation', 'observation-comparator'])('never routes through the %s stage', (stage) => {
-    // A momentum turn: the routed record plus the detached observations of the same input.
-    const [j] = joinTurns(
-      [turn('s', 0, 'aaa')],
-      [decision(1, 'aaa', { stage: 'momentum' }), decision(2, 'aaa', { stage, category: 'design' })],
-    );
-    expect(j.status).toBe('matched');
-    expect(j.category).toBe('standard');
-  });
+  it.each(['observation', 'observation-comparator'])(
+    'never routes through the %s stage',
+    (stage) => {
+      // A momentum turn: the routed record plus the detached observations of the same input.
+      const [j] = joinTurns(
+        [turn('s', 0, 'aaa')],
+        [
+          decision(1, 'aaa', { stage: 'momentum' }),
+          decision(2, 'aaa', { stage, category: 'design' }),
+        ]
+      );
+      expect(j.status).toBe('matched');
+      expect(j.category).toBe('standard');
+    }
+  );
 
   it('reports two routing decisions in the window as ambiguous and picks neither', () => {
     const [j] = joinTurns(
       [turn('s', 0, 'aaa')],
-      [decision(1, 'aaa', { category: 'simple' }), decision(3, 'aaa', { category: 'standard' })],
+      [decision(1, 'aaa', { category: 'simple' }), decision(3, 'aaa', { category: 'standard' })]
     );
     expect(j.status).toBe('ambiguous');
     expect(j.category).toBeNull();
@@ -100,7 +114,10 @@ describe('joinTurns — matching', () => {
   it('a laya routing record next to its comparator record is one candidate, not two', () => {
     const [j] = joinTurns(
       [turn('s', 0, 'aaa')],
-      [decision(1, 'aaa', { stage: 'laya' }), decision(1, 'aaa', { stage: 'comparator', category: 'simple' })],
+      [
+        decision(1, 'aaa', { stage: 'laya' }),
+        decision(1, 'aaa', { stage: 'comparator', category: 'simple' }),
+      ]
     );
     expect(j.status).toBe('matched');
     expect(j.category).toBe('standard');
@@ -109,10 +126,7 @@ describe('joinTurns — matching', () => {
 
 describe('joinTurns — the matched decision carries its process and time', () => {
   it('exposes the process tag and the decision time of the single matched record', () => {
-    const [j] = joinTurns(
-      [turn('s', 0, 'aaa')],
-      [decision(1, 'aaa', { proc: 'proj/2559' })],
-    );
+    const [j] = joinTurns([turn('s', 0, 'aaa')], [decision(1, 'aaa', { proc: 'proj/2559' })]);
     expect(j.decisionTs).toBe(at(1));
     expect(j.proc).toBe('proj/2559');
   });
@@ -128,7 +142,7 @@ describe('joinTurns — switches', () => {
   it('marks a switch when the served model differs from the previous turn of the same session', () => {
     const out = joinTurns(
       [turn('s', 0, 'a1', 'p/x'), turn('s', 100, 'a2', 'p/y')],
-      [decision(1, 'a1'), decision(101, 'a2')],
+      [decision(1, 'a1'), decision(101, 'a2')]
     );
     expect(out.map((j) => j.switched)).toEqual([null, true]);
   });
@@ -136,7 +150,7 @@ describe('joinTurns — switches', () => {
   it('compares only within one session', () => {
     const out = joinTurns(
       [turn('s1', 0, 'a1', 'p/x'), turn('s2', 100, 'a2', 'p/y')],
-      [decision(1, 'a1'), decision(101, 'a2')],
+      [decision(1, 'a1'), decision(101, 'a2')]
     );
     expect(out.map((j) => j.switched)).toEqual([null, null]);
   });
@@ -144,7 +158,7 @@ describe('joinTurns — switches', () => {
   it('skips turns without a served model as predecessors', () => {
     const out = joinTurns(
       [turn('s', 0, 'a1', 'p/x'), turn('s', 50, 'a2', null), turn('s', 100, 'a3', 'p/x')],
-      [decision(1, 'a1'), decision(51, 'a2'), decision(101, 'a3')],
+      [decision(1, 'a1'), decision(51, 'a2'), decision(101, 'a3')]
     );
     expect(out[1].switched).toBeNull();
     expect(out[2].switched).toBe(false);
@@ -153,7 +167,7 @@ describe('joinTurns — switches', () => {
   it('still counts a switch for a turn whose decision is ambiguous', () => {
     const out = joinTurns(
       [turn('s', 0, 'a1', 'p/x'), turn('s', 100, 'a2', 'p/y')],
-      [decision(1, 'a1'), decision(101, 'a2'), decision(103, 'a2')],
+      [decision(1, 'a1'), decision(101, 'a2'), decision(103, 'a2')]
     );
     expect(out[1].status).toBe('ambiguous');
     expect(out[1].switched).toBe(true);
@@ -162,8 +176,16 @@ describe('joinTurns — switches', () => {
 
 describe('joinTurns — determinism', () => {
   it('gives the same result whatever the input order of turns and decisions', () => {
-    const turns = [turn('s', 0, 'a1', 'p/x'), turn('s', 100, 'a2', 'p/y'), turn('t', 5, 'a1', 'p/z')];
-    const decs = [decision(1, 'a1'), decision(101, 'a2'), decision(6, 'a1', { category: 'simple' })];
+    const turns = [
+      turn('s', 0, 'a1', 'p/x'),
+      turn('s', 100, 'a2', 'p/y'),
+      turn('t', 5, 'a1', 'p/z'),
+    ];
+    const decs = [
+      decision(1, 'a1'),
+      decision(101, 'a2'),
+      decision(6, 'a1', { category: 'simple' }),
+    ];
     const forward = joinTurns(turns, decs);
     const reversed = joinTurns([...turns].reverse(), [...decs].reverse());
     expect(reversed).toEqual(forward);
@@ -174,7 +196,7 @@ describe('summarizeJoin', () => {
   it('counts statuses and switches per category, without any prompt text', () => {
     const joined = joinTurns(
       [turn('s', 0, 'a1', 'p/x'), turn('s', 100, 'a2', 'p/y'), turn('s', 200, 'a3', 'p/y')],
-      [decision(1, 'a1', { category: 'continue' }), decision(101, 'a2', { category: 'continue' })],
+      [decision(1, 'a1', { category: 'continue' }), decision(101, 'a2', { category: 'continue' })]
     );
     const s = summarizeJoin(joined);
     expect(s.turns).toBe(3);
@@ -198,7 +220,11 @@ describe('readSessionTurns / readDecisions — file parsing', () => {
     logPath = join(dir, 'decisions.jsonl');
 
     const msg = (role: string, content: unknown, ms: number, extra: Record<string, unknown> = {}) =>
-      JSON.stringify({ type: 'message', timestamp: new Date(ms).toISOString(), message: { role, content, timestamp: ms, ...extra } });
+      JSON.stringify({
+        type: 'message',
+        timestamp: new Date(ms).toISOString(),
+        message: { role, content, timestamp: ms, ...extra },
+      });
 
     writeFileSync(
       join(sessDir, 'a.jsonl'),
@@ -208,15 +234,25 @@ describe('readSessionTurns / readDecisions — file parsing', () => {
         msg('assistant', [{ type: 'text', text: 'ok' }], at(1), { provider: 'p', model: 'x' }),
         msg('user', 'do the next thing', at(100)),
         msg('assistant', [], at(101), { provider: 'p', model: 'y' }),
-      ].join('\n') + '\n',
+      ].join('\n') + '\n'
     );
 
     writeFileSync(
       logPath,
       [
-        JSON.stringify({ ts: new Date(at(1)).toISOString(), stage: 'laya', input: { sha: promptSha('continue') }, final: { category: 'continue', group: 'tactical' } }),
-        JSON.stringify({ ts: new Date(at(101)).toISOString(), stage: 'laya', input: { sha: promptSha('do the next thing') }, final: { category: 'standard', group: 'operational' } }),
-      ].join('\n') + '\n',
+        JSON.stringify({
+          ts: new Date(at(1)).toISOString(),
+          stage: 'laya',
+          input: { sha: promptSha('continue') },
+          final: { category: 'continue', group: 'tactical' },
+        }),
+        JSON.stringify({
+          ts: new Date(at(101)).toISOString(),
+          stage: 'laya',
+          input: { sha: promptSha('do the next thing') },
+          final: { category: 'standard', group: 'operational' },
+        }),
+      ].join('\n') + '\n'
     );
   });
 
@@ -258,7 +294,11 @@ describe('readSessionTurns — hashes the text the router classified', () => {
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'turn-join-norm-'));
     const msg = (role: string, content: unknown, ms: number, extra: Record<string, unknown> = {}) =>
-      JSON.stringify({ type: 'message', timestamp: new Date(ms).toISOString(), message: { role, content, timestamp: ms, ...extra } });
+      JSON.stringify({
+        type: 'message',
+        timestamp: new Date(ms).toISOString(),
+        message: { role, content, timestamp: ms, ...extra },
+      });
     writeFileSync(
       join(dir, 'a.jsonl'),
       [
@@ -266,9 +306,17 @@ describe('readSessionTurns — hashes the text the router classified', () => {
         msg('assistant', [], at(1), { provider: 'p', model: 'a' }),
         msg('user', '  padded request \n\n', at(10)),
         msg('assistant', [], at(11), { provider: 'p', model: 'b' }),
-        msg('user', [{ type: 'text', text: 'part one ' }, { type: 'image', data: 'x' }, { type: 'text', text: 'part two' }], at(20)),
+        msg(
+          'user',
+          [
+            { type: 'text', text: 'part one ' },
+            { type: 'image', data: 'x' },
+            { type: 'text', text: 'part two' },
+          ],
+          at(20)
+        ),
         msg('assistant', [], at(21), { provider: 'p', model: 'c' }),
-      ].join('\n') + '\n',
+      ].join('\n') + '\n'
     );
   });
 

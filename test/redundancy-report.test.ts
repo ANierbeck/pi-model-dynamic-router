@@ -8,7 +8,12 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { analyze, collectInput, formatRedundancyReport, type AnalyzeInput } from '../scripts/redundancy-report.ts';
+import {
+  analyze,
+  collectInput,
+  formatRedundancyReport,
+  type AnalyzeInput,
+} from '../scripts/redundancy-report.ts';
 
 const empty = (): AnalyzeInput => ({
   code: [],
@@ -30,7 +35,9 @@ describe('duplicate function names', () => {
         { path: 'scripts/c.ts', text: 'const pct = (n: number) => n;\n' },
       ],
     });
-    expect(r.duplicateFunctions).toEqual([{ name: 'pct', paths: ['scripts/a.ts', 'scripts/b.ts', 'scripts/c.ts'] }]);
+    expect(r.duplicateFunctions).toEqual([
+      { name: 'pct', paths: ['scripts/a.ts', 'scripts/b.ts', 'scripts/c.ts'] },
+    ]);
   });
 
   it('does not report a name that lives in one file, or the entry-point name main', () => {
@@ -71,21 +78,22 @@ describe('collectInput covers every shipped path (Sourcery 2026-11-03)', () => {
     }
   });
 
-
   it('loads a shipped Markdown file from a directory outside root, docs/ and skills/', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redundancy-shipped-'));
     try {
       execFileSync('git', ['init', '-q'], { cwd: dir });
       fs.writeFileSync(
         path.join(dir, 'package.json'),
-        JSON.stringify({ files: ['PI.md', 'guides/'] }),
+        JSON.stringify({ files: ['PI.md', 'guides/'] })
       );
       fs.writeFileSync(path.join(dir, 'PI.md'), '# PI\n');
       fs.mkdirSync(path.join(dir, 'guides'));
       fs.writeFileSync(path.join(dir, 'guides', 'groups.md'), 'the tactical group\n');
 
       const report = analyze(collectInput(dir));
-      expect(report.staleNames.map((f) => `${f.path}:${f.name}`)).toEqual(['guides/groups.md:tactical']);
+      expect(report.staleNames.map((f) => `${f.path}:${f.name}`)).toEqual([
+        'guides/groups.md:tactical',
+      ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -123,12 +131,18 @@ describe('report robustness (Sourcery round 2026-11-03)', () => {
     expect(r.duplicateFunctions.map((d) => d.name).sort()).toEqual(['arg', 'fmtTime', 'pct']);
   });
 
-
   it('counts a repeated block whose six lines are short in total', () => {
     // The 80-char guard exists to skip brace-and-one-word windows, but it must
     // not hide a real repeated set-up: three files sharing the same six short
     // lines is redundancy the ratchet has to see.
-    const short = ['const a = 1;', 'const b = 2;', 'const c = 3;', 'const d = 4;', 'const e = 5;', 'const f = 6;'].join('\n');
+    const short = [
+      'const a = 1;',
+      'const b = 2;',
+      'const c = 3;',
+      'const d = 4;',
+      'const e = 5;',
+      'const f = 6;',
+    ].join('\n');
     const r = analyze({
       ...empty(),
       tests: ['x', 'y', 'z'].map((n) => ({ path: `test/${n}.test.ts`, text: `${short}\n` })),
@@ -159,7 +173,10 @@ describe('report robustness (Sourcery round 2026-11-03)', () => {
 
 describe('repeated test blocks', () => {
   const block = (n: number) =>
-    Array.from({ length: n }, (_, i) => `  const configuredValue${i} = buildSomethingLong(argument${i}, other${i});`).join('\n');
+    Array.from(
+      { length: n },
+      (_, i) => `  const configuredValue${i} = buildSomethingLong(argument${i}, other${i});`
+    ).join('\n');
 
   it('counts a 6-line block that appears in at least three test files', () => {
     const body = `describe('x', () => {\n${block(6)}\n});\n`;
@@ -204,10 +221,10 @@ describe('repeated test blocks', () => {
     // printWidth 100) must be recognised through their continuation lines.
     const header = [
       "import { describe, it, expect, vi } from 'vitest';",
-      "import {",
-      "  drainStream,",
-      "  makeExtensionContext,",
-      "  someVeryLongHelperNameThatPushesTheImportPast100Chars,",
+      'import {',
+      '  drainStream,',
+      '  makeExtensionContext,',
+      '  someVeryLongHelperNameThatPushesTheImportPast100Chars,',
       "} from './helpers/extension-harness.ts';",
     ].join('\n');
     // Only the header is shared; the bodies differ, as in real test files.
@@ -222,7 +239,8 @@ describe('repeated test blocks', () => {
   });
 
   it('still counts a real repeated set-up that follows an import header', () => {
-    const header = "import { describe, it, expect } from 'vitest';\nimport fs from 'node:fs';\nimport os from 'node:os';\n";
+    const header =
+      "import { describe, it, expect } from 'vitest';\nimport fs from 'node:fs';\nimport os from 'node:os';\n";
     const setup = [
       'const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "router-rlwait-"));',
       'fs.mkdirSync(path.join(tmpDir, ".pi"), { recursive: true });',
@@ -280,7 +298,11 @@ describe('stale group names in shipped docs', () => {
   });
 
   it('is not a finding in a doc that does not ship', () => {
-    const r = analyze({ ...empty(), docs: [{ path: 'docs/architecture.md', text: old }], shipped: ['PI.md'] });
+    const r = analyze({
+      ...empty(),
+      docs: [{ path: 'docs/architecture.md', text: old }],
+      shipped: ['PI.md'],
+    });
     expect(r.staleNames).toEqual([]);
   });
 
@@ -326,7 +348,10 @@ describe('stale group names in shipped docs', () => {
     const r = analyze({
       ...empty(),
       docs: [
-        { path: 'README.md', text: '  agent: "scout",  // the scout group ranks local models first\n' },
+        {
+          path: 'README.md',
+          text: '  agent: "scout",  // the scout group ranks local models first\n',
+        },
         { path: 'PI.md', text: 'the scout group ranks local models first\n' },
       ],
       shipped: ['README.md', 'PI.md'],
@@ -389,7 +414,41 @@ describe('plans without a status line', () => {
     // The field belongs at the top (§11). A plan that merely mentions
     // "Status: ..." in a later paragraph has no Status field, and the ratchet
     // must still count it — otherwise the gate can be satisfied by prose.
-    const body = ['# Plan', '', '## Problem', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'Status: mentioned in passing', ''].join('\n');
+    const body = [
+      '# Plan',
+      '',
+      '## Problem',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'text',
+      'Status: mentioned in passing',
+      '',
+    ].join('\n');
     const r = analyze({ ...empty(), plans: [{ path: 'docs/plans/x.md', text: body }] });
     expect(r.plansWithoutStatus).toEqual(['docs/plans/x.md']);
   });
@@ -400,7 +459,10 @@ describe('plans without a status line', () => {
       plans: [
         { path: 'docs/plans/a.md', text: '# A\n\n**Status:** done\n' },
         { path: 'docs/plans/b.md', text: '# B\n\nStatus: proposed\n' },
-        { path: 'docs/plans/c.md', text: '# C\n\nno status here, but the word status appears mid-line\n' },
+        {
+          path: 'docs/plans/c.md',
+          text: '# C\n\nno status here, but the word status appears mid-line\n',
+        },
       ],
     });
     expect(r.plansWithoutStatus).toEqual(['docs/plans/c.md']);

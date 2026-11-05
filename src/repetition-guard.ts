@@ -51,7 +51,10 @@ export function detectDegenerateRepetition(fullText: string): RepetitionResult {
   if (fullText.length < REPETITION_MIN_TOTAL_LEN) return { detected: false };
 
   const tail = fullText.length > REPETITION_WINDOW ? fullText.slice(-REPETITION_WINDOW) : fullText;
-  const maxUnit = Math.min(REPETITION_MAX_UNIT_LEN, Math.floor(tail.length / REPETITION_MIN_REPEATS));
+  const maxUnit = Math.min(
+    REPETITION_MAX_UNIT_LEN,
+    Math.floor(tail.length / REPETITION_MIN_REPEATS)
+  );
 
   for (let unitLen = REPETITION_MIN_UNIT_LEN; unitLen <= maxUnit; unitLen++) {
     const unit = tail.slice(tail.length - unitLen);

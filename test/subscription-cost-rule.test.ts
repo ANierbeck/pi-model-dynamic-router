@@ -34,7 +34,12 @@ function makeCfg(): Config {
     providers: { 'fake-sub': { billing: 'subscription' }, paygco: { billing: 'pay_per_token' } },
     // Deliberately NO model_metrics sentinels (the point of the rule).
     model_metrics: {},
-    gdpval_builtin: { 'quill-max-2': 1890, 'quill-mini-2': 1895, 'quill-old-1': 1000, 'mid-1': 1880 },
+    gdpval_builtin: {
+      'quill-max-2': 1890,
+      'quill-mini-2': 1895,
+      'quill-old-1': 1000,
+      'mid-1': 1880,
+    },
   } as any;
 }
 
@@ -48,8 +53,10 @@ const PRICING: Cache['openrouter_pricing'] = {
 // The subscription bridge registers every model at cost 0; paygco is priced.
 const REGISTRY = {
   find: (provider: string, id: string) => {
-    if (provider === 'fake-sub') return { provider, id, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
-    if (provider === 'paygco' && id === 'mid-1') return { provider, id, cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 } };
+    if (provider === 'fake-sub')
+      return { provider, id, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+    if (provider === 'paygco' && id === 'mid-1')
+      return { provider, id, cost: { input: 0.3, output: 1.2, cacheRead: 0, cacheWrite: 0 } };
     return undefined;
   },
 };
@@ -60,7 +67,10 @@ let cache: Cache;
 beforeEach(() => {
   cfg = makeCfg();
   cache = {
-    available_models: REFS.map((r) => ({ provider: r.split('/')[0], id: r.slice(r.indexOf('/') + 1) })),
+    available_models: REFS.map((r) => ({
+      provider: r.split('/')[0],
+      id: r.slice(r.indexOf('/') + 1),
+    })),
     openrouter_pricing: PRICING,
   } as any;
   metricsModule.setConfig(cfg);

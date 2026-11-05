@@ -18,9 +18,14 @@ vi.mock('../src/logger.ts', async (orig) => {
   return { ...actual, warnLog: vi.fn() };
 });
 import * as loggerModule from '../src/logger.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 const mockWarnLog = vi.mocked(loggerModule.warnLog);
 
-const SHIPPED = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'router-config.json');
+const SHIPPED = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  '..',
+  'router-config.json'
+);
 
 let tmpDir: string;
 let extDir: string;
@@ -45,7 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+  if (tmpDir) rmTmpDir(tmpDir);
 });
 
 describe('a layer that still defines a removed group', () => {
@@ -68,9 +73,15 @@ describe('a layer that still defines a removed group', () => {
       expect(shipped.model_groups[oldName], oldName).toBeUndefined();
       expect(shipped.model_groups[successor], `${oldName} → ${successor}`).toBeDefined();
     }
-    expect(Object.keys(REMOVED_GROUPS).sort()).toEqual(
-      ['complex', 'fallback', 'operational', 'scout', 'strategic', 'tactical', 'trivial'],
-    );
+    expect(Object.keys(REMOVED_GROUPS).sort()).toEqual([
+      'complex',
+      'fallback',
+      'operational',
+      'scout',
+      'strategic',
+      'tactical',
+      'trivial',
+    ]);
   });
 
   it('warns once per removed group, for several at once', () => {
@@ -95,7 +106,9 @@ describe('prototype keys are not group names', () => {
   });
 
   it('a fallback_groups entry named like a prototype key stays in the chain', () => {
-    const { config } = loadWithProjectLayer({ model_groups: { standard: { fallback_groups: ['toString', 'simple'] } } });
+    const { config } = loadWithProjectLayer({
+      model_groups: { standard: { fallback_groups: ['toString', 'simple'] } },
+    });
     expect(config.model_groups.standard.fallback_groups).toEqual(['toString', 'simple']);
     expect(warnings().some((m) => m.includes('removed group'))).toBe(false);
   });
@@ -103,7 +116,9 @@ describe('prototype keys are not group names', () => {
 
 describe('references to a removed group', () => {
   it('a fallback_groups entry naming a removed group is warned and dropped from the chain', () => {
-    const { config } = loadWithProjectLayer({ model_groups: { standard: { fallback_groups: ['operational', 'simple'] } } });
+    const { config } = loadWithProjectLayer({
+      model_groups: { standard: { fallback_groups: ['operational', 'simple'] } },
+    });
     expect(config.model_groups.standard.fallback_groups).toEqual(['simple']);
     const w = warnings().filter((m) => m.includes('operational'));
     expect(w).toHaveLength(1);
@@ -111,7 +126,9 @@ describe('references to a removed group', () => {
   });
 
   it('delegation.expensive_groups naming a removed group is warned and dropped', () => {
-    const { config } = loadWithProjectLayer({ delegation: { expensive_groups: ['strategic', 'planning'] } });
+    const { config } = loadWithProjectLayer({
+      delegation: { expensive_groups: ['strategic', 'planning'] },
+    });
     expect(config.delegation?.expensive_groups).toEqual(['planning']);
     expect(warnings().filter((m) => m.includes('strategic'))).toHaveLength(1);
   });
@@ -134,7 +151,9 @@ describe('only override layers are checked', () => {
 
 describe('a list that held only removed names', () => {
   it('expensive_groups falls back to the defaults — an emptied list would silently disable the read block', () => {
-    const { config } = loadWithProjectLayer({ delegation: { expensive_groups: ['strategic', 'tactical'] } });
+    const { config } = loadWithProjectLayer({
+      delegation: { expensive_groups: ['strategic', 'tactical'] },
+    });
     expect(delegationSettings(config).expensive_groups).toEqual(['planning', 'code_complex']);
     expect(warnings().filter((m) => m.includes('removed group'))).toHaveLength(2);
   });
@@ -148,7 +167,10 @@ describe('a clean layer', () => {
 
   it('a layer using only the new names produces none either', () => {
     loadWithProjectLayer({
-      model_groups: { code_complex: { max_gdpval: 1900 }, simple: { fallback_groups: ['standard'] } },
+      model_groups: {
+        code_complex: { max_gdpval: 1900 },
+        simple: { fallback_groups: ['standard'] },
+      },
       delegation: { expensive_groups: ['planning', 'code_complex'] },
     });
     expect(warnings().filter((m) => m.includes('removed group'))).toEqual([]);

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { getGroupForCategory } from '../src/content-classifier.ts';
-import { classifyPrompt } from "../src/content-classifier";
+import { classifyPrompt } from '../src/content-classifier';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -15,7 +15,6 @@ describe('classifier-mapping-hints', () => {
   // Tests for CATEGORY_TO_GROUP / getGroupForCategory (category → router group).
   // detectHintDirectly lives in hint-classification / detect-hint-synonyms,
   // classifyStatically in classifier.test.ts.
-
 
   describe('CATEGORY_TO_GROUP / getGroupForCategory', () => {
     // NOTE: the CATEGORY_TO_GROUP table pin that lived here was byte-identical to the one in test/five-group-layout.test.ts (hygiene Phase 4 Step 4, 2026-11-03); kept there only.
@@ -37,7 +36,6 @@ describe('classifier-mapping-hints', () => {
   });
 });
 
-
 describe('classifier.integration', () => {
   // test/classifier.integration.test.ts
   // Integration tests for content-sensitive classification with real Ollama calls.
@@ -45,31 +43,41 @@ describe('classifier.integration', () => {
   // These tests require a running Ollama with gemma2:2b!
   // Enable with: TEST_INTEGRATION=true npm test test/classifier.integration.test.ts
 
-
   // primary model (mistral-nemo:latest) up to 45s cold-start + fallback (gemma2:2b) 10s → allow 120s
   const OLLAMA_TIMEOUT = 120_000;
 
-  describe.skipIf(!process.env.TEST_INTEGRATION)("classifyPrompt (Integration)", () => {
-    it("classifies simple prompts with Ollama", async () => {
-      const result = await classifyPrompt("Replace 'x' with 'y'");
-      console.log("Simple prompt classified as:", result);
-      expect(["code_simple", "continue"]).toContain(result.category);
-    }, OLLAMA_TIMEOUT);
+  describe.skipIf(!process.env.TEST_INTEGRATION)('classifyPrompt (Integration)', () => {
+    it(
+      'classifies simple prompts with Ollama',
+      async () => {
+        const result = await classifyPrompt("Replace 'x' with 'y'");
+        console.log('Simple prompt classified as:', result);
+        expect(['code_simple', 'continue']).toContain(result.category);
+      },
+      OLLAMA_TIMEOUT
+    );
 
-    it("classifies complex prompts with Ollama", async () => {
-      const result = await classifyPrompt("Debug this recursive function");
-      console.log("Complex prompt classified as:", result);
-      expect(["code_complex", "code_simple", "continue"]).toContain(result.category);
-    }, OLLAMA_TIMEOUT);
+    it(
+      'classifies complex prompts with Ollama',
+      async () => {
+        const result = await classifyPrompt('Debug this recursive function');
+        console.log('Complex prompt classified as:', result);
+        expect(['code_complex', 'code_simple', 'continue']).toContain(result.category);
+      },
+      OLLAMA_TIMEOUT
+    );
 
-    it("classifies design prompts with Ollama", async () => {
-      const result = await classifyPrompt("Design an event-sourcing architecture");
-      console.log("Design prompt classified as:", result);
-      expect(["design", "continue"]).toContain(result.category);
-    }, OLLAMA_TIMEOUT);
+    it(
+      'classifies design prompts with Ollama',
+      async () => {
+        const result = await classifyPrompt('Design an event-sourcing architecture');
+        console.log('Design prompt classified as:', result);
+        expect(['design', 'continue']).toContain(result.category);
+      },
+      OLLAMA_TIMEOUT
+    );
   });
 });
-
 
 describe('config-classifier-model', () => {
   // test/config-classifier-model.test.ts

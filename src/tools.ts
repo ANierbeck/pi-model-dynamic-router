@@ -32,7 +32,7 @@ interface ToolDeps {
   readonly getM: (ref: string) => Metrics;
   readonly load: () => void;
   readonly pi: ExtensionAPI;
-  readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
+  readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly router: Router;
 }
 
@@ -106,8 +106,8 @@ export function createTools(rt: ToolDeps) {
         const model = ctx.modelRegistry.find(provider, modelId);
         if (model && (await rt.pi.setModel(model))) {
           rt.activeGroup = name;
-          rt.router.setActiveGroup(name);  // Set active group in router for display
-          rt.router.setCurModel(ref);      // Set current model in router for status line
+          rt.router.setActiveGroup(name); // Set active group in router for display
+          rt.router.setCurModel(ref); // Set current model in router for status line
           const m = rt.getM(ref);
           return {
             content: [
@@ -135,7 +135,13 @@ export function createTools(rt: ToolDeps) {
           'Model group name: planning, design, code_complex, standard, simple, or any custom group',
       }),
     }) as any,
-    execute(_id: string, params: { group: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
+    execute(
+      _id: string,
+      params: { group: string },
+      _signal: AbortSignal | undefined,
+      _onUpdate: unknown,
+      _ctx: ExtensionContext
+    ) {
       rt.load();
       const name = params.group.toLowerCase(),
         res = rt.resolve(name);
@@ -174,7 +180,13 @@ export function createTools(rt: ToolDeps) {
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
     }) as any,
-    execute(_id: string, p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
+    execute(
+      _id: string,
+      p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number },
+      _signal: AbortSignal | undefined,
+      _onUpdate: unknown,
+      _ctx: ExtensionContext
+    ) {
       rt.load();
       const e = rt.cfg.model_metrics[p.model_ref] ?? {};
       if (p.gdpval !== undefined) e.gdpval = p.gdpval;

@@ -1,3 +1,4 @@
+import { routerStatePaths } from './extension-harness.ts';
 // No-op scan-cache for driveStream tests.
 //
 // session_start fires scan() WITHOUT awaiting it. When the scan cache is not
@@ -28,7 +29,10 @@ let originalFetch: typeof fetch | undefined;
  * responsible for undoing both (removeNoOpScanCache) in afterEach.
  * `opts.localModels` seeds Ollama entries for classifier-path tests.
  */
-export function writeNoOpScanCache(scanCachePath: string, opts: { localModels?: string[] } = {}): void {
+export function writeNoOpScanCache(
+  scanCachePath: string,
+  opts: { localModels?: string[] } = {}
+): void {
   const backupPath = `${scanCachePath}${NOOP_CACHE_BACKUP_SUFFIX}`;
   if (fs.existsSync(scanCachePath)) fs.renameSync(scanCachePath, backupPath);
 
@@ -50,7 +54,12 @@ export function writeNoOpScanCache(scanCachePath: string, opts: { localModels?: 
         { id: 'no-op-placeholder', provider: 'test', cost_per_m: 0 },
         // Tests that drive the mocked-Ollama classifier path need a local
         // model in the registry: the chain is derived, not defaulted (ADR-0025).
-        ...(opts.localModels ?? []).map((id) => ({ id, provider: 'ollama', cost_per_m: 0, capabilities: { completion: true } })),
+        ...(opts.localModels ?? []).map((id) => ({
+          id,
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { completion: true },
+        })),
       ],
       // No router-config.dynamic.json belongs to this fixture: without this,
       // the missing file would trigger a regeneration mid-test.
@@ -161,4 +170,35 @@ export function removeNoOpScanCache(scanCachePath: string): void {
     globalThis.fetch = originalFetch;
     originalFetch = undefined;
   }
+}
+
+/**
+ * Write a scan-cache fixture with the standard hermetic fields
+ * (lastScanTimestamp now, gdpval_scraped, models_cached) plus the caller's
+ * overrides — the shape ~12 files spelled out by hand with varying extras.
+ * The no-op backup dance is NOT applied (that is writeNoOpScanCache's job).
+ */
+export function writeScanCacheFixture(
+  scanCachePath: string,
+  overrides: Record<string, unknown> = {}
+): void {
+  fs.mkdirSync(path.dirname(scanCachePath), { recursive: true });
+  fs.writeFileSync(
+    scanCachePath,
+    JSON.stringify({
+      lastScanTimestamp: Date.now(),
+      gdpval_scraped: true,
+      models_cached: new Date().toISOString(),
+      ...overrides,
+    })
+  );
+}
+
+/**
+ * removeNoOpScanCache for the standard scanCachePath from routerStatePaths()
+ * — the one-liner ~20 teardowns spell out. Takes no argument.
+ */
+export function removeNoOpScanCacheDefault(): void {
+  const { scanCachePath } = routerStatePaths();
+  removeNoOpScanCache(scanCachePath);
 }

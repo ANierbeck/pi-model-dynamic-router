@@ -10,7 +10,8 @@ import { formatRateLimitBodyForLog } from '../src/detection.ts';
 
 describe('formatRateLimitBodyForLog', () => {
   it('keeps the provider message, flattened to one line', () => {
-    const body = '402: {\n  "message": "Rate limit exceeded: free-models-per-day. Add 10 credits",\n  "code": 429\n}';
+    const body =
+      '402: {\n  "message": "Rate limit exceeded: free-models-per-day. Add 10 credits",\n  "code": 429\n}';
     const out = formatRateLimitBodyForLog(body);
     expect(out).not.toContain('\n');
     expect(out).toContain('free-models-per-day');
@@ -27,7 +28,7 @@ describe('formatRateLimitBodyForLog', () => {
     // sk- rule alone satisfied the assertions and the Bearer rule was
     // never verified (vacuous). The bearer token now has a non-sk prefix.
     const out = formatRateLimitBodyForLog(
-      'Authorization: Bearer ghp_16C7eXfUllClarity947abcde failed, key sk-proj-ZZZZ9999xxxx',
+      'Authorization: Bearer ghp_16C7eXfUllClarity947abcde failed, key sk-proj-ZZZZ9999xxxx'
     );
     expect(out).not.toContain('ghp_16C7eXfUllClarity947abcde');
     expect(out).not.toContain('ZZZZ9999xxxx');
@@ -36,7 +37,7 @@ describe('formatRateLimitBodyForLog', () => {
 
   it('redacts credential values echoed in key/value pairs (Sourcery PR #74)', () => {
     const out = formatRateLimitBodyForLog(
-      '{"error":{"message":"Usage limit","api_key":"pk_live_9f8e7d6c5b4a3210","auth_token":"tok_Ax9yB8z7C6w5"}}',
+      '{"error":{"message":"Usage limit","api_key":"pk_live_9f8e7d6c5b4a3210","auth_token":"tok_Ax9yB8z7C6w5"}}'
     );
     expect(out).not.toContain('pk_live_9f8e7d6c5b4a3210');
     expect(out).not.toContain('tok_Ax9yB8z7C6w5');
@@ -51,7 +52,7 @@ describe('formatRateLimitBodyForLog', () => {
 
   it('keeps ordinary words that merely contain key/token (no false positives)', () => {
     const out = formatRateLimitBodyForLog(
-      '{"error":{"type":"upstream_error","note":"tokens per minute: keyboard tokenizers"}}',
+      '{"error":{"type":"upstream_error","note":"tokens per minute: keyboard tokenizers"}}'
     );
     expect(out).toContain('tokens per minute');
     expect(out).toContain('keyboard');

@@ -5,6 +5,8 @@
 # 2. The lint gate (docs/plans/2026-11-04-lint-gate.md), when the pushed
 #    repository has one: it skips itself when the working tree is not what is
 #    being pushed, so CI stays the authority on the pushed commit.
+# 3. The format gate (docs/plans/2026-11-05-prettier-formatting.md, owner
+#    decision 3), same skip semantics as the lint gate.
 # Wired by `npm prepare` (git config core.hooksPath .githooks). git runs the
 # hook from the repository's top level and hands it the ref list on stdin;
 # both gates need it, so it is read once.
@@ -18,4 +20,9 @@ if [ -f scripts/lint-gate.ts ]; then
   printf '%s\n' "$refs" | node scripts/lint-gate.ts --pre-push || exit $?
 else
   echo "pre-push: no lint gate in this checkout (scripts/lint-gate.ts), lint skipped" >&2
+fi
+if [ -f scripts/format-gate.ts ]; then
+  printf '%s\n' "$refs" | node scripts/format-gate.ts --pre-push || exit $?
+else
+  echo "pre-push: no format gate in this checkout (scripts/format-gate.ts), format check skipped" >&2
 fi

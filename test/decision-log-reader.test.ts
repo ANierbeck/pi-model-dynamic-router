@@ -12,7 +12,11 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readDecisionLog, readDecisionLogRecords, NON_ROUTING_STAGES } from '../scripts/lib/decision-log.ts';
+import {
+  readDecisionLog,
+  readDecisionLogRecords,
+  NON_ROUTING_STAGES,
+} from '../scripts/lib/decision-log.ts';
 
 function withLog(lines: string[], fn: (path: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'decision-log-'));
@@ -95,7 +99,12 @@ describe('readDecisionLog', () => {
     // sort and window downstream, so the row reader drops it — while the raw
     // reader keeps it (classifier-replay and laya-pair-stats never checked ts
     // and must not lose records).
-    const torn = JSON.stringify({ v: 1, ts: 'not-a-date', stage: 'llm-cloud', final: { category: 'standard', group: 'standard' } });
+    const torn = JSON.stringify({
+      v: 1,
+      ts: 'not-a-date',
+      stage: 'llm-cloud',
+      final: { category: 'standard', group: 'standard' },
+    });
     withLog([rec(), torn], (path) => {
       expect(readDecisionLog(path, {})).toHaveLength(1);
       expect(readDecisionLogRecords(path, {})).toHaveLength(2);

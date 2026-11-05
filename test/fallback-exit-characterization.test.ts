@@ -22,7 +22,13 @@ import { StreamOrchestrator } from '../src/stream-orchestrator.ts';
 // the real log files.
 vi.mock('../src/logger.ts', async (orig) => {
   const actual = await orig<typeof import('../src/logger.ts')>();
-  return { ...actual, appendRawLog: vi.fn(), routerLog: vi.fn(), warnLog: vi.fn(), errorLog: vi.fn() };
+  return {
+    ...actual,
+    appendRawLog: vi.fn(),
+    routerLog: vi.fn(),
+    warnLog: vi.fn(),
+    errorLog: vi.fn(),
+  };
 });
 
 // ── Orchestrator harness ──────────────────────────────────────────────────
@@ -69,7 +75,8 @@ function harness(opts: {
     detectHintDirectly: () => null,
     isCompactionTurn: () => false,
     isLimited: () => false,
-    getGroupForCategory: (category: string) => (category === 'standard' ? 'standard' : 'code_complex'),
+    getGroupForCategory: (category: string) =>
+      category === 'standard' ? 'standard' : 'code_complex',
     classifyPrompt: opts.classify ?? (async () => ({ category: 'standard' })),
   };
 
@@ -80,7 +87,13 @@ function harness(opts: {
   const messages = opts.toolFollowUp
     ? [
         { role: 'user', content: 'run it', timestamp: 1 },
-        { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }], timestamp: 2 },
+        {
+          role: 'toolResult',
+          toolCallId: 't1',
+          toolName: 'bash',
+          content: [{ type: 'text', text: 'ok' }],
+          timestamp: 2,
+        },
       ]
     : [{ role: 'user', content: 'please do the thing', timestamp: 1 }];
 
@@ -88,7 +101,7 @@ function harness(opts: {
     proxy = orch.groupStream(
       { provider: 'router', id: 'dynamic', api: 'openai-completions' } as any,
       { messages } as any,
-      undefined,
+      undefined
     );
     return proxy;
   };
@@ -98,7 +111,11 @@ function harness(opts: {
 /** driveStream is called as (proxy, candidates, context, options, label, group, …). */
 const driven = (drive: Harness['drive']) => {
   const a = drive.mock.calls[0] as unknown as any[];
-  return { candidates: a[1] as string[], label: a[4] as string | undefined, group: a[5] as string | undefined };
+  return {
+    candidates: a[1] as string[],
+    label: a[4] as string | undefined,
+    group: a[5] as string | undefined,
+  };
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -166,7 +183,10 @@ describe("exit: classification fails → group 'simple' (D4)", () => {
   it('with `simple` unresolvable it takes the FIRST non-dynamic group in config order', async () => {
     const h = harness({
       groups: ['alpha', 'beta', 'simple'],
-      resolvable: { alpha: { candidates: ['a/1'], selected: 'a/1' }, beta: { candidates: ['b/1'], selected: 'b/1' } },
+      resolvable: {
+        alpha: { candidates: ['a/1'], selected: 'a/1' },
+        beta: { candidates: ['b/1'], selected: 'b/1' },
+      },
       classify: async () => {
         throw new Error('classifier down');
       },
@@ -250,9 +270,11 @@ describe("exit: tool follow-up step → pool 'simple' behind the last model (D4)
 // ── The shipped failover chains ───────────────────────────────────────────
 
 describe('shipped router-config.json failover chains', () => {
-  const shipped = JSON.parse(fs.readFileSync(new URL('../router-config.json', import.meta.url), 'utf8'));
+  const shipped = JSON.parse(
+    fs.readFileSync(new URL('../router-config.json', import.meta.url), 'utf8')
+  );
   const chains: Record<string, string[] | undefined> = Object.fromEntries(
-    Object.entries<any>(shipped.model_groups).map(([name, g]) => [name, g.fallback_groups]),
+    Object.entries<any>(shipped.model_groups).map(([name, g]) => [name, g.fallback_groups])
   );
 
   it('pins every group and its chain, exactly', () => {
@@ -273,9 +295,14 @@ describe('shipped router-config.json failover chains', () => {
       .filter(([, c]) => c && c[c.length - 1] === 'simple')
       .map(([name]) => name)
       .sort();
-    expect(endsInSimple).toEqual(
-      ['bulk_reader', 'code_complex', 'code_writer', 'design', 'planning', 'standard'],
-    );
+    expect(endsInSimple).toEqual([
+      'bulk_reader',
+      'code_complex',
+      'code_writer',
+      'design',
+      'planning',
+      'standard',
+    ]);
     expect(chains.simple).toEqual(['standard']);
     expect(chains.dynamic).toBeUndefined();
   });

@@ -9,13 +9,7 @@
 // paid_models_from exclusion can never disagree.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  billingTier,
-  isFreeModel,
-  isFreeModelRef,
-  setConfig,
-  setCache,
-} from '../src/metrics.js';
+import { billingTier, isFreeModel, isFreeModelRef, setConfig, setCache } from '../src/metrics.js';
 import { isExcluded } from '../src/exclude.js';
 import type { Config, Cache } from '../src/types.js';
 
@@ -28,10 +22,7 @@ describe('isFreeModelRef — pure helper (the single source)', () => {
   const providers: Config['providers'] = {
     openrouter: {
       billing: 'pay_per_token',
-      free_models: [
-        'openrouter/qwen/qwen3-4b:free',
-        'openrouter/openai/gpt-4o-mini:free',
-      ],
+      free_models: ['openrouter/qwen/qwen3-4b:free', 'openrouter/openai/gpt-4o-mini:free'],
     },
   };
   const available_models = [
@@ -95,9 +86,7 @@ describe('billingTier and isFreeModelRef agree (no divergence)', () => {
   it('a discovered cost_per_m===0 model is tier 0', () => {
     setConfig({ providers: {}, model_groups: {}, model_metrics: {} });
     setCache({
-      available_models: [
-        { id: 'free-by-cost', provider: 'openrouter', cost_per_m: 0 },
-      ],
+      available_models: [{ id: 'free-by-cost', provider: 'openrouter', cost_per_m: 0 }],
     });
     expect(billingTier('openrouter/free-by-cost')).toBe(0);
   });
@@ -105,9 +94,7 @@ describe('billingTier and isFreeModelRef agree (no divergence)', () => {
   it('a paid openrouter model is tier 3 (payg)', () => {
     setConfig({ providers: {}, model_groups: {}, model_metrics: {} });
     setCache({
-      available_models: [
-        { id: 'paid-model', provider: 'openrouter', cost_per_m: 5 },
-      ],
+      available_models: [{ id: 'paid-model', provider: 'openrouter', cost_per_m: 5 }],
     });
     expect(billingTier('openrouter/paid-model')).toBe(3);
   });
@@ -140,7 +127,13 @@ describe('exclude.ts paid_models_from uses the same free definition', () => {
       model_metrics: {},
     };
     const cache: Cache = { available_models: [] };
-    expect(isExcluded('openrouter/qwen/qwen3-4b:free', { rules: { paid_models_from: ['openrouter'] }, cfg, cache })).toBe(false);
+    expect(
+      isExcluded('openrouter/qwen/qwen3-4b:free', {
+        rules: { paid_models_from: ['openrouter'] },
+        cfg,
+        cache,
+      })
+    ).toBe(false);
   });
 
   it('excludes a paid model from a paid_models_from provider', () => {
@@ -150,10 +143,14 @@ describe('exclude.ts paid_models_from uses the same free definition', () => {
       model_metrics: {},
     };
     const cache: Cache = {
-      available_models: [
-        { id: 'paid-model', provider: 'openrouter', cost_per_m: 5 },
-      ],
+      available_models: [{ id: 'paid-model', provider: 'openrouter', cost_per_m: 5 }],
     };
-    expect(isExcluded('openrouter/paid-model', { rules: { paid_models_from: ['openrouter'] }, cfg, cache })).toBe(true);
+    expect(
+      isExcluded('openrouter/paid-model', {
+        rules: { paid_models_from: ['openrouter'] },
+        cfg,
+        cache,
+      })
+    ).toBe(true);
   });
 });

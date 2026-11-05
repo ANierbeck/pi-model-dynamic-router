@@ -70,11 +70,15 @@ beforeAll(() => {
 function permutations<T>(items: T[]): T[][] {
   if (items.length <= 1) return [items];
   return items.flatMap((item, i) =>
-    permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]),
+    permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest])
   );
 }
 
-function expectOrderForEveryPermutation(refs: string[], expected: string[], sort: (r: string[]) => string[]) {
+function expectOrderForEveryPermutation(
+  refs: string[],
+  expected: string[],
+  sort: (r: string[]) => string[]
+) {
   for (const perm of permutations(refs)) {
     expect(sort(perm), `input order ${perm.join(',')}`).toEqual(expected);
   }
@@ -87,7 +91,7 @@ describe('sortByMinCost — every input order', () => {
     expectOrderForEveryPermutation(
       ['ordx/pricey-strong', 'ordx/cheap-weak', 'ordx/mid', 'ordx/unk-weak', 'ordx/unk-strong'],
       ['ordx/cheap-weak', 'ordx/mid', 'ordx/pricey-strong', 'ordx/unk-strong', 'ordx/unk-weak'],
-      (r) => router().sortByMinCost(r),
+      (r) => router().sortByMinCost(r)
     );
   });
 
@@ -95,7 +99,7 @@ describe('sortByMinCost — every input order', () => {
     expectOrderForEveryPermutation(
       ['ordx/mid', 'ordx/tie-strong', 'ordx/cheap-weak'],
       ['ordx/cheap-weak', 'ordx/tie-strong', 'ordx/mid'],
-      (r) => router().sortByMinCost(r),
+      (r) => router().sortByMinCost(r)
     );
   });
 });
@@ -105,7 +109,7 @@ describe('sortByBillingPreference — ordering inside one billing tier', () => {
     expectOrderForEveryPermutation(
       ['ordx/pricey-strong', 'ordx/cheap-weak', 'ordx/mid', 'ordx/unk-weak', 'ordx/unk-strong'],
       ['ordx/cheap-weak', 'ordx/mid', 'ordx/pricey-strong', 'ordx/unk-strong', 'ordx/unk-weak'],
-      (r) => router().sortByBillingPreference(r),
+      (r) => router().sortByBillingPreference(r)
     );
   });
 
@@ -113,7 +117,7 @@ describe('sortByBillingPreference — ordering inside one billing tier', () => {
     expectOrderForEveryPermutation(
       ['ordx/mid', 'ordx/tie-strong'],
       ['ordx/tie-strong', 'ordx/mid'],
-      (r) => router().sortByBillingPreference(r),
+      (r) => router().sortByBillingPreference(r)
     );
   });
 });
@@ -123,7 +127,7 @@ describe('sortBy best — best_quality_window pool comparator', () => {
     expectOrderForEveryPermutation(
       ['winx/top', 'winx/cheap', 'winx/mid', 'winx/unk-strong', 'winx/unk-weak', 'winx/outside'],
       ['winx/cheap', 'winx/mid', 'winx/top', 'winx/unk-weak', 'winx/unk-strong', 'winx/outside'],
-      (r) => router().sortBy(r, 'best'),
+      (r) => router().sortBy(r, 'best')
     );
   });
 });
@@ -134,7 +138,10 @@ type Comparator = (a: string, b: string) => number;
 function lastSortComparator(run: () => void): Comparator {
   const realSort = Array.prototype.sort;
   let captured: Comparator | undefined;
-  const spy = vi.spyOn(Array.prototype, 'sort').mockImplementation(function (this: unknown[], cmp?: Comparator) {
+  const spy = vi.spyOn(Array.prototype, 'sort').mockImplementation(function (
+    this: unknown[],
+    cmp?: Comparator
+  ) {
     if (cmp) captured = cmp;
     return realSort.call(this, cmp);
   });
@@ -158,7 +165,13 @@ function expectComparatorAgrees(cmp: Comparator, expected: string[]) {
 }
 
 describe('comparator contract — every ordered pair, not just the sort output', () => {
-  const unitExpected = ['ordx/cheap-weak', 'ordx/mid', 'ordx/pricey-strong', 'ordx/unk-strong', 'ordx/unk-weak'];
+  const unitExpected = [
+    'ordx/cheap-weak',
+    'ordx/mid',
+    'ordx/pricey-strong',
+    'ordx/unk-strong',
+    'ordx/unk-weak',
+  ];
 
   it('sortByMinCost', () => {
     const cmp = lastSortComparator(() => router().sortByMinCost([...unitExpected]));
@@ -172,7 +185,9 @@ describe('comparator contract — every ordered pair, not just the sort output',
 
   it('best_quality_window pool', () => {
     const poolExpected = ['winx/cheap', 'winx/mid', 'winx/top', 'winx/unk-weak', 'winx/unk-strong'];
-    const cmp = lastSortComparator(() => router().sortBy([...poolExpected, 'winx/outside'], 'best'));
+    const cmp = lastSortComparator(() =>
+      router().sortBy([...poolExpected, 'winx/outside'], 'best')
+    );
     expectComparatorAgrees(cmp, poolExpected);
   });
 });

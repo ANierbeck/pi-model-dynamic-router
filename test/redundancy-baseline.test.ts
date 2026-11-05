@@ -25,11 +25,13 @@ const CEILING: Counts = {
   plansWithoutStatus: 23,
   plansMissingFromIndex: 0,
   duplicateFunctions: 0,
-  repeatedBlocks: 38,
+  repeatedBlocks: 30,
   ollamaMockFiles: 27,
 };
 
-const baseline = JSON.parse(readFileSync(resolve(root, 'scripts/redundancy-baseline.json'), 'utf8')) as {
+const baseline = JSON.parse(
+  readFileSync(resolve(root, 'scripts/redundancy-baseline.json'), 'utf8')
+) as {
   note: string;
   counts: Counts;
 };
@@ -50,9 +52,10 @@ describe('redundancy baseline', () => {
   });
 
   it.each(keys)('%s: no new redundancy above the baseline', (key) => {
-    expect(measured[key], `${key} grew from ${baseline.counts[key]} to ${measured[key]} — run: node scripts/redundancy-report.ts`).toBeLessThanOrEqual(
-      baseline.counts[key]
-    );
+    expect(
+      measured[key],
+      `${key} grew from ${baseline.counts[key]} to ${measured[key]} — run: node scripts/redundancy-report.ts`
+    ).toBeLessThanOrEqual(baseline.counts[key]);
   });
 
   it.each(keys)('%s: a cleanup lowers the baseline in the same change', (key) => {

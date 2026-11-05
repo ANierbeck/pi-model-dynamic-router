@@ -21,7 +21,9 @@ import { SessionEscalation } from '../src/escalation.ts';
 import { delegationSettings } from '../src/delegation.ts';
 import type { Config, Group } from '../src/types.ts';
 
-const shipped = JSON.parse(readFileSync(join(__dirname, '../router-config.json'), 'utf-8')) as Config;
+const shipped = JSON.parse(
+  readFileSync(join(__dirname, '../router-config.json'), 'utf-8')
+) as Config;
 const groups = shipped.model_groups as Record<string, Group>;
 
 const REMOVED = ['trivial', 'scout', 'operational', 'tactical', 'strategic', 'complex', 'fallback'];
@@ -46,9 +48,16 @@ describe('category → group mapping (D4, D6, D7)', () => {
 
 describe('shipped groups', () => {
   it('are the five category groups plus the special groups — nothing else', () => {
-    expect(Object.keys(groups).sort()).toEqual(
-      ['bulk_reader', 'code_complex', 'code_writer', 'design', 'dynamic', 'planning', 'simple', 'standard'],
-    );
+    expect(Object.keys(groups).sort()).toEqual([
+      'bulk_reader',
+      'code_complex',
+      'code_writer',
+      'design',
+      'dynamic',
+      'planning',
+      'simple',
+      'standard',
+    ]);
   });
 
   it('none of the removed names survives as a group', () => {
@@ -56,23 +65,47 @@ describe('shipped groups', () => {
   });
 
   it('simple: free/cloud-first pool (the old scout), standard: the old operational rule', () => {
-    expect(groups.simple).toMatchObject({ method: 'tiered', max_cost: 0, min_gdpval: 0, billing_preference: 'local_before_payg' });
+    expect(groups.simple).toMatchObject({
+      method: 'tiered',
+      max_cost: 0,
+      min_gdpval: 0,
+      billing_preference: 'local_before_payg',
+    });
     expect(groups.standard).toMatchObject({ method: 'tiered', min_gdpval: 300, max_cost: 2.0 });
   });
 
   it('code_complex is the old tactical band; planning keeps 1700 and reasons; design is planning at 1600 on Briefcase (D5)', () => {
-    expect(groups.code_complex).toMatchObject({ method: 'best', min_gdpval: 1630, max_gdpval: 1700, score_by: 'coding' });
+    expect(groups.code_complex).toMatchObject({
+      method: 'best',
+      min_gdpval: 1630,
+      max_gdpval: 1700,
+      score_by: 'coding',
+    });
     // planning ranks by the reasoning blend since 2026-10-31 (owner decision);
     // the floor stays 1700 and models without a value are refused.
-    expect(groups.planning).toMatchObject({ method: 'best', min_gdpval: 1700, score_by: 'reasoning', require_score_column: true });
-    expect(groups.design).toMatchObject({ method: 'best', min_gdpval: 1600, score_by: 'briefcase' });
+    expect(groups.planning).toMatchObject({
+      method: 'best',
+      min_gdpval: 1700,
+      score_by: 'reasoning',
+      require_score_column: true,
+    });
+    expect(groups.design).toMatchObject({
+      method: 'best',
+      min_gdpval: 1600,
+      score_by: 'briefcase',
+    });
   });
 
   it('failover chains: the old ones, renamed, removed groups mapped, self/duplicates dropped', () => {
     expect(groups.simple.fallback_groups).toEqual(['standard']);
     expect(groups.standard.fallback_groups).toEqual(['simple']);
     expect(groups.code_complex.fallback_groups).toEqual(['planning', 'standard', 'simple']);
-    expect(groups.design.fallback_groups).toEqual(['planning', 'code_complex', 'standard', 'simple']);
+    expect(groups.design.fallback_groups).toEqual([
+      'planning',
+      'code_complex',
+      'standard',
+      'simple',
+    ]);
     expect(groups.planning.fallback_groups).toEqual(['code_complex', 'standard', 'simple']);
     expect(groups.bulk_reader.fallback_groups).toEqual(['standard', 'simple']);
     expect(groups.code_writer.fallback_groups).toEqual(['standard', 'simple']);
@@ -89,13 +122,21 @@ describe('shipped groups', () => {
 
   it('delegation protects the top groups (planning was missing — TODO "found on the way")', () => {
     expect(shipped.delegation?.expensive_groups).toEqual(['planning', 'code_complex']);
-    expect(delegationSettings({ delegation: { enabled: true } } as Config).expensive_groups).toEqual(['planning', 'code_complex']);
+    expect(
+      delegationSettings({ delegation: { enabled: true } } as Config).expensive_groups
+    ).toEqual(['planning', 'code_complex']);
   });
 });
 
 describe('code constants follow the layout', () => {
   it('the global fallback order is coarse → cheap over the new names only', () => {
-    expect([...FALLBACK_GROUP_ORDER]).toEqual(['planning', 'design', 'code_complex', 'standard', 'simple']);
+    expect([...FALLBACK_GROUP_ORDER]).toEqual([
+      'planning',
+      'design',
+      'code_complex',
+      'standard',
+      'simple',
+    ]);
   });
 
   it('without a configured chain, the global order walks to the next group', () => {

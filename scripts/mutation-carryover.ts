@@ -26,7 +26,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { invokedDirectly } from './lib/cli.ts';
 
-interface Pos { line: number; column: number }
+interface Pos {
+  line: number;
+  column: number;
+}
 export interface ReportMutant {
   id: string;
   mutatorName: string;
@@ -34,10 +37,16 @@ export interface ReportMutant {
   status?: string;
   location: { start: Pos; end: Pos };
 }
-export interface Report { files: Record<string, { source: string; mutants: ReportMutant[] }> }
+export interface Report {
+  files: Record<string, { source: string; mutants: ReportMutant[] }>;
+}
 /** A ledger cell is a JSON primitive (TSV/JSON round-trip); never an object. */
 type LedgerCell = string | number | boolean | null | undefined;
-export interface Ledger { columns: string[]; rows: LedgerCell[][]; [k: string]: unknown }
+export interface Ledger {
+  columns: string[];
+  rows: LedgerCell[][];
+  [k: string]: unknown;
+}
 
 /** Ledger cell as text; a missing cell reads as '' (never "undefined"). */
 const cellText = (cell: LedgerCell): string => (cell == null ? '' : String(cell));
@@ -67,7 +76,10 @@ function offset(lines: string[], pos: Pos): number {
 }
 
 /** The exact mutated text and the trimmed line with both neighbours ('' past the edges). */
-export function mutantContext(source: string, m: ReportMutant): { original: string; context: string } {
+export function mutantContext(
+  source: string,
+  m: ReportMutant
+): { original: string; context: string } {
   const lines = source.split('\n');
   const original = source.slice(offset(lines, m.location.start), offset(lines, m.location.end));
   const at = (n: number) => (n >= 1 && n <= lines.length ? lines[n - 1].trim() : '');
@@ -75,7 +87,13 @@ export function mutantContext(source: string, m: ReportMutant): { original: stri
   return { original, context: [at(l - 1), at(l), at(l + 1)].join('\n') };
 }
 
-function key(file: string, mutator: string, replacement: string, original: string, context: string): string {
+function key(
+  file: string,
+  mutator: string,
+  replacement: string,
+  original: string,
+  context: string
+): string {
   return JSON.stringify([file, mutator, replacement, original, context]);
 }
 
@@ -91,7 +109,10 @@ export function backfillLedger(report: Report, ledger: Ledger): Ledger {
     const id = cellText(r[idI]);
     const entry = report.files[file];
     const m = entry?.mutants.find((x) => x.id === id);
-    if (!entry || !m) throw new Error(`ledger row ${file}#${id} is not in the report — wrong report for this ledger?`);
+    if (!entry || !m)
+      throw new Error(
+        `ledger row ${file}#${id} is not in the report — wrong report for this ledger?`
+      );
     const { original, context } = mutantContext(entry.source, m);
     return [...keep.map((i) => r[i]), original, context];
   });
@@ -108,25 +129,51 @@ export function formatLedger(ledger: Ledger): string {
   return `${headJson.slice(0, -1)},"rows":[\n${rows.map((r) => JSON.stringify(r)).join(',\n')}\n]}\n`;
 }
 
-interface Verdict { verdicts: Set<string>; why: string; from: string }
+interface Verdict {
+  verdicts: Set<string>;
+  why: string;
+  from: string;
+}
 
 function indexLedger(name: string, ledger: Ledger, into: Map<string, Verdict>): void {
   const ci = (c: string) => ledger.columns.indexOf(c);
-  const [fileI, mutI, repI, origI, ctxI, catI, whyI] = ['file', 'mutator', 'replacement', 'original', 'context', 'category', 'why'].map(ci);
+  const [fileI, mutI, repI, origI, ctxI, catI, whyI] = [
+    'file',
+    'mutator',
+    'replacement',
+    'original',
+    'context',
+    'category',
+    'why',
+  ].map(ci);
   // Never fall back to line numbers: a ledger without the source columns
   // would silently match nothing and report every mutant as NEW.
-  if (origI < 0 || ctxI < 0) throw new Error(`ledger ${name} has no original/context columns — run --backfill first`);
+  if (origI < 0 || ctxI < 0)
+    throw new Error(`ledger ${name} has no original/context columns — run --backfill first`);
   const local = new Map<string, Verdict>();
   for (const r of ledger.rows) {
-    const k = key(cellText(r[fileI]), cellText(r[mutI]), cellText(r[repI]), cellText(r[origI]), cellText(r[ctxI]));
-    const v = local.get(k) ?? { verdicts: new Set<string>(), why: whyI >= 0 ? cellText(r[whyI]) : '', from: name };
+    const k = key(
+      cellText(r[fileI]),
+      cellText(r[mutI]),
+      cellText(r[repI]),
+      cellText(r[origI]),
+      cellText(r[ctxI])
+    );
+    const v = local.get(k) ?? {
+      verdicts: new Set<string>(),
+      why: whyI >= 0 ? cellText(r[whyI]) : '',
+      from: name,
+    };
     v.verdicts.add(cellText(r[catI]));
     local.set(k, v);
   }
   for (const [k, v] of local) into.set(k, v); // a later ledger wins
 }
 
-export function carryOver(report: Report, ledgers: Array<{ name: string; ledger: Ledger }>): CarryRow[] {
+export function carryOver(
+  report: Report,
+  ledgers: Array<{ name: string; ledger: Ledger }>
+): CarryRow[] {
   const known = new Map<string, Verdict>();
   for (const { name, ledger } of ledgers) indexLedger(name, ledger, known);
   const out: CarryRow[] = [];
@@ -136,7 +183,16 @@ export function carryOver(report: Report, ledgers: Array<{ name: string; ledger:
       const { original, context } = mutantContext(entry.source, m);
       const replacement = m.replacement ?? '';
       const hit = known.get(key(file, m.mutatorName, replacement, original, context));
-      const base = { file, line: m.location.start.line, id: m.id, status: m.status, mutator: m.mutatorName, replacement, original, context };
+      const base = {
+        file,
+        line: m.location.start.line,
+        id: m.id,
+        status: m.status,
+        mutator: m.mutatorName,
+        replacement,
+        original,
+        context,
+      };
       if (!hit) {
         out.push({ ...base, verdict: 'NEW', action: 'triage' });
         continue;
@@ -144,7 +200,11 @@ export function carryOver(report: Report, ledgers: Array<{ name: string; ledger:
       // Conflicting verdicts join to e.g. 'EQUIVALENT/REAL-KILLED', which is in
       // neither set and therefore lands in triage instead of a guess.
       const verdict = [...hit.verdicts].sort().join('/');
-      const action = LEDGERED_VERDICTS.has(verdict) ? 'ledgered' : KILLED_VERDICTS.has(verdict) ? 'recheck' : 'triage';
+      const action = LEDGERED_VERDICTS.has(verdict)
+        ? 'ledgered'
+        : KILLED_VERDICTS.has(verdict)
+          ? 'recheck'
+          : 'triage';
       out.push({ ...base, verdict, from: hit.from, why: hit.why, action });
     }
   }
@@ -161,7 +221,10 @@ function main(argv: string[]): number {
   const backfill = take('--backfill', 2);
   if (backfill) {
     const [reportPath, ledgerPath] = backfill;
-    writeFileSync(ledgerPath, formatLedger(backfillLedger(readJson(reportPath), readJson(ledgerPath))));
+    writeFileSync(
+      ledgerPath,
+      formatLedger(backfillLedger(readJson(reportPath), readJson(ledgerPath)))
+    );
     process.stdout.write(`backfilled original + context into ${ledgerPath}\n`);
     return 0;
   }
@@ -169,17 +232,23 @@ function main(argv: string[]): number {
   const outPath = take('--out')?.[0];
   const reportPath = args[0];
   if (!reportPath || !ledgerArg) {
-    process.stderr.write('usage: node scripts/mutation-carryover.ts <mutation.json> --ledger a.json[,b.json] [--out rows.json]\n'
-      + '       node scripts/mutation-carryover.ts --backfill <triaged-report.json> <ledger.json>\n');
+    process.stderr.write(
+      'usage: node scripts/mutation-carryover.ts <mutation.json> --ledger a.json[,b.json] [--out rows.json]\n' +
+        '       node scripts/mutation-carryover.ts --backfill <triaged-report.json> <ledger.json>\n'
+    );
     return 2;
   }
   const ledgers = ledgerArg.split(',').map((p) => ({ name: p, ledger: readJson(p) as Ledger }));
   const rows = carryOver(readJson(reportPath), ledgers);
   if (outPath) writeFileSync(outPath, JSON.stringify(rows, null, 1) + '\n');
   const count = (a: string) => rows.filter((r) => r.action === a).length;
-  process.stdout.write(`${rows.length} undetected: ${count('ledgered')} ledgered, ${count('recheck')} recheck, ${count('triage')} triage\n`);
+  process.stdout.write(
+    `${rows.length} undetected: ${count('ledgered')} ledgered, ${count('recheck')} recheck, ${count('triage')} triage\n`
+  );
   for (const r of rows.filter((x) => x.action !== 'ledgered')) {
-    process.stdout.write(`  [${r.action}] ${r.file}:${r.line} #${r.id} ${r.mutator} ${JSON.stringify(r.original.slice(0, 50))} -> ${JSON.stringify(r.replacement.slice(0, 50))} (${r.verdict})\n`);
+    process.stdout.write(
+      `  [${r.action}] ${r.file}:${r.line} #${r.id} ${r.mutator} ${JSON.stringify(r.original.slice(0, 50))} -> ${JSON.stringify(r.replacement.slice(0, 50))} (${r.verdict})\n`
+    );
   }
   return 0;
 }

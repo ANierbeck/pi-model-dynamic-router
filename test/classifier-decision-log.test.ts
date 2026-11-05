@@ -22,22 +22,43 @@ vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
 const logFile = () => join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 const records = (): any[] =>
   existsSync(logFile())
-    ? readFileSync(logFile(), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    ? readFileSync(logFile(), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
     : [];
 
-const cfgWith = (log: Record<string, unknown> | undefined = { enabled: true, store_text: 'none' }): Config =>
-  ({ providers: {}, model_groups: {}, model_metrics: {}, ...(log ? { classifier_log: log } : {}) }) as Config;
+const cfgWith = (
+  log: Record<string, unknown> | undefined = { enabled: true, store_text: 'none' }
+): Config =>
+  ({
+    providers: {},
+    model_groups: {},
+    model_metrics: {},
+    ...(log ? { classifier_log: log } : {}),
+  }) as Config;
 
 const reply = (obj: Record<string, unknown>) => ({
   content: [{ type: 'text', text: JSON.stringify(obj) }],
   stopReason: 'stop',
 });
-const modelFor = (ref: string) => ({ provider: ref.split('/')[0], id: ref.split('/').slice(1).join('/') });
-const cloudCache = (...refs: string[]): Cache => ({ classifier_fallback_models: refs, classifier_fallback_probe_sig: PROBE_SIGNATURE }) as Cache;
+const modelFor = (ref: string) => ({
+  provider: ref.split('/')[0],
+  id: ref.split('/').slice(1).join('/'),
+});
+const cloudCache = (...refs: string[]): Cache =>
+  ({ classifier_fallback_models: refs, classifier_fallback_probe_sig: PROBE_SIGNATURE }) as Cache;
 
-function cloud(refs: string[], answers: Array<(ref: string) => unknown>, extra: Record<string, unknown> = {}) {
+function cloud(
+  refs: string[],
+  answers: Array<(ref: string) => unknown>,
+  extra: Record<string, unknown> = {}
+) {
   let i = 0;
-  const completeSimple = vi.fn(async (m: any) => answers[Math.min(i++, answers.length - 1)]!(`${m.provider}/${m.id}`));
+  const completeSimple = vi.fn(async (m: any) =>
+    answers[Math.min(i++, answers.length - 1)]!(`${m.provider}/${m.id}`)
+  );
   return {
     cfg: cfgWith(),
     cache: cloudCache(...refs),
@@ -47,8 +68,10 @@ function cloud(refs: string[], answers: Array<(ref: string) => unknown>, extra: 
     ...extra,
   } as any;
 }
-const ok = (category: string, confidence = 0.9, reasonText = 'a reason') => () =>
-  reply({ category, reason: reasonText, confidence });
+const ok =
+  (category: string, confidence = 0.9, reasonText = 'a reason') =>
+  () =>
+    reply({ category, reason: reasonText, confidence });
 
 beforeEach(() => {
   rmSync(join(homedir(), '.pi'), { recursive: true, force: true });
@@ -58,7 +81,9 @@ beforeEach(() => {
 
 describe('record per stage', () => {
   it('hint: deterministic, no model, no chain', async () => {
-    await classifyPrompt('HINT: use group tactical for the dl-hint-stage prompt', { cfg: cfgWith() });
+    await classifyPrompt('HINT: use group tactical for the dl-hint-stage prompt', {
+      cfg: cfgWith(),
+    });
     const [r] = records();
     expect(r).toMatchObject({ v: 1, stage: 'hint', chain: [], raw: null });
     expect(r.final.hint).toMatchObject({ type: 'group', target: 'tactical' });
@@ -104,13 +129,19 @@ describe('record per stage', () => {
   });
 
   it('records prev null when the session has no previous category', async () => {
-    await classifyPrompt('dl prev-null unique prompt number two here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
+    await classifyPrompt(
+      'dl prev-null unique prompt number two here',
+      cloud(['p/m1'], [ok('code_complex', 0.8)])
+    );
     const [r] = records();
     expect(r.prev).toBeNull();
   });
 
   it('llm-cloud: chain, raw, answered_by, group', async () => {
-    await classifyPrompt('dl cloud stage unique prompt number one here', cloud(['p/m1'], [ok('code_complex', 0.8)]));
+    await classifyPrompt(
+      'dl cloud stage unique prompt number one here',
+      cloud(['p/m1'], [ok('code_complex', 0.8)])
+    );
     const [r] = records();
     expect(r.stage).toBe('llm-cloud');
     expect(r.answered_by).toBe('cloud:p/m1');
@@ -118,14 +149,22 @@ describe('record per stage', () => {
     expect(r.chain[0]).toMatchObject({ ref: 'p/m1', outcome: 'ok' });
     expect(typeof r.chain[0].ms).toBe('number');
     expect(r.raw).toMatchObject({ category: 'code_complex', confidence: 0.8 });
-    expect(r.final).toMatchObject({ category: 'code_complex', group: getGroupForCategory('code_complex') });
+    expect(r.final).toMatchObject({
+      category: 'code_complex',
+      group: getGroupForCategory('code_complex'),
+    });
     expect(r.steps).toEqual([]);
     expect(typeof r.ms).toBe('number');
   });
 
   it('llm-local: the Ollama attempt is in the chain', async () => {
-    vi.mocked(callOllama).mockResolvedValue(JSON.stringify({ category: 'simple', reason: 'x', confidence: 0.9 }));
-    await classifyPrompt('dl local stage unique prompt number two here', { cfg: cfgWith(), cache: localModelCache('foo:3b') });
+    vi.mocked(callOllama).mockResolvedValue(
+      JSON.stringify({ category: 'simple', reason: 'x', confidence: 0.9 })
+    );
+    await classifyPrompt('dl local stage unique prompt number two here', {
+      cfg: cfgWith(),
+      cache: localModelCache('foo:3b'),
+    });
     const [r] = records();
     expect(r.stage).toBe('llm-local');
     expect(r.chain[0]).toMatchObject({ ref: 'ollama:foo:3b', outcome: 'ok' });
@@ -133,7 +172,10 @@ describe('record per stage', () => {
   });
 
   it('fallback: every attempt failed — the chain says why', async () => {
-    const opts = cloud(['p/a', 'p/b'], [() => ({ errorMessage: '503: upstream gone', stopReason: 'error', content: [] })]);
+    const opts = cloud(
+      ['p/a', 'p/b'],
+      [() => ({ errorMessage: '503: upstream gone', stopReason: 'error', content: [] })]
+    );
     const result = await classifyPrompt('dl all attempts fail unique prompt three', opts);
     const [r] = records();
     expect(result).toMatchObject({ category: 'continue' });
@@ -161,7 +203,7 @@ describe('raw vs final and steps', () => {
   it('low-confidence inherit is a recorded step', async () => {
     await classifyPrompt(
       'dl low confidence unique prompt number five here',
-      cloud(['p/m1'], [ok('design', 0.2)], { context: { lastCategory: 'code_complex' } }),
+      cloud(['p/m1'], [ok('design', 0.2)], { context: { lastCategory: 'code_complex' } })
     );
     const [r] = records();
     expect(r.raw).toMatchObject({ category: 'design', confidence: 0.2 });
@@ -172,7 +214,7 @@ describe('raw vs final and steps', () => {
   it('fallback-inherit: raw says fallback, final is the previous category', async () => {
     await classifyPrompt(
       'dl fallback inherit unique prompt number six here',
-      cloud(['p/m1'], [ok('continue', 0.9)], { context: { lastCategory: 'design' } }),
+      cloud(['p/m1'], [ok('continue', 0.9)], { context: { lastCategory: 'design' } })
     );
     const [r] = records();
     expect(r.raw.category).toBe('continue');
@@ -186,7 +228,11 @@ describe('raw vs final and steps', () => {
       [
         (ref: string) =>
           ref === 'r/rate'
-            ? { errorMessage: '429: {"message":"SECRETBODY free-models-per-day"}', stopReason: 'error', content: [] }
+            ? {
+                errorMessage: '429: {"message":"SECRETBODY free-models-per-day"}',
+                stopReason: 'error',
+                content: [],
+              }
             : ref === 's/bad'
               ? reply({ category: 'banana', reason: 'x', confidence: 0.9 })
               : reply({ category: 'standard', reason: 'x', confidence: 0.9 }),
@@ -194,13 +240,17 @@ describe('raw vs final and steps', () => {
       {
         findModel: (ref: string) => (ref === 'p/missing' ? undefined : modelFor(ref)),
         hasConfiguredAuth: (m: any) => m.provider !== 'q',
-      },
+      }
     );
     // the answer function dispatches on ref — one answerer for every call
     opts.completeSimple.mockImplementation(async (m: any) => {
       const ref = `${m.provider}/${m.id}`;
       return ref === 'r/rate'
-        ? { errorMessage: '429: {"message":"SECRETBODY free-models-per-day"}', stopReason: 'error', content: [] }
+        ? {
+            errorMessage: '429: {"message":"SECRETBODY free-models-per-day"}',
+            stopReason: 'error',
+            content: [],
+          }
         : ref === 's/bad'
           ? reply({ category: 'banana', reason: 'x', confidence: 0.9 })
           : reply({ category: 'standard', reason: 'x', confidence: 0.9 });
@@ -224,7 +274,10 @@ describe('privacy: store_text', () => {
     classifyPrompt(PROMPT + ' ' + String(store_text), {
       ...cloud(['p/m1'], [ok('simple', 0.9, 'REASONTEXT mentions UNIQUEPROMPTWORD')]),
       cfg: cfgWith({ enabled: true, ...(store_text ? { store_text } : {}) }),
-      context: { previousUserMessage: 'PREVMESSAGE text', lastAssistantSnippet: 'SNIPPETTEXT here' },
+      context: {
+        previousUserMessage: 'PREVMESSAGE text',
+        lastAssistantSnippet: 'SNIPPETTEXT here',
+      },
       ...extra,
     } as any);
 
@@ -233,7 +286,8 @@ describe('privacy: store_text', () => {
     await run(undefined);
     for (const r of records()) {
       const s = JSON.stringify(r);
-      for (const leak of ['UNIQUEPROMPTWORD', 'REASONTEXT', 'PREVMESSAGE', 'SNIPPETTEXT']) expect(s).not.toContain(leak);
+      for (const leak of ['UNIQUEPROMPTWORD', 'REASONTEXT', 'PREVMESSAGE', 'SNIPPETTEXT'])
+        expect(s).not.toContain(leak);
       expect(r.input.text).toBeNull();
       expect(r.input.chars).toBeGreaterThan(10);
       expect(r.input.sha).toMatch(/^[0-9a-f]{12}$/);
@@ -245,7 +299,10 @@ describe('privacy: store_text', () => {
 
   it('"snippet": prompt prefix capped at 120 chars, no context texts', async () => {
     const long = 'x'.repeat(300);
-    await classifyPrompt('dl snippet ' + long, { ...cloud(['p/m1'], [ok('simple')]), cfg: cfgWith({ enabled: true, store_text: 'snippet' }) });
+    await classifyPrompt('dl snippet ' + long, {
+      ...cloud(['p/m1'], [ok('simple')]),
+      cfg: cfgWith({ enabled: true, store_text: 'snippet' }),
+    });
     const [r] = records();
     expect(r.input.text.prompt.length).toBe(120);
     expect(r.input.text.prompt.startsWith('dl snippet xxx')).toBe(true);
@@ -264,18 +321,27 @@ describe('privacy: store_text', () => {
 
 describe('switches and robustness', () => {
   it('no cfg, no classifier_log block, or enabled:false → nothing is written', async () => {
-    await classifyPrompt('dl switch no cfg at all unique prompt eight', { ...cloud(['p/m1'], [ok('simple')]), cfg: undefined });
+    await classifyPrompt('dl switch no cfg at all unique prompt eight', {
+      ...cloud(['p/m1'], [ok('simple')]),
+      cfg: undefined,
+    });
     await classifyPrompt('dl switch absent block unique prompt nine', {
       ...cloud(['p/m1'], [ok('simple')]),
       cfg: { providers: {}, model_groups: {}, model_metrics: {} } as Config,
     });
-    await classifyPrompt('dl switch disabled unique prompt ten here', { ...cloud(['p/m1'], [ok('simple')]), cfg: cfgWith({ enabled: false }) });
+    await classifyPrompt('dl switch disabled unique prompt ten here', {
+      ...cloud(['p/m1'], [ok('simple')]),
+      cfg: cfgWith({ enabled: false }),
+    });
     expect(existsSync(logFile())).toBe(false);
   });
 
   it('fail-open: an unwritable log location never changes the classification', async () => {
     writeFileSync(join(homedir(), '.pi'), 'a file where the log directory should be');
-    const result = await classifyPrompt('dl fail open unique prompt number eleven', cloud(['p/m1'], [ok('planning')]));
+    const result = await classifyPrompt(
+      'dl fail open unique prompt number eleven',
+      cloud(['p/m1'], [ok('planning')])
+    );
     expect(result).toMatchObject({ category: 'planning' });
   });
 
@@ -286,10 +352,10 @@ describe('switches and robustness', () => {
         throw new Error('config getter exploded');
       },
     };
-    const result = await classifyPrompt(
-      'dl fail open during record construction unique prompt',
-      { ...cloud(['p/m1'], [ok('planning')]), cfg: cfgWith(hostile as any) },
-    );
+    const result = await classifyPrompt('dl fail open during record construction unique prompt', {
+      ...cloud(['p/m1'], [ok('planning')]),
+      cfg: cfgWith(hostile as any),
+    });
     expect(result).toMatchObject({ category: 'planning' });
   });
 
@@ -304,21 +370,29 @@ describe('switches and robustness', () => {
       classifyPrompt('dl overlap slow unique prompt number twelve', slow),
       classifyPrompt('dl overlap fast unique prompt number thirteen', fast),
     ]);
-    const byAnswer = Object.fromEntries(records().map((r) => [r.answered_by, r.chain.map((a: any) => a.ref)]));
+    const byAnswer = Object.fromEntries(
+      records().map((r) => [r.answered_by, r.chain.map((a: any) => a.ref)])
+    );
     expect(byAnswer).toEqual({ 'cloud:slow/a': ['slow/a'], 'cloud:fast/b': ['fast/b'] });
   });
 
   it('size rotation: max_bytes/keep from classifier_log', async () => {
     const cfg = cfgWith({ enabled: true, store_text: 'none', max_bytes: 600, keep: 2 });
     for (let i = 0; i < 4; i++) {
-      await classifyPrompt(`dl rotation unique prompt number ${i} padding words`, { ...cloud(['p/m1'], [ok('simple')]), cfg });
+      await classifyPrompt(`dl rotation unique prompt number ${i} padding words`, {
+        ...cloud(['p/m1'], [ok('simple')]),
+        cfg,
+      });
     }
     expect(existsSync(logFile() + '.1')).toBe(true);
     expect(existsSync(logFile() + '.2')).toBe(false);
   });
 
   it('the file is private (0600) and every line is valid JSON', async () => {
-    await classifyPrompt('dl file mode unique prompt number fourteen', cloud(['p/m1'], [ok('simple')]));
+    await classifyPrompt(
+      'dl file mode unique prompt number fourteen',
+      cloud(['p/m1'], [ok('simple')])
+    );
     expect(statSync(logFile()).mode & 0o777).toBe(0o600);
     expect(records()).toHaveLength(1);
     expect(records()[0].ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);

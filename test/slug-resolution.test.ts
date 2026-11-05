@@ -61,10 +61,9 @@ describe('mapLookup — exact match beats wildcard; wildcard beats no-match', ()
   beforeAll(() => {
     // Wildcards match the PROVIDER-STRIPPED model id ('medium-2504'
     // after stripping 'mistral/'), so the prefix is 'medium'.
-    metricsModule.setModelMap(
-      { 'glm-5-2': 'glm-5-2', 'medium-2504': 'mistral-medium-2504' },
-      [['medium', 'mistral-medium-3-5']],
-    );
+    metricsModule.setModelMap({ 'glm-5-2': 'glm-5-2', 'medium-2504': 'mistral-medium-2504' }, [
+      ['medium', 'mistral-medium-3-5'],
+    ]);
   });
 
   it('exact model-map entry returns its slug', () => {
@@ -92,7 +91,7 @@ describe('buildModelMapAliasIndex / aliasesFor — alias groups for the registry
         'zai-glm-5-2': 'glm-slug',
         'mistral/zai-glm-5-2': 'glm-slug', // provider-prefixed: NOT a lookup id
       },
-      [],
+      []
     );
     expect(metricsModule.lookupPrice('mistral/glm-5-2')).toEqual({ input: 2, output: 4 });
   });
@@ -106,10 +105,7 @@ describe('buildModelMapAliasIndex / aliasesFor — alias groups for the registry
     // Discriminator for the alias-index accumulation: with only two keys,
     // "last set wins" coincidentally keeps the right sibling (the queried
     // model is filtered out anyway). Three keys expose it.
-    metricsModule.setModelMap(
-      { 'a-x': 'gs3', 'a-y': 'gs3', 'a-z': 'gs3' },
-      [],
-    );
+    metricsModule.setModelMap({ 'a-x': 'gs3', 'a-y': 'gs3', 'a-z': 'gs3' }, []);
     // Registry prices ONLY the middle sibling — a last-key-only index
     // would miss it.
     expect(metricsModule.lookupPrice('mistral/a-x')).toEqual({ input: 3, output: 6 });

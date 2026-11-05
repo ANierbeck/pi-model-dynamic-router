@@ -15,13 +15,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
 import {
   delegationSettings,
   extractTextContent,
@@ -30,7 +25,10 @@ import {
 } from '../src/delegation';
 import { stripRouterNarration } from '../src/utils';
 import type { Config } from '../src/types';
-import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+import { makeExtensionContext } from './helpers/extension-harness.ts';
+import { bootProjectDir, rmTmpDir } from './helpers/router-env.ts';
+import { withFreshDynamicConfig } from './helpers/router-env.ts';
+import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 
 // ── delegationSettings ──────────────────────────────────────────────────
 
@@ -59,7 +57,13 @@ describe('delegationSettings', () => {
   it('respects full user overrides', () => {
     const cfg = {
       model_groups: {},
-      delegation: { enabled: true, min_chars: 5000, group: 'trivial', max_raw_chars: 1000, tools: ['read'] },
+      delegation: {
+        enabled: true,
+        min_chars: 5000,
+        group: 'trivial',
+        max_raw_chars: 1000,
+        tools: ['read'],
+      },
     } as Config;
     const s = delegationSettings(cfg);
     expect(s).toEqual({
@@ -309,7 +313,11 @@ describe('handleReadDelegation: Portal/shunt threshold (default 3500)', () => {
   it('a read just over the new 3500-char threshold IS delegated (the core fix)', async () => {
     // Previously this sat under the 20000 threshold and passed the expensive
     // model untouched — the dominant real-world case the shunt pattern fixes.
-    const { ctx, streamSimple } = makeCtx(summaryEvents('SUMMARY: the small file holds a few exported symbols and one large constant table.'));
+    const { ctx, streamSimple } = makeCtx(
+      summaryEvents(
+        'SUMMARY: the small file holds a few exported symbols and one large constant table.'
+      )
+    );
     const out = await handleReadDelegation(
       { toolName: 'read', content: [{ type: 'text', text: OVER }], isError: false },
       ctx,
@@ -330,7 +338,12 @@ describe('handleReadDelegation: targeted reads pass through (shunt exemption)', 
     // delegating it would destroy the exact lines the orchestrator needs.
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', offset: 100 } },
+      {
+        toolName: 'read',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { path: 'a.ts', offset: 100 },
+      },
       ctx,
       enabledCfg
     );
@@ -342,7 +355,12 @@ describe('handleReadDelegation: targeted reads pass through (shunt exemption)', 
     // A limit-only read fetches the first N lines — a targeted window.
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', limit: 50 } },
+      {
+        toolName: 'read',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { path: 'a.ts', limit: 50 },
+      },
       ctx,
       enabledCfg
     );
@@ -353,7 +371,12 @@ describe('handleReadDelegation: targeted reads pass through (shunt exemption)', 
   it('a read with BOTH offset and limit is targeted → passes through', async () => {
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'read', content: [{ type: 'text', text: BIG }], isError: false, input: { path: 'a.ts', offset: 10, limit: 20 } },
+      {
+        toolName: 'read',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { path: 'a.ts', offset: 10, limit: 20 },
+      },
       ctx,
       enabledCfg
     );
@@ -370,7 +393,12 @@ describe('handleReadDelegation: piped/grep bash is targeted (shunt exemption)', 
     // targeted reads." The model asked for matches — it needs them exactly.
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'cat big.log | grep ERROR' } },
+      {
+        toolName: 'bash',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { command: 'cat big.log | grep ERROR' },
+      },
       ctx,
       enabledCfg
     );
@@ -381,7 +409,12 @@ describe('handleReadDelegation: piped/grep bash is targeted (shunt exemption)', 
   it('a grep/rg/sed/awk command is targeted → passes through even when oversized', async () => {
     const { ctx, streamSimple } = makeCtx();
     const out = await handleReadDelegation(
-      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'grep -rn TODO src/' } },
+      {
+        toolName: 'bash',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { command: 'grep -rn TODO src/' },
+      },
       ctx,
       enabledCfg
     );
@@ -397,7 +430,12 @@ describe('handleReadDelegation: piped/grep bash is targeted (shunt exemption)', 
       summaryEvents('The command printed a long numbered listing of scanned model entries.')
     );
     const out = await handleReadDelegation(
-      { toolName: 'bash', content: [{ type: 'text', text: BIG }], isError: false, input: { command: 'cat big.log' } },
+      {
+        toolName: 'bash',
+        content: [{ type: 'text', text: BIG }],
+        isError: false,
+        input: { command: 'cat big.log' },
+      },
       ctx,
       enabledCfg
     );
@@ -425,7 +463,9 @@ describe('handleReadDelegation: happy path', () => {
     expect(text).toMatch(/offset\/limit/);
     // Narration stripped (spike finding).
     expect(text).not.toContain('[router]');
-    expect(text).toContain('The file contains 1500 numbered fox-pangram lines for the delegation test.');
+    expect(text).toContain(
+      'The file contains 1500 numbered fox-pangram lines for the delegation test.'
+    );
     // Nested usage attached for accounting (spike-verified shape).
     expect(out!.usage).toMatchObject({ input: 11973, totalTokens: 12081 });
   });
@@ -462,7 +502,10 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
       yield { type: 'text_delta', delta: 'partial' };
       throw new Error('connection reset');
     });
-    const ctx = { modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } }, signal: undefined };
+    const ctx = {
+      modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } },
+      signal: undefined,
+    };
     const out = await handleReadDelegation(bigReadEvent, ctx, enabledCfg);
     expect(out).toBeUndefined();
   });
@@ -472,7 +515,10 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
     const streamSimple = vi.fn(async function* () {
       yield { type: 'error', error: 'provider exploded' };
     });
-    const ctx = { modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } }, signal: undefined };
+    const ctx = {
+      modelRegistry: { find: vi.fn(() => model), runtime: { streamSimple } },
+      signal: undefined,
+    };
     const out = await handleReadDelegation(bigReadEvent, ctx, enabledCfg);
     expect(out).toBeUndefined();
   });
@@ -499,8 +545,6 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
 // wiring (config → handler → module), not the module logic (covered above).
 
 describe('default export wiring: tool_result returns the delegation replacement', () => {
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
   // Production-realistic registry model (cost is mandatory on real models).
   const KNOWN_MODEL = {
     provider: 'mistral',
@@ -511,27 +555,19 @@ describe('default export wiring: tool_result returns the delegation replacement'
   };
 
   it('end-to-end: enabled config → oversized read → replacement with nested usage', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-delegation-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpDir, '.pi', 'router-config.json'),
-      JSON.stringify({
+    const { tmpDir } = bootProjectDir(
+      {
         free_models: [],
         providers: {},
         model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
         delegation: { enabled: true },
-      })
+      },
+      'router-delegation-'
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-    const dynBak = `${dynamicConfigPath}.delegation-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
+    await withFreshDynamicConfig(async (mod) => {
+      // (dynamic config renamed away + no-op scan cache inside the helper)
 
       const { ctx: pi, onHandlers } = makeExtensionContext();
       (mod.default as any)(pi);
@@ -556,7 +592,10 @@ describe('default export wiring: tool_result returns the delegation replacement'
       const model = { provider: 'bulk_reader', id: 'bulk_reader' };
       async function* summaryStream() {
         yield { type: 'text_delta', delta: '> [router] some candidate failed, trying next\n\n' };
-        yield { type: 'text_delta', delta: 'The fixture contains one long run of delegated filler characters.' };
+        yield {
+          type: 'text_delta',
+          delta: 'The fixture contains one long run of delegated filler characters.',
+        };
         yield {
           type: 'message_end',
           usage: { input: 100, output: 20, totalTokens: 120, cost: { total: 0.001 } },
@@ -583,12 +622,9 @@ describe('default export wiring: tool_result returns the delegation replacement'
       // Spike finding: narration must not survive into the replacement.
       expect(text).not.toContain('[router]');
       expect(out.usage).toMatchObject({ totalTokens: 120 });
-    } finally {
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
-    }
+      rmTmpDir(tmpDir);
+    });
   });
 });
 
@@ -599,8 +635,6 @@ describe('default export wiring: tool_result returns the delegation replacement'
 // handler pins the wiring (turn_start → curModel, checkReadBlock, the
 // block/pass decisions) — not the module logic, which the unit tests cover.
 describe('default export wiring: tool_call pre-call read block', () => {
-  const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-
   const KNOWN_MODEL = {
     provider: 'mistral',
     id: 'mistral-medium-3.5',
@@ -614,20 +648,15 @@ describe('default export wiring: tool_call pre-call read block', () => {
    * session_start, and returns the captured handlers plus the tmp dir.
    * Caller is responsible for the finally-block cleanup.
    */
-  async function bootWithConfig(config: Record<string, unknown>, registryModels: any[] = [KNOWN_MODEL]) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-read-block-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(config));
-    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  async function bootWithConfig(
+    config: Record<string, unknown>,
+    registryModels: any[] = [KNOWN_MODEL]
+  ) {
+    const { tmpDir, cwdSpy } = bootProjectDir(config, 'router-read-block-');
 
-    const dynBak = `${dynamicConfigPath}.readblock-bak`;
-    const hadDyn = fs.existsSync(dynamicConfigPath);
-    if (hadDyn) fs.renameSync(dynamicConfigPath, dynBak);
-    writeNoOpScanCache(scanCachePath);
-
-    try {
-      vi.resetModules();
-      const mod = await import('../index.ts');
+    let boot: any;
+    await withFreshDynamicConfig(async (mod) => {
+      // (dynamic config renamed away + no-op scan cache inside the helper)
       const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
       const registryOf = (models: any[]) => ({
         getAvailable: () => models,
@@ -656,25 +685,18 @@ describe('default export wiring: tool_call pre-call read block', () => {
       await onHandlers['session_start']?.({}, sessionCtx);
       await flushBackgroundScan();
 
-      return {
+      boot = {
         onHandlers,
         registerToolCalls: (pi.registerTool as any).mock.calls as any[],
         sessionCtx,
         tmpDir,
         cleanup() {
           cwdSpy.mockRestore();
-          fs.rmSync(tmpDir, { recursive: true, force: true });
-          if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-          removeNoOpScanCache(scanCachePath);
+          rmTmpDir(tmpDir);
         },
       };
-    } catch (err) {
-      cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      if (hadDyn) fs.renameSync(dynBak, dynamicConfigPath);
-      removeNoOpScanCache(scanCachePath);
-      throw err;
-    }
+    });
+    return boot;
   }
 
   const baseConfig = {
@@ -698,9 +720,12 @@ describe('default export wiring: tool_call pre-call read block', () => {
       const { small } = writeFiles(boot.tmpDir);
       // turn_start is what sets turnStart and the session ref the hook
       // falls back to when nothing has streamed yet.
-      await boot.onHandlers['turn_start']?.({}, {
-        model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
-      });
+      await boot.onHandlers['turn_start']?.(
+        {},
+        {
+          model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
+        }
+      );
 
       const out = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } });
       expect(out).toBeDefined();
@@ -723,11 +748,16 @@ describe('default export wiring: tool_call pre-call read block', () => {
       // used here, is a strategic member via the PROVIDER_MAP gdpval and is
       // now CORRECTLY blocked by the live resolver. A local ollama model
       // never resolves into an expensive group.
-      await boot.onHandlers['turn_start']?.({}, {
-        model: { provider: 'ollama', id: 'qwen3.8:27b-mlx' },
-      });
+      await boot.onHandlers['turn_start']?.(
+        {},
+        {
+          model: { provider: 'ollama', id: 'qwen3.8:27b-mlx' },
+        }
+      );
 
-      expect(boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } })).toBeUndefined();
+      expect(
+        boot.onHandlers['tool_call']({ toolName: 'read', input: { path: small } })
+      ).toBeUndefined();
       // The 800-line file still hits the size block (not the expensive one).
       const big = boot.onHandlers['tool_call']({ toolName: 'read', input: { path: large } });
       expect(big).toBeDefined();
@@ -742,12 +772,18 @@ describe('default export wiring: tool_call pre-call read block', () => {
     const boot = await bootWithConfig(baseConfig);
     try {
       const { large } = writeFiles(boot.tmpDir);
-      await boot.onHandlers['turn_start']?.({}, {
-        model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
-      });
+      await boot.onHandlers['turn_start']?.(
+        {},
+        {
+          model: { provider: 'pi-claude', id: 'claude-sonnet-5' },
+        }
+      );
 
       expect(
-        boot.onHandlers['tool_call']({ toolName: 'read', input: { path: large, offset: 1, limit: 50 } })
+        boot.onHandlers['tool_call']({
+          toolName: 'read',
+          input: { path: large, offset: 1, limit: 50 },
+        })
       ).toBeUndefined();
     } finally {
       boot.cleanup();
@@ -784,7 +820,12 @@ describe('default export wiring: tool_call pre-call read block', () => {
       model_groups: {
         // code_complex is one of the two expensive groups (D4 renames);
         // 1650 sits inside its 1630..1700 band.
-        code_complex: { fallback_groups: [], min_gdpval: 1630, max_gdpval: 1700, models: ['pi-claude/claude-sonnet-5'] },
+        code_complex: {
+          fallback_groups: [],
+          min_gdpval: 1630,
+          max_gdpval: 1700,
+          models: ['pi-claude/claude-sonnet-5'],
+        },
       },
     };
     const boot = await bootWithConfig(config, [KNOWN_MODEL, expensiveModel]);
@@ -792,16 +833,25 @@ describe('default export wiring: tool_call pre-call read block', () => {
       const { small } = writeFiles(boot.tmpDir);
       // Cheap session model — the session-ref fallback the hook would use
       // if every router-side ref were lost.
-      await boot.onHandlers['turn_start']?.({}, {
-        model: { provider: 'mistral', id: 'mistral-medium-3.5' },
-      });
+      await boot.onHandlers['turn_start']?.(
+        {},
+        {
+          model: { provider: 'mistral', id: 'mistral-medium-3.5' },
+        }
+      );
 
       // Pin the expensive group model as this turn's driving ref.
       const setGroupTool = boot.registerToolCalls.find(
         (c: any) => c[0]?.name === 'set_model_from_group'
       )?.[0];
       expect(setGroupTool).toBeDefined();
-      await (setGroupTool as any).execute('test', { group: 'code_complex' }, undefined, undefined, boot.sessionCtx);
+      await (setGroupTool as any).execute(
+        'test',
+        { group: 'code_complex' },
+        undefined,
+        undefined,
+        boot.sessionCtx
+      );
 
       // Sanity: the pin is in place and blocks the expensive driver below
       // the size threshold.
@@ -823,5 +873,4 @@ describe('default export wiring: tool_call pre-call read block', () => {
       boot.cleanup();
     }
   });
-
 });

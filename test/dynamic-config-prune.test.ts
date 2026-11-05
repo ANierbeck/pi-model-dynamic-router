@@ -24,7 +24,8 @@ import type { Config } from '../src/types.ts';
 
 const cfgOf = (o: unknown) => o as Config;
 const contributions = (dyn: Config) =>
-  (dyn as unknown as { _dynamic: { static_contributions?: unknown } })._dynamic.static_contributions;
+  (dyn as unknown as { _dynamic: { static_contributions?: unknown } })._dynamic
+    .static_contributions;
 
 const SENTINEL = 'claude-bridge/claude-sonnet-5-5';
 const LEARNED = 'claude-bridge/claude-opus-5-5';
@@ -72,7 +73,9 @@ describe('resyncDynamicFromStatic prunes entries the static layers dropped', () 
   it('(c) self-heals a user-layer removal across two regenerations', () => {
     const withUser = cfgOf({
       model_groups: {},
-      providers: { openrouter: { billing: 'pay_per_token', free_models: ['openrouter/mine:free'] } },
+      providers: {
+        openrouter: { billing: 'pay_per_token', free_models: ['openrouter/mine:free'] },
+      },
       model_metrics: { 'user/pinned': { cost_per_m: 0 } },
       gdpval_builtin: { 'user-slug': 1000 },
     });
@@ -115,7 +118,12 @@ describe('resyncDynamicFromStatic prunes entries the static layers dropped', () 
   });
 
   it('records the current static contribution for the next generation', () => {
-    const dyn = cfgOf({ _dynamic: { generated_at: 'x' }, model_groups: {}, providers: {}, model_metrics: {} });
+    const dyn = cfgOf({
+      _dynamic: { generated_at: 'x' },
+      model_groups: {},
+      providers: {},
+      model_metrics: {},
+    });
     resyncDynamicFromStatic(
       dyn,
       cfgOf({
@@ -123,7 +131,7 @@ describe('resyncDynamicFromStatic prunes entries the static layers dropped', () 
         providers: { openrouter: { billing: 'pay_per_token' } },
         model_metrics: { 'a/b': { cost_per_m: 1 } },
         gdpval_builtin: { slug: 900 },
-      }),
+      })
     );
     expect(contributions(dyn)).toEqual({
       providers: { openrouter: ['billing'] },
@@ -161,12 +169,15 @@ describe('resyncDynamicFromStatic prune is fail-open', () => {
     ['an array', ['model_metrics']],
     ['a section of the wrong shape', { model_metrics: ['x'] }],
     ['an entry with a non-array field list', { model_metrics: { [SENTINEL]: 'cost_per_m' } }],
-  ])('a corrupt remembered set (%s) prunes nothing and is replaced by the current one', (_label, corrupt) => {
-    const dyn = legacyDynamic({ static_contributions: corrupt });
-    resyncDynamicFromStatic(dyn, staticCfg);
-    expect(dyn.model_metrics[SENTINEL]).toEqual({ cost_per_m: 5e-7 });
-    expect(contributions(dyn)).toEqual({ providers: {}, model_metrics: {}, gdpval_builtin: {} });
-  });
+  ])(
+    'a corrupt remembered set (%s) prunes nothing and is replaced by the current one',
+    (_label, corrupt) => {
+      const dyn = legacyDynamic({ static_contributions: corrupt });
+      resyncDynamicFromStatic(dyn, staticCfg);
+      expect(dyn.model_metrics[SENTINEL]).toEqual({ cost_per_m: 5e-7 });
+      expect(contributions(dyn)).toEqual({ providers: {}, model_metrics: {}, gdpval_builtin: {} });
+    }
+  );
 });
 
 describe('registerRegistryProviderStubs (review M2 extraction)', () => {
@@ -176,7 +187,12 @@ describe('registerRegistryProviderStubs (review M2 extraction)', () => {
   it('stubs unknown registry providers and never overwrites an existing entry', async () => {
     const { registerRegistryProviderStubs } = await import('../src/dynamic-config.ts');
     const cfg: any = { providers: { 'known-provider': { billing: 'pay_per_token' } } };
-    registerRegistryProviderStubs(cfg, ['bridge-a/model-x', 'known-provider/model-y', 'nonsense', 'bridge-a/model-z']);
+    registerRegistryProviderStubs(cfg, [
+      'bridge-a/model-x',
+      'known-provider/model-y',
+      'nonsense',
+      'bridge-a/model-z',
+    ]);
     expect(cfg.providers['bridge-a']).toEqual({ billing: 'subscription' });
     expect(cfg.providers['known-provider']).toEqual({ billing: 'pay_per_token' }); // untouched
     expect(Object.keys(cfg.providers)).toEqual(['known-provider', 'bridge-a']); // idempotent: one entry per provider
@@ -185,7 +201,8 @@ describe('registerRegistryProviderStubs (review M2 extraction)', () => {
 
 describe('resyncDynamicFromStatic reports dropped providers (review M2 contract)', () => {
   it('lists exactly the provider entries this resync removed, so load() can re-stub them', async () => {
-    const { resyncDynamicFromStatic, collectStaticContributions } = await import('../src/dynamic-config.ts');
+    const { resyncDynamicFromStatic, collectStaticContributions } =
+      await import('../src/dynamic-config.ts');
     // Dynamic file: bridge-x was recorded as a static contribution but no
     // static layer declares it any more; bridge-keep was never recorded
     // (scan-added) and must not be reported.
@@ -197,7 +214,10 @@ describe('resyncDynamicFromStatic reports dropped providers (review M2 contract)
           gdpval_builtin: {},
         },
       },
-      providers: { 'bridge-x': { billing: 'subscription' }, 'bridge-keep': { billing: 'subscription' } },
+      providers: {
+        'bridge-x': { billing: 'subscription' },
+        'bridge-keep': { billing: 'subscription' },
+      },
     };
     const staticCfg: any = { model_groups: {} };
     const res = resyncDynamicFromStatic(dyn, staticCfg, collectStaticContributions(staticCfg));

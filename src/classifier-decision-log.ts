@@ -26,7 +26,16 @@ export interface DecisionAttempt {
   /** ok | failed | skipped */
   outcome: 'ok' | 'failed' | 'skipped';
   /** Machine-classified failure reason; never the raw body (may echo secrets). */
-  why?: 'timeout' | 'http-429' | 'http-4xx' | 'http-5xx' | 'empty-reply' | 'unparseable' | 'invalid-category' | 'no-credentials' | 'not-in-registry';
+  why?:
+    | 'timeout'
+    | 'http-429'
+    | 'http-4xx'
+    | 'http-5xx'
+    | 'empty-reply'
+    | 'unparseable'
+    | 'invalid-category'
+    | 'no-credentials'
+    | 'not-in-registry';
   /** Wall time of the attempt in ms. */
   ms?: number;
 }
@@ -169,7 +178,8 @@ export function newTrace(): ClassificationTrace {
   return { chain: [], raw: null, steps: [], cacheOrigin: null, answeredBy: null };
 }
 
-const sha = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 12);
+const sha = (s: string): string =>
+  createHash('sha256').update(s, 'utf8').digest('hex').slice(0, 12);
 
 export function decisionLogPath(home: string): string {
   return `${home}/.pi/logs/classifier-decisions.jsonl`;
@@ -177,10 +187,13 @@ export function decisionLogPath(home: string): string {
 
 /** Normalized logging config; null = off (absent/disabled/`options.cfg` undefined). */
 export function resolveClassifierLogConfig(
-  cfgBlock: ClassifierLogConfig | undefined,
+  cfgBlock: ClassifierLogConfig | undefined
 ): { store: 'none' | 'snippet' | 'full'; maxBytes: number; keep: number } | null {
   if (!cfgBlock?.enabled) return null;
-  const store = cfgBlock.store_text === 'snippet' || cfgBlock.store_text === 'full' ? cfgBlock.store_text : 'none';
+  const store =
+    cfgBlock.store_text === 'snippet' || cfgBlock.store_text === 'full'
+      ? cfgBlock.store_text
+      : 'none';
   return {
     store,
     maxBytes: cfgBlock.max_bytes && cfgBlock.max_bytes > 0 ? cfgBlock.max_bytes : 20 * 1024 * 1024,
@@ -191,13 +204,17 @@ export function resolveClassifierLogConfig(
 function storeInput(
   log: { store: 'none' | 'snippet' | 'full' },
   prompt: string,
-  context: { previousUserMessage?: string | undefined; lastAssistantSnippet?: string | undefined } | undefined,
+  context:
+    | { previousUserMessage?: string | undefined; lastAssistantSnippet?: string | undefined }
+    | undefined
 ): DecisionInput['text'] {
   if (log.store === 'full') {
     return {
       prompt,
       ...(context?.previousUserMessage ? { previousUserMessage: context.previousUserMessage } : {}),
-      ...(context?.lastAssistantSnippet ? { lastAssistantSnippet: context.lastAssistantSnippet } : {}),
+      ...(context?.lastAssistantSnippet
+        ? { lastAssistantSnippet: context.lastAssistantSnippet }
+        : {}),
     };
   }
   if (log.store === 'snippet') return { prompt: prompt.slice(0, 120) };
@@ -218,12 +235,14 @@ export interface RecordParams {
   };
   // Structural subset of the classifier's ClassificationContext (imported
   // structurally, not by name — content-classifier imports this module).
-  context: {
-    previousUserMessage?: string | undefined;
-    lastAssistantSnippet?: string | undefined;
-    lastCategory?: string | undefined;
-    isCompaction?: boolean | undefined;
-  } | undefined;
+  context:
+    | {
+        previousUserMessage?: string | undefined;
+        lastAssistantSnippet?: string | undefined;
+        lastCategory?: string | undefined;
+        isCompaction?: boolean | undefined;
+      }
+    | undefined;
   ms: number;
   cfgBlock: ClassifierLogConfig | undefined;
   home: string;
@@ -250,9 +269,7 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
       confidence: p.trace.raw.confidence ?? null,
       reason: reasonsAllowed ? p.trace.raw.reason : null,
     },
-    prev: p.prev
-      ? { category: p.prev.category ?? null, group: p.prev.group ?? null }
-      : null,
+    prev: p.prev ? { category: p.prev.category ?? null, group: p.prev.group ?? null } : null,
     final: {
       category: p.final.category,
       group: p.final.group,
@@ -280,7 +297,11 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
 }
 
 /** Append one record, never throwing (fail-open: logging must not break routing). */
-export function writeDecisionRecord(rec: DecisionRecord, home: string, log: { maxBytes: number; keep: number }): void {
+export function writeDecisionRecord(
+  rec: DecisionRecord,
+  home: string,
+  log: { maxBytes: number; keep: number }
+): void {
   try {
     appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
   } catch {
@@ -322,7 +343,11 @@ export function buildPoolRecord(pool: GroupPool): DecisionPoolRecord {
 }
 
 /** Append one pool record; fail-open like writeDecisionRecord. */
-export function writePoolRecord(rec: DecisionPoolRecord, home: string, log: { maxBytes: number; keep: number }): void {
+export function writePoolRecord(
+  rec: DecisionPoolRecord,
+  home: string,
+  log: { maxBytes: number; keep: number }
+): void {
   try {
     appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
   } catch {

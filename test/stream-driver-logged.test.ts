@@ -29,13 +29,18 @@ beforeEach(() => {
 describe('pushRouterInfoLogged', () => {
   it('writes a durable router.log line in addition to the chat events', () => {
     const proxy = fakeProxy();
-    pushRouterInfoLogged(proxy as any, '> [router] openrouter/foo — rate limit/spend limit reached, trying openrouter/bar …\n\n');
+    pushRouterInfoLogged(
+      proxy as any,
+      '> [router] openrouter/foo — rate limit/spend limit reached, trying openrouter/bar …\n\n'
+    );
 
     expect(routerLogSpy).toHaveBeenCalledTimes(1);
     // The leading "> " chat-formatting marker is stripped before logging.
     const loggedText = routerLogSpy.mock.calls[0][0];
     expect(loggedText.startsWith('>')).toBe(false);
-    expect(loggedText).toContain('[router] openrouter/foo — rate limit/spend limit reached, trying openrouter/bar');
+    expect(loggedText).toContain(
+      '[router] openrouter/foo — rate limit/spend limit reached, trying openrouter/bar'
+    );
   });
 
   it('still pushes the same text_start/text_delta/text_end triplet as pushRouterInfo', () => {
@@ -54,8 +59,14 @@ describe('pushRouterInfoLogged', () => {
 
   it('logs each call independently (no batching/deduping across repeated switches)', () => {
     const proxy = fakeProxy();
-    pushRouterInfoLogged(proxy as any, '> [router] mistral/foo — rate limit, trying mistral/bar …\n\n');
-    pushRouterInfoLogged(proxy as any, '> [router] mistral/bar — stall_timeout, trying mistral/baz …\n\n');
+    pushRouterInfoLogged(
+      proxy as any,
+      '> [router] mistral/foo — rate limit, trying mistral/bar …\n\n'
+    );
+    pushRouterInfoLogged(
+      proxy as any,
+      '> [router] mistral/bar — stall_timeout, trying mistral/baz …\n\n'
+    );
 
     expect(routerLogSpy).toHaveBeenCalledTimes(2);
     expect(routerLogSpy.mock.calls[0][0]).toContain('mistral/foo');

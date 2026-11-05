@@ -21,8 +21,16 @@ const DATE_SUFFIX_RE = /-(?:\d{4}|\d{6}|\d{8})$/g;
 
 // "-latest", "-preview", "-chat", "-instruct", "-thinking", etc.
 const TAG_SUFFIXES = [
-  '-latest', '-preview', '-chat', '-instruct', '-thinking',
-  '-reasoning', '-tee', '-fp8', '-adaptive', '-non-reasoning',
+  '-latest',
+  '-preview',
+  '-chat',
+  '-instruct',
+  '-thinking',
+  '-reasoning',
+  '-tee',
+  '-fp8',
+  '-adaptive',
+  '-non-reasoning',
 ];
 
 // Vendor prefixes that should be stripped ("<vendor>-glm-5-2" → "glm-5-2"):
@@ -190,7 +198,12 @@ function versionTupleGT(a: number[], b: number[]): boolean {
  *      to the newest version of their family (mistral-small-latest → 3-2),
  *   4. more letter-tokens first (more specific match).
  */
-interface CandRank { score: number; exact: boolean; tuple: number[]; tokenCount: number }
+interface CandRank {
+  score: number;
+  exact: boolean;
+  tuple: number[];
+  tokenCount: number;
+}
 function compareCand(a: CandRank, b: CandRank): number {
   if (a.score !== b.score) return b.score - a.score;
   if (a.exact !== b.exact) return a.exact ? -1 : 1;
@@ -209,13 +222,11 @@ function isExactTuple(slugNums: number[], refNums: number[]): boolean {
 // Does NOT match when the size is part of the model family name (e.g. "gemma4-12b"
 // is a GDPval slug, "mistral-small-3-1" has "small" but is a real model).
 // We check this AFTER exact match, so models in the GDPval DB are never excluded.
-const SMALL_MODEL_PATTERNS = [
-  /\bministral-\d+b\b/i,
-  /\bministral-\d+b-/i,
-];
+const SMALL_MODEL_PATTERNS = [/\bministral-\d+b\b/i, /\bministral-\d+b-/i];
 
 // Special-purpose models that are not for general LLM routing
-const SPECIAL_MODEL_RE = /\b(ocr|voxtral|vibe|whisper|tts|embed|guard|safety|moderation|fim|rerank|audio|transcri)\b/i;
+const SPECIAL_MODEL_RE =
+  /\b(ocr|voxtral|vibe|whisper|tts|embed|guard|safety|moderation|fim|rerank|audio|transcri)\b/i;
 
 /**
  * Determine if a model should be EXCLUDED from routing (null GDPval).
@@ -248,8 +259,18 @@ export function shouldExclude(ref: string): boolean {
 // noise (gemma-4-26b-a4b-it ≡ gemma-4-26b-a4b). Mirrors KNOWN_DISCRIMINATING
 // from the OD7 model-identity work (quality-cascade worktree).
 const KNOWN_DISCRIMINATING = new Set([
-  'mini', 'flash', 'small', 'pro', 'nano', 'lite', 'preview', 'turbo',
-  'medium', 'plus', 'instruct', 'reasoning',
+  'mini',
+  'flash',
+  'small',
+  'pro',
+  'nano',
+  'lite',
+  'preview',
+  'turbo',
+  'medium',
+  'plus',
+  'instruct',
+  'reasoning',
 ]);
 
 /**
@@ -262,12 +283,14 @@ const KNOWN_DISCRIMINATING = new Set([
  * (devstral-small-2505 → devstral) when no variant row exists.
  */
 function variantVetoTokens(
-  refLetters: Set<string>, refNumbers: number[],
-  slugLetters: Set<string>, slugNumbers: number[]
+  refLetters: Set<string>,
+  refNumbers: number[],
+  slugLetters: Set<string>,
+  slugNumbers: number[]
 ): boolean {
   if (slugNumbers.length === 0) return false;
   if (!isExactTuple(slugNumbers, refNumbers)) return false;
-  return [...refLetters].some(t => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
+  return [...refLetters].some((t) => KNOWN_DISCRIMINATING.has(t) && !slugLetters.has(t));
 }
 
 /** True when `slug` names a variant-different model than `ref` (veto). */
@@ -288,10 +311,7 @@ export function variantVeto(ref: string, slug: string): boolean {
  * 2. Exact normalized match → slug
  * 3. Token-set fuzzy match → slug
  */
-export function matchSlug(
-  ref: string,
-  gdpvalSlugs: string[]
-): string | null | undefined {
+export function matchSlug(ref: string, gdpvalSlugs: string[]): string | null | undefined {
   const normalized = normalizeModelId(ref);
 
   // Stage 3: Exact match (after normalization) — check FIRST, before exclusion.
@@ -312,7 +332,10 @@ export function matchSlug(
   for (const slug of gdpvalSlugs) {
     const normalizedSlug = normalizeModelId(slug);
     if (normalized !== normalizedSlug) continue;
-    if (exactNumHit === undefined && isExactTuple(extractTokens(normalizeSpacedId(slug)).numbers, refNums)) {
+    if (
+      exactNumHit === undefined &&
+      isExactTuple(extractTokens(normalizeSpacedId(slug)).numbers, refNums)
+    ) {
       exactNumHit = slug;
     } else {
       exactHit ??= slug;
@@ -349,10 +372,14 @@ export function matchSlug(
   let best: CandRank | undefined;
 
   for (const slug of gdpvalSlugs) {
-    const { letters: slugLetters, numbers: slugNumbers, version: slugVersion } = extractTokens(normalizeSpacedId(slug));
+    const {
+      letters: slugLetters,
+      numbers: slugNumbers,
+      version: slugVersion,
+    } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
-    const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
+    const refHasAllSlugLetters = [...slugLetters].every((t) => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
 
     // Rule 1b: the variant-token veto (apodex-1.1-mini vs apodex-1-1).
@@ -367,7 +394,7 @@ export function matchSlug(
     }
 
     // Score: how many slug letter-tokens are in the ref?
-    const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
+    const overlap = [...slugLetters].filter((t) => refLetters.has(t)).length;
     const score = overlap / slugLetters.size;
     const cand: CandRank = {
       score,
@@ -396,11 +423,7 @@ export function matchSlug(
  * Returns up to `maxK` slugs, sorted by descending score.
  * Returns empty array if the model is excluded or no candidates found.
  */
-export function candidateSlugs(
-  ref: string,
-  gdpvalSlugs: string[],
-  maxK: number = 5
-): string[] {
+export function candidateSlugs(ref: string, gdpvalSlugs: string[], maxK: number = 5): string[] {
   // Check exclusion first
   if (shouldExclude(ref)) return [];
 
@@ -409,10 +432,14 @@ export function candidateSlugs(
   const candidates: { slug: string; rank: CandRank }[] = [];
 
   for (const slug of gdpvalSlugs) {
-    const { letters: slugLetters, numbers: slugNumbers, version: slugVersion } = extractTokens(normalizeSpacedId(slug));
+    const {
+      letters: slugLetters,
+      numbers: slugNumbers,
+      version: slugVersion,
+    } = extractTokens(normalizeSpacedId(slug));
 
     // Rule 1: All slug letter-tokens must be in ref
-    const refHasAllSlugLetters = [...slugLetters].every(t => refLetters.has(t));
+    const refHasAllSlugLetters = [...slugLetters].every((t) => refLetters.has(t));
     if (!refHasAllSlugLetters) continue;
 
     // Rule 1b: same variant-token veto as matchSlug — the LLM pre-filter
@@ -427,12 +454,17 @@ export function candidateSlugs(
     }
 
     // Score: how many slug letter-tokens are in the ref?
-    const overlap = [...slugLetters].filter(t => refLetters.has(t)).length;
+    const overlap = [...slugLetters].filter((t) => refLetters.has(t)).length;
     const score = overlap / slugLetters.size;
 
     candidates.push({
       slug,
-      rank: { score, exact: isExactTuple(slugNumbers, refNumbers), tuple: slugVersion, tokenCount: slugLetters.size },
+      rank: {
+        score,
+        exact: isExactTuple(slugNumbers, refNumbers),
+        tuple: slugVersion,
+        tokenCount: slugLetters.size,
+      },
     });
   }
 

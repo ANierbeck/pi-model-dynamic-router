@@ -40,7 +40,9 @@ describe('pre-push plan wording for the format gate', () => {
   it('names the format inputs when they are dirty', () => {
     const plan = prePushLintPlan(`${line(HEAD)}\n`, HEAD, ['src/wip.ts'], 'format');
     expect(plan.run).toBe(false);
-    expect(plan.run === false && plan.reason).toMatch(/uncommitted changes in format inputs.*src\/wip\.ts/);
+    expect(plan.run === false && plan.reason).toMatch(
+      /uncommitted changes in format inputs.*src\/wip\.ts/
+    );
   });
 
   it('keeps the lint wording for the lint gate (default subject unchanged)', () => {
@@ -58,5 +60,22 @@ describe('wiring pins', () => {
     expect(pkg.scripts['format']).toMatch(/format-gate\.ts/);
     expect(pkg.scripts['format']).toMatch(/--write/);
     expect(pkg.scripts['format:check']).toMatch(/format-gate\.ts/);
+  });
+
+  it('CI runs the format check in the required test job (owner decision 3)', () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, '.github/workflows/test.yml'), 'utf-8');
+    expect(workflow).toMatch(/name: Check formatting \(Prettier\)\n\s*run: npm run format:check/);
+  });
+
+  it('the pre-push hook runs the format gate with the same skip semantics', () => {
+    const hook = fs.readFileSync(path.join(repoRoot, '.githooks/pre-push'), 'utf-8');
+    // Same pattern as the lint gate: skip with a notice when the checkout
+    // has no gate, so CI stays the authority.
+    expect(hook).toMatch(
+      /if \[ -f scripts\/format-gate\.ts \]; then\n\s*printf '%s\\n' "\$refs" \| node scripts\/format-gate\.ts --pre-push \|\| exit \$\?/
+    );
+    expect(hook).toMatch(
+      /no format gate in this checkout \(scripts\/format-gate\.ts\), format check skipped/
+    );
   });
 });

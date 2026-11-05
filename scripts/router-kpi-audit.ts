@@ -40,7 +40,15 @@ export function createKpis(): Kpis {
   return {
     lines: 0,
     tagAnomalies: 0,
-    delegation: { replaced: 0, byTool: {}, charsIn: 0, charsOut: 0, inflated: 0, failed: 0, noUsableSummary: 0 },
+    delegation: {
+      replaced: 0,
+      byTool: {},
+      charsIn: 0,
+      charsOut: 0,
+      inflated: 0,
+      failed: 0,
+      noUsableSummary: 0,
+    },
     readBlocks: { expensive: 0, size: 0 },
     hops: { failures: 0, byReason: {}, byModel: {} },
     allCandidatesFailed: 0,
@@ -117,27 +125,51 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
     if (after >= before) k.delegation.inflated++;
     return;
   }
-  if (body.startsWith('[delegation] failed')) { k.delegation.failed++; return; }
-  if (body.startsWith('[delegation] sub-call produced no usable summary')) { k.delegation.noUsableSummary++; return; }
+  if (body.startsWith('[delegation] failed')) {
+    k.delegation.failed++;
+    return;
+  }
+  if (body.startsWith('[delegation] sub-call produced no usable summary')) {
+    k.delegation.noUsableSummary++;
+    return;
+  }
   if (body.startsWith('[bulk_read] blocked a full-file read')) {
     if (body.includes('by expensive model')) k.readBlocks.expensive++;
     else k.readBlocks.size++;
     return;
   }
-  if (/^\[router\] All \d+ candidate\(s\) failed/.test(body)) { k.allCandidatesFailed++; return; }
+  if (/^\[router\] All \d+ candidate\(s\) failed/.test(body)) {
+    k.allCandidatesFailed++;
+    return;
+  }
   if ((r = /^\[router\] \S+ blocked for \d+ days?: ([\w-]+)/.exec(body))) {
     k.blocklist.blocked++;
     bump(k.blocklist.byReason, r[1]);
     return;
   }
-  if (/^\[router\] \S+ answered after its blocklist entry expired/.test(body)) { k.blocklist.cleared++; return; }
-  if (/^\[router\] watchdog: \S+ looks wedged/.test(body)) { k.watchdog.wedged++; return; }
-  if (body.startsWith('[classifier] Ollama marked wedged')) { k.watchdog.classifierSkips++; return; }
+  if (/^\[router\] \S+ answered after its blocklist entry expired/.test(body)) {
+    k.blocklist.cleared++;
+    return;
+  }
+  if (/^\[router\] watchdog: \S+ looks wedged/.test(body)) {
+    k.watchdog.wedged++;
+    return;
+  }
+  if (body.startsWith('[classifier] Ollama marked wedged')) {
+    k.watchdog.classifierSkips++;
+    return;
+  }
   // The only non-anchored matcher: an anomalous (unparseable-tag) line
   // still counts here while every anchored family drops it — the undercount
   // above is family-dependent, which is why the warning says "may".
-  if (body.includes('rejects structured output (501)')) { k.classifier.noSchema501++; return; }
-  if (body.startsWith('[classifier] Fallback model also failed')) { k.classifier.fallbackFailed++; return; }
+  if (body.includes('rejects structured output (501)')) {
+    k.classifier.noSchema501++;
+    return;
+  }
+  if (body.startsWith('[classifier] Fallback model also failed')) {
+    k.classifier.fallbackFailed++;
+    return;
+  }
   if ((r = /^\[router\] (\S+) — (.+?)(?:, trying \S+ …)?$/.exec(body))) {
     const reason = hopReason(r[2]);
     k.hops.failures++;
@@ -151,7 +183,9 @@ export function ingestLine(k: Kpis, line: string, sinceMs?: number): void {
 }
 
 const top = (m: Record<string, number>, n: number) =>
-  Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+  Object.entries(m)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n);
 
 export function formatReport(k: Kpis): string {
   const d = k.delegation;
@@ -161,33 +195,52 @@ export function formatReport(k: Kpis): string {
     `Router KPI audit — ${k.lines} log lines${k.firstTs ? ` (${k.firstTs} … ${k.lastTs})` : ''}`,
     '',
     'Delegation (ADR-0007)',
-    `  replaced results: ${d.replaced} (${top(d.byTool, 5).map(([t, n]) => `${t} ${n}`).join(', ') || '—'})`,
+    `  replaced results: ${d.replaced} (${
+      top(d.byTool, 5)
+        .map(([t, n]) => `${t} ${n}`)
+        .join(', ') || '—'
+    })`,
     `  chars in → out:   ${d.charsIn} → ${d.charsOut} (saved ${saved}, ${pct}%)`,
     `  inflated (summary ≥ original): ${d.inflated}`,
     `  failed / no usable summary:    ${d.failed} / ${d.noUsableSummary}`,
     `  full-file reads blocked:       ${k.readBlocks.expensive} expensive-model, ${k.readBlocks.size} size`,
     '',
     'Failover (ADR-0013)',
-    `  failed hops: ${k.hops.failures} (${top(k.hops.byReason, 8).map(([r, n]) => `${r} ${n}`).join(', ') || '—'})`,
+    `  failed hops: ${k.hops.failures} (${
+      top(k.hops.byReason, 8)
+        .map(([r, n]) => `${r} ${n}`)
+        .join(', ') || '—'
+    })`,
     `  all candidates failed: ${k.allCandidatesFailed}`,
     '  most failing models:',
     ...top(k.hops.byModel, 10).map(([m, n]) => `    ${String(n).padStart(6)}  ${m}`),
     '',
     'Learned blocklist (ADR-0008)',
-    `  blocks: ${k.blocklist.blocked} (${top(k.blocklist.byReason, 8).map(([r, n]) => `${r} ${n}`).join(', ') || '—'}), cleared after re-probe: ${k.blocklist.cleared}`,
+    `  blocks: ${k.blocklist.blocked} (${
+      top(k.blocklist.byReason, 8)
+        .map(([r, n]) => `${r} ${n}`)
+        .join(', ') || '—'
+    }), cleared after re-probe: ${k.blocklist.cleared}`,
     '',
     'Local-provider watchdog (ADR-0016)',
     `  wedge events: ${k.watchdog.wedged}, classifier skips while wedged: ${k.watchdog.classifierSkips}`,
     '',
     'Classifier',
-    `  categories: ${top(k.classifier.byCategory, 10).map(([c, n]) => `${c} ${n}`).join(', ') || '—'}`,
+    `  categories: ${
+      top(k.classifier.byCategory, 10)
+        .map(([c, n]) => `${c} ${n}`)
+        .join(', ') || '—'
+    }`,
     `  primary 501 (no structured output): ${k.classifier.noSchema501}, fallback failed: ${k.classifier.fallbackFailed}`,
   ];
   // Self-containment: the stderr warning is lost when stderr is redirected;
   // the report itself must disclose a possible undercount (review Minor
   // 2026-10-04).
   if (k.tagAnomalies > 0) {
-    out.push('', `⚠ ${k.tagAnomalies} line(s) carry a provenance tag the audit could not parse — counts may undercount`);
+    out.push(
+      '',
+      `⚠ ${k.tagAnomalies} line(s) carry a provenance tag the audit could not parse — counts may undercount`
+    );
   }
   return out.join('\n');
 }
@@ -195,7 +248,8 @@ export function formatReport(k: Kpis): string {
 /** The log and its rotated predecessors, oldest first (see src/logger.ts). */
 export function logFiles(base: string, maxRotations = 20): string[] {
   const rotated: string[] = [];
-  for (let i = maxRotations; i >= 1; i--) if (existsSync(`${base}.${i}`)) rotated.push(`${base}.${i}`);
+  for (let i = maxRotations; i >= 1; i--)
+    if (existsSync(`${base}.${i}`)) rotated.push(`${base}.${i}`);
   return existsSync(base) ? [...rotated, base] : rotated;
 }
 
@@ -207,7 +261,8 @@ export function parseSince(value: string, now: number = Date.now()): number {
     return now - Number(rel[1]) * unit;
   }
   const abs = Date.parse(value);
-  if (Number.isNaN(abs)) throw new Error(`--since: cannot parse "${value}" (use 7d, 24h, 30m or an ISO date)`);
+  if (Number.isNaN(abs))
+    throw new Error(`--since: cannot parse "${value}" (use 7d, 24h, 30m or an ISO date)`);
   return abs;
 }
 
@@ -225,7 +280,9 @@ async function main(argv: string[]): Promise<void> {
     for await (const line of rl) ingestLine(k, line, sinceMs);
   }
   if (k.tagAnomalies > 0) {
-    console.error(`warning: ${k.tagAnomalies} log line(s) carry a provenance tag the audit could not parse; KPIs may undercount (first: ${JSON.stringify(k.tagAnomalyExample)})`);
+    console.error(
+      `warning: ${k.tagAnomalies} log line(s) carry a provenance tag the audit could not parse; KPIs may undercount (first: ${JSON.stringify(k.tagAnomalyExample)})`
+    );
   }
   console.log(argv.includes('--json') ? JSON.stringify(k, null, 2) : formatReport(k));
 }

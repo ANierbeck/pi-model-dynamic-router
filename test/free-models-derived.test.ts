@@ -18,6 +18,7 @@ import { isStreamableRef } from '../src/streamable-refs.ts';
 import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Config, Cache } from '../src/types.ts';
+import { hermeticCacheFlags } from './helpers/stream-fixtures.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -53,7 +54,11 @@ describe('persist path: a scan-discovered :free ref needs the provider credentia
   });
 
   it('never asks the credential gate for local runtimes', () => {
-    const ctx = { ...baseCtx, isLocalProvider: (p: string) => p === 'local-daemon', hasConfiguredAuth: () => false };
+    const ctx = {
+      ...baseCtx,
+      isLocalProvider: (p: string) => p === 'local-daemon',
+      hasConfiguredAuth: () => false,
+    };
     expect(isStreamableRef('local-daemon/anything:7b', ctx)).toBe(true);
   });
 });
@@ -67,15 +72,20 @@ describe('live path: free-tier candidates follow the credential gate', () => {
     usage_log: [],
     benchmarks: {},
     budget_cache: {},
-    gdpval_scraped: true,
-    lastScanTimestamp: Date.now(),
+    ...hermeticCacheFlags(),
     models_cached: '',
   } as any as Cache;
 
   function makeRouter(opts: { configured: boolean; cfgProviders?: Config['providers'] }) {
     const cfg = {
       model_groups: {
-        trivial: { description: 't', method: 'min_cost_if_all_priced', max_cost: 0, min_gdpval: 0, fallback_groups: [] },
+        trivial: {
+          description: 't',
+          method: 'min_cost_if_all_priced',
+          max_cost: 0,
+          min_gdpval: 0,
+          fallback_groups: [],
+        },
       },
       providers: opts.cfgProviders ?? {},
       model_metrics: {},
@@ -85,9 +95,14 @@ describe('live path: free-tier candidates follow the credential gate', () => {
     metricsModule.setCache(cache);
     metricsModule.setModelMap({}, []);
     // Pi's getAvailable() returns only models whose provider holds credentials.
-    const model = { provider: 'acme-router', id: 'vendor/tiny-1:free', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+    const model = {
+      provider: 'acme-router',
+      id: 'vendor/tiny-1:free',
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
     const registry = {
-      find: (p: string, id: string) => (p === model.provider && id === model.id ? model : undefined),
+      find: (p: string, id: string) =>
+        p === model.provider && id === model.id ? model : undefined,
       getAvailable: () => (opts.configured ? [model] : []),
       getRegisteredProviderIds: () => [model.provider],
       hasConfiguredAuth: () => opts.configured,
@@ -114,13 +129,19 @@ describe('live path: free-tier candidates follow the credential gate', () => {
 
   it('user-layer free_models still admits its refs when credentialed', () => {
     const userRef = 'acme-router/vendor/pinned-2:free';
-    const router = makeRouter({ configured: true, cfgProviders: { 'acme-router': { free_models: [userRef] } } as any });
+    const router = makeRouter({
+      configured: true,
+      cfgProviders: { 'acme-router': { free_models: [userRef] } } as any,
+    });
     expect(router.allDiscoveredRefs()).toContain(userRef);
   });
 
   it('user-layer free_models stays gated when the provider has no key', () => {
     const userRef = 'acme-router/vendor/pinned-2:free';
-    const router = makeRouter({ configured: false, cfgProviders: { 'acme-router': { free_models: [userRef] } } as any });
+    const router = makeRouter({
+      configured: false,
+      cfgProviders: { 'acme-router': { free_models: [userRef] } } as any,
+    });
     expect(router.allDiscoveredRefs()).not.toContain(userRef);
   });
 });

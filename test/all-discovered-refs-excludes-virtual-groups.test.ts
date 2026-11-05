@@ -24,6 +24,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Router, isVirtualGroupRef } from '../src/routing.ts';
 import type { Config, Cache } from '../src/types.ts';
 import * as metricsModule from '../src/metrics.ts';
+import { emptyCache } from './helpers/stream-fixtures.ts';
 
 function makeRegistry(
   models: Array<{ provider: string; id: string; cost?: { input: number; output: number } }>,
@@ -37,7 +38,8 @@ function makeRegistry(
       : { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   }));
   return {
-    find: (provider: string, modelId: string) => all.find((m) => m.provider === provider && m.id === modelId),
+    find: (provider: string, modelId: string) =>
+      all.find((m) => m.provider === provider && m.id === modelId),
     getAvailable: () => all,
     getRegisteredProviderIds: () => [...new Set(all.map((m) => m.provider))],
     hasConfiguredAuth: (model: any) => configuredProviders.has(model.provider),
@@ -68,18 +70,7 @@ describe('allDiscoveredRefs() excludes virtual group self-references', () => {
     gdpval_builtin: {},
   } as any;
 
-  const cache: Cache = {
-    available_models: [],
-    gdpval_scores: {},
-    model_score_cache: {},
-    openrouter_pricing: {},
-    usage_log: [],
-    benchmarks: {},
-    budget_cache: {},
-    gdpval_scraped: true,
-    lastScanTimestamp: Date.now(),
-    models_cached: '',
-  } as any;
+  const cache: Cache = { ...emptyCache(), models_cached: '' } as any;
 
   beforeEach(() => {
     metricsModule.setConfig(cfg);
@@ -162,13 +153,19 @@ describe('isVirtualGroupRef() predicate', () => {
 describe('unknown-cost diagnostic excludes virtual group refs', () => {
   const baseCfg: Config = {
     model_groups: {
-      trivial: { description: 'Trivial', method: 'min_cost_if_all_priced', max_cost: 0, min_gdpval: 0, fallback_groups: [] },
+      trivial: {
+        description: 'Trivial',
+        method: 'min_cost_if_all_priced',
+        max_cost: 0,
+        min_gdpval: 0,
+        fallback_groups: [],
+      },
     },
     providers: {},
     model_metrics: {},
     gdpval_builtin: {},
   } as any;
-  const cache: Cache = { available_models: [], gdpval_scores: {}, model_score_cache: {}, openrouter_pricing: {}, usage_log: [], benchmarks: {}, budget_cache: {}, gdpval_scraped: true, lastScanTimestamp: Date.now(), models_cached: '' } as any;
+  const cache: Cache = { ...emptyCache(), models_cached: '' } as any;
 
   beforeEach(() => {
     metricsModule.setConfig(baseCfg);
@@ -183,7 +180,10 @@ describe('unknown-cost diagnostic excludes virtual group refs', () => {
     // could make it 'unknown'. The diagnostic path (index.ts) filters
     // virtual refs FIRST, so the log stays free of routing artefacts
     // regardless of how their cost resolves.
-    const cfgWithUnknown = { ...baseCfg, model_metrics: { 'trivial/trivial': { cost_per_m: 'unknown' } } } as any;
+    const cfgWithUnknown = {
+      ...baseCfg,
+      model_metrics: { 'trivial/trivial': { cost_per_m: 'unknown' } },
+    } as any;
     metricsModule.setConfig(cfgWithUnknown);
 
     const registry = makeRegistry([{ provider: 'trivial', id: 'trivial' }]);

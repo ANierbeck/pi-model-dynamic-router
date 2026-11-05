@@ -34,11 +34,16 @@ describe('mutation-instrument-one: report location convention', () => {
     // The slice at offsetOf(start..end) must be EXACTLY the mutated
     // expression — the same byte range mutation-recheck.ts replaces.
     const sliceOf = (m: (typeof mutants)[number]): string =>
-      FIXTURE.slice(offsetOf(FIXTURE, m.location.start.line, m.location.start.column), offsetOf(FIXTURE, m.location.end.line, m.location.end.column));
+      FIXTURE.slice(
+        offsetOf(FIXTURE, m.location.start.line, m.location.start.column),
+        offsetOf(FIXTURE, m.location.end.line, m.location.end.column)
+      );
 
     // The StringLiteral mutator replaces the literal with an empty
     // double-quoted string (the replacement is `""`, two quote characters).
-    const stringMutant = mutants.find((m) => m.mutatorName === 'StringLiteral' && m.replacement === '""');
+    const stringMutant = mutants.find(
+      (m) => m.mutatorName === 'StringLiteral' && m.replacement === '""'
+    );
     expect(stringMutant).toBeDefined();
     // The whole literal, quotes included — not text one line/col off.
     expect(sliceOf(stringMutant!)).toBe("'slice-me'");

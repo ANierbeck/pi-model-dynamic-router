@@ -42,7 +42,9 @@ describe('detectDegenerateRepetition', () => {
   });
 
   it('ignores a mid-stream loop that the model recovered from', () => {
-    const loop = 'Repeating this line over and over again right now. '.repeat(REPETITION_MIN_REPEATS + 2);
+    const loop = 'Repeating this line over and over again right now. '.repeat(
+      REPETITION_MIN_REPEATS + 2
+    );
     const recovered =
       'Sorry, let me restart. Here is the actual unique answer to your question, ' +
       'written out in full without repeating any earlier sentence verbatim at all.';

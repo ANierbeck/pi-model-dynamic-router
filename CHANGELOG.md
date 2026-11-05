@@ -3,8 +3,9 @@
 ## [Unreleased]
 
 ### Added
-- Prettier format gate (`npm run format` / `format:check`, `scripts/format-gate.ts`) over the code scope (owner decision 1a). The CI step and pre-push hook wiring land together with the one-time reformat (owner decision: re-sequenced so no enforcement is red before the reformat exists).
-- The redundancy metric now skips windows made only of import/export scaffolding (owner decision 2a): after the reformat the import headers normalise and would otherwise raise `repeatedBlocks`. Baseline 45 -> 43.
+- Prettier format gate (`npm run format` / `format:check`, `scripts/format-gate.ts`) over the code scope (owner decision 1a), now enforced: the CI step (`Check formatting (Prettier)` in the `test` job) and the pre-push hook block are wired, with pins in `test/format-gate.test.ts` (owner decision 3).
+- The one-time Prettier reformat of the code scope (272 files) landed together with the enforcement, per the re-sequenced plan: dedupe before reformat, because the reformat normalises duplicated fixtures and would raise `repeatedBlocks`. The dedupe round extracted fixture families into helpers (`doneEvent`/`testModelCost`/`paidCloudModel`/`emptyCache`/`hermeticCacheFlags` in `stream-fixtures.ts`, `makeSessionCtx`/`makePiCtx`/`startSession` in `extension-harness.ts`, `bootProjectDir`/`rmTmpDir`/`teardownBoot`/`withFreshDynamicConfig` in `router-env.ts`, `writeScanCacheFixture`/`removeNoOpScanCacheDefault` in `noop-scan-cache.ts`, `ollamaMockModule`/`ollamaMockPatched` in `ollama-mock.ts`).
+- The redundancy metric now skips windows made only of import/export scaffolding (owner decision 2a): after the reformat the import headers normalise and would otherwise raise `repeatedBlocks`. Baseline 45 -> 43, then 38 after the first dedupe round and 30 after the second (both measured on the reformatted tree).
 
 
 ### Changed

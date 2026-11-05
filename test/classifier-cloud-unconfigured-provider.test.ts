@@ -34,25 +34,30 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
   });
 
   it('skips a candidate whose provider has no configured auth WITHOUT calling completeSimple', async () => {
-    const completeSimple = vi.fn().mockResolvedValue(
-      cloudReply({ category: 'simple', reason: 'should never be reached', confidence: 0.9 })
-    );
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(
+        cloudReply({ category: 'simple', reason: 'should never be reached', confidence: 0.9 })
+      );
     const findModel = vi.fn().mockReturnValue(mockModel);
     const hasConfiguredAuth = vi.fn().mockReturnValue(false);
 
-    const result = await classifyPrompt('Unconfigured provider candidate must be skipped, not tried', {
-      allowCloudFallback: true,
-      allowStaticFallback: true,
-      cfg: {} as any,
-      cache: {
-        classifier_fallback_models: ['openrouter/free-model-a'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
-      } as any,
-      completeSimple,
-      findModel,
-      hasConfiguredAuth,
-      cloudTimeoutMs: 50,
-    });
+    const result = await classifyPrompt(
+      'Unconfigured provider candidate must be skipped, not tried',
+      {
+        allowCloudFallback: true,
+        allowStaticFallback: true,
+        cfg: {} as any,
+        cache: {
+          classifier_fallback_models: ['openrouter/free-model-a'],
+          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        } as any,
+        completeSimple,
+        findModel,
+        hasConfiguredAuth,
+        cloudTimeoutMs: 50,
+      }
+    );
 
     expect(hasConfiguredAuth).toHaveBeenCalledWith(mockModel);
     expect(completeSimple).not.toHaveBeenCalled();
@@ -61,9 +66,11 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
   });
 
   it('still tries a candidate when hasConfiguredAuth returns true (regression guard)', async () => {
-    const completeSimple = vi.fn().mockResolvedValue(
-      cloudReply({ category: 'simple', reason: 'configured provider answered', confidence: 0.9 })
-    );
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(
+        cloudReply({ category: 'simple', reason: 'configured provider answered', confidence: 0.9 })
+      );
     const findModel = vi.fn().mockReturnValue(mockModel);
     const hasConfiguredAuth = vi.fn().mockReturnValue(true);
 
@@ -81,13 +88,19 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
     });
 
     expect(completeSimple).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ category: 'simple', reason: 'configured provider answered', confidence: 0.9 });
+    expect(result).toEqual({
+      category: 'simple',
+      reason: 'configured provider answered',
+      confidence: 0.9,
+    });
   });
 
   it('without the hasConfiguredAuth hook, behavior is unchanged (optional, fail-open)', async () => {
-    const completeSimple = vi.fn().mockResolvedValue(
-      cloudReply({ category: 'simple', reason: 'no hook provided', confidence: 0.9 })
-    );
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(
+        cloudReply({ category: 'simple', reason: 'no hook provided', confidence: 0.9 })
+      );
     const findModel = vi.fn().mockReturnValue(mockModel);
 
     const result = await classifyPrompt('No hasConfiguredAuth hook provided at all', {

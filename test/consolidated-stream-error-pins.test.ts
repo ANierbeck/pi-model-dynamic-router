@@ -11,16 +11,23 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
+  removeNoOpScanCacheDefault,
 } from './helpers/noop-scan-cache.ts';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
-import { drainStream, makeExtensionContext, parkStateFiles , routerStatePaths} from './helpers/extension-harness.ts';
+import {
+  drainStream,
+  makeExtensionContext,
+  parkStateFiles,
+  routerStatePaths,
+  makePiCtx,
+  startSession,
+} from './helpers/extension-harness.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
-import { doneEvent } from './helpers/stream-fixtures.ts';
-import { withRouterEnv } from './helpers/router-env.ts';
+import { doneEvent, paidCloudModel, testModelCost } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, withRouterEnv, rmTmpDir } from './helpers/router-env.ts';
 
 describe('422-client-error-not-rate-limit', () => {
   /**
@@ -43,7 +50,6 @@ describe('422-client-error-not-rate-limit', () => {
    * lives in test/detection.test.ts; this file pins the full driveStream
    * behavior with the exact production error text.
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -68,12 +74,7 @@ describe('422-client-error-not-rate-limit', () => {
 
           // PAID cloud model (no ':free' suffix, not ollama/lm-studio) failing
           // with the exact production error text from the 2026-09-27 incident.
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelsByRef: Record<string, any> = {
             'paid-cloud-provider/paid-model': paidModel,
           };
@@ -87,13 +88,12 @@ describe('422-client-error-not-rate-limit', () => {
           });
           const modelRegistry = {
             getAvailable: () => [paidModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -120,7 +120,6 @@ describe('422-client-error-not-rate-limit', () => {
   });
 });
 
-
 describe('abort-not-provider-error', () => {
   /**
    * Regression test for roborev job 345 (HIGH finding).
@@ -144,7 +143,6 @@ describe('abort-not-provider-error', () => {
    * recorded against the model and no further candidates tried.
    */
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
@@ -165,12 +163,7 @@ describe('abort-not-provider-error', () => {
           const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelsByRef: Record<string, any> = {
             'paid-cloud-provider/paid-model': paidModel,
           };
@@ -197,9 +190,7 @@ describe('abort-not-provider-error', () => {
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -228,7 +219,6 @@ describe('abort-not-provider-error', () => {
     }, 30000);
   });
 });
-
 
 describe('abort-text-not-rate-limit', () => {
   /**
@@ -259,7 +249,6 @@ describe('abort-text-not-rate-limit', () => {
    * candidate retry.
    */
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
@@ -288,7 +277,8 @@ describe('abort-text-not-rate-limit', () => {
             provider: 'pi-claude',
             id: 'claude-sonnet-5',
             api: 'claude-bridge',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'pi-claude/claude-sonnet-5': paidModel,
@@ -308,9 +298,7 @@ describe('abort-text-not-rate-limit', () => {
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -340,12 +328,10 @@ describe('abort-text-not-rate-limit', () => {
   });
 });
 
-
 describe('blocklist-drivestream', () => {
   // test/blocklist-drivestream.test.ts
   // End-to-end check for ADR-0008 Tier 1: a provider_error with a known-permanent
   // OpenRouter signature blocks the model for the following requests.
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -372,13 +358,15 @@ describe('blocklist-drivestream', () => {
             provider: 'openrouter',
             id: 'test-vendor/gated-model:free',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           };
           const healthy = {
             provider: 'healthy-provider',
             id: 'healthy-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const byRef: Record<string, any> = {
             'openrouter/test-vendor/gated-model:free': gated,
@@ -404,24 +392,28 @@ describe('blocklist-drivestream', () => {
           const modelRegistry = {
             getAvailable: () => [gated, healthy],
             find: (provider: string, modelId: string) => byRef[`${provider}/${modelId}`] ?? null,
-            getApiKeyForProvider: async (provider: string) => (provider === 'openrouter' ? 'sk-or-test' : null),
+            getApiKeyForProvider: async (provider: string) =>
+              provider === 'openrouter' ? 'sk-or-test' : null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
 
           const first = await drainStream(defaultExport.groupStream(groupModel, context, {}));
-          expect(first.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta).join('')).toContain(
-            'served by the healthy fallback'
-          );
+          expect(
+            first
+              .filter((e: any) => e.type === 'text_delta')
+              .map((e: any) => e.delta)
+              .join('')
+          ).toContain('served by the healthy fallback');
           expect(streamSimple.mock.calls.map((c: any[]) => c[0].id)).toContain(gated.id);
 
           const persisted = JSON.parse(fs.readFileSync(scanCachePath, 'utf-8'));
-          expect(persisted.model_blocklist?.['openrouter/test-vendor/gated-model:free']).toMatchObject({
+          expect(
+            persisted.model_blocklist?.['openrouter/test-vendor/gated-model:free']
+          ).toMatchObject({
             reason: 'agentic-harness-gate',
             code: 403,
             occurrences: 1,
@@ -437,7 +429,6 @@ describe('blocklist-drivestream', () => {
     }, 30000);
   });
 });
-
 
 describe('claude-bridge-empty-response-narration', () => {
   // test/claude-bridge-empty-response-narration.test.ts
@@ -461,7 +452,6 @@ describe('claude-bridge-empty-response-narration', () => {
   //     reported)" — no cause claimed
   //   - a reset time is only shown when the provider actually sent one;
   //     the router's own cooldown is narrated as "backing off until …".
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -492,13 +482,15 @@ describe('claude-bridge-empty-response-narration', () => {
             provider: 'claude-bridge',
             id: 'claude-opus-5-5',
             api: 'anthropic',
-            contextWindow: 1_000_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
           };
           const nextModel = {
             provider: 'healthy-provider',
             id: 'next-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'claude-bridge/claude-opus-5-5': bridgeModel,
@@ -517,7 +509,8 @@ describe('claude-bridge-empty-response-narration', () => {
           });
           const modelRegistry = {
             getAvailable: () => [bridgeModel, nextModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
@@ -526,7 +519,9 @@ describe('claude-bridge-empty-response-narration', () => {
           await flushBackgroundScan();
 
           const groupModel = { provider: 'standard', id: 'standard' };
-          const context: any = { messages: [{ role: 'user', content: 'write the mailinglist text' }] };
+          const context: any = {
+            messages: [{ role: 'user', content: 'write the mailinglist text' }],
+          };
           const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
 
           const text = events
@@ -538,7 +533,9 @@ describe('claude-bridge-empty-response-narration', () => {
           expect(text).toContain('served by the next model');
 
           // Honest narration: the observable fact, no claimed cause …
-          expect(text).toContain('claude-bridge/claude-opus-5-5 — empty response (no content, no error reported)');
+          expect(text).toContain(
+            'claude-bridge/claude-opus-5-5 — empty response (no content, no error reported)'
+          );
           expect(text).not.toContain('(likely rate limit)');
           expect(text).not.toContain('spend limit');
           // emptyResponseLabel() is branch-free since the honesty fix: the same
@@ -552,7 +549,6 @@ describe('claude-bridge-empty-response-narration', () => {
     }, 30000);
   });
 });
-
 
 describe('context-overflow', () => {
   /**
@@ -586,30 +582,33 @@ describe('context-overflow', () => {
    * one IS configured and contains a model with enough context.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const dynamicConfigPath = path.join(
+    process.env.PI_ROUTER_STATE_DIR!,
+    'router-config.dynamic.json'
+  );
   const dynamicConfigBackupPath = `${dynamicConfigPath}.overflow-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
-
   describe('driveStream: context overflow triggers native compaction signal', () => {
     it('emits a native-style overflow error when all candidates skip on context window', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           rate_limit_wait_max_ms: 0,
           // 'standard' is a member of FALLBACK_GROUP_ORDER since the five-group
           // layout, so an empty fallback_groups would cascade into 'simple' and
           // narrate it. code_writer sits outside that order; its 32k
           // min_context_length would drop this fixture model, so it is lifted.
-          model_groups: { code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 } },
-        })
+          model_groups: {
+            code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 },
+          },
+        },
+        'router-overflow-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-      if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+      if (fs.existsSync(dynamicConfigPath))
+        fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
       try {
@@ -628,7 +627,7 @@ describe('context-overflow', () => {
           id: 'claude-sonnet-4-6',
           api: 'small-api',
           contextWindow: 8_000,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         };
         const modelRegistry = {
           getAvailable: () => [smallCtxModel],
@@ -636,9 +635,7 @@ describe('context-overflow', () => {
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple: () => (async function* () {})() },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // Build a ~30K-token conversation (120K chars / 4).
         const bigMessage = 'x '.repeat(60_000);
@@ -676,15 +673,16 @@ describe('context-overflow', () => {
         // Must NOT have walked the fallback cascade (no other groups configured
         // anyway, but the info line would appear if it tried).
         const allText = events
-          .map((e: any) => (e.type === 'text_delta' ? e.delta ?? '' : ''))
+          .map((e: any) => (e.type === 'text_delta' ? (e.delta ?? '') : ''))
           .join('');
         expect(allText).not.toMatch(/trying \w+/i);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
 
-        if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+        if (fs.existsSync(dynamicConfigBackupPath))
+          fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       }
     });
 
@@ -692,11 +690,8 @@ describe('context-overflow', () => {
       // Sanity: the overflow short-circuit must NOT fire when candidates fail
       // for other reasons (e.g. "not registered"). Otherwise we'd hide real
       // errors behind a compaction trigger.
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-no-overflow-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           // phantom-provider is deliberately find()=null ("available but not
           // registered"). The bundled router-config.json leaks max_cost:5.0
@@ -708,11 +703,13 @@ describe('context-overflow', () => {
           providers: { 'phantom-provider': { billing: 'subscription' } },
           rate_limit_wait_max_ms: 0,
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        })
+        },
+        'router-no-overflow-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-      if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+      if (fs.existsSync(dynamicConfigPath))
+        fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
       try {
@@ -730,7 +727,7 @@ describe('context-overflow', () => {
           id: 'claude-sonnet-4-6',
           api: 'phantom-api',
           contextWindow: 1_000_000,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         };
         const modelRegistry = {
           getAvailable: () => [phantomModel],
@@ -738,9 +735,7 @@ describe('context-overflow', () => {
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple: () => (async function* () {})() },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'standard', id: 'standard' };
         const context: any = { messages: [{ role: 'user', content: 'hello' }] };
@@ -765,10 +760,11 @@ describe('context-overflow', () => {
         expect(text).not.toMatch(/prompt is too long/i);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
 
-        if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+        if (fs.existsSync(dynamicConfigBackupPath))
+          fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       }
     });
 
@@ -778,21 +774,20 @@ describe('context-overflow', () => {
       // large-context model that the current group's (small-context) candidate
       // list doesn't have. The overflow short-circuit must not preempt that —
       // it may only fire once the cascade itself is exhausted.
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-overflow-cascade-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           model_groups: {
             standard: { fallback_groups: ['big'] },
             big: { fallback_groups: [] },
           },
-        })
+        },
+        'router-overflow-cascade-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-      if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+      if (fs.existsSync(dynamicConfigPath))
+        fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
       try {
@@ -810,14 +805,14 @@ describe('context-overflow', () => {
           id: 'small-model',
           api: 'small-api',
           contextWindow: 8_000,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         };
         const bigCtxModel = {
           provider: 'big-ctx-provider',
           id: 'big-model',
           api: 'big-api',
           contextWindow: 1_000_000,
-          cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          cost: testModelCost(),
         };
         const modelsByRef: Record<string, any> = {
           'small-ctx-provider/small-model': smallCtxModel,
@@ -834,13 +829,12 @@ describe('context-overflow', () => {
         });
         const modelRegistry = {
           getAvailable: () => [smallCtxModel, bigCtxModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // ~30K-token conversation — over the small model's 8K window, well under
         // the big model's 1M window.
@@ -863,15 +857,15 @@ describe('context-overflow', () => {
         expect(streamSimple).toHaveBeenCalled();
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
 
-        if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+        if (fs.existsSync(dynamicConfigBackupPath))
+          fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       }
     });
   });
 });
-
 
 describe('cooldown-collapse', () => {
   /**
@@ -899,7 +893,6 @@ describe('cooldown-collapse', () => {
    * override free_models + providers.openrouter.free_models to [] so the
    * candidate pool is exactly our single mocked model.
    */
-
 
   function allText(events: AssistantMessageEvent[]): string {
     return events
@@ -934,21 +927,19 @@ describe('cooldown-collapse', () => {
             throw new Error('first attempt fails');
           }
           // Call 2: the in-pass collapse force-retry succeeds.
-          yield { type: "text_delta", delta: `recovered after ${calls} calls` };
+          yield { type: 'text_delta', delta: `recovered after ${calls} calls` };
           yield doneEvent();
         })();
       });
 
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cooldown-spp-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           providers: { openrouter: { free_models: [] } },
           rate_limit_wait_max_ms: 0,
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        })
+        },
+        'router-cooldown-spp-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
       const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
@@ -958,27 +949,38 @@ describe('cooldown-collapse', () => {
         vi.resetModules();
         const mod = await import('../index.ts');
         const defaultExport = mod.default as any;
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-        };
+        const { pi, onHandlers } = makePiCtx();
         defaultExport(pi);
         const modelRegistry = {
-          getAvailable: () => [{ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }],
-          find: () => ({ provider: 'prov', id: 'm', api: 'phantom', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }),
+          getAvailable: () => [
+            {
+              provider: 'prov',
+              id: 'm',
+              api: 'phantom',
+              contextWindow: 1_000_000,
+              cost: testModelCost(),
+            },
+          ],
+          find: () => ({
+            provider: 'prov',
+            id: 'm',
+            api: 'phantom',
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
+          }),
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // Single-pass recovery: the candidate throws → cooldown → collapse fires
         // within the same pass → force-retry succeeds (call 2).
         const events1 = await drainStream(
-          defaultExport.groupStream({ provider: 'standard', id: 'standard' }, { messages: [{ role: 'user', content: 'go' }] }, {})
+          defaultExport.groupStream(
+            { provider: 'standard', id: 'standard' },
+            { messages: [{ role: 'user', content: 'go' }] },
+            {}
+          )
         );
         const text1 = allText(events1);
         expect(text1).toMatch(/All models in cooldown, retrying/i);
@@ -987,8 +989,8 @@ describe('cooldown-collapse', () => {
         expect(streamSimple).toHaveBeenCalledTimes(2);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
         restoreState();
       }
     });
@@ -1008,16 +1010,14 @@ describe('cooldown-collapse', () => {
     // give full coverage of the collapse fix without the complexity of a combined test.
 
     it('force-retry that fails with provider_error shows the provider-error wording, not the generic empty-response one (roborev job 342 LOW)', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-cooldown-collapse-pe-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           providers: { openrouter: { free_models: [] } },
           rate_limit_wait_max_ms: 0,
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        })
+        },
+        'router-cooldown-collapse-pe-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
       const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
@@ -1055,20 +1055,36 @@ describe('cooldown-collapse', () => {
           })();
         });
         const modelRegistry = {
-          getAvailable: () => [{ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }],
-          find: () => ({ provider: 'paid-cloud-provider', id: 'paid-model', api: 'openai-completions', contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 } }),
+          getAvailable: () => [
+            {
+              provider: 'paid-cloud-provider',
+              id: 'paid-model',
+              api: 'openai-completions',
+              contextWindow: 1_000_000,
+              cost: testModelCost(),
+            },
+          ],
+          find: () => ({
+            provider: 'paid-cloud-provider',
+            id: 'paid-model',
+            api: 'openai-completions',
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
+          }),
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // First call: throws -> soft failure -> cooldown set -> single-pass
         // collapse fires (the live failure put the only candidate into cooldown)
         // -> force-retry path fails with provider_error.
         const events1 = await drainStream(
-          defaultExport.groupStream({ provider: 'standard', id: 'standard' }, { messages: [{ role: 'user', content: 'go' }] }, {})
+          defaultExport.groupStream(
+            { provider: 'standard', id: 'standard' },
+            { messages: [{ role: 'user', content: 'go' }] },
+            {}
+          )
         );
         const text1 = allText(events1);
 
@@ -1083,14 +1099,13 @@ describe('cooldown-collapse', () => {
         expect(text1).toContain('provider error: 429 too many requests (likely rate limit)');
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
         restoreState();
       }
     });
   });
 });
-
 
 describe('is-expected-transient-error', () => {
   describe('isExpectedTransientError', () => {
@@ -1112,7 +1127,6 @@ describe('is-expected-transient-error', () => {
     });
   });
 });
-
 
 describe('provider-error-detection', () => {
   /**
@@ -1137,7 +1151,6 @@ describe('provider-error-detection', () => {
    * `{ ok: false, reason: 'provider_error', detail: <errorMessage> }`, and
    * driveStream records a soft failure so the next candidate gets tried.
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1168,13 +1181,15 @@ describe('provider-error-detection', () => {
             provider: 'err-provider',
             id: 'err-finish-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const healthyModel = {
             provider: 'healthy-provider',
             id: 'healthy-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'err-provider/err-finish-model': errModel,
@@ -1214,9 +1229,7 @@ describe('provider-error-detection', () => {
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -1250,7 +1263,6 @@ describe('provider-error-detection', () => {
   });
 });
 
-
 describe('provider-error-paid-cloud-cooldown', () => {
   /**
    * Regression test for roborev job 339 (LOW finding), revised 2026-09-27.
@@ -1279,7 +1291,6 @@ describe('provider-error-paid-cloud-cooldown', () => {
    * The wording is a direct, observable proxy for which escalation branch ran.
    */
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
@@ -1306,12 +1317,7 @@ describe('provider-error-paid-cloud-cooldown', () => {
           const { ctx: pi, onHandlers } = makeExtensionContext();
           defaultExport(pi);
 
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelsByRef: Record<string, any> = {
             'paid-cloud-provider/paid-model': paidModel,
           };
@@ -1325,13 +1331,12 @@ describe('provider-error-paid-cloud-cooldown', () => {
           });
           const modelRegistry = {
             getAvailable: () => [paidModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -1365,7 +1370,6 @@ describe('provider-error-paid-cloud-cooldown', () => {
   });
 });
 
-
 describe('reasoning-timeout', () => {
   /**
    * Regression test: reasoning models (those advertising a `reasoning`/
@@ -1389,7 +1393,6 @@ describe('reasoning-timeout', () => {
    * of 500ms is > 100ms (short timeout fires) but < 5000ms (long doesn't).
    */
 
-
   function textDeltaText(events: AssistantMessageEvent[]): string {
     return events
       .filter((e: any) => e.type === 'text_delta')
@@ -1399,11 +1402,8 @@ describe('reasoning-timeout', () => {
 
   describe('driveStream: reasoning models get a longer first-token timeout', () => {
     it('a reasoning model emitting its first token after the short timeout still succeeds', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-reasoning-timeout-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           providers: { openrouter: { free_models: [] } },
           // Scale timeouts down so the test is fast. Short = 100ms, long = 5000ms.
@@ -1411,7 +1411,8 @@ describe('reasoning-timeout', () => {
           reasoning_empty_response_timeout_ms: 5000,
           rate_limit_wait_max_ms: 0,
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        })
+        },
+        'router-reasoning-timeout-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
       const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
@@ -1434,7 +1435,8 @@ describe('reasoning-timeout', () => {
           provider: 'mistral-zai',
           id: 'glm-5-2',
           api: 'openai-completions',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
           reasoning: true, // pi-ai's Model.reasoning is a boolean, not a ThinkingLevel string
         };
         const streamSimple = vi.fn((_model: any) => {
@@ -1450,9 +1452,7 @@ describe('reasoning-timeout', () => {
           getApiKeyForProvider: async () => 'fake-key',
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const events = await drainStream(
           defaultExport.groupStream(
@@ -1467,8 +1467,8 @@ describe('reasoning-timeout', () => {
         expect(streamSimple).toHaveBeenCalledTimes(1);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
 
         restoreState();
       }
@@ -1477,18 +1477,16 @@ describe('reasoning-timeout', () => {
     it('a non-reasoning model emitting its first token after the short timeout is aborted', async () => {
       // Sanity: the short timeout must still apply to non-reasoning models.
       // Otherwise we've just made every model wait forever.
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-non-reasoning-timeout-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           providers: { openrouter: { free_models: [] } },
           empty_response_timeout_ms: 100,
           reasoning_empty_response_timeout_ms: 5000,
           rate_limit_wait_max_ms: 0,
           model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-        })
+        },
+        'router-non-reasoning-timeout-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
       const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
@@ -1513,7 +1511,8 @@ describe('reasoning-timeout', () => {
           provider: 'mistral',
           id: 'mistral-medium-3-5',
           api: 'openai-completions',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const streamSimple = vi.fn((_model: any) => {
           return (async function* () {
@@ -1528,9 +1527,7 @@ describe('reasoning-timeout', () => {
           getApiKeyForProvider: async () => 'fake-key',
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const events = await drainStream(
           defaultExport.groupStream(
@@ -1551,13 +1548,12 @@ describe('reasoning-timeout', () => {
         expect(hasError).toBe(true);
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
+        rmTmpDir(tmpDir);
         restoreState();
       }
     });
   });
 });
-
 
 describe('repetition-loop-detection', () => {
   /**
@@ -1567,7 +1563,6 @@ describe('repetition-loop-detection', () => {
    * the next candidate instead of letting the loop burn the whole context
    * window and then retrying the same unhealthy model on the next turn.
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1603,13 +1598,15 @@ describe('repetition-loop-detection', () => {
             provider: 'loopy-provider',
             id: 'loopy-model',
             api: 'loopy-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const healthyModel = {
             provider: 'healthy-provider',
             id: 'healthy-model',
             api: 'healthy-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'loopy-provider/loopy-model': loopyModel,
@@ -1638,13 +1635,12 @@ describe('repetition-loop-detection', () => {
           });
           const modelRegistry = {
             getAvailable: () => [loopyModel, healthyModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'edit the file' }] };
@@ -1667,7 +1663,6 @@ describe('repetition-loop-detection', () => {
   });
 });
 
-
 describe('reset-msg-fallback', () => {
   /**
    * Regression test: the "(resets HH:MM:SS)" suffix on a rate-limit router-info
@@ -1682,7 +1677,6 @@ describe('reset-msg-fallback', () => {
    * wall-clock time is always shown (unless the ref was key-rotated, in which
    * case no cooldown was applied to it at all).
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -1709,7 +1703,8 @@ describe('reset-msg-fallback', () => {
             provider: 'some-provider',
             id: 'rate-limited-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'some-provider/rate-limited-model': model,
@@ -1725,13 +1720,12 @@ describe('reset-msg-fallback', () => {
           });
           const modelRegistry = {
             getAvailable: () => [model],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -1772,12 +1766,7 @@ describe('reset-msg-fallback', () => {
           defaultExport(pi);
 
           // No ":free" suffix and not ollama/lm-studio — a paid cloud model.
-          const paidModel = {
-            provider: 'paid-cloud-provider',
-            id: 'paid-model',
-            api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-          };
+          const paidModel = paidCloudModel();
           const modelsByRef: Record<string, any> = {
             'paid-cloud-provider/paid-model': paidModel,
           };
@@ -1796,13 +1785,12 @@ describe('reset-msg-fallback', () => {
           });
           const modelRegistry = {
             getAvailable: () => [paidModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -1821,7 +1809,6 @@ describe('reset-msg-fallback', () => {
     }, 30000);
   });
 });
-
 
 describe('skip-failure-malus', () => {
   /**
@@ -1846,10 +1833,12 @@ describe('skip-failure-malus', () => {
    * depend on the router's real free-model list or fallback cascade depth.
    */
 
-  const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+  const dynamicConfigPath = path.join(
+    process.env.PI_ROUTER_STATE_DIR!,
+    'router-config.dynamic.json'
+  );
   const dynamicConfigBackupPath = `${dynamicConfigPath}.skip-malus-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
-
 
   // Collects every bit of text the router pushed to the stream — the final
   // error event's content, plus any "> [router] ..." info lines pushed along
@@ -1869,11 +1858,8 @@ describe('skip-failure-malus', () => {
 
   describe('driveStream: skipped (not-thrown) candidates accrue a malus', () => {
     it('a second attempt on a structurally-unusable candidate is short-circuited by cooldown', async () => {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-skip-malus-'));
-      fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpDir, '.pi', 'router-config.json'),
-        JSON.stringify({
+      const { tmpDir } = bootProjectDir(
+        {
           free_models: [],
           // phantom-provider is deliberately find()=null ("available but not
           // registered"). The bundled router-config.json leaks max_cost:5.0 into
@@ -1887,12 +1873,16 @@ describe('skip-failure-malus', () => {
           // layout, so an empty fallback_groups would cascade into 'simple' and
           // narrate it. code_writer sits outside that order; its 32k
           // min_context_length would drop this fixture model, so it is lifted.
-          model_groups: { code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 } },
-        })
+          model_groups: {
+            code_writer: { fallback_groups: [], min_gdpval: 0, min_context_length: 0 },
+          },
+        },
+        'router-skip-malus-'
       );
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
-      if (fs.existsSync(dynamicConfigPath)) fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
+      if (fs.existsSync(dynamicConfigPath))
+        fs.renameSync(dynamicConfigPath, dynamicConfigBackupPath);
 
       writeNoOpScanCache(scanCachePath); // make unawaited session_start scan() a no-op (root cause of the "No available models" CI flake)
       try {
@@ -1906,16 +1896,18 @@ describe('skip-failure-malus', () => {
         // Listed as "available" (so it becomes a candidate) but unresolvable via
         // find() — the exact inconsistency tryStream's "not registered" guard
         // exists for.
-        const phantomModel = { provider: 'phantom-provider', id: 'claude-sonnet-4-6', api: 'phantom-api' };
+        const phantomModel = {
+          provider: 'phantom-provider',
+          id: 'claude-sonnet-4-6',
+          api: 'phantom-api',
+        };
         const modelRegistry = {
           getAvailable: () => [phantomModel],
           find: () => null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple: () => (async function* () {})() },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'code_writer', id: 'code_writer' };
         const context: any = { messages: [{ role: 'user', content: 'hello' }] };
@@ -1937,15 +1929,15 @@ describe('skip-failure-malus', () => {
         expect(text2).not.toContain('not registered in Pi');
       } finally {
         cwdSpy.mockRestore();
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-        removeNoOpScanCache(scanCachePath);
+        rmTmpDir(tmpDir);
+        removeNoOpScanCacheDefault();
 
-        if (fs.existsSync(dynamicConfigBackupPath)) fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
+        if (fs.existsSync(dynamicConfigBackupPath))
+          fs.renameSync(dynamicConfigBackupPath, dynamicConfigPath);
       }
     });
   });
 });
-
 
 describe('stall-timeout-detection', () => {
   /**
@@ -1966,7 +1958,6 @@ describe('stall-timeout-detection', () => {
    * first-token window AND a mid-stream stall trip the same timer. A stall after
    * content is reported as `stall_timeout` (distinct from `empty_timeout`).
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -2005,13 +1996,15 @@ describe('stall-timeout-detection', () => {
             provider: 'stalling-provider',
             id: 'stalling-model',
             api: 'stalling-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const healthyModel = {
             provider: 'healthy-provider',
             id: 'healthy-model',
             api: 'healthy-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'stalling-provider/stalling-model': stallingModel,
@@ -2040,13 +2033,12 @@ describe('stall-timeout-detection', () => {
           });
           const modelRegistry = {
             getAvailable: () => [stallingModel, healthyModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'edit the file' }] };
@@ -2071,7 +2063,6 @@ describe('stall-timeout-detection', () => {
     }, 30000);
   });
 });
-
 
 describe('summarization-error-message', () => {
   /**
@@ -2105,7 +2096,6 @@ describe('summarization-error-message', () => {
    * classifier (guards against the retry-storm regression).
    */
 
-
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
     fn: (defaultExport: any, tmpDir: string) => Promise<void>
@@ -2131,7 +2121,8 @@ describe('summarization-error-message', () => {
             provider: 'broken-provider',
             id: 'broken-model',
             api: 'openai-completions',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'broken-provider/broken-model': brokenModel,
@@ -2145,7 +2136,9 @@ describe('summarization-error-message', () => {
             return (async function* () {
               yield {
                 type: 'error',
-                error: { errorMessage: 'Provider finish_reason: error (rate_limit_exceeded, timeout)' },
+                error: {
+                  errorMessage: 'Provider finish_reason: error (rate_limit_exceeded, timeout)',
+                },
               };
             })();
           });
@@ -2156,9 +2149,7 @@ describe('summarization-error-message', () => {
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
-          const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-          await onHandlers['session_start']?.({}, ctx);
-          await flushBackgroundScan();
+          await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
           const groupModel = { provider: 'standard', id: 'standard' };
           const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -2189,7 +2180,6 @@ describe('summarization-error-message', () => {
   });
 });
 
-
 describe('truncated-length', () => {
   /**
    * Integration test: the router must detect a stream that ends with
@@ -2211,7 +2201,6 @@ describe('truncated-length', () => {
    * candidate), and every terminal stopReason is logged to router.log so the
    * "lazy 'stop'" variant of the failure remains diagnosable.
    */
-
 
   async function withIsolatedRouter(
     configOverride: Record<string, unknown>,
@@ -2249,13 +2238,15 @@ describe('truncated-length', () => {
             provider: 'truncating-provider',
             id: 'truncating-model',
             api: 'truncating-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const healthyModel = {
             provider: 'healthy-provider',
             id: 'healthy-model',
             api: 'healthy-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'truncating-provider/truncating-model': truncatingModel,
@@ -2268,7 +2259,17 @@ describe('truncated-length', () => {
               // no stall — the pre-fix watcher classified this as success.
               return (async function* () {
                 yield { type: 'text_delta', delta: 'Half a sentence, cut off mid-' };
-                yield { type: 'done', reason: 'length', message: { role: 'assistant', content: [], usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, stopReason: 'length', timestamp: Date.now() } };
+                yield {
+                  type: 'done',
+                  reason: 'length',
+                  message: {
+                    role: 'assistant',
+                    content: [],
+                    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+                    stopReason: 'length',
+                    timestamp: Date.now(),
+                  },
+                };
               })();
             }
             if (model.id === 'healthy-model') {
@@ -2281,7 +2282,8 @@ describe('truncated-length', () => {
           });
           const modelRegistry = {
             getAvailable: () => [truncatingModel, healthyModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };
@@ -2337,7 +2339,8 @@ describe('truncated-length', () => {
             provider: 'normal-provider',
             id: 'normal-model',
             api: 'normal-api',
-            contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 1_000_000,
+            cost: testModelCost(),
           };
           const modelsByRef: Record<string, any> = {
             'normal-provider/normal-model': normalModel,
@@ -2353,7 +2356,8 @@ describe('truncated-length', () => {
           });
           const modelRegistry = {
             getAvailable: () => [normalModel],
-            find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+            find: (provider: string, modelId: string) =>
+              modelsByRef[`${provider}/${modelId}`] ?? null,
             getApiKeyForProvider: async () => null,
             runtime: { streamSimple },
           };

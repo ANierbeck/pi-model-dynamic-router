@@ -29,7 +29,7 @@
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 15
+      "count": 14
     },
     {
       "file": "index.ts",
@@ -399,7 +399,7 @@
     {
       "file": "src/dynamic-config-runner.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 15
+      "count": 14
     },
     {
       "file": "src/dynamic-config-runner.ts",
@@ -499,7 +499,7 @@
     {
       "file": "src/free-model-registration.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 9
+      "count": 8
     },
     {
       "file": "src/group-registration.ts",
@@ -654,7 +654,7 @@
     {
       "file": "src/scan-runner.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 34
+      "count": 33
     },
     {
       "file": "src/scan-runner.ts",

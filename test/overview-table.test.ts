@@ -50,7 +50,14 @@ describe('displayMetricsFor — the latency/tok-s gate behind the overview colum
   // 100 tok/s placeholder printed as measured (samples counted token-less
   // streams too). The gate is now: measured (samples / tps_samples) or
   // user-configured; otherwise null (dash).
-  const met = (over: Partial<{ samples: number; tps_samples: number; avg_latency_ms: number; throughput_tps: number }> = {}) => ({
+  const met = (
+    over: Partial<{
+      samples: number;
+      tps_samples: number;
+      avg_latency_ms: number;
+      throughput_tps: number;
+    }> = {}
+  ) => ({
     avg_latency_ms: 1000,
     throughput_tps: 100,
     ...over,
@@ -61,7 +68,10 @@ describe('displayMetricsFor — the latency/tok-s gate behind the overview colum
   });
 
   it('shows a user-configured value before the first completed stream', () => {
-    const d = displayMetricsFor(met({ avg_latency_ms: 123, throughput_tps: 55 }), { avg_latency_ms: 123, throughput_tps: 55 });
+    const d = displayMetricsFor(met({ avg_latency_ms: 123, throughput_tps: 55 }), {
+      avg_latency_ms: 123,
+      throughput_tps: 55,
+    });
     expect(d).toEqual({ latencyMs: 123, tps: 55 });
   });
 
@@ -71,7 +81,10 @@ describe('displayMetricsFor — the latency/tok-s gate behind the overview colum
   });
 
   it('shows measured values once both counters are non-zero', () => {
-    const d = displayMetricsFor(met({ samples: 2, tps_samples: 2, avg_latency_ms: 510, throughput_tps: 210 }), undefined);
+    const d = displayMetricsFor(
+      met({ samples: 2, tps_samples: 2, avg_latency_ms: 510, throughput_tps: 210 }),
+      undefined
+    );
     expect(d).toEqual({ latencyMs: 510, tps: 210 });
   });
 });
@@ -103,7 +116,10 @@ describe('formatOverviewTable — status column', () => {
   });
 
   it('explains the cost multiplier and the rate-limit wait', () => {
-    const lines = formatOverviewTable([row({ rank: 3, costMux: 2, limited: true, limitSecs: 120 })], 30);
+    const lines = formatOverviewTable(
+      [row({ rank: 3, costMux: 2, limited: true, limitSecs: 120 })],
+      30
+    );
     expect(lines[2]).toMatch(/⛔ 120s/);
     expect(lines[2]).toMatch(/cost ×2/);
     expect(lines[2]).not.toMatch(/active/);

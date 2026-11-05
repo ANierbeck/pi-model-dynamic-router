@@ -13,7 +13,14 @@
 import { createHash } from 'node:crypto';
 import { PROVIDER_MAP } from './providers.ts';
 import { baseTokens } from './utils.ts';
-import { effCost, lookupGdp, lookupPrice, lookupContextWindow, getMatchedSlug, lookupCapability } from './metrics.ts';
+import {
+  effCost,
+  lookupGdp,
+  lookupPrice,
+  lookupContextWindow,
+  getMatchedSlug,
+  lookupCapability,
+} from './metrics.ts';
 import { applyGroupFilters, type GroupFilterLookups } from './routing.ts';
 import { isCapabilityColumn, type Config, type Group } from './types.ts';
 import { normalizeModelId } from './slug-matcher.ts';
@@ -48,7 +55,9 @@ export function buildStaticFreeModelsLookup(staticCfg: Config): {
   for (const [provId, provConfig] of Object.entries(staticCfg.providers ?? {})) {
     if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
       for (const freeModel of provConfig.free_models) {
-        const normalizedModel = freeModel.startsWith(`${provId}/`) ? freeModel : `${provId}/${freeModel}`;
+        const normalizedModel = freeModel.startsWith(`${provId}/`)
+          ? freeModel
+          : `${provId}/${freeModel}`;
         staticFreeModels.push(normalizedModel);
         staticFreeModelsLookup.add(normalizedModel);
         if (normalizedModel.includes('/')) {
@@ -80,7 +89,8 @@ export function buildModelsWithMetadata(
       const price = lookupPrice(ref);
 
       const prov = ref.split('/')[0];
-      const isTokenBased = (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
+      const isTokenBased =
+        (cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) === 'pay_per_token';
 
       const isFreeModel =
         staticFreeModelsLookup.has(ref) ||
@@ -97,7 +107,6 @@ export function buildModelsWithMetadata(
       return m.gdpval > 0;
     });
 }
-
 
 /**
  * Collapses same-provider slug clusters to their canonical representative —
@@ -141,7 +150,11 @@ export function collapseSameSlugClusters(models: ModelWithMetadata[]): ModelWith
  * set as the live path (applyGroupFilters, ADR-0010), fed with the values
  * this path already computed per model.
  */
-export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: Group, cfg: Config): ModelWithMetadata[] {
+export function filterModelsForGroup(
+  models: ModelWithMetadata[],
+  groupConfig: Group,
+  cfg: Config
+): ModelWithMetadata[] {
   const byRef = new Map(models.map((m) => [m.ref, m]));
   const lookups: GroupFilterLookups = {
     gdp: (ref) => {
@@ -153,7 +166,9 @@ export function filterModelsForGroup(models: ModelWithMetadata[], groupConfig: G
     contextWindow: (ref) => byRef.get(ref)?.contextWindow ?? null,
     isFree: (ref) => byRef.get(ref)?.isFreeModel ?? false,
   };
-  const kept = new Set(applyGroupFilters([...byRef.keys()], groupConfig, cfg, false, undefined, lookups));
+  const kept = new Set(
+    applyGroupFilters([...byRef.keys()], groupConfig, cfg, false, undefined, lookups)
+  );
   return models.filter((m) => kept.has(m.ref));
 }
 
@@ -186,7 +201,9 @@ export function sortModelsForGroup(
       const hasColumn = (m: ModelWithMetadata) => lookupCapability(m.ref, column) !== null;
       const profiled = sorted.filter(hasColumn);
       const unprofiled = sorted.filter((m) => !hasColumn(m));
-      profiled.sort((a, b) => calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg));
+      profiled.sort(
+        (a, b) => calculateScore(b.ref, column, cfg) - calculateScore(a.ref, column, cfg)
+      );
       unprofiled.sort((a, b) => b.gdpval - a.gdpval);
       return [...profiled, ...unprofiled];
     }
@@ -330,7 +347,10 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
     // an explicit empty array means authoritative "no fallbacks".
     if (g.fallback_groups !== undefined) continue;
     const above = eligibleGroups.slice(myIdx + 1).map(([n]) => n);
-    const below = eligibleGroups.slice(0, myIdx).reverse().map(([n]) => n);
+    const below = eligibleGroups
+      .slice(0, myIdx)
+      .reverse()
+      .map(([n]) => n);
     dynamicGroups[name].fallback_groups = [...above, ...below];
   }
 }
@@ -366,14 +386,19 @@ export function computeFallbackGroups(dynamicGroups: Record<string, Group>): voi
  * fingerprint depends on values only.
  */
 export function staticGroupsFingerprint(groups: Record<string, Group> | undefined): string {
-  return createHash('sha1').update(canonicalJson(groups ?? {})).digest('hex').slice(0, 12);
+  return createHash('sha1')
+    .update(canonicalJson(groups ?? {}))
+    .digest('hex')
+    .slice(0, 12);
 }
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value !== null && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    const entries = Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`);
+    const entries = Object.keys(record)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(record[k])}`);
     return `{${entries.join(',')}}`;
   }
   return JSON.stringify(value) ?? 'null';
@@ -524,7 +549,8 @@ export function collectStaticContributions(staticCfg: Config): StaticContributio
  * skipped (→ nothing pruned there), never thrown on.
  */
 function readRememberedContributions(dynamicCfg: Config): Partial<StaticContributions> {
-  const raw = (dynamicCfg as unknown as { _dynamic?: { static_contributions?: unknown } })._dynamic?.static_contributions;
+  const raw = (dynamicCfg as unknown as { _dynamic?: { static_contributions?: unknown } })._dynamic
+    ?.static_contributions;
   const out: Partial<StaticContributions> = {};
   if (!isPlainObject(raw)) return out;
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
@@ -533,7 +559,8 @@ function readRememberedContributions(dynamicCfg: Config): Partial<StaticContribu
     const parsed: Record<string, string[] | null> = {};
     for (const [entry, fields] of Object.entries(section)) {
       if (fields === null) parsed[entry] = null;
-      else if (Array.isArray(fields) && fields.every((f) => typeof f === 'string')) parsed[entry] = fields;
+      else if (Array.isArray(fields) && fields.every((f) => typeof f === 'string'))
+        parsed[entry] = fields;
     }
     out[key] = parsed;
   }
@@ -552,7 +579,7 @@ function pruneRemovedStaticEntries(
   key: MergeKey,
   remembered: Record<string, string[] | null> | undefined,
   current: Record<string, string[] | null>,
-  dropped?: Set<string>,
+  dropped?: Set<string>
 ): void {
   const entries = dyn[key];
   if (!isPlainObject(entries)) return;
@@ -562,18 +589,26 @@ function pruneRemovedStaticEntries(
     if (!isPlainObject(value)) return;
     const rest = { ...value };
     for (const f of fields) delete rest[f];
-    if (Object.keys(rest).length === 0) { delete pruned[entry]; dropped?.add(entry); }
-    else pruned[entry] = rest;
+    if (Object.keys(rest).length === 0) {
+      delete pruned[entry];
+      dropped?.add(entry);
+    } else pruned[entry] = rest;
   };
   for (const [entry, fields] of Object.entries(remembered ?? {})) {
     const now = current[entry];
     if (fields === null) {
-      if (now === undefined) { delete pruned[entry]; dropped?.add(entry); }
+      if (now === undefined) {
+        delete pruned[entry];
+        dropped?.add(entry);
+      }
     } else {
       const kept = Array.isArray(now) ? now : [];
       // A static entry that turned scalar replaces the dynamic one in the merge.
       if (now === null) continue;
-      dropFields(entry, fields.filter((f) => !kept.includes(f)));
+      dropFields(
+        entry,
+        fields.filter((f) => !kept.includes(f))
+      );
     }
   }
   for (const field of STATIC_AUTHORITATIVE_FIELDS[key] ?? []) {
@@ -600,7 +635,7 @@ function pruneRemovedStaticEntries(
 export function resyncDynamicFromStatic(
   dynamicCfg: Config,
   staticCfg: Config,
-  contributions: StaticContributions = collectStaticContributions(staticCfg),
+  contributions: StaticContributions = collectStaticContributions(staticCfg)
 ): { droppedProviders: string[] } {
   const dyn = dynamicCfg as unknown as Record<string, unknown>;
   const stat = staticCfg as unknown as Record<string, unknown>;
@@ -617,7 +652,13 @@ export function resyncDynamicFromStatic(
   const droppedProviders = new Set<string>();
   for (const key of DYNAMIC_CONFIG_RESYNC_KEYS) dyn[key] = stat[key];
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
-    pruneRemovedStaticEntries(dyn, key, remembered[key], contributions[key], key === 'providers' ? droppedProviders : undefined);
+    pruneRemovedStaticEntries(
+      dyn,
+      key,
+      remembered[key],
+      contributions[key],
+      key === 'providers' ? droppedProviders : undefined
+    );
     const s = stat[key];
     if (!isPlainObject(s)) continue;
     const merged: Record<string, unknown> = { ...(isPlainObject(dyn[key]) ? dyn[key] : {}) };

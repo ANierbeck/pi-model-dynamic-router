@@ -14,7 +14,18 @@ import type {
 import { isCapabilityColumn } from './types.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { explainBestRanking } from './rank-explain.ts';
-import { getM, lookupGdp, getMatchedSlug, billingTier, effCost, lookupPrice, calculateScore, lookupCapability, hasCapabilityData, lookupContextWindow } from './metrics.ts';
+import {
+  getM,
+  lookupGdp,
+  getMatchedSlug,
+  billingTier,
+  effCost,
+  lookupPrice,
+  calculateScore,
+  lookupCapability,
+  hasCapabilityData,
+  lookupContextWindow,
+} from './metrics.ts';
 import { normalizeModelId } from './slug-matcher.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isAgentCapableRef } from './agent-capability.ts';
@@ -124,12 +135,16 @@ export interface GroupFilterLookups {
  * never ran or drifted): an empty group would be worse than an unranked one.
  * Shared by applyGroupFilters (live, display, persist) and detectGroup.
  */
-function scoreColumnGateFailure(ref: string, g: Group): 'require_score_column' | 'min_score' | null {
+function scoreColumnGateFailure(
+  ref: string,
+  g: Group
+): 'require_score_column' | 'min_score' | null {
   const column = g.score_by;
   if (!isCapabilityColumn(column) || !hasCapabilityData(column)) return null;
   const value = lookupCapability(ref, column);
   if (g.require_score_column && value === null) return 'require_score_column';
-  if (g.min_score != null && g.min_score > 0 && (value === null || value < g.min_score)) return 'min_score';
+  if (g.min_score != null && g.min_score > 0 && (value === null || value < g.min_score))
+    return 'min_score';
   return null;
 }
 
@@ -248,7 +263,7 @@ export function applyGroupFilters(
   dedup: boolean = false,
   dedupFn?: (refs: string[]) => string[],
   lookups: GroupFilterLookups = liveGroupFilterLookups(cfg),
-  onDrop?: (ref: string, gate: string) => void,
+  onDrop?: (ref: string, gate: string) => void
 ): string[] {
   let c = refs;
   const L = lookups;
@@ -263,12 +278,14 @@ export function applyGroupFilters(
 
   // 1. exclude_providers
   if (g.exclude_providers?.length) {
-    c = gate('exclude_providers', ref => !g.exclude_providers!.includes(ref.split('/')[0]));
+    c = gate('exclude_providers', (ref) => !g.exclude_providers!.includes(ref.split('/')[0]));
   }
   // 2. exclude_models
   if (g.exclude_models?.length) {
-    const excluded = g.exclude_models.map((p): ((ref: string) => boolean) => (p.includes('*') ? globMatcher(p) : (ref: string): boolean => ref === p));
-    c = gate('exclude_models', ref => !excluded.some((matches) => matches(ref)));
+    const excluded = g.exclude_models.map((p): ((ref: string) => boolean) =>
+      p.includes('*') ? globMatcher(p) : (ref: string): boolean => ref === p
+    );
+    c = gate('exclude_models', (ref) => !excluded.some((matches) => matches(ref)));
   }
   // 3. Same-provider same-slug dedup — BEFORE the quality/cost/context
   //    gates (2026-09-20). The gates must act on the CANONICAL cluster
@@ -306,16 +323,22 @@ export function applyGroupFilters(
   // the 13/148-style collapse where unscored models leaked past the gate via
   // the old `return filtered.length ? filtered : refs` fallback.
   if (g.min_gdpval != null && g.min_gdpval > 0) {
-    c = gate('min_gdpval', ref => { const v = L.gdp(ref); return v !== null && v >= g.min_gdpval!; });
+    c = gate('min_gdpval', (ref) => {
+      const v = L.gdp(ref);
+      return v !== null && v >= g.min_gdpval!;
+    });
   } else if (g.min_gdpval_pct != null && g.min_gdpval_pct > 0) {
     // delegate to the existing quality-pct filter for identical semantics
     // (compute max once; filterByQualityPct is on the Router instance, so
     // replicate the simple percentile gate here for the module function)
-    const all = refs.map(r => L.gdp(r)).filter((v): v is number => v !== null);
+    const all = refs.map((r) => L.gdp(r)).filter((v): v is number => v !== null);
     if (all.length) {
       const max = Math.max(...all);
       const thresh = (g.min_gdpval_pct / 100) * max;
-      c = gate('min_gdpval_pct', ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
+      c = gate('min_gdpval_pct', (ref) => {
+        const v = L.gdp(ref);
+        return v !== null && v >= thresh;
+      });
     }
   }
   // 4b. max_gdpval — the upper tier boundary (ADR-0023). Mirrors
@@ -324,7 +347,10 @@ export function applyGroupFilters(
   // top-tier models out of groups they would dominate via the `best`
   // method's score convergence (owner decision 2026-10-04).
   if (g.max_gdpval != null && g.max_gdpval > 0) {
-    c = gate('max_gdpval', ref => { const v = L.gdp(ref); return v !== null && v <= g.max_gdpval!; });
+    c = gate('max_gdpval', (ref) => {
+      const v = L.gdp(ref);
+      return v !== null && v <= g.max_gdpval!;
+    });
   }
   // 4c. require_score_column — opt-in (rule in scoreColumnGateFailure,
   //     shared with detectGroup): a model with no value in the group's
@@ -333,10 +359,13 @@ export function applyGroupFilters(
   //     the ranking, so live, display and persist agree. Stands down when no
   //     model at all has a value for the column (scrape never ran or
   //     drifted): an empty group would be worse than an unranked one.
-  c = gate('require_score_column', ref => scoreColumnGateFailure(ref, g) !== 'require_score_column');
+  c = gate(
+    'require_score_column',
+    (ref) => scoreColumnGateFailure(ref, g) !== 'require_score_column'
+  );
   // 4d. min_score — the floor on that same column. Strict like min_gdpval:
   //     a model without a value fails a positive floor.
-  c = gate('min_score', ref => scoreColumnGateFailure(ref, g) !== 'min_score');
+  c = gate('min_score', (ref) => scoreColumnGateFailure(ref, g) !== 'min_score');
   // 5. max_cost. `max_cost: 0` admits only local and genuinely free
   //    token-based models (admitsZeroCostGroup) — a cloud subscription model
   //    carries the rule's positive stand-in cost (ADR-0025 B2) and must
@@ -344,7 +373,7 @@ export function applyGroupFilters(
   //    For a positive cap, free models pass and unknown cost is billing-aware
   //    (subscription/local = sunk cost → keep; pay_per_token → drop).
   if (g.max_cost !== undefined) {
-    c = gate('max_cost', ref => {
+    c = gate('max_cost', (ref) => {
       const isFree = L.isFree(ref);
       if (g.max_cost === 0) return admitsZeroCostGroup(ref, isFree, cfg);
       if (isFree) return true;
@@ -358,7 +387,7 @@ export function applyGroupFilters(
   //    under the cap — a subscription model without a registry price drops
   //    out (owner decision, ADR-0010).
   if (g.max_cost_per_m !== undefined) {
-    c = gate('max_cost_per_m', ref => {
+    c = gate('max_cost_per_m', (ref) => {
       if (admitsZeroCostGroup(ref, L.isFree(ref), cfg)) return true;
       const price = L.price(ref);
       if (!price || typeof price.input !== 'number' || price.output === 'unknown') return false;
@@ -370,7 +399,7 @@ export function applyGroupFilters(
   //    model whose capacity is unverified into a group that *needs* a large
   //    context window). Absent/0 means "no context-length gate".
   if (g.min_context_length != null && g.min_context_length > 0) {
-    c = gate('min_context_length', ref => {
+    c = gate('min_context_length', (ref) => {
       const cw = L.contextWindow(ref);
       return cw !== null && cw >= g.min_context_length!;
     });
@@ -386,7 +415,11 @@ export function applyGroupFilters(
  * `fallback_groups`. Coarsest tiers first, cheapest/local last.
  */
 export const FALLBACK_GROUP_ORDER: readonly string[] = [
-  'planning', 'design', 'code_complex', 'standard', 'simple',
+  'planning',
+  'design',
+  'code_complex',
+  'standard',
+  'simple',
 ];
 
 /**
@@ -408,7 +441,7 @@ export const FALLBACK_GROUP_ORDER: readonly string[] = [
 export function getFallbackGroup(
   currentGroup: string,
   modelGroups: Record<string, Group>,
-  visited: ReadonlySet<string>,
+  visited: ReadonlySet<string>
 ): string | null {
   const g = modelGroups[currentGroup];
   if (g?.fallback_groups?.length) {
@@ -443,10 +476,7 @@ export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>):
   if (slash === -1) return false;
   const provider = ref.slice(0, slash);
   const modelId = ref.slice(slash + 1);
-  return (
-    groupNames.has(provider) &&
-    (modelId === provider || modelId === `${provider}:use-static`)
-  );
+  return groupNames.has(provider) && (modelId === provider || modelId === `${provider}:use-static`);
 }
 
 // ── Routing Logic ─────────────────────────────────────────────────────────
@@ -581,7 +611,9 @@ export class Router {
    */
   private applyExcludes(refs: string[]): string[] {
     if (!this.cfg.exclude) return refs;
-    return refs.filter((ref) => !isExcluded(ref, { rules: this.cfg.exclude!, cfg: this.cfg, cache: this.cache }));
+    return refs.filter(
+      (ref) => !isExcluded(ref, { rules: this.cfg.exclude!, cfg: this.cfg, cache: this.cache })
+    );
   }
 
   /**
@@ -589,7 +621,7 @@ export class Router {
    */
   allDiscoveredRefs(): string[] {
     const refs = new Set<string>();
-    
+
     // ALWAYS include models from Pi's model registry if available
     // This is the primary source of truth for available models
     if (this.sessionCtx?.modelRegistry) {
@@ -602,7 +634,7 @@ export class Router {
         refs.add(`${m.provider}/${m.id}`);
       }
     }
-    
+
     // Also include free models from configuration (e.g., openrouter free tier)
     // These might not be in the registry but are available via the provider.
     // Bug 2026-10-06 (review finding 1, the fifth free_models consumer):
@@ -652,7 +684,7 @@ export class Router {
         if (!allowed.has(ref)) refs.delete(ref);
       }
     }
-    
+
     // Apply global exclude rules (paid OpenRouter models, *fable*, etc.)
     // so the live /router table matches generateDynamicConfig output.
     let result = [...refs];
@@ -674,7 +706,10 @@ export class Router {
   filterByBudget(refs: string[]): string[] {
     // Delegate to the single source of truth in budget.ts.
     if (!this.cache.budget_cache) return refs;
-    return filterByBudget(refs, { providers: this.cfg.providers, budget_cache: this.cache.budget_cache });
+    return filterByBudget(refs, {
+      providers: this.cfg.providers,
+      budget_cache: this.cache.budget_cache,
+    });
   }
 
   /**
@@ -704,12 +739,9 @@ export class Router {
       return s.sort((a, b) => getM(a).avg_latency_ms - getM(b).avg_latency_ms);
     if (method === 'max_throughput')
       return s.sort((a, b) => getM(b).throughput_tps - getM(a).throughput_tps);
-    if (method === 'min_cost')
-      return this.sortByMinCost(s);
-    if (method === 'min_cost_if_all_priced')
-      return this.sortByMinCostIfAllPriced(s);
-    if (method === 'max_gdpval') 
-      return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
+    if (method === 'min_cost') return this.sortByMinCost(s);
+    if (method === 'min_cost_if_all_priced') return this.sortByMinCostIfAllPriced(s);
+    if (method === 'max_gdpval') return s.sort((a, b) => getM(b).gdpval - getM(a).gdpval);
     if (method === 'best') return this.sortBest(s, taskType);
     if (method === 'billing_preference') return this.sortByBillingPreference(s);
     // 'roundrobin' and unrecognized methods: input order preserved.
@@ -760,10 +792,10 @@ export class Router {
     const w = this.cfg.best_quality_window ?? 0;
     if (!(w > 0) || sorted.length < 2) return sorted;
     const floor = scoreOf(sorted[0]) * (1 - w);
-    const pool = sorted.filter(m => scoreOf(m) >= floor);
+    const pool = sorted.filter((m) => scoreOf(m) >= floor);
     if (pool.length < 2) return sorted;
     const inPool = new Set(pool);
-    const rest = sorted.filter(m => !inPool.has(m));
+    const rest = sorted.filter((m) => !inPool.has(m));
     pool.sort((a, b) => {
       const costA = effCost(a);
       const costB = effCost(b);
@@ -858,14 +890,14 @@ export class Router {
     return [...refs].sort((a, b) => {
       const costA = effCost(a);
       const costB = effCost(b);
-      
+
       // Handle 'unknown' costs - treat them as equal and sort by GDPval as tiebreaker
       if (costA === 'unknown' && costB === 'unknown') {
         return getM(b).gdpval - getM(a).gdpval;
       }
       if (costA === 'unknown') return 1; // unknown costs go to the end
       if (costB === 'unknown') return -1;
-      
+
       // Both have known costs
       const diff = costA - costB;
       if (diff !== 0) return diff;
@@ -1154,7 +1186,7 @@ export class Router {
     // This matches getTopModels() behavior for consistency.
     let c: string[];
     if (g.models?.length) {
-      c = this.allDiscoveredRefs().filter(ref => g.models!.includes(ref));
+      c = this.allDiscoveredRefs().filter((ref) => g.models!.includes(ref));
     } else {
       c = this.allDiscoveredRefs();
     }
@@ -1167,8 +1199,20 @@ export class Router {
     // collected when the line will actually be written — resolveGroup runs
     // on every routed prompt.
     const drops: Array<[string, string]> | null = isDebugEnabled() ? [] : null;
-    const onDrop = drops ? (ref: string, gate: string) => { drops.push([ref, gate]); } : undefined;
-    c = applyGroupFilters(c, g, this.cfg, true, (r) => this.dedupByModelIdentity(r), undefined, onDrop);
+    const onDrop = drops
+      ? (ref: string, gate: string) => {
+          drops.push([ref, gate]);
+        }
+      : undefined;
+    c = applyGroupFilters(
+      c,
+      g,
+      this.cfg,
+      true,
+      (r) => this.dedupByModelIdentity(r),
+      undefined,
+      onDrop
+    );
 
     // Filter by budget availability (subscription providers)
     // This ensures we only use models with remaining tokens in their window
@@ -1268,7 +1312,9 @@ export class Router {
           ref,
           gdp: gdp ?? null,
           cost: cost === 'unknown' ? null : cost,
-          ...(g.method === 'best' ? { score: calculateScore(ref, g.score_by ?? 'gdpval', this.cfg) } : {}),
+          ...(g.method === 'best'
+            ? { score: calculateScore(ref, g.score_by ?? 'gdpval', this.cfg) }
+            : {}),
           flags,
         };
       }),
@@ -1282,22 +1328,30 @@ export class Router {
    * dropped it. Logged via debugLogOnce, so an unchanged decision is not
    * repeated on every prompt.
    */
-  private formatGroupDecision(name: string, g: Group, ranked: string[], drops: Array<[string, string]>): string {
+  private formatGroupDecision(
+    name: string,
+    g: Group,
+    ranked: string[],
+    drops: Array<[string, string]>
+  ): string {
     const fmt = (v: number) => String(Number(v.toPrecision(4)));
     const paced = pacedProviders(this.cfg, this.cache.usage_log);
     const candidates = ranked.map((ref, i) => {
       const gdp = lookupGdp(ref);
       const cost = effCost(ref);
       let s = `${i + 1}. ${ref} gdp=${gdp ?? 'none'} cost=${cost === 'unknown' ? 'unknown' : fmt(cost)}`;
-      if (g.method === 'best') s += ` score=${fmt(calculateScore(ref, g.score_by ?? 'gdpval', this.cfg))}`;
+      if (g.method === 'best')
+        s += ` score=${fmt(calculateScore(ref, g.score_by ?? 'gdpval', this.cfg))}`;
       if (isUnhealthy(this.cache, ref)) s += ' [unhealthy]';
       if (this.isLimited(ref)) s += ' [limited]';
       if (paced.has(ref.split('/')[0])) s += ' [paced]';
       return s;
     });
     const excluded = drops.map(([ref, gate]) => `${ref}=${gate}`);
-    return `[routing] group=${name} method=${g.method} candidates: ${candidates.join(' | ') || '(none)'}`
-      + ` || excluded: ${excluded.join(', ') || '(none)'}`;
+    return (
+      `[routing] group=${name} method=${g.method} candidates: ${candidates.join(' | ') || '(none)'}` +
+      ` || excluded: ${excluded.join(', ') || '(none)'}`
+    );
   }
 
   // ── Group Detection ─────────────────────────────────────────────────────
@@ -1307,15 +1361,15 @@ export class Router {
    */
   detectGroup(ref: string): string | null {
     if (this.activeGroup) return this.activeGroup;
-    
+
     // With dynamic model discovery, detect group based on GDPval thresholds
     const gdpval = lookupGdp(ref);
-    
+
     // Check groups by GDPval threshold (highest first)
     const groupsByThreshold = Object.entries(this.cfg.model_groups)
       .filter(([_, g]) => g.method !== 'dynamic')
       .sort(([, a], [, b]) => (b.min_gdpval ?? 0) - (a.min_gdpval ?? 0));
-    
+
     if (gdpval !== null) {
       for (const [name, g] of groupsByThreshold) {
         const minGdpval = g.min_gdpval ?? 0;
@@ -1329,7 +1383,7 @@ export class Router {
         return name;
       }
     }
-    
+
     // Fallback: return lowest tier that has no min_gdpval requirement
     for (const name of ['simple', 'standard', 'code_complex', 'planning', 'design']) {
       const g = this.cfg.model_groups[name];
@@ -1337,7 +1391,7 @@ export class Router {
         return name;
       }
     }
-    
+
     return null;
   }
 
@@ -1456,7 +1510,10 @@ export class Router {
     // it correctly lands in the limited bucket.
     c = this.coalesceBySlug(c);
     c = pickSlugClusterRepresentatives(c, (ref) => this.isLimited(ref));
-    const avail = demoteUnhealthy(this.cache, c.filter((ref) => !this.isLimited(ref)));
+    const avail = demoteUnhealthy(
+      this.cache,
+      c.filter((ref) => !this.isLimited(ref))
+    );
     const limited = c.filter((ref) => this.isLimited(ref));
     const ranked = [...avail, ...limited];
     const total = ranked.length;
@@ -1468,7 +1525,8 @@ export class Router {
             ranked,
             scoreOf: (r) => calculateScore(r, column, this.cfg),
             costOf: (r) => effCost(r),
-            isProfiled: (r) => (isCapabilityColumn(column) ? lookupCapability(r, column) !== null : true),
+            isProfiled: (r) =>
+              isCapabilityColumn(column) ? lookupCapability(r, column) !== null : true,
             // The ranked order demotes limited refs to the end and unhealthy
             // ones within the available block — the reason must not hand the
             // top-score label to a model the router would not stream to right

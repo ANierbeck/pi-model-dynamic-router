@@ -47,8 +47,18 @@ function configWith(budget?: ProviderBudget): Config {
     },
     gdpval_builtin: { 'model-one': 1900, 'model-two': 1600 },
     model_metrics: {
-      'paceful/model-one': { cost_per_m: 10, gdpval: 1900, throughput_tps: 50, avg_latency_ms: 500 },
-      'steadye/model-two': { cost_per_m: 10, gdpval: 1600, throughput_tps: 50, avg_latency_ms: 500 },
+      'paceful/model-one': {
+        cost_per_m: 10,
+        gdpval: 1900,
+        throughput_tps: 50,
+        avg_latency_ms: 500,
+      },
+      'steadye/model-two': {
+        cost_per_m: 10,
+        gdpval: 1600,
+        throughput_tps: 50,
+        avg_latency_ms: 500,
+      },
     },
     providers: {
       paceful: budget ? { billing: 'pay_per_token', budget } : { billing: 'pay_per_token' },
@@ -105,7 +115,7 @@ describe('budgetWindowStart / linearPaceTarget', () => {
     expect(start.getDate()).toBe(15);
   });
 
-  it('reset_day beyond a month\'s length is clamped to that month\'s last day', () => {
+  it("reset_day beyond a month's length is clamped to that month's last day", () => {
     const now = new Date(2026, 2, 31).getTime(); // March, 31 days
     expect(new Date(budgetWindowStart(now, 31)).getDate()).toBe(31);
     const feb = new Date(2026, 1, 20).getTime(); // February 2026, 28 days
@@ -220,7 +230,9 @@ describe('Router.resolve demotes a provider ahead of pace', () => {
 
   it('absent budget = no pacing (default OFF pinned): even massive usage never demotes', () => {
     const cfg = configWith(undefined);
-    const cache = cacheWith([{ ref: 'paceful/model-one', tokens: 10_000_000_000, ts: Date.now() - HOUR }]);
+    const cache = cacheWith([
+      { ref: 'paceful/model-one', tokens: 10_000_000_000, ts: Date.now() - HOUR },
+    ]);
     const router = routerFor(cfg, cache);
     expect(router.resolve('tactical')!.candidates).toEqual([
       'paceful/model-one',
@@ -239,7 +251,10 @@ describe('Router.resolve demotes a provider ahead of pace', () => {
       { ref: 'paceful/model-one', tokens: cacheRead + 100, cacheRead, ts: Date.now() - HOUR },
     ]);
     const router = routerFor(cfg, cache);
-    expect(router.resolve('tactical')!.candidates).toEqual(['steadye/model-two', 'paceful/model-one']);
+    expect(router.resolve('tactical')!.candidates).toEqual([
+      'steadye/model-two',
+      'paceful/model-one',
+    ]);
   });
 
   it('unit usd: spend is estimated from effCost and demotes the same way', () => {
@@ -248,10 +263,13 @@ describe('Router.resolve demotes a provider ahead of pace', () => {
     const cfg = configWith(budget);
     const target = linearPaceTarget(budget, Date.now()); // USD target for now
     // Tokens that cost 10x the USD target (>= $0.000001 → at least 1 token).
-    const tokens = Math.max(1, Math.ceil((target * 10) * 1_000_000 / 10));
+    const tokens = Math.max(1, Math.ceil((target * 10 * 1_000_000) / 10));
     const cache = cacheWith([{ ref: 'paceful/model-one', tokens, ts: Date.now() - HOUR }]);
     const router = routerFor(cfg, cache);
-    expect(router.resolve('tactical')!.candidates).toEqual(['steadye/model-two', 'paceful/model-one']);
+    expect(router.resolve('tactical')!.candidates).toEqual([
+      'steadye/model-two',
+      'paceful/model-one',
+    ]);
   });
 
   it('usage before the window start leaves the ranking unchanged (reset_day rolled)', () => {

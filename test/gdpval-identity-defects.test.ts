@@ -30,10 +30,25 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { extractGdpvalScores, extractGdpvalProvenance, needsGdpvalScrape, SCRAPE_VERSION } from '../src/scan-runner.js';
+import {
+  extractGdpvalScores,
+  extractGdpvalProvenance,
+  needsGdpvalScrape,
+  SCRAPE_VERSION,
+} from '../src/scan-runner.js';
 import { matchSlug } from '../src/slug-matcher.js';
 import { estimateOllamaModelsGdpvalAsSlugs } from '../src/ollama-gdpval.js';
-import { setConfig, setGdpval, setModelMap, lookupGdp, loadModelMap, setCache, lookupProvenance, resolveSlug, getGdpvalProvenance } from '../src/metrics.js';
+import {
+  setConfig,
+  setGdpval,
+  setModelMap,
+  lookupGdp,
+  loadModelMap,
+  setCache,
+  lookupProvenance,
+  resolveSlug,
+  getGdpvalProvenance,
+} from '../src/metrics.js';
 import type { Cache } from '../src/types.js';
 
 // ── (a) labelKey overwrite ───────────────────────────────────────────────
@@ -118,7 +133,9 @@ describe('gdpval identity defects: provenance', () => {
     setConfig({ model_groups: {}, model_metrics: {} });
     setModelMap({}, []);
     setGdpval({ 'apodex-1-1': 1190.82 });
-    setCache({ gdpval_provenance: { 'apodex-1-1': { creator: 'Apodex', displayName: 'Apodex 1.1' } } });
+    setCache({
+      gdpval_provenance: { 'apodex-1-1': { creator: 'Apodex', displayName: 'Apodex 1.1' } },
+    });
     expect(lookupProvenance('openrouter/apodex/apodex-1.1:free')).toEqual({
       creator: 'Apodex',
       displayName: 'Apodex 1.1',
@@ -149,7 +166,9 @@ describe('gdpval identity defects: fuzzy variant tokens', () => {
   });
 
   it('ling-3.1-flash still matches its exact slug (positive control)', () => {
-    expect(matchSlug('openrouter/inclusionai/ling-3.1-flash', ['ling-3-1-flash'])).toBe('ling-3-1-flash');
+    expect(matchSlug('openrouter/inclusionai/ling-3.1-flash', ['ling-3-1-flash'])).toBe(
+      'ling-3-1-flash'
+    );
   });
 
   it('the variant veto is scoped: version-less family slugs keep the 2026-09-20 approximation', () => {
@@ -159,7 +178,9 @@ describe('gdpval identity defects: fuzzy variant tokens', () => {
     // version-less family slug. The veto must not break this — it fires
     // only when the slug names the EXACT same version as the ref
     // (apodex-1-1 [1,1] vs apodex-1.1-mini [1,1]).
-    expect(matchSlug('mistral/devstral-small-2505', ['devstral', 'mistral-small-3-1'])).toBe('devstral');
+    expect(matchSlug('mistral/devstral-small-2505', ['devstral', 'mistral-small-3-1'])).toBe(
+      'devstral'
+    );
   });
 });
 
@@ -182,7 +203,11 @@ describe('gdpval identity defects: qwen3-8-27b builtin', () => {
   });
 
   it('the shipped model-map no longer pins the MLX ref to the dead dotted key', () => {
-    setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {} });
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {},
+    });
     setGdpval({ ...QWEN_AA_ROWS });
     loadModelMap('.'); // the SHIPPED map state
     // Before the fix, Stage 0 pinned the ref to the (builtin-only) dotted
@@ -192,14 +217,22 @@ describe('gdpval identity defects: qwen3-8-27b builtin', () => {
   });
 
   it('the OpenRouter API twin resolves to the AA row, not the 580 builtin', () => {
-    setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {} });
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {},
+    });
     setModelMap({}, []); // algorithmic path only
     setGdpval({ ...QWEN_AA_ROWS });
     expect(lookupGdp('openrouter/qwen/qwen3.8-27b:free')).toBe(1381.48);
   });
 
   it('the local MLX twin resolves to the same AA row (dedup-consistent)', () => {
-    setConfig({ model_groups: {}, model_metrics: {}, gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {} });
+    setConfig({
+      model_groups: {},
+      model_metrics: {},
+      gdpval_builtin: SHIPPED_CONFIG.gdpval_builtin ?? {},
+    });
     setModelMap({}, []);
     setGdpval({ ...QWEN_AA_ROWS });
     expect(lookupGdp('ollama/qwen3.8:27b-mlx')).toBe(1381.48);
@@ -238,16 +271,25 @@ describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery
   });
 
   it('a cache scraped with the current version does not re-scrape', () => {
-    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, false)).toBe(false);
+    expect(
+      needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, false)
+    ).toBe(false);
   });
 
   it('force always re-scrapes', () => {
-    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, true)).toBe(true);
+    expect(
+      needsGdpvalScrape({ gdpval_scraped: true, scrape_version: SCRAPE_VERSION } as Cache, true)
+    ).toBe(true);
     // 2026-10-13: the AA payload moved the capability columns into the
     // initialModels records. Caches scraped by the pre-fix extractor have
     // capability_profiles stuck at 0 (the old entryRe matches nothing on the
     // live page) — they must re-scrape once so the profiles fill.
-    expect(needsGdpvalScrape({ gdpval_scraped: true, scrape_version: 2, capability_profiles: {} } as Cache, false)).toBe(true);
+    expect(
+      needsGdpvalScrape(
+        { gdpval_scraped: true, scrape_version: 2, capability_profiles: {} } as Cache,
+        false
+      )
+    ).toBe(true);
   });
 
   it('a cached LLM match that violates the variant veto is ignored', () => {
@@ -258,7 +300,9 @@ describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery
     setConfig({ model_groups: {}, model_metrics: {} });
     setModelMap({}, []);
     setGdpval({ 'apodex-1-1': 1190.82 });
-    setCache({ model_score_cache: { 'openrouter/apodex/apodex-1.1-mini:free': 'apodex-1-1' } } as any);
+    setCache({
+      model_score_cache: { 'openrouter/apodex/apodex-1.1-mini:free': 'apodex-1-1' },
+    } as any);
     expect(lookupGdp('openrouter/apodex/apodex-1.1-mini:free')).toBeNull();
   });
 
@@ -302,7 +346,9 @@ describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery
     setConfig({ model_groups: {}, model_metrics: {} });
     setModelMap({}, []);
     setGdpval({ 'apodex-1-1': 1190.82 });
-    setCache({ gdpval_provenance: { 'apodex-1-1': { creator: 'Apodex', displayName: 'Apodex 1.1' } } });
+    setCache({
+      gdpval_provenance: { 'apodex-1-1': { creator: 'Apodex', displayName: 'Apodex 1.1' } },
+    });
     setCache({ gdpval_provenance: { 'zai-glm-5-3': { creator: 'Z AI', displayName: 'GLM-5.3' } } });
     // A later scrape that dropped a row must not leave its provenance behind.
     expect(getGdpvalProvenance()['apodex-1-1']).toBeUndefined();

@@ -23,7 +23,11 @@ const WEBHOOK = 'http://host.tail' + 'net.ts' + '.net:8123/api' + '/webhook/abc1
 const ZERO = '0'.repeat(40);
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
 }
 
 function commitFile(cwd: string, file: string, content: string, msg: string): string {
@@ -120,7 +124,8 @@ describe('npm prepare wires the hook', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'secret-scan-prepare-'));
     try {
       initRepo(dir);
-      const prepare = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8')).scripts.prepare as string;
+      const prepare = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'))
+        .scripts.prepare as string;
       execFileSync('sh', ['-c', prepare], { cwd: dir });
       expect(git(dir, 'config', '--get', 'core.hooksPath')).toBe('.githooks');
       // The hook must ship executable, or git silently skips it.
@@ -133,8 +138,12 @@ describe('npm prepare wires the hook', () => {
   it('is a no-op outside a git work tree (npm installs of the published tarball)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'secret-scan-nogit-'));
     try {
-      const prepare = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8')).scripts.prepare as string;
-      const r = spawnSync('sh', ['-c', prepare], { cwd: dir, env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(dir) } });
+      const prepare = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'))
+        .scripts.prepare as string;
+      const r = spawnSync('sh', ['-c', prepare], {
+        cwd: dir,
+        env: { ...process.env, GIT_CEILING_DIRECTORIES: path.dirname(dir) },
+      });
       expect(r.status).toBe(0);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -198,11 +207,11 @@ describe('pre-push hook end to end', () => {
         "import { readFileSync } from 'node:fs';\n" +
           "const refs = readFileSync(0, 'utf-8').trim();\n" +
           `console.error('stub lint gate ' + process.argv.slice(2).join(' ') + ' refs=' + refs);\n` +
-          `process.exit(${exitCode});\n`,
+          `process.exit(${exitCode});\n`
       );
     };
 
-    it('rejects the push when the repository\'s lint gate fails, and forwards the refs', () => {
+    it("rejects the push when the repository's lint gate fails, and forwards the refs", () => {
       git(work, 'reset', '-q', '--hard', 'origin/main');
       stubGate(1);
       const sha = commitFile(work, 'lint.md', 'x\n', 'chore: stub failing gate');

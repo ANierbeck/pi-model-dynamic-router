@@ -156,11 +156,15 @@ export const REMOVED_GROUPS: Readonly<Record<string, string>> = {
  */
 function validateRemovedGroups(layer: Partial<Config>, source: string): void {
   const hint = (name: string) => `moved to "${REMOVED_GROUPS[name]}" in the five-group layout`;
-  const groups = layer.model_groups as Record<string, { fallback_groups?: string[] | null }> | undefined;
+  const groups = layer.model_groups as
+    | Record<string, { fallback_groups?: string[] | null }>
+    | undefined;
   if (groups && typeof groups === 'object') {
     for (const name of Object.keys(groups)) {
       if (Object.hasOwn(REMOVED_GROUPS, name)) {
-        warnLog(`[router] ${source} model_groups: removed group "${name}" — ignored; ${hint(name)}, move the settings there`);
+        warnLog(
+          `[router] ${source} model_groups: removed group "${name}" — ignored; ${hint(name)}, move the settings there`
+        );
         delete groups[name];
       }
     }
@@ -169,7 +173,10 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
       if (!Array.isArray(chain)) continue;
       const kept = chain.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
       for (const t of chain) {
-        if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`);
+        if (Object.hasOwn(REMOVED_GROUPS, t))
+          warnLog(
+            `[router] ${source} model_groups.${name}.fallback_groups: removed group "${t}" — dropped; ${hint(t)}`
+          );
       }
       if (kept.length === chain.length) continue;
       if (kept.length > 0) g.fallback_groups = kept;
@@ -180,7 +187,10 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
   if (layer.delegation && Array.isArray(expensive)) {
     const kept = expensive.filter((t) => !Object.hasOwn(REMOVED_GROUPS, t));
     for (const t of expensive) {
-      if (Object.hasOwn(REMOVED_GROUPS, t)) warnLog(`[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`);
+      if (Object.hasOwn(REMOVED_GROUPS, t))
+        warnLog(
+          `[router] ${source} delegation.expensive_groups: removed group "${t}" — dropped; ${hint(t)}`
+        );
     }
     if (kept.length === expensive.length) return;
     if (kept.length > 0) layer.delegation.expensive_groups = kept;
@@ -235,7 +245,10 @@ export function validateClassifierLaya(config: Config): void {
   }
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const loopback =
-    host === 'localhost' || host === '::1' || host === '0:0:0:0:0:0:0:1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '0:0:0:0:0:0:0:1' ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
   if (!loopback) {
     disable(
       `endpoint host ${JSON.stringify(hostname)} is not loopback — the router only sends ` +
@@ -244,18 +257,25 @@ export function validateClassifierLaya(config: Config): void {
     return;
   }
   if (c.mode != null && c.mode !== 'active' && c.mode !== 'shadow') {
-    warnLog(`[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`);
+    warnLog(
+      `[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`
+    );
     c.mode = 'shadow';
   }
   if (
     c.confidence_threshold != null &&
-    (typeof c.confidence_threshold !== 'number' || !(c.confidence_threshold > 0 && c.confidence_threshold <= 1))
+    (typeof c.confidence_threshold !== 'number' ||
+      !(c.confidence_threshold > 0 && c.confidence_threshold <= 1))
   ) {
-    warnLog(`[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`);
+    warnLog(
+      `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`
+    );
     c.confidence_threshold = 0.8;
   }
   if (c.timeout_ms != null && (typeof c.timeout_ms !== 'number' || !(c.timeout_ms > 0))) {
-    warnLog(`[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`);
+    warnLog(
+      `[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`
+    );
     c.timeout_ms = 1500;
   }
   c.endpoint ??= LAYA_DEFAULT_ENDPOINT;
@@ -278,12 +298,16 @@ function validateCategoryGroups(config: Config): void {
   if (!mapping || typeof mapping !== 'object') return;
   for (const [category, group] of Object.entries(mapping)) {
     if (!Object.hasOwn(CATEGORY_TO_GROUP, category)) {
-      warnLog(`[router] category_groups: unknown category "${category}" — entry ignored (known: ${Object.keys(CATEGORY_TO_GROUP).join(', ')})`);
+      warnLog(
+        `[router] category_groups: unknown category "${category}" — entry ignored (known: ${Object.keys(CATEGORY_TO_GROUP).join(', ')})`
+      );
       delete mapping[category];
       continue;
     }
     if (typeof group !== 'string' || !config.model_groups[group]) {
-      warnLog(`[router] category_groups: unknown group "${String(group)}" for category "${category}" — entry ignored (known groups: ${Object.keys(config.model_groups).join(', ')})`);
+      warnLog(
+        `[router] category_groups: unknown group "${String(group)}" for category "${category}" — entry ignored (known groups: ${Object.keys(config.model_groups).join(', ')})`
+      );
       delete mapping[category];
     }
   }

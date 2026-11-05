@@ -1,11 +1,21 @@
 // src/content-classifier.ts
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
-import { recordLocalTimeout, recordLocalSuccess, isProviderWedged, wedgeCooldownText } from './provider-watchdog.ts';
+import {
+  recordLocalTimeout,
+  recordLocalSuccess,
+  isProviderWedged,
+  wedgeCooldownText,
+} from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { isExcluded, isPaidForClassifier } from './exclude.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
-import { getCachedFallbackModels, selectClassifierCandidates, hasProbedFallback, PROBE_TIMEOUT_MS } from './classifier-fallback-probe.ts';
+import {
+  getCachedFallbackModels,
+  selectClassifierCandidates,
+  hasProbedFallback,
+  PROBE_TIMEOUT_MS,
+} from './classifier-fallback-probe.ts';
 import {
   LOCAL_CLASSIFIER_TIMEOUT_MS,
   NO_SCHEMA_MARKER,
@@ -35,7 +45,7 @@ import {
 // ── Types ────────────────────────────────────────────────────────────────
 
 export interface ClassificationResult {
-  category: 
+  category:
     | 'simple'
     | 'code_simple'
     | 'standard'
@@ -53,8 +63,8 @@ export interface ClassificationContext {
   lastCategory?: ClassificationResult['category'] | undefined;
   previousUserMessage?: string | undefined;
   lastAssistantSnippet?: string | undefined;
-  lastModel?: string | undefined;  // Model to reuse (e.g., after compaction)
-  isCompaction?: boolean;  // NEW: Explicit compaction flag
+  lastModel?: string | undefined; // Model to reuse (e.g., after compaction)
+  isCompaction?: boolean; // NEW: Explicit compaction flag
   /**
    * Whether `lastModel` is currently in the router's rate-limit/soft-failure
    * cooldown. When true, compaction-continuity must NOT hint back to it —
@@ -233,7 +243,9 @@ function noteSource(source: string): void {
     // Decision log: which candidate produced the final classification.
     // The deterministic stages have no model behind them.
     holder.trace.answeredBy =
-      source.startsWith('ollama:') || source.startsWith('cloud:') || source.startsWith('laya:') ? source : null;
+      source.startsWith('ollama:') || source.startsWith('cloud:') || source.startsWith('laya:')
+        ? source
+        : null;
   }
 }
 
@@ -257,20 +269,30 @@ function localDay(now = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-let classificationCounts: ClassificationCounts = { day: localDay(), total: 0, bySource: {}, byCategory: {} };
+let classificationCounts: ClassificationCounts = {
+  day: localDay(),
+  total: 0,
+  bySource: {},
+  byCategory: {},
+};
 
 function currentCounts(): ClassificationCounts {
   const day = localDay();
-  if (classificationCounts.day !== day) classificationCounts = { day, total: 0, bySource: {}, byCategory: {} };
+  if (classificationCounts.day !== day)
+    classificationCounts = { day, total: 0, bySource: {}, byCategory: {} };
   return classificationCounts;
 }
 
-function countClassification(result: FullClassificationResult, callSourceName: string | null): void {
+function countClassification(
+  result: FullClassificationResult,
+  callSourceName: string | null
+): void {
   const c = currentCounts();
   const source = (callSourceName ?? 'unknown').split(':')[0];
-  const category = 'category' in result && result.category
-    ? result.category
-    : `hint:${(result as HintClassificationResult).hintType ?? 'unknown'}`;
+  const category =
+    'category' in result && result.category
+      ? result.category
+      : `hint:${(result as HintClassificationResult).hintType ?? 'unknown'}`;
   c.total++;
   c.bySource[source] = (c.bySource[source] ?? 0) + 1;
   c.byCategory[category] = (c.byCategory[category] ?? 0) + 1;
@@ -279,7 +301,12 @@ function countClassification(result: FullClassificationResult, callSourceName: s
 /** Snapshot of today's classification counters (for /router status). */
 export function getClassificationCounts(): ClassificationCounts {
   const c = currentCounts();
-  return { day: c.day, total: c.total, bySource: { ...c.bySource }, byCategory: { ...c.byCategory } };
+  return {
+    day: c.day,
+    total: c.total,
+    bySource: { ...c.bySource },
+    byCategory: { ...c.byCategory },
+  };
 }
 
 /** Test seam: start counting from zero. */
@@ -287,7 +314,9 @@ export function resetClassificationCounts(): void {
   classificationCounts = { day: localDay(), total: 0, bySource: {}, byCategory: {} };
 }
 
-function classifyCacheGet(prompt: string): { result: FullClassificationResult; origin: string | null } | null {
+function classifyCacheGet(
+  prompt: string
+): { result: FullClassificationResult; origin: string | null } | null {
   const entry = classifyCache.get(prompt);
   if (!entry) return null;
   if (Date.now() - entry.ts > CLASSIFY_CACHE_TTL_MS) {
@@ -313,7 +342,11 @@ function classifyCacheSet(prompt: string, result: FullClassificationResult): voi
   }
   // Decision log (D4): keep where a cached classification came from, so a
   // cache hit can report its origin instead of an anonymous 'cache'.
-  classifyCache.set(prompt, { result, ts: Date.now(), origin: callSource.getStore()?.source ?? null });
+  classifyCache.set(prompt, {
+    result,
+    ts: Date.now(),
+    origin: callSource.getStore()?.source ?? null,
+  });
 }
 const FALLBACK_TIMEOUT = 10_000;
 // Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
@@ -345,7 +378,7 @@ const contextDerived = new WeakSet<object>();
  */
 function applyConfidenceGate(
   parsed: ClassificationResult,
-  lastCategory: ClassificationResult['category'] | undefined,
+  lastCategory: ClassificationResult['category'] | undefined
 ): ClassificationResult {
   if (parsed.confidence === undefined || parsed.confidence >= MIN_CONFIDENCE) return parsed;
   const gated: ClassificationResult = {
@@ -369,7 +402,8 @@ const CONTINUATION_MAX_WORDS = 4;
 // ── Core Logic ───────────────────────────────────────────────────────────
 
 // Group-verb prefixes shared by groupMatch and the incomplete-group guard
-const GROUP_VERB_PREFIX = /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe|benutz(?:e)?\s+gruppe)/i;
+const GROUP_VERB_PREFIX =
+  /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe|benutz(?:e)?\s+gruppe)/i;
 
 /**
  * Deterministic HINT detection — bypasses the LLM entirely.
@@ -399,7 +433,9 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   // reserves plain HINT: for the user and stops the router's own narration
   // ("> [router] MHINT: …") from ever being re-read as a user instruction
   // (the 2026-09-18 lock-in loop).
-  const match = prompt.match(/^\s*(HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i);
+  const match = prompt.match(
+    /^\s*(HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+(.+)/i
+  );
   if (!match) return null;
   const isModelOnlyMarker = match[1].toUpperCase() !== 'HINT';
   const instruction = match[2].trim();
@@ -408,9 +444,7 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
   // (only for the plain user HINT marker — MHINT variants are model-only)
   const groupMatch = isModelOnlyMarker
     ? null
-    : instruction.match(
-        new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i')
-      );
+    : instruction.match(new RegExp(GROUP_VERB_PREFIX.source + /\s+(\S+)/.source, 'i'));
   if (groupMatch) {
     return {
       reason: 'User specified group via HINT',
@@ -478,7 +512,16 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
 
   // This is a model hint — clean up common prefixes like "use ", "nutze ".
   let cleanHintTarget = hintTarget;
-  const verbPrefixes = ['use ', 'use:', 'nutze ', 'nutze:', 'utilise ', 'utilise:', 'utilizar ', 'utilizar:'];
+  const verbPrefixes = [
+    'use ',
+    'use:',
+    'nutze ',
+    'nutze:',
+    'utilise ',
+    'utilise:',
+    'utilizar ',
+    'utilizar:',
+  ];
   for (const prefix of verbPrefixes) {
     if (cleanHintTarget.toLowerCase().startsWith(prefix)) {
       cleanHintTarget = cleanHintTarget.slice(prefix.length).trim();
@@ -506,7 +549,9 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
  * like "can I get a hint about…" does not count.
  */
 function containsHintMarker(prompt: string): boolean {
-  return /(?:^|[^A-Za-z0-9_-])(?:HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+\S/i.test(prompt);
+  return /(?:^|[^A-Za-z0-9_-])(?:HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s+\S/i.test(
+    prompt
+  );
 }
 
 /**
@@ -519,7 +564,10 @@ export async function classifyPrompt(
   options: ClassificationOptions = {}
 ): Promise<FullClassificationResult> {
   const started = Date.now();
-  const holder: { source: string | null; trace: ClassificationTrace } = { source: null, trace: newTrace() };
+  const holder: { source: string | null; trace: ClassificationTrace } = {
+    source: null,
+    trace: newTrace(),
+  };
   // Snapshot the sticky context BEFORE the (awaited) classification: the log's
   // `prev` must describe the context the decision was made in, not a newer
   // category a caller might write into a shared context object while the
@@ -552,7 +600,7 @@ function writeDecisionLog(
   raw: FullClassificationResult,
   result: FullClassificationResult,
   started: number,
-  prevCategory: ClassificationContext['lastCategory'],
+  prevCategory: ClassificationContext['lastCategory']
 ): void {
   const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
   if (!log) return;
@@ -578,11 +626,11 @@ function writeDecisionLog(
       : null,
     final: {
       category: 'category' in result ? result.category : null,
-      group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
-      hint:
-        'hintType' in result
-          ? { type: result.hintType, target: result.hintTarget }
+      group:
+        'category' in result && result.category
+          ? getGroupForCategory(result.category, options.cfg)
           : null,
+      hint: 'hintType' in result ? { type: result.hintType, target: result.hintTarget } : null,
       reason: result.reason ?? null,
     },
     context: options.context,
@@ -606,7 +654,7 @@ function writeDecisionLog(
  */
 function inheritPreviousCategory(
   result: FullClassificationResult,
-  lastCategory: ClassificationResult['category'] | undefined,
+  lastCategory: ClassificationResult['category'] | undefined
 ): FullClassificationResult {
   if (!('category' in result) || result.category !== 'continue') return result;
   if (!lastCategory || lastCategory === 'continue') return result;
@@ -628,7 +676,12 @@ function inheritPreviousCategory(
 function spawnMomentumObservation(prompt: string, options: ClassificationOptions): void {
   const prevCategory = options.context?.lastCategory ?? null;
   void (async () => {
-    const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean; observe?: boolean } = {
+    const holder: {
+      source: string | null;
+      trace: ClassificationTrace;
+      comparator?: boolean;
+      observe?: boolean;
+    } = {
       source: null,
       trace: newTrace(),
       comparator: true,
@@ -652,7 +705,10 @@ function spawnMomentumObservation(prompt: string, options: ClassificationOptions
                 : null,
               final: {
                 category: 'category' in result ? result.category : null,
-                group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                group:
+                  'category' in result && result.category
+                    ? getGroupForCategory(result.category, options.cfg)
+                    : null,
                 hint: null,
                 reason: result.reason ?? null,
               },
@@ -712,8 +768,9 @@ async function classifyPromptUncounted(
     // Check if the last model has a large enough context window for compaction.
     // Local models (ollama, lm-studio) often have small windows (4K-8K).
     if (context.lastModel && !context.lastModelLimited) {
-      const isSmallLocal = /ollama\/|lm-studio\//i.test(context.lastModel) ||
-                          /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
+      const isSmallLocal =
+        /ollama\/|lm-studio\//i.test(context.lastModel) ||
+        /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
       if (!isSmallLocal) {
         noteSource('compaction');
         return {
@@ -755,10 +812,7 @@ async function classifyPromptUncounted(
 
   // Background context block (shared builder; the HINT-rule scoping and
   // narration-leak caveat live in classification-prompt.ts).
-  const contextBlock = buildContextBlock(
-    context.previousUserMessage,
-    context.lastAssistantSnippet
-  );
+  const contextBlock = buildContextBlock(context.previousUserMessage, context.lastAssistantSnippet);
 
   // Cache check: only for the LLM-classification path (after the deterministic
   // early-returns above). Cache key is the raw prompt — the deterministic cases
@@ -786,7 +840,9 @@ async function classifyPromptUncounted(
       // Feed generation timeouts to the local-provider watchdog (ADR-0016).
       if (cache && /timeout|timed out/i.test(String((err as Error)?.message ?? err))) {
         if (recordLocalTimeout(cache, `ollama/${m}`)) {
-          warnLog(`[classifier] Ollama looks wedged (generations keep timing out) — skipping local models for ${wedgeCooldownText(cache, 'ollama')}`);
+          warnLog(
+            `[classifier] Ollama looks wedged (generations keep timing out) — skipping local models for ${wedgeCooldownText(cache, 'ollama')}`
+          );
         }
       }
       throw err;
@@ -815,13 +871,23 @@ async function classifyPromptUncounted(
     if (!isValidFullClassification(parsed)) {
       // If category is invalid but structure is valid, map to fallback
       const rawParsed = parsed as any;
-      if (rawParsed && typeof rawParsed.category === 'string' && typeof rawParsed.reason === 'string') {
-        warnLog(`[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'continue'`);
-        return { category: 'continue', reason: rawParsed.reason, confidence: rawParsed.confidence ?? 0 };
+      if (
+        rawParsed &&
+        typeof rawParsed.category === 'string' &&
+        typeof rawParsed.reason === 'string'
+      ) {
+        warnLog(
+          `[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'continue'`
+        );
+        return {
+          category: 'continue',
+          reason: rawParsed.reason,
+          confidence: rawParsed.confidence ?? 0,
+        };
       }
       throw new Error(`Invalid format: ${response}`);
     }
-    
+
     // Check for HINT override in the classification result.
     // Conversion is shared with the cloud fallback loop via
     // toHintClassification so both paths produce identical hint semantics
@@ -838,7 +904,7 @@ async function classifyPromptUncounted(
       }
       return hint;
     }
-    
+
     return applyConfidenceGate(parsed, context.lastCategory);
   };
 
@@ -870,7 +936,11 @@ async function classifyPromptUncounted(
     }
     const retryTarget = fallback && fallback !== primary ? fallback : undefined;
     // Decision log: time and classify every real attempt (ok/failed + why).
-    const tracedLocalAttempt = async (m: string, t: number, attempt: () => Promise<FullClassificationResult>) => {
+    const tracedLocalAttempt = async (
+      m: string,
+      t: number,
+      attempt: () => Promise<FullClassificationResult>
+    ) => {
       const t0 = Date.now();
       const trace = callSource.getStore()?.trace;
       try {
@@ -902,24 +972,36 @@ async function classifyPromptUncounted(
     // is skipped entirely. No guaranteed-501 hop on every prompt.
     if (isMarkedNoSchema(cache, primary)) {
       if (!retryTarget) {
-        routerLog(`[classifier] Local model "${primary}" marked no-structured-output (501) and no fallback — skipping the local leg`);
+        routerLog(
+          `[classifier] Local model "${primary}" marked no-structured-output (501) and no fallback — skipping the local leg`
+        );
         return;
       }
-      routerLog(`[classifier] Primary model "${primary}" marked no-structured-output (501) — trying ${retryTarget} directly`);
+      routerLog(
+        `[classifier] Primary model "${primary}" marked no-structured-output (501) — trying ${retryTarget} directly`
+      );
       await tryFallback();
       return;
     }
     try {
-      classificationResult = await tracedLocalAttempt(primary, timeoutMs, () => tryClassify(primary, timeoutMs));
+      classificationResult = await tracedLocalAttempt(primary, timeoutMs, () =>
+        tryClassify(primary, timeoutMs)
+      );
     } catch (primaryError) {
       const primaryMsg = String((primaryError as Error)?.message ?? '');
       if (primaryMsg.includes(NO_SCHEMA_MARKER)) {
         // Permanent backend property, not transient — mark and never burn
         // this hop again while the mark is within its TTL.
         markNoSchema(cache, primary);
-        routerLog(`[classifier] Primary model "${primary}" rejects structured output (501) — marked in cache`, primaryMsg);
+        routerLog(
+          `[classifier] Primary model "${primary}" rejects structured output (501) — marked in cache`,
+          primaryMsg
+        );
       } else if (retryTarget) {
-        routerLog(`[classifier] Primary model "${primary}" failed, retrying with ${retryTarget}`, primaryMsg);
+        routerLog(
+          `[classifier] Primary model "${primary}" failed, retrying with ${retryTarget}`,
+          primaryMsg
+        );
       }
       // Cold-start timeout or load error → retry immediately with the fallback model
       await tryFallback();
@@ -979,14 +1061,20 @@ async function classifyPromptUncounted(
       // and the static free list / a pin never passed the probe filter.
       if (cfg.exclude) {
         const exCtx = { rules: cfg.exclude, cfg, cache };
-        modelsToTry = modelsToTry.filter((ref) => !isExcluded(ref, exCtx) && !isPaidForClassifier(ref, cfg.exclude));
+        modelsToTry = modelsToTry.filter(
+          (ref) => !isExcluded(ref, exCtx) && !isPaidForClassifier(ref, cfg.exclude)
+        );
       }
-      routerLog(`[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`);
+      routerLog(
+        `[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`
+      );
       // Distinguish "probe ran but all candidates failed" from "probe hasn't
       // run yet" so the empty-list case is diagnosable from logs (roborev
       // job 445 LOW).
       if (modelsToTry.length === 0 && source === 'discovered' && hasProbedFallback(cache)) {
-        warnLog('[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.');
+        warnLog(
+          '[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.'
+        );
       }
 
       const classifyCtx: any = {
@@ -1002,7 +1090,12 @@ async function classifyPromptUncounted(
         try {
           const model = findModel(modelRef);
           if (!model) {
-            trace?.chain.push({ ref: modelRef, outcome: 'skipped', why: 'not-in-registry', ms: Date.now() - t0 });
+            trace?.chain.push({
+              ref: modelRef,
+              outcome: 'skipped',
+              why: 'not-in-registry',
+              ms: Date.now() - t0,
+            });
             routerLog(`[classifier] Cloud model ${modelRef} not in pi registry — skipping`);
             continue;
           }
@@ -1010,8 +1103,15 @@ async function classifyPromptUncounted(
           // not that the provider has credentials (bug 2026-10-06) — skip
           // before completeSimple would fail one level deeper.
           if (hasConfiguredAuth && !hasConfiguredAuth(model)) {
-            trace?.chain.push({ ref: modelRef, outcome: 'skipped', why: 'no-credentials', ms: Date.now() - t0 });
-            routerLog(`[classifier] Cloud model ${modelRef} skipped — provider not configured (no credentials)`);
+            trace?.chain.push({
+              ref: modelRef,
+              outcome: 'skipped',
+              why: 'no-credentials',
+              ms: Date.now() - t0,
+            });
+            routerLog(
+              `[classifier] Cloud model ${modelRef} skipped — provider not configured (no credentials)`
+            );
             continue;
           }
           // S3 (final v1.6.0 review): per-candidate timeout, probe parity.
@@ -1055,7 +1155,12 @@ async function classifyPromptUncounted(
             // No JSON at all — distinguish "answered nothing" from "answered
             // something unparseable" (the breaker watches the former).
             if (!raw.trim()) {
-              trace?.chain.push({ ref: modelRef, outcome: 'failed', why: 'empty-reply', ms: Date.now() - t0 });
+              trace?.chain.push({
+                ref: modelRef,
+                outcome: 'failed',
+                why: 'empty-reply',
+                ms: Date.now() - t0,
+              });
               warnLog(`[classifier] Cloud model ${modelRef} returned an empty reply`);
               continue;
             }
@@ -1090,9 +1195,13 @@ async function classifyPromptUncounted(
               }
               const hint = toHintClassification(extracted);
               if (!hint) {
-                throw new Error(`Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`);
+                throw new Error(
+                  `Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`
+                );
               }
-              routerLog(`[classifier] Cloud model ${modelRef} succeeded (HINT conversion via pi completeSimple)`);
+              routerLog(
+                `[classifier] Cloud model ${modelRef} succeeded (HINT conversion via pi completeSimple)`
+              );
               trace?.chain.push({ ref: modelRef, outcome: 'ok', ms: Date.now() - t0 });
               noteSource(`cloud:${modelRef}`);
               return hint;
@@ -1106,8 +1215,15 @@ async function classifyPromptUncounted(
           // category, missing reason). Used to be skipped without a trace;
           // the chain still moves on to the next candidate — a model that
           // answers with a made-up category is better replaced than trusted.
-          warnLog(`[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String((extracted as any).category)}") — trying the next candidate`);
-          trace?.chain.push({ ref: modelRef, outcome: 'failed', why: 'invalid-category', ms: Date.now() - t0 });
+          warnLog(
+            `[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String((extracted as any).category)}") — trying the next candidate`
+          );
+          trace?.chain.push({
+            ref: modelRef,
+            outcome: 'failed',
+            why: 'invalid-category',
+            ms: Date.now() - t0,
+          });
         } catch (cloudError) {
           // Spurious-HINT / unusable-HINT / invalid-format throws land here
           // too; classifyError never stores the raw body (it can echo
@@ -1115,7 +1231,8 @@ async function classifyPromptUncounted(
           trace?.chain.push({
             ref: modelRef,
             outcome: 'failed',
-            why: classifyError(String((cloudError as Error)?.message ?? cloudError)) ?? 'unparseable',
+            why:
+              classifyError(String((cloudError as Error)?.message ?? cloudError)) ?? 'unparseable',
             ms: Date.now() - t0,
           });
           warnLog(`[classifier] Cloud model ${modelRef} failed`, (cloudError as Error).message);
@@ -1160,7 +1277,9 @@ async function classifyPromptUncounted(
 
     // Static fallback
     if (!allowStaticFallback) {
-      errorLog('[classifier] Ollama models failed, static classifier disabled — returning fallback');
+      errorLog(
+        '[classifier] Ollama models failed, static classifier disabled — returning fallback'
+      );
       noteSource('fallback');
       return {
         category: 'continue',
@@ -1187,7 +1306,9 @@ async function classifyPromptUncounted(
   const spawnBackgroundComparator = (): void => {
     const prevCategory = context.lastCategory ?? null;
     // Inside a momentum observation the replaced chain is the observation's.
-    const comparatorStage = callSource.getStore()?.observe ? 'observation-comparator' : 'comparator';
+    const comparatorStage = callSource.getStore()?.observe
+      ? 'observation-comparator'
+      : 'comparator';
     void (async () => {
       const holder: { source: string | null; trace: ClassificationTrace; comparator?: boolean } = {
         source: null,
@@ -1209,11 +1330,17 @@ async function classifyPromptUncounted(
                 stage: comparatorStage,
                 trace: holder.trace,
                 prev: prevCategory
-                  ? { category: prevCategory, group: getGroupForCategory(prevCategory, options.cfg) }
+                  ? {
+                      category: prevCategory,
+                      group: getGroupForCategory(prevCategory, options.cfg),
+                    }
                   : null,
                 final: {
                   category: 'category' in result ? result.category : null,
-                  group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
+                  group:
+                    'category' in result && result.category
+                      ? getGroupForCategory(result.category, options.cfg)
+                      : null,
                   hint: null,
                   reason: result.reason ?? null,
                 },
@@ -1252,7 +1379,9 @@ async function classifyPromptUncounted(
           ref,
           category: out.answer.category,
           confidence: out.answer.confidence,
-          ...(validLayaDistribution(out.answer.probabilities) ? { probabilities: out.answer.probabilities } : {}),
+          ...(validLayaDistribution(out.answer.probabilities)
+            ? { probabilities: out.answer.probabilities }
+            : {}),
           acted: acts,
           ms,
         };
@@ -1263,7 +1392,11 @@ async function classifyPromptUncounted(
         if (trace) {
           trace.chain.push({ ref, outcome: 'ok', ms });
           // Decision log: what the stage said before post-processing.
-          trace.raw = { category: out.answer.category, confidence: out.answer.confidence, reason: out.result.reason ?? null };
+          trace.raw = {
+            category: out.answer.category,
+            confidence: out.answer.confidence,
+            reason: out.result.reason ?? null,
+          };
         }
         if (!contextBlock) classifyCacheSet(prompt, out.result);
         return out.result;
@@ -1282,9 +1415,7 @@ function isValidClassification(obj: any): obj is ClassificationResult {
   return (
     obj &&
     typeof obj.category === 'string' &&
-    (VALID_CATEGORIES as readonly string[]).includes(
-      obj.category
-    ) &&
+    (VALID_CATEGORIES as readonly string[]).includes(obj.category) &&
     typeof obj.reason === 'string'
   );
 }
@@ -1303,21 +1434,21 @@ function isValidHintClassification(obj: any): obj is HintClassificationResult {
 function isValidFullClassification(obj: any): obj is FullClassificationResult {
   // Check for normal classification
   if (isValidClassification(obj)) return true;
-  
+
   // Check for raw HINT response from LLM (before extraction)
   // These have category starting with 'hint:' but no hintType/hintTarget yet
-  if (obj && 
-      typeof obj.category === 'string' && 
-      obj.category.startsWith('hint:') && 
-      typeof obj.reason === 'string') {
+  if (
+    obj &&
+    typeof obj.category === 'string' &&
+    obj.category.startsWith('hint:') &&
+    typeof obj.reason === 'string'
+  ) {
     return true;
   }
-  
+
   // Check for processed HINT classification
   return isValidHintClassification(obj);
 }
-
-
 
 // ── Mapping ──────────────────────────────────────────────────────────────
 
@@ -1329,13 +1460,13 @@ export const CATEGORY_TO_GROUP: Record<ClassificationResult['category'], string>
   // (D5: 1600 vs 1700, both briefcase-sorted); continue without a real
   // predecessor inherits the previous category, and with none it goes to
   // the standard mid band (D6 — a decent model, not a free one).
-  simple:       'simple',
-  code_simple:  'simple',
-  standard:     'standard',
+  simple: 'simple',
+  code_simple: 'simple',
+  standard: 'standard',
   code_complex: 'code_complex',
-  design:       'design',
-  planning:     'planning',
-  continue:     'standard',
+  design: 'design',
+  planning: 'planning',
+  continue: 'standard',
 };
 
 /**
@@ -1387,10 +1518,14 @@ export function classifyStatically(prompt: string): ClassificationResult {
   // Trivial: Only very specific file/list/todo context phrases
   // The AND condition ensures the keywords appear in a relevant context
   const trivialKeywords = [/what(?:'s| is) in\s/i];
-  
-  if (trivialKeywords.some(regex => regex.test(lowerPrompt)) &&
-      (lowerPrompt.includes('file') || lowerPrompt.includes('todo') || 
-       lowerPrompt.includes('list') || lowerPrompt.includes('content'))) {
+
+  if (
+    trivialKeywords.some((regex) => regex.test(lowerPrompt)) &&
+    (lowerPrompt.includes('file') ||
+      lowerPrompt.includes('todo') ||
+      lowerPrompt.includes('list') ||
+      lowerPrompt.includes('content'))
+  ) {
     return {
       category: 'simple',
       reason: 'Simple lookup request - simple classification',
@@ -1400,12 +1535,24 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Simple: Simple questions/explanations
   const simpleKeywords = [
-    'explain', 'summarize', 'summary', 'what does', 'what is',
-    'tell me', 'describe', 'briefly', 'short', 'quick',
-    'meaning', 'definition', 'what\'s', 'how to', 'how do'
+    'explain',
+    'summarize',
+    'summary',
+    'what does',
+    'what is',
+    'tell me',
+    'describe',
+    'briefly',
+    'short',
+    'quick',
+    'meaning',
+    'definition',
+    "what's",
+    'how to',
+    'how do',
   ];
-  
-  if (simpleKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (simpleKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'simple',
       reason: 'Simple question - simple classification',
@@ -1415,14 +1562,29 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Code Simple: Small code changes
   const codeSimpleKeywords = [
-    'fix', 'rename', 'typo', 'syntax', 'import', 'export',
-    'add a', 'remove', 'delete', 'change', 'update',
-    'one line', 'few lines', 'small'
+    'fix',
+    'rename',
+    'typo',
+    'syntax',
+    'import',
+    'export',
+    'add a',
+    'remove',
+    'delete',
+    'change',
+    'update',
+    'one line',
+    'few lines',
+    'small',
   ];
-  
-  if (codeSimpleKeywords.some(kw => lowerPrompt.includes(kw)) &&
-      (lowerPrompt.includes('code') || lowerPrompt.includes('function') || 
-       lowerPrompt.includes('variable') || lowerPrompt.includes('line'))) {
+
+  if (
+    codeSimpleKeywords.some((kw) => lowerPrompt.includes(kw)) &&
+    (lowerPrompt.includes('code') ||
+      lowerPrompt.includes('function') ||
+      lowerPrompt.includes('variable') ||
+      lowerPrompt.includes('line'))
+  ) {
     return {
       category: 'code_simple',
       reason: 'Small code change - code_simple classification',
@@ -1432,12 +1594,20 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Standard: Standard requests
   const standardKeywords = [
-    'explain this', 'how does', 'why does', 'what are',
-    'difference', 'compare', 'pro and con', 'advantage',
-    'disadvantage', 'when to use', 'best practice'
+    'explain this',
+    'how does',
+    'why does',
+    'what are',
+    'difference',
+    'compare',
+    'pro and con',
+    'advantage',
+    'disadvantage',
+    'when to use',
+    'best practice',
   ];
-  
-  if (standardKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (standardKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'standard',
       reason: 'Standard request - standard classification',
@@ -1447,12 +1617,22 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Code Complex: Complex code tasks
   const codeComplexKeywords = [
-    'refactor', 'debug', 'architecture', 'design', 'implement',
-    'new feature', 'complex', 'large', 'many lines',
-    'review', 'analyze', 'optimize', 'performance'
+    'refactor',
+    'debug',
+    'architecture',
+    'design',
+    'implement',
+    'new feature',
+    'complex',
+    'large',
+    'many lines',
+    'review',
+    'analyze',
+    'optimize',
+    'performance',
   ];
-  
-  if (codeComplexKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (codeComplexKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'code_complex',
       reason: 'Complex code task - code_complex classification',
@@ -1462,11 +1642,18 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Design: Architecture/Design
   const designKeywords = [
-    'architecture', 'system design', 'api design', 'database',
-    'schema', 'diagram', 'flowchart', 'uml', 'structure'
+    'architecture',
+    'system design',
+    'api design',
+    'database',
+    'schema',
+    'diagram',
+    'flowchart',
+    'uml',
+    'structure',
   ];
-  
-  if (designKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (designKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'design',
       reason: 'Design task - design classification',
@@ -1476,12 +1663,20 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Planning: Planning/Roadmaps
   const planningKeywords = [
-    'roadmap', 'plan', 'prioritize', 'prioritization',
-    'task breakdown', 'tasks', 'steps', 'milestone',
-    'timeline', 'schedule', 'break down'
+    'roadmap',
+    'plan',
+    'prioritize',
+    'prioritization',
+    'task breakdown',
+    'tasks',
+    'steps',
+    'milestone',
+    'timeline',
+    'schedule',
+    'break down',
   ];
-  
-  if (planningKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (planningKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'planning',
       reason: 'Planning task - planning classification',
@@ -1491,12 +1686,19 @@ export function classifyStatically(prompt: string): ClassificationResult {
 
   // Exploration: Open-ended questions/Brainstorming
   const explorationKeywords = [
-    'what could', 'what should', 'brainstorm', 'ideas',
-    'suggestions', 'options', 'possibilities', 'vague',
-    'open-ended', 'what if'
+    'what could',
+    'what should',
+    'brainstorm',
+    'ideas',
+    'suggestions',
+    'options',
+    'possibilities',
+    'vague',
+    'open-ended',
+    'what if',
   ];
-  
-  if (explorationKeywords.some(kw => lowerPrompt.includes(kw))) {
+
+  if (explorationKeywords.some((kw) => lowerPrompt.includes(kw))) {
     return {
       category: 'standard',
       reason: 'Open-ended request - standard classification',

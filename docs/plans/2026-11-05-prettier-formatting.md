@@ -1,6 +1,6 @@
 # Prettier: format the code once, then keep it formatted
 
-**Status:** in progress 2026-11-05. Owner decisions 2026-11-05: 1a (code only),
+**Status:** done 2026-11-05. Owner decisions 2026-11-05: 1a (code only),
 2a (the redundancy metric skips import/export scaffolding), 3 = both (CI AND
 the pre-push hook). Empirical correction to step 2's assumption: the reformat
 does NOT leave repeatedBlocks neutral — it normalises real duplicated test

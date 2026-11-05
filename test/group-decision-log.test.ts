@@ -38,9 +38,24 @@ const cfg: Config = {
     tactical: { method: 'best', min_gdpval: 900, max_gdpval: 1700, fallback_groups: [] },
   },
   model_metrics: {
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, gdpval: 1900, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 1.5e-6, gdpval: 1844, throughput_tps: 100, avg_latency_ms: 1000 },
-    'mistral/zai-glm-5-3': { cost_per_m: 1.4, gdpval: 1644, throughput_tps: 60, avg_latency_ms: 1200 },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 1.5e-6,
+      gdpval: 1900,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 1.5e-6,
+      gdpval: 1844,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'mistral/zai-glm-5-3': {
+      cost_per_m: 1.4,
+      gdpval: 1644,
+      throughput_tps: 60,
+      avg_latency_ms: 1200,
+    },
     'mistral/mistral-medium-3.5': { gdpval: 933, throughput_tps: 80, avg_latency_ms: 900 },
   },
   providers: {},
@@ -59,7 +74,10 @@ beforeEach(() => {
   mockDebugOnce.mockClear();
   mockDebugEnabled.mockReturnValue(true);
   cache = {
-    available_models: REFS.map((r) => ({ provider: r.split('/')[0], id: r.slice(r.indexOf('/') + 1) })),
+    available_models: REFS.map((r) => ({
+      provider: r.split('/')[0],
+      id: r.slice(r.indexOf('/') + 1),
+    })),
   } as any;
   metricsModule.setConfig(cfg);
   metricsModule.setCache(cache);
@@ -85,7 +103,9 @@ describe('group decision debug log (Phase 0 step 1)', () => {
     expect(line).toContain('mistral/mistral-medium-3.5 gdp=933 cost=unknown');
     // Candidate order in the line follows the live ranking.
     expect(line.indexOf('1. mistral/zai-glm-5-3')).toBeGreaterThan(-1);
-    expect(line.indexOf('2. mistral/mistral-medium-3.5')).toBeGreaterThan(line.indexOf('1. mistral/zai-glm-5-3'));
+    expect(line.indexOf('2. mistral/mistral-medium-3.5')).toBeGreaterThan(
+      line.indexOf('1. mistral/zai-glm-5-3')
+    );
   });
 
   it('names the gate that excluded each dropped ref', () => {
@@ -102,7 +122,10 @@ describe('group decision debug log (Phase 0 step 1)', () => {
     recordModelFailure(cache, 'mistral/zai-glm-5-3');
     recordModelFailure(cache, 'mistral/zai-glm-5-3');
     const limits = new Map<string, RateLimit>([
-      ['mistral/mistral-medium-3.5', { cooldown_until: Date.now() + 60_000, backoff_ms: 1000, hits: 1 }],
+      [
+        'mistral/mistral-medium-3.5',
+        { cooldown_until: Date.now() + 60_000, backoff_ms: 1000, hits: 1 },
+      ],
     ]);
     const router = new Router(cfg, cache, limits);
     router.resolve('tactical');
@@ -122,15 +145,24 @@ describe('group decision debug log (Phase 0 step 1)', () => {
 describe('applyGroupFilters drop recorder', () => {
   it('reports each dropped ref with its gate and leaves the result unchanged', () => {
     const drops: Array<[string, string]> = [];
-    const withRecorder = applyGroupFilters(REFS, cfg.model_groups!.tactical, cfg, false, undefined, undefined,
-      (ref, reason) => drops.push([ref, reason]));
+    const withRecorder = applyGroupFilters(
+      REFS,
+      cfg.model_groups!.tactical,
+      cfg,
+      false,
+      undefined,
+      undefined,
+      (ref, reason) => drops.push([ref, reason])
+    );
     const without = applyGroupFilters(REFS, cfg.model_groups!.tactical, cfg);
     expect(withRecorder).toEqual(without);
-    expect(drops).toEqual(expect.arrayContaining([
-      ['claude-bridge/claude-opus-5-5', 'max_gdpval'],
-      ['claude-bridge/claude-sonnet-5-5', 'max_gdpval'],
-      ['mistral/unscored-thing', 'min_gdpval'],
-    ]));
+    expect(drops).toEqual(
+      expect.arrayContaining([
+        ['claude-bridge/claude-opus-5-5', 'max_gdpval'],
+        ['claude-bridge/claude-sonnet-5-5', 'max_gdpval'],
+        ['mistral/unscored-thing', 'min_gdpval'],
+      ])
+    );
     expect(drops).toHaveLength(3);
   });
 });
@@ -184,7 +216,9 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
   });
 
   it('top_k truncation is reported as the gate that dropped the cut refs, and only those', () => {
-    const router = withGroups({ cut: { method: 'min_cost', top_k: 1, min_gdpval: 900, max_gdpval: 1700, fallback_groups: [] } });
+    const router = withGroups({
+      cut: { method: 'min_cost', top_k: 1, min_gdpval: 900, max_gdpval: 1700, fallback_groups: [] },
+    });
     const res = router.resolve('cut');
     const line = lineFor('cut');
     expect(res!.candidates).toHaveLength(1);
@@ -221,9 +255,15 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
   });
 
   it('the score= shown for a best group follows its score_by column', () => {
-    const profiled = { ...cache, capability_profiles: { 'zai-glm-5-3': { briefcase: 777 } } } as Cache;
+    const profiled = {
+      ...cache,
+      capability_profiles: { 'zai-glm-5-3': { briefcase: 777 } },
+    } as Cache;
     metricsModule.setCache(profiled);
-    const config = { ...cfg, model_groups: { col: { method: 'best', score_by: 'briefcase', fallback_groups: [] } } } as Config;
+    const config = {
+      ...cfg,
+      model_groups: { col: { method: 'best', score_by: 'briefcase', fallback_groups: [] } },
+    } as Config;
     metricsModule.setConfig(config);
     new Router(config, profiled, new Map()).resolve('col');
     expect(lineFor('col')).toContain('mistral/zai-glm-5-3 gdp=1644 cost=1.4 score=777');
@@ -231,7 +271,10 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
 
   it('a budget drop with debug logging OFF neither throws nor logs', () => {
     mockDebugEnabled.mockReturnValue(false);
-    const budgetCache = { ...cache, budget_cache: { 'claude-bridge': { remaining_tokens: 0 } } } as Cache;
+    const budgetCache = {
+      ...cache,
+      budget_cache: { 'claude-bridge': { remaining_tokens: 0 } },
+    } as Cache;
     metricsModule.setCache(budgetCache);
     const config = {
       ...cfg,
@@ -261,7 +304,10 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
       ...cfg,
       model_groups: { open: { method: 'best', fallback_groups: [] } },
       providers: {
-        'claude-bridge': { billing: 'pay_per_token', budget: { amount: 1000, unit: 'tokens', period: 'month', reset_day: 1 } },
+        'claude-bridge': {
+          billing: 'pay_per_token',
+          budget: { amount: 1000, unit: 'tokens', period: 'month', reset_day: 1 },
+        },
       },
     } as Config;
     metricsModule.setConfig(config);
@@ -279,4 +325,3 @@ describe('group decision debug log — exact shape (nightly R1)', () => {
     resetBudgetPacingMemo();
   });
 });
-

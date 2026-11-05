@@ -36,8 +36,16 @@ const testConfig: Config = {
     code_complex: repoCfg.model_groups!.code_complex,
   },
   model_metrics: {
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 1.5e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 1.5e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
     'mistral/zai-glm-5-3': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
     'mistral/mistral-medium-3.5': { cost_per_m: 0.4, throughput_tps: 80, avg_latency_ms: 900 },
   },

@@ -28,7 +28,8 @@ import type { SessionEscalation } from './escalation.ts';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { CacheManager } from './cache.ts';
 /** Bounded sleep helper — used by the wait-for-reset paths. */
-const sleepMs = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleepMs = (ms: number): Promise<void> =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Per-candidate cancellation. Each stream attempt gets its own AbortSignal,
@@ -63,7 +64,8 @@ function openCandidateAttempt(options: SimpleStreamOptions | undefined): {
       // Drop the chain listener so a long cascade doesn't accumulate one
       // listener per failed candidate on the caller's signal.
       outer?.removeEventListener('abort', onOuterAbort);
-      if (!controller.signal.aborted) controller.abort(new Error('router abandoned this candidate'));
+      if (!controller.signal.aborted)
+        controller.abort(new Error('router abandoned this candidate'));
     },
   };
 }
@@ -101,14 +103,27 @@ function extractContextWindowFromError(detail: string | undefined): {
 import { type ClassificationResult } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText, textOf } from './utils.ts';
+import {
+  resolveShortModelName,
+  stripRouterNarration,
+  hintTargetMatches,
+  normalizeHintName,
+  realUserMessages,
+  messageText,
+  textOf,
+} from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
-import { breakerState, breakerEvidenceSummary, isLocalProviderName, resolveBreakerTuning } from './provider-breaker.ts';
+import {
+  breakerState,
+  breakerEvidenceSummary,
+  isLocalProviderName,
+  resolveBreakerTuning,
+} from './provider-breaker.ts';
 import { isOllamaAvailable } from './ollama-utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
@@ -146,14 +161,19 @@ function emptyResponseLabel(_ref: string): string {
 }
 
 /** Evidence phrase for the breaker-open narration (plan D6). Kinds collapse to one phrase when uniform. */
-function breakerEvidencePhrase(summary: { count: number; spanMs: number; kinds: string[] }): string {
+function breakerEvidencePhrase(summary: {
+  count: number;
+  spanMs: number;
+  kinds: string[];
+}): string {
   const KIND_PHRASE: Record<string, string> = {
     empty_response: 'returned empty responses',
     empty_timeout: 'timed out with no response',
     stall_timeout: 'stalled mid-stream',
     provider_error: 'reported provider errors',
   };
-  const phrase = summary.kinds.length === 1 ? KIND_PHRASE[summary.kinds[0]] ?? 'failed' : 'failed';
+  const phrase =
+    summary.kinds.length === 1 ? (KIND_PHRASE[summary.kinds[0]] ?? 'failed') : 'failed';
   const secs = Math.max(1, Math.round(summary.spanMs / 1000));
   return `${summary.count} distinct model(s) ${phrase} within ${secs} s`;
 }
@@ -170,12 +190,19 @@ function narrateBreakerOpen(
   ref: string
 ): void {
   const provider = ref.split('/')[0];
-  const summary = breakerEvidenceSummary(ctx.cache, provider, Date.now(), resolveBreakerTuning(ctx.cfg.provider_breaker));
+  const summary = breakerEvidenceSummary(
+    ctx.cache,
+    provider,
+    Date.now(),
+    resolveBreakerTuning(ctx.cfg.provider_breaker)
+  );
   const evidence = summary ? breakerEvidencePhrase(summary) : 'several distinct models failed';
   const hint = isLocalProviderName(provider)
     ? wedgeFixHint(provider)
     : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
-  routerLog(`[router] ${provider} looks wedged: ${evidence} — skipping its models for ${ctx.wedgeCooldownText(ref)}`);
+  routerLog(
+    `[router] ${provider} looks wedged: ${evidence} — skipping its models for ${ctx.wedgeCooldownText(ref)}`
+  );
   pushRouterInfoLogged(
     proxy,
     `> [router] ${provider} looks wedged: ${evidence}. Skipping ${provider} models for ${ctx.wedgeCooldownText(ref)}. Fix: ${hint}.\n\n`
@@ -340,7 +367,16 @@ export class StreamOrchestrator {
       // audit data. Only completed turns with REAL provider-reported usage
       // are tracked now.
       // Fire-and-forget by design: driveStream never rejects (see its doc).
-      void this.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      void this.driveStream(
+        proxy,
+        candidates,
+        context,
+        options,
+        undefined,
+        groupName,
+        undefined,
+        sourceModel
+      );
       return proxy;
     }
 
@@ -354,7 +390,9 @@ export class StreamOrchestrator {
         const prompt = this.ctx.extractLastUserPrompt(context);
         const lastMsg = context.messages[context.messages.length - 1];
         const isToolFollowUp =
-          lastMsg?.role === 'toolResult' && !!this.ctx.lastDynamicModel && !this.ctx.detectHintDirectly(prompt ?? '');
+          lastMsg?.role === 'toolResult' &&
+          !!this.ctx.lastDynamicModel &&
+          !this.ctx.detectHintDirectly(prompt ?? '');
         if (isToolFollowUp) {
           let followUpGroup = 'simple';
           let res = this.ctx.resolve(followUpGroup);
@@ -366,8 +404,20 @@ export class StreamOrchestrator {
             res = this.ctx.resolve(alt);
           }
           if (!res) throw new Error('No fallback model for tool follow-up');
-          candidates = [this.ctx.lastDynamicModel, ...res.candidates.filter((r) => r !== this.ctx.lastDynamicModel)];
-          await this.driveStream(proxy, candidates, context, options, undefined, followUpGroup, undefined, sourceModel);
+          candidates = [
+            this.ctx.lastDynamicModel,
+            ...res.candidates.filter((r) => r !== this.ctx.lastDynamicModel),
+          ];
+          await this.driveStream(
+            proxy,
+            candidates,
+            context,
+            options,
+            undefined,
+            followUpGroup,
+            undefined,
+            sourceModel
+          );
           return;
         }
 
@@ -421,7 +471,9 @@ export class StreamOrchestrator {
             lastCategory: this.ctx.lastClassifiedCategory,
             lastModel: this.ctx.lastDynamicModel || undefined,
             isCompaction: this.ctx.isCompactionTurn(context),
-            lastModelLimited: this.ctx.lastDynamicModel ? this.ctx.isLimited(this.ctx.lastDynamicModel) : false,
+            lastModelLimited: this.ctx.lastDynamicModel
+              ? this.ctx.isLimited(this.ctx.lastDynamicModel)
+              : false,
           },
         };
         // The local model(s) are derived inside classifyPrompt from cache
@@ -429,7 +481,8 @@ export class StreamOrchestrator {
         Object.assign(classifyOpts, localClassifierPins(dynamicGroupCfg));
         // Cloud ref is NOT ollama-stripped — findModel needs the full
         // "provider/id" form to resolve it against pi's model registry.
-        if (dynamicGroupCfg?.classifier_cloud_model) classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
+        if (dynamicGroupCfg?.classifier_cloud_model)
+          classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
 
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
 
@@ -443,12 +496,16 @@ export class StreamOrchestrator {
             const res = this.ctx.resolve(classification.hintTarget);
             if (res) {
               const hintSeen = new Set<string>(res.candidates);
-              const hintFallbacks = cfg.model_groups[classification.hintTarget]?.fallback_groups ?? [];
+              const hintFallbacks =
+                cfg.model_groups[classification.hintTarget]?.fallback_groups ?? [];
               for (const fbGroup of hintFallbacks) {
                 const fbRes = this.ctx.resolve(fbGroup);
                 if (!fbRes) continue;
                 for (const ref of fbRes.candidates) {
-                  if (!hintSeen.has(ref)) { hintSeen.add(ref); res.candidates.push(ref); }
+                  if (!hintSeen.has(ref)) {
+                    hintSeen.add(ref);
+                    res.candidates.push(ref);
+                  }
                 }
               }
               candidates = [...res.candidates];
@@ -472,7 +529,9 @@ export class StreamOrchestrator {
             }
             const hintedGroup = cfg.model_groups[classification.hintTarget];
             if (hintedGroup?.method === 'dynamic') {
-              routerLog(`[dynamic] HINT targets the dynamic group itself — falling through to normal classification: ${classification.hintTarget}`);
+              routerLog(
+                `[dynamic] HINT targets the dynamic group itself — falling through to normal classification: ${classification.hintTarget}`
+              );
             } else {
               routerLog(`[dynamic] HINT group not found: ${classification.hintTarget}`);
             }
@@ -491,7 +550,9 @@ export class StreamOrchestrator {
             // "zai-glm-5-3" — exact-only matching made every HINT variant
             // fail with "not found; using as-is").
             const namesMatch = (ref: string) =>
-              ref === shortName || ref.endsWith('/' + bareName) || hintTargetMatches(shortName, ref);
+              ref === shortName ||
+              ref.endsWith('/' + bareName) ||
+              hintTargetMatches(shortName, ref);
             for (const ref of router.allDiscoveredRefs()) {
               if (namesMatch(ref)) addMatch(ref);
             }
@@ -499,7 +560,7 @@ export class StreamOrchestrator {
               const knownProviders = new Set<string>([
                 ...Object.keys(PROVIDER_MAP),
                 ...Object.keys(cfg.providers ?? {}),
-                ...router.allDiscoveredRefs().map(ref => ref.split('/')[0]),
+                ...router.allDiscoveredRefs().map((ref) => ref.split('/')[0]),
               ]);
               const normalizedBare = normalizeHintName(bareName);
               for (const provider of knownProviders) {
@@ -517,10 +578,17 @@ export class StreamOrchestrator {
                 try {
                   const { models } = router.getTopModels(groupName, 100);
                   for (const item of models) allGroupModels.push(item.ref);
-                } catch { /* ignore */ }
+                } catch {
+                  /* ignore */
+                }
               }
               const viaGroups = resolveShortModelName(bareName, allGroupModels);
-              if (viaGroups) { addMatch(viaGroups); routerLog(`[dynamic] HINT: resolved "${shortName}" to "${viaGroups}" via group scan`); }
+              if (viaGroups) {
+                addMatch(viaGroups);
+                routerLog(
+                  `[dynamic] HINT: resolved "${shortName}" to "${viaGroups}" via group scan`
+                );
+              }
             }
             if (matches.length) {
               const ranked = await rankHintCandidates(
@@ -528,17 +596,24 @@ export class StreamOrchestrator {
                 cfg.model_groups,
                 this.ctx.sessionCtx?.modelRegistry,
                 this.ctx.lookupGdp,
-                (unusable) => routerLog(`[dynamic] HINT: skipping unusable refs (no handler/credentials): ${unusable.join(', ')}`)
+                (unusable) =>
+                  routerLog(
+                    `[dynamic] HINT: skipping unusable refs (no handler/credentials): ${unusable.join(', ')}`
+                  )
               );
-              if (shortName.includes('/') && matches.includes(shortName) && await isRefUsable(shortName, cfg.model_groups, this.ctx.sessionCtx?.modelRegistry)) {
-                hintSiblings = [shortName, ...ranked.filter(r => r !== shortName)];
+              if (
+                shortName.includes('/') &&
+                matches.includes(shortName) &&
+                (await isRefUsable(shortName, cfg.model_groups, this.ctx.sessionCtx?.modelRegistry))
+              ) {
+                hintSiblings = [shortName, ...ranked.filter((r) => r !== shortName)];
               } else {
                 hintSiblings = ranked;
               }
               candidates = [...hintSiblings];
               const isExplicitHint = classification.origin !== 'auto';
               if (isExplicitHint) {
-                candidates.forEach(ref => this.ctx.clearLimit(ref));
+                candidates.forEach((ref) => this.ctx.clearLimit(ref));
               }
               if (this.ctx.sessionCtx?.modelRegistry) {
                 const availableModels = this.ctx.sessionCtx.modelRegistry
@@ -554,11 +629,15 @@ export class StreamOrchestrator {
                   const gB = this.ctx.lookupGdp(b) ?? 0;
                   return gB - gA;
                 });
-                const fallbackPool = sortedByGdpval.filter(ref => !candidates.includes(ref));
+                const fallbackPool = sortedByGdpval.filter((ref) => !candidates.includes(ref));
                 const fallbackUsability = await Promise.all(
-                  fallbackPool.map(ref => isRefUsable(ref, cfg.model_groups, this.ctx.sessionCtx.modelRegistry))
+                  fallbackPool.map((ref) =>
+                    isRefUsable(ref, cfg.model_groups, this.ctx.sessionCtx.modelRegistry)
+                  )
                 );
-                const fallbackCandidates = fallbackPool.filter((_, i) => fallbackUsability[i]).slice(0, 5);
+                const fallbackCandidates = fallbackPool
+                  .filter((_, i) => fallbackUsability[i])
+                  .slice(0, 5);
                 if (fallbackCandidates.length) {
                   routerLog(`[dynamic] HINT fallback candidates: ${fallbackCandidates.join(', ')}`);
                   candidates.push(...fallbackCandidates);
@@ -578,8 +657,22 @@ export class StreamOrchestrator {
               // D2: hints name models, not groups; the start group is re-pointed —
               // top models start in 'planning' (old 'strategic'), the mid band in
               // 'code_complex' (old 'tactical'), everything else in 'simple'.
-              const hintStartGroup = resolvedGdpval >= 700 ? 'planning' : resolvedGdpval >= 300 ? 'code_complex' : 'simple';
-              await this.driveStream(proxy, candidates, context, options, dynamicLabel, hintStartGroup, undefined, sourceModel);
+              const hintStartGroup =
+                resolvedGdpval >= 700
+                  ? 'planning'
+                  : resolvedGdpval >= 300
+                    ? 'code_complex'
+                    : 'simple';
+              await this.driveStream(
+                proxy,
+                candidates,
+                context,
+                options,
+                dynamicLabel,
+                hintStartGroup,
+                undefined,
+                sourceModel
+              );
               return;
             } else {
               // Final v1.6.0 review (Minor): this branch used to log "using
@@ -590,7 +683,9 @@ export class StreamOrchestrator {
               // dynamicLabel. The ACTUAL behavior (verified in the 2026-09-20
               // "zai-glm-5.3" incident) is fall-through to normal
               // classification, so the log now says what really happens.
-              routerLog(`[dynamic] HINT model "${shortName}" not found in any group, registry or provider; falling back to normal classification`);
+              routerLog(
+                `[dynamic] HINT model "${shortName}" not found in any group, registry or provider; falling back to normal classification`
+              );
             }
           }
         }
@@ -606,7 +701,10 @@ export class StreamOrchestrator {
 
         let res = this.ctx.resolve(targetGroup);
         resolvedGroup = targetGroup;
-        if (!res) { res = this.ctx.resolve('simple'); resolvedGroup = 'simple'; }
+        if (!res) {
+          res = this.ctx.resolve('simple');
+          resolvedGroup = 'simple';
+        }
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
 
         const seen = new Set<string>(res.candidates);
@@ -616,7 +714,10 @@ export class StreamOrchestrator {
           const fbRes = this.ctx.resolve(fbGroup);
           if (!fbRes) continue;
           for (const ref of fbRes.candidates) {
-            if (!seen.has(ref)) { seen.add(ref); fallbackCandidates.push(ref); }
+            if (!seen.has(ref)) {
+              seen.add(ref);
+              fallbackCandidates.push(ref);
+            }
           }
         }
 
@@ -650,7 +751,16 @@ export class StreamOrchestrator {
         }
         candidates = [...fb.candidates];
       }
-      await this.driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup, undefined, sourceModel);
+      await this.driveStream(
+        proxy,
+        candidates,
+        context,
+        options,
+        dynamicLabel,
+        resolvedGroup,
+        undefined,
+        sourceModel
+      );
     })().catch((err: unknown) => {
       // The try/catch above covers classification, but its own catch branch
       // resolves the fallback group; a throw there must still end the stream.
@@ -683,17 +793,41 @@ export class StreamOrchestrator {
     sourceModel?: SourceModelInfo
   ): Promise<void> {
     try {
-      await this.walkCandidates(proxy, candidates, context, options, label, groupName, visitedGroups, sourceModel);
+      await this.walkCandidates(
+        proxy,
+        candidates,
+        context,
+        options,
+        label,
+        groupName,
+        visitedGroups,
+        sourceModel
+      );
     } catch (err) {
-      this.failStream(proxy, err, `outside the candidate loop for group ${groupName ?? label ?? '?'}`, sourceModel);
+      this.failStream(
+        proxy,
+        err,
+        `outside the candidate loop for group ${groupName ?? label ?? '?'}`,
+        sourceModel
+      );
     }
   }
 
   /** Terminates `proxy` with a router error for a throw the routing code did not expect. */
-  private failStream(proxy: AssistantMessageEventStream, err: unknown, where: string, sourceModel?: SourceModelInfo): void {
+  private failStream(
+    proxy: AssistantMessageEventStream,
+    err: unknown,
+    where: string,
+    sourceModel?: SourceModelInfo
+  ): void {
     const detail = err instanceof Error ? err.message : textOf(err);
     errorLog(`[router] routing threw ${where}`, err);
-    pushStreamError(proxy, `[router] Routing failed: ${detail}`, `[router] routing failed: ${detail}`, sourceModel);
+    pushStreamError(
+      proxy,
+      `[router] Routing failed: ${detail}`,
+      `[router] routing failed: ${detail}`,
+      sourceModel
+    );
   }
 
   private async walkCandidates(
@@ -747,7 +881,14 @@ export class StreamOrchestrator {
         if (ctx.isBreakerOpen(r)) continue;
         if (r.startsWith('ollama/') && isOllamaProbablyDown()) continue;
         const w = ctx.getModelContextWindow(r);
-        if (planOutputBudget({ windowTokens: w, inputTokens: planningTokens, requestedOutput: undefined }).kind === 'skip') continue;
+        if (
+          planOutputBudget({
+            windowTokens: w,
+            inputTokens: planningTokens,
+            requestedOutput: undefined,
+          }).kind === 'skip'
+        )
+          continue;
         return r;
       }
       return undefined;
@@ -784,9 +925,16 @@ export class StreamOrchestrator {
         continue;
       }
       const ctxWindow = ctx.getModelContextWindow(ref);
-      const preflight = planOutputBudget({ windowTokens: ctxWindow, inputTokens: planningTokens, requestedOutput: undefined });
+      const preflight = planOutputBudget({
+        windowTokens: ctxWindow,
+        inputTokens: planningTokens,
+        requestedOutput: undefined,
+      });
       if (preflight.kind === 'skip') {
-        pushError(ref, `skipped, context window ${ctxWindow} < ${preflight.neededTokens} tokens needed`);
+        pushError(
+          ref,
+          `skipped, context window ${ctxWindow} < ${preflight.neededTokens} tokens needed`
+        );
         contextOverflowSkips++;
         continue;
       }
@@ -815,8 +963,12 @@ export class StreamOrchestrator {
         // A thrown OPEN is a request-level provider failure (e.g. a cloud
         // provider's "Connection error" — the 172-line Ollama gap in the
         // plan's evidence table): provider-level evidence, plan D1.
-        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg)) narrateBreakerOpen(ctx, proxy, ref);
-        pushRouterInfoLogged(proxy, `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`);
+        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg))
+          narrateBreakerOpen(ctx, proxy, ref);
+        pushRouterInfoLogged(
+          proxy,
+          `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`
+        );
         return null;
       });
       if (!target) {
@@ -839,7 +991,8 @@ export class StreamOrchestrator {
       let attemptSucceeded = false;
       try {
         const result = await ctx.consumeWithDetection(
-          target.stream, proxy,
+          target.stream,
+          proxy,
           ctx.getEmptyResponseTimeout(ref),
           ctx.getStallTimeout(ref),
           String(ref),
@@ -852,14 +1005,22 @@ export class StreamOrchestrator {
           return;
         }
         if (result.reason === 'aborted') return;
-        if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(ref, result.detail);
+        if (result.reason === 'provider_error' && result.detail)
+          ctx.observeFailure(ref, result.detail);
 
         if (result.reason === 'rate_limit_exceeded') {
           const freeDayCap = isFreeTierDailyCapText(String(result.detail ?? ''));
           // Keep the provider's own words in the log: a daily account cap and a
           // shared upstream pool need different handling and look alike otherwise.
-          routerLog(`[router] ${ref} 429 body: ${formatRateLimitBodyForLog(String(result.detail ?? ''))}`);
-          ctx.recordStreamFailure(ref, String(result.reason), freeDayCap ? undefined : result.resetAtMs, result.detail);
+          routerLog(
+            `[router] ${ref} 429 body: ${formatRateLimitBodyForLog(String(result.detail ?? ''))}`
+          );
+          ctx.recordStreamFailure(
+            ref,
+            String(result.reason),
+            freeDayCap ? undefined : result.resetAtMs,
+            result.detail
+          );
           pushError(ref, 'rate_limit_exceeded');
 
           // OpenRouter's free-models-per-day cap is ACCOUNT-WIDE and resets
@@ -899,11 +1060,11 @@ export class StreamOrchestrator {
           // within minutes all candidates sit on escalated cooldowns while
           // the originally limited model has long been available again.
           const waitMaxMs = ctx.getRateLimitWaitMaxMs();
-          const resetInMs = result.resetAtMs && Number.isFinite(result.resetAtMs)
-            ? result.resetAtMs - Date.now()
-            : -1;
-          if (waitMaxMs > 0 && !rateLimitWaitUsed
-              && resetInMs > 0 && resetInMs <= waitMaxMs) {
+          const resetInMs =
+            result.resetAtMs && Number.isFinite(result.resetAtMs)
+              ? result.resetAtMs - Date.now()
+              : -1;
+          if (waitMaxMs > 0 && !rateLimitWaitUsed && resetInMs > 0 && resetInMs <= waitMaxMs) {
             rateLimitWaitUsed = true;
             const waitSecs = Math.ceil(resetInMs / 1000);
             routerLog(
@@ -915,13 +1076,16 @@ export class StreamOrchestrator {
             );
             await sleepMs(resetInMs + 2000);
             const retryAttempt = openCandidateAttempt(options);
-            const retryTarget = await ctx.tryStream(ref, context, retryAttempt.options).catch(() => null);
+            const retryTarget = await ctx
+              .tryStream(ref, context, retryAttempt.options)
+              .catch(() => null);
             if (!retryTarget) retryAttempt.abandon();
             if (retryTarget) {
               let retrySucceeded = false;
               try {
                 const retryResult = await ctx.consumeWithDetection(
-                  retryTarget.stream, proxy,
+                  retryTarget.stream,
+                  proxy,
                   ctx.getEmptyResponseTimeout(ref),
                   ctx.getStallTimeout(ref),
                   String(ref),
@@ -936,10 +1100,16 @@ export class StreamOrchestrator {
                 // Feed the blocklist observer like the main loop does, so a
                 // provider_error seen during the post-wait retry (e.g. a bare
                 // 422) still counts toward the learned-blocklist streaks.
-                if (retryResult.reason === 'provider_error' && retryResult.detail) ctx.observeFailure(ref, retryResult.detail);
+                if (retryResult.reason === 'provider_error' && retryResult.detail)
+                  ctx.observeFailure(ref, retryResult.detail);
                 // Still failing after the reset window — record it, tell the
                 // user, and fall through to the normal cascade.
-                ctx.recordStreamFailure(ref, String(retryResult.reason), retryResult.resetAtMs, retryResult.detail);
+                ctx.recordStreamFailure(
+                  ref,
+                  String(retryResult.reason),
+                  retryResult.resetAtMs,
+                  retryResult.detail
+                );
                 pushError(ref, `still failing after wait: ${retryResult.reason}`);
                 pushRouterInfoLogged(
                   proxy,
@@ -955,7 +1125,10 @@ export class StreamOrchestrator {
 
           const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          pushRouterInfoLogged(proxy, `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${suffix}\n\n`);
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] ${ref} — rate limit/spend limit reached${resetMsg}${suffix}\n\n`
+          );
           continue;
         }
         if (result.reason === 'context_overflow') {
@@ -992,14 +1165,22 @@ export class StreamOrchestrator {
             // small (parseable) or on cooldown (unparseable). Slicing past i
             // + the larger candidates avoids retrying the same overflow.
             const tried = [...largerCandidates];
-            const label2 = label ? `${label} (context overflow → trying larger)` : `${groupName ?? ref} (context overflow → trying larger)`;
+            const label2 = label
+              ? `${label} (context overflow → trying larger)`
+              : `${groupName ?? ref} (context overflow → trying larger)`;
             pushRouterInfoLogged(
               proxy,
               `> [router] ${ref} context window (${errInfo?.actualContextWindow.toLocaleString() ?? '?'} tokens) < ${minNeeded.toLocaleString()} needed — trying ${largerCandidates.length} larger model(s)…\n\n`
             );
             await this.driveStream(
-              proxy, tried, context, options, label2,
-              groupName, undefined, sourceModel
+              proxy,
+              tried,
+              context,
+              options,
+              label2,
+              groupName,
+              undefined,
+              sourceModel
             );
             return;
           }
@@ -1064,11 +1245,12 @@ export class StreamOrchestrator {
           }
           const nextRef = nextAttemptableRef(i + 1);
           const suffix = nextRef ? `, trying ${nextRef} …` : '';
-          const paidLabel = result.reason === 'stall_timeout'
-            ? 'stream stalled (likely rate limit)'
-            : result.reason === 'provider_error'
-              ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
-              : emptyResponseLabel(ref);
+          const paidLabel =
+            result.reason === 'stall_timeout'
+              ? 'stream stalled (likely rate limit)'
+              : result.reason === 'provider_error'
+                ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
+                : emptyResponseLabel(ref);
           const resetMsg = ctx.formatResetMsg(ref, result.resetAtMs);
           pushRouterInfoLogged(proxy, `> [router] ${ref} — ${paidLabel}${resetMsg}${suffix}\n\n`);
           continue;
@@ -1086,17 +1268,18 @@ export class StreamOrchestrator {
         if (ctx.observeProviderFailure(ref, String(result.reason), result.detail)) {
           narrateBreakerOpen(ctx, proxy, ref);
         }
-        const reason = result.reason === 'empty_timeout'
-          ? 'no response within timeout'
-          : result.reason === 'stall_timeout'
-            ? 'stream stalled mid-response'
-            : result.reason === 'provider_error'
-              ? `provider error${result.detail ? `: ${result.detail}` : ''}`
-              : result.reason === 'stream_threw'
-                ? `stream error${result.detail ? `: ${result.detail}` : ''}`
-                : result.reason === 'tool_markup_as_text'
-                  ? 'printed tool-call markup as text instead of calling a tool'
-                  : 'empty response from model';
+        const reason =
+          result.reason === 'empty_timeout'
+            ? 'no response within timeout'
+            : result.reason === 'stall_timeout'
+              ? 'stream stalled mid-response'
+              : result.reason === 'provider_error'
+                ? `provider error${result.detail ? `: ${result.detail}` : ''}`
+                : result.reason === 'stream_threw'
+                  ? `stream error${result.detail ? `: ${result.detail}` : ''}`
+                  : result.reason === 'tool_markup_as_text'
+                    ? 'printed tool-call markup as text instead of calling a tool'
+                    : 'empty response from model';
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
@@ -1108,10 +1291,14 @@ export class StreamOrchestrator {
         // the session_errors buffer as well — this catch is where the
         // 2026-09-27 422/timeout waves would have been invisible.
         ctx.recordStreamFailure(ref, 'provider_error', undefined, errorMsg);
-        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg)) narrateBreakerOpen(ctx, proxy, ref);
+        if (ctx.observeProviderFailure(ref, 'provider_error', errorMsg))
+          narrateBreakerOpen(ctx, proxy, ref);
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
-        pushRouterInfoLogged(proxy, `> [router] ${ref} — error: ${sanitizeForLog(errorMsg)}${suffix}\n\n`);
+        pushRouterInfoLogged(
+          proxy,
+          `> [router] ${ref} — error: ${sanitizeForLog(errorMsg)}${suffix}\n\n`
+        );
       } finally {
         // Cancel the provider-side work of every attempt that did not win
         // (see openCandidateAttempt) — including timeouts, where the
@@ -1134,10 +1321,19 @@ export class StreamOrchestrator {
       if (fallbackGroup) {
         const fb = ctx.resolve(fallbackGroup);
         if (fb?.candidates?.length) {
-          pushRouterInfoLogged(proxy, `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`);
+          pushRouterInfoLogged(
+            proxy,
+            `> [router] All models in ${groupName} failed, trying ${fallbackGroup}...\n\n`
+          );
           await this.driveStream(
-            proxy, fb.candidates, context, options,
-            `${label ?? groupName}→${fallbackGroup}`, fallbackGroup, visited, sourceModel
+            proxy,
+            fb.candidates,
+            context,
+            options,
+            `${label ?? groupName}→${fallbackGroup}`,
+            fallbackGroup,
+            visited,
+            sourceModel
           );
           return;
         }
@@ -1163,7 +1359,8 @@ export class StreamOrchestrator {
     // the SOONEST expiry and treat it as a forced half-open probe (the
     // same idea as the cooldown collapse, but breaker-aware). A breaker can
     // only ever reorder and delay attempts, never remove the last option.
-    const allBehindBreaker = allFailed && candidates.length > 0 && candidates.every((r) => ctx.isBreakerOpen(r));
+    const allBehindBreaker =
+      allFailed && candidates.length > 0 && candidates.every((r) => ctx.isBreakerOpen(r));
     if (allBehindBreaker) {
       let probeRef: string | null = null;
       let soonestUntil = Number.POSITIVE_INFINITY;
@@ -1199,19 +1396,22 @@ export class StreamOrchestrator {
         }
         recordServedRef(ctx, probeRef);
         const probeAttempt = openCandidateAttempt(options);
-        const probeTarget = await ctx.tryStream(probeRef, context, probeAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : textOf(err);
-          pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
-          ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
-          ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
-          return null;
-        });
+        const probeTarget = await ctx
+          .tryStream(probeRef, context, probeAttempt.options)
+          .catch((err) => {
+            const errorMsg = err instanceof Error ? err.message : textOf(err);
+            pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
+            ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
+            ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
+            return null;
+          });
         if (!probeTarget) probeAttempt.abandon();
         if (probeTarget) {
           let probeSucceeded = false;
           try {
             const result = await ctx.consumeWithDetection(
-              probeTarget.stream, proxy,
+              probeTarget.stream,
+              proxy,
               ctx.getEmptyResponseTimeout(probeRef),
               ctx.getStallTimeout(probeRef),
               probeRef,
@@ -1223,14 +1423,24 @@ export class StreamOrchestrator {
               return;
             }
             if (result.reason === 'aborted') return;
-            if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(probeRef, result.detail);
+            if (result.reason === 'provider_error' && result.detail)
+              ctx.observeFailure(probeRef, result.detail);
             // The forced probe failed: label it as the probe attempt in the
             // error aggregation (plan D4) — never as a plain cascade failure.
-            pushError(probeRef, `probing wedged provider (forced half-open probe): ${result.reason}`);
-            ctx.recordStreamFailure(probeRef, String(result.reason), result.resetAtMs, result.detail);
+            pushError(
+              probeRef,
+              `probing wedged provider (forced half-open probe): ${result.reason}`
+            );
+            ctx.recordStreamFailure(
+              probeRef,
+              String(result.reason),
+              result.resetAtMs,
+              result.detail
+            );
             ctx.observeProviderFailure(probeRef, String(result.reason), result.detail);
           } catch (streamError) {
-            const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+            const errorMsg =
+              streamError instanceof Error ? streamError.message : String(streamError);
             pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
             ctx.observeFailure(probeRef, errorMsg);
             ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
@@ -1267,13 +1477,17 @@ export class StreamOrchestrator {
     // + the rest rate-limited) should NOT trigger the cooldown safety net
     // (the ctx-too-small ref has nothing to retry). Kept this way on purpose;
     // a future refactor of the skip logic must preserve this distinction.
-    const allInCooldownNow = allFailed && !allBehindBreaker && candidates.every((r) => ctx.isLimited(r));
+    const allInCooldownNow =
+      allFailed && !allBehindBreaker && candidates.every((r) => ctx.isLimited(r));
     if (allInCooldownNow && candidates.length > 0) {
       let bestRef: string | null = null;
       let bestSecs = Number.POSITIVE_INFINITY;
       for (const ref of candidates) {
         const secs = ctx.router.limitSecs(ref);
-        if (secs < bestSecs) { bestSecs = secs; bestRef = ref; }
+        if (secs < bestSecs) {
+          bestSecs = secs;
+          bestRef = ref;
+        }
       }
       if (bestRef) {
         // Wait for the shortest cooldown instead of force-retrying into a
@@ -1307,18 +1521,21 @@ export class StreamOrchestrator {
         }
         recordServedRef(ctx, bestRef);
         const collapseAttempt = openCandidateAttempt(options);
-        const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : textOf(err);
-          pushError(bestRef, errorMsg);
-          ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
-          return null;
-        });
+        const target = await ctx
+          .tryStream(bestRef, context, collapseAttempt.options)
+          .catch((err) => {
+            const errorMsg = err instanceof Error ? err.message : textOf(err);
+            pushError(bestRef, errorMsg);
+            ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
+            return null;
+          });
         if (!target) collapseAttempt.abandon();
         if (target) {
           let collapseSucceeded = false;
           try {
             const result = await ctx.consumeWithDetection(
-              target.stream, proxy,
+              target.stream,
+              proxy,
               ctx.getEmptyResponseTimeout(bestRef),
               ctx.getStallTimeout(bestRef),
               bestRef,
@@ -1330,7 +1547,8 @@ export class StreamOrchestrator {
               return;
             }
             if (result.reason === 'aborted') return;
-            if (result.reason === 'provider_error' && result.detail) ctx.observeFailure(bestRef, result.detail);
+            if (result.reason === 'provider_error' && result.detail)
+              ctx.observeFailure(bestRef, result.detail);
             pushError(bestRef, String(result.reason));
             if (result.reason === 'context_overflow') {
               ctx.recordStreamFailure(bestRef, 'context_overflow', undefined, result.detail);
@@ -1351,22 +1569,29 @@ export class StreamOrchestrator {
                 `> [router] ${bestRef} — ${result.reason === 'repetition_loop' ? 'stuck in a repetition loop' : 'output truncated at max tokens (task incomplete)'}\n\n`
               );
             } else {
-              const frResult = ctx.recordStreamFailure(bestRef, String(result.reason), result.resetAtMs, result.detail);
+              const frResult = ctx.recordStreamFailure(
+                bestRef,
+                String(result.reason),
+                result.resetAtMs,
+                result.detail
+              );
               if (frResult.hardLimited) {
                 const reasonTxt = String(result.reason);
-                const labelTxt = reasonTxt === 'rate_limit_exceeded'
-                  ? 'rate limit/spend limit reached'
-                  : reasonTxt === 'stall_timeout'
-                    ? 'stream stalled (likely rate limit)'
-                    : reasonTxt === 'provider_error'
-                      ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
-                      : emptyResponseLabel(bestRef);
+                const labelTxt =
+                  reasonTxt === 'rate_limit_exceeded'
+                    ? 'rate limit/spend limit reached'
+                    : reasonTxt === 'stall_timeout'
+                      ? 'stream stalled (likely rate limit)'
+                      : reasonTxt === 'provider_error'
+                        ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
+                        : emptyResponseLabel(bestRef);
                 const resetMsg = ctx.formatResetMsg(bestRef, result.resetAtMs);
                 pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}\n\n`);
               }
             }
           } catch (streamError) {
-            const errorMsg = streamError instanceof Error ? streamError.message : String(streamError);
+            const errorMsg =
+              streamError instanceof Error ? streamError.message : String(streamError);
             pushError(bestRef, errorMsg);
             ctx.observeFailure(bestRef, errorMsg);
             ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
@@ -1383,11 +1608,15 @@ export class StreamOrchestrator {
     // All candidates exhausted
     if (allErrors.length > 0) {
       const failureLines = allErrors.map(({ ref, message }) => `  • ${ref}: ${message}`).join('\n');
-      const overflowLine = allErrors.some(({ message }) => isOverflowErrorText(message) || isOverflowDeltaText(message))
+      const overflowLine = allErrors.some(
+        ({ message }) => isOverflowErrorText(message) || isOverflowDeltaText(message)
+      )
         ? '\n(Detected overflow in stream — Pi should compact and retry.)'
         : '';
       const errorMsg = `[router] All ${allErrors.length} candidate(s) failed:\n${failureLines}${overflowLine}`;
-      errorLog(`[router] All ${allErrors.length} candidate(s) failed for group ${groupName ?? label ?? '?'}`);
+      errorLog(
+        `[router] All ${allErrors.length} candidate(s) failed for group ${groupName ?? label ?? '?'}`
+      );
       pushStreamError(
         proxy,
         errorMsg,
@@ -1416,7 +1645,9 @@ export class StreamOrchestrator {
       const prev = earlier[earlier.length - 1];
       if (!prev) return undefined;
       return stripRouterNarration(messageText(prev.content)).slice(0, 150);
-    } catch { /* context shape unknown */ }
+    } catch {
+      /* context shape unknown */
+    }
     return undefined;
   }
 }

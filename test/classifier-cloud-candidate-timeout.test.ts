@@ -59,7 +59,11 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
     });
 
     expect(completeSimple).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ category: 'simple', reason: 'from second cloud candidate', confidence: 0.9 });
+    expect(result).toEqual({
+      category: 'simple',
+      reason: 'from second cloud candidate',
+      confidence: 0.9,
+    });
   });
 
   it('falls through cleanly when EVERY cloud candidate hangs', async () => {

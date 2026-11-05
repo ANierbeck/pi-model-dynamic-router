@@ -101,7 +101,11 @@ describe('getFallbackGroup', () => {
   // its contents were never pinned — an emptied or renamed list passed.
   it('FALLBACK_GROUP_ORDER is the coarse-to-cheap cascade, spelled out', () => {
     expect([...FALLBACK_GROUP_ORDER]).toEqual([
-      'planning', 'design', 'code_complex', 'standard', 'simple',
+      'planning',
+      'design',
+      'code_complex',
+      'standard',
+      'simple',
     ]);
   });
 
@@ -116,9 +120,7 @@ describe('getFallbackGroup', () => {
       visited.add(cur);
       cur = getFallbackGroup(cur, modelGroups, visited);
     }
-    expect(walk).toEqual([
-      'planning', 'design', 'code_complex', 'standard', 'simple',
-    ]);
+    expect(walk).toEqual(['planning', 'design', 'code_complex', 'standard', 'simple']);
   });
 
   it('a current group that is absent from config still cascades through the global order', () => {

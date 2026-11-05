@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import { Router, isVirtualGroupRef, applyGroupFilters } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 // ── Cluster 1: isVirtualGroupRef (140 NoCoverage mutants) ──────────────────
 
@@ -133,7 +134,11 @@ describe('applyGroupFilters — min_gdpval_pct percentile gate', () => {
   });
 
   it('all-unscored pools pass through the pct gate untouched', () => {
-    const filtered = applyGroupFilters(['swp/unscored-x'], testConfig.model_groups!.pctgrp!, testConfig);
+    const filtered = applyGroupFilters(
+      ['swp/unscored-x'],
+      testConfig.model_groups!.pctgrp!,
+      testConfig
+    );
     expect(filtered).toEqual(['swp/unscored-x']);
   });
 });
@@ -163,7 +168,7 @@ describe('applyGroupFilters max_cost 0 — isFree via the pricing cache', () => 
     const filtered = applyGroupFilters(
       ['prc/zfree', 'prc/paidy', 'prc/other'],
       testConfig.freegrp as any,
-      testConfig,
+      testConfig
     );
     expect(filtered).toEqual(['prc/zfree']);
   });
@@ -274,7 +279,7 @@ describe('loadModelMap — valid map loads, broken YAML disables overrides loudl
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    rmTmpDir(tmpDir);
   });
 
   afterAll(() => {
@@ -284,7 +289,7 @@ describe('loadModelMap — valid map loads, broken YAML disables overrides loudl
   it('a valid map: exact entries, wildcards, longest-prefix-first', () => {
     fs.writeFileSync(
       path.join(tmpDir, 'model-map.yaml'),
-      'mm-x: mm-slug\nw-*: w-short-slug\nw-long*: w-long-slug\n',
+      'mm-x: mm-slug\nw-*: w-short-slug\nw-long*: w-long-slug\n'
     );
     metricsModule.loadModelMap(tmpDir);
     expect(metricsModule.mapLookup('mistral/mm-x')).toBe('mm-slug');

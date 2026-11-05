@@ -45,10 +45,7 @@ describe('applyGroupFilters — min_context_length', () => {
   it('drops models with unknown context window (strict, like min_gdpval)', () => {
     const g: Group = { method: 'best', min_context_length: 5_000 };
     // small-ctx (8k) passes; big-ctx (256k) passes; no-ctx (unknown) is dropped.
-    expect(applyGroupFilters(REFS, g, CFG)).toEqual([
-      'mistral/small-ctx',
-      'mistral/big-ctx',
-    ]);
+    expect(applyGroupFilters(REFS, g, CFG)).toEqual(['mistral/small-ctx', 'mistral/big-ctx']);
   });
 
   it('drops everything when no model meets the threshold', () => {

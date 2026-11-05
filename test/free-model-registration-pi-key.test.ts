@@ -28,7 +28,8 @@ function baseRt(opts: { resolveApiKey: (p: string) => Promise<string | null> }) 
     sessionCtx: {
       modelRegistry: {
         getRegisteredProviderIds: () => [] as string[],
-        find: (p: string, m: string) => p === 'openrouter' && m === 'test-vendor/fixture-model:free',
+        find: (p: string, m: string) =>
+          p === 'openrouter' && m === 'test-vendor/fixture-model:free',
       },
     },
     resolveApiKey: opts.resolveApiKey,

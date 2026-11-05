@@ -35,10 +35,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+
+import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -53,10 +53,7 @@ async function withIsolatedRouter(
     fireSessionStart: (registryModels: any[]) => Promise<void>
   ) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ollama-merge-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify({}));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir({}, 'router-ollama-merge-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -119,10 +116,7 @@ async function withIsolatedRouter(
     await flushBackgroundScan();
     await fn(mod.default as any, tmpDir, registerProviderCalls, fireSessionStart);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -150,11 +144,26 @@ const qwen35Registry = {
 
 /** The live incident shape: tagged scan ids vs untagged models.json ids. */
 const incidentScanModels = [
-  { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072, vision: true } },
-  { id: 'qwen3.5:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 262_144 } },
+  {
+    id: 'gemma4:latest',
+    provider: 'ollama',
+    cost_per_m: 0,
+    capabilities: { contextWindow: 131_072, vision: true },
+  },
+  {
+    id: 'qwen3.5:latest',
+    provider: 'ollama',
+    cost_per_m: 0,
+    capabilities: { contextWindow: 262_144 },
+  },
   // Scan-only models — NOT in models.json. This is the only source of the
   // user's classifier models, so they must be ADDED, not lost.
-  { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+  {
+    id: 'mistral-nemo:latest',
+    provider: 'ollama',
+    cost_per_m: 0,
+    capabilities: { contextWindow: 131_072 },
+  },
   { id: 'gemma2:2b', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 8_192 } },
 ];
 
@@ -195,8 +204,18 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry, qwen35Registry],
       [
-        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
-        { id: 'qwen3.5:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 262_144 } },
+        {
+          id: 'gemma4:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
+        {
+          id: 'qwen3.5:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 262_144 },
+        },
       ],
       {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
@@ -211,8 +230,18 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry],
       [
-        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
-        { id: 'gemma4:12b-mlx', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
+        {
+          id: 'gemma4:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
+        {
+          id: 'gemma4:12b-mlx',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
       ],
       {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
@@ -222,9 +251,7 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
         expect(models.find((m) => m.id === 'gemma4')).toBeDefined();
         expect(models.find((m) => m.id === 'gemma4:12b-mlx')).toBeDefined();
         // Only ONE untagged/`:latest` gemma4 twin — dedup collapsed them.
-        expect(
-          models.filter((m) => m.id === 'gemma4' || m.id === 'gemma4:latest')
-        ).toHaveLength(1);
+        expect(models.filter((m) => m.id === 'gemma4' || m.id === 'gemma4:latest')).toHaveLength(1);
       }
     );
   });
@@ -257,8 +284,18 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [userSetModel],
       [
-        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
-        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+        {
+          id: 'gemma4:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
+        {
+          id: 'mistral-nemo:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 128_000 },
+        },
       ],
       {},
       async (_defaultExport, _tmpDir, registerProviderCalls) => {
@@ -299,22 +336,29 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry],
       [
-        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
-        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+        {
+          id: 'gemma4:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
+        {
+          id: 'mistral-nemo:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 128_000 },
+        },
       ],
       {},
       async (_defaultExport, _tmpDir, registerProviderCalls, fireSessionStart) => {
         // First session_start merged (gemma4 known, nemo new): 1 call.
         expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
-        const firstModels: any[] = registerProviderCalls.find(
-          (c) => c.name === 'ollama'
-        ).opts.models;
+        const firstModels: any[] = registerProviderCalls.find((c) => c.name === 'ollama').opts
+          .models;
 
         // What a second session_start (or /reload) in the SAME process
         // sees: getAll() now reports the merged list — registry feedback.
-        await fireSessionStart(
-          firstModels.map((m: any) => ({ ...m, provider: 'ollama' }))
-        );
+        await fireSessionStart(firstModels.map((m: any) => ({ ...m, provider: 'ollama' })));
 
         // The 83× invariant: still exactly ONE registration in total.
         expect(registerProviderCalls.filter((c) => c.name === 'ollama')).toHaveLength(1);
@@ -326,8 +370,18 @@ describe('Ollama merge registration (guard fix: tagged scan ids vs untagged mode
     await withIsolatedRouter(
       [gemma4Registry],
       [
-        { id: 'gemma4:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 131_072 } },
-        { id: 'mistral-nemo:latest', provider: 'ollama', cost_per_m: 0, capabilities: { contextWindow: 128_000 } },
+        {
+          id: 'gemma4:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 131_072 },
+        },
+        {
+          id: 'mistral-nemo:latest',
+          provider: 'ollama',
+          cost_per_m: 0,
+          capabilities: { contextWindow: 128_000 },
+        },
       ],
       { omitGetAll: true }, // hosts without getAll(): fallback path
       async (_defaultExport, _tmpDir, registerProviderCalls) => {

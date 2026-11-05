@@ -74,7 +74,10 @@ describe('list price (display) vs effective cost (routing)', () => {
     // The subscription sunk-cost semantics must not change: the sentinel is
     // what keeps opus-5-5 admitted to max_cost groups and sorts it as
     // near-free (owner decision 2026-09-27).
-    expect(lookupPrice('claude-bridge/claude-opus-5-5')).toEqual({ input: SENTINEL, output: SENTINEL });
+    expect(lookupPrice('claude-bridge/claude-opus-5-5')).toEqual({
+      input: SENTINEL,
+      output: SENTINEL,
+    });
   });
 
   it('the status table cost column shows the list price for the sentinel model', () => {

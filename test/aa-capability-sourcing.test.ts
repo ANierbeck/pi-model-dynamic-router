@@ -201,7 +201,10 @@ describe('lookupCapability (metrics.ts)', () => {
   });
 
   it('absent column returns null (NOT 0 — null is the gdpval-fallback signal)', () => {
-    const other = { available_models: [], capability_profiles: { 'zai-glm-5-3': { briefcase: 1 } } } as any;
+    const other = {
+      available_models: [],
+      capability_profiles: { 'zai-glm-5-3': { briefcase: 1 } },
+    } as any;
     metricsModule.setCache(other);
     expect(metricsModule.lookupCapability('mistral/zai-glm-5-3', 'coding')).toBeNull();
   });
@@ -228,8 +231,16 @@ const TASK4_CONFIG = {
     // Sunk-cost subscription pricing: opus slightly CHEAPER in effCost than
     // sonnet here, so under gdpval-only ranking the window would pick opus —
     // the briefcase column must be what flips it to sonnet.
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 2.0e-6, throughput_tps: 100, avg_latency_ms: 1000 },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 1.5e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 2.0e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
     'mistral/zai-glm-5-3': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
     'mistral/mistral-medium-3.5': { cost_per_m: 0.4, throughput_tps: 80, avg_latency_ms: 900 },
   },
@@ -260,7 +271,11 @@ describe('task-type-aware scoring (score_by threading)', () => {
     metricsModule.setConfig(TASK4_CONFIG);
     metricsModule.setCache({ available_models: [], capability_profiles: TASK4_PROFILES } as any);
     metricsModule.setModelRegistry({ find: () => undefined } as any);
-    router = new RoutingRouter(TASK4_CONFIG, { available_models: [], capability_profiles: TASK4_PROFILES } as any, new Map());
+    router = new RoutingRouter(
+      TASK4_CONFIG,
+      { available_models: [], capability_profiles: TASK4_PROFILES } as any,
+      new Map()
+    );
   });
 
   it('calculateScore uses the column when present', () => {
@@ -279,19 +294,31 @@ describe('task-type-aware scoring (score_by threading)', () => {
   it("sortBy('best', 'briefcase') ranks by the column — reversing gdpval's pick", () => {
     // gdpval+window would pick opus (cheaper effCost within the 5% window);
     // the briefcase column (1920 vs 1810, outside the window) picks sonnet.
-    const sorted = router.sortBy(['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'], 'best', 'briefcase');
+    const sorted = router.sortBy(
+      ['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'],
+      'best',
+      'briefcase'
+    );
     expect(sorted[0]).toBe('claude-bridge/claude-sonnet-5-5');
     expect(sorted[1]).toBe('claude-bridge/claude-opus-5-5');
   });
 
   it("sortBy('best', 'coding') lets the cheap model win within the column window", () => {
-    const sorted = router.sortBy(['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5'], 'best', 'coding');
+    const sorted = router.sortBy(
+      ['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5'],
+      'best',
+      'coding'
+    );
     expect(sorted[0]).toBe('mistral/mistral-medium-3.5');
   });
 
-  it("score_by absent → pure gdpval ordering (regression pin, pre-round behavior)", () => {
+  it('score_by absent → pure gdpval ordering (regression pin, pre-round behavior)', () => {
     // legacy group: no score_by → sortBy without a column → opus first (gdpval max)
-    const sorted = router.sortBy(['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'], 'best', 'gdpval');
+    const sorted = router.sortBy(
+      ['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'],
+      'best',
+      'gdpval'
+    );
     expect(sorted[0]).toBe('claude-bridge/claude-opus-5-5');
   });
 
@@ -314,9 +341,7 @@ describe('task-type-aware scoring (score_by threading)', () => {
 
   it('floors remain GDPval-only: a model passing the column but failing the floor is still excluded', () => {
     const cache = {
-      available_models: [
-        { provider: 'mistral', id: 'zai-glm-5-3' },
-      ] as any,
+      available_models: [{ provider: 'mistral', id: 'zai-glm-5-3' }] as any,
       capability_profiles: { 'zai-glm-5-3': { briefcase: 2100 } },
     } as any;
     const r = new RoutingRouter(TASK4_CONFIG, cache, new Map());

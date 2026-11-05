@@ -73,9 +73,6 @@ export function hasBudget(
  * Filter a list of refs to those that have budget available.
  * Convenience over hasBudget — used by routing.resolveGroup.
  */
-export function filterByBudget(
-  refs: string[],
-  ctx: BudgetContext
-): string[] {
+export function filterByBudget(refs: string[], ctx: BudgetContext): string[] {
   return refs.filter((ref) => hasBudget(ref, ctx.providers, ctx.budget_cache));
 }

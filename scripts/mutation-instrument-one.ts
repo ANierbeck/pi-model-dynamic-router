@@ -61,10 +61,11 @@ export async function instrumentOne(name: string, source: string): Promise<Repor
     .provideValue(commonTokens.getLogger, (): Logger => logger)
     .provideValue(commonTokens.logger, logger);
   const instrumenter = injector.injectFunction(createInstrumenter);
-  const result = await instrumenter.instrument(
-    [{ name, mutate: true, content: source }],
-    { plugins: null, excludedMutations: [], ignorers: [] }
-  );
+  const result = await instrumenter.instrument([{ name, mutate: true, content: source }], {
+    plugins: null,
+    excludedMutations: [],
+    ignorers: [],
+  });
   // Convert the instrumenter's INTERNAL 0-based positions to the JSON-report
   // convention: 1-based lines AND 1-based columns. mutation-recheck.ts
   // applies mutants with offsetOf(), which is 1-based in both axes — a

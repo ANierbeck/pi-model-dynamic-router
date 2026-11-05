@@ -21,18 +21,14 @@
 // model's real prior answer.
 
 import { describe, it, expect, vi } from 'vitest';
-import { drainStream, makeExtensionContext } from './helpers/extension-harness.ts';
-import {
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { drainStream, makeExtensionContext, startSession } from './helpers/extension-harness.ts';
+
 import { doneEvent } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 vi.mock('../src/ollama-utils.ts', async () =>
   (await import('./helpers/ollama-mock.ts')).ollamaMockModule()
 );
-
-
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -78,13 +74,12 @@ describe('classifier context: router narration must not leak into lastAssistantS
         );
         const modelRegistry = {
           getAvailable: () => [scoutModel],
-          find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
+          find: (provider: string, modelId: string) =>
+            modelsByRef[`${provider}/${modelId}`] ?? null,
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'dynamic', id: 'dynamic' };
 

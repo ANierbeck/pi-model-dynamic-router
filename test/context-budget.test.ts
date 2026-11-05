@@ -80,7 +80,11 @@ describe('planOutputBudget', () => {
       {
         role: 'assistant',
         content: [
-          { type: 'toolCall', name: 'write', arguments: { path: '/x', content: 'y'.repeat(40_000) } },
+          {
+            type: 'toolCall',
+            name: 'write',
+            arguments: { path: '/x', content: 'y'.repeat(40_000) },
+          },
           { type: 'thinking', thinking: 'z'.repeat(8_000) },
         ],
       },
@@ -98,13 +102,19 @@ describe('planOutputBudget', () => {
 
   it('counts image blocks as a fixed image-token cost, not their base64 payload', () => {
     const messages = [
-      { role: 'user', content: [{ type: 'image', source: { type: 'base64', data: 'a'.repeat(400_000) } }] },
+      {
+        role: 'user',
+        content: [{ type: 'image', source: { type: 'base64', data: 'a'.repeat(400_000) } }],
+      },
     ];
     expect(estimateMessageTokens(messages as any)).toBe(IMAGE_BLOCK_TOKENS);
   });
 
   it('estimateInputTokens includes the system prompt and tool schemas', () => {
-    const context = { systemPrompt: 's'.repeat(20_000), messages: [{ role: 'user', content: 'hello' }] };
+    const context = {
+      systemPrompt: 's'.repeat(20_000),
+      messages: [{ role: 'user', content: 'hello' }],
+    };
     const tools = [{ name: 'read', parameters: { type: 'object' } }];
     const got = estimateInputTokens(context as any, tools);
     expect(got).toBeGreaterThanOrEqual(5_000); // 20k/4 system prompt alone
@@ -114,7 +124,11 @@ describe('planOutputBudget', () => {
   });
 
   it('skips when even the minimum output does not fit', () => {
-    const plan = planOutputBudget({ windowTokens: WINDOW, inputTokens: 260_000, requestedOutput: 165_880 });
+    const plan = planOutputBudget({
+      windowTokens: WINDOW,
+      inputTokens: 260_000,
+      requestedOutput: 165_880,
+    });
     expect(plan.kind).toBe('skip');
   });
 

@@ -53,11 +53,13 @@ describe('no duplicate import bindings in test files', () => {
       "import type { C } from './y';",
       'import {',
       '  a,',
-      '} from \'./x\';',
+      "} from './x';",
       "import type { C } from './z';",
     ].join('\n');
     expect(duplicateImportBindings(src)).toEqual(['C', 'a']);
-    expect(duplicateImportBindings("import { a } from './x';\nimport { b } from './x';")).toEqual([]);
+    expect(duplicateImportBindings("import { a } from './x';\nimport { b } from './x';")).toEqual(
+      []
+    );
   });
 
   it('every test file binds each imported name exactly once', () => {

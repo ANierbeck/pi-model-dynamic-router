@@ -56,7 +56,11 @@ export function buildUsageLogEntry(
  * most recent assistant step's usage; the cost part is the SESSION average
  * per step and is dropped when nothing was billed (subscription / free).
  */
-export function formatCacheStatus(last: StepUsage | undefined, steps: number, totalCost: number): string {
+export function formatCacheStatus(
+  last: StepUsage | undefined,
+  steps: number,
+  totalCost: number
+): string {
   if (!last || steps <= 0) return '';
   const ctx = stepContextTokens(last);
   if (ctx <= 0) return '';

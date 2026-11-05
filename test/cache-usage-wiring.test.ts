@@ -10,7 +10,7 @@ import { SessionEscalation } from '../src/escalation.js';
 function harness() {
   const handlers: Record<string, ((...a: any[]) => any)[]> = {};
   const rt: any = {
-    pi: { on: (name: string, fn: any) => ((handlers[name] ??= []).push(fn)) },
+    pi: { on: (name: string, fn: any) => (handlers[name] ??= []).push(fn) },
     cache: { usage_log: [] },
     curModel: 'standard/standard',
     turnStart: Date.now() - 1000,

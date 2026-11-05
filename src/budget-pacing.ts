@@ -104,7 +104,10 @@ function budgetWindowEnd(now: number, resetDay: number): number {
     start.getFullYear(),
     start.getMonth() + 1,
     Math.min(resetDay, lastDayOfNextMonth),
-    0, 0, 0, 0
+    0,
+    0,
+    0,
+    0
   ).getTime();
 }
 
@@ -164,7 +167,12 @@ export function pacedProviders(
   usageLog: UsageLogEntry[] | undefined,
   now: number = Date.now()
 ): Set<string> {
-  if (memo?.cfg === cfg && memo.log === usageLog && now - memo.at < MEMO_TTL_MS && now >= memo.now) {
+  if (
+    memo?.cfg === cfg &&
+    memo.log === usageLog &&
+    now - memo.at < MEMO_TTL_MS &&
+    now >= memo.now
+  ) {
     return memo.set;
   }
   const set = new Set<string>();

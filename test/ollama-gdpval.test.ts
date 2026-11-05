@@ -102,7 +102,9 @@ describe('ollamaModelSlug — derives GDPval-style slugs', () => {
   it('strips provider prefix', () => {
     expect(ollamaModelSlug('ollama/gemma4:12b-mlx')).toBe('gemma4-12b');
     // Namespace slash (non-ollama) is preserved, :latest stripped, lowercased
-    expect(ollamaModelSlug('PolyoxyDev/granite4-macos-micro:latest')).toBe('polyoxydev/granite4-macos-micro');
+    expect(ollamaModelSlug('PolyoxyDev/granite4-macos-micro:latest')).toBe(
+      'polyoxydev/granite4-macos-micro'
+    );
   });
 
   it('strips date suffixes', () => {

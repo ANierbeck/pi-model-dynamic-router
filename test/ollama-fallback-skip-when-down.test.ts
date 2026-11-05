@@ -9,16 +9,17 @@
 // says the daemon is down, instead of opening doomed streams.
 
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
-import { drainStream, makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+
 import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+  drainStream,
+  makeExtensionContext,
+  parkStateFiles,
+  routerStatePaths,
+} from './helpers/extension-harness.ts';
+import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+import { doneEvent, testModelCost } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -27,15 +28,11 @@ vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   return { ...actual, isOllamaAvailable: vi.fn() };
 });
 
-
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-ollama-down-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir(configOverride, 'router-ollama-down-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -46,10 +43,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any, tmpDir);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -59,13 +53,15 @@ const localModel = {
   provider: 'ollama',
   id: 'local-model:latest',
   api: 'openai-completions',
-  contextWindow: 1_000_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000_000,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 const remoteModel = {
   provider: 'healthy-provider',
   id: 'healthy-model',
   api: 'openai-completions',
-  contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000_000,
+  cost: testModelCost(),
 };
 
 const context: any = { messages: [{ role: 'user', content: 'do the thing' }] };
@@ -101,8 +97,10 @@ describe('driveStream: ollama availability guard', () => {
         const modelRegistry = {
           getAvailable: () => [localModel, remoteModel],
           find: (provider: string, modelId: string) =>
-            provider === 'ollama' && modelId === localModel.id ? localModel
-              : provider === remoteModel.provider && modelId === remoteModel.id ? remoteModel
+            provider === 'ollama' && modelId === localModel.id
+              ? localModel
+              : provider === remoteModel.provider && modelId === remoteModel.id
+                ? remoteModel
                 : null,
           getApiKeyForProvider: async (provider: string) =>
             provider === 'healthy-provider' ? 'sk-test' : null,
@@ -116,9 +114,12 @@ describe('driveStream: ollama availability guard', () => {
         const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
 
         // The remote model served the turn…
-        expect(events.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta).join('')).toContain(
-          'served by the remote model'
-        );
+        expect(
+          events
+            .filter((e: any) => e.type === 'text_delta')
+            .map((e: any) => e.delta)
+            .join('')
+        ).toContain('served by the remote model');
         // …and the down daemon's models were never opened at all.
         const called = streamSimple.mock.calls.map((c: any[]) => c[0].id);
         expect(called).not.toContain('local-model:latest');
@@ -157,8 +158,10 @@ describe('driveStream: ollama availability guard', () => {
         const modelRegistry = {
           getAvailable: () => [localModel, remoteModel],
           find: (provider: string, modelId: string) =>
-            provider === 'ollama' && modelId === localModel.id ? localModel
-              : provider === remoteModel.provider && modelId === remoteModel.id ? remoteModel
+            provider === 'ollama' && modelId === localModel.id
+              ? localModel
+              : provider === remoteModel.provider && modelId === remoteModel.id
+                ? remoteModel
                 : null,
           getApiKeyForProvider: async (provider: string) =>
             provider === 'healthy-provider' ? 'sk-test' : null,
@@ -171,9 +174,12 @@ describe('driveStream: ollama availability guard', () => {
         const groupModel = { provider: 'standard', id: 'standard' };
         const events = await drainStream(defaultExport.groupStream(groupModel, context, {}));
 
-        expect(events.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta).join('')).toContain(
-          'served by the local model'
-        );
+        expect(
+          events
+            .filter((e: any) => e.type === 'text_delta')
+            .map((e: any) => e.delta)
+            .join('')
+        ).toContain('served by the local model');
         expect(streamSimple.mock.calls.map((c: any[]) => c[0].id)).toContain('local-model:latest');
       }
     );

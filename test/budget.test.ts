@@ -76,8 +76,8 @@ describe('filterByBudget — convenience over hasBudget', () => {
 
   it('keeps local + payg models, drops exhausted subscription models', () => {
     const refs = [
-      'ollama/gemma4:12b-mlx',        // local → keep
-      'openrouter/some-model',         // payg → keep
+      'ollama/gemma4:12b-mlx', // local → keep
+      'openrouter/some-model', // payg → keep
       'mistral/mistral-medium-latest', // subscription, 0 tokens → drop
     ];
     const kept = filterByBudget(refs, { providers, budget_cache });

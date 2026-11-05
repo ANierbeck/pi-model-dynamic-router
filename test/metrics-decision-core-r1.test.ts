@@ -33,7 +33,14 @@ import type { Config, Cache } from '../src/types.ts';
 
 type Registry = { find: (provider: string, id: string) => unknown };
 
-function world(opts: { cfg?: Partial<Config>; cache?: Partial<Cache>; registry?: Registry | null; modelMap?: Record<string, string | null> } = {}) {
+function world(
+  opts: {
+    cfg?: Partial<Config>;
+    cache?: Partial<Cache>;
+    registry?: Registry | null;
+    modelMap?: Record<string, string | null>;
+  } = {}
+) {
   const cfg = { model_groups: {}, model_metrics: {}, providers: {}, ...opts.cfg } as any as Config;
   const cache = { available_models: [], ...opts.cache } as any as Cache;
   m.setConfig(cfg);
@@ -41,7 +48,9 @@ function world(opts: { cfg?: Partial<Config>; cache?: Partial<Cache>; registry?:
   m.setGdpval({});
   m.setMetrics({});
   m.setModelMap(opts.modelMap ?? {}, []);
-  m.setModelRegistry(opts.registry === undefined ? { find: () => undefined } : (opts.registry as any));
+  m.setModelRegistry(
+    opts.registry === undefined ? { find: () => undefined } : (opts.registry as any)
+  );
   return { cfg, cache };
 }
 
@@ -50,7 +59,8 @@ const priced = (input: number, output: number) => ({ cost: { input, output } });
 // ── free / billing tier ───────────────────────────────────────────────────
 
 describe('isFreeModelRef / billingTier — free_models and discovery', () => {
-  const providers = (list: string[]) => ({ fp: { billing: 'pay_per_token', free_models: list } }) as any;
+  const providers = (list: string[]) =>
+    ({ fp: { billing: 'pay_per_token', free_models: list } }) as any;
 
   it('a listed FULL ref is free (and tier 0); an unlisted sibling is not (tier 3)', () => {
     world({ cfg: { providers: providers(['fp/a']) } });
@@ -93,7 +103,9 @@ describe('getM — cost_per_m resolution and healing', () => {
   });
 
   it('a payg ref discovered with cost 0 resolves to 0; the same ref undiscovered is unknown', () => {
-    world({ cache: { available_models: [{ provider: 'zz', id: 'scan-zero', cost_per_m: 0 }] as any } });
+    world({
+      cache: { available_models: [{ provider: 'zz', id: 'scan-zero', cost_per_m: 0 }] as any },
+    });
     expect(m.getM('zz/scan-zero').cost_per_m).toBe(0);
     expect(m.getM('zz/undiscovered').cost_per_m).toBe('unknown');
   });
@@ -104,7 +116,12 @@ describe('getM — cost_per_m resolution and healing', () => {
   });
 
   it('a stale "unknown" heals once the registry publishes a price; a real price never does', () => {
-    const registry = { map: new Map<string, unknown>(), find(p: string, id: string) { return this.map.get(`${p}/${id}`); } };
+    const registry = {
+      map: new Map<string, unknown>(),
+      find(p: string, id: string) {
+        return this.map.get(`${p}/${id}`);
+      },
+    };
     world({ cfg: { model_metrics: { 'zz/real': { cost_per_m: 7 } } as any }, registry });
     expect(m.getM('zz/late').cost_per_m).toBe('unknown');
     registry.map.set('zz/late', priced(3, 9));
@@ -114,15 +131,29 @@ describe('getM — cost_per_m resolution and healing', () => {
   });
 
   it('a 0 placeholder heals too once a registry price appears', () => {
-    const registry = { map: new Map<string, unknown>(), find(p: string, id: string) { return this.map.get(`${p}/${id}`); } };
-    world({ cache: { available_models: [{ provider: 'zz', id: 'zero-first', cost_per_m: 0 }] as any }, registry });
+    const registry = {
+      map: new Map<string, unknown>(),
+      find(p: string, id: string) {
+        return this.map.get(`${p}/${id}`);
+      },
+    };
+    world({
+      cache: { available_models: [{ provider: 'zz', id: 'zero-first', cost_per_m: 0 }] as any },
+      registry,
+    });
     expect(m.getM('zz/zero-first').cost_per_m).toBe(0);
     registry.map.set('zz/zero-first', priced(4, 8));
     expect(m.getM('zz/zero-first').cost_per_m).toBe(4);
   });
 
   it('configured throughput and latency are honored, defaults are 100 tps / 1000 ms', () => {
-    world({ cfg: { model_metrics: { 'zz/tuned': { cost_per_m: 1, throughput_tps: 55, avg_latency_ms: 321 } } as any } });
+    world({
+      cfg: {
+        model_metrics: {
+          'zz/tuned': { cost_per_m: 1, throughput_tps: 55, avg_latency_ms: 321 },
+        } as any,
+      },
+    });
     expect(m.getM('zz/tuned').throughput_tps).toBe(55);
     expect(m.getM('zz/tuned').avg_latency_ms).toBe(321);
     expect(m.getM('zz/plain').throughput_tps).toBe(100);
@@ -132,14 +163,18 @@ describe('getM — cost_per_m resolution and healing', () => {
 
 describe('updateMetrics — guards', () => {
   it('a call without tokens leaves throughput alone and persists no benchmark', () => {
-    const { cache } = world({ cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80 } } as any } });
+    const { cache } = world({
+      cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80 } } as any },
+    });
     m.updateMetrics('zz/u', 500, 0, 1000);
     expect(m.getM('zz/u').throughput_tps).toBe(80);
     expect(cache.benchmarks).toBeUndefined();
   });
 
   it('a zero-duration call is skipped, not turned into Infinity throughput', () => {
-    const { cache } = world({ cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80 } } as any } });
+    const { cache } = world({
+      cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80 } } as any },
+    });
     m.updateMetrics('zz/u', 500, 100, 0);
     expect(m.getM('zz/u').throughput_tps).toBe(80);
     expect(cache.benchmarks).toBeUndefined();
@@ -160,7 +195,13 @@ describe('updateMetrics — guards', () => {
   });
 
   it('a user-configured prior still blends on the first stream', () => {
-    world({ cfg: { model_metrics: { 'zz/u': { cost_per_m: 1, throughput_tps: 80, avg_latency_ms: 400 } } as any } });
+    world({
+      cfg: {
+        model_metrics: {
+          'zz/u': { cost_per_m: 1, throughput_tps: 80, avg_latency_ms: 400 },
+        } as any,
+      },
+    });
     m.updateMetrics('zz/u', 500, 100, 1000);
     expect(m.getM('zz/u').throughput_tps).toBeCloseTo(80 * 0.7 + 100 * 0.3, 6);
     expect(m.getM('zz/u').avg_latency_ms).toBeCloseTo(400 * 0.7 + 500 * 0.3, 6);
@@ -208,14 +249,25 @@ describe('registry price lookup — findRegistryModel / registryCost', () => {
   });
 
   it('a half-string registry cost is not a price (either half)', () => {
-    world({ registry: registryOf({ 'zz/in-str': priced('x' as any, 1), 'zz/out-str': priced(1, 'x' as any) }) });
+    world({
+      registry: registryOf({
+        'zz/in-str': priced('x' as any, 1),
+        'zz/out-str': priced(1, 'x' as any),
+      }),
+    });
     expect(m.lookupPrice('zz/in-str')).toBeNull();
     expect(m.lookupPrice('zz/out-str')).toBeNull();
   });
 
   it('the :free retry only happens for :free ids, and never overwrites a hit', () => {
     // 'abcdefghij' minus its last 5 chars is 'abcde' — a non-:free miss must NOT retry that.
-    world({ registry: registryOf({ 'zz/abcde': priced(1, 1), 'zz/x:free': priced(2, 2), 'zz/x': priced(9, 9) }) });
+    world({
+      registry: registryOf({
+        'zz/abcde': priced(1, 1),
+        'zz/x:free': priced(2, 2),
+        'zz/x': priced(9, 9),
+      }),
+    });
     expect(m.lookupPrice('zz/abcdefghij')).toBeNull();
     expect(m.lookupPrice('zz/x:free')).toEqual({ input: 2, output: 2 }); // found directly, not replaced by 'zz/x'
     world({ registry: registryOf({ 'zz/y': priced(5, 5) }) });
@@ -250,7 +302,14 @@ describe('orFallbackPrice — pricing-cache semantics', () => {
   });
 
   it('a half-zero entry is a real price, not "free" and not "unknown"', () => {
-    world({ cache: { openrouter_pricing: { 'zz/in0': { input: 0, output: 5 }, 'zz/out0': { input: 5, output: 0 } } } });
+    world({
+      cache: {
+        openrouter_pricing: {
+          'zz/in0': { input: 0, output: 5 },
+          'zz/out0': { input: 5, output: 0 },
+        },
+      },
+    });
     expect(m.lookupPrice('zz/in0')).toEqual({ input: 0, output: 5 });
     expect(m.lookupPrice('zz/out0')).toEqual({ input: 5, output: 0 });
   });
@@ -264,7 +323,10 @@ describe('orFallbackPrice — pricing-cache semantics', () => {
     });
     expect(m.lookupPrice('zz/z')).toEqual({ input: 0, output: 0 });
     world({
-      cache: { openrouter_pricing: { 'zz/z': { input: 0, output: 0 } }, available_models: [{ provider: 'zz', id: 'z', cost_per_m: 0 }] as any },
+      cache: {
+        openrouter_pricing: { 'zz/z': { input: 0, output: 0 } },
+        available_models: [{ provider: 'zz', id: 'z', cost_per_m: 0 }] as any,
+      },
     });
     expect(m.lookupPrice('zz/z')).toEqual({ input: 0, output: 0 });
   });
@@ -294,13 +356,21 @@ describe('orFallbackPrice — pricing-cache semantics', () => {
   });
 
   it('the paid index follows in-place additions and a replaced pricing table', () => {
-    const { cache } = world({ cache: { openrouter_pricing: { 'x/old-model': { input: 1, output: 1 } } } });
+    const { cache } = world({
+      cache: { openrouter_pricing: { 'x/old-model': { input: 1, output: 1 } } },
+    });
     expect(m.lookupPrice('chutes/old-model')).toEqual({ input: 1, output: 1 });
     expect(m.lookupPrice('chutes/new-model')).toBeNull();
     cache.openrouter_pricing!['x/new-model'] = { input: 2, output: 2 }; // scan-runner mutates in place
     expect(m.lookupPrice('chutes/new-model')).toEqual({ input: 2, output: 2 });
     // a NEW table object with the SAME key count (2): identity alone must trigger the rebuild
-    m.setCache({ ...cache, openrouter_pricing: { 'y/old-model': { input: 5, output: 5 }, 'y/filler': { input: 6, output: 6 } } } as any);
+    m.setCache({
+      ...cache,
+      openrouter_pricing: {
+        'y/old-model': { input: 5, output: 5 },
+        'y/filler': { input: 6, output: 6 },
+      },
+    } as any);
     expect(m.lookupPrice('chutes/old-model')).toEqual({ input: 5, output: 5 });
     expect(m.lookupPrice('chutes/new-model')).toBeNull();
   });
@@ -333,12 +403,23 @@ describe('effCost — subscription rule cost', () => {
   });
 
   it('the rule cost is multiplied by the provider cost multiplier, not divided', () => {
-    world({ cfg: sub, cache: { openrouter_pricing: { 'sp/m': { input: 10, output: 30 } }, cost_mux: { sp: 4 } } });
+    world({
+      cfg: sub,
+      cache: { openrouter_pricing: { 'sp/m': { input: 10, output: 30 } }, cost_mux: { sp: 4 } },
+    });
     expect(m.effCost('sp/m')).toBeCloseTo(EPS * 10 * 4, 12);
   });
 
   it('no list price, a zero list price, or an unknown list price → the constant fallback', () => {
-    world({ cfg: sub, cache: { openrouter_pricing: { 'sp/zero-in': { input: 0, output: 7 }, 'sp/unk': { input: 0, output: 0 } } } });
+    world({
+      cfg: sub,
+      cache: {
+        openrouter_pricing: {
+          'sp/zero-in': { input: 0, output: 7 },
+          'sp/unk': { input: 0, output: 0 },
+        },
+      },
+    });
     expect(m.effCost('sp/none')).toBe(FALLBACK);
     expect(m.effCost('sp/zero-in')).toBe(FALLBACK);
     expect(m.effCost('sp/unk')).toBe(FALLBACK); // {0,0} undiscovered → 'unknown' list price
@@ -364,7 +445,8 @@ describe('usage log windows', () => {
     vi.useRealTimers();
   });
 
-  const entry = (ref: string, ts: number, tokens: number, extra: Record<string, number> = {}) => ({ ref, ts, tokens, ...extra }) as any;
+  const entry = (ref: string, ts: number, tokens: number, extra: Record<string, number> = {}) =>
+    ({ ref, ts, tokens, ...extra }) as any;
 
   it('getUsage / getUsageAll: the window is `days` x 24h, and the cutoff instant itself is OUTSIDE', () => {
     world({
@@ -380,14 +462,21 @@ describe('usage log windows', () => {
     expect(m.getUsage('zz/a', 2)).toBe(10);
     expect(m.getUsageAll(2)).toEqual({ 'zz/a': 10, 'zz/b': 5 });
     // 1 day: a 23h-old entry is in, a 25h-old one is out (kills 60/24-style window arithmetic)
-    world({ cache: { usage_log: [entry('zz/a', NOW - 23 * 3600_000, 1), entry('zz/a', NOW - 25 * 3600_000, 2)] } });
+    world({
+      cache: {
+        usage_log: [entry('zz/a', NOW - 23 * 3600_000, 1), entry('zz/a', NOW - 25 * 3600_000, 2)],
+      },
+    });
     expect(m.getUsage('zz/a', 1)).toBe(1);
     expect(m.getUsageAll(1)).toEqual({ 'zz/a': 1 });
     expect(m.getCacheUsageAll(1)).toEqual({});
     // cache window: a 23h-old entry with cache tokens is inside 1 day, a 25h-old one is not
     world({
       cache: {
-        usage_log: [entry('zz/in', NOW - 23 * 3600_000, 1, { cacheRead: 3 }), entry('zz/out', NOW - 25 * 3600_000, 1, { cacheRead: 4 })],
+        usage_log: [
+          entry('zz/in', NOW - 23 * 3600_000, 1, { cacheRead: 3 }),
+          entry('zz/out', NOW - 25 * 3600_000, 1, { cacheRead: 4 }),
+        ],
       },
     });
     expect(m.getCacheUsageAll(1)).toEqual({ 'zz/in': { cacheRead: 3, cacheWrite: 0 } });
@@ -419,7 +508,11 @@ describe('lookupContextWindow — registry value must be a positive number', () 
   it('a registry model without a window falls through to the scan capabilities', () => {
     world({
       registry: { find: () => ({ id: 'cw' }) },
-      cache: { available_models: [{ provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 8000 } }] as any },
+      cache: {
+        available_models: [
+          { provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 8000 } },
+        ] as any,
+      },
     });
     expect(m.lookupContextWindow('zz/cw')).toBe(8000);
   });
@@ -427,7 +520,11 @@ describe('lookupContextWindow — registry value must be a positive number', () 
   it('a registry window of 0 is not authoritative either', () => {
     world({
       registry: { find: () => ({ id: 'cw', contextWindow: 0 }) },
-      cache: { available_models: [{ provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 9000 } }] as any },
+      cache: {
+        available_models: [
+          { provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 9000 } },
+        ] as any,
+      },
     });
     expect(m.lookupContextWindow('zz/cw')).toBe(9000);
   });
@@ -435,7 +532,11 @@ describe('lookupContextWindow — registry value must be a positive number', () 
   it('a positive registry window wins over the scan value', () => {
     world({
       registry: { find: () => ({ id: 'cw', contextWindow: 123456 }) },
-      cache: { available_models: [{ provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 9000 } }] as any },
+      cache: {
+        available_models: [
+          { provider: 'zz', id: 'cw', cost_per_m: 1, capabilities: { contextWindow: 9000 } },
+        ] as any,
+      },
     });
     expect(m.lookupContextWindow('zz/cw')).toBe(123456);
   });
@@ -446,7 +547,12 @@ describe('lookupContextWindow — registry value must be a positive number', () 
 describe('state contracts', () => {
   it('setConfig makes gdpval_builtin visible through getGdpval immediately', () => {
     world({});
-    m.setConfig({ model_groups: {}, model_metrics: {}, providers: {}, gdpval_builtin: { 'builtin-slug': 777 } } as any);
+    m.setConfig({
+      model_groups: {},
+      model_metrics: {},
+      providers: {},
+      gdpval_builtin: { 'builtin-slug': 777 },
+    } as any);
     expect(m.getGdpval()['builtin-slug']).toBe(777);
   });
 
@@ -525,7 +631,9 @@ describe('loadModelMap — exact vs wildcard, reload, loud failure', () => {
 // ledgered "equivalent", which only holds for a SINGLE decrement.)
 
 describe('version counters — a changed model map / GDPval map always invalidates the cached index', () => {
-  const aliasRegistry = (known: Record<string, unknown>): Registry => ({ find: (p, id) => known[`${p}/${id}`] });
+  const aliasRegistry = (known: Record<string, unknown>): Registry => ({
+    find: (p, id) => known[`${p}/${id}`],
+  });
   /** Price of zz/m-a through the alias retry: needs a CURRENT alias index. */
   const aliasPrice = () => m.lookupPrice('zz/m-a');
   const mapDir = (yaml: string) => {
@@ -576,7 +684,10 @@ describe('version counters — a changed model map / GDPval map always invalidat
   const TOKEN_MAP = { 'x-model': 'alpha-beta' };
 
   it('resolveSlug empty-gdpval restore from cache.gdpval_scores', () => {
-    const { cache } = world({ modelMap: TOKEN_MAP, cache: { gdpval_scores: { 'beta-alpha': 100 } } });
+    const { cache } = world({
+      modelMap: TOKEN_MAP,
+      cache: { gdpval_scores: { 'beta-alpha': 100 } },
+    });
     m.setGdpval({ 'beta-alpha': 100 });
     expect(m.lookupGdp('x-model')).toBe(100); // builds the token index at version k
     m.setGdpval({}); // k+1, now empty
@@ -614,7 +725,12 @@ describe('fresh module — first version bump must build the token-set index', (
   it('setConfig gdpval_builtin', async () => {
     const f = await fresh();
     f.setModelMap(MAP, []);
-    f.setConfig({ model_groups: {}, model_metrics: {}, providers: {}, gdpval_builtin: SCORES } as any);
+    f.setConfig({
+      model_groups: {},
+      model_metrics: {},
+      providers: {},
+      gdpval_builtin: SCORES,
+    } as any);
     expect(f.lookupGdp('x-model')).toBe(700);
   });
 
@@ -636,7 +752,10 @@ describe('capability profile mirror follows the LATEST cache (PR #80 round)', ()
   it('a model the newer cache dropped no longer resolves, and no longer counts as column data', () => {
     world({ cache: { capability_profiles: { 'old-slug': { reasoning: 50 } } as any } });
     expect(m.hasCapabilityData('reasoning')).toBe(true);
-    m.setCache({ available_models: [], capability_profiles: { 'new-slug': { briefcase: 5 } } } as any);
+    m.setCache({
+      available_models: [],
+      capability_profiles: { 'new-slug': { briefcase: 5 } },
+    } as any);
     expect(m.getCapabilityProfiles()['old-slug']).toBeUndefined();
     expect(m.hasCapabilityData('reasoning')).toBe(false);
   });

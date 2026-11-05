@@ -52,15 +52,24 @@ describe('dependency lock security (Dependabot #42-#45, #48)', () => {
     const versions = resolvedVersions('undici');
     expect(versions.length, 'undici must appear in the lockfile').toBeGreaterThan(0);
     for (const v of versions) {
-      expect(cmp(v, '8.12.2'), `undici ${v} is below the patched 8.12.2 (host pin regressed or an override forces it?)`).toBeGreaterThanOrEqual(0);
+      expect(
+        cmp(v, '8.12.2'),
+        `undici ${v} is below the patched 8.12.2 (host pin regressed or an override forces it?)`
+      ).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it('the top-level undici is the host\'s own pin, so no override is needed (the host pins a patched version since 1.5.0)', () => {
+  it("the top-level undici is the host's own pin, so no override is needed (the host pins a patched version since 1.5.0)", () => {
     const host = lock.packages['node_modules/@earendil-works/pi-coding-agent'];
     const pinned = host?.dependencies?.undici;
     expect(pinned, 'the pi host must declare undici in the lockfile').toBeDefined();
-    expect(cmp(pinned!, '8.12.2'), `the host pins undici ${pinned}, below the patched 8.12.2`).toBeGreaterThanOrEqual(0);
-    expect(lock.packages['node_modules/undici']?.version, 'top-level undici must equal the host pin').toBe(pinned);
+    expect(
+      cmp(pinned!, '8.12.2'),
+      `the host pins undici ${pinned}, below the patched 8.12.2`
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      lock.packages['node_modules/undici']?.version,
+      'top-level undici must equal the host pin'
+    ).toBe(pinned);
   });
 });

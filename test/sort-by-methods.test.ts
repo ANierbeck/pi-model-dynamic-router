@@ -65,7 +65,12 @@ const testConfig: Config = {
 
     // unknown-cost score leader: registry lists it, but with no price.
     'poolx/unk-leader': { gdpval: 1000, throughput_tps: 100, avg_latency_ms: 1000 },
-    'poolx/known-second': { gdpval: 990, throughput_tps: 100, avg_latency_ms: 1000, cost_per_m: 0.5 },
+    'poolx/known-second': {
+      gdpval: 990,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+      cost_per_m: 0.5,
+    },
 
     // ── Section 2b: window OFF + tied top scores (cost must NOT reorder),
     // and the exact-floor boundary test (w=0.5 → FP-exact floor).
@@ -85,9 +90,19 @@ const testConfig: Config = {
     // deliberately ABOVE the payg fixture's 0.001 — when a rank-table
     // mutation ties subscription with payg, the cost tiebreak must put
     // PAYG first (observable RED), not coincidentally rescue the order.
-    'mistral/planx-one': { gdpval: 200, throughput_tps: 100, avg_latency_ms: 1000, cost_per_m: 0.05 },
+    'mistral/planx-one': {
+      gdpval: 200,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+      cost_per_m: 0.05,
+    },
     'ollama/daemonx-one': { gdpval: 300, throughput_tps: 100, avg_latency_ms: 1000, cost_per_m: 0 },
-    'openai/coinx-one': { gdpval: 400, throughput_tps: 100, avg_latency_ms: 1000, cost_per_m: 0.001 },
+    'openai/coinx-one': {
+      gdpval: 400,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+      cost_per_m: 0.001,
+    },
 
     // subscription pair for the limitSecs preference (equal cost, equal
     // tier — ONLY limit pressure can discriminate; gdpval favors the
@@ -119,10 +134,21 @@ const testConfig: Config = {
   },
   // calculateScore (scoreOf) reads gdpval from gdpval_builtin via lookupGdp.
   gdpval_builtin: {
-    'top': 1000, 'unk-leader': 1000, 'known-second': 990, 'unk-hi': 990, 'unk-lo': 980, 'cheap-tie': 970, 'over-tie': 965, 'mid': 800,
-    'tie-a': 1000, 'tie-b': 1000, 'low': 900,
-    'wtop': 1000, 'wedge': 500,
-    'sub-a': 100, 'sub-b': 110,
+    top: 1000,
+    'unk-leader': 1000,
+    'known-second': 990,
+    'unk-hi': 990,
+    'unk-lo': 980,
+    'cheap-tie': 970,
+    'over-tie': 965,
+    mid: 800,
+    'tie-a': 1000,
+    'tie-b': 1000,
+    low: 900,
+    wtop: 1000,
+    wedge: 500,
+    'sub-a': 100,
+    'sub-b': 110,
   },
 } as any;
 
@@ -180,7 +206,7 @@ describe('sortBy — method dispatch (simple sort methods)', () => {
     ]);
   });
 
-  it("billing_preference: dispatches to sortByBillingPreference (free before payg)", () => {
+  it('billing_preference: dispatches to sortByBillingPreference (free before payg)', () => {
     const refs = ['openai/coinx-one', 'openrouter/nocost-a:free'];
     expect(router.sortBy(refs, 'billing_preference')).toEqual([
       'openrouter/nocost-a:free',
@@ -259,10 +285,7 @@ describe('sortBy best — pool boundary is INCLUSIVE (>= floor)', () => {
     // 500 and is by far the cheapest — it must be FIRST (in the pool), not
     // demoted behind wtop.
     const router = new Router({ ...testConfig, best_quality_window: 0.5 }, cache, new Map());
-    expect(router.sortBy(['wedg/wtop', 'wedg/wedge'], 'best')).toEqual([
-      'wedg/wedge',
-      'wedg/wtop',
-    ]);
+    expect(router.sortBy(['wedg/wtop', 'wedg/wedge'], 'best')).toEqual(['wedg/wedge', 'wedg/wtop']);
   });
 });
 
@@ -273,7 +296,12 @@ describe('sortByBillingPreference — rank tables decide when costs tie', () => 
   // Cost ties (0/0/0/0.001) + gdpval anti-correlated with rank: the cost
   // tiebreak alone yields local→sub→free→payg, so only the RANK TABLE can
   // produce each preference's asserted order.
-  const SHUFFLED = ['ollama/daemonx-one', 'openai/coinx-one', 'openrouter/nocost-a:free', 'mistral/planx-one'];
+  const SHUFFLED = [
+    'ollama/daemonx-one',
+    'openai/coinx-one',
+    'openrouter/nocost-a:free',
+    'mistral/planx-one',
+  ];
 
   it('default: free → subscription → local → payg', () => {
     expect(router.sortByBillingPreference([...SHUFFLED])).toEqual([
@@ -328,11 +356,17 @@ describe('sortByBillingPreference — subscription-tier limit-pressure preferenc
     // Same tier, same cost; gdpval favors the high-pressure model — only
     // the limitSecs comparison can produce the asserted order.
     const limits = new Map<string, RateLimit>([
-      ['mistral/planx-busy', { cooldown_until: Date.now() + 500_000, backoff_ms: 0, hits: 0 } as RateLimit],
+      [
+        'mistral/planx-busy',
+        { cooldown_until: Date.now() + 500_000, backoff_ms: 0, hits: 0 } as RateLimit,
+      ],
     ]);
     const router = new Router(testConfig, cache, limits);
     expect(
-      router.sortByBillingPreference(['mistral/planx-busy', 'mistral/planx-calm'], 'local_before_payg'),
+      router.sortByBillingPreference(
+        ['mistral/planx-busy', 'mistral/planx-calm'],
+        'local_before_payg'
+      )
     ).toEqual(['mistral/planx-calm', 'mistral/planx-busy']);
   });
 
@@ -341,11 +375,14 @@ describe('sortByBillingPreference — subscription-tier limit-pressure preferenc
     // the high-pressure one — if limitSecs leaked outside tier 1, the
     // low-pressure model would jump ahead.
     const limits = new Map<string, RateLimit>([
-      ['openrouter/nocost-busy:free', { cooldown_until: Date.now() + 500_000, backoff_ms: 0, hits: 0 } as RateLimit],
+      [
+        'openrouter/nocost-busy:free',
+        { cooldown_until: Date.now() + 500_000, backoff_ms: 0, hits: 0 } as RateLimit,
+      ],
     ]);
     const router = new Router(testConfig, cache, limits);
     expect(
-      router.sortByBillingPreference(['openrouter/nocost-busy:free', 'openrouter/nocost-a:free']),
+      router.sortByBillingPreference(['openrouter/nocost-busy:free', 'openrouter/nocost-a:free'])
     ).toEqual(['openrouter/nocost-busy:free', 'openrouter/nocost-a:free']);
   });
 });
@@ -363,7 +400,7 @@ describe('sortByBillingPreference — unknown-cost ordering', () => {
     // DESC (2000 before 1500), and the costly known model stays FIRST
     // despite having the lowest gdpval.
     expect(
-      router.sortByBillingPreference(['paygx/unk-bill-2', 'paygx/unk-bill', 'paygx/known-bill']),
+      router.sortByBillingPreference(['paygx/unk-bill-2', 'paygx/unk-bill', 'paygx/known-bill'])
     ).toEqual(['paygx/known-bill', 'paygx/unk-bill', 'paygx/unk-bill-2']);
   });
 });
@@ -395,7 +432,10 @@ describe('filterByBudget — wrapper with a populated budget cache', () => {
 describe('filterAvailable — rate-limited refs are dropped', () => {
   it('keeps healthy refs and drops the limited one', () => {
     const limits = new Map<string, RateLimit>([
-      ['openai/limited-one', { cooldown_until: Date.now() + 300_000, backoff_ms: 0, hits: 0 } as RateLimit],
+      [
+        'openai/limited-one',
+        { cooldown_until: Date.now() + 300_000, backoff_ms: 0, hits: 0 } as RateLimit,
+      ],
     ]);
     const router = new Router(testConfig, cache, limits);
     const refs = ['openai/limited-one', 'openai/healthy-two', 'ollama/local-ok'];

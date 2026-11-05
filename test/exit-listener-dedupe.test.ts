@@ -12,14 +12,10 @@
 // exactly one.
 
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+
 import { parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-} from './helpers/noop-scan-cache.ts';
+import { writeNoOpScanCache, removeNoOpScanCacheDefault } from './helpers/noop-scan-cache.ts';
+import { bootProjectDir, rmTmpDir } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
@@ -35,11 +31,9 @@ function makeMockPi(): any {
 
 describe('exit-listener dedupe', () => {
   it('registers the exit handler once across two extension loads', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-exit-dedupe-'));
-    fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpDir, '.pi', 'router-config.json'),
-      JSON.stringify({ model_groups: {}, providers: {}, gdpval_builtin: {} })
+    const { tmpDir } = bootProjectDir(
+      { model_groups: {}, providers: {}, gdpval_builtin: {} },
+      'router-exit-dedupe-'
     );
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 
@@ -67,8 +61,8 @@ describe('exit-listener dedupe', () => {
     } finally {
       (globalThis as any).__ROUTER_SIGNAL_CLEANUP__ = savedFlag ?? true;
       cwdSpy.mockRestore();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      removeNoOpScanCache(scanCachePath);
+      rmTmpDir(tmpDir);
+      removeNoOpScanCacheDefault();
       restoreState();
     }
   });

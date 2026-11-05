@@ -23,7 +23,10 @@ interface Mutant {
   coveredBy?: string[];
   location: { start: { line: number; column: number }; end: { line: number; column: number } };
 }
-interface FileEntry { source: string; mutants: Mutant[] }
+interface FileEntry {
+  source: string;
+  mutants: Mutant[];
+}
 
 const MAX_REPLACEMENT = 60;
 
@@ -53,10 +56,14 @@ function main(argv: string[]): number {
   const sourceDir = take('--source-dir');
   const reportPath = args[0];
   if (!reportPath) {
-    process.stderr.write('usage: node scripts/mutation-survivors.ts <mutation.json> [--file src/x.ts] [--source-dir <dir>]\n');
+    process.stderr.write(
+      'usage: node scripts/mutation-survivors.ts <mutation.json> [--file src/x.ts] [--source-dir <dir>]\n'
+    );
     return 2;
   }
-  const report = JSON.parse(readFileSync(reportPath, 'utf8')) as { files: Record<string, FileEntry> };
+  const report = JSON.parse(readFileSync(reportPath, 'utf8')) as {
+    files: Record<string, FileEntry>;
+  };
   for (const [file, entry] of Object.entries(report.files)) {
     if (onlyFile && file !== onlyFile) continue;
     if (sourceDir) {
@@ -67,7 +74,9 @@ function main(argv: string[]): number {
     for (const [line, mutants] of groupUndetectedByLine(entry)) {
       process.stdout.write(`${file}:${line}  ${lines[line - 1]?.trim() ?? ''}\n`);
       for (const m of mutants) {
-        process.stdout.write(`    ${m.status === 'NoCoverage' ? 'NC' : 'SV'} ${m.mutatorName} -> ${shorten(m.replacement ?? '')}\n`);
+        process.stdout.write(
+          `    ${m.status === 'NoCoverage' ? 'NC' : 'SV'} ${m.mutatorName} -> ${shorten(m.replacement ?? '')}\n`
+        );
       }
     }
   }

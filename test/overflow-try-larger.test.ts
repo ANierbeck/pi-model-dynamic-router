@@ -39,7 +39,7 @@ describe('extractContextWindowFromError', () => {
     // only 710 tokens — any model with >197318 tokens (e.g. mistral-zai/glm-5-2
     // at 1M) would fit, which is exactly the case the handler optimizes for.
     const detail =
-      "prompt is too long: 400: {\"message\":\"This endpoint's maximum context length is 196608 tokens. However, you requested about 197318 tokens (27673 of text input, 12711 of tool input, 156934 in the output).\",\"code\":400}";
+      'prompt is too long: 400: {"message":"This endpoint\'s maximum context length is 196608 tokens. However, you requested about 197318 tokens (27673 of text input, 12711 of tool input, 156934 in the output).","code":400}';
     expect(extractContextWindowFromError(detail)).toEqual({
       actualContextWindow: 196608,
       requestedTokens: 197318,
@@ -70,13 +70,9 @@ describe('extractContextWindowFromError', () => {
 
   it('returns null when only one of the two numbers is present', () => {
     // Only the context-window number, no requested-tokens number.
-    expect(
-      extractContextWindowFromError('maximum context length is 196608 tokens')
-    ).toBeNull();
+    expect(extractContextWindowFromError('maximum context length is 196608 tokens')).toBeNull();
     // Only the requested-tokens number, no context-window number.
-    expect(
-      extractContextWindowFromError('requested about 197318 tokens')
-    ).toBeNull();
+    expect(extractContextWindowFromError('requested about 197318 tokens')).toBeNull();
   });
 });
 
@@ -87,12 +83,10 @@ describe('extractContextWindowFromError', () => {
 // above don't cover. They follow the context-overflow.test.ts pattern:
 // mock modelRegistry.runtime.streamSimple to yield provider events, and a
 // find() that maps refs to models with known context windows.
-import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
 import { doneEvent } from './helpers/stream-fixtures.ts';
+import { startSession } from './helpers/extension-harness.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 // Under vitest, import('../index.ts') runs the TS source, so import.meta.url
 // resolves to the repo root/index.ts and extDir = repo root (NOT dist/). loadLayeredConfig
@@ -100,7 +94,10 @@ import { doneEvent } from './helpers/stream-fixtures.ts';
 // <cwd>/.pi/router-config.json (project override, highest priority). So the
 // per-test override goes to tmpDir/.pi/router-config.json (with cwdSpy→tmpDir),
 // exactly like context-overflow.test.ts — NOT by backing up dist/router-config.
-const dynamicConfigPath2 = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
+const dynamicConfigPath2 = path.join(
+  process.env.PI_ROUTER_STATE_DIR!,
+  'router-config.dynamic.json'
+);
 const scanCachePath2 = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
 // A minimal config whose 'standard' group lists exactly the two refs the
@@ -126,7 +123,8 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     // Project-config override (cwd-layer, highest priority in loadLayeredConfig).
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-    if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.trylarge-bak`);
+    if (fs.existsSync(dynamicConfigPath2))
+      fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.trylarge-bak`);
     writeNoOpScanCache(scanCachePath2);
     try {
       vi.resetModules();
@@ -134,9 +132,13 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       const defaultExport = mod.default as any;
       const onHandlers: Record<string, any> = {};
       const pi: any = {
-        registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
-        on: vi.fn((e: string, h: any) => { onHandlers[e] = h; }),
+        on: vi.fn((e: string, h: any) => {
+          onHandlers[e] = h;
+        }),
       };
       defaultExport(pi);
 
@@ -170,17 +172,23 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         getApiKeyForProvider: async () => null,
         runtime: { streamSimple },
       };
-      const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-      await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+      await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
       const groupModel = { provider: 'standard', id: 'standard' };
       const context: any = { messages: [{ role: 'user', content: 'Hello' }] };
       const events = await drainStream2(defaultExport.groupStream(groupModel, context, {}));
 
       // small was tried first (overflowed), then big was tried (succeeded).
-      expect(streamSimple).toHaveBeenCalledWith(expect.objectContaining({ id: 'small' }), expect.anything(), expect.anything());
-      expect(streamSimple).toHaveBeenCalledWith(expect.objectContaining({ id: 'big' }), expect.anything(), expect.anything());
+      expect(streamSimple).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'small' }),
+        expect.anything(),
+        expect.anything()
+      );
+      expect(streamSimple).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'big' }),
+        expect.anything(),
+        expect.anything()
+      );
       // Prove the tests exercise OUR mock models, not incidental production refs:
       const calledIds = streamSimple.mock.calls.map((c) => c[0]?.id);
       expect(calledIds).toContain('small');
@@ -189,14 +197,18 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       // No overflow error surfaced — big succeeded.
       const errEvent = events.find((e: any) => e.type === 'error');
       expect(errEvent).toBeUndefined();
-      const text = events.filter((e: any) => e.type === 'text_delta').map((e: any) => e.delta ?? '').join('');
+      const text = events
+        .filter((e: any) => e.type === 'text_delta')
+        .map((e: any) => e.delta ?? '')
+        .join('');
       expect(text).toContain('served by the big model');
     } finally {
       cwdSpy.mockRestore();
       vi.restoreAllMocks();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
       removeNoOpScanCache(scanCachePath2);
-      if (fs.existsSync(`${dynamicConfigPath2}.trylarge-bak`)) fs.renameSync(`${dynamicConfigPath2}.trylarge-bak`, dynamicConfigPath2);
+      if (fs.existsSync(`${dynamicConfigPath2}.trylarge-bak`))
+        fs.renameSync(`${dynamicConfigPath2}.trylarge-bak`, dynamicConfigPath2);
     }
   });
 
@@ -210,7 +222,8 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), TEST_CFG_BODY);
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
-    if (fs.existsSync(dynamicConfigPath2)) fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.unparse-bak`);
+    if (fs.existsSync(dynamicConfigPath2))
+      fs.renameSync(dynamicConfigPath2, `${dynamicConfigPath2}.unparse-bak`);
     writeNoOpScanCache(scanCachePath2);
     try {
       vi.resetModules();
@@ -218,9 +231,13 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
       const defaultExport = mod.default as any;
       const onHandlers: Record<string, any> = {};
       const pi: any = {
-        registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
+        registerTool: vi.fn(),
+        registerCommand: vi.fn(),
+        registerProvider: vi.fn(),
         setModel: vi.fn(async () => true),
-        on: vi.fn((e: string, h: any) => { onHandlers[e] = h; }),
+        on: vi.fn((e: string, h: any) => {
+          onHandlers[e] = h;
+        }),
       };
       defaultExport(pi);
 
@@ -238,7 +255,11 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
             // Unparseable overflow text — still detected as overflow by
             // isOverflowErrorText (matches 'prompt is too long'), but
             // extractContextWindowFromError returns null (no token numbers).
-            yield { type: 'error', reason: 'error', error: { message: 'prompt is too long: request too large' } };
+            yield {
+              type: 'error',
+              reason: 'error',
+              error: { message: 'prompt is too long: request too large' },
+            };
           })();
         }
         return (async function* () {
@@ -252,9 +273,7 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
         getApiKeyForProvider: async () => null,
         runtime: { streamSimple },
       };
-      const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-      await onHandlers['session_start']?.({}, ctx);
-      await flushBackgroundScan();
+      await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
       const groupModel = { provider: 'standard', id: 'standard' };
       const context: any = { messages: [{ role: 'user', content: 'Hello' }] };
@@ -272,9 +291,10 @@ describe('driveStream: context_overflow — try-larger recursion', () => {
     } finally {
       cwdSpy.mockRestore();
       vi.restoreAllMocks();
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      rmTmpDir(tmpDir);
       removeNoOpScanCache(scanCachePath2);
-      if (fs.existsSync(`${dynamicConfigPath2}.unparse-bak`)) fs.renameSync(`${dynamicConfigPath2}.unparse-bak`, dynamicConfigPath2);
+      if (fs.existsSync(`${dynamicConfigPath2}.unparse-bak`))
+        fs.renameSync(`${dynamicConfigPath2}.unparse-bak`, dynamicConfigPath2);
     }
   });
 });

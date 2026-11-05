@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { deepMergeConfig, loadLayeredConfig } from '../src/config-loader.js';
 import type { Config } from '../src/types.js';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 // Mocking os.homedir() directly (rather than mutating process.env.HOME)
 // so the global override path resolves under a per-test tmpDir. Node's
@@ -145,17 +146,14 @@ describe('loadLayeredConfig', () => {
     fs.mkdirSync(globalDir, { recursive: true });
 
     // Write the embedded default config.
-    fs.writeFileSync(
-      path.join(extDir, 'router-config.json'),
-      JSON.stringify(DEFAULT_CONFIG)
-    );
+    fs.writeFileSync(path.join(extDir, 'router-config.json'), JSON.stringify(DEFAULT_CONFIG));
 
     mockHomedir.mockReturnValue(path.join(tmpDir, 'home'));
   });
 
   afterEach(() => {
     mockHomedir.mockReset();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    rmTmpDir(tmpDir);
   });
 
   it('loads only the embedded defaults when no overrides exist', () => {
@@ -249,10 +247,7 @@ describe('loadLayeredConfig', () => {
   });
 
   it('does not throw when an override file is malformed JSON (logs + skips)', () => {
-    fs.writeFileSync(
-      path.join(globalDir, 'router-config.user.json'),
-      '{ this is not valid json'
-    );
+    fs.writeFileSync(path.join(globalDir, 'router-config.user.json'), '{ this is not valid json');
     const logs: string[] = [];
     const { config, sources } = loadLayeredConfig(extDir, cwdDir, (msg) => logs.push(msg));
     // Falls back to defaults only.
@@ -262,10 +257,7 @@ describe('loadLayeredConfig', () => {
   });
 
   it('does not throw when an override file is a JSON array (ignores it)', () => {
-    fs.writeFileSync(
-      path.join(globalDir, 'router-config.user.json'),
-      '["not", "an", "object"]'
-    );
+    fs.writeFileSync(path.join(globalDir, 'router-config.user.json'), '["not", "an", "object"]');
     const { config, sources } = loadLayeredConfig(extDir, cwdDir);
     expect(config).toEqual(DEFAULT_CONFIG);
     expect(sources).toHaveLength(1);

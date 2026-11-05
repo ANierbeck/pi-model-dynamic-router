@@ -15,7 +15,13 @@ import * as metricsModule from '../src/metrics.js';
 
 const CONFIG = {
   model_groups: {
-    tactical: { method: 'best', min_gdpval: 600, max_gdpval: 1700, score_by: 'coding', fallback_groups: [] },
+    tactical: {
+      method: 'best',
+      min_gdpval: 600,
+      max_gdpval: 1700,
+      score_by: 'coding',
+      fallback_groups: [],
+    },
     planning: { method: 'best', min_gdpval: 1700, score_by: 'briefcase', fallback_groups: [] },
   },
   model_metrics: {
@@ -23,8 +29,16 @@ const CONFIG = {
     'mistral/zai-glm-5-3': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
     'mistral/glm-5-2': { cost_per_m: 1.4, throughput_tps: 60, avg_latency_ms: 1200 },
     'mistral/glm-flash': { cost_per_m: 0.1, throughput_tps: 200, avg_latency_ms: 800 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 2.0e-6, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, throughput_tps: 100, avg_latency_ms: 1000 },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 2.0e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 1.5e-6,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
   },
   providers: {},
   gdpval_builtin: {
@@ -51,16 +65,28 @@ describe("sortBy('best') with a capability column: unprofiled models rank last",
     metricsModule.setConfig(CONFIG);
     metricsModule.setCache({ available_models: [], capability_profiles: PROFILES } as any);
     metricsModule.setModelRegistry({ find: () => undefined } as any);
-    router = new RoutingRouter(CONFIG, { available_models: [], capability_profiles: PROFILES } as any, new Map());
+    router = new RoutingRouter(
+      CONFIG,
+      { available_models: [], capability_profiles: PROFILES } as any,
+      new Map()
+    );
   });
 
-  it("coding: a profiled model beats an unprofiled one whose GDPval is numerically higher", () => {
-    const sorted = router.sortBy(['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5'], 'best', 'coding');
+  it('coding: a profiled model beats an unprofiled one whose GDPval is numerically higher', () => {
+    const sorted = router.sortBy(
+      ['mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5'],
+      'best',
+      'coding'
+    );
     expect(sorted).toEqual(['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3']);
   });
 
   it('briefcase: the same rule for the planning column', () => {
-    const sorted = router.sortBy(['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'], 'best', 'briefcase');
+    const sorted = router.sortBy(
+      ['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'],
+      'best',
+      'briefcase'
+    );
     expect(sorted).toEqual(['claude-bridge/claude-sonnet-5-5', 'claude-bridge/claude-opus-5-5']);
   });
 
@@ -68,9 +94,13 @@ describe("sortBy('best') with a capability column: unprofiled models rank last",
     const sorted = router.sortBy(
       ['mistral/glm-5-2', 'mistral/zai-glm-5-3', 'mistral/mistral-medium-3.5'],
       'best',
-      'coding',
+      'coding'
     );
-    expect(sorted).toEqual(['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3', 'mistral/glm-5-2']);
+    expect(sorted).toEqual([
+      'mistral/mistral-medium-3.5',
+      'mistral/zai-glm-5-3',
+      'mistral/glm-5-2',
+    ]);
   });
 
   it('when no candidate has a profile the order is the plain GDPval order (nothing to demote)', () => {
@@ -79,7 +109,11 @@ describe("sortBy('best') with a capability column: unprofiled models rank last",
   });
 
   it('without a column (score_by absent / gdpval) nothing changes: pure GDPval ordering', () => {
-    const sorted = router.sortBy(['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3'], 'best', 'gdpval');
+    const sorted = router.sortBy(
+      ['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3'],
+      'best',
+      'gdpval'
+    );
     expect(sorted[0]).toBe('mistral/zai-glm-5-3');
   });
 
@@ -93,7 +127,10 @@ describe("sortBy('best') with a capability column: unprofiled models rank last",
     } as any;
     const r = new RoutingRouter(CONFIG, cache, new Map());
     const res = r.resolve('tactical');
-    expect(res?.candidates?.slice(0, 2)).toEqual(['mistral/mistral-medium-3.5', 'mistral/zai-glm-5-3']);
+    expect(res?.candidates?.slice(0, 2)).toEqual([
+      'mistral/mistral-medium-3.5',
+      'mistral/zai-glm-5-3',
+    ]);
   });
 
   it('unprofiled tail is STRICT GDPval order — no quality window, no cost tiebreak', () => {

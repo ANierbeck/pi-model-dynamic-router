@@ -76,9 +76,9 @@ describe('plausibleMatchCandidates', () => {
 
 describe('matchModelsWithLLMBatched', () => {
   it('processes a single batch under the batch size without batching', async () => {
-    const callLlm: LlmCaller = vi.fn().mockResolvedValue(
-      JSON.stringify({ 'zai-glm-5-2': 'glm-5-2' })
-    );
+    const callLlm: LlmCaller = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ 'zai-glm-5-2': 'glm-5-2' }));
     const result = await matchModelsWithLLMBatched({
       modelIds: ['zai-glm-5-2'],
       gdpvalEntries: GDPVAL,
@@ -90,9 +90,9 @@ describe('matchModelsWithLLMBatched', () => {
   });
 
   it('pre-filters implausible models BEFORE calling the LLM', async () => {
-    const callLlm: LlmCaller = vi.fn().mockResolvedValue(
-      JSON.stringify({ 'zai-glm-5-2': 'glm-5-2' })
-    );
+    const callLlm: LlmCaller = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ 'zai-glm-5-2': 'glm-5-2' }));
     const result = await matchModelsWithLLMBatched({
       modelIds: ['zai-glm-5-2', 'mistral/voxtral-mini-2602', 'mistral/ministral-3b'],
       gdpvalEntries: GDPVAL,
@@ -165,9 +165,9 @@ describe('matchModelsWithLLMBatched', () => {
   });
 
   it('rejects hallucinated slugs (hallucination guard still active per batch)', async () => {
-    const callLlm: LlmCaller = vi.fn().mockResolvedValue(
-      JSON.stringify({ 'zai-glm-5-2': 'totally-fabricated-slug' })
-    );
+    const callLlm: LlmCaller = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ 'zai-glm-5-2': 'totally-fabricated-slug' }));
     const result = await matchModelsWithLLMBatched({
       modelIds: ['zai-glm-5-2'],
       gdpvalEntries: GDPVAL,

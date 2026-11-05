@@ -15,8 +15,16 @@ import { loadLayeredConfig } from '../src/config-loader.ts';
 import { Router } from '../src/routing.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Cache, Config } from '../src/types.ts';
+import { emptyCache } from './helpers/stream-fixtures.ts';
 
-const REGISTRY_REFS = ['shipped-prov/a', 'shipped-prov/b', 'user-prov/big', 'user-prov/small', 'proj/z', 'ok/m'];
+const REGISTRY_REFS = [
+  'shipped-prov/a',
+  'shipped-prov/b',
+  'user-prov/big',
+  'user-prov/small',
+  'proj/z',
+  'ok/m',
+];
 
 let extDir: string;
 let agentDir: string;
@@ -41,7 +49,11 @@ function writeShipped(extra: Record<string, unknown> = {}): void {
 function makeRegistry(refs: string[]) {
   const all = refs.map((r) => {
     const [provider, ...rest] = r.split('/');
-    return { provider, id: rest.join('/'), cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+    return {
+      provider,
+      id: rest.join('/'),
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
   });
   return {
     find: (provider: string, id: string) => all.find((m) => m.provider === provider && m.id === id),
@@ -57,11 +69,7 @@ function makeRegistry(refs: string[]) {
  * mirrors index.ts: re-read the layered config, rebuild the router.
  */
 function setup(refs: string[] = REGISTRY_REFS) {
-  const cache: Cache = {
-    available_models: [], gdpval_scores: {}, model_score_cache: {}, openrouter_pricing: {},
-    usage_log: [], benchmarks: {}, budget_cache: {}, gdpval_scraped: true,
-    lastScanTimestamp: Date.now(), models_cached: '',
-  } as any;
+  const cache: Cache = { ...emptyCache(), models_cached: '' } as any;
   let cfg!: Config;
   let router!: Router;
   const load = vi.fn(() => {
@@ -75,8 +83,12 @@ function setup(refs: string[] = REGISTRY_REFS) {
   let handler!: (args: string, ctx: any) => Promise<void>;
   let completions!: (prefix: string) => Array<{ value: string; label?: string }> | null;
   const rt: any = {
-    get cfg() { return cfg; },
-    get router() { return router; },
+    get cfg() {
+      return cfg;
+    },
+    get router() {
+      return router;
+    },
     cache,
     cfgPath: path.join(extDir, 'router-config.json'),
     load,
@@ -126,7 +138,10 @@ describe('/router config — display', () => {
     writeShipped({ exclude: { models: ['shipped-prov/*'] } });
     fs.writeFileSync(userFile, JSON.stringify({ exclude: { models: ['user-prov/big'] } }));
     fs.mkdirSync(path.join(cwd, '.pi'));
-    fs.writeFileSync(path.join(cwd, '.pi', 'router-config.json'), JSON.stringify({ exclude: { models: ['proj/*'] } }));
+    fs.writeFileSync(
+      path.join(cwd, '.pi', 'router-config.json'),
+      JSON.stringify({ exclude: { models: ['proj/*'] } })
+    );
   });
 
   it('lists each config source with its origin and path', async () => {
@@ -179,12 +194,16 @@ describe('/router config — display', () => {
     const out = await run('config compaction on');
     expect(out).toMatch(/auto-compaction enabled/i);
     expect(out).toMatch(/soft_tokens|hard_tokens/); // honest: the flag alone arms nothing
-    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({ enabled: true });
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({
+      enabled: true,
+    });
     expect(rt.cfg.context_budget?.enabled).toBe(true); // live without restart
 
     const off = await run('config compaction off');
     expect(off).toMatch(/auto-compaction disabled/i);
-    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({ enabled: false });
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8')).context_budget).toEqual({
+      enabled: false,
+    });
     expect(rt.cfg.context_budget?.enabled).toBe(false);
   });
 
@@ -207,7 +226,11 @@ describe('/router config — autocomplete', () => {
 
   it('lists config in the unfiltered completions', () => {
     writeShipped();
-    expect(setup().completions('')!.map((r) => r.value)).toContain('config');
+    expect(
+      setup()
+        .completions('')!
+        .map((r) => r.value)
+    ).toContain('config');
   });
 });
 
@@ -231,7 +254,10 @@ describe('/router config exclude', () => {
   });
 
   it('persists the pattern to the user file and keeps every key it already had', async () => {
-    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['p'], models: ['old/*'] } }));
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ log_level: 'debug', exclude: { providers: ['p'], models: ['old/*'] } })
+    );
     await setup(['aprov/m1:free']).run('config exclude aprov/*');
 
     const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
@@ -249,7 +275,9 @@ describe('/router config exclude', () => {
   });
 
   it('reports the match count and the scan-cycle note', async () => {
-    const out = await setup(['aprov/m1:free', 'aprov/m2:free', 'bprov/m3:free']).run('config exclude aprov/*');
+    const out = await setup(['aprov/m1:free', 'aprov/m2:free', 'bprov/m3:free']).run(
+      'config exclude aprov/*'
+    );
     expect(out).toContain('matches 2 discovered model(s)');
     expect(out).toContain('takes full effect at the next scan cycle for persisted group lists');
   });
@@ -290,7 +318,10 @@ describe('/router config unexclude', () => {
   });
 
   it('removes a user-layer entry, persists it, keeps other keys and re-admits the model', async () => {
-    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov/*', 'keep/*'] } }));
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov/*', 'keep/*'] } })
+    );
     const { rt, run } = setup(['aprov/m1:free', 'bprov/m2:free']);
     expect(rt.resolve('trivial')!.candidates).not.toContain('aprov/m1:free');
 
@@ -316,9 +347,14 @@ describe('/router config unexclude', () => {
 
   it('refuses a project entry naming the project layer', async () => {
     fs.mkdirSync(path.join(cwd, '.pi'));
-    fs.writeFileSync(path.join(cwd, '.pi', 'router-config.json'), JSON.stringify({ exclude: { models: ['proj/*'] } }));
+    fs.writeFileSync(
+      path.join(cwd, '.pi', 'router-config.json'),
+      JSON.stringify({ exclude: { models: ['proj/*'] } })
+    );
     const out = await setup().run('config unexclude proj/*');
-    expect(out).toContain('"proj/*" is part of the project defaults — removable only in that layer');
+    expect(out).toContain(
+      '"proj/*" is part of the project defaults — removable only in that layer'
+    );
   });
 
   it('says so when a removed user entry is still excluded by another layer', async () => {
@@ -386,7 +422,10 @@ describe('/router config exclude — bare provider names', () => {
   });
 
   it('keeps every key the user file already had and appends to its provider list', async () => {
-    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['old'], models: ['x/*'] } }));
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ log_level: 'debug', exclude: { providers: ['old'], models: ['x/*'] } })
+    );
     await setup(['aprov/m1:free']).run('config exclude aprov');
     const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));
     expect(after.log_level).toBe('debug');
@@ -416,7 +455,10 @@ describe('/router config exclude — bare provider names', () => {
   });
 
   it('unexclude removes the provider entry again and re-admits its models', async () => {
-    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { providers: ['aprov', 'keep'] } }));
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ log_level: 'debug', exclude: { providers: ['aprov', 'keep'] } })
+    );
     const { rt, run } = setup(['aprov/m1:free', 'bprov/m2:free']);
     expect(candidates(rt)).not.toContain('aprov/m1:free');
 
@@ -431,7 +473,10 @@ describe('/router config exclude — bare provider names', () => {
   });
 
   it('unexclude still removes a legacy BARE name that the pre-fix command wrote into exclude.models (review Minor 3)', async () => {
-    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov', 'keep/*'] } }));
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ log_level: 'debug', exclude: { models: ['aprov', 'keep/*'] } })
+    );
     const out = await setup(['aprov/m1:free']).run('config unexclude aprov');
     expect(out).toContain('Removed "aprov"');
     const after = JSON.parse(fs.readFileSync(userFile, 'utf-8'));

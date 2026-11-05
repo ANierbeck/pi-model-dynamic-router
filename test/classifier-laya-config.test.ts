@@ -41,7 +41,11 @@ describe('classifier-laya-config', () => {
       // Merge-review Important 2 (2026-11-01): README/types promise the router
       // only talks HTTP to 127.0.0.1 — the code must enforce it, not just document it.
       const cfg = deepMergeConfig(base, {
-        classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: 'https://classify.example.com/hook' },
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: 'https://classify.example.com/hook',
+        },
       }) as Config;
       validateClassifierLaya(cfg);
       expect(cfg.classifier_laya?.enabled).toBe(false);
@@ -56,7 +60,12 @@ describe('classifier-laya-config', () => {
     });
 
     it('accepts loopback endpoints: 127.0.0.1, other 127/8, localhost, [::1]', () => {
-      for (const endpoint of ['http://127.0.0.1:8089', 'http://127.0.0.2:9999', 'http://localhost:8089', 'http://[::1]:8089']) {
+      for (const endpoint of [
+        'http://127.0.0.1:8089',
+        'http://127.0.0.2:9999',
+        'http://localhost:8089',
+        'http://[::1]:8089',
+      ]) {
         const cfg = deepMergeConfig(base, {
           classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint },
         }) as Config;
@@ -69,7 +78,13 @@ describe('classifier-laya-config', () => {
     it('resets wrong-typed mode / confidence_threshold / timeout_ms to defaults', () => {
       // Merge-review Minor 2: no type check existed; invalid values reached the client.
       const cfg = deepMergeConfig(base, {
-        classifier_laya: { enabled: true, checkpoint: 'x/y', mode: 'turbo', confidence_threshold: 5, timeout_ms: -1 },
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          mode: 'turbo',
+          confidence_threshold: 5,
+          timeout_ms: -1,
+        },
       }) as Config;
       validateClassifierLaya(cfg);
       expect(cfg.classifier_laya?.enabled).toBe(true);
@@ -79,15 +94,12 @@ describe('classifier-laya-config', () => {
     });
 
     it('accepts enabled:true with a pinned checkpoint and applies defaults', () => {
-      const cfg = deepMergeConfig(
-        base,
-        {
-          classifier_laya: {
-            enabled: true,
-            checkpoint: 'aac6fef/laya-multilingual-mlx:f2b4faf51023039425946074e2cf1361d2db11d5',
-          },
-        }
-      ) as Config;
+      const cfg = deepMergeConfig(base, {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'aac6fef/laya-multilingual-mlx:f2b4faf51023039425946074e2cf1361d2db11d5',
+        },
+      }) as Config;
       validateClassifierLaya(cfg);
       expect(cfg.classifier_laya?.enabled).toBe(true);
       expect(cfg.classifier_laya?.checkpoint).toBe(
@@ -100,19 +112,16 @@ describe('classifier-laya-config', () => {
     });
 
     it('respects user-provided endpoint / timeout / threshold / mode when enabled', () => {
-      const cfg = deepMergeConfig(
-        base,
-        {
-          classifier_laya: {
-            enabled: true,
-            checkpoint: 'x/y',
-            endpoint: 'http://127.0.0.1:9999',
-            timeout_ms: 3000,
-            confidence_threshold: 0.9,
-            mode: 'active',
-          },
-        }
-      ) as Config;
+      const cfg = deepMergeConfig(base, {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: 'http://127.0.0.1:9999',
+          timeout_ms: 3000,
+          confidence_threshold: 0.9,
+          mode: 'active',
+        },
+      }) as Config;
       validateClassifierLaya(cfg);
       expect(cfg.classifier_laya?.endpoint).toBe('http://127.0.0.1:9999');
       expect(cfg.classifier_laya?.timeout_ms).toBe(3000);
@@ -121,10 +130,9 @@ describe('classifier-laya-config', () => {
     });
 
     it('enabled:false keeps checkpoint absent and needs no defaults', () => {
-      const cfg = deepMergeConfig(
-        base,
-        { classifier_laya: { enabled: false, checkpoint: 'x/y' } } as any
-      ) as Config;
+      const cfg = deepMergeConfig(base, {
+        classifier_laya: { enabled: false, checkpoint: 'x/y' },
+      } as any) as Config;
       validateClassifierLaya(cfg); // throws nothing
       expect(cfg.classifier_laya?.enabled).toBe(false);
     });

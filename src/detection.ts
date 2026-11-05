@@ -124,18 +124,42 @@ const TEXT_DELTA_OVERFLOW_PATTERNS: readonly string[] = [
  * Lookup is the only gate: an unknown name returns undefined, never a guess.
  */
 const MONTH_INDEX: Record<string, number> = {
-  jan: 0, january: 0, januar: 0,
-  feb: 1, february: 1, februar: 1,
-  mar: 2, march: 2, 'mär': 2, 'märz': 2, maerz: 2,
-  apr: 3, april: 3,
-  may: 4, mai: 4,
-  jun: 5, june: 5, juni: 5,
-  jul: 6, july: 6, juli: 6,
-  aug: 7, august: 7,
-  sep: 8, sept: 8, september: 8,
-  oct: 9, october: 9, okt: 9, oktober: 9,
-  nov: 10, november: 10,
-  dec: 11, december: 11, dez: 11, dezember: 11,
+  jan: 0,
+  january: 0,
+  januar: 0,
+  feb: 1,
+  february: 1,
+  februar: 1,
+  mar: 2,
+  march: 2,
+  mär: 2,
+  märz: 2,
+  maerz: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  mai: 4,
+  jun: 5,
+  june: 5,
+  juni: 5,
+  jul: 6,
+  july: 6,
+  juli: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  okt: 9,
+  oktober: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+  dez: 11,
+  dezember: 11,
 };
 
 // A month token: Latin-1 letters (\w is ASCII-only and would miss "ä"), the
@@ -239,7 +263,9 @@ function zonedTimeToUtcMs(
     minute: '2-digit',
     second: '2-digit',
   });
-  const parts = Object.fromEntries(dtf.formatToParts(new Date(utcGuess)).map((p) => [p.type, p.value]));
+  const parts = Object.fromEntries(
+    dtf.formatToParts(new Date(utcGuess)).map((p) => [p.type, p.value])
+  );
   // Intl's 24h formatter can emit "24" for midnight instead of "00".
   const guessedHour = parts.hour === '24' ? 0 : Number(parts.hour);
   const guessedLocalAsUtc = Date.UTC(
@@ -286,9 +312,12 @@ export function parseResetAtMs(text: string): number | undefined {
   // directions, just less precise, exactly like the pre-existing behavior
   // before this reset-time feature existed.
   const TZ_OFFSET_HOURS: Record<string, number> = {
-    UTC: 0, GMT: 0,
-    MEZ: 1, MESZ: 2, // Germany (CET/CEST), German abbreviation — the documented case
-    CET: 1, CEST: 2, // same zones, English abbreviation
+    UTC: 0,
+    GMT: 0,
+    MEZ: 1,
+    MESZ: 2, // Germany (CET/CEST), German abbreviation — the documented case
+    CET: 1,
+    CEST: 2, // same zones, English abbreviation
   };
   const offsetHours = tz in TZ_OFFSET_HOURS ? TZ_OFFSET_HOURS[tz] : explicitOffsetHours(tz);
   if (offsetHours === undefined) return undefined;
@@ -297,14 +326,9 @@ export function parseResetAtMs(text: string): number | undefined {
     // equal to "local wall-clock time interpreted as UTC", which is exactly
     // offsetHours ahead of the real UTC instant (local = UTC + offset).
     // Subtracting the offset recovers the real instant for mapped zones.
-    const ms = Date.UTC(
-      Number(year),
-      month,
-      Number(day),
-      Number(hour),
-      Number(minute),
-      Number(second)
-    ) - offsetHours * 60 * 60 * 1000;
+    const ms =
+      Date.UTC(Number(year), month, Number(day), Number(hour), Number(minute), Number(second)) -
+      offsetHours * 60 * 60 * 1000;
     if (!Number.isFinite(ms)) return undefined;
     const now = Date.now();
     // Sanity-check the parsed timestamp: must be a future time within 7 days
@@ -343,7 +367,9 @@ function parseInformalZonedReset(text: string): number | undefined {
       month: '2-digit',
       day: '2-digit',
     });
-    const todayParts = Object.fromEntries(dtf.formatToParts(new Date(now)).map((p) => [p.type, p.value]));
+    const todayParts = Object.fromEntries(
+      dtf.formatToParts(new Date(now)).map((p) => [p.type, p.value])
+    );
     const year = Number(todayParts.year);
     const month = Number(todayParts.month);
     const day = Number(todayParts.day);
@@ -389,7 +415,15 @@ function parseTimeOnlyReset(text: string): number | undefined {
   const second = m[3] ? Number(m[3]) : 0;
   if (hour > 23 || minute > 59 || second > 59) return undefined;
   const now = new Date();
-  const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, second, 0);
+  const candidate = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    hour,
+    minute,
+    second,
+    0
+  );
   let ms = candidate.getTime();
   if (ms <= now.getTime()) ms += 24 * 60 * 60 * 1000; // already passed → next occurrence
   // Same plausibility guard as the other formats.
@@ -445,7 +479,7 @@ export function sanitizeForLog(text: string): string {
     // contain key/token ("keyboard", "tokens per minute") stay intact.
     .replace(
       /(["']?(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|token|secret|password|key)["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      '$1[redacted]',
+      '$1[redacted]'
     )
     // Terminal control sequences (Sourcery PR #74): a provider body could
     // carry ANSI escapes; a log viewed in a terminal must not be spoofable.
@@ -549,9 +583,7 @@ export function isToolCallMarkupText(text: string): boolean {
  * error (e.g. Mistral's bare 422), not a masked rate-limit.
  */
 function isRateLimitLikeReason(reason: string): boolean {
-  return reason === 'empty_response'
-    || reason === 'empty_timeout'
-    || reason === 'stall_timeout';
+  return reason === 'empty_response' || reason === 'empty_timeout' || reason === 'stall_timeout';
 }
 
 /**
@@ -611,7 +643,11 @@ export function isAbortLikeText(text: string): boolean {
  * one but not the other), which would have made the user-facing "treated as
  * rate-limit" message lie about which backoff tier was actually applied.
  */
-export function isPaidCloudRateLimitFailure(ref: string, reason: string, errorText?: string): boolean {
+export function isPaidCloudRateLimitFailure(
+  ref: string,
+  reason: string,
+  errorText?: string
+): boolean {
   const isCloudProvider = !ref.startsWith('ollama/') && !ref.startsWith('lm-studio/');
   // TERMINAL :free tag only (Sourcery PR #74): a mid-string `:free` in a paid
   // ref must not skip the paid hard-cooldown path for a 429/402.

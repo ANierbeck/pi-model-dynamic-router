@@ -211,7 +211,7 @@ const KNOWN_CATEGORIES = new Set(VALID_CATEGORIES);
 
 async function classifyViaEndpoint(
   endpoint: string,
-  item: { prompt: string; context?: CorpusContext },
+  item: { prompt: string; context?: CorpusContext }
 ): Promise<{ category: string | null; invalid: boolean; error: boolean }> {
   try {
     const res = await fetch(`${endpoint.replace(/\/$/, '')}/classify`, {
@@ -219,12 +219,19 @@ async function classifyViaEndpoint(
       headers: { 'content-type': 'application/json' },
       // Same inputs the known classifier saw: the prompt plus, when the
       // decision record stored them, the two background context texts.
-      body: JSON.stringify({ prompt: item.prompt, ...(item.context ? { context: item.context } : {}) }),
+      body: JSON.stringify({
+        prompt: item.prompt,
+        ...(item.context ? { context: item.context } : {}),
+      }),
     });
     if (!res.ok) return { category: null, invalid: false, error: true };
-    const body = (await res.json().catch(() => null));
+    const body = await res.json().catch(() => null);
     const category = typeof body?.category === 'string' ? body.category : null;
-    return { category, invalid: category !== null && !KNOWN_CATEGORIES.has(category), error: category === null };
+    return {
+      category,
+      invalid: category !== null && !KNOWN_CATEGORIES.has(category),
+      error: category === null,
+    };
   } catch {
     return { category: null, invalid: false, error: true };
   }
@@ -233,7 +240,7 @@ async function classifyViaEndpoint(
 /** Replay a corpus against the candidate endpoint and compare to the known decisions. */
 export async function replayAgainstEndpoint(
   corpus: CorpusItem[],
-  opts: { endpoint: string; concurrency?: number },
+  opts: { endpoint: string; concurrency?: number }
 ): Promise<ReplayResult> {
   const result: ReplayResult = {
     total: corpus.length,
@@ -300,13 +307,17 @@ async function main(): Promise<void> {
   });
   const endpoint = flag('endpoint');
   if (!endpoint) {
-    console.log(`corpus: ${corpus.length} unique prompts (from ${recordsPaths.length} record file(s), ${sessionPrompts.length} session prompt(s))`);
+    console.log(
+      `corpus: ${corpus.length} unique prompts (from ${recordsPaths.length} record file(s), ${sessionPrompts.length} session prompt(s))`
+    );
     console.log('pass --endpoint http://… to replay against a candidate classifier');
     return;
   }
   const result = await replayAgainstEndpoint(corpus, { endpoint });
   const rate = result.classified ? Math.round((100 * result.agree) / result.classified) : 0;
-  console.log(`replayed ${result.total}: ${result.classified} classified, ${result.agree} agree (${rate}%), ${result.disagreements.length} disagree, ${result.errors} endpoint error(s)`);
+  console.log(
+    `replayed ${result.total}: ${result.classified} classified, ${result.agree} agree (${rate}%), ${result.disagreements.length} disagree, ${result.errors} endpoint error(s)`
+  );
   const report = flag('report');
   if (report) {
     writeFileSync(report, JSON.stringify({ corpusSize: corpus.length, result }, null, 2));

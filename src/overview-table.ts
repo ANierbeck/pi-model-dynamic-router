@@ -62,8 +62,10 @@ export function displayMetricsFor(
   userCfg: MetricsUserConfig | undefined
 ): { latencyMs: number | null; tps: number | null } {
   return {
-    latencyMs: (m.samples ?? 0) > 0 || userCfg?.avg_latency_ms !== undefined ? m.avg_latency_ms : null,
-    tps: (m.tps_samples ?? 0) > 0 || userCfg?.throughput_tps !== undefined ? m.throughput_tps : null,
+    latencyMs:
+      (m.samples ?? 0) > 0 || userCfg?.avg_latency_ms !== undefined ? m.avg_latency_ms : null,
+    tps:
+      (m.tps_samples ?? 0) > 0 || userCfg?.throughput_tps !== undefined ? m.throughput_tps : null,
   };
 }
 
@@ -95,7 +97,9 @@ function status(row: OverviewRow): string {
  * ~110 columns at a 30-column model name; a long status wraps at the end only.
  */
 export function formatOverviewTable(rows: OverviewRow[], nameWidth: number): string[] {
-  const names = rows.map((r) => (r.ref.length > nameWidth ? '…' + r.ref.slice(-(nameWidth - 1)) : r.ref));
+  const names = rows.map((r) =>
+    r.ref.length > nameWidth ? '…' + r.ref.slice(-(nameWidth - 1)) : r.ref
+  );
   const showBudget = rows.some((r) => r.budget !== '');
   const width = Math.max(5, Math.min(nameWidth, Math.max(...names.map((n) => n.length), 5)));
   const cols: Array<{ head: string; w: number; left?: boolean }> = [
@@ -110,7 +114,9 @@ export function formatOverviewTable(rows: OverviewRow[], nameWidth: number): str
     ...(showBudget ? [{ head: 'Budget', w: 7 }] : []),
   ];
   const line = (cells: string[]) =>
-    '│ ' + cols.map((c, i) => (c.left ? cells[i].padEnd(c.w) : cells[i].padStart(c.w))).join(' ') + ' ';
+    '│ ' +
+    cols.map((c, i) => (c.left ? cells[i].padEnd(c.w) : cells[i].padStart(c.w))).join(' ') +
+    ' ';
 
   const header = line(cols.map((c) => c.head)) + 'Status';
   const separator = '│ ' + cols.map((c) => '─'.repeat(c.w)).join(' ') + ' ' + '─'.repeat(12);

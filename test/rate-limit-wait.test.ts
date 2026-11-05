@@ -23,13 +23,19 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
-import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
-import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
+
+import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { RateLimitManager } from '../src/rate-limit.ts';
 import { routerLog } from '../src/logger.ts';
-import { drainStream, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+import {
+  drainStream,
+  parkStateFiles,
+  routerStatePaths,
+  makePiCtx,
+} from './helpers/extension-harness.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
+import { testModelCost } from './helpers/stream-fixtures.ts';
 
 // The 429-body assertions below need the log call, not the log file.
 vi.mock('../src/logger.ts', async (importOriginal) => {
@@ -45,14 +51,18 @@ vi.mock('../src/logger.ts', async (importOriginal) => {
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-
 /** Formats an absolute reset instant the way claude-bridge does (de-DE, Berlin
  * zone) — the format parseResetAtMs understands, including TZ correction. */
 function formatResetAt(resetAtMs: number): string {
   return new Date(resetAtMs).toLocaleString('de-DE', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    timeZone: 'Europe/Berlin', timeZoneName: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Europe/Berlin',
+    timeZoneName: 'short',
   });
 }
 
@@ -60,10 +70,7 @@ async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
   fn: (defaultExport: any, tmpDir: string) => Promise<void>
 ) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-rlwait-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.pi', 'router-config.json'), JSON.stringify(configOverride));
-  const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
+  const { tmpDir, cwdSpy } = bootProjectDir(configOverride, 'router-rlwait-');
 
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
 
@@ -74,10 +81,7 @@ async function withIsolatedRouter(
     const mod = await import('../index.ts');
     await fn(mod.default as any, tmpDir);
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -95,7 +99,7 @@ function makeRegistry(modelsByRef: Record<string, any>) {
     calls.push(ref);
     const script = scripts[ref] ?? [];
     const idx = calls.filter((c) => c === ref).length - 1;
-    const events = idx < script.length ? script[idx] : script[script.length - 1] ?? [];
+    const events = idx < script.length ? script[idx] : (script[script.length - 1] ?? []);
     return (async function* () {
       for (const ev of events) yield ev;
     })();
@@ -106,8 +110,7 @@ function makeRegistry(modelsByRef: Record<string, any>) {
     scripts,
     registry: {
       getAvailable: () => modelList.map((e) => e.model),
-      find: (provider: string, modelId: string) =>
-        modelsByRef[`${provider}/${modelId}`] ?? null,
+      find: (provider: string, modelId: string) => modelsByRef[`${provider}/${modelId}`] ?? null,
       getApiKeyForProvider: async () => null,
       runtime: { streamSimple },
     },
@@ -141,8 +144,17 @@ function ordinaryRateLimitEvents(resetAtMs: number, cause: string): AssistantMes
 
 function healthyEvents(text: string, stopReason: string = 'stop'): AssistantMessageEvent[] {
   return [
-    { type: 'text_delta', contentIndex: 0, delta: text, partial: { role: 'assistant', content: [{ type: 'text', text }], stopReason } } as any,
-    { type: 'done', reason: stopReason, message: { role: 'assistant', content: [{ type: 'text', text }], stopReason } } as any,
+    {
+      type: 'text_delta',
+      contentIndex: 0,
+      delta: text,
+      partial: { role: 'assistant', content: [{ type: 'text', text }], stopReason },
+    } as any,
+    {
+      type: 'done',
+      reason: stopReason,
+      message: { role: 'assistant', content: [{ type: 'text', text }], stopReason },
+    } as any,
   ];
 }
 
@@ -164,32 +176,37 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         rate_limit_wait_max_ms: 4_000,
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-        };
+        const { pi, onHandlers } = makePiCtx();
         defaultExport(pi);
 
         const limited = {
-          provider: 'lim-provider', id: 'limited-model', api: 'lim-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const healthy = {
-          provider: 'ok-provider', id: 'healthy-model', api: 'ok-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const mock = makeRegistry({
           'lim-provider/limited-model': limited,
           'ok-provider/healthy-model': healthy,
         });
         mock.scripts['lim-provider/limited-model'] = [
-          rateLimitErrorEvents(Date.now() + 1500),  // first attempt: near reset (≥1.5s so second-truncation can't push it into the past)
-          healthyEvents('served after wait'),       // retry: healthy
+          rateLimitErrorEvents(Date.now() + 1500), // first attempt: near reset (≥1.5s so second-truncation can't push it into the past)
+          healthyEvents('served after wait'), // retry: healthy
         ];
 
-        const ctx: any = { modelRegistry: mock.registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
@@ -225,21 +242,22 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         rate_limit_wait_max_ms: 4_000,
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-        };
+        const { pi, onHandlers } = makePiCtx();
         defaultExport(pi);
 
         const limited = {
-          provider: 'lim-provider', id: 'limited-model', api: 'lim-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const healthy = {
-          provider: 'ok-provider', id: 'healthy-model', api: 'ok-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const mock = makeRegistry({
           'lim-provider/limited-model': limited,
@@ -248,9 +266,15 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         mock.scripts['lim-provider/limited-model'] = [
           rateLimitErrorEvents(Date.now() + 60 * 60 * 1000), // 1h out — beyond threshold
         ];
-        mock.scripts['ok-provider/healthy-model'] = [healthyEvents('served by the healthy fallback')];
+        mock.scripts['ok-provider/healthy-model'] = [
+          healthyEvents('served by the healthy fallback'),
+        ];
 
-        const ctx: any = { modelRegistry: mock.registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
@@ -290,21 +314,22 @@ describe('driveStream: bounded wait-for-short-reset', () => {
       },
       async (defaultExport) => {
         vi.mocked(routerLog).mockClear();
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-        };
+        const { pi, onHandlers } = makePiCtx();
         defaultExport(pi);
 
         const limited = {
-          provider: 'lim-provider', id: 'limited-model', api: 'lim-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const healthy = {
-          provider: 'ok-provider', id: 'healthy-model', api: 'ok-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const mock = makeRegistry({
           'lim-provider/limited-model': limited,
@@ -313,9 +338,15 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         mock.scripts['lim-provider/limited-model'] = [
           ordinaryRateLimitEvents(Date.now() + 60 * 60 * 1000, 'shared upstream pool'),
         ];
-        mock.scripts['ok-provider/healthy-model'] = [healthyEvents('served by the healthy fallback')];
+        mock.scripts['ok-provider/healthy-model'] = [
+          healthyEvents('served by the healthy fallback'),
+        ];
 
-        const ctx: any = { modelRegistry: mock.registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
@@ -324,8 +355,9 @@ describe('driveStream: bounded wait-for-short-reset', () => {
 
         await drainStream(defaultExport.groupStream(groupModel, context, {}));
 
-        const bodyLines = vi.mocked(routerLog).mock.calls
-          .map((c) => String(c[0]))
+        const bodyLines = vi
+          .mocked(routerLog)
+          .mock.calls.map((c) => String(c[0]))
           .filter((l) => l.includes('429 body:'));
         expect(bodyLines.length).toBeGreaterThanOrEqual(1);
         // The provider's own words must survive — an EMPTY body was the
@@ -348,21 +380,22 @@ describe('driveStream: bounded wait-for-short-reset', () => {
         soft_backoff_ms: [1000, 2000],
       },
       async (defaultExport) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
-        const pi: any = {
-          registerTool: vi.fn(), registerCommand: vi.fn(), registerProvider: vi.fn(),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => { onHandlers[event] = handler; }),
-        };
+        const { pi, onHandlers } = makePiCtx();
         defaultExport(pi);
 
         const limited = {
-          provider: 'lim-provider', id: 'limited-model', api: 'lim-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const second = {
-          provider: 'sec-provider', id: 'second-model', api: 'sec-api',
-          contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          provider: 'sec-provider',
+          id: 'second-model',
+          api: 'sec-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
         };
         const mock = makeRegistry({
           'lim-provider/limited-model': limited,
@@ -373,11 +406,15 @@ describe('driveStream: bounded wait-for-short-reset', () => {
           rateLimitErrorEvents(Date.now() + 1500), // retry fails again (reset now past) → cascade continues
         ];
         mock.scripts['sec-provider/second-model'] = [
-          rateLimitErrorEvents(Date.now() + 1900),      // second candidate fails too (wait already used)
-          healthyEvents('served after collapse wait'),  // collapse retry succeeds
+          rateLimitErrorEvents(Date.now() + 1900), // second candidate fails too (wait already used)
+          healthyEvents('served after collapse wait'), // collapse retry succeeds
         ];
 
-        const ctx: any = { modelRegistry: mock.registry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
         await onHandlers['session_start']?.({}, ctx);
         await flushBackgroundScan();
 
@@ -417,7 +454,12 @@ describe('RateLimitManager.listLimits / clearAllLimits (backing /router cooldown
     const mgr = new RateLimitManager([60_000], [30_000], 5, {} as any);
     const now = Date.now();
     mgr['limits'].set('prov/a', { cooldown_until: now + 5_000, backoff_ms: 60_000, hits: 1 });
-    mgr['limits'].set('prov/b', { cooldown_until: now + 60_000, backoff_ms: 60_000, hits: 3, resetAtMs: now + 60_000 });
+    mgr['limits'].set('prov/b', {
+      cooldown_until: now + 60_000,
+      backoff_ms: 60_000,
+      hits: 3,
+      resetAtMs: now + 60_000,
+    });
     mgr['limits'].set('prov/expired', { cooldown_until: now - 1_000, backoff_ms: 60_000, hits: 2 });
 
     const listed = mgr.listLimits();

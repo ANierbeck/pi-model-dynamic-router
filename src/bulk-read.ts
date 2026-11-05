@@ -174,7 +174,10 @@ function isExpensiveViaLiveRefs(
  * without booting the whole extension; the hook calls it verbatim.
  */
 export function resolveReadBlockStreamRef(
-  router: { getTurnDriverRef(turnStartMs?: number): string; getCurModel(turnStartMs?: number): string },
+  router: {
+    getTurnDriverRef(turnStartMs?: number): string;
+    getCurModel(turnStartMs?: number): string;
+  },
   turnStartMs: number,
   sessionRef: string
 ): string {
@@ -233,7 +236,11 @@ export function checkReadBlock(
     // Membership is OR-combined from two sources: the LIVE resolver
     // (Router.getTopModels — authoritative, covers the static-cfg live
     // bug) and the cfg's materialized lists (scan snapshots, tests).
-    if (curModel && (isExpensiveModelRef(curModel, cfg, settings) || isExpensiveViaLiveRefs(curModel, settings, liveGroupRefs))) {
+    if (
+      curModel &&
+      (isExpensiveModelRef(curModel, cfg, settings) ||
+        isExpensiveViaLiveRefs(curModel, settings, liveGroupRefs))
+    ) {
       return {
         block: true,
         expensive: true,
@@ -286,7 +293,10 @@ function loadFiles(paths: string[], maxRawChars: number): BulkReadFile[] {
     try {
       text = fs.readFileSync(p, 'utf8');
     } catch (err) {
-      throw new Error(`bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : textOf(err)}`, { cause: err });
+      throw new Error(
+        `bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : textOf(err)}`,
+        { cause: err }
+      );
     }
     if (budget <= 0) {
       truncated = true;
@@ -354,7 +364,9 @@ export async function executeBulkRead(
   const answer = stripRouterNarration(text);
   if (answer.trim().length === 0) {
     log?.(`[bulk_read] sub-call produced no usable answer — reporting error`);
-    throw new Error('bulk_read: the reader model returned no usable answer; use a targeted read instead');
+    throw new Error(
+      'bulk_read: the reader model returned no usable answer; use a targeted read instead'
+    );
   }
 
   log?.(

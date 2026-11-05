@@ -22,16 +22,12 @@ import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   writeNoOpScanCache,
-  removeNoOpScanCache,
   flushBackgroundScan,
+  removeNoOpScanCacheDefault,
 } from './helpers/noop-scan-cache.ts';
-import { doneEvent } from './helpers/stream-fixtures.ts';
+import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
 
-const scanCachePath = path.join(
-  process.env.PI_ROUTER_STATE_DIR!,
-  '.cache',
-  'scan-cache.json'
-);
+const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
 async function drainStream(stream: AsyncIterable<any>): Promise<any[]> {
   const events: any[] = [];
@@ -72,13 +68,7 @@ async function bootToolResultHarness() {
   };
   defaultExport(pi);
 
-  const paidModel = {
-    provider: 'paid-cloud-provider',
-    id: 'paid-model',
-    api: 'openai-completions',
-    contextWindow: 1_000_000,
-    cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
-  };
+  const paidModel = paidCloudModel();
   const streamSimple = vi.fn(() =>
     (async function* () {
       yield { type: 'text_delta', delta: 'working on it' };
@@ -152,15 +142,14 @@ async function assertStreamStaysClean(harness: Awaited<ReturnType<typeof bootToo
 /** True if the paid model got a rate_limit_exceeded record of any shape. */
 function findRateLimitEntry(persisted: any) {
   return (persisted.session_errors ?? []).find(
-    (e: any) =>
-      e.ref === 'paid-cloud-provider/paid-model' && e.reason === 'rate_limit_exceeded'
+    (e: any) => e.ref === 'paid-cloud-provider/paid-model' && e.reason === 'rate_limit_exceeded'
   );
 }
 
 async function cleanup(harness: Awaited<ReturnType<typeof bootToolResultHarness>>) {
   harness.cwdSpy.mockRestore();
   fs.rmSync(harness.tmpDir, { recursive: true, force: true });
-  removeNoOpScanCache(scanCachePath);
+  removeNoOpScanCacheDefault();
 }
 
 describe('tool_result output NEVER rate-limits the current model (day-1 heuristic removed)', () => {

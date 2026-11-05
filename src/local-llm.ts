@@ -229,10 +229,7 @@ async function callOpenAiChat(args: OpenAiChatArgs): Promise<string> {
  * Try each configured free cloud model in order until one succeeds.
  * Returns the model's text response, or null if all fail.
  */
-async function callCloudFallback(
-  prompt: string,
-  deps: LocalLlmDeps
-): Promise<string | null> {
+async function callCloudFallback(prompt: string, deps: LocalLlmDeps): Promise<string | null> {
   const { cfg, providers, resolveApiKey, timeoutMs = 30_000 } = deps;
   const freeModels = await collectFreeCloudModels(cfg, providers, resolveApiKey);
   if (freeModels.length === 0) return null;
@@ -283,9 +280,7 @@ async function collectFreeCloudModels(
 
     for (const freeRef of freeModels) {
       // free_models entries may be "provider/modelId" or bare "modelId".
-      const modelId = freeRef.startsWith(`${provId}/`)
-        ? freeRef.slice(provId.length + 1)
-        : freeRef;
+      const modelId = freeRef.startsWith(`${provId}/`) ? freeRef.slice(provId.length + 1) : freeRef;
       result.push({
         baseUrl: def.baseUrl,
         modelId,

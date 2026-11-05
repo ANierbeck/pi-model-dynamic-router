@@ -7,7 +7,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../src/ollama-utils.ts', async () =>
-  (await import('./helpers/ollama-mock.ts')).ollamaMockModule({ category: 'code_complex', reason: 'cached test' })
+  (await import('./helpers/ollama-mock.ts')).ollamaMockModule({
+    category: 'code_complex',
+    reason: 'cached test',
+  })
 );
 
 // Import AFTER the mock is registered.

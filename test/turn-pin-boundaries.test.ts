@@ -15,7 +15,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Router } from '../src/routing.ts';
 import type { Config } from '../src/types.ts';
 
-const mkRouter = () => new Router({ model_groups: {}, model_metrics: {}, providers: {} } as Config, {} as never, new Map() as never);
+const mkRouter = () =>
+  new Router(
+    { model_groups: {}, model_metrics: {}, providers: {} } as Config,
+    {} as never,
+    new Map() as never
+  );
 
 describe('Router turn pin — clock-controlled boundaries', () => {
   beforeEach(() => {

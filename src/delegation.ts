@@ -107,14 +107,19 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
   const expensiveProviders = strList(d.expensive_providers, DEFAULTS.expensive_providers);
   return {
     enabled: d.enabled === true,
-    min_chars: typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
+    min_chars:
+      typeof d.min_chars === 'number' && d.min_chars > 0 ? d.min_chars : DEFAULTS.min_chars,
     group: typeof d.group === 'string' && d.group ? d.group : DEFAULTS.group,
     max_raw_chars:
-      typeof d.max_raw_chars === 'number' && d.max_raw_chars > 0 ? d.max_raw_chars : DEFAULTS.max_raw_chars,
+      typeof d.max_raw_chars === 'number' && d.max_raw_chars > 0
+        ? d.max_raw_chars
+        : DEFAULTS.max_raw_chars,
     tools,
     // 0 explicitly disables pre-call blocking; negative/non-number falls back.
     block_lines:
-      typeof d.block_lines === 'number' && d.block_lines >= 0 ? d.block_lines : DEFAULTS.block_lines,
+      typeof d.block_lines === 'number' && d.block_lines >= 0
+        ? d.block_lines
+        : DEFAULTS.block_lines,
     expensive_groups: expensiveGroups,
     expensive_providers: expensiveProviders,
   };
@@ -271,7 +276,9 @@ export async function handleReadDelegation(
     }
 
     const context = {
-      messages: [{ role: 'user', content: buildSummaryPrompt(raw.slice(0, settings.max_raw_chars)) }],
+      messages: [
+        { role: 'user', content: buildSummaryPrompt(raw.slice(0, settings.max_raw_chars)) },
+      ],
     };
     const stream = ctx.modelRegistry.runtime.streamSimple(model, context, { signal: ctx?.signal });
     const { text, usage } = await drainSubCallStream(stream);
@@ -281,7 +288,9 @@ export async function handleReadDelegation(
     // ORIGINAL through rather than replacing content with noise.
     const summary = stripRouterNarration(text);
     if (summary.length < MIN_SUMMARY_CHARS) {
-      log?.(`[delegation] sub-call produced no usable summary (${summary.length} chars) — passing through`);
+      log?.(
+        `[delegation] sub-call produced no usable summary (${summary.length} chars) — passing through`
+      );
       return undefined;
     }
 
@@ -290,13 +299,17 @@ export async function handleReadDelegation(
       `re-read with offset/limit or re-run with narrower output for exact content]\n\n` +
       summary;
 
-    log?.(`[delegation] replaced ${raw.length}-char ${tool} result with ${summary.length}-char summary via ${settings.group}`);
+    log?.(
+      `[delegation] replaced ${raw.length}-char ${tool} result with ${summary.length}-char summary via ${settings.group}`
+    );
     const outcome: DelegationOutcome = { content: [{ type: 'text', text: replacement }] };
     if (usage) outcome.usage = usage;
     return outcome;
   } catch (err) {
     // Fail-open: the main model must never lose the original result.
-    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : textOf(err)}`);
+    log?.(
+      `[delegation] failed, passing through: ${err instanceof Error ? err.message : textOf(err)}`
+    );
     return undefined;
   }
 }

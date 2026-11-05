@@ -19,10 +19,7 @@
  * stale cache entries must be pruned.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  redundantAliasProviders,
-  pruneRedundantCacheEntries,
-} from '../src/provider-shadow.ts';
+import { redundantAliasProviders, pruneRedundantCacheEntries } from '../src/provider-shadow.ts';
 
 const PROVIDER_MAP = {
   mistral: { baseUrl: 'https://api.mistral.ai/v1', api: 'openai-completions' },
@@ -82,9 +79,7 @@ describe('pruneRedundantCacheEntries', () => {
   });
 
   it('keeps the array untouched when the redundant set is empty', () => {
-    const available = [
-      { id: 'zai-glm-5-3', provider: 'mistral-zai', cost_per_m: 0 },
-    ];
+    const available = [{ id: 'zai-glm-5-3', provider: 'mistral-zai', cost_per_m: 0 }];
     const kept = pruneRedundantCacheEntries(available, new Set());
     expect(kept).toEqual(available);
   });

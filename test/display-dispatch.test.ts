@@ -89,12 +89,13 @@ beforeAll(() => {
       'dup-3-5': 'dup-3-5',
       'dup-latest': 'dup-3-5',
     },
-    [],
+    []
   );
   metricsModule.setModelRegistry({ find: () => undefined } as any);
 });
 
-const mk = (c: Cache = cache, limits: Map<string, RateLimit> = new Map(), cfg: Config = config) => new Router(cfg, c, limits);
+const mk = (c: Cache = cache, limits: Map<string, RateLimit> = new Map(), cfg: Config = config) =>
+  new Router(cfg, c, limits);
 
 describe('tiered groups — billing tier, then cost (never the input order)', () => {
   it('live resolution orders by cost inside the payg tier', () => {
@@ -237,18 +238,24 @@ describe('detectGroup threshold ordering', () => {
 describe('detectGroup — an unscored ref takes the first UNRESTRICTED tier of the fallback list', () => {
   const unscored = 'provx/not-in-any-score-table';
   const detect = (groups: Record<string, any>) =>
-    new Router({ ...config, model_groups: groups } as Config, cache, new Map()).detectGroup(unscored);
+    new Router({ ...config, model_groups: groups } as Config, cache, new Map()).detectGroup(
+      unscored
+    );
 
   it('the list is simple, standard, code_complex, planning, design — each tier on its own', () => {
     expect(detect({ planning: { method: 'best' } })).toBe('planning');
     expect(detect({ code_complex: { method: 'best' } })).toBe('code_complex');
     expect(detect({ simple: { method: 'best' } })).toBe('simple');
     expect(detect({ simple: { method: 'best' }, planning: { method: 'best' } })).toBe('simple');
-    expect(detect({ planning: { method: 'best' }, code_complex: { method: 'best' } })).toBe('code_complex');
+    expect(detect({ planning: { method: 'best' }, code_complex: { method: 'best' } })).toBe(
+      'code_complex'
+    );
   });
 
   it('the fallback list wins over a min-0 group that merely sorts first (no null -> 0 coercion)', () => {
-    expect(detect({ zzz: { method: 'best', min_gdpval: 0 }, code_complex: { method: 'best' } })).toBe('code_complex');
+    expect(
+      detect({ zzz: { method: 'best', min_gdpval: 0 }, code_complex: { method: 'best' } })
+    ).toBe('code_complex');
   });
 
   it('an explicit min_gdpval of 0 still counts as unrestricted; a positive floor does not', () => {

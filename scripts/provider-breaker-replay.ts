@@ -53,7 +53,8 @@ interface TripEvent {
 
 const TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})Z/;
 const FAIL_RE = /\[router\] ([a-z0-9][a-z0-9-]*\/[^\s]+) — (.*)$/;
-const FINISH_RE = /\[stream\] ([a-z0-9][a-z0-9-]*\/[^\s]+) finished \(stopReason: ([a-z]+), (\d+) chars\)/;
+const FINISH_RE =
+  /\[stream\] ([a-z0-9][a-z0-9-]*\/[^\s]+) finished \(stopReason: ([a-z]+), (\d+) chars\)/;
 
 /** Maps a failure narration to its D1 evidence kind, or null when it is not evidence. */
 function classifyFailureLine(text: string): { kind: EvidenceKind; detail?: string } | null {
@@ -81,7 +82,9 @@ function classifyFailureLine(text: string): { kind: EvidenceKind; detail?: strin
   return null;
 }
 
-function parseLine(line: string): { kind: 'failure'; ev: FailureEvent } | { kind: 'success'; ref: string; ts: number } | null {
+function parseLine(
+  line: string
+): { kind: 'failure'; ev: FailureEvent } | { kind: 'success'; ref: string; ts: number } | null {
   const tsMatch = line.match(TS_RE);
   if (!tsMatch) return null;
   const ts = Date.parse(`${tsMatch[1]}Z`);
@@ -144,7 +147,10 @@ async function main(): Promise<void> {
 
   const cache: Cache = {};
   const trips: TripEvent[] = [];
-  const failuresByProvider = new Map<string, { count: number; counted: number; kinds: Record<string, number> }>();
+  const failuresByProvider = new Map<
+    string,
+    { count: number; counted: number; kinds: Record<string, number> }
+  >();
   let failureLines = 0;
   let countedEvidence = 0;
   let successes = 0;
@@ -211,7 +217,11 @@ async function main(): Promise<void> {
           failureLines,
           countedEvidence,
           successes,
-          trips: trips.map((t) => ({ provider: t.provider, at: new Date(t.at).toISOString(), evidence: t.evidence })),
+          trips: trips.map((t) => ({
+            provider: t.provider,
+            at: new Date(t.at).toISOString(),
+            evidence: t.evidence,
+          })),
           tripsByProviderDay: [...tripsByProviderDay.entries()],
           avoidedHops: [...avoidedHops.entries()],
           falseTrips: falseTrips.length,
@@ -224,10 +234,14 @@ async function main(): Promise<void> {
   }
 
   console.log(`provider-breaker replay — ${logPath}`);
-  console.log(`  failure lines parsed: ${failureLines} (D1 evidence: ${countedEvidence}), successes: ${successes}`);
+  console.log(
+    `  failure lines parsed: ${failureLines} (D1 evidence: ${countedEvidence}), successes: ${successes}`
+  );
   console.log('');
   console.log('Failure lines per provider (all parsed / D1-counted):');
-  for (const [provider, b] of [...failuresByProvider.entries()].sort((a, b) => b[1].count - a[1].count)) {
+  for (const [provider, b] of [...failuresByProvider.entries()].sort(
+    (a, b) => b[1].count - a[1].count
+  )) {
     console.log(
       `  ${provider}: ${b.count} parsed, ${b.counted} counted — kinds: ${Object.entries(b.kinds)
         .map(([k, n]) => `${k}=${n}`)
@@ -238,7 +252,9 @@ async function main(): Promise<void> {
   console.log(`Trips (${trips.length}), window ${WEDGE_WINDOW_MS / 60_000} min:`);
   for (const t of trips) {
     const evs = t.evidence.map((e) => `${e.ref.split('/')[1]}(${e.kind})`).join(', ');
-    console.log(`  ${day(t.at)} ${new Date(t.at).toISOString().slice(11, 19)}  ${t.provider}  [${evs}]`);
+    console.log(
+      `  ${day(t.at)} ${new Date(t.at).toISOString().slice(11, 19)}  ${t.provider}  [${evs}]`
+    );
   }
   console.log('');
   console.log('Avoided hops (failures inside own open windows, upper bound):');

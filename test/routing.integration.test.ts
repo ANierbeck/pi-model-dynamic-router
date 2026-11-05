@@ -53,12 +53,12 @@ const testConfig: Config = {
     'openai/gpt-4': { gdpval: 0.98, throughput_tps: 15, avg_latency_ms: 150 },
     'google/gemini-1.5-pro': { gdpval: 0.93, throughput_tps: 12, avg_latency_ms: 180 },
     'anthropic/claude-3-haiku': { gdpval: 0.85, throughput_tps: 8, avg_latency_ms: 120 },
-    'openai/gpt-3.5-turbo': { gdpval: 0.80, throughput_tps: 10, avg_latency_ms: 100 },
+    'openai/gpt-3.5-turbo': { gdpval: 0.8, throughput_tps: 10, avg_latency_ms: 100 },
     'mistral/mistral-large': { gdpval: 0.88, throughput_tps: 9, avg_latency_ms: 250 },
     'google/gemini-1.5-flash': { gdpval: 0.82, throughput_tps: 7, avg_latency_ms: 90 },
     'mistral/mistral-small': { gdpval: 0.75, throughput_tps: 6, avg_latency_ms: 80 },
     'openai/gpt-4o-mini': { gdpval: 0.78, throughput_tps: 5, avg_latency_ms: 70 },
-    'google/gemini-1.5-nano': { gdpval: 0.70, throughput_tps: 4, avg_latency_ms: 60 },
+    'google/gemini-1.5-nano': { gdpval: 0.7, throughput_tps: 4, avg_latency_ms: 60 },
     'local/llama-3.2-1b': { gdpval: 0.65, throughput_tps: 3, avg_latency_ms: 50 },
   },
   gdpval_builtin: {},
@@ -84,11 +84,7 @@ const rateLimitManager = new RateLimitManager(
 // DiscoveryManager erstellen
 
 // Router erstellen
-const router = new Router(
-  testConfig,
-  cache,
-  rateLimitManager.getLimits()
-);
+const router = new Router(testConfig, cache, rateLimitManager.getLimits());
 
 describe('Router Integration Tests', () => {
   beforeAll(() => {
@@ -146,9 +142,7 @@ describe('Router Integration Tests', () => {
             { provider: 'openai', id: 'gpt-4' },
           ],
         },
-        scopedModels: [
-          { model: { provider: 'anthropic', id: 'claude-3-sonnet' } },
-        ],
+        scopedModels: [{ model: { provider: 'anthropic', id: 'claude-3-sonnet' } }],
       } as any);
 
       const refs = router.allDiscoveredRefs();
@@ -258,11 +252,7 @@ describe('Router Integration Tests', () => {
 
   describe('filterAvailable()', () => {
     it('should filter models without limits', () => {
-      const refs = [
-        'anthropic/claude-3-sonnet',
-        'openai/gpt-4',
-        'google/gemini-1.5-pro',
-      ];
+      const refs = ['anthropic/claude-3-sonnet', 'openai/gpt-4', 'google/gemini-1.5-pro'];
 
       const filtered = router.filterAvailable(refs, {});
 
@@ -324,19 +314,28 @@ describe('Router Integration Tests', () => {
     // making `tiered` groups in /router effectively unsorted whenever every
     // candidate shared a billing tier and cost (e.g. all $0.0 models).
     it('breaks a same-tier cost tie by higher gdpval, not input order', () => {
-      const sorted = router.sortByBillingPreference(['anthropic/claude-3-haiku', 'anthropic/claude-3-sonnet']);
+      const sorted = router.sortByBillingPreference([
+        'anthropic/claude-3-haiku',
+        'anthropic/claude-3-sonnet',
+      ]);
       expect(sorted).toEqual(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
     });
 
     it('is insensitive to input order once tied on tier and cost', () => {
-      const sorted = router.sortByBillingPreference(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
+      const sorted = router.sortByBillingPreference([
+        'anthropic/claude-3-sonnet',
+        'anthropic/claude-3-haiku',
+      ]);
       expect(sorted).toEqual(['anthropic/claude-3-sonnet', 'anthropic/claude-3-haiku']);
     });
 
     it('still prefers billing tier over gdpval when tiers differ', () => {
       // mistral/mistral-large is pay_per_token (tier 3); anthropic/claude-3-haiku
       // is subscription (tier 1) despite the lower gdpval (0.85 vs 0.88).
-      const sorted = router.sortByBillingPreference(['mistral/mistral-large', 'anthropic/claude-3-haiku']);
+      const sorted = router.sortByBillingPreference([
+        'mistral/mistral-large',
+        'anthropic/claude-3-haiku',
+      ]);
       expect(sorted).toEqual(['anthropic/claude-3-haiku', 'mistral/mistral-large']);
     });
   });

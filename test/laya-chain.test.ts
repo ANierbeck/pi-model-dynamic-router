@@ -32,7 +32,11 @@ const CKPT = 'test/ckpt';
 const logFile = () => join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 const records = (): any[] =>
   existsSync(logFile())
-    ? readFileSync(logFile(), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    ? readFileSync(logFile(), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
     : [];
 
 let server: http.Server;
@@ -67,7 +71,9 @@ function cfg(layaOverrides: Record<string, unknown> | null = {}): Config {
 }
 
 const ollamaSays = (category: string) =>
-  vi.mocked(callOllama).mockResolvedValue(JSON.stringify({ category, reason: 'from ollama', confidence: 0.9 }));
+  vi
+    .mocked(callOllama)
+    .mockResolvedValue(JSON.stringify({ category, reason: 'from ollama', confidence: 0.9 }));
 
 const run = (prompt: string, config: Config, extra: Record<string, unknown> = {}) =>
   classifyPrompt(prompt, { cfg: config, model: 'gemma-primary', timeoutMs: 1000, ...extra } as any);
@@ -78,7 +84,12 @@ beforeEach(async () => {
   resetLayaAvailability();
   stubStatus = 200;
   bodies = [];
-  stubAnswer = { category: 'design', confidence: 0.95, probabilities: { design: 0.95, planning: 0.03 }, ms: 4 };
+  stubAnswer = {
+    category: 'design',
+    confidence: 0.95,
+    probabilities: { design: 0.95, planning: 0.03 },
+    ms: 4,
+  };
   vi.mocked(isOllamaAvailable).mockResolvedValue(true);
   ollamaSays('simple');
   server = http.createServer((req, res) => {
@@ -118,12 +129,20 @@ describe('active mode', () => {
     await run('Draft the module boundaries for the billing service beta', cfg(), {
       context: { previousUserMessage: 'we use postgres', lastAssistantSnippet: 'noted' },
     });
-    expect(bodies[0].context).toEqual({ previousUserMessage: 'we use postgres', lastAssistantSnippet: 'noted' });
+    expect(bodies[0].context).toEqual({
+      previousUserMessage: 'we use postgres',
+      lastAssistantSnippet: 'noted',
+    });
     expect(bodies[0].prompt).toBe('Draft the module boundaries for the billing service beta');
   });
 
   it('low confidence falls through to the next stage — not to `fallback`', async () => {
-    stubAnswer = { category: 'design', confidence: 0.41, probabilities: { design: 0.41, planning: 0.3 }, ms: 4 };
+    stubAnswer = {
+      category: 'design',
+      confidence: 0.41,
+      probabilities: { design: 0.41, planning: 0.3 },
+      ms: 4,
+    };
     const r = await run('Draft the module boundaries for the billing service gamma', cfg());
     expect(bodies).toHaveLength(1); // Laya was asked …
     expect(callOllama).toHaveBeenCalled(); // … and the chain went on
@@ -131,7 +150,12 @@ describe('active mode', () => {
   });
 
   it('a confident `fallback` answer falls through as well', async () => {
-    stubAnswer = { category: 'fallback', confidence: 0.99, probabilities: { fallback: 0.99 }, ms: 4 };
+    stubAnswer = {
+      category: 'fallback',
+      confidence: 0.99,
+      probabilities: { fallback: 0.99 },
+      ms: 4,
+    };
     const r = await run('Draft the module boundaries for the billing service delta', cfg());
     expect(callOllama).toHaveBeenCalled();
     expect(r).toMatchObject({ category: 'simple' });
@@ -168,21 +192,41 @@ describe('what Laya never sees', () => {
 });
 
 describe('shadow mode — observe, never decide', () => {
-  it.each([['shadow'], [undefined]])('mode %s: the chain decides, Laya is only logged', async (mode) => {
-    const r = await run(`Draft the module boundaries for the billing service theta ${mode}`, cfg({ mode }));
-    expect(bodies).toHaveLength(1); // Laya ran …
-    expect(callOllama).toHaveBeenCalled(); // … the real chain decided
-    expect(r).toMatchObject({ category: 'simple' });
-    const [rec] = records();
-    expect(rec.stage).toBe('llm-local');
-    expect(rec.laya).toMatchObject({ ref: `laya:${CKPT}`, category: 'design', confidence: 0.95, acted: false });
-    expect(typeof rec.laya.ms).toBe('number');
-  });
+  it.each([['shadow'], [undefined]])(
+    'mode %s: the chain decides, Laya is only logged',
+    async (mode) => {
+      const r = await run(
+        `Draft the module boundaries for the billing service theta ${mode}`,
+        cfg({ mode })
+      );
+      expect(bodies).toHaveLength(1); // Laya ran …
+      expect(callOllama).toHaveBeenCalled(); // … the real chain decided
+      expect(r).toMatchObject({ category: 'simple' });
+      const [rec] = records();
+      expect(rec.stage).toBe('llm-local');
+      expect(rec.laya).toMatchObject({
+        ref: `laya:${CKPT}`,
+        category: 'design',
+        confidence: 0.95,
+        acted: false,
+      });
+      expect(typeof rec.laya.ms).toBe('number');
+    }
+  );
 
   it('records the answer even when it would have fallen through', async () => {
-    stubAnswer = { category: 'planning', confidence: 0.31, probabilities: { planning: 0.31, design: 0.3 }, ms: 4 };
+    stubAnswer = {
+      category: 'planning',
+      confidence: 0.31,
+      probabilities: { planning: 0.31, design: 0.3 },
+      ms: 4,
+    };
     await run('Draft the module boundaries for the billing service iota', cfg({ mode: 'shadow' }));
-    expect(records()[0].laya).toMatchObject({ category: 'planning', confidence: 0.31, acted: false });
+    expect(records()[0].laya).toMatchObject({
+      category: 'planning',
+      confidence: 0.31,
+      acted: false,
+    });
   });
 });
 
@@ -202,7 +246,10 @@ describe('active mode + background comparator (compare_in_background)', () => {
   };
 
   it('Laya decides; the chain answer arrives as a separate `comparator` record', async () => {
-    const r = await run('Draft the module boundaries for the billing service xi', cfg({ compare_in_background: true }));
+    const r = await run(
+      'Draft the module boundaries for the billing service xi',
+      cfg({ compare_in_background: true })
+    );
     expect(r).toMatchObject({ category: 'design' });
     await waitFor(() => records().some((rec) => rec.stage === 'comparator'));
     const recs = records();
@@ -260,7 +307,10 @@ describe('momentum observation (observe_momentum)', () => {
 
   it('routing is unchanged: the short prompt still inherits the previous category', async () => {
     const r = await run('ok do it now', cfg({ observe_momentum: true }), ctx);
-    expect(r).toMatchObject({ category: 'planning', reason: expect.stringContaining('Short prompt') });
+    expect(r).toMatchObject({
+      category: 'planning',
+      reason: expect.stringContaining('Short prompt'),
+    });
     // Let the detached observation finish before the stub server goes away.
     await waitFor(() => records().some((x) => x.stage === 'observation'));
   });
@@ -270,7 +320,15 @@ describe('momentum observation (observe_momentum)', () => {
     stubAnswer = {
       category: 'design',
       confidence: 0.95,
-      probabilities: { simple: 0.01, code_simple: 0.01, standard: 0.01, code_complex: 0.01, design: 0.95, planning: 0.005, continue: 0.005 },
+      probabilities: {
+        simple: 0.01,
+        code_simple: 0.01,
+        standard: 0.01,
+        code_complex: 0.01,
+        design: 0.95,
+        planning: 0.005,
+        continue: 0.005,
+      },
       ms: 4,
     };
     await run('ok do it please', cfg({ observe_momentum: true, compare_in_background: true }), ctx);
@@ -312,7 +370,11 @@ describe('momentum observation (observe_momentum)', () => {
   });
 
   it('does not observe prompts that are not momentum prompts', async () => {
-    await run('Draft the module boundaries for the billing service upsilon', cfg({ observe_momentum: true }), ctx);
+    await run(
+      'Draft the module boundaries for the billing service upsilon',
+      cfg({ observe_momentum: true }),
+      ctx
+    );
     expect(records().some((x) => x.stage === 'observation')).toBe(false);
   });
 
@@ -343,7 +405,15 @@ describe('decision log', () => {
   // Calibration needs the whole distribution, not only the winning label's
   // confidence: temperature / bias fits on owner labels are impossible without it.
   it('logs the full Laya probability distribution alongside the answer', async () => {
-    const dist = { simple: 0.02, code_simple: 0.01, standard: 0.05, code_complex: 0.06, design: 0.6, planning: 0.2, continue: 0.06 };
+    const dist = {
+      simple: 0.02,
+      code_simple: 0.01,
+      standard: 0.05,
+      code_complex: 0.06,
+      design: 0.6,
+      planning: 0.2,
+      continue: 0.06,
+    };
     stubAnswer = { category: 'design', confidence: 0.6, probabilities: dist, ms: 4 };
     await run('Draft the module boundaries for the billing service mu', cfg({ mode: 'shadow' }));
     const [rec] = records();
@@ -353,7 +423,12 @@ describe('decision log', () => {
   // The distribution feeds calibration fits: a malformed one must not reach the
   // log, while the answer itself is still recorded.
   it('drops a malformed distribution (incomplete labels, value out of range) but keeps the answer', async () => {
-    stubAnswer = { category: 'design', confidence: 0.6, probabilities: { design: 1.7, planning: 0.3 }, ms: 4 };
+    stubAnswer = {
+      category: 'design',
+      confidence: 0.6,
+      probabilities: { design: 1.7, planning: 0.3 },
+      ms: 4,
+    };
     await run('Draft the module boundaries for the billing service nu', cfg({ mode: 'shadow' }));
     const [rec] = records();
     expect(rec.laya).toMatchObject({ category: 'design', confidence: 0.6 });

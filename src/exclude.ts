@@ -27,11 +27,7 @@ export interface ExcludeContext {
 export function globMatcher(pattern: string): (ref: string) => boolean {
   // Escape regex specials, then turn * into ".*"
   const re = new RegExp(
-    '^' +
-      pattern
-        .replace(/[.+^${}()|[\]\\?]/g, '\\$&')
-        .replace(/\*/g, '.*') +
-      '$',
+    '^' + pattern.replace(/[.+^${}()|[\]\\?]/g, '\\$&').replace(/\*/g, '.*') + '$',
     'i'
   );
   return (ref: string) => re.test(ref);

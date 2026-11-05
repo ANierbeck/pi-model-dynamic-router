@@ -49,7 +49,12 @@ import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isExcluded, isPaidForClassifier } from './exclude.ts';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
-import { formatBlockLogLine, isBlocked, recordBlocklistFailure, recordBlocklistSuccess } from './model-blocklist.ts';
+import {
+  formatBlockLogLine,
+  isBlocked,
+  recordBlocklistFailure,
+  recordBlocklistSuccess,
+} from './model-blocklist.ts';
 import {
   VALID_CATEGORIES,
   buildClassificationPrompt,
@@ -161,7 +166,10 @@ export const PROBE_SIGNATURE: string = (() => {
  * case accepts. hint:* is ALWAYS a fail: no probe case contains a HINT
  * request, so a hint category means the model copied the narration bait.
  */
-export function judgeProbeReply(raw: string, tc: ProbeCase): { ok: true } | { ok: false; reason: string } {
+export function judgeProbeReply(
+  raw: string,
+  tc: ProbeCase
+): { ok: true } | { ok: false; reason: string } {
   const parsed = extractClassificationJson(raw);
   if (!parsed || typeof parsed.category !== 'string') {
     return { ok: false, reason: 'no parseable classification JSON' };
@@ -215,7 +223,7 @@ export interface ProbeContext {
 export function selectClassifierCandidates(
   cfg: Config,
   cache: Cache,
-  opts: { maxPrice?: number; maxGdpval?: number; maxCandidates?: number } = {},
+  opts: { maxPrice?: number; maxGdpval?: number; maxCandidates?: number } = {}
 ): string[] {
   const maxPrice = opts.maxPrice ?? MAX_OUTPUT_PRICE_PER_M;
   const maxGdpval = opts.maxGdpval ?? MAX_GDPVAL_LOW_TIER;
@@ -349,7 +357,7 @@ export async function probeAndCache(
   cfg: Config,
   cache: Cache,
   pctx: ProbeContext,
-  onLog?: (msg: string) => void,
+  onLog?: (msg: string) => void
 ): Promise<string[]> {
   const candidates = selectClassifierCandidates(cfg, cache);
   const log = onLog ?? (() => {});
@@ -437,7 +445,9 @@ export async function probeAndCache(
 
   cache.classifier_fallback_models = working;
   cache.classifier_fallback_probe_sig = PROBE_SIGNATURE;
-  log(`[classifier-probe] ${working.length} working model(s) cached: ${working.join(', ') || '(none)'}`);
+  log(
+    `[classifier-probe] ${working.length} working model(s) cached: ${working.join(', ') || '(none)'}`
+  );
   return working;
 }
 

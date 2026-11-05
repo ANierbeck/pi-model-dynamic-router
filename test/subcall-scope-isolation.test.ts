@@ -76,8 +76,14 @@ function subCallStream(w: ReturnType<typeof world>, before?: () => Promise<void>
   return vi.fn(async function* () {
     await before?.();
     await w.drive(BULK_MODEL);
-    yield { type: 'text_delta', delta: 'a summary of the result, long enough to be used as a replacement' };
-    yield { type: 'message_end', usage: { input: 10, output: 5, totalTokens: 15, cost: { total: 0 } } };
+    yield {
+      type: 'text_delta',
+      delta: 'a summary of the result, long enough to be used as a replacement',
+    };
+    yield {
+      type: 'message_end',
+      usage: { input: 10, output: 5, totalTokens: 15, cost: { total: 0 } },
+    };
   });
 }
 
@@ -91,7 +97,7 @@ const bigBash = () => ({
 function delegation(w: ReturnType<typeof world>, streamSimple: ReturnType<typeof subCallStream>) {
   const handlers: Record<string, ((...a: any[]) => any)[]> = {};
   const rt: any = {
-    pi: { on: (name: string, fn: any) => ((handlers[name] ??= []).push(fn)) },
+    pi: { on: (name: string, fn: any) => (handlers[name] ??= []).push(fn) },
     cache: w.ctx.cache,
     cfg: w.ctx.cfg as Config,
     activeGroup: null,
@@ -106,7 +112,10 @@ function delegation(w: ReturnType<typeof world>, streamSimple: ReturnType<typeof
   Object.defineProperty(rt, 'lastDynamicModel', { get: () => w.ctx.lastDynamicModel });
   createEventHandlers(rt);
   const ctx = {
-    modelRegistry: { find: vi.fn(() => ({ provider: 'bulk_reader', id: 'bulk_reader' })), runtime: { streamSimple } },
+    modelRegistry: {
+      find: vi.fn(() => ({ provider: 'bulk_reader', id: 'bulk_reader' })),
+      runtime: { streamSimple },
+    },
     signal: undefined,
   };
   const run = async () => {
@@ -151,7 +160,10 @@ describe('tool_result delegation', () => {
     const w = world();
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const pending = delegation(w, subCallStream(w, () => gate)).run();
+    const pending = delegation(
+      w,
+      subCallStream(w, () => gate)
+    ).run();
 
     await w.drive(MAIN_MODEL); // a different session's stream, started OUTSIDE the sub-call
     expect(w.ctx.lastDynamicModel).toBe(MAIN_MODEL);
@@ -200,7 +212,13 @@ describe('bulk_read tool', () => {
       cwd: process.cwd(),
       signal: undefined,
     };
-    await registered['bulk_read'].execute('id', { question: 'what?', paths: ['package.json'] }, undefined, undefined, ctx);
+    await registered['bulk_read'].execute(
+      'id',
+      { question: 'what?', paths: ['package.json'] },
+      undefined,
+      undefined,
+      ctx
+    );
 
     expect(w.ctx.lastDynamicModel).toBe(TURN_MODEL);
     expect(w.holder.router.getCurModel()).toBe('');
@@ -224,7 +242,12 @@ describe('degraded cascade paths inside a sub-call', () => {
   it('breaker dead-end: the half-open probe ref does not become the turn model', async () => {
     const w = world({
       isBreakerOpen: () => true,
-      cache: { usage_log: [], provider_breaker: { openrouter: { open_until: Date.now() + 60_000, trip_count: 1, evidence: [] } } },
+      cache: {
+        usage_log: [],
+        provider_breaker: {
+          openrouter: { open_until: Date.now() + 60_000, trip_count: 1, evidence: [] },
+        },
+      },
     });
     await runAsSubCall(() => w.drive(BULK_MODEL));
 
@@ -247,14 +270,18 @@ describe('degraded cascade paths inside a sub-call', () => {
 describe('dynamic group used as a delegation group', () => {
   function dynamicWorld() {
     const ctx: any = {
-      cfg: { model_groups: { dynamic: { method: 'dynamic' }, standard: { method: 'best' } }, model_metrics: {} },
+      cfg: {
+        model_groups: { dynamic: { method: 'dynamic' }, standard: { method: 'best' } },
+        model_metrics: {},
+      },
       cache: {},
       router: {},
       lastDynamicModel: TURN_MODEL,
       lastClassifiedCategory: 'planning',
       escalation: { level: 'standard' },
       sessionCtx: undefined,
-      resolve: (name: string) => (name === 'standard' ? { candidates: [BULK_MODEL], selected: BULK_MODEL } : null),
+      resolve: (name: string) =>
+        name === 'standard' ? { candidates: [BULK_MODEL], selected: BULK_MODEL } : null,
       extractLastUserPrompt: () => 'summarize this',
       extractLastAssistantSnippet: () => undefined,
       detectHintDirectly: () => null,
@@ -269,7 +296,7 @@ describe('dynamic group used as a delegation group', () => {
       orch.groupStream(
         { provider: 'router', id: 'dynamic', api: 'openai-completions' } as any,
         { messages: [{ role: 'user', content: 'summarize this', timestamp: 1 }] } as any,
-        undefined,
+        undefined
       );
     return { ctx, drive, open };
   }

@@ -27,6 +27,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { rmTmpDir } from './helpers/router-env.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
 const BUILD_OUTPUTS = ['index.js', 'router-config.json', 'router-defaults.yaml', 'model-map.yaml'];
@@ -46,7 +47,7 @@ describe('npm package contents', () => {
   let tmpDir: string | undefined;
 
   afterEach(() => {
-    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (tmpDir) rmTmpDir(tmpDir);
     tmpDir = undefined;
   });
 
@@ -93,7 +94,9 @@ describe('npm package contents', () => {
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const files: string[] = JSON.parse(out)[0].files.map((f: { path: string }) => f.path);
-    const skillDirs = [...new Set(files.filter((f) => f.startsWith('skills/')).map((f) => f.split('/')[1]))].sort();
+    const skillDirs = [
+      ...new Set(files.filter((f) => f.startsWith('skills/')).map((f) => f.split('/')[1])),
+    ].sort();
 
     expect(skillDirs).toEqual([...SHIPPED_SKILLS, 'laya-tooling'].sort());
   }, 30_000);

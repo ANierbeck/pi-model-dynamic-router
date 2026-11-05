@@ -16,15 +16,25 @@ afterEach(() => {
 const jsonRes = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-function fakeOllama(models: Record<string, { size: string; generate: (prompt: string) => Response }>) {
+function fakeOllama(
+  models: Record<string, { size: string; generate: (prompt: string) => Response }>
+) {
   return vi.fn(async (input: any, init?: any) => {
     const url = String(input);
     if (url.endsWith('/api/tags')) {
-      return jsonRes({ models: Object.entries(models).map(([name, m]) => ({ name, details: { parameter_size: m.size } })) });
+      return jsonRes({
+        models: Object.entries(models).map(([name, m]) => ({
+          name,
+          details: { parameter_size: m.size },
+        })),
+      });
     }
     if (url.endsWith('/api/show')) {
       const { name } = JSON.parse(init.body);
-      return jsonRes({ capabilities: ['completion'], details: { parameter_size: models[name].size } });
+      return jsonRes({
+        capabilities: ['completion'],
+        details: { parameter_size: models[name].size },
+      });
     }
     if (url.endsWith('/api/generate')) {
       const { model, prompt } = JSON.parse(init.body);
@@ -35,7 +45,11 @@ function fakeOllama(models: Record<string, { size: string; generate: (prompt: st
 }
 
 const classifyReply = (prompt: string) => {
-  const category = prompt.includes('What is in this file?') ? 'simple' : prompt.includes('Fix the typo') ? 'code_simple' : 'simple';
+  const category = prompt.includes('What is in this file?')
+    ? 'simple'
+    : prompt.includes('Fix the typo')
+      ? 'code_simple'
+      : 'simple';
   return jsonRes({ response: JSON.stringify({ category, reason: 'r', confidence: 0.9 }) });
 };
 
@@ -66,7 +80,11 @@ describe('scan() → local classifier probe (ADR-0025 C1)', () => {
 
   it('marks a 501 model and leaves it out of the persisted chain', async () => {
     globalThis.fetch = fakeOllama({
-      'foo:3b': { size: '3B', generate: () => new Response('{"error":"structured output is unavailable"}', { status: 501 }) },
+      'foo:3b': {
+        size: '3B',
+        generate: () =>
+          new Response('{"error":"structured output is unavailable"}', { status: 501 }),
+      },
       'bar:9b': { size: '9B', generate: (p) => classifyReply(p) },
     }) as any;
     const cache = { gdpval_scraped: true } as Cache;

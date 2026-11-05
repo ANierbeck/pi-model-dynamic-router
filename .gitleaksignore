@@ -8,3 +8,7 @@ c4bfedb012ae2fd133c4f536fe5e1698a6c50f6c:src/slug-matcher.ts:generic-api-key:153
 # (Sourcery PR #74 round): invented strings ("pk_live_…", "tok_…") that must
 # LOOK like credentials so the redaction rule is exercised. Not real keys.
 762790018f08d42f6d43f1e04fcb573212698645:test/rate-limit-body-log.test.ts:generic-api-key:39
+
+# Same fixture after the one-time Prettier reformat moved the line 39 -> 40
+# (commit aeb8bb6): the invented pk_live_/tok_ strings are not credentials.
+df7db8e72ad444cf7d3fb5e155bfe0b0b1690e39:test/rate-limit-body-log.test.ts:generic-api-key:40

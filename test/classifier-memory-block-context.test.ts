@@ -20,16 +20,16 @@
 // stays a user message.
 
 import { describe, it, expect, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { makeExtensionContext, parkStateFiles, routerStatePaths } from './helpers/extension-harness.ts';
+
 import {
-  writeNoOpScanCache,
-  removeNoOpScanCache,
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+  makeExtensionContext,
+  parkStateFiles,
+  routerStatePaths,
+  startSession,
+} from './helpers/extension-harness.ts';
+import { writeNoOpScanCache } from './helpers/noop-scan-cache.ts';
 import { doneEvent } from './helpers/stream-fixtures.ts';
+import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
 
 vi.mock('../src/ollama-utils.ts', async () =>
   (await import('./helpers/ollama-mock.ts')).ollamaMockModule()
@@ -37,17 +37,15 @@ vi.mock('../src/ollama-utils.ts', async () =>
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
-const MEMORY_BODY = 'final_fix_2026_05_31: Extension komplett neu aufgebaut, altes Verzeichnis geloescht';
+const MEMORY_BODY =
+  'final_fix_2026_05_31: Extension komplett neu aufgebaut, altes Verzeichnis geloescht';
 const memoryBlock = `<memory>\n## Relevant Memory\n- ${MEMORY_BODY}\n</memory>`;
 
 /** Runs one groupStream turn through the real router and returns the text the classifier saw. */
 async function classifierSees(messages: any[]): Promise<string> {
   const ollamaUtils = await import('../src/ollama-utils.ts');
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-memory-block-'));
-  fs.mkdirSync(path.join(tmpDir, '.pi'), { recursive: true });
-  fs.writeFileSync(
-    path.join(tmpDir, '.pi', 'router-config.json'),
-    JSON.stringify({
+  const { tmpDir } = bootProjectDir(
+    {
       free_models: [],
       providers: {},
       model_groups: {
@@ -55,7 +53,8 @@ async function classifierSees(messages: any[]): Promise<string> {
         scout: { method: 'best', min_gdpval: 0, fallback_groups: [] },
       },
       gdpval_builtin: { 'ollama/scout-model': 100 },
-    })
+    },
+    'router-memory-block-'
   );
   const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmpDir);
   const restoreState = parkStateFiles([dynamicConfigPath, scanCachePath]);
@@ -69,7 +68,12 @@ async function classifierSees(messages: any[]): Promise<string> {
     const { ctx: pi, onHandlers } = makeExtensionContext();
     defaultExport(pi);
 
-    const scoutModel = { provider: 'ollama', id: 'scout-model', api: 'openai-completions', contextWindow: 100_000 };
+    const scoutModel = {
+      provider: 'ollama',
+      id: 'scout-model',
+      api: 'openai-completions',
+      contextWindow: 100_000,
+    };
     const streamSimple = vi.fn(() =>
       (async function* () {
         yield { type: 'text_delta', delta: 'scout reply' };
@@ -82,20 +86,19 @@ async function classifierSees(messages: any[]): Promise<string> {
       getApiKeyForProvider: async () => null,
       runtime: { streamSimple },
     };
-    const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-    await onHandlers['session_start']?.({}, ctx);
-    await flushBackgroundScan();
+    await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
-    for await (const _ev of defaultExport.groupStream({ provider: 'dynamic', id: 'dynamic' }, { messages }, {})) {
+    for await (const _ev of defaultExport.groupStream(
+      { provider: 'dynamic', id: 'dynamic' },
+      { messages },
+      {}
+    )) {
       /* drain so classification runs */
     }
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     return vi.mocked(ollamaUtils.callOllama).mock.calls[0][1] as string;
   } finally {
-    cwdSpy.mockRestore();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    restoreState();
-    removeNoOpScanCache(scanCachePath);
+    teardownBoot({ cwdSpy, tmpDir, restoreState });
   }
 }
 
@@ -125,7 +128,10 @@ describe('classifier context: the memory extension block is not a user message',
 
   it('array-form content blocks are recognised too', async () => {
     const seen = await classifierSees([
-      { role: 'user', content: [{ type: 'text', text: 'Bitte pruefe die Konfiguration des Routers.' }] },
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'Bitte pruefe die Konfiguration des Routers.' }],
+      },
       { role: 'assistant', content: 'Erledigt.' },
       { role: 'user', content: [{ type: 'text', text: memoryBlock }] },
       { role: 'user', content: [{ type: 'text', text: 'Und was ist mit dem Cache?' }] },
@@ -140,7 +146,8 @@ describe('classifier context: the memory extension block is not a user message',
     // always PRECEDES the real prompt (97/97 observed), so the last user
     // message is the request by position; dropping it would route an earlier
     // or empty prompt instead of what the user asked.
-    const pasted = '<memory>\nBitte fasse diesen eingefuegten Notizblock zusammen und sage was fehlt.\n</memory>';
+    const pasted =
+      '<memory>\nBitte fasse diesen eingefuegten Notizblock zusammen und sage was fehlt.\n</memory>';
     const seen = await classifierSees([
       { role: 'user', content: 'Frueher gestellte Frage zum Thema Logging im Router.' },
       { role: 'assistant', content: 'Antwort.' },

@@ -95,7 +95,8 @@ export function extractGdpvalScores(html: string): Record<string, number> {
   // Stage 1 (Format A, 2025+): RSC payload uses {"label":"Model Name",
   // "gdpvalAaElo":[{"@type":"PropertyValue","name":"mid","value":N},...],
   // "detailsUrl":"/models/slug"}.  detailsUrl gives the slug directly.
-  const entryRe = /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
+  const entryRe =
+    /\{"label":"([^"]+)","gdpvalAaElo":\[[^\]]*"name":"mid","value":([\d.]+)[^\]]*\],"detailsUrl":"\/models\/([^"]+)"\}/g;
   let em;
   while ((em = entryRe.exec(html))) {
     const label = em[1];
@@ -103,8 +104,19 @@ export function extractGdpvalScores(html: string): Record<string, number> {
     const slug = em[3];
     scores[slug] = score;
     slugWritten.add(slug);
-    const labelKey = label.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    if (labelKey && labelKey !== slug && !slugWritten.has(labelKey) && scores[labelKey] === undefined) scores[labelKey] = score;
+    const labelKey = label
+      .toLowerCase()
+      .replace(/\s*\(.*?\)\s*/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    if (
+      labelKey &&
+      labelKey !== slug &&
+      !slugWritten.has(labelKey) &&
+      scores[labelKey] === undefined
+    )
+      scores[labelKey] = score;
   }
 
   // Stage 2 (Format B): AA also embeds the full sorted leaderboard as
@@ -126,7 +138,8 @@ export function extractGdpvalScores(html: string): Record<string, number> {
   // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
   // Stop at the first closing brace so that nested creator objects don't break
   // the regex.
-  const eloRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
+  const eloRe =
+    /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\},"elo":([0-9.]+),"confidenceInterval":/g;
   while ((em = eloRe.exec(normalized))) {
     const displayName = em[1];
     const score = parseFloat(em[2]);
@@ -134,20 +147,43 @@ export function extractGdpvalScores(html: string): Record<string, number> {
     // (strips parenthetical suffix like "(max)").
     let slug = slugByDisplayName.get(displayName);
     if (!slug) {
-      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const labelKey = displayName
+        .toLowerCase()
+        .replace(/\s*\(.*?\)\s*/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '');
       for (const [dn, sv] of slugByDisplayName) {
-        const dnKey = dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        if (dnKey === labelKey) { slug = sv; break; }
+        const dnKey = dn
+          .toLowerCase()
+          .replace(/\s*\(.*?\)\s*/g, '')
+          .trim()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '');
+        if (dnKey === labelKey) {
+          slug = sv;
+          break;
+        }
       }
     }
     if (slug) {
       scores[slug] = score; // Format B is authoritative for the full leaderboard
       slugWritten.add(slug);
-      const labelKey = displayName.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const labelKey = displayName
+        .toLowerCase()
+        .replace(/\s*\(.*?\)\s*/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '');
       // B may refresh a key Format A's labelKey filled (B is authoritative),
       // but never a slug-owned key and never twice (descending Elo → the
       // highest variant claims the labelKey first).
-      if (labelKey && labelKey !== slug && !slugWritten.has(labelKey) && !bLabelWritten.has(labelKey)) {
+      if (
+        labelKey &&
+        labelKey !== slug &&
+        !slugWritten.has(labelKey) &&
+        !bLabelWritten.has(labelKey)
+      ) {
         scores[labelKey] = score;
         bLabelWritten.add(labelKey);
       }
@@ -166,13 +202,18 @@ export function extractGdpvalScores(html: string): Record<string, number> {
           slugWritten.add(slug);
           if (m.shortName && scores[m.shortName] === undefined) scores[m.shortName] = m.gdpval;
           if (m.name) {
-            const nameKey = m.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+            const nameKey = m.name
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^a-z0-9-]/g, '');
             scores[nameKey] ??= m.gdpval;
           }
         }
       }
       if (Object.keys(scores).length > 0) return scores;
-    } catch { /* legacy structure absent or malformed: fall through to the next source */ }
+    } catch {
+      /* legacy structure absent or malformed: fall through to the next source */
+    }
   }
 
   return scores;
@@ -196,7 +237,9 @@ export function extractGdpvalScores(html: string): Record<string, number> {
  * the same model's data anyway. Fail-closed: unrecognized payloads yield
  * {}.
  */
-export function extractGdpvalProvenance(html: string): Record<string, { creator?: string; displayName?: string }> {
+export function extractGdpvalProvenance(
+  html: string
+): Record<string, { creator?: string; displayName?: string }> {
   const provenance: Record<string, { creator?: string; displayName?: string }> = {};
 
   // The HTML embeds JSON with HTML-escaped quotes (\" → "), same as the
@@ -210,7 +253,12 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
   while ((s = slugRe.exec(normalized))) slugByDisplayName.set(s[2], s[1]);
 
   const labelKeyOf = (dn: string) =>
-    dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    dn
+      .toLowerCase()
+      .replace(/\s*\(.*?\)\s*/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
 
   // Format B: {"id":"...","displayName":"...","creator":{...},"elo":N,...}
   // creator.name is OPTIONAL (Sourcery PR #66 round: a row without a named
@@ -226,7 +274,10 @@ export function extractGdpvalProvenance(html: string): Record<string, { creator?
     if (!slug) {
       const labelKey = labelKeyOf(displayName);
       for (const [dn, sv] of slugByDisplayName) {
-        if (labelKeyOf(dn) === labelKey) { slug = sv; break; }
+        if (labelKeyOf(dn) === labelKey) {
+          slug = sv;
+          break;
+        }
       }
     }
     if (slug) {
@@ -296,11 +347,17 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   while ((s = slugRe.exec(html))) slugByDisplayName.set(s[2], s[1]);
 
   const labelKeyOf = (dn: string) =>
-    dn.toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    dn
+      .toLowerCase()
+      .replace(/\s*\(.*?\)\s*/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
 
   // One chunk per entry: displayName + everything after creator{} up to the
   // next entry start (or end of payload).
-  const entryRe = /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\}([\s\S]*?)(?=\{"id":"[^"]+","displayName":|$)/g;
+  const entryRe =
+    /\{"id":"[^"]+","displayName":"([^"]+)","creator":\{[^}]+\}([\s\S]*?)(?=\{"id":"[^"]+","displayName":|$)/g;
   let em: RegExpExecArray | null;
   while ((em = entryRe.exec(html))) {
     const displayName = em[1];
@@ -354,7 +411,7 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   // wrong data). Chunks therefore never run past a model-shaped record.
   const modelRecRe = new RegExp(
     String.raw`\{"id":"[0-9a-f-]{36}","slug":"([^"]+)","name":"[^"]+","(?!color")([a-zA-Z]+)"([\s\S]*?)` +
-    String.raw`(?=\{"id":"[0-9a-f-]{36}","slug":"[^"]+","name":"[^"]+","(?!color")[a-zA-Z]+"|$)`,
+      String.raw`(?=\{"id":"[0-9a-f-]{36}","slug":"[^"]+","name":"[^"]+","(?!color")[a-zA-Z]+"|$)`,
     'g'
   );
   let mr: RegExpExecArray | null;
@@ -389,7 +446,8 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
     const omniscience = pct('omniscience');
     const hleDiamond = pct('hleDiamond');
     if (intelligence !== null && omniscience !== null && hleDiamond !== null) {
-      profile.reasoning = Math.round(((intelligence + omniscience + 100 * hleDiamond) / 3) * 100) / 100;
+      profile.reasoning =
+        Math.round(((intelligence + omniscience + 100 * hleDiamond) / 3) * 100) / 100;
     }
 
     const scicode = pct('scicode');
@@ -460,9 +518,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       cache: rt.cache,
       cfg: rt.cfg,
       resolveApiKey: async (provider: string) =>
-        (await (rt.sessionCtx?.modelRegistry)?.getApiKeyForProvider?.(provider)?.catch?.(
-          () => null
-        )) ?? null,
+        (await rt.sessionCtx?.modelRegistry
+          ?.getApiKeyForProvider?.(provider)
+          ?.catch?.(() => null)) ?? null,
       timeoutMs: 90_000, // large models need time; if the local model is too
       // slow it fails and the cloud fallback (free OpenRouter) fires.
     };
@@ -513,9 +571,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
 
   /** Best-effort human-readable label for a gdpval slug (slug → Title Case). */
   function slugToLabel(slug: string): string {
-    return slug
-      .replace(/[-_]/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   // fmt/fmtTime: delegate to utils.ts, the single implementation.
@@ -623,12 +679,18 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               // pin a cache without reasoning values for the whole TTL
               // (planning's gates would stand down). Unstamped, the next
               // scan retries (Sourcery PR #80 round).
-              capabilityScrapeFresh = Object.values(profiles).some((p) => typeof p.reasoning === 'number');
+              capabilityScrapeFresh = Object.values(profiles).some(
+                (p) => typeof p.reasoning === 'number'
+              );
               if (!capabilityScrapeFresh) {
-                routerLog('[scan] Capability profiles carry no reasoning blend - scrape stays unstamped and retries on the next scan');
+                routerLog(
+                  '[scan] Capability profiles carry no reasoning blend - scrape stays unstamped and retries on the next scan'
+                );
               }
             } else {
-              routerLog('[scan] No capability profiles extracted - AA payload shape may have drifted');
+              routerLog(
+                '[scan] No capability profiles extracted - AA payload shape may have drifted'
+              );
             }
           } catch {
             // Fail-closed: profile extraction must never break the gdpval
@@ -647,7 +709,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               rt.cache.gdpval_provenance = provenance;
               metricsModule.setCache(rt.cache);
             } else {
-              routerLog('[scan] No gdpval provenance extracted - AA payload shape may have drifted');
+              routerLog(
+                '[scan] No gdpval provenance extracted - AA payload shape may have drifted'
+              );
             }
           } catch {
             // Fail-closed: provenance extraction must never break the
@@ -671,7 +735,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           }
         } catch (err) {
           /* scrape failed, use builtins */
-          warnLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : textOf(err)}); using builtins only`);
+          warnLog(
+            `[scan] GDPval scrape failed (${err instanceof Error ? err.message : textOf(err)}); using builtins only`
+          );
         }
       }
       const age = rt.cache.models_cached
@@ -690,7 +756,12 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             for (const m of d.data ?? []) {
               const caps = extractCapabilities('openrouter', m);
               if (String(m.pricing?.prompt ?? '1') === '0')
-                models.push({ id: m.id, provider: 'openrouter', cost_per_m: 0, ...(caps ? { capabilities: caps } : {}) });
+                models.push({
+                  id: m.id,
+                  provider: 'openrouter',
+                  cost_per_m: 0,
+                  ...(caps ? { capabilities: caps } : {}),
+                });
               const inp = parseFloat(m.pricing?.prompt ?? '0') * 1_000_000;
               const out = parseFloat(m.pricing?.completion ?? '0') * 1_000_000;
               if (inp >= 0 && out >= 0) {
@@ -703,11 +774,15 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               }
             }
             rt.cache.openrouter_pricing = pricing;
-          } catch { /* public catalog unreachable: keep the cached pricing */ }
+          } catch {
+            /* public catalog unreachable: keep the cached pricing */
+          }
         }
         try {
           const d = await fetchJson('http://localhost:11434/api/tags', { timeoutMs: 5_000 });
-          const ollamaModelNames = (d.models ?? []).map((m: any) => m.name).filter((id: string) => id);
+          const ollamaModelNames = (d.models ?? [])
+            .map((m: any) => m.name)
+            .filter((id: string) => id);
           // Estimate GDPval for Ollama models as SLUG → score (compatible with
           // cache.gdpval_scores, which the lookup pipeline consumes as slug
           // keys — NOT raw "ollama/<id>" refs). These are FALLBACK scores only;
@@ -755,8 +830,12 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             if (existing) {
               if (!existing.capabilities && caps) existing.capabilities = caps;
             } else {
-              const entry: { id: string; provider: string; cost_per_m: number; capabilities?: ModelCapabilities } =
-                { id, provider: 'ollama', cost_per_m: 0 };
+              const entry: {
+                id: string;
+                provider: string;
+                cost_per_m: number;
+                capabilities?: ModelCapabilities;
+              } = { id, provider: 'ollama', cost_per_m: 0 };
               if (caps) entry.capabilities = caps;
               models.push(entry);
             }
@@ -778,7 +857,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             // here is safe and makes the estimates visible immediately.
             metricsModule.setCache(rt.cache);
           }
-        } catch { /* local Ollama unavailable: no estimates this pass */ }
+        } catch {
+          /* local Ollama unavailable: no estimates this pass */
+        }
         // ADR-0022 removed the direct-API provider catalog scans: post-ADR-0021 their results were inert
         // cache entries and they were the last reason the router needed
         // raw API key values. Pi's catalog is the source of truth.
@@ -797,7 +878,9 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             for (const model of rt.sessionCtx.modelRegistry.getAvailable()) {
               piKnownProviders.add(model.provider);
             }
-          } catch { /* registry without getAvailable(): no prune evidence */ }
+          } catch {
+            /* registry without getAvailable(): no prune evidence */
+          }
         }
         const redundantProviders = redundantAliasProviders(PROVIDER_MAP, piKnownProviders);
         //
@@ -828,23 +911,31 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       try {
         const registry = rt.sessionCtx?.modelRegistry;
         if (registry?.runtime?.completeSimple) {
-          await probeAndCache(rt.cfg, rt.cache, {
-            findModel: (ref: string) => {
-              const i = ref.indexOf('/');
-              if (i === -1) return undefined;
-              return registry.find(ref.slice(0, i), ref.slice(i + 1));
+          await probeAndCache(
+            rt.cfg,
+            rt.cache,
+            {
+              findModel: (ref: string) => {
+                const i = ref.indexOf('/');
+                if (i === -1) return undefined;
+                return registry.find(ref.slice(0, i), ref.slice(i + 1));
+              },
+              completeSimple: (model: any, ctx: any, options: any) =>
+                registry.runtime.completeSimple(model, ctx, options),
+              hasConfiguredAuth: (model: any) =>
+                typeof registry?.hasConfiguredAuth === 'function'
+                  ? Boolean(registry.hasConfiguredAuth(model))
+                  : true,
             },
-            completeSimple: (model: any, ctx: any, options: any) =>
-              registry.runtime.completeSimple(model, ctx, options),
-            hasConfiguredAuth: (model: any) =>
-              typeof registry?.hasConfiguredAuth === 'function'
-                ? Boolean(registry.hasConfiguredAuth(model))
-                : true,
-          }, routerLog);
+            routerLog
+          );
           rt.saveCache();
         }
       } catch (probeErr) {
-        warnLog('[scan] classifier-fallback probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+        warnLog(
+          '[scan] classifier-fallback probe failed:',
+          probeErr instanceof Error ? probeErr.message : String(probeErr)
+        );
       }
 
       // Generate the dynamic configuration FIRST (review M2, 2026-10-07):
@@ -861,10 +952,19 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // order applies only before the first probe (review N2, 2026-10-07);
       // after a probe, an empty list is final until a re-probe.
       try {
-        await probeLocalClassifierCandidates(rt.cfg, rt.cache, { callOllama, isAvailable: isOllamaAvailable }, routerLog, { force });
+        await probeLocalClassifierCandidates(
+          rt.cfg,
+          rt.cache,
+          { callOllama, isAvailable: isOllamaAvailable },
+          routerLog,
+          { force }
+        );
         rt.saveCache();
       } catch (probeErr) {
-        warnLog('[scan] local classifier probe failed:', probeErr instanceof Error ? probeErr.message : String(probeErr));
+        warnLog(
+          '[scan] local classifier probe failed:',
+          probeErr instanceof Error ? probeErr.message : String(probeErr)
+        );
       }
     } finally {
       rt.scanning = false;

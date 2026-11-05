@@ -53,7 +53,12 @@ beforeEach(async () => {
   resetLayaAvailability();
   mode = 'ok';
   requests = [];
-  answer = { category: 'standard', confidence: 0.95, probabilities: { standard: 0.95, simple: 0.03 }, ms: 4 };
+  answer = {
+    category: 'standard',
+    confidence: 0.95,
+    probabilities: { standard: 0.95, simple: 0.03 },
+    ms: 4,
+  };
   server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => (raw += c));
@@ -165,7 +170,12 @@ describe('answer vetting', () => {
   });
 
   it('detailed variant exposes the raw answer even when the stage falls through (shadow data)', async () => {
-    answer = { category: 'design', confidence: 0.41, probabilities: { design: 0.41, planning: 0.3 }, ms: 4 };
+    answer = {
+      category: 'design',
+      confidence: 0.41,
+      probabilities: { design: 0.41, planning: 0.3 },
+      ms: 4,
+    };
     const out = await classifyWithLayaDetailed('low confidence ask', undefined, {
       cfg: cfgFor(port),
       checkpoint: 'test/ckpt',
@@ -177,9 +187,14 @@ describe('answer vetting', () => {
 
   it('detailed variant returns null when the stage is disabled or the sidecar is down', async () => {
     expect(
-      await classifyWithLayaDetailed('x', undefined, { cfg: cfgFor(port, { enabled: false }), checkpoint: 'c' }),
+      await classifyWithLayaDetailed('x', undefined, {
+        cfg: cfgFor(port, { enabled: false }),
+        checkpoint: 'c',
+      })
     ).toBeNull();
     mode = 'http500';
-    expect(await classifyWithLayaDetailed('y', undefined, { cfg: cfgFor(port), checkpoint: 'c' })).toBeNull();
+    expect(
+      await classifyWithLayaDetailed('y', undefined, { cfg: cfgFor(port), checkpoint: 'c' })
+    ).toBeNull();
   });
 });

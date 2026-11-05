@@ -27,6 +27,7 @@ vi.mock('../src/logger.ts', async (orig) => {
   return { ...actual, warnLog: vi.fn() };
 });
 import * as loggerModule from '../src/logger.ts';
+import { rmTmpDir } from './helpers/router-env.ts';
 const mockWarnLog = vi.mocked(loggerModule.warnLog);
 
 const BASE_CONFIG: Config = {
@@ -127,7 +128,7 @@ describe('loadLayeredConfig validates category_groups (warn, never throw)', () =
   afterEach(() => {
     // Guard: if a beforeEach threw before assigning tmpDir, there is
     // nothing to clean up.
-    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (tmpDir) rmTmpDir(tmpDir);
   });
 
   it('accepts a valid mapping silently (no warning)', () => {

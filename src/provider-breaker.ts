@@ -16,7 +16,11 @@ import { PROVIDER_MAP } from './providers.ts';
 import type { BreakerConfig, Cache } from './types.ts';
 
 /** Failure shapes the orchestrator can report to the breaker. */
-export type ProviderEvidenceKind = 'empty_response' | 'empty_timeout' | 'stall_timeout' | 'provider_error';
+export type ProviderEvidenceKind =
+  | 'empty_response'
+  | 'empty_timeout'
+  | 'stall_timeout'
+  | 'provider_error';
 
 // Connection/5xx-shaped wording of a provider_error detail (D1). Deliberately
 // positive lists: an unrecognised provider error never counts. Transport
@@ -34,7 +38,8 @@ const GATEWAY_ERROR = /bad gateway|service unavailable|gateway timeout|upstream[
 export function countsAsProviderEvidence(kind: ProviderEvidenceKind, detail?: string): boolean {
   if (kind !== 'provider_error') return true;
   if (!detail?.trim()) return false;
-  if (isRateLimitText(detail) || isAbortLikeText(detail) || isOverflowErrorText(detail)) return false;
+  if (isRateLimitText(detail) || isAbortLikeText(detail) || isOverflowErrorText(detail))
+    return false;
   // No ref: provider-scoped signatures do not apply, only the generic verdicts.
   const { verdict, code } = classifyFailure('', detail);
   if (verdict === 'request' || verdict === 'permanent') return false;
@@ -87,9 +92,10 @@ function positiveInt(v: unknown, fallback: number): number {
 /** Resolves the optional `provider_breaker` config fragment over the code defaults. */
 export function resolveBreakerTuning(o?: BreakerConfig): BreakerTuning {
   if (!o) return DEFAULT_BREAKER_TUNING;
-  const cooldown = Array.isArray(o.cooldown_s) && o.cooldown_s.length > 0
-    ? o.cooldown_s.filter((s) => Number.isFinite(s) && s > 0).map((s) => s * 1000)
-    : undefined;
+  const cooldown =
+    Array.isArray(o.cooldown_s) && o.cooldown_s.length > 0
+      ? o.cooldown_s.filter((s) => Number.isFinite(s) && s > 0).map((s) => s * 1000)
+      : undefined;
   return {
     cloudEnabled: o.enabled !== false,
     minModelsCloud: positiveInt(o.min_models?.cloud, MIN_MODELS_CLOUD),
@@ -114,7 +120,11 @@ function minModels(provider: string, tuning: BreakerTuning): number {
   return isLocalProviderName(provider) ? tuning.minModelsLocal : tuning.minModelsCloud;
 }
 
-function liveEvidence(s: ProviderBreaker, now: number, windowMs: number = WEDGE_WINDOW_MS): { ref: string; at: number; kind: ProviderEvidenceKind }[] {
+function liveEvidence(
+  s: ProviderBreaker,
+  now: number,
+  windowMs: number = WEDGE_WINDOW_MS
+): { ref: string; at: number; kind: ProviderEvidenceKind }[] {
   return Object.entries(s.evidence)
     .filter(([, e]) => now - e.at < windowMs)
     .map(([ref, e]) => ({ ref, at: e.at, kind: e.kind as ProviderEvidenceKind }));
@@ -196,7 +206,8 @@ export function recordProviderFailure(
   // a whole window has passed, the old trip no longer vouches for a single
   // failure ("one slow model alone never triggers it", ADR-0016).
   if (now - (s.open_until ?? 0) >= tuning.windowMs) s.trip_count = 0;
-  if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider, tuning)) return false;
+  if (s.trip_count === 0 && Object.keys(s.evidence).length < minModels(provider, tuning))
+    return false;
   s.trip_count++;
   const step = Math.min(s.trip_count, tuning.cooldownMs.length) - 1;
   s.open_until = now + tuning.cooldownMs[step];
@@ -209,7 +220,11 @@ export function recordProviderSuccess(cache: Cache, ref: string): void {
   delete cache.provider_breaker?.[providerOf(ref)];
 }
 
-export function isProviderOpen(cache: Cache | undefined, provider: string, now: number = Date.now()): boolean {
+export function isProviderOpen(
+  cache: Cache | undefined,
+  provider: string,
+  now: number = Date.now()
+): boolean {
   const until = cache?.provider_breaker?.[provider]?.open_until;
   return until !== undefined && now < until;
 }
@@ -233,7 +248,10 @@ export function breakerState(
 }
 
 /** Providers whose breaker is open right now, with the expiry, for status displays. */
-export function openBreakers(cache: Cache | undefined, now: number = Date.now()): { provider: string; until: number }[] {
+export function openBreakers(
+  cache: Cache | undefined,
+  now: number = Date.now()
+): { provider: string; until: number }[] {
   return Object.entries(cache?.provider_breaker ?? {})
     .filter(([provider]) => isProviderOpen(cache, provider, now))
     .map(([provider, s]) => ({ provider, until: s.open_until! }));

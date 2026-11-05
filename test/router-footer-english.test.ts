@@ -11,7 +11,11 @@ import type { Cache } from '../src/types.ts';
 
 async function renderOverview(cache: Cache): Promise<string> {
   let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
-  const pi = { registerCommand: (name: string, def: any) => { if (name === 'router') handler = def.handler; } };
+  const pi = {
+    registerCommand: (name: string, def: any) => {
+      if (name === 'router') handler = def.handler;
+    },
+  };
   const rt: any = {
     pi,
     cache,
@@ -30,7 +34,9 @@ async function renderOverview(cache: Cache): Promise<string> {
     // 6 candidates, top-5 shown -> footer must report +1 more.
     getTopModels: (_groupName: string, n: number) => ({
       models: Array.from({ length: Math.min(n, 6) }, (_, i) => ({
-        ref: `prov/m${i}`, limited: false, rank: i,
+        ref: `prov/m${i}`,
+        limited: false,
+        rank: i,
       })),
       total: 6,
     }),
@@ -42,7 +48,7 @@ async function renderOverview(cache: Cache): Promise<string> {
     lookupListPrice: () => null,
     lookupPrice: () => null,
     limitSecs: () => 0,
-    getUsage: () => ({} as any),
+    getUsage: () => ({}) as any,
   };
   createCommands(rt);
   const notes: string[] = [];

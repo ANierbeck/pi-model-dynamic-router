@@ -70,7 +70,9 @@ export async function rankHintCandidates(
   lookupGdp: (id: string) => number | null,
   onUnusable?: (unusable: string[]) => void
 ): Promise<string[]> {
-  const usability = await Promise.all(refs.map((ref) => isRefUsable(ref, modelGroups, modelRegistry)));
+  const usability = await Promise.all(
+    refs.map((ref) => isRefUsable(ref, modelGroups, modelRegistry))
+  );
   const usable: string[] = [];
   const unusable: string[] = [];
   refs.forEach((ref, i) => (usability[i] ? usable : unusable).push(ref));

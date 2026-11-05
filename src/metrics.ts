@@ -36,7 +36,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
 import { errorLog } from './logger.ts';
-import { CAPABILITY_COLUMNS, isCapabilityColumn, type CapabilityColumn, type Metrics, type Config, type Cache } from './types.ts';
+import {
+  CAPABILITY_COLUMNS,
+  isCapabilityColumn,
+  type CapabilityColumn,
+  type Metrics,
+  type Config,
+  type Cache,
+} from './types.ts';
 import { norm, baseTokens, splitRef, textOf } from './utils.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
@@ -97,7 +104,9 @@ export function loadModelMap(extDir: string): void {
     // so ALL model-map overrides silently stop working and every model falls
     // through to the lossy token-set + LLM fallback. Log loudly so this is
     // never silent again.
-    errorLog(`[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : textOf(err)}); model-map overrides are DISABLED. Check for duplicate keys.`);
+    errorLog(
+      `[router] WARNING: model-map.yaml failed to parse (${err instanceof Error ? err.message : textOf(err)}); model-map overrides are DISABLED. Check for duplicate keys.`
+    );
     modelMap = {};
     modelMapWildcards = [];
     modelMapVersion++;
@@ -366,7 +375,8 @@ export function resolveSlug(ref: string): string | null | undefined {
   // doesn't share in-memory state with index.ts. A cached match may point at
   // a duplicate spelling — canonicalize like a fresh match.
   const cached = (cache as any)?.model_score_cache?.[ref];
-  if (cached && typeof cached === 'string' && !variantVeto(ref, cached)) return canon.get(cached) ?? cached;
+  if (cached && typeof cached === 'string' && !variantVeto(ref, cached))
+    return canon.get(cached) ?? cached;
 
   // Stage 2: algorithmic slug-matcher (FALLBACK — only if LLM didn't match).
   // Duplicate-spelling keys are collapsed to their canonical twin BEFORE
@@ -447,7 +457,7 @@ export function lookupContextWindow(ref: string): number | null {
   if (slashIdx > 0 && modelRegistry) {
     try {
       const registryModel = findRegistryModel(ref.slice(0, slashIdx), ref.slice(slashIdx + 1));
-      const registryCw = (registryModel)?.contextWindow;
+      const registryCw = registryModel?.contextWindow;
       if (typeof registryCw === 'number' && registryCw > 0) return registryCw;
     } catch {
       // Degraded registry (e.g. harness without a full mock) — fall through
@@ -457,9 +467,7 @@ export function lookupContextWindow(ref: string): number | null {
 
   // Step 1: scanned capabilities (fallback for models the registry doesn't
   // know — e.g. scanned-but-unregistered cache entries).
-  const discovered = (cache.available_models ?? []).find(
-    (m) => `${m.provider}/${m.id}` === ref,
-  );
+  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   const cw = discovered?.capabilities?.contextWindow;
   return typeof cw === 'number' ? cw : null;
 }
@@ -561,7 +569,9 @@ export function setCache(newCache: Cache): void {
   if (cache.capability_profiles) {
     capabilityProfiles = { ...cache.capability_profiles };
     capabilityColumnsWithData = new Set(
-      CAPABILITY_COLUMNS.filter((col) => Object.values(capabilityProfiles).some((p) => typeof p?.[col] === 'number'))
+      CAPABILITY_COLUMNS.filter((col) =>
+        Object.values(capabilityProfiles).some((p) => typeof p?.[col] === 'number')
+      )
     );
   }
   // Task-0 identity audit (2026-10-12): per-slug provenance. REPLACE when
@@ -666,7 +676,7 @@ export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
  * 3) isFreeModelRef: local provider, :free tag, free_models list, or
  *    cache-discovered cost_per_m: 0 → free
  * 4) otherwise 'unknown'
- * 
+ *
  * This helper is used by both the config-default path and the early-return
  * healing path.
  */
@@ -688,12 +698,12 @@ function resolveCostPerM(ref: string): number | 'unknown' {
   }
 
   // 2. Subscription providers with no registry price → 0 placeholder.
-    // effCost's subscription rule (ADR-0025 B2) turns it into eps x list
-    // price; billing counts from cfg.providers OR PROVIDER_MAP (an
-    // anthropic/chutes model must get the rule cost, not 'unknown').
-    if ((provCfg?.billing ?? provDef?.billing) === 'subscription') {
-      return 0;
-    }
+  // effCost's subscription rule (ADR-0025 B2) turns it into eps x list
+  // price; billing counts from cfg.providers OR PROVIDER_MAP (an
+  // anthropic/chutes model must get the rule cost, not 'unknown').
+  if ((provCfg?.billing ?? provDef?.billing) === 'subscription') {
+    return 0;
+  }
 
   // 3. Free: local provider ($0 compute), :free tag, free_models list, or a
   //    scan-discovered cost_per_m of 0 — isFreeModelRef covers all four, so
@@ -717,7 +727,7 @@ export function getM(ref: string): Metrics {
     // gdpval is NOT cached — it can change as model-map / scraped scores
     // load. Always recompute it so the TUI reflects the current state.
     metrics[ref].gdpval = lookupGdp(ref) ?? cfg.model_metrics?.[ref]?.gdpval ?? 50;
-    
+
     // Heal stale cost_per_m PLACEHOLDERS only: 'unknown' (written before the
     // registry was published, e.g. pi-claude) and 0 (scan placeholders for
     // custom providers) are re-resolved via the authoritative chain. A
@@ -733,10 +743,10 @@ export function getM(ref: string): Metrics {
   }
 
   const cm = cfg.model_metrics[ref] ?? {};
-  
+
   // Start with user config; default to 0 (will be healed below)
   let costPerM: number | 'unknown' = cm.cost_per_m ?? 0;
-  
+
   // If cost is 0 (default or explicit), resolve via authoritative chain.
   // This also handles explicit user 0: registry price wins over user 0
   // (matching the pre-existing config-default semantics — 0 is "unpriced",
@@ -977,10 +987,7 @@ function findRegistryModel(provider: string, modelId: string): any {
   return model;
 }
 
-function registryCost(
-  provider: string,
-  modelId: string
-): { input: number; output: number } | null {
+function registryCost(provider: string, modelId: string): { input: number; output: number } | null {
   if (!modelRegistry) return null;
   try {
     let model = findRegistryModel(provider, modelId);
@@ -1010,7 +1017,9 @@ function registryCost(
  * Looks up the price for a reference
  * Returns null if not found, or { input: 'unknown', output: 'unknown' } if model exists but price is unknown
  */
-export function lookupPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+export function lookupPrice(
+  ref: string
+): { input: number | 'unknown'; output: number | 'unknown' } | null {
   // 0. Pi's modelRegistry is the authoritative source — ask it FIRST.
   //    `Model.cost` is populated from the provider's own /v1/models (e.g.
   //    requesty reports `input_price`/`output_price` per model). The router's
@@ -1071,17 +1080,21 @@ function orPaidNormIndex(): Map<string, { input: number; output: number }> {
   return orNormIndex!;
 }
 
-function orFallbackPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+function orFallbackPrice(
+  ref: string
+): { input: number | 'unknown'; output: number | 'unknown' } | null {
   // 2. Check pricing cache by exact provider/model ref
   if (cache.openrouter_pricing?.[ref]) {
     const price = cache.openrouter_pricing[ref];
     // If price exists but is 0, check if it's explicitly free or unknown
     if (price.input === 0 && price.output === 0) {
       // Check if this is a known free model
-      const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+      const discovered = (cache.available_models ?? []).find(
+        (m) => `${m.provider}/${m.id}` === ref
+      );
       const prov = ref.split('/')[0];
       const freeModels = cfg.providers?.[prov]?.free_models ?? [];
-      
+
       if (discovered?.cost_per_m === 0 || freeModels.includes(ref)) {
         return { input: 0, output: 0 };
       }
@@ -1121,7 +1134,9 @@ function orFallbackPrice(ref: string): { input: number | 'unknown'; output: numb
  * price from the display (2026-10-04 regression: opus-5-5 showed "$0.0/$0.0"
  * while sonnet-5-5 showed its real $2/$10 via the OR backfill).
  */
-export function lookupListPrice(ref: string): { input: number | 'unknown'; output: number | 'unknown' } | null {
+export function lookupListPrice(
+  ref: string
+): { input: number | 'unknown'; output: number | 'unknown' } | null {
   const { provider, modelId } = splitRef(ref);
   const regCost = registryCost(provider, modelId);
   if (regCost) return regCost;
@@ -1150,9 +1165,11 @@ export function collectUnknownCostRefs(refs: string[]): string[] {
 function subscriptionRuleCost(ref: string): number | null {
   const prov = ref.split('/')[0];
   if (PROVIDER_MAP[prov]?.local) return null;
-  if ((cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) !== 'subscription') return null;
+  if ((cfg.providers?.[prov]?.billing ?? PROVIDER_MAP[prov]?.billing) !== 'subscription')
+    return null;
   const list = lookupListPrice(ref);
-  if (list && typeof list.input === 'number' && list.input > 0) return SUBSCRIPTION_COST_EPSILON * list.input;
+  if (list && typeof list.input === 'number' && list.input > 0)
+    return SUBSCRIPTION_COST_EPSILON * list.input;
   return SUBSCRIPTION_FALLBACK_COST;
 }
 
@@ -1163,7 +1180,7 @@ function subscriptionRuleCost(ref: string): number | null {
 export function effCost(ref: string): number | 'unknown' {
   const m = getM(ref),
     prov = ref.split('/')[0];
-  
+
   // 1. Use metrics cost_per_m if set to a non-zero value.
   //    cost_per_m: 0 is a valid value (free model) and must NOT be treated
   //    as "unpriced" and replaced by a positive default — that would cause
@@ -1181,7 +1198,7 @@ export function effCost(ref: string): number | 'unknown' {
     if (sub === null) return 0; // explicitly free
     return sub * costMux(prov);
   }
-  
+
   // getM() heals every ref's cost_per_m to a defined value (number, or the
   // 'unknown' sentinel via resolveCostPerM), so `base` is never undefined
   // here. The former price-lookup / provider-estimate / default-cost
@@ -1191,12 +1208,12 @@ export function effCost(ref: string): number | 'unknown' {
   if (typeof base !== 'number') {
     return 'unknown';
   }
-  
+
   // Apply subscription discount
   if (cfg.providers?.[prov]?.billing === 'subscription') {
     base *= SUB_DISCOUNT;
   }
-  
+
   return base * costMux(prov);
 }
 
@@ -1236,7 +1253,9 @@ export function getUsageAll(days: number): Record<string, number> {
  * written before 5a carry no cache fields and contribute 0, so the share is a
  * lower bound for windows that straddle the upgrade.
  */
-export function getCacheUsageAll(days: number): Record<string, { cacheRead: number; cacheWrite: number }> {
+export function getCacheUsageAll(
+  days: number
+): Record<string, { cacheRead: number; cacheWrite: number }> {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const result: Record<string, { cacheRead: number; cacheWrite: number }> = {};
   for (const e of cache.usage_log ?? []) {

@@ -9,9 +9,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const readJson = (rel: string) => JSON.parse(readFileSync(join(process.cwd(), rel), 'utf8')) as {
-  engines?: { node?: string };
-};
+const readJson = (rel: string) =>
+  JSON.parse(readFileSync(join(process.cwd(), rel), 'utf8')) as {
+    engines?: { node?: string };
+  };
 
 /**
  * `>=22.19.0` -> [22, 19, 0]. A missing or unparseable range is a test
@@ -19,11 +20,15 @@ const readJson = (rel: string) => JSON.parse(readFileSync(join(process.cwd(), re
  * floor; the host side may carry an upper bound (">=22.19.0 <25"), so only its
  * first ">=" bound is read.
  */
-function floorOf(range: string | undefined, who: string, strict: boolean): [number, number, number] {
+function floorOf(
+  range: string | undefined,
+  who: string,
+  strict: boolean
+): [number, number, number] {
   const m = (strict ? /^>=\s*(\d+)\.(\d+)\.(\d+)$/ : />=\s*(\d+)\.(\d+)\.(\d+)/).exec(range ?? '');
   if (!m) {
     throw new Error(
-      `${who}: engines.node must ${strict ? 'be a plain ">=X.Y.Z" floor' : 'contain a ">=X.Y.Z" bound'}, got ${JSON.stringify(range)}`,
+      `${who}: engines.node must ${strict ? 'be a plain ">=X.Y.Z" floor' : 'contain a ">=X.Y.Z" bound'}, got ${JSON.stringify(range)}`
     );
   }
   return [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -35,16 +40,16 @@ const atLeast = (a: number[], b: number[]): boolean => {
 };
 
 describe('Node engines floor follows the Pi host', () => {
-  it('package.json engines.node is at least the host\'s engines.node', () => {
+  it("package.json engines.node is at least the host's engines.node", () => {
     const own = floorOf(readJson('package.json').engines?.node, 'package.json', true);
     const host = floorOf(
       readJson('node_modules/@earendil-works/pi-coding-agent/package.json').engines?.node,
       'pi-coding-agent',
-      false,
+      false
     );
     expect(
       atLeast(own, host),
-      `package.json promises node >=${own.join('.')} but the host needs >=${host.join('.')}`,
+      `package.json promises node >=${own.join('.')} but the host needs >=${host.join('.')}`
     ).toBe(true);
   });
 });

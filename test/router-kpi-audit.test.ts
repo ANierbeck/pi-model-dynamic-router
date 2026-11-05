@@ -6,7 +6,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { createKpis, ingestLine, formatReport, parseSince, logFiles } from '../scripts/router-kpi-audit.ts';
+import {
+  createKpis,
+  ingestLine,
+  formatReport,
+  parseSince,
+  logFiles,
+} from '../scripts/router-kpi-audit.ts';
 
 const LINES = [
   '2026-09-26T16:00:00.000Z  [delegation] replaced 21000-char read result with 65-char summary via bulk_reader',
@@ -35,17 +41,30 @@ describe('router KPI audit', () => {
     for (const l of LINES) ingestLine(k, l);
     expect(k.lines).toBe(LINES.length - 1);
     expect(k.delegation).toMatchObject({
-      replaced: 2, byTool: { read: 1, bash: 1 }, charsIn: 27533, charsOut: 7001,
-      inflated: 1, failed: 1, noUsableSummary: 1,
+      replaced: 2,
+      byTool: { read: 1, bash: 1 },
+      charsIn: 27533,
+      charsOut: 7001,
+      inflated: 1,
+      failed: 1,
+      noUsableSummary: 1,
     });
     expect(k.readBlocks).toEqual({ expensive: 1, size: 1 });
     expect(k.hops.failures).toBe(3);
     expect(k.hops.byReason).toEqual({ timeout: 1, provider_error: 1, rate_limit: 1 });
     expect(k.hops.byModel['openrouter/thinkingmachines/inkling:free']).toBe(1);
     expect(k.allCandidatesFailed).toBe(1);
-    expect(k.blocklist).toEqual({ blocked: 1, byReason: { 'agentic-harness-gate': 1 }, cleared: 1 });
+    expect(k.blocklist).toEqual({
+      blocked: 1,
+      byReason: { 'agentic-harness-gate': 1 },
+      cleared: 1,
+    });
     expect(k.watchdog).toEqual({ wedged: 1, classifierSkips: 1 });
-    expect(k.classifier).toEqual({ byCategory: { code_complex: 1 }, noSchema501: 1, fallbackFailed: 1 });
+    expect(k.classifier).toEqual({
+      byCategory: { code_complex: 1 },
+      noSchema501: 1,
+      fallbackFailed: 1,
+    });
     expect(formatReport(k)).toContain('saved 20532, 75%');
   });
 
@@ -69,8 +88,14 @@ describe('router KPI audit', () => {
 describe('provenance tag (global log, 2026-10-03)', () => {
   it('counts KPIs on lines carrying a [<project>/<pid>] tag', () => {
     const k = createKpis();
-    ingestLine(k, '2026-10-04T08:00:00.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader');
-    ingestLine(k, '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [router] mistral/mistral-small-latest — rate limit/spend limit reached (resets 23:00)');
+    ingestLine(
+      k,
+      '2026-10-04T08:00:00.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader'
+    );
+    ingestLine(
+      k,
+      '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [router] mistral/mistral-small-latest — rate limit/spend limit reached (resets 23:00)'
+    );
     expect(k.lines).toBe(2);
     expect(k.delegation.replaced).toBe(1);
     expect(k.hops.failures).toBe(1);
@@ -83,9 +108,13 @@ describe('provenance tag (global log, 2026-10-03)', () => {
     // parse a basename containing "]"; such lines matched no KPI family and
     // undercounted silently. The audit must at least flag them.
     const k = createKpis();
-    const anomalous = '2026-10-04T08:00:00.000Z  [foo]bar/123] [router] All 47 candidate(s) failed for group standard';
+    const anomalous =
+      '2026-10-04T08:00:00.000Z  [foo]bar/123] [router] All 47 candidate(s) failed for group standard';
     ingestLine(k, anomalous);
-    ingestLine(k, '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader');
+    ingestLine(
+      k,
+      '2026-10-04T08:00:01.000Z  [pi-model-router-fork/61544] [delegation] replaced 21000-char read result with 65-char summary via bulk_reader'
+    );
     expect(k.lines).toBe(2);
     expect(k.tagAnomalies).toBe(1);
     expect(k.tagAnomalyExample).toBe(anomalous);
@@ -99,7 +128,10 @@ describe('provenance tag (global log, 2026-10-03)', () => {
 
   it('does not misread message bracket prefixes as tag anomalies', () => {
     const k = createKpis();
-    ingestLine(k, '2026-10-04T08:00:00.000Z  [router] openrouter/thinkingmachines/inkling:free blocked for 7 days: agentic-harness-gate (HTTP 403, signature 403:agentic-harness-gate, seen 1×)');
+    ingestLine(
+      k,
+      '2026-10-04T08:00:00.000Z  [router] openrouter/thinkingmachines/inkling:free blocked for 7 days: agentic-harness-gate (HTTP 403, signature 403:agentic-harness-gate, seen 1×)'
+    );
     ingestLine(k, '2026-10-04T08:00:01.000Z  [escalation] tier jump 3/5] applied');
     expect(k.tagAnomalies).toBe(0);
   });
@@ -108,7 +140,10 @@ describe('provenance tag (global log, 2026-10-03)', () => {
 describe('blocklist lines', () => {
   it('counts a block whatever TTL the log line states', () => {
     const k = createKpis();
-    ingestLine(k, '2026-09-27T08:00:00.000Z  [router] a/b blocked for 14 days: decommissioned (HTTP 404, signature s, seen 1×)');
+    ingestLine(
+      k,
+      '2026-09-27T08:00:00.000Z  [router] a/b blocked for 14 days: decommissioned (HTTP 404, signature s, seen 1×)'
+    );
     expect(k.blocklist).toMatchObject({ blocked: 1, byReason: { decommissioned: 1 } });
   });
 });
@@ -133,7 +168,8 @@ describe('rotated log files', () => {
   it('lists rotations oldest first, then the live log', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kpi-rot-'));
     const base = path.join(dir, 'router.log');
-    for (const f of ['router.log', 'router.log.1', 'router.log.3']) fs.writeFileSync(path.join(dir, f), '');
+    for (const f of ['router.log', 'router.log.1', 'router.log.3'])
+      fs.writeFileSync(path.join(dir, f), '');
     expect(logFiles(base)).toEqual([`${base}.3`, `${base}.1`, base]);
     fs.rmSync(dir, { recursive: true, force: true });
   });

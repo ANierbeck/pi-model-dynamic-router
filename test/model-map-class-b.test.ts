@@ -41,13 +41,23 @@ describe('model-map.yaml class-B invariant (ADR-0025 §2B)', () => {
     // read anything. index.ts and event-handlers.ts legitimately call
     // metricsModule.loadModelMap(); that is routing the map INTO metrics,
     // not consuming it.
-    const files = ['index.ts', ...readdirSync(join(process.cwd(), 'src')).filter((f) => f.endsWith('.ts')).map((f) => `src/${f}`)];
+    const files = [
+      'index.ts',
+      ...readdirSync(join(process.cwd(), 'src'))
+        .filter((f) => f.endsWith('.ts'))
+        .map((f) => `src/${f}`),
+    ];
     const loaderDefs: string[] = [];
     const offenders: string[] = [];
     for (const file of files) {
       const code = stripComments(readFileSync(file, 'utf8'));
       if (code.includes('export function loadModelMap')) loaderDefs.push(file);
-      if (file !== 'src/metrics.ts' && code.includes('model-map.yaml') && /readFileSync|writeFileSync|loadYAML|\.parse\(|import YAML|from 'yaml'/.test(code)) offenders.push(file);
+      if (
+        file !== 'src/metrics.ts' &&
+        code.includes('model-map.yaml') &&
+        /readFileSync|writeFileSync|loadYAML|\.parse\(|import YAML|from 'yaml'/.test(code)
+      )
+        offenders.push(file);
     }
     expect(loaderDefs).toEqual(['src/metrics.ts']);
     expect(offenders, `second access path to model-map.yaml: ${offenders.join(', ')}`).toEqual([]);
@@ -80,7 +90,10 @@ describe('model-map.yaml class-B invariant (ADR-0025 §2B)', () => {
     // value, still not admission or removal of supply.
     const discovered = [{ provider: 'x', id: 'voxtral-large', cost_per_m: 1 }] as any;
     const base = {
-      model_groups: { g: { name: 'g', method: 'best', min_gdpval: 0 }, strict: { name: 'strict', method: 'best', min_gdpval: 1 } },
+      model_groups: {
+        g: { name: 'g', method: 'best', min_gdpval: 0 },
+        strict: { name: 'strict', method: 'best', min_gdpval: 1 },
+      },
       model_metrics: {},
       providers: {},
     };
@@ -96,7 +109,9 @@ describe('model-map.yaml class-B invariant (ADR-0025 §2B)', () => {
     };
 
     const open = world({ g: base.model_groups.g });
-    expect(new Router(open.cfg, open.cache, new Map()).resolve('g')!.candidates).toContain('x/voxtral-large');
+    expect(new Router(open.cfg, open.cache, new Map()).resolve('g')!.candidates).toContain(
+      'x/voxtral-large'
+    );
     expect(metricsModule.resolveSlug('x/voxtral-large')).toBeNull();
 
     const strict = world({ strict: base.model_groups.strict });

@@ -38,8 +38,13 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import { removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import { makeExtensionContext, routerStatePaths } from './helpers/extension-harness.ts';
+import { removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
+import {
+  makeExtensionContext,
+  routerStatePaths,
+  startSession,
+  makePiCtx,
+} from './helpers/extension-harness.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
@@ -122,19 +127,12 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
       },
       scanModels,
       async (defaultExport, tmpDir) => {
-        const onHandlers: Record<string, (ev: any, ctx: any) => any> = {};
         const registerProviderCalls: any[] = [];
-        const pi: any = {
-          registerTool: vi.fn(),
-          registerCommand: vi.fn(),
+        const { pi, onHandlers } = makePiCtx({
           registerProvider: vi.fn((name: string, opts: any) => {
             registerProviderCalls.push({ name, opts });
           }),
-          setModel: vi.fn(async () => true),
-          on: vi.fn((event: string, handler: any) => {
-            onHandlers[event] = handler;
-          }),
-        };
+        });
         defaultExport(pi);
 
         // REAL 0.99.1 ModelRegistry contract (pi-ai dist/models.js:572):
@@ -146,9 +144,7 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
         const modelRegistry = {
           getAll: () => [knownChat],
           getModelsOfType: (type: string, provider?: string) =>
-            nonChat.filter(
-              (m: any) => m.type === type && (!provider || m.provider === provider)
-            ),
+            nonChat.filter((m: any) => m.type === type && (!provider || m.provider === provider)),
           findOfType: (type: string, provider: string, modelId: string) =>
             nonChat.find(
               (m: any) => m.type === type && m.provider === provider && m.id === modelId
@@ -159,9 +155,7 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
           getApiKeyForProvider: async () => 'test-key',
           runtime: { streamSimple: vi.fn() },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // INVARIANT 1: no registration of scan-discovered models. The old
         // union registered mistral-zai here (with glm-5-2 added and the
@@ -200,9 +194,7 @@ describe('ADR-0021: the router never registers models Pi does not know', () => {
           getApiKeyForProvider: async () => 'test-key',
           runtime: { streamSimple: vi.fn() },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         // INVARIANT 2: the snapshot exists, the pi-known ref is a routing
         // candidate, and the unresolvable scan ref never made it in — even

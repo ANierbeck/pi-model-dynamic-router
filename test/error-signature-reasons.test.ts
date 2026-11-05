@@ -16,7 +16,10 @@ const body = (reasons: unknown[]): string =>
 
 describe('classifyFailure — ineligibility reasons', () => {
   it('still reads a string guardrail reason', () => {
-    const c = classifyFailure('openrouter/openrouter/free', body([{ reason: 'free-model-training-violation-by-guardrail', endpoint_count: 1 }]));
+    const c = classifyFailure(
+      'openrouter/openrouter/free',
+      body([{ reason: 'free-model-training-violation-by-guardrail', endpoint_count: 1 }])
+    );
     expect(c.signature).toMatch(/404/);
   });
 

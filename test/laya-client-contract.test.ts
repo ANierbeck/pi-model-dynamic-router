@@ -14,7 +14,11 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import * as http from 'node:http';
-import { classifyWithLayaRaw, truncatePromptForLaya, layaPromptBudgetChars } from '../src/laya-classifier.ts';
+import {
+  classifyWithLayaRaw,
+  truncatePromptForLaya,
+  layaPromptBudgetChars,
+} from '../src/laya-classifier.ts';
 
 interface Captured {
   path: string | undefined;
@@ -38,7 +42,14 @@ async function startWrapperStub(): Promise<string> {
       const body = JSON.parse(raw);
       captured.push({ path: req.url, body });
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ category: 'simple', confidence: 0.9, probabilities: { simple: 0.9 }, ms: 3 }));
+      res.end(
+        JSON.stringify({
+          category: 'simple',
+          confidence: 0.9,
+          probabilities: { simple: 0.9 },
+          ms: 3,
+        })
+      );
     });
   });
   await new Promise<void>((r) => server!.listen(0, '127.0.0.1', r));
@@ -71,10 +82,13 @@ describe('laya client ↔ wrapper contract', () => {
       'fix the failing test',
       { previousUserMessage: 'run the suite', lastAssistantSnippet: '3 failures' },
       base,
-      1000,
+      1000
     );
     const body = captured[0]!.body;
-    expect(body.context).toEqual({ previousUserMessage: 'run the suite', lastAssistantSnippet: '3 failures' });
+    expect(body.context).toEqual({
+      previousUserMessage: 'run the suite',
+      lastAssistantSnippet: '3 failures',
+    });
     // The wrapper builds the context block itself — a block already embedded in
     // the prompt would appear twice in the model input.
     expect(body.prompt).toBe('fix the failing test');

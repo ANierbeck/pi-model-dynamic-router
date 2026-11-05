@@ -85,7 +85,7 @@ function append(
   logPath: string,
   line: string,
   rot: { maxBytes: number; keep: number } = rotation,
-  mode?: number,
+  mode?: number
 ): void {
   ensureLogDirFor(logPath);
   const size = fs.existsSync(logPath) ? fs.statSync(logPath).size : 0;
@@ -100,7 +100,10 @@ function append(
       // why the file keeps growing, and back off.
       rotationRetryAt.set(logPath, Date.now() + ROTATION_RETRY_MS);
       const reason = err instanceof Error ? err.message : textOf(err);
-      fs.appendFileSync(logPath, `${new Date().toISOString()}  [router] log rotation failed, retrying in ${ROTATION_RETRY_MS / 1000}s: ${reason}\n`);
+      fs.appendFileSync(
+        logPath,
+        `${new Date().toISOString()}  [router] log rotation failed, retrying in ${ROTATION_RETRY_MS / 1000}s: ${reason}\n`
+      );
     }
   }
   // `mode` applies when the file is created (private data files, e.g. the
@@ -117,7 +120,7 @@ export function appendRotating(
   logPath: string,
   line: string,
   rot: { maxBytes: number; keep: number },
-  mode?: number,
+  mode?: number
 ): void {
   append(logPath, line, { maxBytes: rot.maxBytes, keep: Math.max(1, rot.keep) }, mode);
 }
@@ -142,16 +145,22 @@ export function writeLogLine(line: string): void {
   if (projectLogPath && path.resolve(projectLogPath) === path.resolve(home)) {
     try {
       append(home, withTag(line));
-    } catch { /* logging must never throw into its caller */ }
+    } catch {
+      /* logging must never throw into its caller */
+    }
     return;
   }
   try {
     append(home, withTag(line));
-  } catch { /* logging must never throw into its caller */ }
+  } catch {
+    /* logging must never throw into its caller */
+  }
   if (projectLogPath) {
     try {
       append(projectLogPath, line);
-    } catch { /* logging must never throw into its caller */ }
+    } catch {
+      /* logging must never throw into its caller */
+    }
   }
 }
 

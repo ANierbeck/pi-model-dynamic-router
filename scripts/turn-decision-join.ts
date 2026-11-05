@@ -108,7 +108,9 @@ function parseLines(path: string): unknown[] {
 /** User turns of every `*.jsonl` session file in `dir`, with the first served model after each. */
 export function readSessionTurns(dir: string, bounds: Bounds): SessionTurn[] {
   const turns: SessionTurn[] = [];
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort()) {
+  for (const file of readdirSync(dir)
+    .filter((f) => f.endsWith('.jsonl'))
+    .sort()) {
     let pending: SessionTurn | null = null;
     for (const rec of parseLines(join(dir, file)) as Array<Record<string, any>>) {
       if (rec?.type !== 'message' || !rec.message || typeof rec.message !== 'object') continue;
@@ -153,7 +155,7 @@ const byTsThenSession = (a: SessionTurn, b: SessionTurn) =>
 export function joinTurns(
   turns: SessionTurn[],
   decisions: DecisionRow[],
-  window: JoinWindow = DEFAULT_WINDOW,
+  window: JoinWindow = DEFAULT_WINDOW
 ): JoinedTurn[] {
   const routing = new Map<string, DecisionRow[]>();
   for (const d of decisions) {
@@ -167,9 +169,10 @@ export function joinTurns(
   const lastServed = new Map<string, string>();
   return ordered.map((t) => {
     const hits = (routing.get(t.sha) ?? []).filter(
-      (d) => d.ts >= t.ts - window.beforeMs && d.ts <= t.ts + window.afterMs,
+      (d) => d.ts >= t.ts - window.beforeMs && d.ts <= t.ts + window.afterMs
     );
-    const status: JoinedTurn['status'] = hits.length === 1 ? 'matched' : hits.length === 0 ? 'unmatched' : 'ambiguous';
+    const status: JoinedTurn['status'] =
+      hits.length === 1 ? 'matched' : hits.length === 0 ? 'unmatched' : 'ambiguous';
     const prev = lastServed.get(t.session);
     const switched = t.served !== null && prev !== undefined ? t.served !== prev : null;
     if (t.served !== null) lastServed.set(t.session, t.served);
@@ -194,9 +197,16 @@ export interface JoinSummary {
 }
 
 export function summarizeJoin(joined: JoinedTurn[]): JoinSummary {
-  const s: JoinSummary = { turns: joined.length, matched: 0, ambiguous: 0, unmatched: 0, byCategory: {} };
+  const s: JoinSummary = {
+    turns: joined.length,
+    matched: 0,
+    ambiguous: 0,
+    unmatched: 0,
+    byCategory: {},
+  };
   for (const j of joined) {
-    s[j.status === 'matched' ? 'matched' : j.status === 'ambiguous' ? 'ambiguous' : 'unmatched'] += 1;
+    s[j.status === 'matched' ? 'matched' : j.status === 'ambiguous' ? 'ambiguous' : 'unmatched'] +=
+      1;
     if (j.status !== 'matched' || j.category === null) continue;
     const c = (s.byCategory[j.category] ??= { turns: 0, switches: 0 });
     c.turns += 1;
@@ -206,7 +216,16 @@ export function summarizeJoin(joined: JoinedTurn[]): JoinSummary {
 }
 
 function fingerprint(joined: JoinedTurn[]): string {
-  const rows = joined.map((j) => [j.session, j.ts, j.sha, j.status, j.category, j.group, j.served, j.switched]);
+  const rows = joined.map((j) => [
+    j.session,
+    j.ts,
+    j.sha,
+    j.status,
+    j.category,
+    j.group,
+    j.served,
+    j.switched,
+  ]);
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16);
 }
 
@@ -228,7 +247,9 @@ function main(): void {
   const joined = joinTurns(readSessionTurns(sessions, bounds), readDecisions(log, bounds));
   const s = summarizeJoin(joined);
   console.log(`bounds: since=${since ?? '-'} until=${until ?? '-'}`);
-  console.log(`turns=${s.turns} matched=${s.matched} ambiguous=${s.ambiguous} unmatched=${s.unmatched}`);
+  console.log(
+    `turns=${s.turns} matched=${s.matched} ambiguous=${s.ambiguous} unmatched=${s.unmatched}`
+  );
   console.log(`fingerprint=${fingerprint(joined)}`);
   for (const [cat, c] of Object.entries(s.byCategory).sort()) {
     console.log(`  ${cat.padEnd(14)} turns=${c.turns} switches=${c.switches}`);

@@ -40,17 +40,14 @@
 // is the defense-in-depth guarantee the user asked for.
 
 import { describe, it, expect, vi } from 'vitest';
-import { makeExtensionContext } from './helpers/extension-harness.ts';
-import {
-  flushBackgroundScan,
-} from './helpers/noop-scan-cache.ts';
+import { makeExtensionContext, startSession } from './helpers/extension-harness.ts';
+
 import { doneEvent } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 vi.mock('../src/ollama-utils.ts', async () =>
   (await import('./helpers/ollama-mock.ts')).ollamaMockModule()
 );
-
 
 async function withIsolatedRouter(
   configOverride: Record<string, unknown>,
@@ -64,12 +61,14 @@ async function withIsolatedRouter(
 // contains an embedded "> [router] HINT: ..." line — NOT at the start. This
 // is the critical case the first test missed: stripRouterNarration must
 // filter EVERY matching line, not just a leading one.
-const NARRATION_LINE = '> [router] HINT: openrouter/cohere/north-mini-code:free · openrouter/cohere/north-mini-code:free';
+const NARRATION_LINE =
+  '> [router] HINT: openrouter/cohere/north-mini-code:free · openrouter/cohere/north-mini-code:free';
 
 const contaminatedUserMessage =
   '<conversation>\n' +
   '[Assistant thinking]: I should route this to a cheap model.\n' +
-  NARRATION_LINE + '\n' +
+  NARRATION_LINE +
+  '\n' +
   'Now for the actual question: please summarize the diff and tell me whether the new test covers the compaction path.\n' +
   '</conversation>';
 
@@ -111,9 +110,7 @@ describe('classifier context: router narration must not leak via user-message pa
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'dynamic', id: 'dynamic' };
 
@@ -181,9 +178,7 @@ describe('classifier context: router narration must not leak via user-message pa
           getApiKeyForProvider: async () => null,
           runtime: { streamSimple },
         };
-        const ctx: any = { modelRegistry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
-        await onHandlers['session_start']?.({}, ctx);
-        await flushBackgroundScan();
+        await startSession(onHandlers, { modelRegistry, cwd: tmpDir });
 
         const groupModel = { provider: 'dynamic', id: 'dynamic' };
 

@@ -88,7 +88,9 @@ describe('rankHintCandidates()', () => {
     // Mirrors the real bug: anthropic/claude-sonnet-5 (no key) vs.
     // claude-bridge/claude-sonnet-5 (own auth, always usable).
     const registry = fakeRegistry({
-      getApiKeyForProvider: vi.fn(async (provider: string) => (provider === 'anthropic' ? null : 'key')),
+      getApiKeyForProvider: vi.fn(async (provider: string) =>
+        provider === 'anthropic' ? null : 'key'
+      ),
     });
     const ranked = await rankHintCandidates(
       ['anthropic/claude-sonnet-5', 'claude-bridge/claude-sonnet-5'],
@@ -105,7 +107,9 @@ describe('rankHintCandidates()', () => {
     // entirely, so "unusable" here is gated on model lookup instead — mirrors a
     // ref that Pi's registry doesn't actually know about.
     const registry = fakeRegistry({
-      find: vi.fn((provider: string) => (provider.startsWith('usable') ? { id: 'stub' } : undefined)),
+      find: vi.fn((provider: string) =>
+        provider.startsWith('usable') ? { id: 'stub' } : undefined
+      ),
     });
     const gdpval: Record<string, number> = {
       'usable-low/m': 100,
@@ -124,7 +128,12 @@ describe('rankHintCandidates()', () => {
 
   it('never drops an unusable ref — keeps it as a last-resort candidate', async () => {
     const registry = fakeRegistry({ getApiKeyForProvider: vi.fn(async () => null) });
-    const ranked = await rankHintCandidates(['anthropic/claude-sonnet-5'], noGroups, registry, () => 0);
+    const ranked = await rankHintCandidates(
+      ['anthropic/claude-sonnet-5'],
+      noGroups,
+      registry,
+      () => 0
+    );
     expect(ranked).toEqual(['anthropic/claude-sonnet-5']);
   });
 
@@ -134,14 +143,26 @@ describe('rankHintCandidates()', () => {
     });
     const gdpval: Record<string, number> = { 'bad1/m': 50, 'bad2/m': 500, 'ok/m': 10 };
     const onUnusable = vi.fn();
-    await rankHintCandidates(['bad1/m', 'ok/m', 'bad2/m'], noGroups, registry, (id) => gdpval[id] ?? 0, onUnusable);
+    await rankHintCandidates(
+      ['bad1/m', 'ok/m', 'bad2/m'],
+      noGroups,
+      registry,
+      (id) => gdpval[id] ?? 0,
+      onUnusable
+    );
     expect(onUnusable).toHaveBeenCalledWith(['bad2/m', 'bad1/m']);
   });
 
   it('does not call onUnusable when every ref is usable', async () => {
     const registry = fakeRegistry();
     const onUnusable = vi.fn();
-    await rankHintCandidates(['claude-bridge/a', 'claude-bridge/b'], noGroups, registry, () => 0, onUnusable);
+    await rankHintCandidates(
+      ['claude-bridge/a', 'claude-bridge/b'],
+      noGroups,
+      registry,
+      () => 0,
+      onUnusable
+    );
     expect(onUnusable).not.toHaveBeenCalled();
   });
 });

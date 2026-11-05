@@ -44,7 +44,9 @@ export function parseFamilyTokens(text: string): string[] {
   const familyRows = [...table[1].matchAll(/family:/g)];
   if (tokenRows.length === 0) throw new Error('no tokens rows found in MODEL_FAMILIES');
   if (tokenRows.length !== familyRows.length) {
-    throw new Error(`MODEL_FAMILIES parse mismatch: ${tokenRows.length} token rows vs ${familyRows.length} family rows`);
+    throw new Error(
+      `MODEL_FAMILIES parse mismatch: ${tokenRows.length} token rows vs ${familyRows.length} family rows`
+    );
   }
   const tokens: string[] = [];
   for (const m of tokenRows) {
@@ -70,26 +72,33 @@ function readNonModelIdentifiers(): string[] {
 const FAMILY_TOKENS = readFamilyTokens();
 const NON_MODEL_IDENTIFIERS = readNonModelIdentifiers();
 const scan = (text: string, file = 'src/fixture.ts') =>
-  scanSourceText(text, { file, familyTokens: FAMILY_TOKENS, nonModelIdentifiers: NON_MODEL_IDENTIFIERS });
+  scanSourceText(text, {
+    file,
+    familyTokens: FAMILY_TOKENS,
+    nonModelIdentifiers: NON_MODEL_IDENTIFIERS,
+  });
 const literals = (text: string) => scan(text).map((f) => f.literal);
 
 describe('readFamilyTokens() reads the real model-matcher table', () => {
   it('finds the documented families', () => {
-    expect(FAMILY_TOKENS).toEqual(expect.arrayContaining(['claude', 'mistral', 'gemma', 'qwen', 'glm', 'nvidia']));
+    expect(FAMILY_TOKENS).toEqual(
+      expect.arrayContaining(['claude', 'mistral', 'gemma', 'qwen', 'glm', 'nvidia'])
+    );
   });
   it('still parses every row if the table is reformatted with double quotes', () => {
     const text = [
-      "const MODEL_FAMILIES: readonly { tokens: string[]; family: string }[] = [",
-      "  { tokens: [\"claude\", \"opus\"], family: 'anthropic' },",
-      "  { tokens: [\"mistral\", \"nemo\"], family: 'mistral' },",
-      "];",
-    ].join("\n");
+      'const MODEL_FAMILIES: readonly { tokens: string[]; family: string }[] = [',
+      '  { tokens: ["claude", "opus"], family: \'anthropic\' },',
+      '  { tokens: ["mistral", "nemo"], family: \'mistral\' },',
+      '];',
+    ].join('\n');
     expect(parseFamilyTokens(text)).toEqual(['claude', 'opus', 'mistral', 'nemo']);
   });
   it('refuses a half-parsed table instead of silently dropping tokens', () => {
     const broken = "const MODEL_FAMILIES = [\n  { tokens: [], family: 'x' },\n];";
     expect(() => parseFamilyTokens(broken)).toThrow();
-    const mismatched = "const MODEL_FAMILIES = [\n  { tokens: ['a'], family: 'x' },\n  { family: 'y' },\n];";
+    const mismatched =
+      "const MODEL_FAMILIES = [\n  { tokens: ['a'], family: 'x' },\n  { family: 'y' },\n];";
     expect(() => parseFamilyTokens(mismatched)).toThrow();
   });
 });
@@ -97,11 +106,14 @@ describe('readFamilyTokens() reads the real model-matcher table', () => {
 describe('scanSourceText()', () => {
   it('reports a bare family-prefixed model id with its line', () => {
     const findings = scan(`const a = 1;\nconst M = 'gemma9-nonexistent:12b';\n`);
-    expect(findings).toEqual([{ file: 'src/fixture.ts', literal: 'gemma9-nonexistent:12b', line: 2 }]);
+    expect(findings).toEqual([
+      { file: 'src/fixture.ts', literal: 'gemma9-nonexistent:12b', line: 2 },
+    ]);
   });
 
   it('reports provider/model refs, including inside template expressions', () => {
-    const text = 'const s = `x ${pick(cfg.m, \'ollama/foo-model:7b\')} y`;\nconst r = "openrouter/acme/tiny-1:free";';
+    const text =
+      'const s = `x ${pick(cfg.m, \'ollama/foo-model:7b\')} y`;\nconst r = "openrouter/acme/tiny-1:free";';
     expect(literals(text)).toEqual(['ollama/foo-model:7b', 'openrouter/acme/tiny-1:free']);
   });
 
@@ -151,13 +163,22 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
   const cfg = {
     log_level: 'warn',
     non_agent_model_prefixes: ['acme-small-'],
-    exclude: { providers: ['someprov'], models: ['openrouter/acme/bad:free'], paid_models_from: ['openrouter'] },
+    exclude: {
+      providers: ['someprov'],
+      models: ['openrouter/acme/bad:free'],
+      paid_models_from: ['openrouter'],
+    },
     providers: {
       openrouter: { billing: 'pay_per_token', free_models: ['openrouter/acme/tiny-1:free'] },
       'claude-bridge': { billing: 'subscription' },
     },
     model_groups: {
-      simple: { method: 'tiered', max_cost: 0, models: ['acme/pinned-1'], exclude_models: ['acme/never-1'] },
+      simple: {
+        method: 'tiered',
+        max_cost: 0,
+        models: ['acme/pinned-1'],
+        exclude_models: ['acme/never-1'],
+      },
       dynamic: {
         method: 'dynamic',
         classifier_model: 'ollama/judge:1b',
@@ -171,7 +192,11 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
   };
 
   it('reports every named-model position with a config:<path> literal', () => {
-    expect(scanConfig(cfg).map((f) => f.literal).sort()).toEqual(
+    expect(
+      scanConfig(cfg)
+        .map((f) => f.literal)
+        .sort()
+    ).toEqual(
       [
         'config:non_agent_model_prefixes[]=acme-small-',
         'config:exclude.models[]=openrouter/acme/bad:free',
@@ -184,11 +209,15 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
         'config:model_metrics["claude-bridge/acme-5"]',
       ].sort()
     );
-    expect(scanConfig(cfg).every((f) => f.file === 'router-config.json' && f.line === 0)).toBe(true);
+    expect(scanConfig(cfg).every((f) => f.file === 'router-config.json' && f.line === 0)).toBe(
+      true
+    );
   });
 
   it('does not report gdpval_builtin (class B annotation data) or provider-level entries', () => {
-    const literals = scanConfig(cfg).map((f) => f.literal).join('\n');
+    const literals = scanConfig(cfg)
+      .map((f) => f.literal)
+      .join('\n');
     expect(literals).not.toContain('gdpval_builtin');
     expect(literals).not.toContain('exclude.providers');
     expect(literals).not.toContain('paid_models_from');
@@ -197,18 +226,26 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
   it('tolerates missing sections and non-object input', () => {
     expect(scanConfig({})).toEqual([]);
     expect(scanConfig(null)).toEqual([]);
-    expect(scanConfig({ model_groups: { x: null }, providers: { y: 'z' }, exclude: [] })).toEqual([]);
+    expect(scanConfig({ model_groups: { x: null }, providers: { y: 'z' }, exclude: [] })).toEqual(
+      []
+    );
   });
 });
 
 describe('compareToBaseline() — the ratchet', () => {
-  const finding = (literal: string, line = 7): HardcodedFinding => ({ file: 'src/fixture.ts', literal, line });
+  const finding = (literal: string, line = 7): HardcodedFinding => ({
+    file: 'src/fixture.ts',
+    literal,
+    line,
+  });
 
   it('flags a literal that is not in the baseline, naming file, line and literal', () => {
     const findings = scan(`\n\nconst M = 'gemma9-nonexistent:12b';`);
     const violations = compareToBaseline(findings, []);
     expect(violations).toHaveLength(1);
-    expect(violations[0]).toMatch(/^NEW hardcoded model literal in src\/fixture\.ts:3: 'gemma9-nonexistent:12b'/);
+    expect(violations[0]).toMatch(
+      /^NEW hardcoded model literal in src\/fixture\.ts:3: 'gemma9-nonexistent:12b'/
+    );
     expect(violations[0]).toContain('ADR-0025');
   });
 
@@ -216,14 +253,18 @@ describe('compareToBaseline() — the ratchet', () => {
     const stale: BaselineEntry = { file: 'src/fixture.ts', literal: 'gone-model:1b', count: 1 };
     const violations = compareToBaseline([], [stale]);
     expect(violations).toHaveLength(1);
-    expect(violations[0]).toMatch(/^BASELINE entry is stale and must be REMOVED \(the ratchet only shrinks\)/);
+    expect(violations[0]).toMatch(
+      /^BASELINE entry is stale and must be REMOVED \(the ratchet only shrinks\)/
+    );
     expect(violations[0]).toContain('gone-model:1b');
   });
 
   it('counts occurrences: a second copy of a baselined literal is new, a removed copy is stale', () => {
     const entry: BaselineEntry = { file: 'src/fixture.ts', literal: 'gemma2:2b', count: 1 };
     expect(compareToBaseline([finding('gemma2:2b', 3), finding('gemma2:2b', 9)], [entry])).toEqual([
-      expect.stringMatching(/^NEW hardcoded model literal in src\/fixture\.ts:3,9: 'gemma2:2b' \(2 found, baseline allows 1\)/),
+      expect.stringMatching(
+        /^NEW hardcoded model literal in src\/fixture\.ts:3,9: 'gemma2:2b' \(2 found, baseline allows 1\)/
+      ),
     ]);
     expect(compareToBaseline([finding('gemma2:2b')], [{ ...entry, count: 2 }])).toEqual([
       expect.stringMatching(/^BASELINE entry is stale and must be REMOVED .*now found 1/),
@@ -231,7 +272,11 @@ describe('compareToBaseline() — the ratchet', () => {
   });
 
   it('passes when findings and baseline match exactly', () => {
-    const findings = [finding('gemma2:2b', 3), finding('gemma2:2b', 9), finding('ollama/x-1:1b', 4)];
+    const findings = [
+      finding('gemma2:2b', 3),
+      finding('gemma2:2b', 9),
+      finding('ollama/x-1:1b', 4),
+    ];
     expect(compareToBaseline(findings, toBaselineEntries(findings))).toEqual([]);
   });
 
@@ -257,7 +302,9 @@ function scanShippedTree(): HardcodedFinding[] {
     .concat('index.ts')
     .filter(isScannedSourcePath)
     .sort();
-  const findings = sources.flatMap((file) => scan(readFileSync(path.join(REPO_ROOT, file), 'utf-8'), file));
+  const findings = sources.flatMap((file) =>
+    scan(readFileSync(path.join(REPO_ROOT, file), 'utf-8'), file)
+  );
   const cfg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'router-config.json'), 'utf-8'));
   return findings.concat(scanConfig(cfg));
 }
@@ -289,7 +336,12 @@ describe('isScannedSourcePath() — ADR-0025 class A/B allowlist', () => {
   });
 
   it('skips the class A/B files', () => {
-    for (const f of ['src/capabilities.ts', 'src/providers.ts', 'src/ollama-gdpval.ts', 'src/model-matcher.ts']) {
+    for (const f of [
+      'src/capabilities.ts',
+      'src/providers.ts',
+      'src/ollama-gdpval.ts',
+      'src/model-matcher.ts',
+    ]) {
       expect(isScannedSourcePath(f)).toBe(false);
     }
   });
@@ -300,7 +352,6 @@ describe('isScannedSourcePath() — ADR-0025 class A/B allowlist', () => {
     expect(isScannedSourcePath('src/notes.md')).toBe(false);
   });
 });
-
 
 // Ratchet ceiling (review Minor 1): the note in the baseline file claims
 // entries are never ADDED, but the matching guard only catches additions as

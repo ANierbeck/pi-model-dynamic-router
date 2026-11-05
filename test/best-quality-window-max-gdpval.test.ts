@@ -49,10 +49,30 @@ const testConfig: Config = {
     // Production-shaped sunk-cost pricing: every claude-bridge peer costs
     // the same 1.5e-6 — cost alone CANNOT differentiate sonnet from opus;
     // only the least-overkill tiebreak can.
-    'claude-bridge/claude-opus-5-5': { cost_per_m: 1.5e-6, gdpval: 1900, throughput_tps: 100, avg_latency_ms: 1000 },
-    'claude-bridge/claude-sonnet-5-5': { cost_per_m: 1.5e-6, gdpval: 1844, throughput_tps: 100, avg_latency_ms: 1000 },
-    'mistral/zai-glm-5-3': { cost_per_m: 1.4, gdpval: 1644, throughput_tps: 60, avg_latency_ms: 1200 },
-    'mistral/mistral-medium-3.5': { cost_per_m: 0.4, gdpval: 933, throughput_tps: 80, avg_latency_ms: 900 },
+    'claude-bridge/claude-opus-5-5': {
+      cost_per_m: 1.5e-6,
+      gdpval: 1900,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'claude-bridge/claude-sonnet-5-5': {
+      cost_per_m: 1.5e-6,
+      gdpval: 1844,
+      throughput_tps: 100,
+      avg_latency_ms: 1000,
+    },
+    'mistral/zai-glm-5-3': {
+      cost_per_m: 1.4,
+      gdpval: 1644,
+      throughput_tps: 60,
+      avg_latency_ms: 1200,
+    },
+    'mistral/mistral-medium-3.5': {
+      cost_per_m: 0.4,
+      gdpval: 933,
+      throughput_tps: 80,
+      avg_latency_ms: 900,
+    },
   },
   providers: {},
   // Scores go into gdpval_builtin (slug-keyed): applyGroupFilters reads
@@ -85,7 +105,11 @@ const TACTICAL_POOL = [
 
 describe('max_gdpval — hard upper tier boundary (applyGroupFilters)', () => {
   it('drops models ABOVE the cap and keeps those below (tactical: opus/sonnet out, glm/medium in)', () => {
-    const filtered = applyGroupFilters(TACTICAL_POOL, testConfig.model_groups!.tactical, testConfig);
+    const filtered = applyGroupFilters(
+      TACTICAL_POOL,
+      testConfig.model_groups!.tactical,
+      testConfig
+    );
     expect(filtered).toContain('mistral/zai-glm-5-3');
     expect(filtered).toContain('mistral/mistral-medium-3.5');
     expect(filtered).not.toContain('claude-bridge/claude-opus-5-5');
@@ -93,7 +117,11 @@ describe('max_gdpval — hard upper tier boundary (applyGroupFilters)', () => {
   });
 
   it('leaves an uncapped group (strategic) untouched by the boundary', () => {
-    const filtered = applyGroupFilters(TACTICAL_POOL, testConfig.model_groups!.strategic, testConfig);
+    const filtered = applyGroupFilters(
+      TACTICAL_POOL,
+      testConfig.model_groups!.strategic,
+      testConfig
+    );
     expect(filtered).toContain('claude-bridge/claude-opus-5-5');
     expect(filtered).toContain('claude-bridge/claude-sonnet-5-5');
     expect(filtered).toContain('mistral/zai-glm-5-3');
@@ -127,7 +155,12 @@ describe('best_quality_window — cheapest-within-equivalence selection (sortBy 
       ...testConfig,
       model_metrics: {
         ...testConfig.model_metrics,
-        'openrouter/glm-twin:free': { cost_per_m: 0, gdpval: 1650, throughput_tps: 50, avg_latency_ms: 800 },
+        'openrouter/glm-twin:free': {
+          cost_per_m: 0,
+          gdpval: 1650,
+          throughput_tps: 50,
+          avg_latency_ms: 800,
+        },
       },
     } as any;
     metricsModule.setConfig(cfg2);
@@ -142,13 +175,25 @@ describe('best_quality_window — cheapest-within-equivalence selection (sortBy 
     const cfg2 = {
       ...testConfig,
       model_metrics: {
-        'claude-bridge/claude-opus-5-5': { gdpval: 1900, throughput_tps: 100, avg_latency_ms: 1000 },
-        'claude-bridge/claude-sonnet-5-5': { cost_per_m: 1.5e-6, gdpval: 1844, throughput_tps: 100, avg_latency_ms: 1000 },
+        'claude-bridge/claude-opus-5-5': {
+          gdpval: 1900,
+          throughput_tps: 100,
+          avg_latency_ms: 1000,
+        },
+        'claude-bridge/claude-sonnet-5-5': {
+          cost_per_m: 1.5e-6,
+          gdpval: 1844,
+          throughput_tps: 100,
+          avg_latency_ms: 1000,
+        },
       },
     } as any;
     metricsModule.setConfig(cfg2);
     const r2 = new Router(cfg2, cache, new Map());
-    const sorted = r2.sortBy(['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'], 'best');
+    const sorted = r2.sortBy(
+      ['claude-bridge/claude-opus-5-5', 'claude-bridge/claude-sonnet-5-5'],
+      'best'
+    );
     expect(sorted[0]).toBe('claude-bridge/claude-sonnet-5-5');
     expect(sorted[1]).toBe('claude-bridge/claude-opus-5-5');
   });
@@ -173,7 +218,7 @@ describe('best_quality_window — cheapest-within-equivalence selection (sortBy 
   });
 });
 
-describe('end-to-end tier routing (the owner\'s actual complaint)', () => {
+describe("end-to-end tier routing (the owner's actual complaint)", () => {
   it('tactical resolves to glm-5-3 first; opus only reachable via strategic', () => {
     metricsModule.setConfig(testConfig);
     const router = new Router(testConfig, cache, new Map());

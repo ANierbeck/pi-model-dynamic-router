@@ -32,10 +32,22 @@ import {
   isLocalProviderName,
   type ProviderEvidenceKind,
 } from './src/provider-breaker.ts';
-import { resyncDynamicFromStatic, collectStaticContributions, registerRegistryProviderStubs, staticGroupsFingerprint, type StaticContributions } from './src/dynamic-config.ts';
+import {
+  resyncDynamicFromStatic,
+  collectStaticContributions,
+  registerRegistryProviderStubs,
+  staticGroupsFingerprint,
+  type StaticContributions,
+} from './src/dynamic-config.ts';
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
-import { classifyPrompt, detectHintDirectly, getGroupForCategory, setCategoryGroupMapping, ClassificationResult } from './src/content-classifier.ts';
+import {
+  classifyPrompt,
+  detectHintDirectly,
+  getGroupForCategory,
+  setCategoryGroupMapping,
+  ClassificationResult,
+} from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { localClassifierPins, resolveLocalClassifierChain } from './src/classifier-local-probe.ts';
 import { costTracker } from './src/cost-tracker.ts';
@@ -44,7 +56,11 @@ import { costTracker } from './src/cost-tracker.ts';
 // and can land in the user's input field). Re-imported here for index.ts's own use.
 import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
 import { homedir } from 'node:os';
-import { buildPoolRecord, writePoolRecord, resolveClassifierLogConfig } from './src/classifier-decision-log.ts';
+import {
+  buildPoolRecord,
+  writePoolRecord,
+  resolveClassifierLogConfig,
+} from './src/classifier-decision-log.ts';
 import { StreamOrchestrator, type StreamOrchestratorContext } from './src/stream-orchestrator.ts';
 import { createContextUtils } from './src/context-utils.ts';
 import { createLimitGlue } from './src/limit-glue.ts';
@@ -192,9 +208,9 @@ const defaultExport = function (pi: ExtensionAPI) {
   let lastClassifiedCategory: ClassificationResult['category'] | undefined;
   let sessionCtx: any = null;
 
-// Compaction detection state
-let previousMessageCount = 0;
-let previousTokenCount = 0;
+  // Compaction detection state
+  let previousMessageCount = 0;
+  let previousTokenCount = 0;
 
   // ── Session Escalation ─────────────────────────────────────────────────
   const escalation = new SessionEscalation();
@@ -202,205 +218,524 @@ let previousTokenCount = 0;
   // full tryStream helpers are defined. tryStream clears and repopulates it.
   let skipReasons = new Map<string, string>();
 
-  const { estimateContextTokens, getModelContextWindow, updateModelContextWindow, getEmptyResponseTimeout, getStallTimeout, getRateLimitWaitMaxMs, extractLastUserPrompt, extractLastAssistantSnippet, isCompactionTurn } = createContextUtils({
-    get cfg() { return cfg; },
-    get EMPTY_RESPONSE_TIMEOUT_MS() { return EMPTY_RESPONSE_TIMEOUT_MS; },
-    get previousMessageCount() { return previousMessageCount; },
-    set previousMessageCount(v) { previousMessageCount = v; },
-    get previousTokenCount() { return previousTokenCount; },
-    set previousTokenCount(v) { previousTokenCount = v; },
-    get RATE_LIMIT_WAIT_MAX_MS() { return RATE_LIMIT_WAIT_MAX_MS; },
-    get REASONING_EMPTY_RESPONSE_TIMEOUT_MS() { return REASONING_EMPTY_RESPONSE_TIMEOUT_MS; },
-    get sessionCtx() { return sessionCtx; },
-    get STALL_TIMEOUT_MS() { return STALL_TIMEOUT_MS; },
-  });
-
-  const { getM, costMux, isLimited, limitSecs, effCost, clearLimit, recordOk, observeFailure, recordStreamFailure, formatResetMsg, limitFreeDayCap, updateMetrics, lookupPrice, formatBlocklist, getUsage } = createLimitGlue({
-    get cache() { return cache; },
-    get cacheManager() { return cacheManager; },
-    get cfg() { return cfg; },
-    get discoveryManager() { return discoveryManager; },
-    get rateLimitManager() { return rateLimitManager; },
-    get scheduleSessionErrorSave() { return scheduleSessionErrorSave; },
-    get updateErrorStatusLine() { return updateErrorStatusLine; },
-  });
-
-  const { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } = createModelResolveGlue({
-    get cache() { return cache; },
-    get costMux() { return costMux; },
-    get discoveryManager() { return discoveryManager; },
-    get effCost() { return effCost; },
-    get getM() { return getM; },
-    get isLimited() { return isLimited; },
-    get limitSecs() { return limitSecs; },
-    get router() { return router; },
-    // Route 2 of the pool replay (ADR-0027 log): one 'pool' record per group
-    // resolution that drives a stream, appended to the decision log right
-    // after the turn's decision record. Only the stream-driving resolve
-    // callers (stream proxy + orchestrator, wired below with
-    // resolveForStream) pass this through — group registration, /router and
-    // the resolve_model_group tool resolve without logging, so the log holds
-    // decisions, not non-decisions. Fail-open, and off unless the classifier
-    // log is enabled — same gate as the decision records.
-    logPool: (pool) => {
-      const log = resolveClassifierLogConfig(cfg?.classifier_log);
-      if (!log) return;
-      writePoolRecord(buildPoolRecord(pool), homedir(), log);
+  const {
+    estimateContextTokens,
+    getModelContextWindow,
+    updateModelContextWindow,
+    getEmptyResponseTimeout,
+    getStallTimeout,
+    getRateLimitWaitMaxMs,
+    extractLastUserPrompt,
+    extractLastAssistantSnippet,
+    isCompactionTurn,
+  } = createContextUtils({
+    get cfg() {
+      return cfg;
+    },
+    get EMPTY_RESPONSE_TIMEOUT_MS() {
+      return EMPTY_RESPONSE_TIMEOUT_MS;
+    },
+    get previousMessageCount() {
+      return previousMessageCount;
+    },
+    set previousMessageCount(v) {
+      previousMessageCount = v;
+    },
+    get previousTokenCount() {
+      return previousTokenCount;
+    },
+    set previousTokenCount(v) {
+      previousTokenCount = v;
+    },
+    get RATE_LIMIT_WAIT_MAX_MS() {
+      return RATE_LIMIT_WAIT_MAX_MS;
+    },
+    get REASONING_EMPTY_RESPONSE_TIMEOUT_MS() {
+      return REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    get STALL_TIMEOUT_MS() {
+      return STALL_TIMEOUT_MS;
     },
   });
 
+  const {
+    getM,
+    costMux,
+    isLimited,
+    limitSecs,
+    effCost,
+    clearLimit,
+    recordOk,
+    observeFailure,
+    recordStreamFailure,
+    formatResetMsg,
+    limitFreeDayCap,
+    updateMetrics,
+    lookupPrice,
+    formatBlocklist,
+    getUsage,
+  } = createLimitGlue({
+    get cache() {
+      return cache;
+    },
+    get cacheManager() {
+      return cacheManager;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get discoveryManager() {
+      return discoveryManager;
+    },
+    get rateLimitManager() {
+      return rateLimitManager;
+    },
+    get scheduleSessionErrorSave() {
+      return scheduleSessionErrorSave;
+    },
+    get updateErrorStatusLine() {
+      return updateErrorStatusLine;
+    },
+  });
+
+  const { resolve, resolveForStream, detectGroup, fmtModel, getTopModels, allDiscoveredRefs } =
+    createModelResolveGlue({
+      get cache() {
+        return cache;
+      },
+      get costMux() {
+        return costMux;
+      },
+      get discoveryManager() {
+        return discoveryManager;
+      },
+      get effCost() {
+        return effCost;
+      },
+      get getM() {
+        return getM;
+      },
+      get isLimited() {
+        return isLimited;
+      },
+      get limitSecs() {
+        return limitSecs;
+      },
+      get router() {
+        return router;
+      },
+      // Route 2 of the pool replay (ADR-0027 log): one 'pool' record per group
+      // resolution that drives a stream, appended to the decision log right
+      // after the turn's decision record. Only the stream-driving resolve
+      // callers (stream proxy + orchestrator, wired below with
+      // resolveForStream) pass this through — group registration, /router and
+      // the resolve_model_group tool resolve without logging, so the log holds
+      // decisions, not non-decisions. Fail-open, and off unless the classifier
+      // log is enabled — same gate as the decision records.
+      logPool: (pool) => {
+        const log = resolveClassifierLogConfig(cfg?.classifier_log);
+        if (!log) return;
+        writePoolRecord(buildPoolRecord(pool), homedir(), log);
+      },
+    });
+
   const { populateLlmMatches, scan } = createScanRunner({
-    get cache() { return cache; },
-    get cacheManager() { return cacheManager; },
-    get cfg() { return cfg; },
-    get GDPVAL_URL() { return GDPVAL_URL; },
-    get generateDynamicConfig() { return generateDynamicConfig; },
-    get MODELS_TTL() { return MODELS_TTL; },
-    get saveCache() { return saveCache; },
-    get scanning() { return scanning; },
-    set scanning(v) { scanning = v; },
-    get sessionCtx() { return sessionCtx; },
+    get cache() {
+      return cache;
+    },
+    get cacheManager() {
+      return cacheManager;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get GDPVAL_URL() {
+      return GDPVAL_URL;
+    },
+    get generateDynamicConfig() {
+      return generateDynamicConfig;
+    },
+    get MODELS_TTL() {
+      return MODELS_TTL;
+    },
+    get saveCache() {
+      return saveCache;
+    },
+    get scanning() {
+      return scanning;
+    },
+    set scanning(v) {
+      scanning = v;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
   });
 
   const { generateDynamicConfig } = createDynamicConfigRunner({
-    get cache() { return cache; },
-    get cacheManager() { return cacheManager; },
-    get cfg() { return cfg; },
-    set cfg(v) { cfg = v; },
-    get discoveryManager() { return discoveryManager; },
-    set discoveryManager(v) { discoveryManager = v; },
-    get dynamicConfigFingerprint() { return dynamicConfigFingerprint; },
-    get populateLlmMatches() { return populateLlmMatches; },
-    get rateLimitManager() { return rateLimitManager; },
-    get router() { return router; },
-    set router(v) { router = v; },
-    get routerStartedAt() { return routerStartedAt; },
-    get SCAN_REFUSAL_MAX_AGE_MS() { return SCAN_REFUSAL_MAX_AGE_MS; },
-    get scanning() { return scanning; },
-    get sessionCtx() { return sessionCtx; },
-    get settleRetryScheduled() { return settleRetryScheduled; },
-    set settleRetryScheduled(v) { settleRetryScheduled = v; },
-    get stateDir() { return stateDir; },
-    get staticCfg() { return staticCfg; },
-    get staticContributions() { return staticContributions; },
-    get turnStart() { return turnStart; },
-  });
-
-  const { registerFreeModelOnDemand } = createFreeModelRegistration({
-    get cfg() { return cfg; },
-    get pi() { return pi; },
-    get sessionCtx() { return sessionCtx; },
-    // ADR-0022: the router never resolves keys itself — pi does.
-    get resolveApiKey() {
-      return async (provider: string) =>
-        (await (sessionCtx?.modelRegistry)?.getApiKeyForProvider?.(provider).catch?.(
-          () => null
-        )) ?? null;
+    get cache() {
+      return cache;
+    },
+    get cacheManager() {
+      return cacheManager;
+    },
+    get cfg() {
+      return cfg;
+    },
+    set cfg(v) {
+      cfg = v;
+    },
+    get discoveryManager() {
+      return discoveryManager;
+    },
+    set discoveryManager(v) {
+      discoveryManager = v;
+    },
+    get dynamicConfigFingerprint() {
+      return dynamicConfigFingerprint;
+    },
+    get populateLlmMatches() {
+      return populateLlmMatches;
+    },
+    get rateLimitManager() {
+      return rateLimitManager;
+    },
+    get router() {
+      return router;
+    },
+    set router(v) {
+      router = v;
+    },
+    get routerStartedAt() {
+      return routerStartedAt;
+    },
+    get SCAN_REFUSAL_MAX_AGE_MS() {
+      return SCAN_REFUSAL_MAX_AGE_MS;
+    },
+    get scanning() {
+      return scanning;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    get settleRetryScheduled() {
+      return settleRetryScheduled;
+    },
+    set settleRetryScheduled(v) {
+      settleRetryScheduled = v;
+    },
+    get stateDir() {
+      return stateDir;
+    },
+    get staticCfg() {
+      return staticCfg;
+    },
+    get staticContributions() {
+      return staticContributions;
+    },
+    get turnStart() {
+      return turnStart;
     },
   });
 
-  const { groupStream, tryStream, consumeWithDetection, isLocalProvider, localStreamLimit } = createStreamProxy({
-    get cfg() { return cfg; },
-    get localStreamsInFlight() { return localStreamsInFlight; },
-    set localStreamsInFlight(v) { localStreamsInFlight = v; },
-    get OLLAMA_MAX_CONCURRENT_STREAMS() { return OLLAMA_MAX_CONCURRENT_STREAMS; },
-    get registerFreeModelOnDemand() { return registerFreeModelOnDemand; },
-    // Pool logging for the stream-driving resolutions only (ADR-0027):
-    // this is the path that serves an actual group stream.
-    get resolve() { return resolveForStream; },
-    get sessionCtx() { return sessionCtx; },
-    get skipReasons() { return skipReasons; },
-    set skipReasons(v) { skipReasons = v; },
-    get streamOrchestrator() { return streamOrchestrator; },
+  const { registerFreeModelOnDemand } = createFreeModelRegistration({
+    get cfg() {
+      return cfg;
+    },
+    get pi() {
+      return pi;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    // ADR-0022: the router never resolves keys itself — pi does.
+    get resolveApiKey() {
+      return async (provider: string) =>
+        (await sessionCtx?.modelRegistry?.getApiKeyForProvider?.(provider).catch?.(() => null)) ??
+        null;
+    },
   });
 
+  const { groupStream, tryStream, consumeWithDetection, isLocalProvider, localStreamLimit } =
+    createStreamProxy({
+      get cfg() {
+        return cfg;
+      },
+      get localStreamsInFlight() {
+        return localStreamsInFlight;
+      },
+      set localStreamsInFlight(v) {
+        localStreamsInFlight = v;
+      },
+      get OLLAMA_MAX_CONCURRENT_STREAMS() {
+        return OLLAMA_MAX_CONCURRENT_STREAMS;
+      },
+      get registerFreeModelOnDemand() {
+        return registerFreeModelOnDemand;
+      },
+      // Pool logging for the stream-driving resolutions only (ADR-0027):
+      // this is the path that serves an actual group stream.
+      get resolve() {
+        return resolveForStream;
+      },
+      get sessionCtx() {
+        return sessionCtx;
+      },
+      get skipReasons() {
+        return skipReasons;
+      },
+      set skipReasons(v) {
+        skipReasons = v;
+      },
+      get streamOrchestrator() {
+        return streamOrchestrator;
+      },
+    });
+
   const { registerGroupProviders, registerGroupModels } = createGroupRegistration({
-    get cache() { return cache; },
-    get cfg() { return cfg; },
-    get getM() { return getM; },
-    get groupStream() { return groupStream; },
-    get pi() { return pi; },
-    get resolve() { return resolve; },
-    get sessionCtx() { return sessionCtx; },
-    get contextWindow() { return lookupContextWindow; },
+    get cache() {
+      return cache;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get getM() {
+      return getM;
+    },
+    get groupStream() {
+      return groupStream;
+    },
+    get pi() {
+      return pi;
+    },
+    get resolve() {
+      return resolve;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    get contextWindow() {
+      return lookupContextWindow;
+    },
   });
 
   createEventHandlers({
-    get activeGroup() { return activeGroup; },
-    set activeGroup(v) { activeGroup = v; },
-    get cache() { return cache; },
-    get cfg() { return cfg; },
-    get curModel() { return curModel; },
-    set curModel(v) { curModel = v; },
-    get detectGroup() { return detectGroup; },
-    get escalation() { return escalation; },
-    get extDir() { return extDir; },
-    get getM() { return getM; },
-    get isLimited() { return isLimited; },
-    get lastDynamicModel() { return lastDynamicModel; },
-    get load() { return load; },
-    get loadCache() { return loadCache; },
-    get pi() { return pi; },
-    get rateLimitManager() { return rateLimitManager; },
-    get recordOk() { return recordOk; },
-    get registerGroupModels() { return registerGroupModels; },
-    get router() { return router; },
-    get saveCache() { return saveCache; },
-    get scan() { return scan; },
-    get sessionAnchorInit() { return sessionAnchorInit; },
-    set sessionAnchorInit(v) { sessionAnchorInit = v; },
-    get sessionCtx() { return sessionCtx; },
-    set sessionCtx(v) { sessionCtx = v; },
-    get sessionStart() { return sessionStart; },
-    set sessionStart(v) { sessionStart = v; },
-    get statusUpdater() { return statusUpdater; },
-    set statusUpdater(v) { statusUpdater = v; },
-    get turnStart() { return turnStart; },
-    set turnStart(v) { turnStart = v; },
-    get updateErrorStatusLine() { return updateErrorStatusLine; },
-    get updateMetrics() { return updateMetrics; },
+    get activeGroup() {
+      return activeGroup;
+    },
+    set activeGroup(v) {
+      activeGroup = v;
+    },
+    get cache() {
+      return cache;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get curModel() {
+      return curModel;
+    },
+    set curModel(v) {
+      curModel = v;
+    },
+    get detectGroup() {
+      return detectGroup;
+    },
+    get escalation() {
+      return escalation;
+    },
+    get extDir() {
+      return extDir;
+    },
+    get getM() {
+      return getM;
+    },
+    get isLimited() {
+      return isLimited;
+    },
+    get lastDynamicModel() {
+      return lastDynamicModel;
+    },
+    get load() {
+      return load;
+    },
+    get loadCache() {
+      return loadCache;
+    },
+    get pi() {
+      return pi;
+    },
+    get rateLimitManager() {
+      return rateLimitManager;
+    },
+    get recordOk() {
+      return recordOk;
+    },
+    get registerGroupModels() {
+      return registerGroupModels;
+    },
+    get router() {
+      return router;
+    },
+    get saveCache() {
+      return saveCache;
+    },
+    get scan() {
+      return scan;
+    },
+    get sessionAnchorInit() {
+      return sessionAnchorInit;
+    },
+    set sessionAnchorInit(v) {
+      sessionAnchorInit = v;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    set sessionCtx(v) {
+      sessionCtx = v;
+    },
+    get sessionStart() {
+      return sessionStart;
+    },
+    set sessionStart(v) {
+      sessionStart = v;
+    },
+    get statusUpdater() {
+      return statusUpdater;
+    },
+    set statusUpdater(v) {
+      statusUpdater = v;
+    },
+    get turnStart() {
+      return turnStart;
+    },
+    set turnStart(v) {
+      turnStart = v;
+    },
+    get updateErrorStatusLine() {
+      return updateErrorStatusLine;
+    },
+    get updateMetrics() {
+      return updateMetrics;
+    },
   });
 
   createTools({
-    get activeGroup() { return activeGroup; },
-    set activeGroup(v) { activeGroup = v; },
-    get cfg() { return cfg; },
-    get cfgPath() { return cfgPath; },
-    get fmtModel() { return fmtModel; },
-    get getM() { return getM; },
-    get load() { return load; },
-    get pi() { return pi; },
-    get resolve() { return resolve; },
-    get router() { return router; },
+    get activeGroup() {
+      return activeGroup;
+    },
+    set activeGroup(v) {
+      activeGroup = v;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get cfgPath() {
+      return cfgPath;
+    },
+    get fmtModel() {
+      return fmtModel;
+    },
+    get getM() {
+      return getM;
+    },
+    get load() {
+      return load;
+    },
+    get pi() {
+      return pi;
+    },
+    get resolve() {
+      return resolve;
+    },
+    get router() {
+      return router;
+    },
   });
 
   createCommands({
-    get allDiscoveredRefs() { return allDiscoveredRefs; },
-    get cache() { return cache; },
-    get cacheManager() { return cacheManager; },
-    get cfg() { return cfg; },
-    get cfgPath() { return cfgPath; },
-    get costMux() { return costMux; },
-    get curModel() { return curModel; },
-    get effCost() { return effCost; },
-    get fmtModel() { return fmtModel; },
-    get formatBlocklist() { return formatBlocklist; },
-    get getM() { return getM; },
-    get getTopModels() { return getTopModels; },
-    get getUsage() { return getUsage; },
-    get isLimited() { return isLimited; },
-    get limitSecs() { return limitSecs; },
-    get load() { return load; },
-    get lookupPrice() { return lookupPrice; },
-    get lookupListPrice() { return metricsModule.lookupListPrice; },
-    get pi() { return pi; },
-    get rateLimitManager() { return rateLimitManager; },
-    get resolve() { return resolve; },
-    get router() { return router; },
-    get scan() { return scan; },
-    get sessionCtx() { return sessionCtx; },
-    set sessionCtx(v) { sessionCtx = v; },
-    get sessionStart() { return sessionStart; },
+    get allDiscoveredRefs() {
+      return allDiscoveredRefs;
+    },
+    get cache() {
+      return cache;
+    },
+    get cacheManager() {
+      return cacheManager;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get cfgPath() {
+      return cfgPath;
+    },
+    get costMux() {
+      return costMux;
+    },
+    get curModel() {
+      return curModel;
+    },
+    get effCost() {
+      return effCost;
+    },
+    get fmtModel() {
+      return fmtModel;
+    },
+    get formatBlocklist() {
+      return formatBlocklist;
+    },
+    get getM() {
+      return getM;
+    },
+    get getTopModels() {
+      return getTopModels;
+    },
+    get getUsage() {
+      return getUsage;
+    },
+    get isLimited() {
+      return isLimited;
+    },
+    get limitSecs() {
+      return limitSecs;
+    },
+    get load() {
+      return load;
+    },
+    get lookupPrice() {
+      return lookupPrice;
+    },
+    get lookupListPrice() {
+      return metricsModule.lookupListPrice;
+    },
+    get pi() {
+      return pi;
+    },
+    get rateLimitManager() {
+      return rateLimitManager;
+    },
+    get resolve() {
+      return resolve;
+    },
+    get router() {
+      return router;
+    },
+    get scan() {
+      return scan;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    set sessionCtx(v) {
+      sessionCtx = v;
+    },
+    get sessionStart() {
+      return sessionStart;
+    },
   });
 
   // ── Config + Cache ─────────────────────────────────────────────────────
@@ -429,7 +764,7 @@ let previousTokenCount = 0;
     const dynamicConfigPath = path.join(stateDir, 'router-config.dynamic.json');
     let loadedFromDynamic = false;
     let loadResync: { droppedProviders: string[] } = { droppedProviders: [] };
-    
+
     try {
       if (fs.existsSync(dynamicConfigPath)) {
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
@@ -445,41 +780,47 @@ let previousTokenCount = 0;
           // fingerprint (undefined) are still accepted — the scan regenerates
           // them once (self-healing, PR #68).
           const storedGroupsFp = dynamicCfg._dynamic.groups_fingerprint;
-          if (typeof storedGroupsFp === 'string' && storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups)) {
+          if (
+            typeof storedGroupsFp === 'string' &&
+            storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups)
+          ) {
             routerLog(
               '[router] Stored router-config.dynamic.json has a stale groups fingerprint ' +
                 '(static model_groups changed since it was built) — ignoring it and using the static config; ' +
                 'the next scan regenerates the snapshot'
             );
           } else {
-          // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
-          // rate-limit scheduling, delegation, the local-stream limiter, …)
-          // must ALWAYS come from staticCfg — the dynamic config can contain
-          // stale values if the user changed router-config.json or
-          // router-config.user.json in the meantime. Without this re-sync,
-          // editing any of these keys has no effect as long as a
-          // router-config.dynamic.json exists on disk (the common steady
-          // state). The whitelist is a single exported list,
-          // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
-          // the write site in generateDynamicConfigNow — per-key rationale
-          // lives there; DYNAMIC_CONFIG_MERGE_KEYS (providers, model_metrics,
-          // gdpval_builtin) are pruned of static-removed entries (the
-          // contribution snapshot is taken in load(), before any stub can
-          // pollute it), then merged per entry, static winning. Final
-          // v1.6.0 review I4: ollama_max_concurrent_streams
-          // had been forgotten in both hand-maintained assignment blocks;
-          // I5: the shared list + the data-driven staleness test keep the
-          // next key from being forgotten the same way.
-          loadResync = resyncDynamicFromStatic(dynamicCfg, staticCfg, staticContributions);
-          cfg = dynamicCfg;
-          loadedFromDynamic = true;
+            // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
+            // rate-limit scheduling, delegation, the local-stream limiter, …)
+            // must ALWAYS come from staticCfg — the dynamic config can contain
+            // stale values if the user changed router-config.json or
+            // router-config.user.json in the meantime. Without this re-sync,
+            // editing any of these keys has no effect as long as a
+            // router-config.dynamic.json exists on disk (the common steady
+            // state). The whitelist is a single exported list,
+            // DYNAMIC_CONFIG_RESYNC_KEYS (src/dynamic-config.ts), shared with
+            // the write site in generateDynamicConfigNow — per-key rationale
+            // lives there; DYNAMIC_CONFIG_MERGE_KEYS (providers, model_metrics,
+            // gdpval_builtin) are pruned of static-removed entries (the
+            // contribution snapshot is taken in load(), before any stub can
+            // pollute it), then merged per entry, static winning. Final
+            // v1.6.0 review I4: ollama_max_concurrent_streams
+            // had been forgotten in both hand-maintained assignment blocks;
+            // I5: the shared list + the data-driven staleness test keep the
+            // next key from being forgotten the same way.
+            loadResync = resyncDynamicFromStatic(dynamicCfg, staticCfg, staticContributions);
+            cfg = dynamicCfg;
+            loadedFromDynamic = true;
           }
         }
       }
     } catch (error) {
-      errorLog('[router] Error loading dynamic configuration, falling back to static config:', error);
+      errorLog(
+        '[router] Error loading dynamic configuration, falling back to static config:',
+        error
+      );
     }
-    
+
     // If there is no dynamic configuration, use the static one
     if (!loadedFromDynamic) {
       cfg = staticCfg;
@@ -518,15 +859,22 @@ let previousTokenCount = 0;
     // gdpval state lives in metrics.ts (single source of truth).
     // setConfig + setCache below populate it correctly, including self-healing
     // from cache.gdpval_scores when needed.
-    
+
     // Initialize managers. The backoff schedules are cfg-backed (falling
     // back to the YAML defaults) so they can be tuned per environment — and
     // shrunk in integration tests to exercise the cooldown paths quickly
     // (the collapse-wait test needs sub-5s cooldowns, impossible with the
     // 60s/30s production minimums).
-    const backoffSchedule = (cfg.backoff_minutes ?? _defaults.backoff_minutes).map((m) => m * 60_000);
+    const backoffSchedule = (cfg.backoff_minutes ?? _defaults.backoff_minutes).map(
+      (m) => m * 60_000
+    );
     const softBackoffSchedule = cfg.soft_backoff_ms ?? _defaults.soft_backoff_ms;
-    rateLimitManager = new RateLimitManager(backoffSchedule, softBackoffSchedule, COST_MUX_AT_HIT, cache);
+    rateLimitManager = new RateLimitManager(
+      backoffSchedule,
+      softBackoffSchedule,
+      COST_MUX_AT_HIT,
+      cache
+    );
     discoveryManager = new DiscoveryManager(cfg, cache);
     // Always use staticCfg for metrics to ensure provider costs are available
     metricsModule.setConfig(staticCfg);
@@ -596,7 +944,6 @@ let previousTokenCount = 0;
   // resolution (modelRegistry.getApiKeyForProvider); the router never
   // reads or writes Pi's credential store.
 
-
   load();
   metricsModule.loadModelMap(extDir);
   loadCache();
@@ -612,15 +959,33 @@ let previousTokenCount = 0;
     // ctx.router.setCurModel (which hits the live Router instance) — the
     // former ctx.curModel field was write-only dead wiring (final v1.6.0
     // review minor #8).
-    get activeGroup() { return activeGroup; },
-    set activeGroup(v) { activeGroup = v; },
-    get lastDynamicModel() { return lastDynamicModel; },
-    set lastDynamicModel(v) { lastDynamicModel = v; },
-    get lastClassifiedCategory() { return lastClassifiedCategory; },
-    set lastClassifiedCategory(v) { lastClassifiedCategory = v; },
-    get sessionCtx() { return sessionCtx; },
-    get cfg() { return cfg; },
-    get cache() { return cache; },
+    get activeGroup() {
+      return activeGroup;
+    },
+    set activeGroup(v) {
+      activeGroup = v;
+    },
+    get lastDynamicModel() {
+      return lastDynamicModel;
+    },
+    set lastDynamicModel(v) {
+      lastDynamicModel = v;
+    },
+    get lastClassifiedCategory() {
+      return lastClassifiedCategory;
+    },
+    set lastClassifiedCategory(v) {
+      lastClassifiedCategory = v;
+    },
+    get sessionCtx() {
+      return sessionCtx;
+    },
+    get cfg() {
+      return cfg;
+    },
+    get cache() {
+      return cache;
+    },
     // router/rateLimitManager/cacheManager are all reassigned by load() (F10
     // cooldown investigation, 2026-09-02) — load() runs on every session_start
     // AND on every resolve_model_group/update_model_metrics tool call and
@@ -643,9 +1008,15 @@ let previousTokenCount = 0;
     // (matching the existing cfg/cache/activeGroup pattern above) make these
     // three always resolve the CURRENT module-level binding, eliminating the
     // whole staleness class instead of patching each load() call site.
-    get router() { return router; },
-    get rateLimitManager() { return rateLimitManager; },
-    get cacheManager() { return cacheManager; },
+    get router() {
+      return router;
+    },
+    get rateLimitManager() {
+      return rateLimitManager;
+    },
+    get cacheManager() {
+      return cacheManager;
+    },
     escalation,
     costTracker,
     // Pool logging for the stream-driving resolutions only (ADR-0027):
@@ -681,15 +1052,20 @@ let previousTokenCount = 0;
     observeProviderFailure: (ref: string, reason: string, detail?: string) => {
       const kind = reason as ProviderEvidenceKind;
       if (
-        kind !== 'empty_response' && kind !== 'empty_timeout' &&
-        kind !== 'stall_timeout' && kind !== 'provider_error'
-      ) return false;
+        kind !== 'empty_response' &&
+        kind !== 'empty_timeout' &&
+        kind !== 'stall_timeout' &&
+        kind !== 'provider_error'
+      )
+        return false;
       const provider = ref.split('/')[0];
       const tuning = resolveBreakerTuning(cfg.provider_breaker);
       if (!isLocalProviderName(provider) && !tuning.cloudEnabled) return false;
       const newlyOpen = recordProviderFailure(cache, ref, kind, detail, Date.now(), tuning);
       if (newlyOpen) {
-        warnLog(`[router] breaker: ${provider} looks wedged — skipping its models for ${wedgeCooldownText(cache, provider, tuning)}`);
+        warnLog(
+          `[router] breaker: ${provider} looks wedged — skipping its models for ${wedgeCooldownText(cache, provider, tuning)}`
+        );
       }
       return newlyOpen;
     },
@@ -698,10 +1074,13 @@ let previousTokenCount = 0;
       if (!isProviderOpen(cache, provider)) return false;
       // Local providers keep ADR-0016's always-on watchdog; the kill switch
       // only ever disarms the cloud generalization (plan D8).
-      return isLocalProviderName(provider) || resolveBreakerTuning(cfg.provider_breaker).cloudEnabled;
+      return (
+        isLocalProviderName(provider) || resolveBreakerTuning(cfg.provider_breaker).cloudEnabled
+      );
     },
     noteBreakerSkip: (ref: string) => recordBreakerSkip(cache, ref.split('/')[0]),
-    wedgeCooldownText: (ref: string) => wedgeCooldownText(cache, ref.split('/')[0], resolveBreakerTuning(cfg.provider_breaker)),
+    wedgeCooldownText: (ref: string) =>
+      wedgeCooldownText(cache, ref.split('/')[0], resolveBreakerTuning(cfg.provider_breaker)),
     recordStreamFailure,
     formatResetMsg,
     limitFreeDayCap,
@@ -712,12 +1091,15 @@ let previousTokenCount = 0;
     extractLastAssistantSnippet,
     isCompactionTurn,
     lookupGdp,
-    get skipReasons() { return skipReasons; },
-    get localStreamsInFlight() { return localStreamsInFlight; },
+    get skipReasons() {
+      return skipReasons;
+    },
+    get localStreamsInFlight() {
+      return localStreamsInFlight;
+    },
   });
 
   const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
-
 
   pi.on('session_shutdown', () => {
     sessionCtx = null;
