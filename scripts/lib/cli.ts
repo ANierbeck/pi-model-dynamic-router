@@ -7,6 +7,7 @@
 // silently ignored in another. One implementation, both shapes.
 
 import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -33,11 +34,18 @@ export function arg(name: string, argv: string[] = process.argv.slice(2)): strin
  * pre-push hook silently stopped rejecting leaks).
  */
 export function invokedDirectly(moduleUrl: string): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  // realpath first (symlinked entry points); if that throws, fall back to the
+  // resolved path instead of answering "not the entry" — a false here makes a
+  // gate script exit 0 without checking anything.
+  let entryPath: string;
   try {
-    return !!process.argv[1] && moduleUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+    entryPath = realpathSync(entry);
   } catch {
-    return false;
+    entryPath = resolve(entry);
   }
+  return moduleUrl === pathToFileURL(entryPath).href;
 }
 
 /** 1-based line/column of a mutation report -> offset into the source text. */
