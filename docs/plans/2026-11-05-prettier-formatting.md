@@ -1,6 +1,18 @@
 # Prettier: format the code once, then keep it formatted
 
-**Status:** proposed (2026-11-05)
+**Status:** in progress 2026-11-05. Owner decisions 2026-11-05: 1a (code only),
+2a (the redundancy metric skips import/export scaffolding), 3 = both (CI AND
+the pre-push hook). Empirical correction to step 2's assumption: the reformat
+does NOT leave repeatedBlocks neutral — it normalises real duplicated test
+fixtures and raises the count 43 -> 53, which the ratchet forbids. Owner
+decision (same day): re-sequence — (1) this PR lands the gate tool, the metric
+fix and .prettierignore WITHOUT the CI/hook enforcement (every enforcement run
+would be red until the reformat exists); (2) a dedupe round extracts the
+fixture families the reformat revealed (plan step 5, now known to be 4-5
+families across ~40 files, not 3 classes); (3) the reformat lands last, with
+the CI step, the pre-push hook wiring and their pins, and re-measured
+baselines. Step 4's lint prediction (-4 findings) held exactly (919 -> 915,
+measured on the reformatted tree, branch save/prettier-reformat).
 
 AGENTS.md §11: one problem per plan. This one is only about formatting. The
 lint gate (`docs/plans/2026-11-04-lint-gate.md`) is the neighbouring problem and
@@ -82,9 +94,9 @@ eslint.config.js`):
    `test/helpers/extension-harness.ts` could own. Each is a `refactor:` commit
    that lowers `repeatedBlocks` again.
 
-## Open decisions (owner)
+## Open decisions (owner) — all decided 2026-11-05
 
-1. **Scope of round 1.** (a) Code only — `src/`, `test/`, `scripts/`,
+1. **Scope of round 1 — decided: (a) code only.** (a) Code only — `src/`, `test/`, `scripts/`,
    `index.ts`, `eslint.config.js` (recommended: 264 files, zero prose, the
    whole point of the formatter). (b) Code plus the six shipped docs
    (`README`, `PI`, `AGENTS`, `TODO`, `RELEASE_CHECKLIST`, `CLAUDE`): prettier's
@@ -93,13 +105,13 @@ eslint.config.js`):
    data files: `model-map.yaml` alone changes 308 lines, `router-config.json`
    42, `router-defaults.yaml` 20, for no readability gain in files that are
    data, not code.
-2. **The `repeatedBlocks` ratchet.** (a) Make the metric skip import/export
+2. **The `repeatedBlocks` ratchet — decided: (a) metric skips import/export.** (a) Make the metric skip import/export
    scaffolding (step 2, recommended — small, tested, and it fixes a real
    false-positive class). (b) Dedupe the 15 blocks — impossible for import
    headers, and a 16-file fixture extraction is its own round. (c) Raise the
    baseline — forbidden by the ratchet rule ("never raise an entry to make a PR
    green").
-3. **Where the check runs.** CI only (recommended: formatting is not a defect
+3. **Where the check runs — decided: CI AND the pre-push hook.** CI only (recommended: formatting is not a defect
    class, and the pre-push hook already carries the secret scan and the lint
    gate) or additionally in `.githooks/pre-push` (+~2.3 s per push).
 

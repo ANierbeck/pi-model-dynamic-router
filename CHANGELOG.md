@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- Prettier format gate (`npm run format` / `format:check`, `scripts/format-gate.ts`) over the code scope (owner decision 1a). The CI step and pre-push hook wiring land together with the one-time reformat (owner decision: re-sequenced so no enforcement is red before the reformat exists).
+- The redundancy metric now skips windows made only of import/export scaffolding (owner decision 2a): after the reformat the import headers normalise and would otherwise raise `repeatedBlocks`. Baseline 45 -> 43.
+
+
 ### Changed
 - Mutation slice 2 (driveStream) triaged: all 329 non-killed mutants have verdicts (205 real gaps → follow-up test round, 118 equivalent, 1 false survivor, 1 dead store). The dead `pushError` on the genuine-overflow path was removed (AGENTS.md §7). Per-cluster inventory with test sketches: `docs/mutation-data/slice2-triage/`.
 

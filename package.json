@@ -22,6 +22,8 @@
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
     "lint": "node scripts/lint-gate.ts",
+    "format": "node scripts/format-gate.ts --write",
+    "format:check": "node scripts/format-gate.ts",
     "lint:fix": "eslint src/ index.ts scripts/ test/ --fix",
     "audit:kpi": "node scripts/router-kpi-audit.ts",
     "secret-scan": "node scripts/secret-scan.ts",

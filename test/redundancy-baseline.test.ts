@@ -25,7 +25,7 @@ const CEILING: Counts = {
   plansWithoutStatus: 23,
   plansMissingFromIndex: 0,
   duplicateFunctions: 0,
-  repeatedBlocks: 45,
+  repeatedBlocks: 43,
   ollamaMockFiles: 27,
 };
 

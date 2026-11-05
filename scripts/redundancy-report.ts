@@ -121,17 +121,48 @@ function findDuplicateFunctions(code: TextFile[]): Report['duplicateFunctions'] 
 
 const isTrivialLine = (line: string): boolean => !/[A-Za-z0-9_$]{3,}/.test(line);
 
+// Import/export scaffolding is not a copy-pasted test body. After the one-time
+// Prettier reformat (docs/plans/2026-11-05-prettier-formatting.md, step 2) the
+// import headers normalise, so many test files share the SAME 6-line window
+// of `import … from` lines — that shared scaffolding must not raise the
+// repeatedBlocks count. A line belongs to scaffolding when it starts an
+// import statement or an `export … from` re-export, or continues a multi-line
+// import (the shape Prettier produces past printWidth 100). Real declarations
+// (`export const x = …`, `export function …`) stay code.
+const IMPORT_START = /^(?:import\b|export\b[^;]*\bfrom\b|export\s*\{)/;
+
+function importScaffoldMask(lines: string[]): boolean[] {
+  const mask = Array.from({ length: lines.length }, () => false);
+  let open = false; // inside a multi-line import statement
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (open) {
+      mask[i] = true;
+      if (/;\s*$/.test(line)) open = false;
+      continue;
+    }
+    if (IMPORT_START.test(line)) {
+      mask[i] = true;
+      if (!/;\s*$/.test(line)) open = true;
+    }
+  }
+  return mask;
+}
+
 function findRepeatedBlocks(tests: TextFile[]): Report['repeatedBlocks'] {
   // key -> files that contain the window
   const filesOf = new Map<string, Set<string>>();
   const windowsOf = new Map<string, string[]>();
   for (const f of tests) {
     const lines = f.text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const scaffold = importScaffoldMask(lines);
     const keys: string[] = [];
     for (let i = 0; i + BLOCK_LINES <= lines.length; i++) {
       const window = lines.slice(i, i + BLOCK_LINES);
       const w = window.join('\n');
       keys.push(w);
+      // Skip windows that lie entirely in the import/export scaffolding.
+      if (window.every((_, j) => scaffold[i + j])) continue;
       // Skip windows that carry no information — six closing braces are not a
       // shared set-up. A window counts as trivial when no line contains an
       // identifier or number of three or more characters, which keeps short
@@ -269,6 +300,7 @@ export function analyze(input: AnalyzeInput): Report {
 export const ROOT_ALLOWLIST = [
   '.gitignore',
   '.gitleaksignore',
+  '.prettierignore',
   '.prettierrc',
   '.roborev.toml',
   'AGENTS.md',
