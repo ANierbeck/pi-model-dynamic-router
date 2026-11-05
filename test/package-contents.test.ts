@@ -112,7 +112,7 @@ describe('npm package contents', () => {
     expect(dirs).toEqual([...SHIPPED_SKILLS].sort());
   });
 
-  it('ships the docs the shipped README points at (CHANGELOG before 2.0)', () => {
+  it('top-level docs in the tarball are exactly PI.md, README.md, CHANGELOG.md', () => {
     // README.md tells the reader to use "the CHANGELOG's combined migration
     // section" for the pre-1.7.0 upgrade — a reference that dangles when the
     // tarball ships README.md without CHANGELOG.md. The doc allowlist is
