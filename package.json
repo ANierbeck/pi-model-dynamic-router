@@ -52,7 +52,8 @@
     "dist/model-map.yaml",
     "skills/",
     "PI.md",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
