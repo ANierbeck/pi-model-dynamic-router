@@ -1313,15 +1313,15 @@ breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
 | `driveStream` | 644–1347 | 337 | 2 |
 | helpers, breaker narration | 49–180 | 49 | 3 |
 
-### Slice 2 verdicts (driveStream)
+### Slice 2 recheck result (driveStream)
 
 > Run of 2026-11-05: 642 mutants via the standalone one-file instrumenter (`scripts/mutation-instrument-one.ts`), rechecked with `scripts/mutation-recheck.ts`. **313 killed, 325 survived (no verdict yet), 4 unconfirmed (open).**
 
 | category | count | evidence |
 | --- | --- | --- |
-| REAL-KILLED (observed on mutated tree + confirmed alone) | 313 | `scripts/mutation-recheck.ts` kill observed on the mutated tree and confirmed alone on the mutated tree and baseline |
+| KILLED by the existing suite, recheck-confirmed (no test added in this slice) | 313 | `scripts/mutation-recheck.ts`: kill observed on the mutated tree and confirmed alone on the mutated tree and baseline. Killer files per mutant are in the result data (`docs/mutation-data/slice2-driveStream.json`) |
 | UNCONFIRMED — OPEN, not yet judged | 4 | the recheck could not confirm a kill (each killer candidate is not green alone on the baseline or does not fail alone on the mutated tree); no per-mutant reading done yet, so NO equivalence verdict |
-| Real-gap survivors (to triage in Slice 2 follow-up) | 325 | clusters: driveStream-core 118, collapse 66, probe/breaker 86, driveStream-pre 55 |
+| UNTRIAGED: survived the full-suite recheck; no per-mutant reading done | 325 | clusters: driveStream-core 118, collapse 66, probe/breaker 86, driveStream-pre 55. Not a REAL GAP until read and classified |
 
 ### Slice 1 verdicts (272)
 

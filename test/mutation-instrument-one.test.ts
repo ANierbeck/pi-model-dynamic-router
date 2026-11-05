@@ -18,8 +18,8 @@ import { instrumentOne } from '../scripts/mutation-instrument-one.ts';
 import { offsetOf } from '../scripts/lib/cli.ts';
 
 // A small fixture with distinctive, predictable mutation targets:
-//  - line 4 (1-based): the string literal 'slice-me' (StringLiteral -> "")
-//  - line 6 (1-based): the ternary x > 1 (ConditionalExpression -> true/false)
+//  - line 1 (1-based): the string literal 'slice-me' (StringLiteral -> "")
+//  - line 4 (1-based): the ternary x > 1 (ConditionalExpression -> true/false)
 const FIXTURE = `const marker = 'slice-me';
 export function pick(x: number): number {
   // a comment line so the line offsets are unambiguous

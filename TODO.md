@@ -44,11 +44,14 @@ entries** after the S1+S2+S3 burn-down (was 1217 / 299; S3 took it to 919 / 159)
       `textOf()` helper), `restrict-template-expressions`,
       `no-redundant-type-constituents`
 - [x] **S3** `prefer-nullish-coalescing` + `prefer-optional-chain` — done
-      2026-11-05. 18 sites converted to `??`/`??=`, 14 kept `||` on purpose with a
-      one-line `eslint-disable-next-line` and the reason (an empty string must
-      fall through; a `false` from `includes()` must still reach the
-      provider-rule check), and the 4 `prefer-optional-chain` findings became
-      the existing `invokedDirectly()` helper in five scripts. Baseline
+      2026-11-05. `prefer-nullish-coalescing`: 32 findings → 0 in the baseline.
+      9 `||` sites are kept on purpose, each with a one-line
+      `eslint-disable-next-line` and its reason (an empty string must fall
+      through; a `false` from `includes()` must still reach the provider-rule
+      check). The rest were converted to `??`/`??=`. (The earlier "18 converted /
+      14 kept" split did not match the tree; the directive count is the
+      checkable number.) The 4 `prefer-optional-chain` findings became the
+      existing `invokedDirectly()` helper in five scripts. Baseline
       955 → 919 findings, 183 → 159 entries. The `no-unnecessary-type-assertion`
       part was already burned down by the `--fix` run in the S1+S2 commit
 - [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
