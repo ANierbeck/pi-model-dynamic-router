@@ -18,7 +18,7 @@ import { setProjectLogDir, debugLog, routerLog, warnLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
-import { fmt, fmtTime } from './utils.ts';
+import { fmt, fmtTime, textOf } from './utils.ts';
 import { buildUsageLogEntry, formatCacheStatus } from './cache-stats.ts';
 import { runContextCompaction, type CompactionRunState } from './context-compaction.ts';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
@@ -135,7 +135,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // throw (e.g. from checkScanSanity or saveCache) must not disappear
     // silently (final v1.6.0 review minor #6).
     rt.scan().catch((err) =>
-      warnLog(`[scan] background scan failed: ${err instanceof Error ? err.message : String(err)}`)
+      warnLog(`[scan] background scan failed: ${err instanceof Error ? err.message : textOf(err)}`)
     );
 
     // Footer

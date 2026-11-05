@@ -31,6 +31,11 @@ describe('textOf', () => {
     expect(textOf([1, 'two'])).toBe('[1,"two"]');
   });
 
+  it('prints an Error as name and message, not as {} (JSON drops its non-enumerable fields)', () => {
+    expect(textOf(new Error('boom'))).toBe('Error: boom');
+    expect(textOf(new TypeError('bad'))).toBe('TypeError: bad');
+  });
+
   it('falls back to the object tag for a circular value', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
@@ -48,10 +53,8 @@ describe('textOf', () => {
     expect(textOf(undef)).toBe('[object Object]');
   });
 
-  it('keeps the tag for a Date-like value that JSON cannot express fully', () => {
-    // A Date serializes through its toJSON to an ISO string (quoted), so the
-    // shape is still visible; it must not collapse to "[object Date]" or
-    // "[object Object]".
+  it('serialises a Date through its toJSON (a quoted ISO string), not as a tag', () => {
+    // Date.toJSON gives an ISO string, which JSON quotes; the value is visible.
     const d = new Date('2026-11-05T00:00:00.000Z');
     expect(textOf(d)).toBe('"2026-11-05T00:00:00.000Z"');
   });

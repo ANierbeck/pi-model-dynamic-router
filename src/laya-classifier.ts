@@ -25,6 +25,7 @@ import { warnLog } from './logger.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
 import type { Config } from './types.ts';
 import { buildClassifierLayaQuestion, VALID_CATEGORIES, buildContextBlock } from './classification-prompt.ts';
+import { textOf } from './utils.ts';
 
 /** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
@@ -104,7 +105,7 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     _lastProbeError = null;
     return true;
   } catch (err) {
-    markUnavailable(err instanceof Error ? err.message : String(err));
+    markUnavailable(err instanceof Error ? err.message : textOf(err));
     return false;
   }
 }
@@ -267,8 +268,8 @@ export async function classifyWithLayaDetailed(
   try {
     answer = await classifyWithLayaRaw(prompt, context, cfg.endpoint!, cfg.timeout_ms!);
   } catch (err) {
-    markUnavailable(err instanceof Error ? err.message : String(err));
-    warnLog(`[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : String(err)}; stage disabled`);
+    markUnavailable(err instanceof Error ? err.message : textOf(err));
+    warnLog(`[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : textOf(err)}; stage disabled`);
     return null;
   }
   return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };

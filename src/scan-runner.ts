@@ -20,6 +20,7 @@ import { redundantAliasProviders, pruneRedundantCacheEntries } from './provider-
 import { PROVIDER_MAP } from './providers.ts';
 import type { Cache, ModelCapabilities, Config } from './types.ts';
 import type { CacheManager } from './cache.ts';
+import { textOf } from './utils.ts';
 
 /**
  * Dependencies createScanRunner reads from index.ts's extension closure. Exposed as
@@ -505,7 +506,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
     } catch (err) {
       // Fail-open: keep whatever cached hits we had; log the gap.
       routerLog(
-        `[router] LLM matcher unavailable (${err instanceof Error ? err.message : String(err)}); ${stillUnscored.length} model(s) remain unscored`
+        `[router] LLM matcher unavailable (${err instanceof Error ? err.message : textOf(err)}); ${stillUnscored.length} model(s) remain unscored`
       );
     }
   }
@@ -670,7 +671,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
           }
         } catch (err) {
           /* scrape failed, use builtins */
-          warnLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : String(err)}); using builtins only`);
+          warnLog(`[scan] GDPval scrape failed (${err instanceof Error ? err.message : textOf(err)}); using builtins only`);
         }
       }
       const age = rt.cache.models_cached

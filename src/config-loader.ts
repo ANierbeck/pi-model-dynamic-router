@@ -25,6 +25,7 @@ import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
+import { textOf } from './utils.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -306,7 +307,7 @@ function tryReadPartial(
     return undefined;
   } catch (err) {
     log?.(
-      `[router] Failed to read override config ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+      `[router] Failed to read override config ${filePath}: ${err instanceof Error ? err.message : textOf(err)}`
     );
     return undefined;
   }

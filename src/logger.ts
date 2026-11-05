@@ -99,7 +99,7 @@ function append(
       // never lose the line over it — append to whatever is there now, say
       // why the file keeps growing, and back off.
       rotationRetryAt.set(logPath, Date.now() + ROTATION_RETRY_MS);
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = err instanceof Error ? err.message : textOf(err);
       fs.appendFileSync(logPath, `${new Date().toISOString()}  [router] log rotation failed, retrying in ${ROTATION_RETRY_MS / 1000}s: ${reason}\n`);
     }
   }

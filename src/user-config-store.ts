@@ -16,6 +16,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { piAgentDir } from './config-loader.ts';
 import type { ExcludeRules } from './types.ts';
+import { textOf } from './utils.ts';
 
 const USER_CONFIG_FILE = 'router-config.user.json';
 
@@ -69,7 +70,7 @@ function readObjectFile(file: string): { config: Record<string, unknown> | undef
     }
     return { config: parsed as Record<string, unknown> };
   } catch (err) {
-    return { config: undefined, error: `${file} is unreadable: ${err instanceof Error ? err.message : String(err)}` };
+    return { config: undefined, error: `${file} is unreadable: ${err instanceof Error ? err.message : textOf(err)}` };
   }
 }
 
@@ -123,7 +124,7 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
         fs.renameSync(tmp, file);
       } catch (err) {
         fs.rmSync(tmp, { force: true });
-        return { ok: false, error: `Not written — ${err instanceof Error ? err.message : String(err)}` };
+        return { ok: false, error: `Not written — ${err instanceof Error ? err.message : textOf(err)}` };
       }
       return { ok: true, written: file };
     },

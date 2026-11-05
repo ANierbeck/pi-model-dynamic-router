@@ -26,7 +26,7 @@
 
 import type { Config } from './types.ts';
 import type { Usage } from '@earendil-works/pi-ai';
-import { stripRouterNarration } from './utils.ts';
+import { stripRouterNarration, textOf } from './utils.ts';
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
@@ -296,7 +296,7 @@ export async function handleReadDelegation(
     return outcome;
   } catch (err) {
     // Fail-open: the main model must never lose the original result.
-    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : String(err)}`);
+    log?.(`[delegation] failed, passing through: ${err instanceof Error ? err.message : textOf(err)}`);
     return undefined;
   }
 }

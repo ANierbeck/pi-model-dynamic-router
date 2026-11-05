@@ -12,7 +12,7 @@ import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts'
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
 import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-driver.ts';
-import { splitRef } from './utils.ts';
+import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
@@ -550,7 +550,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
         }
       } catch (err) {
         clearTimer();
-        const message = err instanceof Error ? err.message : String(err);
+        const message = err instanceof Error ? err.message : textOf(err);
         if ((err as any)?.name === 'AbortError') {
           // Upstream cancellation (the caller aborted) — the same meaning as a
           // structured aborted event: the cascade must stop, not fall over.

@@ -37,7 +37,7 @@ import {
   isTargetedReadInput,
   drainSubCallStream,
 } from './delegation.ts';
-import { stripRouterNarration } from './utils.ts';
+import { stripRouterNarration, textOf } from './utils.ts';
 
 // ── line counting ────────────────────────────────────────────────────────
 
@@ -286,7 +286,7 @@ function loadFiles(paths: string[], maxRawChars: number): BulkReadFile[] {
     try {
       text = fs.readFileSync(p, 'utf8');
     } catch (err) {
-      throw new Error(`bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+      throw new Error(`bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : textOf(err)}`, { cause: err });
     }
     if (budget <= 0) {
       truncated = true;

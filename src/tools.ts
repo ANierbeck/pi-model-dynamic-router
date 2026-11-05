@@ -11,7 +11,7 @@ import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
 import * as metricsModule from './metrics.ts';
-import { splitRef } from './utils.ts';
+import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import * as fs from 'node:fs';
@@ -204,7 +204,7 @@ export function createTools(rt: ToolDeps) {
         // future load() on this install (roborev reviews of 7b58045 and
         // e99265a). Losing one metrics update is strictly the lesser harm.
         routerLog(
-          `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err instanceof Error ? err.message : String(err)}`
+          `[router] update_model_metrics: embedded config unusable, refusing to write to avoid clobbering: ${err instanceof Error ? err.message : textOf(err)}`
         );
         return syncResult({
           content: [

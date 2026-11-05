@@ -101,7 +101,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 import { type ClassificationResult } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText } from './utils.ts';
+import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText, textOf } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -641,7 +641,7 @@ export class StreamOrchestrator {
         if (!fb) {
           pushStreamError(
             proxy,
-            `[router] Dynamic routing failed: ${err instanceof Error ? err.message : String(err)}`,
+            `[router] Dynamic routing failed: ${err instanceof Error ? err.message : textOf(err)}`,
             '[router] dynamic classification and fallback routing both unavailable',
             sourceModel
           );
@@ -690,7 +690,7 @@ export class StreamOrchestrator {
 
   /** Terminates `proxy` with a router error for a throw the routing code did not expect. */
   private failStream(proxy: AssistantMessageEventStream, err: unknown, where: string, sourceModel?: SourceModelInfo): void {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = err instanceof Error ? err.message : textOf(err);
     errorLog(`[router] routing threw ${where}`, err);
     pushStreamError(proxy, `[router] Routing failed: ${detail}`, `[router] routing failed: ${detail}`, sourceModel);
   }
@@ -1187,7 +1187,7 @@ export class StreamOrchestrator {
         recordServedRef(ctx, probeRef);
         const probeAttempt = openCandidateAttempt(options);
         const probeTarget = await ctx.tryStream(probeRef, context, probeAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorMsg = err instanceof Error ? err.message : textOf(err);
           pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
           ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
           ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
@@ -1294,7 +1294,7 @@ export class StreamOrchestrator {
         recordServedRef(ctx, bestRef);
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : String(err);
+          const errorMsg = err instanceof Error ? err.message : textOf(err);
           pushError(bestRef, errorMsg);
           ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
           return null;

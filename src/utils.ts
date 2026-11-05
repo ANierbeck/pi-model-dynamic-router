@@ -121,6 +121,7 @@ export function messageText(content: unknown): string {
 export function textOf(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'symbol') return value.toString();
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
   if (typeof value === 'object' && value !== null) {
     try {
       const json = JSON.stringify(value);
