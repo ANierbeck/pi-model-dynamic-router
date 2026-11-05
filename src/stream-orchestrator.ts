@@ -228,7 +228,8 @@ export interface StreamOrchestratorContext {
     proxy: AssistantMessageEventStream,
     emptyResponseTimeoutMs: number,
     stallTimeoutMs: number,
-    ref: string
+    ref: string,
+    hasTools: boolean
   ) => Promise<{ ok: boolean; reason?: string; resetAtMs?: number; detail?: string | undefined }>;
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
@@ -714,6 +715,10 @@ export class StreamOrchestrator {
     };
 
     let contextOverflowSkips = 0;
+    // I4: whether this turn carries tools decides if printed tool-call markup
+    // is a failure (tools present: the model should have called one) or a
+    // legitimate answer (no tools: the same text is prose).
+    const hasTools = (context.tools?.length ?? 0) > 0;
     // Bounded wait-for-reset: at most ONE wait-and-retry per driveStream call,
     // so a chain of short-reset rate limits can't turn the wait path into a
     // livelock (each wait retries the SAME model once, then falls through to
@@ -837,7 +842,8 @@ export class StreamOrchestrator {
           target.stream, proxy,
           ctx.getEmptyResponseTimeout(ref),
           ctx.getStallTimeout(ref),
-          String(ref)
+          String(ref),
+          hasTools
         );
 
         if (result.ok) {
@@ -918,7 +924,8 @@ export class StreamOrchestrator {
                   retryTarget.stream, proxy,
                   ctx.getEmptyResponseTimeout(ref),
                   ctx.getStallTimeout(ref),
-                  String(ref)
+                  String(ref),
+                  hasTools
                 );
                 if (retryResult.ok) {
                   retrySucceeded = true;
@@ -1084,7 +1091,9 @@ export class StreamOrchestrator {
               ? `provider error${result.detail ? `: ${result.detail}` : ''}`
               : result.reason === 'stream_threw'
                 ? `stream error${result.detail ? `: ${result.detail}` : ''}`
-                : 'empty response from model';
+                : result.reason === 'tool_markup_as_text'
+                  ? 'printed tool-call markup as text instead of calling a tool'
+                  : 'empty response from model';
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
@@ -1202,7 +1211,8 @@ export class StreamOrchestrator {
               probeTarget.stream, proxy,
               ctx.getEmptyResponseTimeout(probeRef),
               ctx.getStallTimeout(probeRef),
-              probeRef
+              probeRef,
+              hasTools
             );
             if (result.ok) {
               probeSucceeded = true;
@@ -1308,7 +1318,8 @@ export class StreamOrchestrator {
               target.stream, proxy,
               ctx.getEmptyResponseTimeout(bestRef),
               ctx.getStallTimeout(bestRef),
-              bestRef
+              bestRef,
+              hasTools
             );
             if (result.ok) {
               collapseSucceeded = true;

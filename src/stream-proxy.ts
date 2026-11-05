@@ -7,14 +7,14 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, sanitizeForLog } from './detection.ts';
+import { isAbortLikeText, isRateLimitText, isToolCallMarkupText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, sanitizeForLog } from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
 import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-driver.ts';
 import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
-import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
+import { type Model, type Context, type SimpleStreamOptions, type AssistantMessageEvent, type AssistantMessageEventStream, createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
 import type { StreamOrchestrator } from './stream-orchestrator.ts';
 
@@ -247,7 +247,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     proxy: AssistantMessageEventStream,
     timeoutMs: number,
     stallMs: number,
-    ref: string
+    ref: string,
+    hasTools: boolean
   ): Promise<{ ok: boolean; reason?: string; detail?: string | undefined; resetAtMs?: number }> {
     let hadContent = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -327,6 +328,51 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // cancels the candidate) into the proxy, i.e. into the output of the
     // candidate that had already taken over.
     let abandoned = false;
+    // I4: with tools in the request, HOLD the answer's opening text instead of
+    // forwarding it straight away. A model that prints its tool call as prose
+    // (2026-11-05: `openrouter/openrouter/free` emitted
+    // `<dots_function_call>…</dots_function_call>` on ten consecutive turns,
+    // stopReason 'toolUse', 0–3 chars of text) produces a stream that finishes
+    // normally, so no failure detector could see it: the markup reached the
+    // user AND consumeWithDetection returned { ok: true } → recordOk, i.e. the
+    // model was rewarded for it. Holding the opening lets the verdict below
+    // reject the candidate before the markup is ever forwarded. The hold ends
+    // as soon as a real tool-call event arrives or the window fills, so a
+    // healthy stream pays at most TOOL_MARKUP_HOLD_CHARS of latency.
+    const TOOL_MARKUP_HOLD_CHARS = 200;
+    let sawToolCall = false;
+    let holdActive = hasTools;
+    const heldEvents: AssistantMessageEvent[] = [];
+    let heldChars = 0;
+    const flushHeld = (): void => {
+      if (!holdActive) return;
+      holdActive = false;
+      for (const held of heldEvents) proxy.push(held);
+      heldEvents.length = 0;
+    };
+    /**
+     * Decide what to do with the opening text still held when the stream
+     * ended. Returns true when it is tool-call markup and must be dropped.
+     * Every other outcome flushes the hold, so the branches below keep the
+     * behaviour they had before the hold existed (content already forwarded).
+     */
+    let toolMarkupAsText = false;
+    let toolMarkupDetail = '';
+    const heldOpeningIsToolMarkup = (): boolean => {
+      if (!holdActive) return toolMarkupAsText;
+      const head = heldEvents.map((e) => (e.type === 'text_delta' ? e.delta : '')).join('');
+      if (!hasTools || sawToolCall || !isToolCallMarkupText(head)) {
+        flushHeld();
+        return false;
+      }
+      // Never forward the markup: the user should see the next candidate's
+      // answer, not this candidate's failed attempt at a tool call.
+      toolMarkupAsText = true;
+      toolMarkupDetail = sanitizeForLog(head.trim().slice(0, 120));
+      heldEvents.length = 0;
+      holdActive = false;
+      return true;
+    };
     const iterPromise = (async (): Promise<'done'> => {
       try {
         for await (const event of upstream) {
@@ -353,6 +399,15 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             }
           }
           armTimer();
+          if (
+            event.type === 'toolcall_start' ||
+            event.type === 'toolcall_delta' ||
+            event.type === 'toolcall_end'
+          ) {
+            // A real tool call: the answer is legitimate, stop holding.
+            sawToolCall = true;
+            flushHeld();
+          }
           if (event.type === 'error') {
             clearTimer();
             // pi-ai's AssistantMessageEvent contract (types.d.ts) has a stream
@@ -472,10 +527,16 @@ export function createStreamProxy(rt: StreamProxyDeps) {
           // Claude limit as an `error` EVENT (errorMessage "Claude rate limit
           // ..."), handled above, and its yellow warning is a piUI.notify UI
           // notification that never enters this stream.
+          const holdThisDelta = holdActive && event.type === 'text_delta';
           if (event.type === 'text_delta') {
             // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const delta = String((event as any).delta || (event as any).text || '');
             accumulatedText += delta;
+            if (holdThisDelta) {
+              heldEvents.push(event);
+              heldChars += delta.length;
+              if (heldChars >= TOOL_MARKUP_HOLD_CHARS) flushHeld();
+            }
             // Some providers return overflow rejections as text content rather
             // than as an error event. Detect it so driveStream can emit the
             // native overflow error and trigger Pi compaction instead of hanging.
@@ -546,12 +607,26 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               clearTimer();
               return 'done';
             }
+            // I4: the stream is about to terminate, so the hold must be
+            // resolved NOW — after the terminal event is forwarded the proxy
+            // is closed and a late flush would be a no-op (the answer would be
+            // silently lost). A markup verdict returns WITHOUT forwarding the
+            // done event, exactly like the length/empty branches above: the
+            // cascade needs the proxy open for the next candidate.
+            if (heldOpeningIsToolMarkup()) {
+              clearTimer();
+              return 'done';
+            }
           }
-          proxy.push(event);
+          if (!holdThisDelta) proxy.push(event);
           if (event.type === 'done') terminalForwarded = true;
         }
       } catch (err) {
         clearTimer();
+        // Whatever was held is forwarded before the failure is classified:
+        // before the hold existed this content had already reached the proxy,
+        // and dropping it here would be an unrelated behaviour change.
+        flushHeld();
         const message = err instanceof Error ? err.message : textOf(err);
         if ((err as any)?.name === 'AbortError') {
           // Upstream cancellation (the caller aborted) — the same meaning as a
@@ -583,6 +658,12 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     })();
 
     const winner = await Promise.race([iterPromise, timeoutPromise]);
+
+    // I4 verdict first, so every classification below keeps the behaviour it
+    // had before the hold existed (the opening text is already forwarded).
+    // The done branch above already decided for a clean termination; this
+    // covers the timeout path, where the hold may still be open.
+    heldOpeningIsToolMarkup();
 
     if (winner === 'timeout') {
       abandoned = true;
@@ -639,6 +720,18 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       // a provider that streams partial content and THEN errors still needs
       // this branch, since hadContent alone would otherwise report success.
       return { ok: false, reason: 'provider_error', detail: providerErrorDetail || undefined };
+    }
+
+    if (toolMarkupAsText) {
+      // The model printed its tool call instead of emitting one (I4). The
+      // markup was held back and dropped, so the user never sees it; the
+      // cascade hands the turn to the next candidate. Soft failure on
+      // purpose — this is a model-quality signal, not a provider fault.
+      return {
+        ok: false,
+        reason: 'tool_markup_as_text',
+        ...(toolMarkupDetail ? { detail: toolMarkupDetail } : {}),
+      };
     }
 
     if (truncatedByLength) {
