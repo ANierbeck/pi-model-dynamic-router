@@ -1,6 +1,6 @@
 # Mutation triage of the stream orchestrator after the Laya merge
 
-**Status:** in progress 2026-11-05. Slice 1 done 2026-11-04: `groupStream`, 272 undetected mutants → 257 killed by `test/orchestrator-hint-wiring.test.ts`, 15 ledgered as equivalent. Slice 2 (2026-11-05): `driveStream` instrumented with the standalone one-file instrumenter, 642 mutants → recheck completed (first run invalidated by off-by-one location bug; fixed, kILEd 313, survived 325, 4 unconfirmed (equivalent). Slices 3 open (391 undetected mutants in helpers).
+**Status:** in progress 2026-11-05. Slice 1 done 2026-11-04: `groupStream`, 272 undetected mutants → 257 killed by `test/orchestrator-hint-wiring.test.ts`, 15 ledgered as equivalent. Slice 2 (2026-11-05): `driveStream` instrumented with the standalone one-file instrumenter, 642 mutants → recheck completed (first run invalidated by off-by-one location bug; fixed): 313 killed, 325 survived (triage of the survivors still open), 4 unconfirmed (open, not judged). Slices 3 open (391 undetected mutants in helpers).
 
 AGENTS.md §11: one problem per plan. This is the owner-mandated round of 2026-10-15 ("do this first after laya-spike merges", TODO.md): the most consequential selection code in the router has the weakest mutation coverage. The verdict ledger stays `docs/mutation-triage.md`; the numbers of this round are in `docs/research/2026-11-04-orchestrator-mutation-r4.md`.
 
