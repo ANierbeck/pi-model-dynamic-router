@@ -37,11 +37,6 @@
       "count": 10
     },
     {
-      "file": "index.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "scripts/classifier-replay.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 2
@@ -84,11 +79,6 @@
     {
       "file": "scripts/laya-pair-stats.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "scripts/laya-pair-stats.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
       "count": 1
     },
     {
@@ -142,11 +132,6 @@
       "count": 1
     },
     {
-      "file": "scripts/pool-replay.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
-    },
-    {
       "file": "scripts/provider-breaker-replay.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -155,11 +140,6 @@
       "file": "scripts/redundancy-report.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 3
-    },
-    {
-      "file": "scripts/redundancy-report.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
     },
     {
       "file": "scripts/router-kpi-audit.ts",
@@ -195,11 +175,6 @@
       "file": "scripts/turn-decision-join.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
       "count": 9
-    },
-    {
-      "file": "scripts/turn-decision-join.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
     },
     {
       "file": "src/budget-pacing.ts",
@@ -242,16 +217,6 @@
       "count": 1
     },
     {
-      "file": "src/cache.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/classifier-decision-log.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 2
-    },
-    {
       "file": "src/classifier-fallback-probe.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 3
@@ -292,11 +257,6 @@
       "count": 2
     },
     {
-      "file": "src/classifier-local-probe.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/commands.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 5
@@ -317,11 +277,6 @@
       "count": 2
     },
     {
-      "file": "src/commands.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/config-loader.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -330,11 +285,6 @@
       "file": "src/config-loader.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
       "count": 2
-    },
-    {
-      "file": "src/config-loader.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 4
     },
     {
       "file": "src/content-classifier.ts",
@@ -372,11 +322,6 @@
       "count": 3
     },
     {
-      "file": "src/content-classifier.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 2
-    },
-    {
       "file": "src/context-utils.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -400,11 +345,6 @@
       "file": "src/context-utils.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
       "count": 9
-    },
-    {
-      "file": "src/cost-tracker.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
     },
     {
       "file": "src/delegation.ts",
@@ -537,11 +477,6 @@
       "count": 2
     },
     {
-      "file": "src/event-handlers.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/free-model-registration.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -652,29 +587,9 @@
       "count": 7
     },
     {
-      "file": "src/metrics.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/model-blocklist.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 2
-    },
-    {
-      "file": "src/model-health.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/model-resolve-glue.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 2
-    },
-    {
-      "file": "src/ollama-gdpval.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
     },
     {
       "file": "src/overview-table.ts",
@@ -682,19 +597,9 @@
       "count": 1
     },
     {
-      "file": "src/provider-breaker.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/rank-explain.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
-    },
-    {
-      "file": "src/rate-limit.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 2
     },
     {
       "file": "src/routing.ts",
@@ -757,18 +662,8 @@
       "count": 4
     },
     {
-      "file": "src/scan-runner.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 2
-    },
-    {
       "file": "src/session-errors.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/slug-matcher.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
       "count": 1
     },
     {
@@ -817,11 +712,6 @@
       "count": 2
     },
     {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
       "file": "src/stream-proxy.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 4
@@ -855,11 +745,6 @@
       "file": "src/stream-proxy.ts",
       "rule": "@typescript-eslint/no-unsafe-return",
       "count": 2
-    },
-    {
-      "file": "src/stream-proxy.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 5
     },
     {
       "file": "src/tools.ts",
@@ -900,11 +785,6 @@
       "file": "src/utils.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
       "count": 2
-    },
-    {
-      "file": "src/utils.ts",
-      "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
     },
     {
       "file": "src/version.ts",

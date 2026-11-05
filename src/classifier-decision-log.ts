@@ -232,6 +232,11 @@ export interface RecordParams {
 export function buildDecisionRecord(p: RecordParams): DecisionRecord {
   const log = resolveClassifierLogConfig(p.cfgBlock)!;
   const reasonsAllowed = log.store !== 'none';
+  // buildContextBlock returns a block only when at least one of the two
+  // history texts is non-empty — an empty string must fall through, so `||`
+  // (not `??`) is the correct operator here.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  const hasHistoryText = !!(p.context?.previousUserMessage || p.context?.lastAssistantSnippet);
   return {
     v: DECISION_LOG_VERSION,
     ts: new Date().toISOString(),
@@ -265,10 +270,10 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
       context: {
         // buildContextBlock returns a block only when at least one of the
         // two history texts exists — same condition here.
-        hasContextBlock: !!(p.context?.previousUserMessage || p.context?.lastAssistantSnippet),
+        hasContextBlock: hasHistoryText,
         lastCategory: p.context?.lastCategory ?? null,
         isCompaction: !!p.context?.isCompaction,
-        hasHistory: !!(p.context?.previousUserMessage || p.context?.lastAssistantSnippet),
+        hasHistory: hasHistoryText,
       },
     },
   };

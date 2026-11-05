@@ -314,8 +314,8 @@ export function matchSlug(
     if (normalized !== normalizedSlug) continue;
     if (exactNumHit === undefined && isExactTuple(extractTokens(normalizeSpacedId(slug)).numbers, refNums)) {
       exactNumHit = slug;
-    } else if (exactHit === undefined) {
-      exactHit = slug;
+    } else {
+      exactHit ??= slug;
     }
   }
   if (exactNumHit !== undefined) return exactNumHit;

@@ -109,7 +109,7 @@ import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
 import * as metrics from '../src/metrics.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLog } from './lib/decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 
 interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
 
@@ -205,7 +205,7 @@ function replayMain(): void {
 }
 
 
-if (process.argv[1] && process.argv[1].endsWith('pool-replay.ts')) {
+if (invokedDirectly(import.meta.url)) {
   if (process.argv.includes('--calibrate')) calibrationMain();
   if (process.argv.includes('--replay')) replayMain();
 }

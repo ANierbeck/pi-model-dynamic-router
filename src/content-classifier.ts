@@ -468,6 +468,7 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
     const groupName = hintTarget.slice(6).trim(); // Remove 'group:' prefix
     if (!groupName) return null;
     return {
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
       reason: parsed.reason || 'User specified group via HINT',
       confidence: 1.0,
       hintType: 'group',
@@ -486,6 +487,7 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
   }
   if (!cleanHintTarget) return null; // e.g. "hint:use" with nothing after the verb
   return {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
     reason: parsed.reason || 'User specified model via HINT',
     confidence: 1.0,
     hintType: 'model',
