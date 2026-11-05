@@ -93,7 +93,10 @@ export function buildModelsWithMetadata(
       return { ref, gdpval, cost, price, isFreeModel, contextWindow };
     })
     .filter((m) => {
-      if (staticModelRefs.has(m.ref)) return true;
+      // Explicitly configured: a `models` entry, or a `free_models` entry (the
+      // owner's own choice, ADR-0021). Their group fit is decided by the groups'
+      // filters, not by the pool.
+      if (staticModelRefs.has(m.ref) || staticFreeModelsLookup.has(m.ref)) return true;
       return m.gdpval > 0;
     });
 }
