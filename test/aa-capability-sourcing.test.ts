@@ -21,6 +21,7 @@
 // \\" before parsing and the fixtures apply the identical normalization.
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { extractCapabilityProfiles } from '../src/scan-runner.js';
 import { Router as RoutingRouter } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
@@ -342,7 +343,5 @@ describe('shipped config wiring', () => {
 });
 
 function readFileSyncConfig(): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const fs = require('fs');
-  return fs.readFileSync(new URL('../router-config.json', import.meta.url), 'utf8');
+  return readFileSync(new URL('../router-config.json', import.meta.url), 'utf8');
 }

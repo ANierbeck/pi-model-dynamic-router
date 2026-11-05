@@ -1297,16 +1297,6 @@
       "count": 1
     },
     {
-      "file": "test/aa-capability-sourcing.test.ts",
-      "rule": "@typescript-eslint/no-require-imports",
-      "count": 1
-    },
-    {
-      "file": "test/aa-capability-sourcing.test.ts",
-      "rule": "fatal",
-      "count": 1
-    },
-    {
       "file": "test/agent-capability-tier.test.ts",
       "rule": "no-useless-assignment",
       "count": 1

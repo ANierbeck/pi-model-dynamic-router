@@ -23,7 +23,7 @@
 ### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
 
 The gate is live (`npm run lint`, step in the required `test` job,
-`docs/plans/2026-11-04-lint-gate.md`). Baseline: 1219 findings / 301 (file, rule)
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: 1217 findings / 299 (file, rule)
 entries. Each slice lowers `scripts/lint-baseline.json` **and** `CEILING_FINDINGS`
 in `test/lint-baseline.test.ts` in the same commit:
 

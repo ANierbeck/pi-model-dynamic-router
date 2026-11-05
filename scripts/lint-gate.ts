@@ -13,6 +13,7 @@
 import { ESLint } from 'eslint';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { invokedDirectly } from './lib/cli.ts';
 
 export interface LintEntry {
   /** Repo-relative path with POSIX separators. */
@@ -36,7 +37,12 @@ export function toEntries(results: ESLint.LintResult[], root: string): LintEntry
   for (const result of results) {
     const file = result.filePath.slice(root.length + 1).split('\\').join('/');
     for (const message of result.messages) {
-      const key = `${file}${SEP}${message.ruleId ?? 'fatal'}`;
+      // A real parse error has `fatal: true` and no ruleId; an unused
+      // eslint-disable directive also has no ruleId but is NOT fatal. Bucketing
+      // both as 'fatal' would let a genuine parse error hide behind a baselined
+      // directive warning.
+      const rule = message.fatal ? 'fatal' : (message.ruleId ?? 'eslint-directive');
+      const key = `${file}${SEP}${rule}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -45,7 +51,10 @@ export function toEntries(results: ESLint.LintResult[], root: string): LintEntry
       const [file, rule] = key.split(SEP);
       return { file, rule, count };
     })
-    .sort((a, b) => a.file.localeCompare(b.file) || a.rule.localeCompare(b.rule));
+    // UTF-16 code-unit order, matching Array.prototype.sort() on strings — the
+    // canonical check in test/lint-baseline.test.ts uses exactly that, and
+    // localeCompare orders differently (a_b before a-b).
+    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.rule < b.rule ? -1 : a.rule > b.rule ? 1 : 0));
 }
 
 /**
@@ -111,6 +120,9 @@ async function main(): Promise<void> {
   console.log(`lint gate ok: ${total} findings, all baselined`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// invokedDirectly(), not a hand-rolled `file://${argv[1]}` comparison: the naive
+// form fails open on paths with a space (argv[1] is not percent-encoded), which
+// is how the pre-push hook once silently stopped rejecting leaks.
+if (invokedDirectly(import.meta.url)) {
   await main();
 }
