@@ -1315,13 +1315,52 @@ breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
 
 ### Slice 2 recheck result (driveStream)
 
-> Run of 2026-11-05: 642 mutants via the standalone one-file instrumenter (`scripts/mutation-instrument-one.ts`), rechecked with `scripts/mutation-recheck.ts`. **313 killed, 325 survived (no verdict yet), 4 unconfirmed (open).**
+> Run of 2026-11-05: 642 mutants via the standalone one-file instrumenter (`scripts/mutation-instrument-one.ts`), rechecked with `scripts/mutation-recheck.ts`. **313 killed, 325 survived, 4 unconfirmed — all 329 triaged 2026-11-05 (see `Slice 2 triage` below).**
 
 | category | count | evidence |
 | --- | --- | --- |
 | KILLED by the existing suite, recheck-confirmed (no test added in this slice) | 313 | `scripts/mutation-recheck.ts`: kill observed on the mutated tree and confirmed alone on the mutated tree and baseline. Killer files per mutant are in the result data (`docs/mutation-data/slice2-driveStream.json`) |
-| UNCONFIRMED — OPEN, not yet judged | 4 | the recheck could not confirm a kill (each killer candidate is not green alone on the baseline or does not fail alone on the mutated tree); no per-mutant reading done yet, so NO equivalence verdict |
-| UNTRIAGED: survived the full-suite recheck; no per-mutant reading done | 325 | by line range of `src/stream-orchestrator.ts` at the recheck: driveStream-pre 674–899 → 55, driveStream-core 900–1122 → 118, probe/breaker 1123–1259 → 86, collapse 1260–1383 → 66. The per-mutant records are in `docs/mutation-data/slice2-driveStream.json`, so the split can be recomputed. Not a REAL GAP until read and classified |
+| UNCONFIRMED — RESOLVED 2026-11-05 (see `Slice 2 triage` below) | 4 | 871 and 1059 are REAL GAPs (empirically survive the full suite on current main); 1060/1061 are EQUIVALENT (defensive cleanup, no observable) |
+| TRIAGED 2026-11-05 (verdicts in the `Slice 2 triage` section below) | 325 | 205 REAL GAP (follow-up red-first tests; concrete sketches in `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 FALSE SURVIVOR (1034), 1 REDUNDANT (741 — dead store removed per AGENTS.md §7) |
+
+### Slice 2 triage (2026-11-05)
+
+Method: four parallel reading passes (one per region) against the instrumented
+tree `c101b27` — the tree `docs/mutation-data/slice2-driveStream.json` was
+produced from — cross-checked against then-current main. Every claim of
+"already covered / false survivor" was then CHECKED EMPIRICALLY: the mutant
+was hand-applied to a pristine copy of main (`9c57cda`) and run against the
+targeted test file and the full suite. The per-cluster inventory with test
+sketches is `docs/mutation-data/slice2-triage/{pre,core,probe,collapse}.md`
+(each file carries a correction header where an agent claim did not hold).
+
+**Empirical corrections (hand-applied mutants, full-suite runs on `9c57cda`):**
+
+| mutant | claim | empirically |
+| --- | --- | --- |
+| 669, 670 | "already killed by `rate-limit-wait.test.ts` — false survivor" | **DISPROVED — REAL GAP.** Survive the full suite. The divergence is state-level only: a successful wait-retry records a bogus `recordStreamFailure(ref, 'undefined')` and skips `recordOk`; the "still failing" narration and the post-terminal cascade are invisible in the event stream (the proxy already got `done`; the next candidate's `tryStream` skip leaves no trace). Kill needs a state-observation test (cooldown/session-errors on the next turn). |
+| 871 (unconfirmed) | "already rejected by `classifier-replay.test.ts`" | **DISPROVED — REAL GAP (thin).** Survives the full suite. The reachable divergence needs a walk that exhausts candidates with `allErrors` empty — every skip path pushes an error, and empty candidate lists are handled at resolve level (a `min_gdpval`-empty group falls back before the walk), so no fixture was found in spot-checks. |
+| 1034 | "ALREADY COVERED (stale survivor)" | **CONFIRMED — FALSE SURVIVOR.** Killed by the full suite on current main: 18 failures (5 files), timeout-based (the mutant waits real seconds on every collapse). Ledgered as killed, no test needed. |
+| 1059 (unconfirmed) | TESTED-idea (abandons the live retry stream) | **CONFIRMED — REAL GAP.** Survives the full suite: mock streams do not honor abort signals, so the aborted retry still delivers its content. Kill needs a signal-respecting fixture. |
+| 1060, 1061 (unconfirmed) | EQUIVALENT (defensive cleanup) | **CONFIRMED — EQUIVALENT.** Survive the full suite, consistent with the reading: `target` null means no stream was ever opened; the abandon would only abort an unused controller. |
+| 659 | UNSURE (unclear mutated expression) | **RESOLVED — REAL GAP (thin).** The mutant is the INVERTED `if (!retryTarget) retryAttempt.abandon()` guard (abandons the LIVE retry stream right after a successful open) — the wait-retry twin of collapse 1058/1059; same signal-respecting-fixture caveat. |
+| 1137–1141 | UNSURE (defensive catch, likely unreachable) | **RESOLVED — EQUIVALENT (defensive), no §7 removal.** `consumeWithDetection` never throws by contract (`test/drive-stream-never-rejects.test.ts`); the catch stays as the never-rejects guard. |
+
+**Verdict totals (325 survivors + 4 unconfirmed):**
+
+| verdict | count | notes |
+| --- | --- | --- |
+| REAL GAP (follow-up red-first tests) | 205 | sketches per cluster in `docs/mutation-data/slice2-triage/`; the four highest-value clusters: retry-fails-again family (~15), fallback-cascade e2e (5), breaker-on-thrown-errors (4), larger-candidates filter (4) |
+| EQUIVALENT | 118 | rationale per line in the region files — mostly narration/log text (open decision 2), defensive guards subsumed by neighboring conjuncts, and state-only reason strings |
+| FALSE SURVIVOR | 1 | 1034 — killed by the full suite on current main |
+| REDUNDANT (removed per AGENTS.md §7) | 1 | 741 — `pushError` dead store on the genuine-overflow path (the walk returns right after the terminal `pushStreamError`, so the `allErrors` entry is never consumed); removed in the triage commit |
+
+The 205 REAL GAPs are dominated by user-visible narration/reason strings
+(cheap to pin once the fixture exists) and by recorded-state divergences
+(`recordOk`/`recordStreamFailure`/`observeFailure` seams) that need
+state-observation tests rather than event-stream assertions. The test round is
+the follow-up batch; per the plan's open decision 1, behaviours the
+Virtual-Models spike might replace get characterisation pins only.
 
 ### Slice 1 verdicts (272)
 
