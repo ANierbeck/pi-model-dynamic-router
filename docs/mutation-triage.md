@@ -1321,7 +1321,7 @@ breaker-dead-end wait guard (L1107), the dynamic-HINT match lines (L465/L549).
 | --- | --- | --- |
 | KILLED by the existing suite, recheck-confirmed (no test added in this slice) | 313 | `scripts/mutation-recheck.ts`: kill observed on the mutated tree and confirmed alone on the mutated tree and baseline. Killer files per mutant are in the result data (`docs/mutation-data/slice2-driveStream.json`) |
 | UNCONFIRMED — OPEN, not yet judged | 4 | the recheck could not confirm a kill (each killer candidate is not green alone on the baseline or does not fail alone on the mutated tree); no per-mutant reading done yet, so NO equivalence verdict |
-| UNTRIAGED: survived the full-suite recheck; no per-mutant reading done | 325 | clusters: driveStream-core 118, collapse 66, probe/breaker 86, driveStream-pre 55. Not a REAL GAP until read and classified |
+| UNTRIAGED: survived the full-suite recheck; no per-mutant reading done | 325 | by line range of `src/stream-orchestrator.ts` at the recheck: driveStream-pre 674–899 → 55, driveStream-core 900–1122 → 118, probe/breaker 1123–1259 → 86, collapse 1260–1383 → 66. The per-mutant records are in `docs/mutation-data/slice2-driveStream.json`, so the split can be recomputed. Not a REAL GAP until read and classified |
 
 ### Slice 1 verdicts (272)
 

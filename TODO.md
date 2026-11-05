@@ -54,6 +54,9 @@ entries** after the S1+S2+S3 burn-down (was 1217 / 299; S3 took it to 919 / 159)
       existing `invokedDirectly()` helper in five scripts. Baseline
       955 → 919 findings, 183 → 159 entries. The `no-unnecessary-type-assertion`
       part was already burned down by the `--fix` run in the S1+S2 commit
+      One conversion is not behaviour-neutral and is noted here: `fuzzyMatch ?? null`
+      in `src/utils.ts` differs from `||` only for an empty-string ref, which no
+      caller reaches in practice.
 - [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
       burn down, explicit return types are treated as an API contract
 - [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,
