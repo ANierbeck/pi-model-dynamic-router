@@ -68,7 +68,7 @@ export function isMarkedNoSchema(cache: Cache | undefined, model: string): boole
 /** Persist a 501 "structured output is unavailable" observation in the cache. */
 export function markNoSchema(cache: Cache | undefined, model: string): void {
   if (!cache) return; // no cache to persist into — the 501 hop just repeats this session
-  if (!cache.classifier_no_schema) cache.classifier_no_schema = {};
+  cache.classifier_no_schema ??= {};
   cache.classifier_no_schema[model] = Date.now();
 }
 

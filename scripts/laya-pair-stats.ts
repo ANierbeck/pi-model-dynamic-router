@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLogRecords } from './lib/decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 import { pct } from './lib/cli.ts';
 
 export interface PairLogRecord {
@@ -304,4 +304,4 @@ function main(): void {
   console.log(formatPairReport(summarizePairs(pairs, observedGroupMap(records)), { file, unpairedLaya, orphanComparators }));
 }
 
-if (process.argv[1] && process.argv[1].endsWith('laya-pair-stats.ts')) main();
+if (invokedDirectly(import.meta.url)) main();

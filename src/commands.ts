@@ -358,6 +358,7 @@ function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: s
   const others = layers.filter(
     (l) =>
       l.origin !== 'user' &&
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
       (l.exclude.models?.includes(pattern) || coveringProviderRuleKind(l, pattern) !== null)
   );
 

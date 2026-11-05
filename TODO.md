@@ -24,7 +24,7 @@
 
 The gate is live (`npm run lint`, step in the required `test` job,
 `docs/plans/2026-11-04-lint-gate.md`). Baseline: **955 findings / 183 (file, rule)
-entries** after the S1+S2 burn-down (was 1217 / 299). Each slice lowers
+entries** after the S1+S2+S3 burn-down (was 1217 / 299; S3 took it to 919 / 159). Each slice lowers
 `scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
 `test/lint-baseline.test.ts` in the same commit:
 
@@ -43,8 +43,13 @@ entries** after the S1+S2 burn-down (was 1217 / 299). Each slice lowers
       handler/tool contracts allow sync bodies), `no-base-to-string` (new
       `textOf()` helper), `restrict-template-expressions`,
       `no-redundant-type-constituents`
-- [ ] **S3** mechanical (~125): `prefer-nullish-coalescing` (careful: `||` vs `??`
-      on falsy strings), `prefer-optional-chain` — the `no-unnecessary-type-assertion`
+- [x] **S3** `prefer-nullish-coalescing` + `prefer-optional-chain` — done
+      2026-11-05. 18 sites converted to `??`/`??=`, 14 kept `||` on purpose with a
+      one-line `eslint-disable-next-line` and the reason (an empty string must
+      fall through; a `false` from `includes()` must still reach the
+      provider-rule check), and the 4 `prefer-optional-chain` findings became
+      the existing `invokedDirectly()` helper in five scripts. Baseline
+      955 → 919 findings, 183 → 159 entries. The `no-unnecessary-type-assertion`
       part was already burned down by the `--fix` run in the S1+S2 commit
 - [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
       burn down, explicit return types are treated as an API contract

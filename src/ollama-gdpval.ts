@@ -268,7 +268,7 @@ export function estimateOllamaModelsGdpvalAsSlugs(
       const slug = ollamaModelSlug(model);
       // Don't overwrite a score already present (e.g. from model-map.yaml
       // builtins) — heuristic is a FALLBACK only.
-      if (estimates[slug] === undefined) estimates[slug] = score;
+      estimates[slug] ??= score;
     }
   }
   return estimates;

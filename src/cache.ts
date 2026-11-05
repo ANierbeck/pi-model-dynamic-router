@@ -408,7 +408,7 @@ export class CacheManager {
    * Adds a new entry to the usage log
    */
   addUsageLogEntry(ref: string, tokens: number): void {
-    if (!this.cache.usage_log) this.cache.usage_log = [];
+    this.cache.usage_log ??= [];
     this.cache.usage_log.push({ ref, tokens, ts: Date.now() });
     // Trim log to last 30 days
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;

@@ -104,5 +104,5 @@ if (invokedDirectly(import.meta.url)) {
   }
   const report = await buildReport(file, process.cwd());
   writeFileSync(out, JSON.stringify(report));
-  process.stdout.write(`${file}: ${report.files[file]!.mutants.length} mutants -> ${out}\n`);
+  process.stdout.write(`${file}: ${report.files[file].mutants.length} mutants -> ${out}\n`);
 }

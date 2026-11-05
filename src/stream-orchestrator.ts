@@ -795,6 +795,7 @@ export class StreamOrchestrator {
       // returned null with a skipReason and never threw).
       let openFailureText: string | undefined;
       const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
         const errorMsg = String(err.message || err);
         const isExpectedError = isExpectedTransientError(errorMsg);
         if (!isExpectedError) warnLog(`[router] Skipping ${ref}: ${errorMsg}`);

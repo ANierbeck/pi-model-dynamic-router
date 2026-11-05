@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { invokedDirectly } from './lib/cli.ts';
 
 export interface TextFile {
   path: string;
@@ -418,4 +419,4 @@ function main(): void {
   console.log(process.argv.includes('--json') ? JSON.stringify(report.counts, null, 2) : formatRedundancyReport(report));
 }
 
-if (process.argv[1] && process.argv[1].endsWith('redundancy-report.ts')) main();
+if (invokedDirectly(import.meta.url)) main();

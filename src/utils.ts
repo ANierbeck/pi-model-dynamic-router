@@ -206,7 +206,7 @@ export function resolveShortModelName(
   const fuzzyMatch = allDiscoveredRefs.find(
     (m: string) => normalizeHintName(m.split('/').pop() ?? m) === normalized
   );
-  return fuzzyMatch || null;
+  return fuzzyMatch ?? null;
 }
 
 

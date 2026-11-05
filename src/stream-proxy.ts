@@ -381,6 +381,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             // `.errorMessage` (the assistant-message shape), not `.message` —
             // check both so this works across provider families.
             const errObj = (event as any).error;
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
             // A provider/transport can also report a client-side or
             // cascade-induced abort as free-text inside an `error` event
@@ -472,6 +473,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
           // ..."), handled above, and its yellow warning is a piUI.notify UI
           // notification that never enters this stream.
           if (event.type === 'text_delta') {
+            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const delta = String((event as any).delta || (event as any).text || '');
             accumulatedText += delta;
             // Some providers return overflow rejections as text content rather

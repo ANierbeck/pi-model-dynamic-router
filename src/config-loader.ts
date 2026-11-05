@@ -258,9 +258,10 @@ export function validateClassifierLaya(config: Config): void {
     warnLog(`[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`);
     c.timeout_ms = 1500;
   }
-  if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
-  if (c.timeout_ms == null) c.timeout_ms = 1500;
-  if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
+  c.endpoint ??= LAYA_DEFAULT_ENDPOINT;
+  c.timeout_ms ??= 1500;
+  c.confidence_threshold ??= 0.8;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
   if (!c.mode) c.mode = 'shadow';
 }
 

@@ -185,7 +185,7 @@ export function recordProviderFailure(
 ): boolean {
   if (!countsAsProviderEvidence(kind, detail)) return false;
   const provider = providerOf(ref);
-  if (!cache.provider_breaker) cache.provider_breaker = {};
+  cache.provider_breaker ??= {};
   const s = (cache.provider_breaker[provider] ??= { evidence: {}, trip_count: 0 });
   for (const [model, e] of Object.entries(s.evidence)) {
     if (now - e.at >= tuning.windowMs) delete s.evidence[model];

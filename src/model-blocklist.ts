@@ -35,7 +35,7 @@ interface BlocklistEntry {
 }
 
 function block(cache: Cache, ref: string, reason: string, code: number, signature: string, now: number): BlocklistEntry {
-  if (!cache.model_blocklist) cache.model_blocklist = {};
+  cache.model_blocklist ??= {};
   const prev = cache.model_blocklist[ref];
   const entry: BlocklistEntry = {
     reason,
@@ -72,7 +72,7 @@ export function recordBlocklistFailure(
     return block(cache, ref, prev.reason, prev.code, c.signature, now);
   }
 
-  if (!cache.model_failure_streaks) cache.model_failure_streaks = {};
+  cache.model_failure_streaks ??= {};
   let streak = cache.model_failure_streaks[ref];
   if (streak?.signature !== c.signature || now - streak.last_seen >= BLOCKLIST_TTL_MS) {
     streak = { signature: c.signature, count: 0, first_seen: now, last_seen: now };
