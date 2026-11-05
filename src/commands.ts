@@ -210,8 +210,9 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   // digging through the router log.
   const counts = input.counts;
   if (counts && counts.total > 0) {
-    const byFreq = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]);
-    const pct = (n: number) => Math.round((n / counts.total) * 100);
+    const byFreq = (m: Record<string, number>): [string, number][] =>
+      Object.entries(m).sort((a, b) => b[1] - a[1]);
+    const pct = (n: number): number => Math.round((n / counts.total) * 100);
     lines.push(
       `│ Today: ${counts.total} classified — ${byFreq(counts.bySource)
         .map(([k, n]) => `${k} ${n}`)
@@ -403,7 +404,7 @@ function coveringProviderRuleKind(
   pattern: string
 ): 'providers' | 'paid_models_from' | null {
   const prov = pattern.split('/')[0];
-  const covers = (entries: string[] | undefined) =>
+  const covers = (entries: string[] | undefined): boolean =>
     (entries ?? []).some((e) => e === prov || (e.includes('*') && globMatcher(e)(prov)));
   if (covers(layer.exclude.providers)) return 'providers';
   if (covers(layer.exclude.paid_models_from)) return 'paid_models_from';
@@ -472,7 +473,8 @@ function handleConfigCommand(
   rest: string
 ): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
-  const layers = () => readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
+  const layers = (): ConfigLayerView[] =>
+    readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
   if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
   if (sub === 'compaction') {
     if (arg === 'on') return setCompaction(rt, true);
@@ -484,7 +486,7 @@ function handleConfigCommand(
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
 }
 
-export function createCommands(rt: CommandDeps) {
+export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {

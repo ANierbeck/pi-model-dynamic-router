@@ -198,7 +198,7 @@ export function sortModelsForGroup(
       // after every profiled one, in GDPval order. The generated
       // router-config.dynamic.json must match what the live router
       // would pick.
-      const hasColumn = (m: ModelWithMetadata) => lookupCapability(m.ref, column) !== null;
+      const hasColumn = (m: ModelWithMetadata): boolean => lookupCapability(m.ref, column) !== null;
       const profiled = sorted.filter(hasColumn);
       const unprofiled = sorted.filter((m) => !hasColumn(m));
       profiled.sort(
@@ -265,11 +265,11 @@ export function collectGroupModels(
   cfg: Config
 ): string[] {
   const modelsToInclude = new Set<string>();
-  const modelSig = (ref: string) => [...baseTokens(ref)].sort().join('|');
+  const modelSig = (ref: string): string => [...baseTokens(ref)].sort().join('|');
   // Identity key: matched GDPval slug when one exists, else the token signature
   // (so unmatched refs still dedup by their tokens and never collapse with a
   // different unmatched model).
-  const identityKey = (ref: string) => getMatchedSlug(ref) ?? modelSig(ref);
+  const identityKey = (ref: string): string => getMatchedSlug(ref) ?? modelSig(ref);
   // Canonical: the ref whose normalized id equals its matched slug — the real
   // versioned name that -latest / dated-snapshot aliases point at.
   const isCanonicalRef = (ref: string): boolean => {
@@ -584,7 +584,7 @@ function pruneRemovedStaticEntries(
   const entries = dyn[key];
   if (!isPlainObject(entries)) return;
   const pruned: Record<string, unknown> = { ...entries };
-  const dropFields = (entry: string, fields: readonly string[]) => {
+  const dropFields = (entry: string, fields: readonly string[]): void => {
     const value = pruned[entry];
     if (!isPlainObject(value)) return;
     const rest = { ...value };

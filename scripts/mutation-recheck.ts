@@ -128,7 +128,7 @@ async function main(argv: string[]): Promise<number> {
   const treeDir: string = tree;
   const outFile: string = outPath;
   const scratch = join(tmpdir(), `mutation-recheck-${process.pid}`);
-  const cleanup = () => rmSync(scratch, { recursive: true, force: true });
+  const cleanup = (): void => rmSync(scratch, { recursive: true, force: true });
   for (const sig of ['SIGINT', 'SIGTERM'] as const)
     process.on(sig, () => {
       for (const c of liveChildren) c.kill('SIGKILL');

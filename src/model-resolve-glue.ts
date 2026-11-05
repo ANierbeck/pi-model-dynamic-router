@@ -65,7 +65,7 @@ export function createModelResolveGlue(d: ModelResolveGlueDeps) {
 
   // ── Format ─────────────────────────────────────────────────────────────
 
-  function fmtModel(ref: string, i: number, sel: boolean) {
+  function fmtModel(ref: string, i: number, sel: boolean): string {
     const m = d.getM(ref),
       prov = ref.split('/')[0],
       mux = d.costMux(prov);

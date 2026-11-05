@@ -192,14 +192,14 @@ function replayMain(): void {
   metrics.setModelRegistry({ find: () => undefined } as any);
   const designFloor = targetLayout(shipped).model_groups.design.min_gdpval!;
   const planningScoreBy = shipped.model_groups.planning.score_by;
-  const score = (ref: string) => metrics.calculateScore(ref, planningScoreBy, shipped);
+  const score = (ref: string): number => metrics.calculateScore(ref, planningScoreBy, shipped);
 
   const lines: RoutingLine[] = readFileSync(routerLog, 'utf8')
     .split('\n')
     .map(parseRoutingLine)
     .filter((l): l is RoutingLine => l !== null);
   const decisions = readRawDecisions(log, bounds);
-  const poolAt = (group: string, proc: string, ts: number) =>
+  const poolAt = (group: string, proc: string, ts: number): RoutingLine =>
     lines
       .filter((l) => l.group === group && l.proc === proc && l.ts <= ts)
       .sort((a, b) => b.ts - a.ts)[0];
@@ -262,7 +262,7 @@ function replayMain(): void {
   );
   // Billing as the router classifies it (metrics.billingTier), not the list price.
   const TIER = ['free', 'subscription', 'local', 'payg'];
-  const billing = (c?: { ref: string }) =>
+  const billing = (c?: { ref: string }): string =>
     c ? (TIER[metrics.billingTier(c.ref)] ?? 'unknown') : 'none';
   console.log(
     `   head billing today : ${JSON.stringify(tally(cOk.map((r) => billing(r.curHead))))}`

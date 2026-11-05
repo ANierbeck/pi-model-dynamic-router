@@ -148,7 +148,7 @@ export function readDecisions(path: string, bounds: Bounds): DecisionRow[] {
     }));
 }
 
-const byTsThenSession = (a: SessionTurn, b: SessionTurn) =>
+const byTsThenSession = (a: SessionTurn, b: SessionTurn): number =>
   a.session.localeCompare(b.session) || a.ts - b.ts || a.sha.localeCompare(b.sha);
 
 /** Join turns with their routing decisions and compute switches per session. */

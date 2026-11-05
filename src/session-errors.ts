@@ -129,7 +129,8 @@ export function formatErrorsReport(
   // entries must not break the "⚠N err == headline == N events" correlation
   // (review Minor 2026-10-04). Entries without a pid (pre-split history)
   // keep the old behavior.
-  const own = (e: SessionError) => pid === undefined || e.pid === undefined || e.pid === pid;
+  const own = (e: SessionError): boolean =>
+    pid === undefined || e.pid === undefined || e.pid === pid;
   const sessionEntries = all.filter((e) => e.ts >= sessionStartTs && own(e));
   // "Outside this session", not "earlier": a same-project sibling process's
   // entries land here too, and those can be NEWER than this session's start

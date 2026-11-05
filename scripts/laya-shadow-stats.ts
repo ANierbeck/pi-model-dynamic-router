@@ -36,7 +36,7 @@ const LOG_FILE = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 const file = arg('file') ?? LOG_FILE;
 const threshold = parseFloat(arg('threshold') ?? '0.8');
 
-const records: DecisionRecord[] = (() => {
+const records: DecisionRecord[] = ((): DecisionRecord[] => {
   try {
     return readDecisionLogRecords(file) as DecisionRecord[];
   } catch (err: unknown) {
@@ -89,7 +89,8 @@ const disagreeRate = withLaya.length
   ? ((disagree.length / withLaya.length) * 100).toFixed(1)
   : '0.0';
 const decidedRate = withLaya.length ? ((decided.length / withLaya.length) * 100).toFixed(1) : '0.0';
-const avgConf = (m: { sum: number; n: number }) => (m.n ? ((m.sum / m.n) * 100).toFixed(1) : '-');
+const avgConf = (m: { sum: number; n: number }): string =>
+  m.n ? ((m.sum / m.n) * 100).toFixed(1) : '-';
 const avgConfAgree = avgConf(confByOutcome.get('agree') ?? { sum: 0, n: 0 });
 const avgConfDisagree = avgConf(confByOutcome.get('disagree') ?? { sum: 0, n: 0 });
 

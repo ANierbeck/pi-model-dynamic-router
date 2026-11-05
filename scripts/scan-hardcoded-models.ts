@@ -118,7 +118,7 @@ export interface BaselineEntry {
   count: number;
 }
 
-const baselineKey = (file: string, literal: string) => `${file}\u0000${literal}`;
+const baselineKey = (file: string, literal: string): string => `${file}\u0000${literal}`;
 
 /** Aggregates findings into baseline entries, sorted by file, then literal. */
 export function toBaselineEntries(findings: readonly HardcodedFinding[]): BaselineEntry[] {
@@ -129,7 +129,7 @@ export function toBaselineEntries(findings: readonly HardcodedFinding[]): Baseli
     if (entry) entry.count++;
     else byKey.set(key, { file: f.file, literal: f.literal, count: 1 });
   }
-  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const cmp = (a: string, b: string): 0 | 1 | -1 => (a < b ? -1 : a > b ? 1 : 0);
   return [...byKey.values()].sort((a, b) => cmp(a.file, b.file) || cmp(a.literal, b.literal));
 }
 
@@ -190,7 +190,7 @@ function stringsOf(v: unknown): string[] {
 export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
   if (!isRecord(cfgJson)) return [];
   const literals: string[] = [];
-  const add = (literal: string) => literals.push(`config:${literal}`);
+  const add = (literal: string): number => literals.push(`config:${literal}`);
 
   for (const p of stringsOf(cfgJson.non_agent_model_prefixes))
     add(`non_agent_model_prefixes[]=${p}`);

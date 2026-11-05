@@ -47,7 +47,7 @@ export function explainBestRanking(input: ExplainInput): Map<string, string> {
   const out = new Map<string, string>();
   if (ranked.length < 2) return out;
 
-  const demoted = input.isDemoted ?? (() => false);
+  const demoted = input.isDemoted ?? ((): false => false);
   const eligible = ranked.filter((ref) => !demoted(ref));
   const profiled = eligible.filter(isProfiled);
   for (const ref of eligible) if (!isProfiled(ref)) out.set(ref, 'no profile, by GDPval');

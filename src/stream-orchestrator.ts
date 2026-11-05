@@ -53,14 +53,14 @@ function openCandidateAttempt(options: SimpleStreamOptions | undefined): {
 } {
   const controller = new AbortController();
   const outer = options?.signal;
-  const onOuterAbort = () => controller.abort(outer?.reason);
+  const onOuterAbort = (): void => controller.abort(outer?.reason);
   if (outer) {
     if (outer.aborted) controller.abort(outer.reason);
     else outer.addEventListener('abort', onOuterAbort, { once: true });
   }
   return {
     options: { ...(options ?? {}), signal: controller.signal },
-    abandon: () => {
+    abandon: (): void => {
       // Drop the chain listener so a long cascade doesn't accumulate one
       // listener per failed candidate on the caller's signal.
       outer?.removeEventListener('abort', onOuterAbort);
@@ -382,7 +382,7 @@ export class StreamOrchestrator {
 
     // Dynamic group
     const proxy = createAssistantMessageEventStream();
-    void (async () => {
+    void (async (): Promise<void> => {
       let candidates: string[];
       let dynamicLabel: string | undefined;
       let resolvedGroup: string | undefined;
@@ -542,14 +542,14 @@ export class StreamOrchestrator {
               ? shortName.slice(shortName.lastIndexOf('/') + 1)
               : shortName;
             const matches: string[] = [];
-            const addMatch = (ref: string) => {
+            const addMatch = (ref: string): void => {
               if (ref && !matches.includes(ref)) matches.push(ref);
             };
             // Exact match first, then separator-normalized second chance
             // (2026-09-20: "zai-glm-5.3"/"zai-glm-5_3" must resolve to
             // "zai-glm-5-3" — exact-only matching made every HINT variant
             // fail with "not found; using as-is").
-            const namesMatch = (ref: string) =>
+            const namesMatch = (ref: string): boolean =>
               ref === shortName ||
               ref.endsWith('/' + bareName) ||
               hintTargetMatches(shortName, ref);

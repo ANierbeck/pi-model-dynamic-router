@@ -155,7 +155,8 @@ export const REMOVED_GROUPS: Readonly<Record<string, string>> = {
  * validateCategoryGroups (unknown group).
  */
 function validateRemovedGroups(layer: Partial<Config>, source: string): void {
-  const hint = (name: string) => `moved to "${REMOVED_GROUPS[name]}" in the five-group layout`;
+  const hint = (name: string): string =>
+    `moved to "${REMOVED_GROUPS[name]}" in the five-group layout`;
   const groups = layer.model_groups as
     | Record<string, { fallback_groups?: string[] | null }>
     | undefined;

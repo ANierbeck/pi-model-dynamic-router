@@ -202,7 +202,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+  const day = (ts: number): string => new Date(ts).toISOString().slice(0, 10);
   const tripsByProviderDay = new Map<string, number>();
   for (const t of trips) {
     const key = `${t.provider} ${day(t.at)}`;

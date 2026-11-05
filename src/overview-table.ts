@@ -113,7 +113,7 @@ export function formatOverviewTable(rows: OverviewRow[], nameWidth: number): str
     { head: 'use 30d', w: 7 },
     ...(showBudget ? [{ head: 'Budget', w: 7 }] : []),
   ];
-  const line = (cells: string[]) =>
+  const line = (cells: string[]): string =>
     '│ ' +
     cols.map((c, i) => (c.left ? cells[i].padEnd(c.w) : cells[i].padStart(c.w))).join(' ') +
     ' ';

@@ -142,7 +142,7 @@ export async function probeLocalClassifierCandidates(
   onLog?: (msg: string) => void,
   opts: { force?: boolean } = {}
 ): Promise<string[]> {
-  const log = onLog ?? (() => {});
+  const log = onLog ?? ((): void => {});
   const candidates = selectLocalClassifierCandidates(cache, cfg).slice(
     0,
     MAX_LOCAL_PROBE_CANDIDATES
@@ -229,7 +229,7 @@ export async function probeLocalClassifierCandidates(
 export function localClassifierPins(
   group: { classifier_model?: string; classifier_fallback?: string } | undefined
 ): { model?: string; fallbackModel?: string } {
-  const bare = (ref: string) => ref.replace(/^ollama\//, '');
+  const bare = (ref: string): string => ref.replace(/^ollama\//, '');
   return {
     ...(group?.classifier_model ? { model: bare(group.classifier_model) } : {}),
     ...(group?.classifier_fallback ? { fallbackModel: bare(group.classifier_fallback) } : {}),
