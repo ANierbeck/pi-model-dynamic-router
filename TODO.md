@@ -20,6 +20,33 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
+### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
+
+The gate is live (`npm run lint`, step in the required `test` job,
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: 1219 findings / 301 (file, rule)
+entries. Each slice lowers `scripts/lint-baseline.json` **and** `CEILING_FINDINGS`
+in `test/lint-baseline.test.ts` in the same commit:
+
+- [ ] **S1** cheap real defects (~100): `no-empty`, `prefer-const`,
+      `no-useless-assignment`, `preserve-caught-error`, `no-control-regex`,
+      `no-unused-vars`, `no-require-imports`, `no-regex-spaces`, `require-yield`,
+      `no-useless-escape`
+- [ ] **S2** real bug classes (~25): `no-floating-promises`, `require-await`,
+      `no-base-to-string`, `restrict-template-expressions`,
+      `no-redundant-type-constituents`
+- [ ] **S3** mechanical (~125): `prefer-nullish-coalescing` (careful: `||` vs `??`
+      on falsy strings), `prefer-optional-chain`,
+      `no-unnecessary-type-assertion`
+- [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
+      burn down, explicit return types are treated as an API contract
+- [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,
+      per-file slices. May never reach zero; the ratchet only requires it never
+      grows.
+
+Note: keeping ESLint keeps the dev-only `minimatch` alert
+(CVE-2026-118764) open until ESLint 11 / typescript-eslint / Stryker move to
+minimatch 11 (see the dependency-security round below).
+
 ### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
 
 Independent review of `38d2a27..fde54f8` (the structural question behind most of these — should the router keep its own turn-state machine at all? — is `docs/plans/2026-11-04-virtual-models-routing.md`; mapping of every item in `docs/research/2026-11-04-virtual-models-fit.md`). Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:

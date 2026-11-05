@@ -21,6 +21,8 @@
     "test:watch": "vitest",
     "test:integration": "TEST_INTEGRATION=true vitest run test/classifier.test.ts",
     "test:coverage": "vitest run --coverage",
+    "lint": "node scripts/lint-gate.ts",
+    "lint:fix": "eslint src/ index.ts scripts/ test/ --fix",
     "audit:kpi": "node scripts/router-kpi-audit.ts",
     "secret-scan": "node scripts/secret-scan.ts",
     "prepublishOnly": "if [ -z \"$(git tag --points-at HEAD 2>/dev/null)\" ]; then echo 'No git tag found at current commit, skipping publish'; exit 1; fi"
@@ -73,7 +75,6 @@
     "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.6",
     "execa": "^9.6.1",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
