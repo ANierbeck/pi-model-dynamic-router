@@ -14,7 +14,6 @@ import {
   removeNoOpScanCache,
   flushBackgroundScan,
 } from './helpers/noop-scan-cache.ts';
-import { fileURLToPath } from 'node:url';
 import { isExpectedTransientError } from '../src/stream-driver.ts';
 import { isRetryableAssistantError } from '@earendil-works/pi-ai';
 import { drainStream, makeExtensionContext, routerStatePaths, parkStateFiles } from './helpers/extension-harness.ts';
@@ -161,7 +160,6 @@ describe('abort-not-provider-error', () => {
    * recorded against the model and no further candidates tried.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -297,7 +295,6 @@ describe('abort-text-not-rate-limit', () => {
    * candidate retry.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -686,7 +683,6 @@ describe('context-overflow', () => {
    * one IS configured and contains a model with enough context.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
   const dynamicConfigBackupPath = `${dynamicConfigPath}.overflow-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
@@ -1001,7 +997,6 @@ describe('cooldown-collapse', () => {
    * candidate pool is exactly our single mocked model.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -1030,7 +1025,7 @@ describe('cooldown-collapse', () => {
       // force-retries — so streamSimple call 2 (the in-pass force-retry)
       // succeeds. We track call count to flip behaviour deterministically.
       let calls = 0;
-      const streamSimple = vi.fn((model: any) => {
+      const streamSimple = vi.fn((_model: any) => {
         calls++;
         return (async function* () {
           if (calls === 1) {
@@ -1242,7 +1237,6 @@ describe('provider-error-detection', () => {
    * driveStream records a soft failure so the next candidate gets tried.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -1534,7 +1528,6 @@ describe('reasoning-timeout', () => {
    * of 500ms is > 100ms (short timeout fires) but < 5000ms (long doesn't).
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -1585,7 +1578,7 @@ describe('reasoning-timeout', () => {
           contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
           reasoning: true, // pi-ai's Model.reasoning is a boolean, not a ThinkingLevel string
         };
-        const streamSimple = vi.fn((model: any) => {
+        const streamSimple = vi.fn((_model: any) => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `thought for a while, then answered` };
@@ -1663,7 +1656,7 @@ describe('reasoning-timeout', () => {
           api: 'openai-completions',
           contextWindow: 1_000_000, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
         };
-        const streamSimple = vi.fn((model: any) => {
+        const streamSimple = vi.fn((_model: any) => {
           return (async function* () {
             await new Promise((r) => setTimeout(r, 500));
             yield { type: 'text_delta', delta: `should never reach here` };
@@ -1716,7 +1709,6 @@ describe('repetition-loop-detection', () => {
    * window and then retrying the same unhealthy model on the next turn.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -2036,7 +2028,6 @@ describe('skip-failure-malus', () => {
    * depend on the router's real free-model list or fallback cascade depth.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
   const dynamicConfigBackupPath = `${dynamicConfigPath}.skip-malus-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
@@ -2158,7 +2149,6 @@ describe('stall-timeout-detection', () => {
    * content is reported as `stall_timeout` (distinct from `empty_timeout`).
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -2317,7 +2307,6 @@ describe('summarization-error-message', () => {
    * classifier (guards against the retry-storm regression).
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 

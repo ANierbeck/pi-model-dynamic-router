@@ -10,7 +10,7 @@ import { buildClassifierLayaQuestion } from '../src/classification-prompt.ts';
 // serializes server start/stop so parallel tasks can't collide on the shared
 // 'global' server entry (module-level state must never be shared by parallel
 // vitest tasks).
-let _releaseLock: (() => void) | null = null;
+const _releaseLock: (() => void) | null = null;
 let _releaseWait: Promise<void> | null = null;
 
 async function withMutex<T>(fn: () => Promise<T>): Promise<T> {
@@ -28,16 +28,6 @@ async function withMutex<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const SERVERS = new Map<string, http.Server>();
-
-function getCurrentId(): string {
-  // Fallback for environments without getTestContext — the mutex makes the
-  // global entry safe, so 'global' is always fine.
-  try {
-    return (vi as any).getTestContext?.()?.task?.id || 'default';
-  } catch {
-    return 'global';
-  }
-}
 
 async function stopGlobalServer(): Promise<void> {
   await withMutex(() => {
@@ -66,7 +56,7 @@ describe('laya-classifier', () => {
             res.end('not found');
             return;
           }
-          try { JSON.parse(body); } catch {}
+          try { JSON.parse(body); } catch { /* a non-JSON body is one of the cases under test */ }
           if (mode === 'timeout') {
             // never respond -> client AbortError
             return;

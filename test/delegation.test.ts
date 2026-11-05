@@ -17,7 +17,6 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   writeNoOpScanCache,
   removeNoOpScanCache,
@@ -432,7 +431,7 @@ describe('handleReadDelegation: happy path', () => {
   });
 
   it('respects a custom group and threshold from config', async () => {
-    const { ctx, streamSimple } = makeCtx(
+    const { ctx } = makeCtx(
       summaryEvents('The file is a short numbered fixture used to exercise the custom group.')
     );
     const smallEvent = { toolName: 'read', content: [{ type: 'text', text: 'y'.repeat(120) }] };
@@ -500,7 +499,6 @@ describe('handleReadDelegation: fail-open on sub-call failure', () => {
 // wiring (config → handler → module), not the module logic (covered above).
 
 describe('default export wiring: tool_result returns the delegation replacement', () => {
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
   // Production-realistic registry model (cost is mandatory on real models).
@@ -601,7 +599,6 @@ describe('default export wiring: tool_result returns the delegation replacement'
 // handler pins the wiring (turn_start → curModel, checkReadBlock, the
 // block/pass decisions) — not the module logic, which the unit tests cover.
 describe('default export wiring: tool_call pre-call read block', () => {
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
   const KNOWN_MODEL = {

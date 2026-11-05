@@ -9,7 +9,6 @@
 // says the daemon is down, instead of opening doomed streams.
 
 import { describe, it, expect, vi } from 'vitest';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

@@ -36,7 +36,7 @@ export function targetGroupFor(category: string): string | null {
  *   design      ← planning, floor 1600 (D5)
  */
 export function targetLayout(shipped: Config): Config {
-  const g = shipped.model_groups as Record<string, Group>;
+  const g = shipped.model_groups;
   const bare = (name: string): Group => ({ ...g[name], fallback_groups: [] });
   const model_groups: Record<string, Group> = {
     simple: bare('scout'),
@@ -109,7 +109,7 @@ import { universeAsOf, admit, rankBy, diffPools } from './pool-delta.ts';
 import * as metrics from '../src/metrics.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
 import { readDecisionLog } from './lib/decision-log.ts';
-import { arg } from './lib/cli.ts';
+import { arg, invokedDirectly } from './lib/cli.ts';
 
 interface RawDecision { ts: number; proc: string; stage: string; category: string | null; group: string | null; prevCategory: string | null }
 
@@ -154,8 +154,8 @@ function replayMain(): void {
     (shipped as { providers?: unknown }).providers = providers;
   } catch { /* no user layer: shipped billing only */ }
   metrics.setConfig(shipped); metrics.setCache(cache); metrics.setModelRegistry({ find: () => undefined } as any);
-  const designFloor = (targetLayout(shipped).model_groups as Record<string, Group>).design.min_gdpval!;
-  const planningScoreBy = (shipped.model_groups as Record<string, Group>).planning.score_by;
+  const designFloor = (targetLayout(shipped).model_groups).design.min_gdpval!;
+  const planningScoreBy = (shipped.model_groups).planning.score_by;
   const score = (ref: string) => metrics.calculateScore(ref, planningScoreBy, shipped);
 
   const lines: RoutingLine[] = readFileSync(routerLog, 'utf8').split('\n').map(parseRoutingLine).filter((l): l is RoutingLine => l !== null);
@@ -205,7 +205,7 @@ function replayMain(): void {
 }
 
 
-if (process.argv[1] && process.argv[1].endsWith('pool-replay.ts')) {
+if (invokedDirectly(import.meta.url)) {
   if (process.argv.includes('--calibrate')) calibrationMain();
   if (process.argv.includes('--replay')) replayMain();
 }

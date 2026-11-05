@@ -25,6 +25,7 @@ import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
+import { textOf } from './utils.ts';
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -210,7 +211,7 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
  */
 export function validateClassifierLaya(config: Config): void {
   const c = config.classifier_laya;
-  if (!c || !c.enabled) return;
+  if (!c?.enabled) return;
   const disable = (why: string): void => {
     warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
     c.enabled = false;
@@ -223,7 +224,7 @@ export function validateClassifierLaya(config: Config): void {
     return;
   }
   const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
-  let hostname = '';
+  let hostname: string;
   try {
     const u = new URL(endpoint);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
@@ -257,9 +258,10 @@ export function validateClassifierLaya(config: Config): void {
     warnLog(`[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`);
     c.timeout_ms = 1500;
   }
-  if (c.endpoint == null) c.endpoint = LAYA_DEFAULT_ENDPOINT;
-  if (c.timeout_ms == null) c.timeout_ms = 1500;
-  if (c.confidence_threshold == null) c.confidence_threshold = 0.8;
+  c.endpoint ??= LAYA_DEFAULT_ENDPOINT;
+  c.timeout_ms ??= 1500;
+  c.confidence_threshold ??= 0.8;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
   if (!c.mode) c.mode = 'shadow';
 }
 
@@ -306,7 +308,7 @@ function tryReadPartial(
     return undefined;
   } catch (err) {
     log?.(
-      `[router] Failed to read override config ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+      `[router] Failed to read override config ${filePath}: ${err instanceof Error ? err.message : textOf(err)}`
     );
     return undefined;
   }

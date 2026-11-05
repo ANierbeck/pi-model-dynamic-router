@@ -81,7 +81,7 @@ export function parkStateFiles(paths: (string | undefined | null)[]): () => void
       // previous test's state and passing for the wrong reason: put back what
       // was already parked and fail loudly.
       restore();
-      throw new Error(`parkStateFiles: cannot park ${p}: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`parkStateFiles: cannot park ${p}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
     }
     parked.push([bak, p]);
   }

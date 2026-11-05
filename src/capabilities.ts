@@ -120,7 +120,7 @@ registerCapabilityExtractor('ollama', (e) => {
   const modelInfo = (e.model_info as Record<string, unknown> | undefined) ?? {};
   const ctxKey = Object.keys(modelInfo).find((k) => k.endsWith('.context_length'));
   const contextWindow =
-    ctxKey && typeof modelInfo[ctxKey] === 'number' ? (modelInfo[ctxKey] as number) : undefined;
+    ctxKey && typeof modelInfo[ctxKey] === 'number' ? (modelInfo[ctxKey]) : undefined;
   const out = caps(
     vision ? true : false,
     reasoningFromCaps ? true : false,

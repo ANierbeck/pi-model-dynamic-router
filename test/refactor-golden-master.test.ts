@@ -16,7 +16,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as path from 'node:path';
-import * as fs from 'node:fs';
 import { Router } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';

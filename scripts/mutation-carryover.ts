@@ -35,7 +35,12 @@ export interface ReportMutant {
   location: { start: Pos; end: Pos };
 }
 export interface Report { files: Record<string, { source: string; mutants: ReportMutant[] }> }
-export interface Ledger { columns: string[]; rows: unknown[][]; [k: string]: unknown }
+/** A ledger cell is a JSON primitive (TSV/JSON round-trip); never an object. */
+type LedgerCell = string | number | boolean | null | undefined;
+export interface Ledger { columns: string[]; rows: LedgerCell[][]; [k: string]: unknown }
+
+/** Ledger cell as text; a missing cell reads as '' (never "undefined"). */
+const cellText = (cell: LedgerCell): string => (cell == null ? '' : String(cell));
 
 export interface CarryRow {
   file: string;
@@ -82,8 +87,8 @@ export function backfillLedger(report: Report, ledger: Ledger): Ledger {
   const columns = ledger.columns.filter((c) => c !== 'original' && c !== 'context');
   const keep = columns.map((c) => ci(c));
   const rows = ledger.rows.map((r) => {
-    const file = String(r[fileI]);
-    const id = String(r[idI]);
+    const file = cellText(r[fileI]);
+    const id = cellText(r[idI]);
     const entry = report.files[file];
     const m = entry?.mutants.find((x) => x.id === id);
     if (!entry || !m) throw new Error(`ledger row ${file}#${id} is not in the report — wrong report for this ledger?`);
@@ -113,9 +118,9 @@ function indexLedger(name: string, ledger: Ledger, into: Map<string, Verdict>): 
   if (origI < 0 || ctxI < 0) throw new Error(`ledger ${name} has no original/context columns — run --backfill first`);
   const local = new Map<string, Verdict>();
   for (const r of ledger.rows) {
-    const k = key(String(r[fileI]), String(r[mutI]), String(r[repI] ?? ''), String(r[origI]), String(r[ctxI]));
-    const v = local.get(k) ?? { verdicts: new Set<string>(), why: whyI >= 0 ? String(r[whyI] ?? '') : '', from: name };
-    v.verdicts.add(String(r[catI]));
+    const k = key(cellText(r[fileI]), cellText(r[mutI]), cellText(r[repI]), cellText(r[origI]), cellText(r[ctxI]));
+    const v = local.get(k) ?? { verdicts: new Set<string>(), why: whyI >= 0 ? cellText(r[whyI]) : '', from: name };
+    v.verdicts.add(cellText(r[catI]));
     local.set(k, v);
   }
   for (const [k, v] of local) into.set(k, v); // a later ledger wins

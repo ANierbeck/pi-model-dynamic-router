@@ -8,7 +8,7 @@
 // only `content[0].text` and the optional `errorMessage` differ. Pure
 // code motion, no semantic changes.
 
-import type { AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { isRateLimitText } from './detection.ts';
 import { routerLog } from './logger.ts';
 
@@ -74,7 +74,7 @@ export function pushStreamError(
     type: 'error',
     reason: 'error',
     error: buildErrorAssistantMessage(text, errorMessage, sourceModel),
-  } as AssistantMessageEvent);
+  });
 }
 
 /**

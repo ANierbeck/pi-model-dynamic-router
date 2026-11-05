@@ -9,7 +9,7 @@
 //
 // These tests pin allDiscoveredRefs() to honour cfg.exclude.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Router } from '../src/routing.js';
 import * as metricsModule from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.js';

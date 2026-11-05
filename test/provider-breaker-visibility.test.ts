@@ -7,7 +7,7 @@
 // overview shows every open breaker (cloud too, with counters) and
 // `/router cooldowns clear` closes breakers as incident relief.
 
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';

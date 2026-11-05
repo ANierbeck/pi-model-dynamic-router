@@ -272,7 +272,7 @@ describe('gdpval identity defects: stale caches and cached LLM matches (Sourcery
 
   it('provenance is also stored under dot-less labelKey twins', () => {
     const html = [
-      '\\"models\":[{',
+      '\\"models\\":[{',
       '\\"id\\":\\"a\\",\\"displayName\\":\\"Claude Opus 5.5 (high)\\",\\"creator\\":{\\"name\\":\\"Anthropic\\"},\\"elo\\":1251.2,\\"confidenceInterval\\":\\"-1 / +1\\"',
       '},{',
       '\\"id\\":\\"b\\",\\"displayName\\":\\"Claude Opus 5.5 (low)\\",\\"creator\\":{\\"name\\":\\"Anthropic\\"},\\"elo\\":1233.7,\\"confidenceInterval\\":\\"-1 / +1\\"',

@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { classifyPrompt, classifyStatically, detectHintDirectly } from '../src/content-classifier.js';
-import type { ClassificationResult, HintClassificationResult, FullClassificationResult } from '../src/content-classifier.js';
+import type { ClassificationResult, HintClassificationResult } from '../src/content-classifier.js';
 import { localModelCache } from './helpers/local-model-cache.ts';
 import { resolveShortModelName } from '../src/utils.js';
 
@@ -223,7 +223,7 @@ describe('HINT Classification', () => {
       vi.mocked(callOllama).mockResolvedValue(
         JSON.stringify({ category: 'continue', reason: 'Empty HINT', confidence: 0.5 })
       );
-      const result = await classifyPrompt('HINT: ', { cache: localModelCache() });
+      await classifyPrompt('HINT: ', { cache: localModelCache() });
       // detectHintDirectly returns null → classifyPrompt calls LLM
       expect(vi.mocked(callOllama)).toHaveBeenCalled();
     });

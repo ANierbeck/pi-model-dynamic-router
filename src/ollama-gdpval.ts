@@ -262,13 +262,13 @@ export function estimateOllamaModelsGdpvalAsSlugs(
     // the estimate fills the dotted slug key and SHADOWS the real row via
     // exact-normalized matching (qwen3.8:27b-mlx → estimate qwen3-8-27b:
     // 812 shadowed the AA rows at 1071-1381).
-    if (hasScore && hasScore(`ollama/${model}`)) continue;
+    if (hasScore?.(`ollama/${model}`)) continue;
     const score = estimateOllamaGdpval(model);
     if (score !== null) {
       const slug = ollamaModelSlug(model);
       // Don't overwrite a score already present (e.g. from model-map.yaml
       // builtins) — heuristic is a FALLBACK only.
-      if (estimates[slug] === undefined) estimates[slug] = score;
+      estimates[slug] ??= score;
     }
   }
   return estimates;

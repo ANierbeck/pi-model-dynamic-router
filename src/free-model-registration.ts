@@ -67,7 +67,7 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
     // session_start diagnostics) for the authoritative 'is the provider known'
     // check.
     const registeredProviderIds: string[] =
-      (rt.sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() ?? [];
+      (rt.sessionCtx?.modelRegistry)?.getRegisteredProviderIds?.() ?? [];
     if (registeredProviderIds.includes(provider)) return false;
     // 0.99.1 note (ADR-0019): getRegisteredProviderIds() includes every
     // builtin-catalog provider there, so this guard degrades to 'never

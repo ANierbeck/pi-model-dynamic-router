@@ -15,7 +15,7 @@
 // configured), the same conditions only produce a HINT ("compacting now would
 // pay off: /compact") instead.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   CACHE_MISS_SHARE_THRESHOLD,
   decideCompaction,

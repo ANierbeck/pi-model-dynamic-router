@@ -129,7 +129,7 @@ export function readDecisionRecords(paths: string[]): DecisionRecordLite[] {
     // One reader for the log (scripts/lib/decision-log.ts): it owns the
     // skipping rules, so a torn line is handled the same way everywhere.
     for (const rec of readDecisionLogRecords(p)) {
-      if (rec.v === 1) out.push(rec as DecisionRecordLite);
+      if (rec.v === 1) out.push(rec);
     }
   }
   return out;
@@ -222,7 +222,7 @@ async function classifyViaEndpoint(
       body: JSON.stringify({ prompt: item.prompt, ...(item.context ? { context: item.context } : {}) }),
     });
     if (!res.ok) return { category: null, invalid: false, error: true };
-    const body = (await res.json().catch(() => null)) as any;
+    const body = (await res.json().catch(() => null));
     const category = typeof body?.category === 'string' ? body.category : null;
     return { category, invalid: category !== null && !KNOWN_CATEGORIES.has(category), error: category === null };
   } catch {

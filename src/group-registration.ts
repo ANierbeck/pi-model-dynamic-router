@@ -25,7 +25,7 @@ interface GroupRegistrationDeps {
   readonly cache: Cache;
   readonly cfg: Config;
   readonly getM: (ref: string) => Metrics;
-  readonly groupStream: (model: Model<any>, context: Context, options?: SimpleStreamOptions | undefined) => AssistantMessageEventStream;
+  readonly groupStream: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[]; } | null;
   readonly sessionCtx: any;
@@ -129,9 +129,9 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         continue;
       }
       if (
-        (rt.sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds &&
+        rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds &&
         !registeredGroupProviderNames.has(groupName) &&
-        ((rt.sessionCtx?.modelRegistry as any)?.getRegisteredProviderIds?.() as string[]).includes(groupName)
+        (rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds?.() as string[]).includes(groupName)
       ) {
         routerLog(
           `[groups] Refusing to register model group "${groupName}" as a provider: ` +
@@ -180,7 +180,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
 
   // ── Events ─────────────────────────────────────────────────────────────
 
-  async function registerGroupModels(ctx: any) {
+  function registerGroupModels(ctx: any): void {
     // ADR-0021 (2026-10-02): the router NEVER registers models — or
     // providers — Pi does not already know. This block used to be the
     // scan-union: it resolved keys, round-tripped Pi's own registered models
@@ -271,7 +271,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         // the scanned ids) keeps hosts without getAll() working.
         let piKnownModels: any[] = [];
         try {
-          piKnownModels = ((ctx.modelRegistry as any).getAll?.() ?? []).filter(
+          piKnownModels = (ctx.modelRegistry.getAll?.() ?? []).filter(
             (m: any) => m.provider === 'ollama'
           );
         } catch {
@@ -366,11 +366,11 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
     // virtual group providers — stripProvider needs to recognize them too.
     // (ADR-0021: no cloud provider is registered here anymore.)
     try {
-      const ids = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
+      const ids = ctx.modelRegistry.getRegisteredProviderIds?.() ?? [];
       setPiRegisteredProviders(ids);
       // Refresh the registry handle too — the registrations above may have
       // added providers whose `Model.cost` we now want to read.
-      setModelRegistry((ctx as any).modelRegistry);
+      setModelRegistry(ctx.modelRegistry);
     } catch {
       /* registry may not expose getRegisteredProviderIds — leave the existing set */
     }

@@ -31,7 +31,7 @@ export default [
     rules: {
       '@typescript-eslint/explicit-function-return-type': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/prefer-optional-chain': 'error',
       'prefer-const': 'error',
@@ -51,7 +51,7 @@ export default [
     languageOptions: { parser },
     plugins: { '@typescript-eslint': ts },
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       // `any` in fixtures is legitimate; it is not a defect signal in test code.
       '@typescript-eslint/no-explicit-any': 'off',
       'no-console': 'off',

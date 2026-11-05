@@ -5,11 +5,9 @@
 // tests themselves are UNCHANGED; hooks and fixtures moved verbatim.
 
 import { describe, it, expect, vi } from 'vitest';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { drainStream, routerStatePaths } from './helpers/extension-harness.ts';
 
@@ -26,7 +24,6 @@ describe('free-model-on-demand-registration', () => {
    * to the next non-free model (claude-sonnet-5) on every turn.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 

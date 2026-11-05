@@ -101,7 +101,7 @@ function extractContextWindowFromError(detail: string | undefined): {
 import { type ClassificationResult } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
-import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText } from './utils.ts';
+import { resolveShortModelName, stripRouterNarration, hintTargetMatches, normalizeHintName, realUserMessages, messageText, textOf } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
 import { PROVIDER_MAP } from './providers.ts';
@@ -115,15 +115,12 @@ import { appendRawLog, routerLog, warnLog, errorLog } from './logger.ts';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import {
   pushStreamError,
-  pushRouterInfo,
   pushRouterInfoLogged,
   isExpectedTransientError,
 } from './stream-driver.ts';
 import {
-  isRateLimitText,
   isOverflowErrorText,
   isOverflowDeltaText,
-  parseResetAtMs,
   isPaidCloudRateLimitFailure,
   isFreeTierDailyCapText,
   formatRateLimitBodyForLog,
@@ -231,7 +228,8 @@ export interface StreamOrchestratorContext {
     proxy: AssistantMessageEventStream,
     emptyResponseTimeoutMs: number,
     stallTimeoutMs: number,
-    ref: string
+    ref: string,
+    hasTools: boolean
   ) => Promise<{ ok: boolean; reason?: string; resetAtMs?: number; detail?: string | undefined }>;
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
@@ -341,13 +339,14 @@ export class StreamOrchestrator {
       // selection-time call passed hardcoded 1000/500 tokens — fabricated
       // audit data. Only completed turns with REAL provider-reported usage
       // are tracked now.
-      this.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      // Fire-and-forget by design: driveStream never rejects (see its doc).
+      void this.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
 
     // Dynamic group
     const proxy = createAssistantMessageEventStream();
-    (async () => {
+    void (async () => {
       let candidates: string[];
       let dynamicLabel: string | undefined;
       let resolvedGroup: string | undefined;
@@ -398,7 +397,7 @@ export class StreamOrchestrator {
             // hostStreamSimple (src/stream-proxy.ts) uses for streamSimple. The
             // pinned harness (pi-coding-agent@0.83.0) exposes neither method
             // on the facade itself.
-            const registry = this.ctx.sessionCtx?.modelRegistry as any;
+            const registry = this.ctx.sessionCtx?.modelRegistry;
             return registry?.runtime?.completeSimple?.(model, ctx, options);
           },
           // Bug 2026-10-06: findModel resolving a ref only proves pi's catalog
@@ -408,7 +407,7 @@ export class StreamOrchestrator {
           // every classification. hasConfiguredAuth IS on the public
           // ModelRegistry facade (unlike completeSimple).
           hasConfiguredAuth: (model: any) => {
-            const registry = this.ctx.sessionCtx?.modelRegistry as any;
+            const registry = this.ctx.sessionCtx?.modelRegistry;
             // typeof guard mirrors dynamic-config-runner: a future pi
             // version dropping the facade method fails OPEN, not with a
             // TypeError that would silently degrade cloud classification.
@@ -518,7 +517,7 @@ export class StreamOrchestrator {
                 try {
                   const { models } = router.getTopModels(groupName, 100);
                   for (const item of models) allGroupModels.push(item.ref);
-                } catch (_) { /* ignore */ }
+                } catch { /* ignore */ }
               }
               const viaGroups = resolveShortModelName(bareName, allGroupModels);
               if (viaGroups) { addMatch(viaGroups); routerLog(`[dynamic] HINT: resolved "${shortName}" to "${viaGroups}" via group scan`); }
@@ -544,7 +543,7 @@ export class StreamOrchestrator {
               if (this.ctx.sessionCtx?.modelRegistry) {
                 const availableModels = this.ctx.sessionCtx.modelRegistry
                   .getAvailable()
-                  .map((m: any) => `${m.provider}/${m.id}` as string)
+                  .map((m: any) => `${m.provider}/${m.id}`)
                   .filter((ref: string) => {
                     if (isBlocked(cache, ref)) return false;
                     if (!cfg.exclude) return true;
@@ -643,7 +642,7 @@ export class StreamOrchestrator {
         if (!fb) {
           pushStreamError(
             proxy,
-            `[router] Dynamic routing failed: ${err}`,
+            `[router] Dynamic routing failed: ${err instanceof Error ? err.message : textOf(err)}`,
             '[router] dynamic classification and fallback routing both unavailable',
             sourceModel
           );
@@ -652,13 +651,52 @@ export class StreamOrchestrator {
         candidates = [...fb.candidates];
       }
       await this.driveStream(proxy, candidates, context, options, dynamicLabel, resolvedGroup, undefined, sourceModel);
-    })();
+    })().catch((err: unknown) => {
+      // The try/catch above covers classification, but its own catch branch
+      // resolves the fallback group; a throw there must still end the stream.
+      this.failStream(proxy, err, 'in dynamic routing', sourceModel);
+    });
     return proxy;
   }
 
   // ── driveStream ──────────────────────────────────────────────────────────
 
+  /**
+   * Walks the candidates onto `proxy`. Never rejects, and always leaves the
+   * proxy terminated: every caller starts it fire-and-forget (groupStream's
+   * static path, the dynamic path's async IIFE, the stream proxy), and a
+   * rejection there was both unhandled (Node's default mode terminates the
+   * process) and a hang, because the proxy never got a terminal event. Only
+   * each candidate attempt is guarded inside walkCandidates; this catches
+   * everything around it (token estimate, pre-flight checks, narration,
+   * error aggregation). Pushing onto an already-terminated proxy is a no-op
+   * in pi-ai, so the error event cannot clobber a served answer.
+   */
   async driveStream(
+    proxy: AssistantMessageEventStream,
+    candidates: string[],
+    context: Context,
+    options: SimpleStreamOptions | undefined,
+    label?: string,
+    groupName?: string,
+    visitedGroups?: Set<string>,
+    sourceModel?: SourceModelInfo
+  ): Promise<void> {
+    try {
+      await this.walkCandidates(proxy, candidates, context, options, label, groupName, visitedGroups, sourceModel);
+    } catch (err) {
+      this.failStream(proxy, err, `outside the candidate loop for group ${groupName ?? label ?? '?'}`, sourceModel);
+    }
+  }
+
+  /** Terminates `proxy` with a router error for a throw the routing code did not expect. */
+  private failStream(proxy: AssistantMessageEventStream, err: unknown, where: string, sourceModel?: SourceModelInfo): void {
+    const detail = err instanceof Error ? err.message : textOf(err);
+    errorLog(`[router] routing threw ${where}`, err);
+    pushStreamError(proxy, `[router] Routing failed: ${detail}`, `[router] routing failed: ${detail}`, sourceModel);
+  }
+
+  private async walkCandidates(
     proxy: AssistantMessageEventStream,
     candidates: string[],
     context: Context,
@@ -671,20 +709,21 @@ export class StreamOrchestrator {
     const ctx = this.ctx;
     if (ctx.activeGroup) ctx.router.setActiveGroup(ctx.activeGroup);
 
-    let lastError: string | undefined;
     const allErrors: { ref: string; message: string }[] = [];
     const pushError = (ref: string, message: string): void => {
-      lastError = `${ref}: ${message}`;
       allErrors.push({ ref, message });
     };
 
     let contextOverflowSkips = 0;
+    // I4: whether this turn carries tools decides if printed tool-call markup
+    // is a failure (tools present: the model should have called one) or a
+    // legitimate answer (no tools: the same text is prose).
+    const hasTools = (context.tools?.length ?? 0) > 0;
     // Bounded wait-for-reset: at most ONE wait-and-retry per driveStream call,
     // so a chain of short-reset rate limits can't turn the wait path into a
     // livelock (each wait retries the SAME model once, then falls through to
     // the normal cascade).
     let rateLimitWaitUsed = false;
-    let cooldownSkips = 0;
     const contextTokens = ctx.estimateContextTokens(context);
     // Planning input = message text + system prompt + tool schemas (the
     // provider counts all three against the window).
@@ -718,7 +757,6 @@ export class StreamOrchestrator {
       const ref = candidates[i];
       if (ctx.isLimited(ref)) {
         pushError(ref, `skipped, still in cooldown (${ctx.router.limitSecs(ref)}s remaining)`);
-        cooldownSkips++;
         continue;
       }
       // Pre-flight breaker skip (plan Phase 2, generalized from the
@@ -732,7 +770,6 @@ export class StreamOrchestrator {
         const st = breakerState(ctx.cache, ref.split('/')[0]);
         const secsLeft = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
         pushError(ref, `skipped, provider breaker open (${secsLeft}s remaining)`);
-        cooldownSkips++;
         ctx.noteBreakerSkip(ref);
         continue;
       }
@@ -763,6 +800,7 @@ export class StreamOrchestrator {
       // returned null with a skipReason and never threw).
       let openFailureText: string | undefined;
       const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
         const errorMsg = String(err.message || err);
         const isExpectedError = isExpectedTransientError(errorMsg);
         if (!isExpectedError) warnLog(`[router] Skipping ${ref}: ${errorMsg}`);
@@ -804,7 +842,8 @@ export class StreamOrchestrator {
           target.stream, proxy,
           ctx.getEmptyResponseTimeout(ref),
           ctx.getStallTimeout(ref),
-          String(ref)
+          String(ref),
+          hasTools
         );
 
         if (result.ok) {
@@ -885,7 +924,8 @@ export class StreamOrchestrator {
                   retryTarget.stream, proxy,
                   ctx.getEmptyResponseTimeout(ref),
                   ctx.getStallTimeout(ref),
-                  String(ref)
+                  String(ref),
+                  hasTools
                 );
                 if (retryResult.ok) {
                   retrySucceeded = true;
@@ -1051,7 +1091,9 @@ export class StreamOrchestrator {
               ? `provider error${result.detail ? `: ${result.detail}` : ''}`
               : result.reason === 'stream_threw'
                 ? `stream error${result.detail ? `: ${result.detail}` : ''}`
-                : 'empty response from model';
+                : result.reason === 'tool_markup_as_text'
+                  ? 'printed tool-call markup as text instead of calling a tool'
+                  : 'empty response from model';
         const nextRef = nextAttemptableRef(i + 1);
         const suffix = nextRef ? `, trying ${nextRef} …` : '';
         pushRouterInfoLogged(proxy, `> [router] ${ref} — ${reason}${suffix}\n\n`);
@@ -1155,10 +1197,10 @@ export class StreamOrchestrator {
         recordServedRef(ctx, probeRef);
         const probeAttempt = openCandidateAttempt(options);
         const probeTarget = await ctx.tryStream(probeRef, context, probeAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          pushError(probeRef!, `probing wedged provider (forced half-open probe): ${errorMsg}`);
-          ctx.recordStreamFailure(probeRef!, 'provider_error', undefined, errorMsg);
-          ctx.observeProviderFailure(probeRef!, 'provider_error', errorMsg);
+          const errorMsg = err instanceof Error ? err.message : textOf(err);
+          pushError(probeRef, `probing wedged provider (forced half-open probe): ${errorMsg}`);
+          ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
+          ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
           return null;
         });
         if (!probeTarget) probeAttempt.abandon();
@@ -1169,7 +1211,8 @@ export class StreamOrchestrator {
               probeTarget.stream, proxy,
               ctx.getEmptyResponseTimeout(probeRef),
               ctx.getStallTimeout(probeRef),
-              probeRef as string
+              probeRef,
+              hasTools
             );
             if (result.ok) {
               probeSucceeded = true;
@@ -1201,7 +1244,8 @@ export class StreamOrchestrator {
     }
 
     // Total cooldown collapse.
-    // The original strict-equality check (`cooldownSkips === allErrors.length`)
+    // The original strict-equality check (`cooldownSkips === allErrors.length`;
+    // the counter itself was dead state and has been removed)
     // misses an important case: when N-1 candidates are pre-skipped as in
     // cooldown and the Nth is tried LIVE, hits a fresh 429, and records its
     // OWN cooldown via recordStreamFailure, then cooldownSkips = N-1 but
@@ -1261,9 +1305,9 @@ export class StreamOrchestrator {
         recordServedRef(ctx, bestRef);
         const collapseAttempt = openCandidateAttempt(options);
         const target = await ctx.tryStream(bestRef, context, collapseAttempt.options).catch((err) => {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          pushError(bestRef!, errorMsg);
-          ctx.recordStreamFailure(bestRef!, 'provider_error', undefined, errorMsg);
+          const errorMsg = err instanceof Error ? err.message : textOf(err);
+          pushError(bestRef, errorMsg);
+          ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
           return null;
         });
         if (!target) collapseAttempt.abandon();
@@ -1274,7 +1318,8 @@ export class StreamOrchestrator {
               target.stream, proxy,
               ctx.getEmptyResponseTimeout(bestRef),
               ctx.getStallTimeout(bestRef),
-              bestRef as string
+              bestRef,
+              hasTools
             );
             if (result.ok) {
               collapseSucceeded = true;
@@ -1312,8 +1357,8 @@ export class StreamOrchestrator {
                     ? 'stream stalled (likely rate limit)'
                     : reasonTxt === 'provider_error'
                       ? `provider error${result.detail ? `: ${result.detail}` : ''} (likely rate limit)`
-                      : emptyResponseLabel(bestRef!);
-                const resetMsg = ctx.formatResetMsg(bestRef!, result.resetAtMs);
+                      : emptyResponseLabel(bestRef);
+                const resetMsg = ctx.formatResetMsg(bestRef, result.resetAtMs);
                 pushRouterInfoLogged(proxy, `> [router] ${bestRef} — ${labelTxt}${resetMsg}\n\n`);
               }
             }

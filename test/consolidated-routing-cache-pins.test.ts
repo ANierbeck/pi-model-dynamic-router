@@ -10,8 +10,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { DYNAMIC_CONFIG_RESYNC_KEYS } from '../src/dynamic-config.ts';
 import { flushBackgroundScan } from './helpers/noop-scan-cache.ts';
-import type { AssistantMessageEvent } from '@earendil-works/pi-ai';
-import { fileURLToPath } from 'node:url';
 import { writeNoOpScanCache, removeNoOpScanCache } from './helpers/noop-scan-cache.ts';
 import { beforeEach } from 'vitest';
 import { Router } from '../src/routing.ts';
@@ -371,7 +369,6 @@ describe('dynamic-config-staleness', () => {
    * test).
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -592,7 +589,7 @@ describe('get-top-models-total', () => {
       const router = makeRouter(cfg, {});
       // Stub the entire getTopModels to return a predictable shape
       // @ts-expect-error override private method
-      router.getTopModels = (groupName: string, n: number) => ({ models: [{ ref: 'a', limited: false, rank: 0 }], total: 7 });
+      router.getTopModels = (_groupName: string, _n: number) => ({ models: [{ ref: 'a', limited: false, rank: 0 }], total: 7 });
       const { models: top, total } = router.getTopModels('testgroup', 5);
       expect(top.length).toBe(1);
       expect(total).toBe(7);
@@ -980,7 +977,6 @@ describe('orchestrator-router-context-freshness', () => {
    * reading the stale Map.
    */
 
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 
@@ -1149,7 +1145,6 @@ describe('sticky-model-regression', () => {
   // Move both aside for the duration of this test so it exercises real dynamic
   // discovery (allDiscoveredRefs()) purely from the mocked modelRegistry,
   // deterministically.
-  const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const dynamicConfigPath = path.join(process.env.PI_ROUTER_STATE_DIR!, 'router-config.dynamic.json');
   const dynamicConfigBackupPath = `${dynamicConfigPath}.regression-test-bak`;
   const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');

@@ -43,6 +43,7 @@ interface MatchResult {
 // ── Prompt building ───────────────────────────────────────────────────────
 
 import { candidateSlugs } from './slug-matcher.ts';
+import { textOf } from './utils.ts';
 
 /**
  * Build a PER-MODEL prompt where each model only sees its top-K candidate slugs
@@ -326,7 +327,7 @@ export async function matchModelsWithLLMBatched(
       raw = await callLlm(prompt);
     } catch (err) {
       // Record the error but continue with other batches.
-      batchError = err instanceof Error ? err.message : String(err);
+      batchError = err instanceof Error ? err.message : textOf(err);
       allUnmatched.push(...batch);
       continue;
     }

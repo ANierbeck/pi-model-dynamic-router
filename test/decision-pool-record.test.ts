@@ -8,7 +8,7 @@
 // decision (classification → resolve → stream), same group. No prompt text —
 // refs, metrics and flags only.
 
-import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
