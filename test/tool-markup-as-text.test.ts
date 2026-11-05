@@ -225,3 +225,118 @@ describe('I4: tool-call markup printed as text', () => {
     }
   });
 });
+
+describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop the wrong things', () => {
+  it('never forwards overflow text that was held before the overflow was recognised', async () => {
+    // The first delta alone is not an overflow message; the second completes the
+    // pattern ("exceeds the maximum context length"). The first must not reach the
+    // user when the candidate is rejected.
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'text_delta', delta: 'The request exceeds the' };
+          yield { type: 'text_delta', delta: ' maximum context length of this model' };
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      expect(textOf(events)).not.toContain('The request exceeds the');
+      expect(textOf(events)).not.toContain('maximum context length');
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it('keeps holding a tool-call markup block that outgrows the window, so it never reaches the user', async () => {
+    // A realistic call with JSON arguments is well over 200 characters.
+    const args = Array.from({ length: 60 }, (_, i) => `k${i}:v${i * 7}`).join(',');
+    const markup = `<tool_call>{"name":"write","arguments":{${args}}}</tool_call>`;
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          for (let i = 0; i < markup.length; i += 90) {
+            yield { type: 'text_delta', delta: markup.slice(i, i + 90) };
+          }
+          yield { type: 'done', reason: 'stop', message: doneMessage('toolUse') };
+        },
+        'second-model': async function* () {
+          yield { type: 'text_delta', delta: 'ANSWER-FROM-SECOND' };
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      expect(textOf(events)).not.toContain('tool_call');
+      expect(textOf(events)).toContain('ANSWER-FROM-SECOND');
+      expect(harness.streamSimple).toHaveBeenCalledTimes(2);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it('keeps the partial answer when the stream is aborted while the hold is open', async () => {
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'text_delta', delta: 'partial answer' };
+          yield {
+            type: 'error',
+            reason: 'aborted',
+            error: { role: 'assistant', content: [], stopReason: 'aborted', errorMessage: 'Aborted', timestamp: Date.now() },
+          };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      expect(textOf(events)).toContain('partial answer');
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it('forwards text_start, text_delta and text_end in the order the provider sent them', async () => {
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'text_start', contentIndex: 0, partial: {} } as any;
+          yield { type: 'text_delta', contentIndex: 0, delta: 'Here is the answer: 42.', partial: {} } as any;
+          yield { type: 'text_end', contentIndex: 0, content: 'Here is the answer: 42.', partial: {} } as any;
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      // The router's own narration is text too; only the block around the answer counts.
+      const seq = events.filter((e) => String(e.type).startsWith('text_'));
+      const at = seq.findIndex((e) => e.type === 'text_delta' && String(e.delta).includes('Here is the answer'));
+      expect(at).toBeGreaterThan(0);
+      expect(seq[at - 1].type).toBe('text_start');
+      expect(seq[at + 1].type).toBe('text_end');
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it('accepts an answer that shows a fenced tool-call example (the fence is prose, not the opening)', async () => {
+    const harness = await bootHarness({
+      bodies: {
+        'first-model': async function* () {
+          yield { type: 'text_delta', delta: '```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.' };
+          yield { type: 'done', reason: 'stop', message: doneMessage() };
+        },
+      },
+    });
+    try {
+      const events = await harness.stream(WITH_TOOLS);
+      expect(textOf(events)).toContain('That is how a call looks.');
+      expect(harness.streamSimple).toHaveBeenCalledTimes(1);
+    } finally {
+      harness.cleanup();
+    }
+  });
+});

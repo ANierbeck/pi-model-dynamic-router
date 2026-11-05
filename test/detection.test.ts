@@ -355,8 +355,9 @@ describe('isToolCallMarkupText — a tool call printed as prose (I4)', () => {
     expect(isToolCallMarkupText('  \n<tool_call>')).toBe(true);
   });
 
-  it('matches through a leading markdown fence', () => {
-    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>')).toBe(true);
+  it('does not match through a leading markdown fence (a fenced example is prose)', () => {
+    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>\n```\nThat is how a call looks.')).toBe(false);
+    expect(isToolCallMarkupText('```xml\n<tool_call>read</tool_call>')).toBe(false);
   });
 
   it('does not match ordinary prose that merely mentions a marker', () => {

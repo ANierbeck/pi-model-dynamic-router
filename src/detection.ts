@@ -513,9 +513,15 @@ export const TOOL_MARKUP_PREFIXES: readonly string[] = [
 /** Matches `<anything_function_call>` / `<anything_tool_call>` at the start. */
 const GENERIC_TOOL_MARKUP_RE = /^<[a-z0-9_.-]*(?:function|tool)_call[s]?\b/i;
 
-/** Strip leading whitespace and markdown code fences before the check. */
+/**
+ * Leading whitespace only. A markdown fence is NOT stripped: an answer that
+ * opens with a fenced code block is prose that may show a tool call as an
+ * example (the owner's own answers discuss this router's wire formats), so the
+ * fence itself must not turn the answer into a failure. The incident's dialect
+ * was not fenced.
+ */
 function stripAnswerOpening(text: string): string {
-  return text.replace(/^\s*(?:```[a-z]*\s*)?/i, '');
+  return text.trimStart();
 }
 
 /**

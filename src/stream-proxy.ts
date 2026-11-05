@@ -340,37 +340,47 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // as soon as a real tool-call event arrives or the window fills, so a
     // healthy stream pays at most TOOL_MARKUP_HOLD_CHARS of latency.
     const TOOL_MARKUP_HOLD_CHARS = 200;
+    // Markers are anchored at the start, so the head of the held text is all the
+    // verdict needs; keeping only that avoids re-joining a long held answer.
+    const HELD_HEAD_CHARS = 256;
     let sawToolCall = false;
     let holdActive = hasTools;
+    // Every event after `start` is held in order while the hold is open, not only
+    // text deltas: text_start / text_end forwarded ahead of their held deltas would
+    // reach the consumer out of order.
     const heldEvents: AssistantMessageEvent[] = [];
     let heldChars = 0;
+    let heldHead = '';
     const flushHeld = (): void => {
       if (!holdActive) return;
       holdActive = false;
       for (const held of heldEvents) proxy.push(held);
       heldEvents.length = 0;
     };
-    /**
-     * Decide what to do with the opening text still held when the stream
-     * ended. Returns true when it is tool-call markup and must be dropped.
-     * Every other outcome flushes the hold, so the branches below keep the
-     * behaviour they had before the hold existed (content already forwarded).
-     */
+    /** Drops the held events unforwarded: the content of a rejected candidate. */
+    const discardHeld = (): void => {
+      holdActive = false;
+      heldEvents.length = 0;
+    };
     let toolMarkupAsText = false;
     let toolMarkupDetail = '';
+    /**
+     * Decide what to do with the held opening when the stream ends. Returns true
+     * when it is tool-call markup and was dropped. Any other outcome forwards the
+     * held events, so the branches below keep the behaviour they had before the
+     * hold existed.
+     */
     const heldOpeningIsToolMarkup = (): boolean => {
       if (!holdActive) return toolMarkupAsText;
-      const head = heldEvents.map((e) => (e.type === 'text_delta' ? e.delta : '')).join('');
-      if (!hasTools || sawToolCall || !isToolCallMarkupText(head)) {
+      if (!hasTools || sawToolCall || !isToolCallMarkupText(heldHead)) {
         flushHeld();
         return false;
       }
       // Never forward the markup: the user should see the next candidate's
       // answer, not this candidate's failed attempt at a tool call.
       toolMarkupAsText = true;
-      toolMarkupDetail = sanitizeForLog(head.trim().slice(0, 120));
-      heldEvents.length = 0;
-      holdActive = false;
+      toolMarkupDetail = sanitizeForLog(heldHead.trim().slice(0, 120));
+      discardHeld();
       return true;
     };
     const iterPromise = (async (): Promise<'done'> => {
@@ -427,6 +437,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // stopReason:'aborted' message — pi-ai's own retry/abort
               // handling already treats this specially (never retried, no
               // cooldown recorded against the model).
+              // The held prefix is the partial answer: it goes out before the terminal.
+              flushHeld();
               proxy.push(event);
               terminalForwarded = true;
               return 'done';
@@ -464,6 +476,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               // consumers (pi-ai's own retry/abort handling) see the same
               // shape they'd get from a structured abort, instead of a raw
               // error event they might not recognize as a cancellation.
+              flushHeld();
               proxy.push({
                 ...(event as any),
                 reason: 'aborted',
@@ -527,16 +540,10 @@ export function createStreamProxy(rt: StreamProxyDeps) {
           // Claude limit as an `error` EVENT (errorMessage "Claude rate limit
           // ..."), handled above, and its yellow warning is a piUI.notify UI
           // notification that never enters this stream.
-          const holdThisDelta = holdActive && event.type === 'text_delta';
           if (event.type === 'text_delta') {
             // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
             const delta = String((event as any).delta || (event as any).text || '');
             accumulatedText += delta;
-            if (holdThisDelta) {
-              heldEvents.push(event);
-              heldChars += delta.length;
-              if (heldChars >= TOOL_MARKUP_HOLD_CHARS) flushHeld();
-            }
             // Some providers return overflow rejections as text content rather
             // than as an error event. Detect it so driveStream can emit the
             // native overflow error and trigger Pi compaction instead of hanging.
@@ -548,7 +555,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               overflowDetected = true;
               overflowDetail = accumulatedText;
               clearTimer();
-              // Stop consuming — don't forward the raw provider error text
+              // Stop consuming — don't forward the raw provider error text, nor
+              // the held prefix that led up to it (I4 review: the prefix leaked).
+              discardHeld();
               return 'done';
             }
             // Some models (observed with devstral variants) get stuck
@@ -568,6 +577,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
                 repetitionDetail = `"${(rep.unit ?? '').trim().slice(0, 80)}" x${rep.repeats}`;
                 clearTimer();
                 // Stop consuming — don't forward more of the repeated text
+                discardHeld();
                 return 'done';
               }
             }
@@ -591,6 +601,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             if (doneReason === 'length') {
               truncatedByLength = true;
               clearTimer();
+              heldOpeningIsToolMarkup();
               // Stop consuming — don't forward the terminal done event
               return 'done';
             }
@@ -605,6 +616,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
             // return early for the same reason).
             if (!hadContent) {
               clearTimer();
+              flushHeld();
               return 'done';
             }
             // I4: the stream is about to terminate, so the hold must be
@@ -618,7 +630,21 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               return 'done';
             }
           }
-          if (!holdThisDelta) proxy.push(event);
+          if (holdActive && event.type !== 'start') {
+            heldEvents.push(event);
+            if (event.type === 'text_delta' || event.type === 'thinking_delta') {
+              const delta = event.delta;
+              heldChars += delta.length;
+              if (event.type === 'text_delta' && heldHead.length < HELD_HEAD_CHARS) {
+                heldHead += delta.slice(0, HELD_HEAD_CHARS - heldHead.length);
+              }
+            }
+            // Window full and the opening is not markup: release it. A markup
+            // opening stays held until the stream ends, when the verdict drops it.
+            if (heldChars >= TOOL_MARKUP_HOLD_CHARS && !isToolCallMarkupText(heldHead)) flushHeld();
+          } else {
+            proxy.push(event);
+          }
           if (event.type === 'done') terminalForwarded = true;
         }
       } catch (err) {
