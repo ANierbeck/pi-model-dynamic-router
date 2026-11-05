@@ -449,7 +449,12 @@ export function sanitizeForLog(text: string): string {
     )
     // Terminal control sequences (Sourcery PR #74): a provider body could
     // carry ANSI escapes; a log viewed in a terminal must not be spoofable.
+    // Control characters are the POINT of these two patterns (the router
+    // strips terminal escape sequences so a provider body cannot spoof a
+    // log line); no-control-regex has no option to allow them in ESLint 10.
+    // eslint-disable-next-line no-control-regex
     .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '')
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
     .trim();
   return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;

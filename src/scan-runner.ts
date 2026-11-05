@@ -32,7 +32,7 @@ interface ScanRunnerDeps {
   readonly cacheManager: CacheManager;
   readonly cfg: Config;
   readonly GDPVAL_URL: string;
-  readonly generateDynamicConfig: (force?: boolean | undefined) => Promise<void>;
+  readonly generateDynamicConfig: (force?: boolean) => Promise<void>;
   readonly MODELS_TTL: number;
   readonly saveCache: () => void;
   scanning: boolean;
@@ -171,7 +171,7 @@ export function extractGdpvalScores(html: string): Record<string, number> {
         }
       }
       if (Object.keys(scores).length > 0) return scores;
-    } catch {}
+    } catch { /* legacy structure absent or malformed: fall through to the next source */ }
   }
 
   return scores;
@@ -303,7 +303,7 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   let em: RegExpExecArray | null;
   while ((em = entryRe.exec(html))) {
     const displayName = em[1];
-    let slug = slugByDisplayName.get(displayName) ?? labelKeyOf(displayName);
+    const slug = slugByDisplayName.get(displayName) ?? labelKeyOf(displayName);
     if (!slug) continue;
     const chunk = em[2];
 
@@ -459,7 +459,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       cache: rt.cache,
       cfg: rt.cfg,
       resolveApiKey: async (provider: string) =>
-        (await (rt.sessionCtx?.modelRegistry as any)?.getApiKeyForProvider?.(provider)?.catch?.(
+        (await (rt.sessionCtx?.modelRegistry)?.getApiKeyForProvider?.(provider)?.catch?.(
           () => null
         )) ?? null,
       timeoutMs: 90_000, // large models need time; if the local model is too
@@ -702,7 +702,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
               }
             }
             rt.cache.openrouter_pricing = pricing;
-          } catch {}
+          } catch { /* public catalog unreachable: keep the cached pricing */ }
         }
         try {
           const d = await fetchJson('http://localhost:11434/api/tags', { timeoutMs: 5_000 });
@@ -779,7 +779,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             // here is safe and makes the estimates visible immediately.
             metricsModule.setCache(rt.cache);
           }
-        } catch {}
+        } catch { /* local Ollama unavailable: no estimates this pass */ }
         // ADR-0022 removed the direct-API provider catalog scans: post-ADR-0021 their results were inert
         // cache entries and they were the last reason the router needed
         // raw API key values. Pi's catalog is the source of truth.
@@ -798,7 +798,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
             for (const model of rt.sessionCtx.modelRegistry.getAvailable()) {
               piKnownProviders.add(model.provider);
             }
-          } catch {}
+          } catch { /* registry without getAvailable(): no prune evidence */ }
         }
         const redundantProviders = redundantAliasProviders(PROVIDER_MAP, piKnownProviders);
         //
@@ -827,7 +827,7 @@ export function createScanRunner(rt: ScanRunnerDeps) {
       // the try-each loop at classification time. See
       // src/classifier-fallback-probe.ts.
       try {
-        const registry = rt.sessionCtx?.modelRegistry as any;
+        const registry = rt.sessionCtx?.modelRegistry;
         if (registry?.runtime?.completeSimple) {
           await probeAndCache(rt.cfg, rt.cache, {
             findModel: (ref: string) => {

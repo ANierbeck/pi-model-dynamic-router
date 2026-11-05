@@ -225,18 +225,16 @@ describe('agent-capability spike canary — Pi exposes no per-model tool-capabil
   });
 
   it('pi-ai Model / BaseModel declare no tool or function-calling capability field', () => {
-    let dir = repoRoot;
-    let typesPath = '';
-    for (;;) {
-      const candidate = path.join(dir, 'node_modules/@earendil-works/pi-ai/dist/types.d.ts');
-      if (fs.existsSync(candidate)) {
-        typesPath = candidate;
-        break;
+    const findTypes = (start: string): string => {
+      let dir = start;
+      for (;;) {
+        const candidate = path.join(dir, 'node_modules/@earendil-works/pi-ai/dist/types.d.ts');
+        if (fs.existsSync(candidate)) return candidate;
+        if (path.dirname(dir) === dir) throw new Error('@earendil-works/pi-ai types.d.ts not found');
+        dir = path.dirname(dir);
       }
-      if (path.dirname(dir) === dir) throw new Error('@earendil-works/pi-ai types.d.ts not found');
-      dir = path.dirname(dir);
-    }
-    const dts = fs.readFileSync(typesPath, 'utf-8');
+    };
+    const dts = fs.readFileSync(findTypes(repoRoot), 'utf-8');
     expect(declaresToolCapability(dts, ['BaseModel', 'Model'])).toBe(false);
   });
 });

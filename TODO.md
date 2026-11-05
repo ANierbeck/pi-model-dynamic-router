@@ -23,20 +23,29 @@
 ### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
 
 The gate is live (`npm run lint`, step in the required `test` job,
-`docs/plans/2026-11-04-lint-gate.md`). Baseline: 1217 findings / 299 (file, rule)
-entries. Each slice lowers `scripts/lint-baseline.json` **and** `CEILING_FINDINGS`
-in `test/lint-baseline.test.ts` in the same commit:
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: **955 findings / 183 (file, rule)
+entries** after the S1+S2 burn-down (was 1217 / 299). Each slice lowers
+`scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
+`test/lint-baseline.test.ts` in the same commit:
 
-- [ ] **S1** cheap real defects (~100): `no-empty`, `prefer-const`,
-      `no-useless-assignment`, `preserve-caught-error`, `no-control-regex`,
-      `no-unused-vars`, `no-require-imports`, `no-regex-spaces`, `require-yield`,
-      `no-useless-escape`
-- [ ] **S2** real bug classes (~25): `no-floating-promises`, `require-await`,
-      `no-base-to-string`, `restrict-template-expressions`,
+- [x] **S1** cheap real defects — done 2026-11-04: `no-empty` (10 documented
+      swallows), `prefer-const`, `no-useless-assignment`, `preserve-caught-error`
+      (`{ cause }` on three rethrows), `no-control-regex` (two documented
+      directives — ESLint 10 removed the rule's `allow` option),
+      `no-unused-vars` (79: dead imports/state in `src/`, unused test fixtures),
+      `no-regex-spaces`, `require-yield`, `no-useless-escape`,
+      `no-irregular-whitespace`
+- [x] **S2** real bug classes — done 2026-11-04. `no-floating-promises` found a
+      real hang: `driveStream` was started fire-and-forget by three callers and
+      had no outer guard, so a throw outside the candidate loop became an
+      unhandled rejection AND left the proxy without a terminal event
+      (`test/drive-stream-never-rejects.test.ts`). Also: `require-await` (8, the
+      handler/tool contracts allow sync bodies), `no-base-to-string` (new
+      `textOf()` helper), `restrict-template-expressions`,
       `no-redundant-type-constituents`
 - [ ] **S3** mechanical (~125): `prefer-nullish-coalescing` (careful: `||` vs `??`
-      on falsy strings), `prefer-optional-chain`,
-      `no-unnecessary-type-assertion`
+      on falsy strings), `prefer-optional-chain` — the `no-unnecessary-type-assertion`
+      part was already burned down by the `--fix` run in the S1+S2 commit
 - [ ] **S4** `explicit-function-return-type` (117) — owner decision D3: keep and
       burn down, explicit return types are treated as an API contract
 - [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,

@@ -66,7 +66,7 @@ function isStale(rec: HealthRecord | undefined): boolean {
  */
 export function failureStreak(cache: Cache, ref: string): number {
   const rec = store(cache)[ref];
-  return isStale(rec) ? 0 : rec!.fails;
+  return isStale(rec) ? 0 : rec.fails;
 }
 
 /**

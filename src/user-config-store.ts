@@ -161,7 +161,7 @@ export function readConfigLayers(opts: { extDir: string; cwd: string; agentDir?:
       path: file,
       present,
       ...(error ? { error } : {}),
-      exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? (rules as ExcludeRules) : {},
+      exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? (rules) : {},
     };
   });
 }

@@ -292,7 +292,7 @@ let previousTokenCount = 0;
     // ADR-0022: the router never resolves keys itself — pi does.
     get resolveApiKey() {
       return async (provider: string) =>
-        (await (sessionCtx?.modelRegistry as any)?.getApiKeyForProvider?.(provider).catch?.(
+        (await (sessionCtx?.modelRegistry)?.getApiKeyForProvider?.(provider).catch?.(
           () => null
         )) ?? null;
     },

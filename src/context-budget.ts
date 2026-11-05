@@ -31,6 +31,8 @@ export function safetyTokens(windowTokens: number): number {
  */
 export const IMAGE_BLOCK_TOKENS = 1600;
 
+import { textOf } from './utils.ts';
+
 // Hiragana, Katakana, CJK unified + compatibility ideographs, Hangul.
 const CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7a3]/g;
 
@@ -86,7 +88,9 @@ export function estimateMessageTokens(messages: readonly { content?: unknown }[]
         }
       }
     } else if (c != null) {
-      total += estimateTextTokens(String(c));
+      // Unknown content shape: count its JSON, not "[object Object]" (11
+      // chars), so a future object shape cannot slip through as free.
+      total += estimateTextTokens(textOf(c));
     }
   }
   return total;

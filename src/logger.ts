@@ -30,6 +30,7 @@
 import { homedir } from 'node:os';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { textOf } from './utils.ts';
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
@@ -141,16 +142,16 @@ export function writeLogLine(line: string): void {
   if (projectLogPath && path.resolve(projectLogPath) === path.resolve(home)) {
     try {
       append(home, withTag(line));
-    } catch {}
+    } catch { /* logging must never throw into its caller */ }
     return;
   }
   try {
     append(home, withTag(line));
-  } catch {}
+  } catch { /* logging must never throw into its caller */ }
   if (projectLogPath) {
     try {
       append(projectLogPath, line);
-    } catch {}
+    } catch { /* logging must never throw into its caller */ }
   }
 }
 
@@ -199,7 +200,7 @@ export function errorLog(msg: string, extra?: unknown): void {
 function logAt(cls: LogLevel, msg: string, extra?: unknown): void {
   if (LEVEL_RANK[cls] > LEVEL_RANK[level]) return;
   const suffix = extra
-    ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : String(extra)}`
+    ? ` ${extra instanceof Error ? (extra.stack ?? extra.message) : textOf(extra)}`
     : '';
   writeLogLine(`${new Date().toISOString()}  ${msg}${suffix}`);
 }

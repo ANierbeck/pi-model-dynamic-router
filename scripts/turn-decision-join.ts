@@ -119,7 +119,7 @@ export function readSessionTurns(dir: string, bounds: Bounds): SessionTurn[] {
         const ts = typeof m.timestamp === 'number' ? m.timestamp : Date.parse(rec.timestamp);
         pending = { session: file, ts, sha: promptSha(text), served: null };
         if (inBounds(ts, bounds)) turns.push(pending);
-      } else if (m.role === 'assistant' && pending && pending.served === null) {
+      } else if (m.role === 'assistant' && pending?.served === null) {
         if (m.provider && m.model) pending.served = `${m.provider}/${m.model}`;
         pending = null;
       }

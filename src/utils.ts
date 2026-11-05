@@ -112,6 +112,29 @@ export function messageText(content: unknown): string {
   return '';
 }
 
+/**
+ * Diagnostic text for an arbitrary value. `String(value)` prints
+ * "[object Object]" for any object (`no-base-to-string` flags exactly that),
+ * so objects get their JSON instead. Never throws: a circular or otherwise
+ * unserializable value falls back to its String() form.
+ */
+export function textOf(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'symbol') return value.toString();
+  if (typeof value === 'object' && value !== null) {
+    try {
+      const json = JSON.stringify(value);
+      if (json !== undefined) return json;
+    } catch {
+      /* circular, or a toJSON that throws */
+    }
+    // Last resort: the object's tag ("[object Date]", "[object Object]") at
+    // least distinguishes shapes, where String() would collapse all of them.
+    return Object.prototype.toString.call(value);
+  }
+  return String(value);
+}
+
 /** The `role: 'user'` messages that are real user turns (memory-extension blocks excluded). */
 export function realUserMessages<T extends { role?: string; content?: unknown }>(messages: readonly T[]): T[] {
   return messages.filter((m) => m.role === 'user' && !isMemoryContextText(messageText(m.content)));

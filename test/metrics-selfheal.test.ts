@@ -19,7 +19,7 @@ import {
   setGdpval,
   setModelMap,
 } from '../src/metrics.js';
-import type { Config, Cache } from '../src/types.js';
+import type { Cache } from '../src/types.js';
 
 beforeEach(() => {
   // Reset to a clean state before each test.

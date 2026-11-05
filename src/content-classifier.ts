@@ -142,7 +142,7 @@ interface ClassificationOptions {
    * registry, so completeSimple can be called. Returns undefined if pi
    * doesn't know the model.
    */
-  findModel?: (ref: string) => any | undefined;
+  findModel?: (ref: string) => any;
   /**
    * Pi's available models (modelRegistry.getAvailable()), pre-resolved so the
    * classifier can pick the cheapest without a second round-trip. Optional.
@@ -579,7 +579,7 @@ function writeDecisionLog(
       group: 'category' in result && result.category ? getGroupForCategory(result.category, options.cfg) : null,
       hint:
         'hintType' in result
-          ? { type: (result as HintClassificationResult).hintType, target: (result as HintClassificationResult).hintTarget }
+          ? { type: result.hintType, target: result.hintTarget }
           : null,
       reason: result.reason ?? null,
     },

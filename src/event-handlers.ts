@@ -52,7 +52,7 @@ interface EventHandlerDeps {
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;
   readonly recordOk: (ref: string) => void;
-  readonly registerGroupModels: (ctx: any) => Promise<void>;
+  readonly registerGroupModels: (ctx: any) => void;
   readonly router: Router;
   readonly saveCache: () => void;
   readonly scan: (force?: boolean) => Promise<void>;
@@ -67,7 +67,7 @@ interface EventHandlerDeps {
 
 export function createEventHandlers(rt: EventHandlerDeps) {
 
-  rt.pi.on('session_start', async (ev, ctx) => {
+  rt.pi.on('session_start', (ev, ctx) => {
     rt.sessionCtx = ctx;
     rt.router.setSessionCtx(ctx);
     setProjectLogDir(ctx.cwd);
@@ -130,7 +130,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     
     rt.escalation.reset();
     
-    await rt.registerGroupModels(ctx);
+    rt.registerGroupModels(ctx);
     // scan() swallows per-provider failures by design, but a top-level
     // throw (e.g. from checkScanSanity or saveCache) must not disappear
     // silently (final v1.6.0 review minor #6).
@@ -174,7 +174,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
           let lastUsage: AssistantMessage['usage'] | undefined;
           for (const e of ctx.sessionManager.getBranch()) {
             if (e.type === 'message' && e.message.role === 'assistant') {
-              const a = e.message as AssistantMessage;
+              const a = e.message;
               inp += a.usage.input;
               out += a.usage.output;
               cost += a.usage.cost.total;
@@ -226,7 +226,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
   });
 
 
-  rt.pi.on('model_select', async (ev) => {
+  rt.pi.on('model_select', (ev) => {
     if (ev.source !== 'restore') rt.activeGroup = null;
     rt.curModel = `${ev.model.provider}/${ev.model.id}`;
   });
@@ -235,7 +235,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
   // boundary. Owned here because it must survive the Router reloads.
   const compactionState: CompactionRunState = { lastHintAt: 0 };
 
-  rt.pi.on('turn_start', async (_ev, ctx) => {
+  rt.pi.on('turn_start', (_ev, ctx) => {
     rt.turnStart = Date.now();
     // Mark the turn boundary on the router so the first setCurModel() of
     // this turn re-pins the driving ref (a nested delegation stream must
@@ -246,7 +246,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     // boundary, before the prompt is processed, never between tool steps
     // (owner decision 2026-10-05). Fire-and-forget inside.
     runContextCompaction({
-      ctx: ctx as any,
+      ctx,
       cfg: rt.cfg,
       activeGroup: rt.activeGroup,
       usageLog: rt.cache.usage_log,
@@ -254,7 +254,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
     });
   });
 
-  rt.pi.on('turn_end', async (ev) => {
+  rt.pi.on('turn_end', (ev) => {
     if (!rt.curModel || !rt.turnStart) return;
     const ms = Date.now() - rt.turnStart,
       msg = ev.message;
@@ -282,7 +282,7 @@ export function createEventHandlers(rt: EventHandlerDeps) {
       // same factual-ref source the expensive-model read block uses; falls
       // back to curModel for non-routed sessions where they coincide.
       const factualRef = rt.router.getCurModel(rt.turnStart) || rt.curModel;
-      const a = msg as AssistantMessage;
+      const a = msg;
       // Real usage entry (Phase 5a): tokens = input + output + cacheRead +
       // cacheWrite — input alone excluded the cached bulk of a long context
       // (~40x undercount). Null when the provider reported no usage.
@@ -321,10 +321,10 @@ export function createEventHandlers(rt: EventHandlerDeps) {
         if (realTok > 0) {
           costTracker.trackRequest(
             factualRef,
-            a.usage!.input,
-            a.usage!.output,
-            a.usage!.cacheRead ?? 0,
-            a.usage!.cacheWrite ?? 0
+            a.usage.input,
+            a.usage.output,
+            a.usage.cacheRead ?? 0,
+            a.usage.cacheWrite ?? 0
           );
         }
       }
@@ -405,8 +405,8 @@ export function createEventHandlers(rt: EventHandlerDeps) {
   });
 
   let turns = 0;
-  rt.pi.on('turn_end', async () => {
+  rt.pi.on('turn_end', () => {
     if (++turns % 10 === 0) rt.saveCache();
   });
-  rt.pi.on('session_shutdown', async () => rt.saveCache());
+  rt.pi.on('session_shutdown', () => rt.saveCache());
 }

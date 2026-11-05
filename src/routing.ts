@@ -313,7 +313,7 @@ export function applyGroupFilters(
     const all = refs.map(r => L.gdp(r)).filter((v): v is number => v !== null);
     if (all.length) {
       const max = Math.max(...all);
-      const thresh = (g.min_gdpval_pct! / 100) * max;
+      const thresh = (g.min_gdpval_pct / 100) * max;
       c = gate('min_gdpval_pct', ref => { const v = L.gdp(ref); return v !== null && v >= thresh; });
     }
   }

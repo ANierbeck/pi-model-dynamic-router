@@ -33,7 +33,7 @@ import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
 import { openBreakers, clearBreakers, isLocalProviderName } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
-import { fmt, splitRef } from './utils.ts';
+import { splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
 import { openUserConfigStore, readConfigLayers, validateExcludePattern, type ConfigLayerView } from './user-config-store.ts';
@@ -378,7 +378,7 @@ function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: s
   if (!res.ok) return res.error;
 
   if (others.length === 0 && rt.cfg.exclude?.[kind]) {
-    rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: rt.cfg.exclude[kind]!.filter((p) => p !== pattern) };
+    rt.cfg.exclude = { ...rt.cfg.exclude, [kind]: rt.cfg.exclude[kind].filter((p) => p !== pattern) };
   }
   rt.load();
   const still = others.length ? ` It is still excluded by the ${others.map((l) => l.origin).join(' and ')} layer.` : '';
@@ -689,7 +689,7 @@ export function createCommands(rt: CommandDeps) {
             const prov = ref.split('/')[0];
             const budgetInfo = rt.cache.budget_cache?.[prov];
             let budget = '';
-            if (budgetInfo && budgetInfo.window_reset && budgetInfo.remaining_tokens !== undefined) {
+            if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
               if (Date.now() < budgetInfo.window_reset) {
                 const windowType = budgetInfo.window_type ?? 'monthly';
                 budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;

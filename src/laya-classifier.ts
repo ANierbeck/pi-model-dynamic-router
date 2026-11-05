@@ -187,7 +187,7 @@ export async function classifyWithLayaRaw(
     if (!raw || typeof raw.category !== 'string' || typeof raw.confidence !== 'number') {
       throw new Error('malformed response: expected {category, confidence, probabilities, ms}');
     }
-    const probabilities = (raw as any).probabilities;
+    const probabilities = raw.probabilities;
     if (typeof probabilities !== 'object' || Array.isArray(probabilities) || probabilities === null) {
       throw new Error('malformed response: probabilities must be an object');
     }
@@ -199,7 +199,7 @@ export async function classifyWithLayaRaw(
     };
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(`classify request timed out after ${timeoutMs}ms`);
+      throw new Error(`classify request timed out after ${timeoutMs}ms`, { cause: err });
     }
     throw err;
   } finally {
@@ -260,7 +260,7 @@ export async function classifyWithLayaDetailed(
   options: { cfg?: Config; checkpoint: string },
 ): Promise<{ answer: LayaAnswer; result: ClassificationResult | null } | null> {
   const cfg = options.cfg?.classifier_laya;
-  if (!cfg || !cfg.enabled) return null;
+  if (!cfg?.enabled) return null;
   if (!(await ensureLayaAvailable(cfg.endpoint!, cfg.timeout_ms!))) return null;
 
   let answer: LayaAnswer;

@@ -84,8 +84,8 @@ export function prePushRanges(stdin: string): string[][] {
   for (const line of stdin.split('\n')) {
     const parts = line.trim().split(/\s+/);
     if (parts.length < 4) continue;
-    const local = parts[1]!;
-    const remote = parts[3]!;
+    const local = parts[1];
+    const remote = parts[3];
     if (ZERO_SHA.test(local)) continue;
     ranges.push(ZERO_SHA.test(remote) ? [local, '--not', '--remotes'] : [`${remote}..${local}`]);
   }
@@ -137,8 +137,8 @@ function main(argv: string[]): number {
     // A remote sha we never fetched cannot anchor a range: fall back to
     // "everything not on any remote" for that ref.
     rangeSpecs = rangeSpecs.map((spec) => {
-      const m = /^([0-9a-f]{40})\.\.([0-9a-f]{40})$/.exec(spec[0]!);
-      return m && !commitExists(m[1]!, cwd) ? [m[2]!, '--not', '--remotes'] : spec;
+      const m = /^([0-9a-f]{40})\.\.([0-9a-f]{40})$/.exec(spec[0]);
+      return m && !commitExists(m[1], cwd) ? [m[2], '--not', '--remotes'] : spec;
     });
   } else {
     const i = argv.indexOf('--range');

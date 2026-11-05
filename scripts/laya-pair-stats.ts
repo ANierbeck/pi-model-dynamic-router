@@ -292,7 +292,7 @@ function main(): void {
     // One reader for the log (scripts/lib/decision-log.ts) owns the skipping
     // rules, so a torn line at a rotation boundary is handled the same way as
     // in every other script.
-    records = readDecisionLogRecords(file) as PairLogRecord[];
+    records = readDecisionLogRecords(file);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       console.log(`No decision log yet at ${file} — run some prompts and come back.`);

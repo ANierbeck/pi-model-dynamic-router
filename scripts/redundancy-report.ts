@@ -145,7 +145,7 @@ function findRepeatedBlocks(tests: TextFile[]): Report['repeatedBlocks'] {
   const starts = new Map<string, number>();
   for (const keys of windowsOf.values()) {
     keys.forEach((key, i) => {
-      if (!repeated(key) || (i > 0 && repeated(keys[i - 1]!))) return;
+      if (!repeated(key) || (i > 0 && repeated(keys[i - 1]))) return;
       starts.set(key, filesOf.get(key)!.size);
     });
   }

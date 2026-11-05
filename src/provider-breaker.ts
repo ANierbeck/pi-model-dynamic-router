@@ -105,7 +105,6 @@ export function isLocalProviderName(provider: string): boolean {
 }
 
 type ProviderBreaker = NonNullable<Cache['provider_breaker']>[string];
-type ProviderBreakerStats = NonNullable<Cache['provider_breaker_stats']>[string];
 
 function providerOf(ref: string): string {
   return ref.split('/')[0];

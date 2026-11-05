@@ -286,7 +286,7 @@ function loadFiles(paths: string[], maxRawChars: number): BulkReadFile[] {
     try {
       text = fs.readFileSync(p, 'utf8');
     } catch (err) {
-      throw new Error(`bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`bulk_read: cannot read "${p}": ${err instanceof Error ? err.message : String(err)}`, { cause: err });
     }
     if (budget <= 0) {
       truncated = true;

@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { hasBudget, filterByBudget } from '../src/budget.ts';
-import type { Config, Cache } from '../src/types.ts';
+import type { Config } from '../src/types.ts';
 
 const providers: Config['providers'] = {
   mistral: { billing: 'subscription' },

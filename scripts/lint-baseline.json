@@ -9,12 +9,7 @@
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 6
-    },
-    {
-      "file": "index.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
+      "count": 5
     },
     {
       "file": "index.ts",
@@ -54,12 +49,7 @@
     {
       "file": "scripts/classifier-replay.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 2
-    },
-    {
-      "file": "scripts/classifier-replay.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 2
+      "count": 1
     },
     {
       "file": "scripts/classifier-replay.ts",
@@ -83,11 +73,6 @@
     },
     {
       "file": "scripts/laya-e2e.ts",
-      "rule": "@typescript-eslint/no-base-to-string",
-      "count": 1
-    },
-    {
-      "file": "scripts/laya-e2e.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
       "count": 1
     },
@@ -97,18 +82,8 @@
       "count": 8
     },
     {
-      "file": "scripts/laya-e2e.ts",
-      "rule": "@typescript-eslint/restrict-template-expressions",
-      "count": 2
-    },
-    {
       "file": "scripts/laya-pair-stats.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "scripts/laya-pair-stats.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
       "count": 1
     },
     {
@@ -122,16 +97,6 @@
       "count": 2
     },
     {
-      "file": "scripts/laya-shadow-stats.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "scripts/lib/cli.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 2
-    },
-    {
       "file": "scripts/mutation-apply.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -140,11 +105,6 @@
       "file": "scripts/mutation-carryover.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 5
-    },
-    {
-      "file": "scripts/mutation-carryover.ts",
-      "rule": "@typescript-eslint/no-base-to-string",
-      "count": 2
     },
     {
       "file": "scripts/mutation-carryover.ts",
@@ -173,11 +133,6 @@
     },
     {
       "file": "scripts/pool-replay.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 3
-    },
-    {
-      "file": "scripts/pool-replay.ts",
       "rule": "@typescript-eslint/no-unsafe-argument",
       "count": 1
     },
@@ -203,11 +158,6 @@
     },
     {
       "file": "scripts/redundancy-report.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "scripts/redundancy-report.ts",
       "rule": "@typescript-eslint/prefer-optional-chain",
       "count": 1
     },
@@ -217,24 +167,9 @@
       "count": 3
     },
     {
-      "file": "scripts/router-kpi-audit.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 5
-    },
-    {
-      "file": "scripts/router-kpi-audit.ts",
-      "rule": "no-useless-assignment",
-      "count": 1
-    },
-    {
       "file": "scripts/scan-hardcoded-models.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 3
-    },
-    {
-      "file": "scripts/secret-scan.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 5
     },
     {
       "file": "scripts/turn-decision-join.ts",
@@ -264,16 +199,11 @@
     {
       "file": "scripts/turn-decision-join.ts",
       "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 2
-    },
-    {
-      "file": "src/budget-pacing.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
     },
     {
       "file": "src/budget-pacing.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
+      "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
     },
     {
@@ -302,11 +232,6 @@
       "count": 3
     },
     {
-      "file": "src/bulk-read.ts",
-      "rule": "preserve-caught-error",
-      "count": 1
-    },
-    {
       "file": "src/cache.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
       "count": 1
@@ -319,16 +244,6 @@
     {
       "file": "src/cache.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/cache.ts",
-      "rule": "no-empty",
-      "count": 2
-    },
-    {
-      "file": "src/capabilities.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
       "count": 1
     },
     {
@@ -345,11 +260,6 @@
       "file": "src/classifier-fallback-probe.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 8
-    },
-    {
-      "file": "src/classifier-fallback-probe.ts",
-      "rule": "@typescript-eslint/no-redundant-type-constituents",
-      "count": 1
     },
     {
       "file": "src/classifier-fallback-probe.ts",
@@ -398,11 +308,6 @@
     },
     {
       "file": "src/commands.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "src/commands.ts",
       "rule": "@typescript-eslint/no-unsafe-argument",
       "count": 1
     },
@@ -413,17 +318,7 @@
     },
     {
       "file": "src/commands.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "src/commands.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/commands.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
       "count": 1
     },
     {
@@ -442,16 +337,6 @@
       "count": 4
     },
     {
-      "file": "src/config-loader.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
-    },
-    {
-      "file": "src/config-loader.ts",
-      "rule": "no-useless-assignment",
-      "count": 1
-    },
-    {
       "file": "src/content-classifier.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 4
@@ -460,16 +345,6 @@
       "file": "src/content-classifier.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 25
-    },
-    {
-      "file": "src/content-classifier.ts",
-      "rule": "@typescript-eslint/no-redundant-type-constituents",
-      "count": 1
-    },
-    {
-      "file": "src/content-classifier.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 2
     },
     {
       "file": "src/content-classifier.ts",
@@ -502,11 +377,6 @@
       "count": 2
     },
     {
-      "file": "src/context-budget.ts",
-      "rule": "@typescript-eslint/no-base-to-string",
-      "count": 1
-    },
-    {
       "file": "src/context-utils.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -514,16 +384,6 @@
     {
       "file": "src/context-utils.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 6
-    },
-    {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-redundant-type-constituents",
-      "count": 1
-    },
-    {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
       "count": 3
     },
     {
@@ -542,16 +402,6 @@
       "count": 9
     },
     {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "src/cost-tracker.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 2
-    },
-    {
       "file": "src/cost-tracker.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
       "count": 1
@@ -559,12 +409,7 @@
     {
       "file": "src/delegation.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 4
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 5
+      "count": 2
     },
     {
       "file": "src/delegation.ts",
@@ -587,11 +432,6 @@
       "count": 10
     },
     {
-      "file": "src/detection.ts",
-      "rule": "no-control-regex",
-      "count": 2
-    },
-    {
       "file": "src/dynamic-config-runner.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 4
@@ -599,12 +439,7 @@
     {
       "file": "src/dynamic-config-runner.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 3
-    },
-    {
-      "file": "src/dynamic-config-runner.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 3
+      "count": 2
     },
     {
       "file": "src/dynamic-config-runner.ts",
@@ -632,33 +467,13 @@
       "count": 1
     },
     {
-      "file": "src/dynamic-config-runner.ts",
-      "rule": "prefer-const",
-      "count": 2
-    },
-    {
       "file": "src/dynamic-config.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 4
     },
     {
-      "file": "src/dynamic-config.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-base-to-string",
-      "count": 1
-    },
-    {
       "file": "src/error-signatures.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 1
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-redundant-type-constituents",
       "count": 1
     },
     {
@@ -669,7 +484,7 @@
     {
       "file": "src/error-signatures.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 6
+      "count": 5
     },
     {
       "file": "src/error-signatures.ts",
@@ -679,7 +494,12 @@
     {
       "file": "src/error-signatures.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 12
+      "count": 11
+    },
+    {
+      "file": "src/error-signatures.ts",
+      "rule": "@typescript-eslint/no-unsafe-return",
+      "count": 1
     },
     {
       "file": "src/event-handlers.ts",
@@ -689,12 +509,7 @@
     {
       "file": "src/event-handlers.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 13
-    },
-    {
-      "file": "src/event-handlers.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 7
+      "count": 12
     },
     {
       "file": "src/event-handlers.ts",
@@ -704,7 +519,7 @@
     {
       "file": "src/event-handlers.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 4
+      "count": 3
     },
     {
       "file": "src/event-handlers.ts",
@@ -727,16 +542,6 @@
       "count": 1
     },
     {
-      "file": "src/event-handlers.ts",
-      "rule": "@typescript-eslint/require-await",
-      "count": 5
-    },
-    {
-      "file": "src/exclude.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 3
-    },
-    {
       "file": "src/free-model-registration.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -744,12 +549,7 @@
     {
       "file": "src/free-model-registration.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 4
-    },
-    {
-      "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
+      "count": 3
     },
     {
       "file": "src/free-model-registration.ts",
@@ -769,22 +569,12 @@
     {
       "file": "src/group-registration.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 3
-    },
-    {
-      "file": "src/group-registration.ts",
-      "rule": "@typescript-eslint/no-duplicate-type-constituents",
-      "count": 1
+      "count": 2
     },
     {
       "file": "src/group-registration.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 17
-    },
-    {
-      "file": "src/group-registration.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 5
+      "count": 12
     },
     {
       "file": "src/group-registration.ts",
@@ -804,12 +594,7 @@
     {
       "file": "src/group-registration.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 51
-    },
-    {
-      "file": "src/group-registration.ts",
-      "rule": "@typescript-eslint/require-await",
-      "count": 1
+      "count": 47
     },
     {
       "file": "src/hint-resolution.ts",
@@ -820,16 +605,6 @@
       "file": "src/hint-resolution.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 4
-    },
-    {
-      "file": "src/laya-classifier.ts",
-      "rule": "@typescript-eslint/no-explicit-any",
-      "count": 1
-    },
-    {
-      "file": "src/laya-classifier.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
     },
     {
       "file": "src/laya-classifier.ts",
@@ -842,64 +617,24 @@
       "count": 5
     },
     {
-      "file": "src/laya-classifier.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
-    },
-    {
-      "file": "src/laya-classifier.ts",
-      "rule": "preserve-caught-error",
-      "count": 1
-    },
-    {
       "file": "src/limit-glue.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 7
     },
     {
-      "file": "src/limit-glue.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
-    },
-    {
       "file": "src/local-llm.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/local-llm.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "src/local-llm.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
       "count": 1
     },
     {
       "file": "src/logger.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
-    },
-    {
-      "file": "src/logger.ts",
-      "rule": "@typescript-eslint/no-base-to-string",
-      "count": 1
-    },
-    {
-      "file": "src/logger.ts",
-      "rule": "no-empty",
-      "count": 3
     },
     {
       "file": "src/metrics.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 6
-    },
-    {
-      "file": "src/metrics.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
+      "count": 5
     },
     {
       "file": "src/metrics.ts",
@@ -918,11 +653,6 @@
     },
     {
       "file": "src/metrics.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "src/metrics.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
       "count": 1
     },
@@ -930,16 +660,6 @@
       "file": "src/model-blocklist.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
       "count": 2
-    },
-    {
-      "file": "src/model-blocklist.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 2
-    },
-    {
-      "file": "src/model-health.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
     },
     {
       "file": "src/model-health.ts",
@@ -952,28 +672,13 @@
       "count": 2
     },
     {
-      "file": "src/model-resolve-glue.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
-      "count": 1
-    },
-    {
       "file": "src/ollama-gdpval.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/ollama-gdpval.ts",
-      "rule": "@typescript-eslint/prefer-optional-chain",
       "count": 1
     },
     {
       "file": "src/overview-table.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/provider-breaker.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
       "count": 1
     },
     {
@@ -1003,11 +708,6 @@
     },
     {
       "file": "src/routing.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "src/routing.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
       "count": 1
     },
@@ -1028,18 +728,8 @@
     },
     {
       "file": "src/scan-runner.ts",
-      "rule": "@typescript-eslint/no-duplicate-type-constituents",
-      "count": 1
-    },
-    {
-      "file": "src/scan-runner.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 9
-    },
-    {
-      "file": "src/scan-runner.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 2
+      "count": 7
     },
     {
       "file": "src/scan-runner.ts",
@@ -1072,16 +762,6 @@
       "count": 2
     },
     {
-      "file": "src/scan-runner.ts",
-      "rule": "no-empty",
-      "count": 4
-    },
-    {
-      "file": "src/scan-runner.ts",
-      "rule": "prefer-const",
-      "count": 1
-    },
-    {
       "file": "src/session-errors.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -1098,11 +778,6 @@
     },
     {
       "file": "src/stream-driver.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 1
-    },
-    {
-      "file": "src/stream-driver.ts",
       "rule": "@typescript-eslint/no-unsafe-argument",
       "count": 3
     },
@@ -1114,17 +789,7 @@
     {
       "file": "src/stream-orchestrator.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 15
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-floating-promises",
-      "count": 2
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 12
+      "count": 13
     },
     {
       "file": "src/stream-orchestrator.ts",
@@ -1153,17 +818,7 @@
     },
     {
       "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 6
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
-      "count": 1
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/restrict-template-expressions",
       "count": 1
     },
     {
@@ -1174,17 +829,7 @@
     {
       "file": "src/stream-proxy.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 22
-    },
-    {
-      "file": "src/stream-proxy.ts",
-      "rule": "@typescript-eslint/no-floating-promises",
-      "count": 1
-    },
-    {
-      "file": "src/stream-proxy.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
-      "count": 6
+      "count": 16
     },
     {
       "file": "src/stream-proxy.ts",
@@ -1213,11 +858,6 @@
     },
     {
       "file": "src/stream-proxy.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 3
-    },
-    {
-      "file": "src/stream-proxy.ts",
       "rule": "@typescript-eslint/prefer-nullish-coalescing",
       "count": 5
     },
@@ -1242,28 +882,8 @@
       "count": 1
     },
     {
-      "file": "src/tools.ts",
-      "rule": "@typescript-eslint/require-await",
-      "count": 2
-    },
-    {
-      "file": "src/tools.ts",
-      "rule": "@typescript-eslint/restrict-template-expressions",
-      "count": 1
-    },
-    {
-      "file": "src/types.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
       "file": "src/user-config-store.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/user-config-store.ts",
-      "rule": "@typescript-eslint/no-unnecessary-type-assertion",
       "count": 1
     },
     {
@@ -1295,206 +915,6 @@
       "file": "src/version.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
       "count": 1
-    },
-    {
-      "file": "test/agent-capability-tier.test.ts",
-      "rule": "no-useless-assignment",
-      "count": 1
-    },
-    {
-      "file": "test/budget.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/classifier-cloud-candidate-timeout.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/classifier-context-narration-leak.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/classifier-fallback-probe.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/classifier-memory-block-context.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/consolidated-config-pins.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/consolidated-provider-pins.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/consolidated-routing-cache-pins.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 6
-    },
-    {
-      "file": "test/consolidated-stream-error-pins.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 13
-    },
-    {
-      "file": "test/context-compaction.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/decision-pool-record.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/delegation.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 3
-    },
-    {
-      "file": "test/dynamic-classification-momentum.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/dynamic-config.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/exclude.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/exit-listener-dedupe.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/forward-throw-terminates-stream.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/gdpval-identity-defects.test.ts",
-      "rule": "no-useless-escape",
-      "count": 1
-    },
-    {
-      "file": "test/helpers/extension-harness.ts",
-      "rule": "preserve-caught-error",
-      "count": 1
-    },
-    {
-      "file": "test/hint-classification.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/laya-classifier.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/laya-classifier.test.ts",
-      "rule": "no-empty",
-      "count": 1
-    },
-    {
-      "file": "test/laya-classifier.test.ts",
-      "rule": "prefer-const",
-      "count": 1
-    },
-    {
-      "file": "test/metrics-cost-heal.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/metrics-selfheal.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/model-map-class-b.test.ts",
-      "rule": "no-irregular-whitespace",
-      "count": 1
-    },
-    {
-      "file": "test/ollama-concurrency-limit.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/ollama-fallback-skip-when-down.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/orchestrator-hint-wiring.test.ts",
-      "rule": "no-regex-spaces",
-      "count": 8
-    },
-    {
-      "file": "test/provider-breaker-visibility.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/provider-watchdog-integration.test.ts",
-      "rule": "require-yield",
-      "count": 1
-    },
-    {
-      "file": "test/refactor-golden-master.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/routing-exclude.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/routing.integration.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/runtime-overflow-detection.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
-    },
-    {
-      "file": "test/slug-resolution.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 1
-    },
-    {
-      "file": "test/stream-failure-termination.test.ts",
-      "rule": "require-yield",
-      "count": 1
-    },
-    {
-      "file": "test/subcall-scope-isolation.test.ts",
-      "rule": "require-yield",
-      "count": 1
-    },
-    {
-      "file": "test/unified-slug-resolution.test.ts",
-      "rule": "@typescript-eslint/no-unused-vars",
-      "count": 2
     }
   ]
 }

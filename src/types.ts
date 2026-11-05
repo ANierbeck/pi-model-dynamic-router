@@ -1,7 +1,6 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
-import type { Model } from '@earendil-works/pi-ai';
 
 // ── Core Types ────────────────────────────────────────────────────────────
 

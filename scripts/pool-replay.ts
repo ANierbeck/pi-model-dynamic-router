@@ -36,7 +36,7 @@ export function targetGroupFor(category: string): string | null {
  *   design      ← planning, floor 1600 (D5)
  */
 export function targetLayout(shipped: Config): Config {
-  const g = shipped.model_groups as Record<string, Group>;
+  const g = shipped.model_groups;
   const bare = (name: string): Group => ({ ...g[name], fallback_groups: [] });
   const model_groups: Record<string, Group> = {
     simple: bare('scout'),
@@ -154,8 +154,8 @@ function replayMain(): void {
     (shipped as { providers?: unknown }).providers = providers;
   } catch { /* no user layer: shipped billing only */ }
   metrics.setConfig(shipped); metrics.setCache(cache); metrics.setModelRegistry({ find: () => undefined } as any);
-  const designFloor = (targetLayout(shipped).model_groups as Record<string, Group>).design.min_gdpval!;
-  const planningScoreBy = (shipped.model_groups as Record<string, Group>).planning.score_by;
+  const designFloor = (targetLayout(shipped).model_groups).design.min_gdpval!;
+  const planningScoreBy = (shipped.model_groups).planning.score_by;
   const score = (ref: string) => metrics.calculateScore(ref, planningScoreBy, shipped);
 
   const lines: RoutingLine[] = readFileSync(routerLog, 'utf8').split('\n').map(parseRoutingLine).filter((l): l is RoutingLine => l !== null);

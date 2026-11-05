@@ -210,7 +210,7 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
  */
 export function validateClassifierLaya(config: Config): void {
   const c = config.classifier_laya;
-  if (!c || !c.enabled) return;
+  if (!c?.enabled) return;
   const disable = (why: string): void => {
     warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
     c.enabled = false;
@@ -223,7 +223,7 @@ export function validateClassifierLaya(config: Config): void {
     return;
   }
   const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
-  let hostname = '';
+  let hostname: string;
   try {
     const u = new URL(endpoint);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');

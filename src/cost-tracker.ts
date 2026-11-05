@@ -98,7 +98,7 @@ export class CostTracker {
     // Calculate cost: (inputTokens * inputPrice + outputTokens * outputPrice) / 1,000,000
     const cost =
       price && price.input !== 'unknown' && price.output !== 'unknown'
-        ? (inputTokens * (price.input as number) + outputTokens * (price.output as number)) / 1_000_000
+        ? (inputTokens * (price.input) + outputTokens * (price.output)) / 1_000_000
         : 0;
 
     // Update metrics

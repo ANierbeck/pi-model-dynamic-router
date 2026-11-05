@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
-import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
+import { isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) => {

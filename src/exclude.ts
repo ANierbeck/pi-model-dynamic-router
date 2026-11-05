@@ -11,7 +11,6 @@
 // models never enter any group's candidate list.
 
 import type { ExcludeRules, Config, Cache } from './types.ts';
-import { PROVIDER_MAP } from './providers.ts';
 import { isFreeModelRef } from './metrics.ts';
 
 export interface ExcludeContext {
@@ -46,7 +45,6 @@ export function globMatcher(pattern: string): (ref: string) => boolean {
  */
 export function isExcluded(ref: string, ctx: ExcludeContext): boolean {
   const rules = ctx.rules ?? {};
-  const { cfg, cache } = ctx;
 
   // 1. Provider exclusion: drop if the ref's provider matches.
   if (rules.providers?.length) {

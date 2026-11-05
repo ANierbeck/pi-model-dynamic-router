@@ -875,47 +875,47 @@ describe('decision lines (router.log)', () => {
     await w.open();
     expect(lineOf()).toHaveLength(1);
     const line = lineOf()[0];
-    expect(line).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z  standard → standard  mistral\/glm  "first line x{69}"$/);
+    expect(line).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z {2}standard → standard {2}mistral\/glm {2}"first line x{69}"$/);
   });
 
   it('a group HINT logs without a selected-ref column; a model HINT logs MHINT with the first sibling', async () => {
     const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: 'pin a group' });
     await g.open();
-    expect(lineOf()[0]).toMatch(/Z  HINT: planning → claude-bridge\/opus  "pin a group"$/);
+    expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}"pin a group"$/);
 
     vi.clearAllMocks();
     const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: 'pin a model' });
     await m.open();
-    expect(lineOf()[0]).toMatch(/Z  MHINT: mistral\/m  mistral\/m  "pin a model"$/);
+    expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}"pin a model"$/);
   });
 
   it('HINT lines also cut the prompt at 80 characters and keep it on one line', async () => {
     const long = 'first line\n' + 'x'.repeat(200);
     const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: long });
     await g.open();
-    expect(lineOf()[0]).toMatch(/Z  HINT: planning → claude-bridge\/opus  "first line x{69}"$/);
+    expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}"first line x{69}"$/);
 
     vi.clearAllMocks();
     const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: long });
     await m.open();
-    expect(lineOf()[0]).toMatch(/Z  MHINT: mistral\/m  mistral\/m  "first line x{69}"$/);
+    expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}"first line x{69}"$/);
   });
 
   it('HINT lines without a prompt log an empty quoted string too', async () => {
     const g = world({ classification: { hintType: 'group', hintTarget: 'planning' }, resolvable: { planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' } }, prompt: undefined });
     await g.open();
-    expect(lineOf()[0]).toMatch(/Z  HINT: planning → claude-bridge\/opus  ""$/);
+    expect(lineOf()[0]).toMatch(/Z {2}HINT: planning → claude-bridge\/opus {2}""$/);
 
     vi.clearAllMocks();
     const m = world({ keyed: ['mistral'], classification: { hintType: 'model', hintTarget: 'mistral/m' }, discovered: ['mistral/m'], known: ['mistral/m'], prompt: undefined });
     await m.open();
-    expect(lineOf()[0]).toMatch(/Z  MHINT: mistral\/m  mistral\/m  ""$/);
+    expect(lineOf()[0]).toMatch(/Z {2}MHINT: mistral\/m {2}mistral\/m {2}""$/);
   });
 
   it('a missing prompt logs as an empty quoted string', async () => {
     const w = world({ classification: { category: 'standard' }, resolvable: { standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' } }, prompt: undefined });
     await w.open();
-    expect(lineOf()[0]).toMatch(/  ""$/);
+    expect(lineOf()[0]).toMatch(/ {2}""$/);
   });
 });
 

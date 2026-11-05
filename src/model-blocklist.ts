@@ -68,13 +68,13 @@ export function recordBlocklistFailure(
   if (c.verdict !== 'unknown' || PROVIDER_MAP[ref.split('/')[0]]?.local) return null;
 
   const prev = cache.model_blocklist?.[ref];
-  if (prev && prev.signature === c.signature) {
+  if (prev?.signature === c.signature) {
     return block(cache, ref, prev.reason, prev.code, c.signature, now);
   }
 
   if (!cache.model_failure_streaks) cache.model_failure_streaks = {};
   let streak = cache.model_failure_streaks[ref];
-  if (!streak || streak.signature !== c.signature || now - streak.last_seen >= BLOCKLIST_TTL_MS) {
+  if (streak?.signature !== c.signature || now - streak.last_seen >= BLOCKLIST_TTL_MS) {
     streak = { signature: c.signature, count: 0, first_seen: now, last_seen: now };
   }
   streak.count++;

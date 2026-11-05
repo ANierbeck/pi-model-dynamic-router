@@ -7,7 +7,7 @@
  * groupStream. Pure code motion; closure state via live accessors on rt.
  */
 
-import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, isFreeTierDailyCapText, sanitizeForLog } from './detection.ts';
+import { isAbortLikeText, isRateLimitText, parseResetAtMs, isOverflowErrorText, OVERFLOW_TEXT_SCAN_MAX_CHARS, isOverflowDeltaText, sanitizeForLog } from './detection.ts';
 import { routerLog, debugLogOnce, forgetDebugOnce, debugLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { detectDegenerateRepetition } from './repetition-guard.ts';
@@ -68,7 +68,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     context: Context,
     options: SimpleStreamOptions | undefined
   ): AssistantMessageEventStream | null {
-    const registry = rt.sessionCtx?.modelRegistry as any;
+    const registry = rt.sessionCtx?.modelRegistry;
     if (!registry) return null;
 
     const runtime = registry.runtime;
@@ -165,7 +165,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // (or success) can be correlated with the model's actual provider/api/baseUrl
     // fields instead of guessing. Remove once claude-bridge routing is confirmed stable.
     forgetDebugOnce(`tryStream-skip:${ref}`);
-    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${(realModel as any).api} baseUrl=${(realModel as any).baseUrl ?? 'n/a'}`);
+    debugLog(`[diag] tryStream resolved "${ref}" -> provider=${realModel.provider} id=${realModel.id} api=${realModel.api} baseUrl=${realModel.baseUrl ?? 'n/a'}`);
     const apiKey = await rt.sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
@@ -185,7 +185,7 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     // requested output budget against the window as well as the input: cap an
     // explicit output budget to what the window leaves, skip only when even the
     // minimum output does not fit. Without this the reservation is unbounded.
-    const window = (realModel as any).contextWindow as number | undefined;
+    const window = realModel.contextWindow as number | undefined;
     const budget = planOutputBudget({
       windowTokens: window,
       inputTokens: estimateInputTokens(context, (context as any).tools),
@@ -411,8 +411,8 @@ export function createStreamProxy(rt: StreamProxyDeps) {
               proxy.push({
                 ...(event as any),
                 reason: 'aborted',
-                error: { ...(errObj as any), stopReason: 'aborted' },
-              } as any);
+                error: { ...(errObj), stopReason: 'aborted' },
+              });
               terminalForwarded = true;
               return 'done';
             }
@@ -681,7 +681,6 @@ export function createStreamProxy(rt: StreamProxyDeps) {
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
     const useStaticMatch = model.id.match(/^(.+):use-static$/);
-    const useStatic = useStaticMatch !== null;
     const groupName = useStaticMatch ? useStaticMatch[1] : model.id;
     const g = rt.cfg.model_groups[groupName];
     const isDynamic = g?.method === 'dynamic';
@@ -701,7 +700,9 @@ export function createStreamProxy(rt: StreamProxyDeps) {
       // selection-time call passed hardcoded 1000/500 tokens — fabricated
       // audit data. Only completed turns with REAL provider-reported usage
       // are tracked now.
-      rt.streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
+      // Fire-and-forget by design: driveStream never rejects and always
+      // terminates the proxy (see its doc in stream-orchestrator.ts).
+      void rt.streamOrchestrator.driveStream(proxy, candidates, context, options, undefined, groupName, undefined, sourceModel);
       return proxy;
     }
 
