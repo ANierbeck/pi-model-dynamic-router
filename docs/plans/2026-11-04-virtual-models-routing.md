@@ -4,7 +4,7 @@
 (`docs/research/2026-11-06-virtual-model-spike.md`: Pi's retry measured, shadow
 agreement 74 % same / 10 % recovered / 16 % lost on 100 real turns). Step 4
 (two layers, state separation, attribution) measured 2026-11-07, same note §5.
-Step 5 — the decision — is open. No routing code has been written for this plan.
+Cost comparison against a session-keyed store in today's design measured 2026-11-07, note §6. Step 5 — the decision — is open. No routing code has been written for this plan.
 
 AGENTS.md §11: one problem per plan. This plan covers ONE problem — the router keeps its own copy of "which model drives this turn" and a failover loop that has to be protected against its own sub-calls. Pi has offered a first-class feature for routing since 0.99.0. The measurements and the item-by-item mapping live in `docs/research/2026-11-04-virtual-models-fit.md`.
 

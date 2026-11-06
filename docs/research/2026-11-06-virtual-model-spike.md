@@ -233,3 +233,92 @@ router would need (state keyed by session id) is the cost comparison still open.
 - Still open: compaction, `/tree`, the footer, a tool follow-up (`continuation`
   with tool results, not run here), and `previous` after a model left the
   catalog.
+
+## 6. Cost comparison: session-keyed state vs. the virtual-model state (measured 2026-11-07)
+
+Question from the owner: do the turn-state bugs need the migration, or does the
+same state keyed by session in today's design fix them at lower cost? What is
+**measured** below is feasibility and size (probe runs, grep counts). What is an
+**estimate** is marked as such; nothing was implemented.
+
+### Feasibility facts (probe `ext7`, same fake provider as §1)
+
+| fact | result |
+|---|---|
+| Session id in the group provider's `streamSimple` | `options.sessionId` is set by Pi (`sdk.js` passes `sessionManager.getSessionId()`), **also when the group provider is selected directly, as today**. The router reads it nowhere. |
+| Session id in `route()` | `ctx.sessionManager.getSessionId()`, equal to the `options.sessionId` of the following group request (`S7` = `S7`) |
+| `ModelRouteRequest` fields | `reason, thinkingLevel, signal, state, model, previous, failed, messages` — no session id, no tool-result flag beyond `reason` |
+| Extension factory calls | one per pi process in these runs; whether in-process subagent sessions (`createAgentSession`, used by pi-subagents) call the factory again is **not measured** — I2's "shared between subagent sessions" is taken from the review |
+
+So a session-keyed turn state is possible today without any Pi change: the key
+is already in every `streamSimple` call and in every event handler's context.
+
+### Size of the two changes
+
+Today's design, session-keyed store (counted, `index.ts` + `src/`, comments excluded):
+
+| state | references | files |
+|---|---:|---:|
+| `curModel` | 25 | 5 |
+| `activeGroup` | 30 | 6 |
+| `lastDynamicModel` | 23 | 3 |
+| `lastClassifiedCategory` | 9 | 2 |
+| `turnStart` | 20 | 3 |
+| `escalation` | 22 | 5 |
+| `skipReasons` | 13 | 3 |
+| `previousMessageCount/TokenCount` | 21 | 2 |
+| `Router` turn fields (`setCurModel`, `turnDriver*`, …) | 21 | 5 |
+| **all, 15 distinct files** | ~184 | 15 |
+
+The three that carry I2/I3/I5 are `curModel`, `lastDynamicModel`,
+`lastClassifiedCategory`: 57 code references; 8 files mention them by name
+(comments included). Tests touching these names:
+16 files.
+
+Virtual-model migration (hybrid, failover stays):
+
+- `groupStream` is ~445 lines (classification, HINT group/model, escalation,
+  tool-follow-up, candidate building) and calls `driveStream` (~870 lines, stays)
+  from at least four places with its decision as arguments. Classification is an
+  LLM call and needs the whole message list, so it has to run in `route()`
+  (async is allowed). The group provider's `streamSimple` then needs that
+  decision — group, candidate order, HINT pin, tool-follow-up flag — and
+  `route()` can only hand it over through `state` (read in `route()`, not
+  readable in `streamSimple`) or **a short-lived map keyed by session id**, which
+  the §6 facts show is possible. The migration therefore contains a session-keyed
+  map too, only with a one-request lifetime.
+- 35 test files call `groupStream` (36 reference it or `StreamOrchestrator`;
+  297 `it`/`test` cases in them, a lower bound since `it.each` counts once). The
+  orchestrator tests construct the orchestrator context directly; they would be
+  rewritten, not adjusted.
+- Two registrations (virtual model plus group providers), and the API that the
+  0.99.0 changelog called experimental.
+
+### Bug by bug
+
+| item | session-keyed store | virtual model | difference |
+|---|---|---|---|
+| I2 remainder (state shared by subagent sessions) | key by session id | `state` per branch | equal; virtual also persists across restart/fork |
+| I3 (follow-up falls into `simple`) | store the run's driver and group at classification | `continuation` + group from `state` | **same logic in `driveStream`'s follow-up order in both**; only the "is this a follow-up" signal differs (`reason` vs. `isToolFollowUp`) |
+| I5 (compaction continuity trusts any large model) | decide by real window, exclude `:free` | same rule in `route()` | **a rule fix, not a state fix — identical in both** |
+| Category memory on a pin | fixed (PR #115) | fixed | none |
+| Sub-call overwrites turn state | fixed (async scope) | structural (`direct`) | already fixed today |
+| Turn state lost on router reload / restart | lost unless persisted | survives (custom entry on the branch) | **real advantage of the migration** |
+| Fork / `/tree` semantics | none (a fork is a new session, empty state) | state follows the branch | **real advantage of the migration** |
+
+### Reading
+
+- Of the open items, the migration changes the **state's location and lifetime**,
+  not the logic: I3 and I5 need the same rule changes either way.
+- Its real extras are persistence across restart and branch-correct state. Neither
+  is a reported bug today; the category memory after a restart is a nicety.
+- The cheaper path for I2 is the session-keyed store: ~57 references (8 files) for the three
+  state variables that matter, no change to the stream path, no rewrite of the
+  orchestrator tests beyond the state seam. It is an **estimate** that this
+  is cheaper; the counts are measured, the effort is not.
+- Neither path fixes anything about the failover gaps of §1–§3; both keep
+  `driveStream`.
+- Not decidable from measurements: whether branch-correct, persistent turn state
+  is worth a ~445-line split and a test rewrite. That is a product decision.
+
+Probe artefacts (`ext7`, run logs) are not committed, as in §5.
