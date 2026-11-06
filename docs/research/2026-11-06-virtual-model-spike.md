@@ -171,3 +171,65 @@ migration": the `driveStream` walk stays, the module-level turn state goes.
   logged the raw 429 body, the body was used; elsewhere the narration stands in
   for what Pi would have seen. The 14 `quota exceeded` cases were checked
   line by line against the logged body.
+
+## 5. Step 5, two questions (measured 2026-11-07)
+
+Probes (throwaway, outside the repo, so the lint gate does not see them):
+the fake provider from §1; `ext5` registers a virtual model whose `route()`
+logs `reason` and the incoming `state` and returns `{ turns }`, plus a direct
+request started from `agent_end` via `ctx.modelRegistry.streamSimple(virtualModel, …)`;
+`ext6` adds a group-like provider `grp/code` whose `streamSimple` forwards every
+event of an inner request to `spike/spike-c` into its own proxy stream, and
+routes a virtual model there. Runs with `pi -p … --session-dir … --session-id`
+and `--fork`/`--session`.
+
+### (a) Is the state separated? Yes, for the four cases measured
+
+| case | what `route()` received | result |
+|---|---|---|
+| direct request after turn 1, same process | `reason: direct`, `state: null` | the state it returned (`turns: 999`) was discarded; the next user turn read `turns: 1` |
+| fork at a tip with `turns: 2`, two user turns in the fork | `state: {turns: 2}` | the fork continued at 3 and 4 |
+| resume the original after the fork | `state: {turns: 2}` | 3 — the fork's 4 is not visible |
+| fresh, independent session | `state: null` | 1 |
+
+Storage: a `custom` entry `pi.virtual-model-state` (`{provider, modelId, state}`)
+on the session branch, appended after each state change. Direct requests write
+neither an entry nor an assistant message.
+
+Not measured: compaction and `/tree` navigation. Both need an interactive
+session; the docs claim that state survives both, and this is unverified.
+
+What (a) does not show: that the migration is cheaper than a session-keyed map
+in the router. Pi isolates the state correctly. Whether that beats the fix the
+router would need (state keyed by session id) is the cost comparison still open.
+
+### (b) Attribution in the assistant message and `/session`
+
+- Two layers (`spike/vtwo` → `grp/code` → `spike/spike-c`): the assistant
+  message records `spike/spike-c` and `api: openai-completions`. `grp/code`
+  appears nowhere in the transcript. `model_change` records only the virtual
+  model.
+- Today, in a real router session file (`~/.pi/agent/sessions/…`, 2026-10-06):
+  assistant messages name the physical model (`mistral/zai-glm-5-3`: 3715
+  messages, `claude-bridge/claude-sonnet-5-5`: 1451, …); `model_change` records
+  `dynamic`. The attribution the router already has is therefore "physical
+  model in the message", and the two-layer variant keeps it.
+- Synthetic error messages carry the stamp of the outer model (`dynamic` today,
+  `grp/code` in the two-layer variant). A failed attempt is attributed to the
+  group, a real answer to the physical model.
+- **`previous` names the physical model** (`spike/spike-c` after the first turn,
+  not `grp/code`). A `route()` that derived the group from `previous` would skip
+  the group provider, and its failover, on every continuation. The group must
+  come from `state`. This is a constraint on the design, not a blocker.
+- Not measured: the footer (interactive) and the `/session` aggregation. The
+  probe's cost is zero, so no cost figure has been checked.
+
+### Consequences for the decision (plan step 5)
+
+- The hybrid option is still the only one the measurements support: the
+  failover stays in `driveStream`, the turn state moves to `route()` + `state`.
+- Two-layer costs: an extra `route()` hop, one more provider to register, the
+  continuation constraint above. It does not cost per-model attribution.
+- Still open: compaction, `/tree`, the footer, a tool follow-up (`continuation`
+  with tool results, not run here), and `previous` after a model left the
+  catalog.

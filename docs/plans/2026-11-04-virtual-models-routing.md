@@ -2,8 +2,9 @@
 
 **Status:** proposed 2026-11-04. Spike steps 1–3 done 2026-11-06
 (`docs/research/2026-11-06-virtual-model-spike.md`: Pi's retry measured, shadow
-agreement 74 % same / 10 % recovered / 16 % lost on 100 real turns). Step 4 —
-the decision — is open. No routing code has been written for this plan.
+agreement 74 % same / 10 % recovered / 16 % lost on 100 real turns). Step 4
+(two layers, state separation, attribution) measured 2026-11-07, same note §5.
+Step 5 — the decision — is open. No routing code has been written for this plan.
 
 AGENTS.md §11: one problem per plan. This plan covers ONE problem — the router keeps its own copy of "which model drives this turn" and a failover loop that has to be protected against its own sub-calls. Pi has offered a first-class feature for routing since 0.99.0. The measurements and the item-by-item mapping live in `docs/research/2026-11-04-virtual-models-fit.md`.
 
@@ -36,7 +37,8 @@ Spike, in order, each step stops the plan if it fails:
    routing change, no registration. Register a second virtual model (config-gated, off by default) whose `route()` only LOGS the choice it would make, next to the choice the current chain made, into the decision log. Measure agreement on real sessions; no routing change.
 3. ~~**Retry behaviour.**~~ Done 2026-11-06 against a local fake provider, §1 of
    the research note. Force a rate-limit and an empty response through a probe provider and record what Pi does (delay, number of attempts, what `failed` contains, whether the user sees an error).
-4. **Decision.** Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
+4. ~~**Two layers.**~~ Done 2026-11-07, note §5: state separated for direct, fork, resume and independent sessions; attribution in the assistant message names the physical model with or without a group layer; `previous` names the physical model, so the group must come from `state`.
+5. **Decision.** Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
 
 ## Open decisions (owner)
 
