@@ -23,9 +23,9 @@
 ### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
 
 The gate is live (`npm run lint`, step in the required `test` job,
-`docs/plans/2026-11-04-lint-gate.md`). Baseline: **810 findings / 130 (file, rule)
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: **803 findings / 123 (file, rule)
 entries** after the S1+S2+S3+S4 burn-down (was 1217 / 299; S3 took it to 919 / 159, the
-Prettier reformat to 915, S4 to 810 / 130). Each slice lowers
+Prettier reformat to 915, S4 to 810 / 130, S4 factory interfaces to 803 / 123). Each slice lowers
 `scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
 `test/lint-baseline.test.ts` in the same commit:
 
@@ -59,10 +59,11 @@ Prettier reformat to 915, S4 to 810 / 130). Each slice lowers
       in `src/utils.ts` differs from `||` only for an empty-string ref, which no
       caller reaches in practice.
 - [x] **S4** `explicit-function-return-type` — done: 105 of 116 annotated
-      (TypeScript-checker-driven codemod); the remaining 11 stay baselined — 7
+      (TypeScript-checker-driven codemod); the remaining 11 were baselined — 7
       factory functions whose inferred return type is a 100+ char inline object
-      (they get named return interfaces in a dedicated round) and 4 whose
-      honest type is `any` (S5 territory: `sessionCtx` getter, `readJson`,
+      (now named: `ContextUtils`, `FreeModelRegistration`, `LimitGlue`,
+      `ModelResolveGlue`, `ScanRunner`, `StreamProxy`, `WalkGroupSummary`) and 4 whose
+      honest type is `any` (still baselined) (S5 territory: `sessionCtx` getter, `readJson`,
       `hasConfiguredAuth`, `createGroupRegistration`). Owner decision D3: keep
       and burn down, explicit return types are treated as an API contract
 - [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,

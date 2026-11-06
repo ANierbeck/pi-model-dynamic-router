@@ -138,21 +138,21 @@ export function walkDecisions(lines: string[], decisions: WalkDecision[]): WalkR
   return rows;
 }
 
+/** One group's walk counters, as summarized by summarizeWalk. */
+export interface WalkGroupSummary {
+  turns: number;
+  success: number;
+  firstChoiceServed: number;
+  firstAttemptFailed: number;
+  noPool: number;
+  poolEarlier: number;
+  maxAttempts: number;
+  attemptsSum: number;
+}
+
 /** Per-group summary: how often the first choice served the turn, and how far the walk went. */
-export function summarizeWalk(rows: WalkRow[]) {
-  const groups: Record<
-    string,
-    {
-      turns: number;
-      success: number;
-      firstChoiceServed: number;
-      firstAttemptFailed: number;
-      noPool: number;
-      poolEarlier: number;
-      maxAttempts: number;
-      attemptsSum: number;
-    }
-  > = {};
+export function summarizeWalk(rows: WalkRow[]): Record<string, WalkGroupSummary> {
+  const groups: Record<string, WalkGroupSummary> = {};
   for (const r of rows) {
     const g = (groups[r.group] ??= {
       turns: 0,

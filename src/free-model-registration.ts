@@ -31,7 +31,11 @@ interface FreeModelRegistrationDeps {
   readonly resolveApiKey: (provider: string) => Promise<string | null>;
 }
 
-export function createFreeModelRegistration(rt: FreeModelRegistrationDeps) {
+export interface FreeModelRegistration {
+  registerFreeModelOnDemand: (provider: string, modelId: string) => Promise<boolean>;
+}
+
+export function createFreeModelRegistration(rt: FreeModelRegistrationDeps): FreeModelRegistration {
   /**
    * On-demand registration of a configured free model into Pi's model
    * registry. Statically-configured free models (cfg.providers[provider]

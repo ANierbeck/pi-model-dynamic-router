@@ -26,7 +26,19 @@ interface ContextUtilsDeps {
   readonly STALL_TIMEOUT_MS: number;
 }
 
-export function createContextUtils(d: ContextUtilsDeps) {
+export interface ContextUtils {
+  estimateContextTokens: (context: Context) => number;
+  getModelContextWindow: (ref: string) => number | null;
+  updateModelContextWindow: (ref: string, cw: number) => void;
+  getEmptyResponseTimeout: (ref: string) => number;
+  getStallTimeout: (_ref: string) => number;
+  getRateLimitWaitMaxMs: () => number;
+  extractLastUserPrompt: (context: Context) => string;
+  extractLastAssistantSnippet: (context: Context) => string | undefined;
+  isCompactionTurn: (context: Context) => boolean;
+}
+
+export function createContextUtils(d: ContextUtilsDeps): ContextUtils {
   function extractLastUserPrompt(context: Context): string {
     // Stripped of router narration (see stripRouterNarration in src/utils.ts):
     // this text becomes the classifier's "current request", and a subagent

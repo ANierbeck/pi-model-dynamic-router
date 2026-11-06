@@ -24,6 +24,7 @@ import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-drive
 import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import {
+  type Api,
   type Model,
   type Context,
   type SimpleStreamOptions,
@@ -64,7 +65,30 @@ interface StreamProxyDeps {
   readonly streamOrchestrator: StreamOrchestrator;
 }
 
-export function createStreamProxy(rt: StreamProxyDeps) {
+export interface StreamProxy {
+  groupStream: (
+    model: Model<Api>,
+    context: Context,
+    options?: SimpleStreamOptions
+  ) => AssistantMessageEventStream;
+  tryStream: (
+    ref: string,
+    context: Context,
+    options: SimpleStreamOptions | undefined
+  ) => Promise<{ stream: AssistantMessageEventStream; ref: string } | null>;
+  consumeWithDetection: (
+    upstream: AssistantMessageEventStream,
+    proxy: AssistantMessageEventStream,
+    timeoutMs: number,
+    stallMs: number,
+    ref: string,
+    hasTools: boolean
+  ) => Promise<{ ok: boolean; reason?: string; detail?: string | undefined; resetAtMs?: number }>;
+  isLocalProvider: (ref: string) => boolean;
+  localStreamLimit: () => number;
+}
+
+export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
   // ── Streaming helpers (hoisted for early group registration) ─────────
 
   /**

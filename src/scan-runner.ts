@@ -473,7 +473,12 @@ export function extractCapabilityProfiles(html: string): NonNullable<Cache['capa
   return profiles;
 }
 
-export function createScanRunner(rt: ScanRunnerDeps) {
+export interface ScanRunner {
+  populateLlmMatches: (allModelRefs: string[]) => Promise<void>;
+  scan: (force?: boolean) => Promise<void>;
+}
+
+export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
   // ── Helpers ────────────────────────────────────────────────────────────
 
   async function populateLlmMatches(allModelRefs: string[]): Promise<void> {
