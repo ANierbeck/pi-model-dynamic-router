@@ -8,6 +8,9 @@
 - The redundancy metric now skips windows made only of import/export scaffolding (owner decision 2a): after the reformat the import headers normalise and would otherwise raise `repeatedBlocks`. Baseline 45 -> 43, then 38 after the first dedupe round and 30 after the second (both measured on the reformatted tree).
 
 
+### Fixed
+- A pinned turn (`HINT: <model>` / `HINT: <group>`) now classifies its content, with the HINT head removed, and remembers that category. Before, the pin's classification carried no category, so `lastClassifiedCategory` kept the value from before the pin and a following unpinned "weiter" inherited a stale category (TODO "Pinned continuation does not update the category memory", found 2026-10-22). The pin still decides the model. Cost: one extra classifier call per pinned turn (cached like any other classification). An unknown `HINT` model or group that falls through to normal classification now uses the content's category; it used to ignore the content and route to `simple`. An automatic compaction hint is not a user pin and is not classified again.
+
 ### Changed
 - Lint burn-down S4 follow-up: the seven factory functions whose inferred return type was a 100+ character inline object now return named interfaces (`ContextUtils`, `FreeModelRegistration`, `LimitGlue`, `ModelResolveGlue`, `ScanRunner`, `StreamProxy`, `WalkGroupSummary`). Baseline 810 → 803 findings, 130 → 123 entries.
 - Lint burn-down S4 (`explicit-function-return-type`): 105 of the 116 flagged functions now carry an explicit return type, inferred and inserted by a TypeScript-checker-driven codemod. The 11 that stay baselined either are factory functions whose inferred return type is a 100+ character inline object (a dedicated round will name proper return interfaces) or have `any` as their honest type (S5 territory). Baseline 915 → 810 findings, 159 → 130 entries.

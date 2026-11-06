@@ -519,27 +519,27 @@
     {
       "file": "src/stream-orchestrator.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 13
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-unsafe-argument",
-      "count": 15
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 13
-    },
-    {
-      "file": "src/stream-orchestrator.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
       "count": 12
     },
     {
       "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-argument",
+      "count": 9
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-assignment",
+      "count": 8
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
+      "rule": "@typescript-eslint/no-unsafe-call",
+      "count": 8
+    },
+    {
+      "file": "src/stream-orchestrator.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 44
+      "count": 25
     },
     {
       "file": "src/stream-orchestrator.ts",

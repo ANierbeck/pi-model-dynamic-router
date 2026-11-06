@@ -482,6 +482,24 @@ export function detectHintDirectly(prompt: string): HintClassificationResult | n
 }
 
 /**
+ * The HINT head of a pinned prompt: the marker, an optional verb, an optional
+ * group keyword after a verb, and the pinned target. Same shape as the head
+ * detectHintDirectly accepts, so the two agree on what a pin is.
+ */
+const HINT_HEAD =
+  /^\s*(?:HINT|MHINT|MODEL[-_]HINT)\b\s*(?::|(?=\s*(?:use|nutze|verwende|benutz(?:e)?(?:\s+modell)?)\b))\s*:?\s*(?:(?:use|nutze|verwende|benutz(?:e)?)(?:\s+modell)?\s+(?:(?:group|gruppe)\s+)?)?\S+/i;
+
+/**
+ * The turn's content behind a HINT pin, with the head removed. The pin decides
+ * the model; the content is what the classifier must see, and it must not see
+ * the marker: a prompt that carries a HINT lets the LLM answer with a `hint:*`
+ * category (see the cloud path's containsHintMarker guard).
+ */
+export function stripHintHead(prompt: string): string {
+  return prompt.replace(HINT_HEAD, '').trim();
+}
+
+/**
  * Converts a raw LLM `hint:*` classification (e.g. {category:
  * 'hint:group:tactical', reason}) into a processed HintClassificationResult
  * (hintType + hintTarget). Shared by the Ollama path and the cloud fallback
