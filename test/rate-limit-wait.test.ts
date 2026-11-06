@@ -449,6 +449,319 @@ describe('driveStream: bounded wait-for-short-reset', () => {
   }, 30_000);
 });
 
+// ── post-wait retry block (mutation slice 2, docs/mutation-data/slice2-triage/core.md A) ──
+//
+// The wait-retry block's own bookkeeping had no pins: the grace period after
+// the reset, the one-wait-per-walk guard, `recordOk` after a successful retry
+// and the null retry target. Each case names the behaviour a surviving mutant
+// changes.
+
+/** A model whose script depends on the wall clock: 429 until `resetAtMs`. */
+function resetAwareScript(resetAtMs: number, successText: string) {
+  return () =>
+    Date.now() < resetAtMs ? rateLimitErrorEvents(resetAtMs) : healthyEvents(successText);
+}
+
+describe('driveStream: post-wait retry bookkeeping', () => {
+  it('retries only AFTER the announced reset has passed', async () => {
+    const resetAtMs = Date.now() + 1500;
+    await withIsolatedRouter(
+      {
+        ...baseCfg,
+        gdpval_builtin: { 'limited-model': 1000, 'healthy-model': 900 },
+        rate_limit_wait_max_ms: 4_000,
+      },
+      async (defaultExport) => {
+        const { pi, onHandlers } = makePiCtx();
+        defaultExport(pi);
+
+        const limited = {
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const healthy = {
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const mock = makeRegistry({
+          'lim-provider/limited-model': limited,
+          'ok-provider/healthy-model': healthy,
+        });
+        // The retry is answered by the clock: a retry that fires before the
+        // reset gets another 429 and the walk cascades.
+        mock.streamSimple.mockImplementation((model: any) => {
+          const ref =
+            model.id === 'limited-model'
+              ? 'lim-provider/limited-model'
+              : 'ok-provider/healthy-model';
+          mock.calls.push(ref);
+          const events =
+            model.id === 'limited-model'
+              ? resetAwareScript(resetAtMs, 'served after the reset')()
+              : healthyEvents('served by the fallback');
+          return (async function* () {
+            for (const ev of events) yield ev;
+          })();
+        });
+
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const events = await drainStream(
+          defaultExport.groupStream(
+            { provider: 'standard', id: 'standard' },
+            { messages: [{ role: 'user', content: 'do work' }] },
+            {}
+          )
+        );
+        const text = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+
+        // The retry happened after the reset, so the same model answered.
+        expect(text).toContain('served after the reset');
+        expect(mock.calls).toEqual(['lim-provider/limited-model', 'lim-provider/limited-model']);
+      }
+    );
+  }, 30_000);
+
+  it('clears the cooldown of a model whose post-wait retry succeeded', async () => {
+    await withIsolatedRouter(
+      {
+        ...baseCfg,
+        gdpval_builtin: { 'limited-model': 1000, 'healthy-model': 900 },
+        rate_limit_wait_max_ms: 4_000,
+      },
+      async (defaultExport) => {
+        const { pi, onHandlers } = makePiCtx();
+        defaultExport(pi);
+
+        const limited = {
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const healthy = {
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const mock = makeRegistry({
+          'lim-provider/limited-model': limited,
+          'ok-provider/healthy-model': healthy,
+        });
+        mock.scripts['lim-provider/limited-model'] = [
+          rateLimitErrorEvents(Date.now() + 1500),
+          healthyEvents('turn one answered'),
+          healthyEvents('turn two answered'),
+        ];
+
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const groupModel = { provider: 'standard', id: 'standard' };
+        const context: any = { messages: [{ role: 'user', content: 'do work' }] };
+
+        const turnOne = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+        const turnTwo = await drainStream(defaultExport.groupStream(groupModel, context, {}));
+
+        const textOf = (events: AssistantMessageEvent[]) =>
+          events
+            .filter((e: any) => e.type === 'text_delta')
+            .map((e: any) => e.delta ?? '')
+            .join('');
+        expect(textOf(turnOne)).toContain('turn one answered');
+        expect(textOf(turnTwo)).toContain('turn two answered');
+        // Turn 2 must attempt the recovered model again instead of skipping it
+        // as still-limited: 2 calls on turn 1 (429 + retry) + 1 on turn 2.
+        expect(mock.calls.filter((c) => c === 'lim-provider/limited-model')).toHaveLength(3);
+      }
+    );
+  }, 30_000);
+
+  it('waits at most ONCE per walk — the second near-reset 429 cascades instead', async () => {
+    await withIsolatedRouter(
+      {
+        ...baseCfg,
+        gdpval_builtin: { 'first-model': 1000, 'second-model': 990, 'third-model': 900 },
+        rate_limit_wait_max_ms: 4_000,
+      },
+      async (defaultExport) => {
+        const { pi, onHandlers } = makePiCtx();
+        defaultExport(pi);
+
+        const model = (provider: string, id: string) => ({
+          provider,
+          id,
+          api: 'test-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        });
+        const mock = makeRegistry({
+          'first-provider/first-model': model('first-provider', 'first-model'),
+          'second-provider/second-model': model('second-provider', 'second-model'),
+          'third-provider/third-model': model('third-provider', 'third-model'),
+        });
+        // Both limited models announce a near reset — computed at CALL time,
+        // so the second one is still near when the walk reaches it. The first
+        // model's retry fails with a reset far outside the wait budget.
+        const seen: Record<string, number> = {};
+        mock.streamSimple.mockImplementation((model: any) => {
+          const ref =
+            model.id === 'first-model'
+              ? 'first-provider/first-model'
+              : model.id === 'second-model'
+                ? 'second-provider/second-model'
+                : 'third-provider/third-model';
+          mock.calls.push(ref);
+          seen[ref] = (seen[ref] ?? 0) + 1;
+          const events =
+            model.id === 'first-model'
+              ? rateLimitErrorEvents(Date.now() + (seen[ref] === 1 ? 1500 : 600_000))
+              : model.id === 'second-model'
+                ? seen[ref] === 1
+                  ? rateLimitErrorEvents(Date.now() + 1500)
+                  : healthyEvents('second retry must never run')
+                : healthyEvents('third model answered');
+          return (async function* () {
+            for (const ev of events) yield ev;
+          })();
+        });
+
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const events = await drainStream(
+          defaultExport.groupStream(
+            { provider: 'standard', id: 'standard' },
+            { messages: [{ role: 'user', content: 'do work' }] },
+            {}
+          )
+        );
+        const text = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+
+        // Exactly one wait in this walk; the second limited model is passed
+        // over and the third answers.
+        expect(text.match(/— waiting \d+s, then retrying/g) ?? []).toHaveLength(1);
+        expect(text).toContain('third model answered');
+        // The second limited model is attempted once and then passed over —
+        // no second wait, no retry.
+        expect(mock.calls.filter((c) => c === 'second-provider/second-model')).toHaveLength(1);
+        expect(text).not.toContain('second retry must never run');
+      }
+    );
+  }, 30_000);
+
+  it('survives a retry whose upstream call throws, without replacing the aggregate', async () => {
+    await withIsolatedRouter(
+      {
+        ...baseCfg,
+        gdpval_builtin: { 'limited-model': 1000, 'healthy-model': 900 },
+        rate_limit_wait_max_ms: 4_000,
+      },
+      async (defaultExport) => {
+        const { pi, onHandlers } = makePiCtx();
+        defaultExport(pi);
+
+        const limited = {
+          provider: 'lim-provider',
+          id: 'limited-model',
+          api: 'lim-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const healthy = {
+          provider: 'ok-provider',
+          id: 'healthy-model',
+          api: 'ok-api',
+          contextWindow: 1_000_000,
+          cost: testModelCost(),
+        };
+        const mock = makeRegistry({
+          'lim-provider/limited-model': limited,
+          'ok-provider/healthy-model': healthy,
+        });
+        let limitedCalls = 0;
+        mock.streamSimple.mockImplementation((model: any) => {
+          const ref =
+            model.id === 'limited-model'
+              ? 'lim-provider/limited-model'
+              : 'ok-provider/healthy-model';
+          mock.calls.push(ref);
+          if (model.id === 'limited-model') {
+            limitedCalls += 1;
+            // The retry (second call) throws like a bridge that died.
+            if (limitedCalls === 2) throw new Error('bridge exploded');
+            const events = rateLimitErrorEvents(Date.now() + 1500);
+            return (async function* () {
+              for (const ev of events) yield ev;
+            })();
+          }
+          const events = healthyEvents('served by the fallback');
+          return (async function* () {
+            for (const ev of events) yield ev;
+          })();
+        });
+
+        const ctx: any = {
+          modelRegistry: mock.registry,
+          cwd: os.tmpdir(),
+          ui: { setFooter: vi.fn() },
+        };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const events = await drainStream(
+          defaultExport.groupStream(
+            { provider: 'standard', id: 'standard' },
+            { messages: [{ role: 'user', content: 'do work' }] },
+            {}
+          )
+        );
+        const text = events
+          .filter((e: any) => e.type === 'text_delta')
+          .map((e: any) => e.delta ?? '')
+          .join('');
+
+        // A null retry target must not be dereferenced (that would throw out
+        // of the walk and replace the cascade with "Routing failed"), and the
+        // walk must carry on to the next candidate.
+        expect(text).toContain('served by the fallback');
+        expect(text).not.toContain('Routing failed');
+      }
+    );
+  }, 30_000);
+});
+
 describe('RateLimitManager.listLimits / clearAllLimits (backing /router cooldowns)', () => {
   it('lists active cooldowns shortest-first and clears them all', () => {
     const mgr = new RateLimitManager([60_000], [30_000], 5, {} as any);

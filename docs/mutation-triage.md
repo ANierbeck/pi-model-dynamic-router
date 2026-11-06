@@ -1373,15 +1373,16 @@ re-running the mutant:
 | `test/drive-stream-cascade-pins.test.ts` (new) | 10 | fallback-cascade head, context-overflow short-circuit, all-behind-breaker probe gate, larger-candidates filter, compaction headline (`probe.md`, `core.md` C) |
 | `test/cooldown-collapse-retried-narration.test.ts` (+6) | 9 total | wait-vs-force-retry guard, wait duration, shortest-cooldown tie-break, throwing retry, live winner signal, no aggregate after recovery (`collapse.md` A/B/D/E/F/G) |
 | `test/walk-skip-reasons.test.ts` (new) + 1 case in `test/ollama-fallback-skip-when-down.test.ts` | 4 | pre-flight skip reasons (breaker seconds, ollama probe, context window) and the thrown-open narration (`pre.md` D/E/F/G/H) |
+| `test/rate-limit-wait.test.ts` (+4) | 9 total | post-wait retry: the grace period after the reset, one wait per walk, `recordOk` after a successful retry, a throwing retry (`core.md` A) |
 
 **Empirical verification (hand-applied mutants from the instrumenter report,
 targeted file only, baseline green in the same copy):**
 
 | verdict | mutants (line on current main) |
 | --- | --- |
-| KILLED by the new tests | 1149/1152 filter + narration: 719, 726, 728, 729, 742, 743, 744, 745, 749 · collapse: 1487 (`<`→`<=`), 1504 (`&&`→`\|\|`, `>0`→`<=0`, `<=`→`<`, `*1000`→`/1000`), 1512 (`+2000`→`-2000`, `*1000`→`/1000`), 1532 (`!target`→`target`, abandon removed), 1544 (`result.ok`→true/false), 1549 (`=== 'aborted'`→`!==`), 1550 (`&&`→true, `===`→`!==`) · pre-flight: 912 (max→min, `/`→`*`, `-`→`+`), 913/924/936/970 (reason and narration strings emptied), 952 (`\|\|`→`&&`) |
-| still surviving — EQUIVALENT in reachable states | 720 (`slice(i+1)`→`candidates`: the overflowing ref is on cooldown by then) · 1043/1044 (`waitMaxMs > 0`→`true`/`>= 0`: with a cap of 0 the second conjunct is false anyway) |
-| still surviving — needs a different fixture | 1070 (abandon removed on a null retry target: needs a signal-respecting stream, same class as 1059) · 1071 (`if (target)`→`true`: needs a wait-branch retry that returns null) · 1089 (`observeFailure` on a non-`provider_error` retry: needs blocklist state observation) · 751 (compaction message without detail: needs a `context_overflow` with a falsy detail) |
+| KILLED by the new tests | 1149/1152 filter + narration: 719, 726, 728, 729, 742, 743, 744, 745, 749 · wait-retry: 1067 (`!rateLimitWaitUsed`→`rateLimitWaitUsed`, `resetInMs <= waitMaxMs`→`>`), 1068 (`rateLimitWaitUsed` `true`→`false`), 1077 (`resetInMs + 2000`→`- 2000`) · collapse: 1487 (`<`→`<=`), 1504 (`&&`→`\|\|`, `>0`→`<=0`, `<=`→`<`, `*1000`→`/1000`), 1512 (`+2000`→`-2000`, `*1000`→`/1000`), 1532 (`!target`→`target`, abandon removed), 1544 (`result.ok`→true/false), 1549 (`=== 'aborted'`→`!==`), 1550 (`&&`→true, `===`→`!==`) · pre-flight: 912 (max→min, `/`→`*`, `-`→`+`), 913/924/936/970 (reason and narration strings emptied), 952 (`\|\|`→`&&`) |
+| still surviving — EQUIVALENT in reachable states | 720 (`slice(i+1)`→`candidates`: the overflowing ref is on cooldown by then) · 1043/1044 and 1067 `waitMaxMs > 0`→`true`/`>= 0` (with a cap of 0 the second conjunct is false anyway) · 1067 `resetInMs > 0`→`>= 0` (a reset exactly at "now" is not constructible) · 1069 (`resetInMs / 1000`→`* 1000`: `waitSecs` only feeds the narration number) |
+| still surviving — needs a different fixture | 1070 / 1082 / 1084 (abandon and `retrySucceeded` on a null retry target: need a signal-respecting stream, same class as 1059) · 1071 (`if (target)`→`true`: needs a wait-branch retry that returns null) · 1089 (`observeFailure` on a non-`provider_error` retry: needs blocklist state observation) · 751 (compaction message without detail: needs a `context_overflow` with a falsy detail) |
 
 Method note: `scripts/mutation-recheck.ts` was used for the first region
 (128 mutants, 50 killed by the cascade/overflow/breaker tests) but proved too
@@ -1391,12 +1392,12 @@ full timeouts. Those mutants were applied individually from the instrumenter
 report and run against the targeted file, which is the same kill criterion
 (file red on the mutated tree, green on the identical baseline copy).
 
-Not covered yet (the rest of the 205 REAL GAPs): the rate-limit wait-retry
-block (`core.md` A: reset-aware retry timing, one-wait-per-walk, retry-abandon,
-`recordOk` after a successful retry), the repetition/truncation main-loop
-narrations (`core.md` D/E), the paid rate-limit labels (`core.md` F), the
-recorded-state seams (`recordStreamFailure`/`observeFailure`), and the
-remaining narration lookahead guards (`pre.md` D).
+Not covered yet (the rest of the 205 REAL GAPs): the abort-during-retry case
+(`core.md` A), the repetition/truncation main-loop narrations (`core.md` D/E),
+the paid rate-limit labels (`core.md` F), the recorded-state seams
+(`recordStreamFailure`/`observeFailure`), the local-slot release after a
+wait-retry (`core.md` A, needs the ollama mock), and the remaining narration
+lookahead guards (`pre.md` D).
 
 ### Slice 1 verdicts (272)
 
