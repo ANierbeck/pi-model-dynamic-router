@@ -131,6 +131,16 @@ Same problem as review item I3 below, kept as ONE entry there (measured now:
 the 2026-11-03 incident is the live case). Structural answer proposed in
 `docs/plans/2026-11-04-virtual-models-routing.md`.
 
+The spike's steps 1–3 are done (2026-11-06,
+`docs/research/2026-11-06-virtual-model-spike.md`). Measured: on 100 real
+turns a pure virtual model would have finished 74 % unchanged, recovered 10 %
+through Pi's retry, and lost 16 % — 14 of them because Pi treats a
+`Claude quota exceeded` 429 as final, 2 because the chain needed eight
+candidates and Pi allows four. Pi also has no stall detection and does not
+retry a well-formed empty response. So the in-request failover has to stay
+and the migration candidate is the turn state (`route()` + `state`), not the
+failover. Step 4 (migrate / hybrid / stay) is the owner's decision.
+
 ### ✅ **`delegation.expensive_groups` omitted `planning` — CLOSED 2026-11-02 (already fixed)**
 
 The shipped `router-config.json` now lists `["planning", "code_complex"]`,

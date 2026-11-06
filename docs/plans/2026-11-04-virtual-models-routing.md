@@ -1,6 +1,9 @@
 # Route through Pi's Virtual Models: evaluate whether the router's own turn-state machine can go
 
-**Status:** proposed 2026-11-04. Nothing is decided; the first step is a read-only shadow spike (see Solution). No code has been written for this plan.
+**Status:** proposed 2026-11-04. Spike steps 1–3 done 2026-11-06
+(`docs/research/2026-11-06-virtual-model-spike.md`: Pi's retry measured, shadow
+agreement 74 % same / 10 % recovered / 16 % lost on 100 real turns). Step 4 —
+the decision — is open. No routing code has been written for this plan.
 
 AGENTS.md §11: one problem per plan. This plan covers ONE problem — the router keeps its own copy of "which model drives this turn" and a failover loop that has to be protected against its own sub-calls. Pi has offered a first-class feature for routing since 0.99.0. The measurements and the item-by-item mapping live in `docs/research/2026-11-04-virtual-models-fit.md`.
 
@@ -26,9 +29,13 @@ What it does NOT give us, and what the spike must quantify: the router's failove
 
 Spike, in order, each step stops the plan if it fails:
 
-1. **Inventory.** Classify every in-request behaviour of `driveStream` (the 17 incident-driven groups in `test/consolidated-stream-error-pins.test.ts`, local slots, breaker, blocklist, narration, escalation, HINT) as: Pi does it natively / reproducible between requests via `route()` + `message_end` events / lost.
-2. **Shadow mode.** Register a second virtual model (config-gated, off by default) whose `route()` only LOGS the choice it would make, next to the choice the current chain made, into the decision log. Measure agreement on real sessions; no routing change.
-3. **Retry behaviour.** Force a rate-limit and an empty response through a probe provider and record what Pi does (delay, number of attempts, what `failed` contains, whether the user sees an error).
+1. ~~**Inventory.**~~ Done 2026-11-06, §3 of the research note. Classify every in-request behaviour of `driveStream` (the 17 incident-driven groups in `test/consolidated-stream-error-pins.test.ts`, local slots, breaker, blocklist, narration, escalation, HINT) as: Pi does it natively / reproducible between requests via `route()` + `message_end` events / lost.
+2. ~~**Shadow mode.**~~ Done 2026-11-06 as an offline report instead of a
+   registered second model: `scripts/virtual-route-shadow.ts` replays the real
+   logs and answers per turn whether Pi's retry would have finished it. No
+   routing change, no registration. Register a second virtual model (config-gated, off by default) whose `route()` only LOGS the choice it would make, next to the choice the current chain made, into the decision log. Measure agreement on real sessions; no routing change.
+3. ~~**Retry behaviour.**~~ Done 2026-11-06 against a local fake provider, §1 of
+   the research note. Force a rate-limit and an empty response through a probe provider and record what Pi does (delay, number of attempts, what `failed` contains, whether the user sees an error).
 4. **Decision.** Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
 
 ## Open decisions (owner)
