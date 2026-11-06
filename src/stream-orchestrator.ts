@@ -100,7 +100,11 @@ function extractContextWindowFromError(detail: string | undefined): {
   return { actualContextWindow: cw, requestedTokens: req };
 }
 
-import { type ClassificationResult } from './content-classifier.ts';
+import {
+  type ClassificationResult,
+  type FullClassificationResult,
+  stripHintHead,
+} from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
 import type { CostTracker } from './cost-tracker.ts';
 import {
@@ -298,7 +302,7 @@ export interface StreamOrchestratorContext {
    */
   limitFreeDayCap?: (candidates: string[], untilMs: number) => number;
   // Classification helpers
-  classifyPrompt: (prompt: string, opts: any) => Promise<any>;
+  classifyPrompt: (prompt: string, opts: any) => Promise<FullClassificationResult>;
   detectHintDirectly: (prompt: string) => any;
   getGroupForCategory: (category: string, cfg?: Config) => string;
   // Context helpers
@@ -485,9 +489,16 @@ export class StreamOrchestrator {
           classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
 
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
+        // A user pin decides the model, not the category: the turn's content
+        // still has one, and that is what the next unpinned turn inherits.
+        const contentClassification = await this.classifyBehindPin(
+          classification,
+          prompt ?? '',
+          classifyOpts
+        );
 
-        if ('category' in classification) {
-          if (!inSubCall()) this.ctx.lastClassifiedCategory = classification.category;
+        if ('category' in contentClassification) {
+          if (!inSubCall()) this.ctx.lastClassifiedCategory = contentClassification.category;
         }
 
         // HINT override
@@ -690,7 +701,7 @@ export class StreamOrchestrator {
           }
         }
 
-        const normalClassification = classification as ClassificationResult;
+        const normalClassification = contentClassification as ClassificationResult;
         let targetGroup: string;
         if (this.ctx.escalation.level !== 'standard') {
           targetGroup = this.ctx.escalation.level;
@@ -814,6 +825,33 @@ export class StreamOrchestrator {
   }
 
   /** Terminates `proxy` with a router error for a throw the routing code did not expect. */
+  /**
+   * The category of a pinned turn's content (see groupStream). A user pin
+   * (HINT model/group) yields a hint with no category, so the content is
+   * classified again with the HINT head removed. Automatic hints (compaction
+   * continuity) are the router's own choice, not a user pin, and pass through.
+   * A failed content classification must not fail a turn whose pin is valid:
+   * the memory keeps its previous value and the pin routes as before.
+   */
+  private async classifyBehindPin(
+    classification: FullClassificationResult,
+    prompt: string,
+    classifyOpts: Record<string, unknown>
+  ): Promise<FullClassificationResult> {
+    if (!('hintType' in classification) || classification.origin === 'auto') return classification;
+    const content = stripHintHead(prompt);
+    if (!content) return classification;
+    try {
+      return await this.ctx.classifyPrompt(content, classifyOpts);
+    } catch (err) {
+      warnLog(
+        '[dynamic] pinned turn: content classification failed, keeping previous category',
+        err
+      );
+      return classification;
+    }
+  }
+
   private failStream(
     proxy: AssistantMessageEventStream,
     err: unknown,

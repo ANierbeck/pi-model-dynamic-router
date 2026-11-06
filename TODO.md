@@ -342,7 +342,9 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
   2026-11-06: the v2 taxonomy and the five-group layout fixed the category
   set (`docs/plans/2026-10-25-category-group-mismatch.md`); a new category
   is a taxonomy decision, not an open task.
-- [ ] **Pinned continuation does not update the category memory** (found 2026-10-22,
+- [x] ~~Pinned continuation does not update the category memory~~ FIXED 2026-11-06
+  (`fix/pinned-turn-category-memory`, red-first in `test/orchestrator-hint-wiring.test.ts`,
+  `test/strip-hint-head.test.ts`). Original report (found 2026-10-22,
   code read, not yet reproduced live). A `HINT:` model pin bypasses the
   classifier, so the turn returns no `category`, and
   `lastClassifiedCategory` (`src/stream-orchestrator.ts:419`) keeps the value

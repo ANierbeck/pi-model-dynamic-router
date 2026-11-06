@@ -1300,3 +1300,114 @@ describe('HINT matching against the discovered pool only (registry does not know
     );
   });
 });
+
+// ── a pinned turn still has a category (TODO: pinned continuation) ────────
+//
+// A user pin (HINT: <model> / HINT: <group>) decides the MODEL. The turn's
+// content still has a category, and that category is what the next unpinned
+// turn inherits. Before the fix, the pin classification carried no category,
+// so lastClassifiedCategory kept the value from before the pin.
+
+const PIN_REF = 'claude-bridge/claude-opus-5-5';
+const pinBase = {
+  discovered: [PIN_REF],
+  known: [PIN_REF],
+  gdp: { [PIN_REF]: 1900 },
+  keyed: ['mistral', 'openrouter'],
+};
+const modelPin = { hintType: 'model', hintTarget: PIN_REF, reason: 'pin', confidence: 1.0 };
+const contentCategory = (category: string) => ({ category, reason: 'content', confidence: 0.9 });
+
+describe('a pinned turn still classifies its content', () => {
+  it('a model pin keeps the pin and remembers the content category', async () => {
+    const w = world({
+      ...pinBase,
+      classification: modelPin,
+      lastCategory: 'planning',
+      prompt: `HINT: ${PIN_REF} refactor the rate limiter`,
+    });
+    w.classifyPrompt
+      .mockResolvedValueOnce(modelPin as any)
+      .mockResolvedValueOnce(contentCategory('standard') as any);
+    const d = await w.open();
+    expect(d.candidates[0]).toBe(PIN_REF);
+    expect(d.label).toBe(`MHINT: ${PIN_REF}`);
+    expect(w.ctx.lastClassifiedCategory).toBe('standard');
+  });
+
+  it('the content classification receives the prompt without the HINT head', async () => {
+    const w = world({
+      ...pinBase,
+      classification: modelPin,
+      prompt: `HINT: ${PIN_REF} refactor the rate limiter`,
+    });
+    w.classifyPrompt
+      .mockResolvedValueOnce(modelPin as any)
+      .mockResolvedValueOnce(contentCategory('standard') as any);
+    await w.open();
+    expect(w.classifyPrompt).toHaveBeenCalledTimes(2);
+    const contentCall = w.classifyPrompt.mock.calls[1] as unknown as [string, any];
+    expect(contentCall[0]).toBe('refactor the rate limiter');
+  });
+
+  it('a group pin keeps the group and remembers the content category', async () => {
+    const groupPin = { hintType: 'group', hintTarget: 'planning', reason: 'pin', confidence: 1.0 };
+    const w = world({
+      resolvable: {
+        planning: { candidates: ['claude-bridge/opus'], selected: 'claude-bridge/opus' },
+      },
+      classification: groupPin,
+      lastCategory: 'design',
+      prompt: 'HINT: use group planning\nfix the typo in the readme',
+    });
+    w.classifyPrompt
+      .mockResolvedValueOnce(groupPin as any)
+      .mockResolvedValueOnce(contentCategory('simple') as any);
+    const d = await w.open();
+    expect(d.group).toBe('planning');
+    expect(w.classifyPrompt.mock.calls[1]).toEqual([
+      'fix the typo in the readme',
+      expect.anything(),
+    ]);
+    expect(w.ctx.lastClassifiedCategory).toBe('simple');
+  });
+
+  it('an unknown HINT model falls back to the content category, not to a category-less default', async () => {
+    const unknown = {
+      hintType: 'model',
+      hintTarget: 'no-such-model',
+      reason: 'pin',
+      confidence: 1.0,
+    };
+    const w = world({
+      resolvable: {
+        standard: { candidates: ['mistral/glm'], selected: 'mistral/glm' },
+        simple: { candidates: ['openrouter/free'], selected: 'openrouter/free' },
+      },
+      classification: unknown,
+      prompt: 'HINT: no-such-model refactor the rate limiter',
+    });
+    w.classifyPrompt
+      .mockResolvedValueOnce(unknown as any)
+      .mockResolvedValueOnce(contentCategory('standard') as any);
+    const d = await w.open();
+    expect(d.group).toBe('standard');
+    // standard's own fallback group (simple) follows its candidates
+    expect(d.candidates).toEqual(['mistral/glm', 'openrouter/free']);
+  });
+
+  it('an automatic (compaction) hint is not a user pin: no second classification', async () => {
+    // Characterisation guard, green by design: the compaction continuity hint
+    // is the router's own choice, its content is a summary, not a user turn.
+    const auto = {
+      hintType: 'model',
+      hintTarget: PIN_REF,
+      reason: 'auto',
+      confidence: 1.0,
+      origin: 'auto',
+    };
+    const w = world({ ...pinBase, classification: auto, prompt: 'compact the session' });
+    await w.open();
+    expect(w.classifyPrompt).toHaveBeenCalledTimes(1);
+  });
+});
