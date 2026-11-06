@@ -9,6 +9,7 @@
 
 
 ### Changed
+- Lint burn-down S4 follow-up: the seven factory functions whose inferred return type was a 100+ character inline object now return named interfaces (`ContextUtils`, `FreeModelRegistration`, `LimitGlue`, `ModelResolveGlue`, `ScanRunner`, `StreamProxy`, `WalkGroupSummary`). Baseline 810 → 803 findings, 130 → 123 entries.
 - Lint burn-down S4 (`explicit-function-return-type`): 105 of the 116 flagged functions now carry an explicit return type, inferred and inserted by a TypeScript-checker-driven codemod. The 11 that stay baselined either are factory functions whose inferred return type is a 100+ character inline object (a dedicated round will name proper return interfaces) or have `any` as their honest type (S5 territory). Baseline 915 → 810 findings, 159 → 130 entries.
 - Mutation slice 2 (driveStream) triaged: all 329 non-killed mutants have verdicts (205 real gaps → follow-up test round, 118 equivalent, 1 false survivor, 1 dead store). The dead `pushError` on the genuine-overflow path was removed (AGENTS.md §7). Per-cluster inventory with test sketches: `docs/mutation-data/slice2-triage/`.
 

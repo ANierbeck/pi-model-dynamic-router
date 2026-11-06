@@ -42,7 +42,30 @@ interface LimitGlueDeps {
   readonly updateErrorStatusLine: () => void;
 }
 
-export function createLimitGlue(d: LimitGlueDeps) {
+export interface LimitGlue {
+  getM: (ref: string) => Metrics;
+  costMux: (prov: string) => number;
+  isLimited: (ref: string) => boolean;
+  limitSecs: (ref: string) => number;
+  effCost: (ref: string) => number | 'unknown';
+  clearLimit: (ref: string) => void;
+  recordOk: (ref: string) => void;
+  observeFailure: (ref: string, failureText: string) => void;
+  recordStreamFailure: (
+    ref: string,
+    reason: string,
+    resetAtMs?: number,
+    errorText?: string
+  ) => { hardLimited: boolean };
+  formatResetMsg: (ref: string, resetAtMs: number | undefined) => string;
+  limitFreeDayCap: (candidates: string[], untilMs: number) => number;
+  updateMetrics: (ref: string, latMs: number, tokens: number, durMs: number) => void;
+  lookupPrice: (ref: string) => { input: number | 'unknown'; output: number | 'unknown' } | null;
+  formatBlocklist: () => string;
+  getUsage: (ref: string, days: number) => number;
+}
+
+export function createLimitGlue(d: LimitGlueDeps): LimitGlue {
   // ── Metrics ────────────────────────────────────────────────────────────
 
   function getM(ref: string): Metrics {
