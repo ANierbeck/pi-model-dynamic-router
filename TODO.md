@@ -455,11 +455,15 @@ judged sufficient.
 
 ### Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator (OWNER-MANDATED 2026-10-15 — do this first after laya-spike merges to main)
 
-> **Status 2026-11-05:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
+> **Status 2026-11-06:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
 > (`driveStream`) triaged 2026-11-05: of 329 non-killed mutants, 205 REAL GAP
-> (follow-up red-first test round — sketches in
-> `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 false survivor,
-> 1 dead store removed. Open: the slice-2 test round and slice 3 (helpers).
+> (sketches in `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 false
+> survivor, 1 dead store removed. The slice-2 test round started 2026-11-06:
+> cascade head / overflow / breaker-probe gate, the collapse guard+duration+
+> tie-break+signal cases and the pre-flight skip reasons are pinned (30 mutants
+> verified killed, see `docs/mutation-triage.md`); the wait-retry block, the
+> repetition/truncation narrations, the paid labels and the recorded-state
+> seams are still open. Then slice 3 (helpers).
 > Plan: `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
 
 Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.

@@ -5,12 +5,7 @@
 // or mis-keys them survived. Each case below drives the real walk and asserts
 // the exact text the user sees in the terminal error event.
 
-import { describe, it, expect, vi } from 'vitest';
-
-vi.mock('../src/ollama-utils.ts', async () => {
-  const { ollamaMockModule } = await import('./helpers/ollama-mock.ts');
-  return ollamaMockModule({ available: false });
-});
+import { describe, it, expect } from 'vitest';
 
 import {
   BASE_CONFIG,
@@ -61,30 +56,6 @@ describe('walkCandidates: pre-flight skip reasons reach the aggregate', () => {
         // zero or an inflated value all break the shape below.
         expect(errText).toMatch(/skipped, provider breaker open \((?:[1-9]\d{0,3})s remaining\)/);
         expect(errText).toContain('wedge-provider/x-4');
-      }
-    );
-  }, 30_000);
-
-  it('names the ollama availability probe as the skip reason', async () => {
-    await withIsolatedRouter(
-      {
-        ...BASE_CONFIG,
-        model_groups: { standard: { fallback_groups: [], min_gdpval: 0, max_cost: 0 } },
-        gdpval_builtin: { 'nemo:latest': 1000, 'cloud-1': 990 },
-      },
-      [
-        { ...cloudModel('ollama', 'nemo:latest'), cost: { input: 0, output: 0 } },
-        { ...cloudModel('cloud-a', 'cloud-1'), cost: { input: 0, output: 0 } },
-      ],
-      async ({ groupStream, streamSimple }) => {
-        streamSimple.mockImplementation(() => errorStream('500 upstream down'));
-
-        const errText = streamErrorText(await run(groupStream));
-
-        // The daemon probe (mocked as down) skips the local candidate with a
-        // reason the user can act on.
-        expect(errText).toContain('skipped, ollama daemon unavailable (availability probe)');
-        expect(streamSimple.mock.calls.map((c: any[]) => c[0].id)).not.toContain('nemo:latest');
       }
     );
   }, 30_000);

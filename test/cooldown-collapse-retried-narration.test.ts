@@ -403,6 +403,9 @@ describe('cooldown-collapse: retry bookkeeping', () => {
         expect(errText).toContain('candidate(s) failed');
         expect(errText).toContain('lim-provider/lim-model');
         expect(errText).toContain('bridge exploded');
+        // A null retry target must not be dereferenced: that would throw out
+        // of the walk and replace the aggregate with "Routing failed".
+        expect(errText).not.toContain('Routing failed');
       },
       { throwOnRetryOf: 'lim-provider/lim-model' }
     );

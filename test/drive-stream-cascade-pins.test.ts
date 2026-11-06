@@ -234,3 +234,99 @@ describe('driveStream: all-behind-breaker probe gate', () => {
     );
   }, 30_000);
 });
+
+describe('driveStream: context-overflow → larger candidates', () => {
+  // The provider's own numbers, not our estimate: a parseable overflow error
+  // names the model's real window and the tokens the request needed.
+  const OVERFLOW_DETAIL =
+    'prompt is too long: 400: {"message":"This endpoint\'s maximum context length is 196608 tokens. However, you requested about 197318 tokens","code":400}';
+  const overflowStream = () => errorStream(OVERFLOW_DETAIL);
+  const modelWithWindow = (provider: string, id: string, contextWindow: number) => ({
+    ...cloudModel(provider, id),
+    contextWindow,
+  });
+
+  it('tries only the candidates that can hold the tokens the provider reported', async () => {
+    await withIsolatedRouter(
+      { ...BASE_CONFIG, gdpval_builtin: { a: 1000, tiny: 990, edge: 980, big: 970 } },
+      [
+        modelWithWindow('overflow-provider', 'a', 200_000),
+        modelWithWindow('tiny-provider', 'tiny', 100_000),
+        // Exactly the reported need: not LARGER, so it must not be tried.
+        modelWithWindow('edge-provider', 'edge', 197_318),
+        modelWithWindow('big-provider', 'big', 1_000_000),
+      ],
+      async ({ groupStream, streamSimple }) => {
+        streamSimple.mockImplementation((model: any) =>
+          model.id === 'big' ? successStream('big model answered') : overflowStream()
+        );
+
+        const events = await run(groupStream);
+        const attempted = streamSimple.mock.calls.map((c: any[]) => c[0].id);
+
+        expect(attempted).toEqual(['a', 'big']);
+        expect(streamText(events)).toContain('big model answered');
+        // The narration names the discovered window and the need.
+        expect(streamText(events)).toContain(
+          'context window (196,608 tokens) < 197,318 needed — trying 1 larger model(s)'
+        );
+      }
+    );
+  }, 30_000);
+
+  it('asks for compaction with the provider detail when no larger candidate remains', async () => {
+    await withIsolatedRouter(
+      { ...BASE_CONFIG, gdpval_builtin: { a: 1000 } },
+      [modelWithWindow('overflow-provider', 'a', 200_000)],
+      async ({ groupStream, streamSimple }) => {
+        streamSimple.mockImplementation(() => overflowStream());
+
+        const events = await run(groupStream);
+        const err: any = events.find((e: any) => e.type === 'error');
+        const content = (err.error.content ?? []).map((c: any) => c.text ?? '').join('');
+
+        expect(content).toContain(
+          'overflow-provider/a rejected the prompt as too large for its context window — triggering compaction.'
+        );
+        // The provider's own words survive into the compaction trigger.
+        expect(String(err.error.errorMessage)).toContain(
+          'prompt is too long: prompt is too long: 400'
+        );
+      }
+    );
+  }, 30_000);
+});
+
+describe('driveStream: unparseable context overflow', () => {
+  it('falls back to the token estimate and narrates an unknown window', async () => {
+    await withIsolatedRouter(
+      {
+        ...BASE_CONFIG,
+        gdpval_builtin: { a: 1000, tiny: 990, big: 970 },
+      },
+      [
+        { ...cloudModel('overflow-provider', 'a'), contextWindow: 200_000 },
+        { ...cloudModel('tiny-provider', 'tiny'), contextWindow: 100_000 },
+        { ...cloudModel('big-provider', 'big'), contextWindow: 1_000_000 },
+      ],
+      async ({ groupStream, streamSimple }) => {
+        // Overflow-shaped, but without the provider's numbers: the branch has
+        // to fall back to our own estimate and say the window is unknown.
+        streamSimple.mockImplementation((model: any) =>
+          model.id === 'big'
+            ? successStream('big model answered')
+            : errorStream('prompt is too long: 400 (no token counts in this body)')
+        );
+
+        const events = await run(groupStream);
+
+        // Without the provider's numbers the filter can only use our own
+        // estimate, so every remaining candidate looks large enough — and the
+        // narration says the window is unknown instead of inventing one.
+        expect(streamText(events)).toContain('context window (? tokens)');
+        expect(streamText(events)).toContain('big model answered');
+        expect(streamSimple.mock.calls.map((c: any[]) => c[0].id)).toEqual(['a', 'tiny', 'big']);
+      }
+    );
+  }, 30_000);
+});
