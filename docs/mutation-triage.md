@@ -1411,3 +1411,18 @@ What was missing: the explicit `HINT: <group>` and `HINT: <model>` branches (lin
 Equivalents, by reason: junk-array fallbacks (`?? []` → `['Stryker was here']`, lines 430/499); throws caught by the enclosing try/catch with only the log text differing (352, 594); conditions implied by the one beside them (425, 463, 478 `ref === shortName`, 517 ×2); idempotent guards (533 `isExcluded` with undefined rules, 466 `includes('')`, 465 overwritten initial value); end anchor-only regex (311).
 
 Method as in R2/R3. Not done: a full-suite recheck of the 15 equivalents (the verdicts rest on reading the code, like R1/R2).
+
+## Slice 2 test round, batch 3 (2026-11-06) — cluster H (thrown streams)
+
+Scope: `core.md` cluster H (the `catch (streamError)` block of the walk). Test file:
+`test/drive-stream-thrown-streams.test.ts` (2 tests, characterisation of the soft path).
+
+Verified (mutant applied by hand to `src/stream-orchestrator.ts`, file red on the mutant, green on the original):
+- the `stream error` prefix of the `stream_threw` narration: killed by the narration test.
+
+Findings that change the triage rows:
+1. **The cluster H catch block is not reachable through a throwing stream.** `src/stream-proxy.ts` (`stream_threw`) catches a throw during consumption and returns a soft failure; a synchronous throw from `streamSimple` is narrated by the walk as `Trying next model (… unavailable: …)`. The `catch (streamError)` runs only when a recording seam (`pushError`, `recordStreamFailure`, `observeFailure`, `observeProviderFailure`, `narrateBreakerOpen`) throws after a result came back. Mutants 847–858 and 860 stay open: they need a fixture in which a recording seam throws. They are not killed by stream fixtures.
+2. **Open design question (owner):** a thrown stream is not provider-breaker evidence. `stream_threw` is absent from the D1 evidence kinds (ADR-0026: empty_response, empty_timeout, stall_timeout, provider_error), so three throws from one provider do not open the breaker and the fourth candidate is still tried. The test for that behaviour was dropped rather than pinned; decide whether a throw should count, and if so record it in a new ADR.
+
+Not touched in this batch: cluster A (abort during the retry, local slot release, late-event leak), cluster C (context-window persistence 918/919, candidate filter 713/717/722), cluster D (749/751/752). Clusters E, F and G are equivalent per the triage. `docs/mutation-data/slice2-driveStream.json` is the baseline from before batches 1 and 2: its `result` column does not reflect those kills, and its line numbers predate the pinned-turn fix (PR #115). Re-instrument before the next batch.
+
