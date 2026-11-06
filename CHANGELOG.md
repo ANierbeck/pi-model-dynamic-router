@@ -9,6 +9,7 @@
 
 
 ### Fixed
+- A stream that throws mid-response with a connection/5xx-shaped message (`read ECONNRESET`, `fetch failed`, …) is now provider-breaker evidence. The `stream_threw` failure reason (added with the pi 1.4.0 alignment) was dropped by the breaker seam, so a provider whose connections died mid-stream never opened its breaker and every one of its candidates was tried on every request. It is now reported as a `provider_error` and the existing text filter decides; other throws (parse/shape errors, malformed events) still do not count. New ADR-0029 (extends ADR-0026, which stays unchanged).
 - A pinned turn (`HINT: <model>` / `HINT: <group>`) now classifies its content, with the HINT head removed, and remembers that category. Before, the pin's classification carried no category, so `lastClassifiedCategory` kept the value from before the pin and a following unpinned "weiter" inherited a stale category (TODO "Pinned continuation does not update the category memory", found 2026-10-22). The pin still decides the model. Cost: one extra classifier call per pinned turn (cached like any other classification). An unknown `HINT` model or group that falls through to normal classification now uses the content's category; it used to ignore the content and route to `simple`. An automatic compaction hint is not a user pin and is not classified again.
 
 ### Changed
