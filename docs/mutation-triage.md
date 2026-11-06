@@ -1436,3 +1436,4 @@ Not touched in this batch: cluster A (abort during the retry, local slot release
 
 Correction to the batch 3 note above: after the catch block both candidates are in cooldown, so the walk ends in the shortest-cooldown force-retry and the aggregate error only shows that last round; the catch path's `pushError` text is therefore not visible there (mutant 848 stays open).
 
+Resolution of the batch 3 breaker question (2026-11-06): a thrown stream is breaker evidence when its text is connection/5xx-shaped (ADR-0029). The dropped three-strike test is now `test/drive-stream-thrown-streams.test.ts`.

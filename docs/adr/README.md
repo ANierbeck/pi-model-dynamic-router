@@ -56,3 +56,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0025 — No hardcoded models: everything derives from the models Pi uses](0025-no-hardcoded-models.md)
 - [0026 — One provider circuit breaker for local and cloud providers](0026-provider-circuit-breaker.md)
 - [0027 — Classifier decision log: one record per classification, replay over re-simulation](0027-classifier-decision-log.md)
+- [0029 — A stream that throws is provider-breaker evidence when its text says so (extends 0026)](0029-stream-threw-is-breaker-evidence.md)

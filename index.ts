@@ -1050,7 +1050,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
     // this failure newly OPENS the breaker, so the orchestrator narrates
     // once per open.
     observeProviderFailure: (ref: string, reason: string, detail?: string): boolean => {
-      const kind = reason as ProviderEvidenceKind;
+      // A stream that threw while being consumed is a provider_error with the
+      // thrown message as detail (ADR-0029); countsAsProviderEvidence then
+      // decides on the text, so only connection/5xx-shaped throws count.
+      const kind = (reason === 'stream_threw' ? 'provider_error' : reason) as ProviderEvidenceKind;
       if (
         kind !== 'empty_response' &&
         kind !== 'empty_timeout' &&
