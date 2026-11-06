@@ -128,6 +128,65 @@ describe('driveStream: ollama availability guard', () => {
     );
   }, 30000);
 
+  it('names the availability probe as the skip reason in the aggregate', async () => {
+    const { isOllamaAvailable } = await import('../src/ollama-utils.ts');
+    vi.mocked(isOllamaAvailable).mockResolvedValue(false);
+
+    await withIsolatedRouter(
+      {
+        free_models: [],
+        providers: { openrouter: { free_models: [] } },
+        model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
+        gdpval_builtin: { 'local-model:latest': 900, 'healthy-model': 900 },
+      },
+      async (defaultExport) => {
+        const { ctx: pi, onHandlers } = makeExtensionContext();
+        defaultExport(pi);
+
+        // The remote candidate fails too, so the turn ends in the aggregate
+        // failure block — where the skipped local candidate's reason shows.
+        const streamSimple = vi.fn(() =>
+          Promise.resolve(
+            (async function* () {
+              yield { type: 'error', error: { errorMessage: '500 upstream down' } };
+            })()
+          )
+        );
+        const modelRegistry = {
+          getAvailable: () => [localModel, remoteModel],
+          find: (provider: string, modelId: string) =>
+            provider === localModel.provider && modelId === localModel.id
+              ? localModel
+              : provider === remoteModel.provider && modelId === remoteModel.id
+                ? remoteModel
+                : null,
+          getApiKeyForProvider: async () => 'sk-test',
+          runtime: { streamSimple },
+        };
+        const ctx: any = { modelRegistry, cwd: os.tmpdir(), ui: { setFooter: vi.fn() } };
+        await onHandlers['session_start']?.({}, ctx);
+        await flushBackgroundScan();
+
+        const events = await drainStream(
+          defaultExport.groupStream({ provider: 'standard', id: 'standard' }, context, {})
+        );
+        const errText = events
+          .filter((e: any) => e.type === 'error')
+          .map((e: any) =>
+            Array.isArray(e.error?.content)
+              ? e.error.content.map((c: any) => String(c?.text ?? '')).join('')
+              : ''
+          )
+          .join('\n');
+
+        expect(errText).toContain('skipped, ollama daemon unavailable (availability probe)');
+        expect(streamSimple.mock.calls.map((c: any[]) => c[0].id)).not.toContain(
+          'local-model:latest'
+        );
+      }
+    );
+  }, 30000);
+
   it('still tries ollama/* candidates when the daemon is up (guard must not over-block)', async () => {
     const { isOllamaAvailable } = await import('../src/ollama-utils.ts');
     vi.mocked(isOllamaAvailable).mockResolvedValue(true);

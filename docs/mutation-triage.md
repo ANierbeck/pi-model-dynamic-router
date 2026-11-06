@@ -1362,6 +1362,42 @@ state-observation tests rather than event-stream assertions. The test round is
 the follow-up batch; per the plan's open decision 1, behaviours the
 Virtual-Models spike might replace get characterisation pins only.
 
+### Slice 2 test round (2026-11-06)
+
+The follow-up batch for the 205 REAL GAPs. Three new test files/sections, each
+case written against the observable the mutant changes and then verified by
+re-running the mutant:
+
+| file | tests | cluster (triage file) |
+| --- | --- | --- |
+| `test/drive-stream-cascade-pins.test.ts` (new) | 10 | fallback-cascade head, context-overflow short-circuit, all-behind-breaker probe gate, larger-candidates filter, compaction headline (`probe.md`, `core.md` C) |
+| `test/cooldown-collapse-retried-narration.test.ts` (+6) | 9 total | wait-vs-force-retry guard, wait duration, shortest-cooldown tie-break, throwing retry, live winner signal, no aggregate after recovery (`collapse.md` A/B/D/E/F/G) |
+| `test/walk-skip-reasons.test.ts` (new) + 1 case in `test/ollama-fallback-skip-when-down.test.ts` | 4 | pre-flight skip reasons (breaker seconds, ollama probe, context window) and the thrown-open narration (`pre.md` D/E/F/G/H) |
+
+**Empirical verification (hand-applied mutants from the instrumenter report,
+targeted file only, baseline green in the same copy):**
+
+| verdict | mutants (line on current main) |
+| --- | --- |
+| KILLED by the new tests | 1149/1152 filter + narration: 719, 726, 728, 729, 742, 743, 744, 745, 749 · collapse: 1487 (`<`→`<=`), 1504 (`&&`→`\|\|`, `>0`→`<=0`, `<=`→`<`, `*1000`→`/1000`), 1512 (`+2000`→`-2000`, `*1000`→`/1000`), 1532 (`!target`→`target`, abandon removed), 1544 (`result.ok`→true/false), 1549 (`=== 'aborted'`→`!==`), 1550 (`&&`→true, `===`→`!==`) · pre-flight: 912 (max→min, `/`→`*`, `-`→`+`), 913/924/936/970 (reason and narration strings emptied), 952 (`\|\|`→`&&`) |
+| still surviving — EQUIVALENT in reachable states | 720 (`slice(i+1)`→`candidates`: the overflowing ref is on cooldown by then) · 1043/1044 (`waitMaxMs > 0`→`true`/`>= 0`: with a cap of 0 the second conjunct is false anyway) |
+| still surviving — needs a different fixture | 1070 (abandon removed on a null retry target: needs a signal-respecting stream, same class as 1059) · 1071 (`if (target)`→`true`: needs a wait-branch retry that returns null) · 1089 (`observeFailure` on a non-`provider_error` retry: needs blocklist state observation) · 751 (compaction message without detail: needs a `context_overflow` with a falsy detail) |
+
+Method note: `scripts/mutation-recheck.ts` was used for the first region
+(128 mutants, 50 killed by the cascade/overflow/breaker tests) but proved too
+slow for the collapse region — a few mutants make the duration test sleep into
+the 30 s test timeout / the 180 s run timeout, and each such mutant costs two
+full timeouts. Those mutants were applied individually from the instrumenter
+report and run against the targeted file, which is the same kill criterion
+(file red on the mutated tree, green on the identical baseline copy).
+
+Not covered yet (the rest of the 205 REAL GAPs): the rate-limit wait-retry
+block (`core.md` A: reset-aware retry timing, one-wait-per-walk, retry-abandon,
+`recordOk` after a successful retry), the repetition/truncation main-loop
+narrations (`core.md` D/E), the paid rate-limit labels (`core.md` F), the
+recorded-state seams (`recordStreamFailure`/`observeFailure`), and the
+remaining narration lookahead guards (`pre.md` D).
+
 ### Slice 1 verdicts (272)
 
 | category | count | evidence |
