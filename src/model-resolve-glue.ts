@@ -34,7 +34,22 @@ interface ModelResolveGlueDeps {
   readonly logPool?: (pool: GroupPool) => void;
 }
 
-export function createModelResolveGlue(d: ModelResolveGlueDeps) {
+export interface ModelResolveGlue {
+  resolve: (
+    name: string,
+    opts?: { logPool?: boolean }
+  ) => { selected: string; candidates: string[] } | null;
+  resolveForStream: (name: string) => { selected: string; candidates: string[] } | null;
+  detectGroup: (ref: string) => string | null;
+  fmtModel: (ref: string, i: number, sel: boolean) => string;
+  getTopModels: (
+    groupName: string,
+    n: number
+  ) => { models: { ref: string; limited: boolean; rank: number }[]; total: number };
+  allDiscoveredRefs: () => string[];
+}
+
+export function createModelResolveGlue(d: ModelResolveGlueDeps): ModelResolveGlue {
   // ── Resolution ─────────────────────────────────────────────────────────
 
   // ── Auto-discovery ────────────────────────────────────────────────────

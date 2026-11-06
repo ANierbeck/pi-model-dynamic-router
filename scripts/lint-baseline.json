@@ -57,11 +57,6 @@
       "count": 9
     },
     {
-      "file": "scripts/failover-walk.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
       "file": "scripts/laya-e2e.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
       "count": 1
@@ -238,11 +233,6 @@
     },
     {
       "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/context-utils.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 3
     },
@@ -383,11 +373,6 @@
     },
     {
       "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
-      "file": "src/free-model-registration.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 3
     },
@@ -452,11 +437,6 @@
       "count": 5
     },
     {
-      "file": "src/limit-glue.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
       "file": "src/metrics.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 5
@@ -477,11 +457,6 @@
       "count": 7
     },
     {
-      "file": "src/model-resolve-glue.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
-    },
-    {
       "file": "src/routing.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 1
@@ -500,11 +475,6 @@
       "file": "src/routing.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
       "count": 3
-    },
-    {
-      "file": "src/scan-runner.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
     },
     {
       "file": "src/scan-runner.ts",
@@ -575,11 +545,6 @@
       "file": "src/stream-orchestrator.ts",
       "rule": "@typescript-eslint/no-unsafe-return",
       "count": 2
-    },
-    {
-      "file": "src/stream-proxy.ts",
-      "rule": "@typescript-eslint/explicit-function-return-type",
-      "count": 1
     },
     {
       "file": "src/stream-proxy.ts",
