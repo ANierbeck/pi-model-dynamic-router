@@ -1426,3 +1426,13 @@ Findings that change the triage rows:
 
 Not touched in this batch: cluster A (abort during the retry, local slot release, late-event leak), cluster C (context-window persistence 918/919, candidate filter 713/717/722), cluster D (749/751/752). Clusters E, F and G are equivalent per the triage. `docs/mutation-data/slice2-driveStream.json` is the baseline from before batches 1 and 2: its `result` column does not reflect those kills, and its line numbers predate the pinned-turn fix (PR #115). Re-instrument before the next batch.
 
+### Cluster H follow-up: seam-throw fixture (2026-11-06)
+
+`test/drive-stream-seam-throw.test.ts` (4 tests) makes the provider-breaker store throw once per ref (mocked `recordProviderFailure`, empty-response evidence write only), which is what drives the walk into `catch (streamError)`. Verified by hand-applied mutants (file red on the mutant, green on the original):
+- `observeProviderFailure` guard of the catch path → `false`: killed (transport-shaped seam error must open the breaker).
+- `narrateBreakerOpen` removed from the catch path: killed.
+- `error: ` prefix of the catch narration emptied: killed.
+- `ctx.recordStreamFailure(ref, 'provider_error', …)` removed from the catch path: **survives**. Its observable effect is the session-error buffer entry, which this fixture does not read; the cooldown comes from `observeFailure`. Needs a fixture that reads `session_errors`.
+
+Correction to the batch 3 note above: after the catch block both candidates are in cooldown, so the walk ends in the shortest-cooldown force-retry and the aggregate error only shows that last round; the catch path's `pushError` text is therefore not visible there (mutant 848 stays open).
+
