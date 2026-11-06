@@ -328,7 +328,9 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 
 ### Resilience & Fallback Strategies
 - [x] ~~Implement caching for classification~~ DONE in v1.5.0 (LRU+TTL, `test/classification-cache.test.ts`)
-- [ ] **Add batch processing** - Parallelize classification requests
+- [x] ~~Add batch processing - Parallelize classification requests~~ DROPPED
+  2026-11-06: there is exactly one classification per turn (plus the
+  classification cache), so there is nothing to batch or parallelize.
 - [x] ~~Optimize model selection - Evaluate smaller models for
   classification~~ DONE 2026-10-07 via ADR-0025 Phase C (PR #50): the local
   classifier chain is DERIVED from the scan, ordered smallest-first — the
@@ -336,7 +338,10 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
   24 h re-probe; no hardcoded pick remains.
 
 ### Extended Classification
-- [ ] **Add more categories** - More specific distinction
+- [x] ~~Add more categories - More specific distinction~~ SUPERSEDED
+  2026-11-06: the v2 taxonomy and the five-group layout fixed the category
+  set (`docs/plans/2026-10-25-category-group-mismatch.md`); a new category
+  is a taxonomy decision, not an open task.
 - [ ] **Pinned continuation does not update the category memory** (found 2026-10-22,
   code read, not yet reproduced live). A `HINT:` model pin bypasses the
   classifier, so the turn returns no `category`, and
@@ -357,7 +362,6 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
   label source for calibration. Open: keep labels separate from model
   predictions (`owner_label` field) and decide the category handling of
   "plan check" (taxonomy says code_complex).
-- [ ] **Multi-label classification** - Multiple categories per prompt (needs an ADR before implementation, see below)
 - [x] **Context-based classification (partially done, 2026-08-29)** — the
   classifier already accepted `lastCategory` (short-prompt momentum: "yes",
   "do it", "mach das" inherit the prior task's category) and
@@ -380,7 +384,10 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 - [x] **`resolve()` returns null for dynamic groups** — intentional (see the
   `✅ resolve() "→ none" for dynamic groups` entry above, DONE 2026-08-26),
   not a bug. Cross-referenced here to stop it resurfacing as "open".
-- [ ] **Improve error handling** - Better error messages and recovery
+- [x] ~~Improve error handling - Better error messages and recovery~~
+  DROPPED 2026-11-06: no concrete defect named. Concrete error-handling work
+  is tracked where it was found (mutation triage, provider breaker, the
+  never-rejects contract of `driveStream`).
 - [x] ~~Add more unit tests - Increase coverage for edge cases~~ DONE
   2026-10-07 via the Nightly R1 mutation triage: the edge cases the suite
   was missing ARE what mutation survivors pointed at — +152 tests now pin
@@ -392,14 +399,16 @@ to stdout/stderr. Tests: `test/cost-tracker.test.ts` updated to assert
 ## 🌟 **Long-term Features** (1-2 weeks)
 
 ### Extended Provider Management
-- [ ] **Add more providers** - Support for additional AI providers
-- [ ] **Improve provider detection** - Better discovery of available models
+- [x] ~~Add more providers / Improve provider detection~~ SUPERSEDED
+  2026-11-06: the router never registers models Pi does not know (ADR-0021,
+  AGENTS.md §6) — the provider and model inventory is Pi's registry; the
+  router only enriches what Pi already resolves.
 
 ### Intelligent Routing
-- [ ] **Multi-label classification** - Assign multiple categories to a single prompt
+- [ ] **Multi-label classification** - Assign multiple categories to a single prompt (needs an ADR before implementation)
   - *Idea*: Allow prompts to match multiple categories (e.g., "code_simple" + "explanation")
   - *Benefit*: More accurate model selection based on combined requirements
-- [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation, see below)
+- [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
 - [x] **Add user-specific configurations (already built, closed 2026-08-29)**
   — `src/config-loader.ts`'s layered config already does exactly this:
   embedded defaults → `~/.pi/agent/router-config.user.json` (global user
@@ -442,12 +451,22 @@ judged sufficient.
 ## 📊 **Technical Debt**
 
 ### Low Priority
-- [ ] **Clean up archive directory** - Remove outdated files
-- [ ] **Update dependencies** - Check for newer versions
+- [x] ~~Clean up archive directory~~ DONE: no root `archive/` exists in the
+  checkout (checked 2026-11-06). The hygiene plan listed that git-ignored
+  leftover for an owner decision (`docs/plans/2026-10-29-repo-hygiene.md`,
+  Phase 1 Step 3); `docs/archive/` is the deliberate, versioned history
+  location and stays.
+- [x] ~~Update dependencies~~ standing process, not a task: Dependabot plus
+  the per-alert evaluation rule (AGENTS.md §10); open alerts are tracked in
+  this file's dependency section.
 
 ### Medium Priority
-- [ ] **Clean up test files** - Remove redundant tests
-- [ ] **Improve documentation** - Add more examples and use cases
+- [x] ~~Clean up test files - Remove redundant tests~~ DONE via repo hygiene
+  phases 4-5 and the fixture-dedupe rounds; kept that way by the redundancy
+  ratchet (`scripts/redundancy-report.ts`, `test/redundancy-baseline.test.ts`).
+- [x] ~~Improve documentation - Add more examples and use cases~~ DROPPED
+  2026-11-06: no concrete gap named. The redundancy report's removed-group
+  name check and its plan-index check guard the docs against stale content.
 
 ---
 
