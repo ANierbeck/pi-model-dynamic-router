@@ -84,14 +84,20 @@ function streamErrorText(events: AssistantMessageEvent[]): string {
  */
 function makeScriptedRegistry(modelsByRef: Record<string, any>) {
   const calls: string[] = [];
+  /** The AbortSignal the walk forwarded on each call (openCandidateAttempt's). */
+  const signals: (AbortSignal | undefined)[] = [];
+  /** Per-ref hook: return 'throw' to make that call reject like a bridge error. */
+  const throwOnCall = new Map<string, number>();
   const scripts: Record<string, AssistantMessageEvent[][]> = {};
   const entries = Object.entries(modelsByRef).map(([ref, m]) => ({ ref, model: m }));
 
-  const streamSimple = vi.fn((model: any) => {
+  const streamSimple = vi.fn((model: any, _context: any, options?: any) => {
     const found = entries.find((e) => e.model.id === model.id)!;
     calls.push(found.ref);
-    const script = scripts[found.ref] ?? [];
+    signals.push(options?.signal);
     const idx = calls.filter((c) => c === found.ref).length - 1;
+    if (throwOnCall.get(found.ref) === idx) throw new Error('bridge exploded');
+    const script = scripts[found.ref] ?? [];
     const events = idx < script.length ? script[idx] : (script[script.length - 1] ?? []);
     return (async function* () {
       for (const ev of events) yield ev;
@@ -100,6 +106,8 @@ function makeScriptedRegistry(modelsByRef: Record<string, any>) {
 
   return {
     calls,
+    signals,
+    throwOnCall,
     scripts,
     registry: {
       getAvailable: () => entries.map((e) => e.model),
@@ -192,9 +200,25 @@ const baseCfg = {
  * serves `retryEvents` (script index 1, also the last-entry fallback, so it
  * applies whichever model wins the shortest-cooldown pick).
  */
+/** What one collapse scenario observed, handed to the assertion callback. */
+interface CollapseRun {
+  text: string;
+  errText: string;
+  calls: string[];
+  /** The AbortSignal forwarded on each upstream call, in call order. */
+  signals: (AbortSignal | undefined)[];
+  /** Wall-clock duration of the whole groupStream drain. */
+  elapsedMs: number;
+}
+
 async function driveCollapseScenario(
   retryEvents: () => AssistantMessageEvent[],
-  assert: (helpers: { text: string; errText: string; calls: string[] }) => void
+  assert: (helpers: CollapseRun) => void,
+  overrides: {
+    config?: Record<string, unknown>;
+    /** Make the retry call of `ref` reject, like a bridge that throws. */
+    throwOnRetryOf?: string;
+  } = {}
 ): Promise<void> {
   const cfg = {
     ...baseCfg,
@@ -202,6 +226,7 @@ async function driveCollapseScenario(
     rate_limit_wait_max_ms: 4_000,
     backoff_minutes: [0.02, 0.04],
     soft_backoff_ms: [1000, 2000],
+    ...overrides.config,
   };
   const { dynamicConfigPath, scanCachePath } = routerStatePaths();
   const dynBak = `${dynamicConfigPath}.bak`;
@@ -221,11 +246,13 @@ async function driveCollapseScenario(
       // call (the collapse retry) serves the scenario's retry script.
       mock.scripts['lim-provider/lim-model'] = [rateLimitNoResetEvents(), retryEvents()];
       mock.scripts['sec-provider/sec-model'] = [rateLimitNoResetEvents(), retryEvents()];
+      if (overrides.throwOnRetryOf) mock.throwOnCall.set(overrides.throwOnRetryOf, 1);
 
       const ctx: any = { modelRegistry: mock.registry, cwd: tmpDir, ui: { setFooter: vi.fn() } };
       await onHandlers['session_start']?.({}, ctx);
       await flushBackgroundScan();
 
+      const startedAt = Date.now();
       const events = await drainStream(
         defaultExport.groupStream(
           { provider: 'standard', id: 'standard' },
@@ -234,7 +261,13 @@ async function driveCollapseScenario(
         )
       );
 
-      assert({ text: allText(events), errText: streamErrorText(events), calls: mock.calls });
+      assert({
+        text: allText(events),
+        errText: streamErrorText(events),
+        calls: mock.calls,
+        signals: mock.signals,
+        elapsedMs: Date.now() - startedAt,
+      });
     },
     {
       config: cfg,
@@ -293,5 +326,113 @@ describe('cooldown-collapse: retried-result narrations (B3 / mutation R3)', () =
       expect(text).not.toContain('stuck in a repetition loop');
       expect(errText).toContain('candidate(s) failed');
     });
+  }, 30_000);
+});
+
+// ── guard, duration, bookkeeping (mutation slice 2, collapse region) ────────
+//
+// The triage in docs/mutation-data/slice2-triage/collapse.md lists survivors
+// that the narration tests above cannot reach: the wait-vs-force-retry guard
+// with a cap enabled, the wait duration, the shortest-cooldown tie-break, the
+// throwing retry, the abandoned/live retry signal, and the aggregate failure
+// block. Each test below names the behaviour a surviving mutant changes.
+
+describe('cooldown-collapse: wait-vs-force-retry guard', () => {
+  it('force-retries instead of waiting when the cooldown exceeds the wait cap', async () => {
+    await driveCollapseScenario(
+      rateLimitNoResetEvents,
+      ({ text, calls }) => {
+        // 1.2s cooldown vs a 500ms cap: waiting would sleep past the cap.
+        expect(text).toContain('All models in cooldown, retrying');
+        expect(text).not.toContain('All models in cooldown — waiting');
+        expect(calls).toHaveLength(3);
+      },
+      { config: { rate_limit_wait_max_ms: 500 } }
+    );
+  }, 30_000);
+
+  it('waits when the cooldown is exactly at the wait cap (boundary is inclusive)', async () => {
+    await driveCollapseScenario(
+      rateLimitNoResetEvents,
+      ({ text }) => {
+        // bestSecs is ceil(remaining/1000) = 2 for the 1.2s tier-1 cooldown,
+        // so bestSecs*1000 === waitMaxMs: the inclusive comparison waits.
+        expect(text).toContain('All models in cooldown — waiting');
+        expect(text).not.toContain('All models in cooldown, retrying');
+      },
+      { config: { rate_limit_wait_max_ms: 2000 } }
+    );
+  }, 30_000);
+
+  it('sleeps the full cooldown plus the 2s grace before retrying', async () => {
+    await driveCollapseScenario(
+      rateLimitNoResetEvents,
+      ({ elapsedMs, text }) => {
+        expect(text).toContain('All models in cooldown — waiting');
+        // 3s cooldown + 2s grace = ~5s. A shortened sleep (cooldown - grace,
+        // or cooldown/1000 + grace) finishes in ~1s / ~2s.
+        expect(elapsedMs).toBeGreaterThanOrEqual(4_500);
+      },
+      { config: { backoff_minutes: [0.05], rate_limit_wait_max_ms: 4000 } }
+    );
+  }, 30_000);
+});
+
+describe('cooldown-collapse: retry bookkeeping', () => {
+  it('retries the FIRST of two equally-cooldown candidates', async () => {
+    await driveCollapseScenario(
+      rateLimitNoResetEvents,
+      ({ calls, text }) => {
+        // Both models carry the same tier-1 soft backoff, so the pick is a tie
+        // and must keep the earlier (higher-ranked) candidate.
+        expect(calls).toHaveLength(3);
+        expect(calls[0]).toBe('lim-provider/lim-model');
+        expect(calls[2]).toBe('lim-provider/lim-model');
+        expect(text).toContain('retrying lim-provider/lim-model');
+      },
+      { config: { rate_limit_wait_max_ms: 0 } }
+    );
+  }, 30_000);
+
+  it('reports a retry whose upstream call throws instead of dropping it from the aggregate', async () => {
+    await driveCollapseScenario(
+      rateLimitNoResetEvents,
+      ({ errText }) => {
+        // The retried model threw: its message must still appear in the
+        // user-visible aggregate list, not vanish.
+        expect(errText).toContain('candidate(s) failed');
+        expect(errText).toContain('lim-provider/lim-model');
+        expect(errText).toContain('bridge exploded');
+      },
+      { throwOnRetryOf: 'lim-provider/lim-model' }
+    );
+  }, 30_000);
+
+  it('does not abort the winning attempt signal after a successful retry', async () => {
+    await driveCollapseScenario(
+      () => [
+        { type: 'text_delta', contentIndex: 0, delta: 'recovered after the collapse' } as any,
+        {
+          type: 'done',
+          reason: 'stop',
+          message: {
+            role: 'assistant',
+            content: [],
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            stopReason: 'stop',
+            timestamp: Date.now(),
+          },
+        } as any,
+      ],
+      ({ text, errText, calls, signals }) => {
+        expect(text).toContain('recovered after the collapse');
+        // A successful recovery must not also push the aggregate failure.
+        expect(errText).not.toContain('candidate(s) failed');
+        // The retried attempt's signal is still live: abandoning the winner
+        // would kill a successful toolUse turn's SDK query.
+        expect(calls).toHaveLength(3);
+        expect(signals[2]?.aborted).toBe(false);
+      }
+    );
   }, 30_000);
 });
