@@ -21,7 +21,7 @@ import {
   parseRouterLogLines,
   classifySwitchCause,
   measurePairs,
-  summarizePairs,
+  summarizeSwitchPairs,
   type RoutingRow,
 } from '../scripts/continue-switch-measure.ts';
 import type { SessionTurn } from '../scripts/turn-decision-join.ts';
@@ -215,13 +215,13 @@ describe('measurePairs', () => {
     // aaa -> bbb: same group (operational); bbb -> ccc: group moved to planning.
     expect(pairs[0].groupChanged).toBe(false);
     expect(pairs[1].groupChanged).toBe(true);
-    const s = summarizePairs(pairs);
+    const s = summarizeSwitchPairs(pairs);
     expect(s.byKind.continue.pairs).toBe(2);
     expect(s.byKind.continue.groupChangedSwitches).toBe(1);
     expect(s.byKind.continue.sameGroupSwitches).toBe(1);
   });
 
-  it('summarizePairs counts kinds and switch causes', () => {
+  it('summarizeSwitchPairs counts kinds and switch causes', () => {
     const pairs = measurePairs(
       [
         turn('s', 0, 'aaa', 'p/a'),
@@ -239,7 +239,7 @@ describe('measurePairs', () => {
         }),
       ]
     );
-    const s = summarizePairs(pairs, [
+    const s = summarizeSwitchPairs(pairs, [
       { ts: at(5), text: '[router] p/a — rate limited — backing off' },
     ]);
     expect(s.byKind.continue.pairs).toBe(2);

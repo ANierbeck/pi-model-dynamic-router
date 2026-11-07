@@ -197,7 +197,7 @@ export interface PairSummary {
 }
 
 /** Counts per kind, with the cause split for the switches (needs the router.log lines). */
-export function summarizePairs(
+export function summarizeSwitchPairs(
   pairs: TurnPair[],
   routerLines: RouterLine[] = [],
   causeBeforeMs = 45_000
@@ -250,7 +250,7 @@ function main(): void {
   const decisions = readRoutingRows(logs, bounds);
   const pairs = measurePairs(turns, decisions);
   const routerLines = routerLogs.flatMap((p) => parseRouterLogLines(p, bounds));
-  const s = summarizePairs(pairs, routerLines, causeSec * 1000);
+  const s = summarizeSwitchPairs(pairs, routerLines, causeSec * 1000);
 
   console.log(`bounds: since=${since ?? '-'} until=${until ?? '-'} cause-window=${causeSec}s`);
   console.log(`turns=${turns.length} routing-rows=${decisions.length} pairs=${pairs.length}`);
