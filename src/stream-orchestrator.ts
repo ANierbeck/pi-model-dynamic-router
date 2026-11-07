@@ -409,6 +409,44 @@ export class StreamOrchestrator {
    * — or a ctx that remembers no run — keeps the former order: current model,
    * then the `simple` pool (any other non-dynamic group when `simple` is gone).
    */
+  /**
+   * Whether a model can be tried right now: not on a rate-limit cooldown and
+   * its provider breaker is closed. The one definition behind every "put the
+   * previous model first" decision (tool follow-up driver, continue turn).
+   */
+  private usableNow(ref: string): boolean {
+    return !this.ctx.isLimited(ref) && !this.ctx.isBreakerOpen(ref);
+  }
+
+  /**
+   * A `continue` turn means "nothing new, keep going": the previous model
+   * leads the candidate list so a ranking change between two turns does not
+   * switch models on a cold prompt cache (docs/plans/2026-10-26-continue-
+   * keeps-model.md; owner decisions 2026-11-07: only `continue`, kept past
+   * any quality gap). Only when the model is a candidate of the inherited
+   * group (its fallback groups included — it may be serving from one) and
+   * usable now; the rest of the list stays the group's ranking, so the
+   * failure cascade is unchanged. Never in an escalated session (the user
+   * asked for a stronger group) and never inside a router-internal sub-call.
+   */
+  private previousModelToKeep(
+    classification: ClassificationResult,
+    candidates: string[]
+  ): string | undefined {
+    // The first prompt of a session has no previous model ('' is never a candidate).
+    const previous = this.ctx.lastDynamicModel;
+    if (
+      !classification.inheritedFromContinue ||
+      inSubCall() ||
+      this.ctx.escalation.level !== 'standard' ||
+      !candidates.includes(previous) ||
+      !this.usableNow(previous)
+    ) {
+      return undefined;
+    }
+    return previous;
+  }
+
   private planToolFollowUp(context: Context): { group: string; candidates: string[] } {
     const { lastDynamicModel: current } = this.ctx;
     const runGroup = this.ctx.runGroup;
@@ -416,7 +454,7 @@ export class StreamOrchestrator {
       const res = this.ctx.resolve(runGroup);
       if (res) {
         const driver = this.ctx.runDriver;
-        const driverFirst = driver && !this.ctx.isLimited(driver) ? driver : undefined;
+        const driverFirst = driver && this.usableNow(driver) ? driver : undefined;
         const ordered = [
           ...(driverFirst ? [driverFirst] : []),
           current,
@@ -847,14 +885,24 @@ export class StreamOrchestrator {
         }
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
 
-        candidates = [
+        const ranked = [
           ...res.candidates,
           ...this.fallbackGroupCandidates(targetGroup, res.candidates),
         ];
-        if (!inSubCall()) this.ctx.lastDynamicModel = res.selected;
-        this.rememberRun(resolvedGroup, res.selected);
+        const kept = this.previousModelToKeep(normalClassification, ranked);
+        candidates = kept ? [kept, ...ranked.filter((r) => r !== kept)] : ranked;
+        // The turn's model: the kept previous model on a continue turn, the
+        // group's pick otherwise.
+        const selected = kept ?? res.selected;
+        if (kept && kept !== res.selected) {
+          routerLog(
+            `[routing] continue keeps ${kept} (the ranking would have led with ${res.selected})`
+          );
+        }
+        if (!inSubCall()) this.ctx.lastDynamicModel = selected;
+        this.rememberRun(resolvedGroup, selected);
         dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
-        const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
+        const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${selected}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
         appendRawLog(logLine);
         // Cost tracking moved to turn_end (review I2 — hardcoded
         // 1000/500 here were fabricated audit data).
