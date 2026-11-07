@@ -1437,3 +1437,85 @@ Not touched in this batch: cluster A (abort during the retry, local slot release
 Correction to the batch 3 note above: after the catch block both candidates are in cooldown, so the walk ends in the shortest-cooldown force-retry and the aggregate error only shows that last round; the catch path's `pushError` text is therefore not visible there (mutant 848 stays open).
 
 Resolution of the batch 3 breaker question (2026-11-06): a thrown stream is breaker evidence when its text is connection/5xx-shaped (ADR-0029). The dropped three-strike test is now `test/drive-stream-thrown-streams.test.ts`.
+
+## Slice 3 triage (2026-11-06) — helpers of `src/stream-orchestrator.ts`
+
+Scope: lines 40–217 — `openCandidateAttempt` (abort plumbing), `extractContextWindowFromError`,
+`emptyResponseLabel`, `breakerEvidencePhrase`, `narrateBreakerOpen`. The plan's table said 49
+mutants for lines 49–180; the instrumenter finds **65** on `main` at `d5aad68` (the region now
+also covers `narrateBreakerOpen`, lines 191–217). All 65 were `NoCoverage` in the instrumenter
+report; this is the first recheck of the region.
+
+Method: `scripts/mutation-recheck.ts` twice, both against a pristine worktree of `d5aad68`
+(`/tmp/s3-tree`). First pass with the 11 files that name these helpers
+(`--tests cooldown-collapse…,drive-stream-*,overflow-try-larger,provider-breaker-orchestration,
+provider-watchdog-integration,stream-failure-termination,walk-skip-reasons,
+consolidated-stream-error-pins`): **25 killed**. Second pass, the 40 left, against the full
+suite: **5 more killed** (`subcall-scope-isolation` 55, `overflow-output-reserve` 62,
+`stream-abandon-and-text-scan` 63, 67 ×2). **35 genuinely alive.**
+
+A first attempt aborted with "the unmutated tree is not green": `test/no-external-references.test.ts`
+runs `git ls-files`, so the tree must be a git worktree, not a `git archive` extraction.
+
+### REAL GAP — cluster A: no test ever passes an outer `signal` (9 mutants)
+
+`openCandidateAttempt` exists because claude-bridge only cancels its SDK query on
+`options.signal` abort (2026-09-27 incident). The suite checks that an abandoned candidate's
+signal IS aborted (`test/stream-abandon-and-text-scan.test.ts`), but **no test passes an outer
+signal into `driveStream`**, so the whole propagation block (lines 57–59, 66, 68) never runs:
+
+| line | mutant | effect |
+| --- | --- | --- |
+| 56 | `() => undefined` | the caller's abort no longer reaches the candidate — the 2026-09-27 burn returns |
+| 57 | `if (outer)` → `false`, `{}` | no listener at all |
+| 58 | `if (outer.aborted)` → `false`, `abort(…)` → `;` | an already-aborted caller does not stop the attempt |
+| 58 | `if (outer.aborted)` → `true` | EVERY candidate is aborted at creation |
+| 59 | `'abort'` → `''` | the listener is registered for an event that never fires |
+
+One test file kills all nine: drive `driveStream` with an outer `AbortSignal`, (a) abort it
+mid-stream and assert the candidate's signal is aborted, (b) pass an already-aborted signal and
+assert the walk does not open a stream, (c) assert a live outer signal leaves the candidate's
+signal un-aborted.
+
+### REAL GAP — cluster B: `context_overflow` without a detail (1 mutant)
+
+Line 89, `if (!detail) return null` → `false`: `detail.match` then throws on `undefined`, and the
+walk's `catch (streamError)` turns that into a stream error instead of the candidate filter. Needs
+a `context_overflow` result with a falsy `detail` — the same fixture the slice-2 row for mutant 751
+asks for.
+
+### REAL GAP — cluster C: the breaker evidence phrase (12 mutants)
+
+`breakerEvidencePhrase` is asserted nowhere: the existing tests only check `looks wedged` and its
+count (`test/drive-stream-seam-throw.test.ts`, `test/drive-stream-thrown-streams.test.ts`). Alive:
+the whole body (172), the `KIND_PHRASE` table (173) and its four phrases (174–177), the
+uniform-vs-mixed branch (180 ×5), the `Math.max(1, …)` floor and the `/ 1000` (181 ×2), and the
+returned template (182). One parametrised test over the four evidence kinds plus one mixed-kind
+case kills all twelve.
+
+### REAL GAP — cluster D: breaker narration texts (2 mutants)
+
+Line 206 (the cloud advice `check the provider/extension …`) and line 208 (the whole
+`[router] <provider> looks wedged: <evidence> — skipping its models …` template). The seam-throw
+fixture asserts `looks wedged` only, so both survive.
+
+### EQUIVALENT (11 mutants, reason per row)
+
+| line | mutant | why it cannot be observed |
+| --- | --- | --- |
+| 56 | `outer?.reason` → `outer.reason` | the listener is only registered when `outer` is set |
+| 59 | `{ once: true }` → `{}` / `{ once: false }` | one abort per candidate; a stale listener fires once more into an already-aborted controller |
+| 66 | `'abort'` → `''` in `removeEventListener` | same: the leftover listener calls `abort()` on an aborted controller |
+| 67 | `!controller.signal.aborted` → `true` | `abort()` on an aborted controller is a no-op |
+| 68 | abort reason `''` | diagnostic text only, no branch reads it |
+| 96 | `\|\|` → `&&` | with one regex missing, the other parse is `NaN` and line 99 returns null |
+| 99 | `\|\|` → `&&`, `!cw && !req`, → `false` | needs both regexes to match and `parseInt` to yield 0/NaN — not constructible from a provider message |
+| 203 | `'several distinct models failed'` → `''` | unreachable: both call sites run right after `observeProviderFailure` returned true, which requires live evidence in the window |
+
+### Slice 3 test round (open)
+
+24 mutants, four small test additions: the outer-abort file (cluster A), the detail-less
+`context_overflow` (cluster B, shared with the slice-2 row for 751), a parametrised
+`breakerEvidencePhrase` test (cluster C), and two narration assertions (cluster D). Nothing here
+depends on the virtual-models decision: the spike showed the in-request failover stays
+(`docs/research/2026-11-06-virtual-model-spike.md`), so these helpers stay as well.
