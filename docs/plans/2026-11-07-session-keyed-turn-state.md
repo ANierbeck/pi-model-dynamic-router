@@ -1,7 +1,7 @@
 # Session-Keyed Turn State Implementation Plan
 
-**Status:** in progress (2026-11-07) — implemented on `fix/turn-state-round`,
-not merged. Owner decisions of 2026-11-07: no virtual-model migration
+**Status:** done 2026-11-07 — merged (PR #120, with its review round). Owner
+decisions of 2026-11-07: no virtual-model migration
 (`2026-11-04-virtual-models-routing.md`); open decisions 1-3 below answered
 "follow the proposal".
 
