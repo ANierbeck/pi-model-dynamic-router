@@ -405,7 +405,7 @@ export interface Config {
   /**
    * User override of the category→group mapping (task-type-balancing
    * Phase 3): `{ <category>: <group> }`, merged OVER the built-in
-   * CATEGORY_TO_GROUP in src/content-classifier.ts. Only the nine known
+   * CATEGORY_TO_GROUP in src/content-classifier.ts. Only the seven known
    * categories are valid keys and only groups present in `model_groups`
    * are valid values — anything else is rejected with a warning at load
    * time and ignored. Absent = the built-in mapping applies unchanged.

@@ -161,10 +161,9 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
         }
       }
 
-      // With dynamic model discovery, we always consider all registry models as valid.
-      // No need to check against static group model lists anymore.
+      // With dynamic model discovery, all registry models are always
+      // considered valid — there is no static-list ref check to skip on.
       // Always regenerate if cache is invalid or force is true.
-      const hasNewRegistryRefs = false;
 
       // lastScanTimestamp is only set after a dynamic config was written, so a
       // valid cache with no config file means the file was lost (e.g. dist/
@@ -188,7 +187,6 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
         storedGroupsFingerprint !== groupsFingerprint;
       if (
         !force &&
-        !hasNewRegistryRefs &&
         rt.cacheManager.isScanCacheValid(rt.cache) &&
         !dynamicConfigMissing &&
         !groupsDrifted

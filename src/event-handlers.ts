@@ -339,7 +339,20 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       }
 
       // ── Metrics & Usage Logging ─────────────────────────────────────────
-      if (msg?.role === 'assistant') {
+      // A FAILED turn (stopReason 'error'/'aborted' — pi's agent loop emits
+      // turn_end for those too, and the router's all-candidates-failed path
+      // ends the proxy with a synthetic error message) is NOT a model
+      // success: recordOk() would close the provider's circuit breaker
+      // (ADR-0026 D5), clear the ref's health streak and blocklist entry and
+      // reset the rate-limit counter right after the cascade failed on that
+      // provider — release review 2026-11-08 lane B finding I1. The error
+      // text is router narration, not model output, so no metrics/usage
+      // either.
+      const failedTurn =
+        msg?.role === 'assistant' &&
+        ((msg as { stopReason?: string }).stopReason === 'error' ||
+          (msg as { stopReason?: string }).stopReason === 'aborted');
+      if (msg?.role === 'assistant' && !failedTurn) {
         // Factual stream ref of THIS turn (review I1): curModel stays the
         // virtual group ref ('standard/standard') in group sessions — keying
         // usage_log by it made the /router cost windows structurally all-zero

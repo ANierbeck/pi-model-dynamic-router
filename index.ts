@@ -1063,7 +1063,6 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return cacheManager;
     },
     escalation,
-    costTracker,
     // Pool logging for the stream-driving resolutions only (ADR-0027):
     // every ctx.resolve call here serves a candidate stream.
     resolve: resolveForStream,

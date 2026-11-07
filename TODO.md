@@ -738,12 +738,20 @@ Pick up in a later round, each as its own plan where noted (§11):
   5d (compaction summary via a cheaper model, bulk_read thresholds). 5c stays
   deferred to a later 2.0.x by owner decision.
 - **Release prep for 2.0.0** (owner 2026-11-07: target the next release as
-  2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the §1 whole-range code review
-  (requesting-code-review over v1.6.1..main), the `npm audit` summary in the
-  report, the pi devDependency vs. installed-host check (AGENTS.md §10), the
-  fallback-rename (V3) and M3 landing in 2.0.0. The release itself (tag /
-  publish) is a separate explicit owner approval per AGENTS.md §1 — never
-  implied by this list.
+  2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the fallback-rename (V3) and
+  M3 landed in 2.0.0 (PR #126/#127). The §1 whole-range code review RAN
+  2026-11-08 (requesting-code-review over v1.6.1..main, four reviewer lanes
+  via the subagent fanout, run ab1760b9): 0 Critical, 1 Important — FIXED in
+  PR #128 (turn_end recorded a failed turn as a model success and closed the
+  provider breaker right after a failed cascade; red-first pin in
+  test/cache-usage-wiring.test.ts), 6 Minor fixed or justified (stale
+  comments, dead costTracker field, breakerState tuning at two sites, dead
+  hasNewRegistryRefs, budget-pacing clock-skew guard documented).
+  `npm audit` 0 / 0 prod (minimatch fixed by override, PR #125); pi devDep
+  1.5.0 = installed host 1.5.0; shipped `log_level: "warn"`. Remaining before
+  a release may be proposed: nothing from the review. The release itself
+  (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
+  never implied by this list.
 
 ### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
 

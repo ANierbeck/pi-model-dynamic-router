@@ -106,7 +106,6 @@ import {
   stripHintHead,
 } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
-import type { CostTracker } from './cost-tracker.ts';
 import {
   resolveShortModelName,
   stripRouterNarration,
@@ -236,10 +235,6 @@ export interface StreamOrchestratorContext {
   cache: Cache;
   router: Router;
   escalation: SessionEscalation;
-  /** Retained for interface compatibility; cost tracking moved to turn_end
-   * in index.ts (2026-09-27, review I2 — selection-time tracking passed
-   * fabricated token counts). */
-  costTracker?: CostTracker;
   rateLimitManager: RateLimitManager;
   cacheManager: CacheManager;
 
@@ -1113,7 +1108,12 @@ export class StreamOrchestrator {
       // MID-WALK and the remaining candidates of the just-tripped provider
       // are skipped within the SAME walk (plan D3).
       if (ctx.isBreakerOpen(ref)) {
-        const st = breakerState(ctx.cache, ref.split('/')[0]);
+        const st = breakerState(
+          ctx.cache,
+          ref.split('/')[0],
+          Date.now(),
+          resolveBreakerTuning(ctx.cfg.provider_breaker)
+        );
         const secsLeft = st.until ? Math.max(0, Math.ceil((st.until - Date.now()) / 1000)) : 0;
         pushError(ref, `skipped, provider breaker open (${secsLeft}s remaining)`);
         ctx.noteBreakerSkip(ref);
@@ -1578,7 +1578,12 @@ export class StreamOrchestrator {
       let probeRef: string | null = null;
       let soonestUntil = Number.POSITIVE_INFINITY;
       for (const r of candidates) {
-        const st = breakerState(ctx.cache, r.split('/')[0]);
+        const st = breakerState(
+          ctx.cache,
+          r.split('/')[0],
+          Date.now(),
+          resolveBreakerTuning(ctx.cfg.provider_breaker)
+        );
         // Ties keep the earlier (higher-ranked) candidate — the same one
         // the regular half-open would probe (plan D5).
         if (st.open && st.until !== undefined && st.until < soonestUntil) {
