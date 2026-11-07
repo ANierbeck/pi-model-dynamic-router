@@ -93,6 +93,33 @@ describe('classifier-laya-config', () => {
       expect(cfg.classifier_laya?.timeout_ms).toBe(1500);
     });
 
+    it('keeps confidence_threshold 0 — the owner-decided "no gate, Laya decides everything" setting', () => {
+      // docs/plans/2026-10-25-laya-sole-classifier.md decision 1. The merge-review
+      // validation (5d9427b) required 0 < t <= 1 and silently reset 0 to 0.8 on
+      // every start, so live traffic kept going to the cloud chain whenever Laya
+      // was below 0.8 (found in the 2026-11-08 live check of the decision log).
+      const cfg = deepMergeConfig(base, {
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          mode: 'active',
+          confidence_threshold: 0,
+        },
+      }) as Config;
+      validateClassifierLaya(cfg);
+      expect(cfg.classifier_laya?.confidence_threshold).toBe(0);
+    });
+
+    it('still rejects a negative, a NaN and a string confidence_threshold', () => {
+      for (const bad of [-0.1, Number.NaN, '0.5' as unknown as number]) {
+        const cfg = deepMergeConfig(base, {
+          classifier_laya: { enabled: true, checkpoint: 'x/y', confidence_threshold: bad },
+        }) as Config;
+        validateClassifierLaya(cfg);
+        expect(cfg.classifier_laya?.confidence_threshold).toBe(0.8);
+      }
+    });
+
     it('accepts enabled:true with a pinned checkpoint and applies defaults', () => {
       const cfg = deepMergeConfig(base, {
         classifier_laya: {

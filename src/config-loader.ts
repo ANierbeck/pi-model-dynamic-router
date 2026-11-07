@@ -295,7 +295,8 @@ export function validateClassifierLaya(config: Config): void {
   if (
     c.confidence_threshold != null &&
     (typeof c.confidence_threshold !== 'number' ||
-      !(c.confidence_threshold > 0 && c.confidence_threshold <= 1))
+      // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
+      !(c.confidence_threshold >= 0 && c.confidence_threshold <= 1))
   ) {
     warnLog(
       `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`

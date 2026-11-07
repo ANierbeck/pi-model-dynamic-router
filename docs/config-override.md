@@ -132,7 +132,7 @@ experimental — start in `"shadow"` mode, which only logs.
 | `enabled` | `false` | Turn the stage on (requires `checkpoint`) |
 | `checkpoint` | — | Pinned weights, `<hf-repo>:<revision>`. Required when enabled — the router never downloads weights |
 | `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
-| `confidence_threshold` | `0.8` | Minimum confidence to use the answer (the scale is uncalibrated — keep the gate) |
+| `confidence_threshold` | `0.8` | Minimum confidence to use the answer, `0`–`1`. The scale is uncalibrated, so the default keeps a gate; `0` switches the gate off (Laya's answer is used whatever its confidence — the cloud chain then only runs on failure or as the background comparator) |
 | `endpoint` | `http://127.0.0.1:8089` | Sidecar URL, `POST /classify` |
 | `timeout_ms` | `1500` | Fall through to the chain after this long |
 | `compare_in_background` | `false` | In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027) |
