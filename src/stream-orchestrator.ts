@@ -148,6 +148,7 @@ import {
 } from './detection.ts';
 import { isOllamaProbablyDown } from './ollama-utils.ts';
 import { inSubCall } from './subcall-scope.ts';
+import { runInSession } from './turn-state.ts';
 
 /**
  * Narration label for an empty response on a PAID cloud model: stopReason
@@ -336,22 +337,26 @@ function recordServedRef(ctx: StreamOrchestratorContext, ref: string): void {
 export class StreamOrchestrator {
   constructor(public ctx: StreamOrchestratorContext) {}
 
-  /**
-   * Session boundary (session_shutdown in index.ts): the inheritable
-   * previous category must NOT survive into the next session — a 'continue'
-   * classification in a fresh session would otherwise inherit the previous
-   * session's category (cross-session context leak, PR #70 review).
-   */
-  resetLastCategory(): void {
-    this.ctx.lastClassifiedCategory = undefined;
-  }
-
   // ── groupStream ─────────────────────────────────────────────────────────
 
+  /**
+   * Entry point of every group provider. Pi sets `options.sessionId` on each
+   * stream call; running the whole turn (including its async work) inside that
+   * session keeps the per-session turn state (src/turn-state.ts) the session's
+   * own — an in-process subagent stream no longer reads or overwrites the
+   * parent's turn model and category. Without a session id the ambient one
+   * stays (a stream opened from inside a handler).
+   */
   groupStream(
     model: Model<any>,
     context: Context,
     options?: SimpleStreamOptions
+  ): AssistantMessageEventStream {
+    return runInSession(options?.sessionId, () => this.openGroupStream(model, context, options));
+  }
+
+  private openGroupStream(
+    ...[model, context, options]: Parameters<StreamOrchestrator['groupStream']>
   ): AssistantMessageEventStream {
     const { cfg, cache, router } = this.ctx;
     const useStaticMatch = model.id.match(/^(.+):use-static$/);

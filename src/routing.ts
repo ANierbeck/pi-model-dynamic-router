@@ -35,6 +35,12 @@ import { isDebugEnabled, debugLogOnce } from './logger.ts';
 import { filterByBudget } from './budget.ts';
 import { pacedProviders } from './budget-pacing.ts';
 import { isRefLimited, refLimitSecs } from './rate-limit.ts';
+import {
+  currentSessionId,
+  emptyRouterTurnState,
+  SessionStore,
+  type RouterTurnState,
+} from './turn-state.ts';
 
 /**
  * Pick ONE representative ref per GDPval-slug cluster, in first-occurrence
@@ -489,9 +495,6 @@ export class Router {
   private cache: Cache;
   private limits: Map<string, RateLimit>;
   private rrCounters: Record<string, number> = {};
-  private activeGroup: string | null = null;
-  private curModel: string = '';
-  private curModelAt: number = 0;
   /**
    * The turn's DRIVING model: the FIRST ref that opened a stream in the
    * current turn. Distinct from `curModel`, which every nested stream
@@ -501,10 +504,6 @@ export class Router {
    * read block (bulk-read checkReadBlock) would let the expensive model's
    * subsequent full-file reads through.
    */
-  private turnDriverRef: string = '';
-  private turnDriverAt: number = 0;
-  /** Start of the current turn, as reported by noteTurnStart(). 0 = unknown. */
-  private turnBoundaryAt: number = 0;
 
   /**
    * Marks the start of a new turn. Called from the turn_start hook BEFORE
@@ -512,22 +511,22 @@ export class Router {
    * set here; it is set by the first setCurModel() of the turn.
    */
   noteTurnStart(turnStartMs: number): void {
-    if (typeof turnStartMs === 'number' && turnStartMs > this.turnBoundaryAt) {
-      this.turnBoundaryAt = turnStartMs;
+    if (typeof turnStartMs === 'number' && turnStartMs > this.turn.turnBoundaryAt) {
+      this.turn.turnBoundaryAt = turnStartMs;
     }
   }
 
   setCurModel(model: string): void {
-    this.curModel = model;
-    this.curModelAt = Date.now();
+    this.turn.curModel = model;
+    this.turn.curModelAt = Date.now();
     // Pin the FIRST stream ref of the turn as its driver. Later (nested)
     // setCurModel calls update curModel but leave the pin alone. Without a
     // turn_start (turnBoundaryAt 0) the very first ref of the session is
     // pinned; the stale guard in getTurnDriverRef() keeps such a pin from
     // matching once a real turnStart is passed, so this fails open.
-    if (this.turnDriverAt === 0 || this.turnDriverAt < this.turnBoundaryAt) {
-      this.turnDriverRef = model;
-      this.turnDriverAt = this.curModelAt;
+    if (this.turn.turnDriverAt === 0 || this.turn.turnDriverAt < this.turn.turnBoundaryAt) {
+      this.turn.turnDriverRef = model;
+      this.turn.turnDriverAt = this.turn.curModelAt;
     }
   }
 
@@ -540,8 +539,8 @@ export class Router {
    */
   adoptTurnDriverRef(ref: string): void {
     if (!ref) return;
-    this.turnDriverRef = ref;
-    this.turnDriverAt = Date.now();
+    this.turn.turnDriverRef = ref;
+    this.turn.turnDriverAt = Date.now();
   }
 
   /**
@@ -553,10 +552,14 @@ export class Router {
    * turnStartMs: the last pinned ref.
    */
   getTurnDriverRef(turnStartMs?: number): string {
-    if (typeof turnStartMs === 'number' && turnStartMs > 0 && this.turnDriverAt < turnStartMs) {
+    if (
+      typeof turnStartMs === 'number' &&
+      turnStartMs > 0 &&
+      this.turn.turnDriverAt < turnStartMs
+    ) {
       return '';
     }
-    return this.turnDriverRef;
+    return this.turn.turnDriverRef;
   }
 
   /**
@@ -571,14 +574,33 @@ export class Router {
    * (status-line display use).
    */
   getCurModel(turnStartMs?: number): string {
-    if (typeof turnStartMs === 'number' && turnStartMs > 0 && this.curModelAt < turnStartMs) {
+    if (typeof turnStartMs === 'number' && turnStartMs > 0 && this.turn.curModelAt < turnStartMs) {
       return '';
     }
-    return this.curModel;
+    return this.turn.curModel;
   }
   private sessionCtx: ExtensionContext | null = null;
 
-  constructor(cfg: Config, cache: Cache, limits: Map<string, RateLimit>) {
+  /**
+   * The turn fields (active group, factual ref, driving-model pin, turn
+   * boundary) are per SESSION: in-process subagent sessions share this Router,
+   * and each must keep its own pin (docs/plans/2026-11-07-session-keyed-turn-state.md).
+   * index.ts passes ONE store to every Router it builds, so a Router
+   * replacement no longer drops them; a standalone Router owns its store.
+   */
+  private readonly turnStates: SessionStore<RouterTurnState>;
+
+  private get turn(): RouterTurnState {
+    return this.turnStates.forSession(currentSessionId());
+  }
+
+  constructor(
+    cfg: Config,
+    cache: Cache,
+    limits: Map<string, RateLimit>,
+    turnStates: SessionStore<RouterTurnState> = new SessionStore(emptyRouterTurnState)
+  ) {
+    this.turnStates = turnStates;
     this.cfg = cfg;
     this.cache = cache;
     this.limits = limits;
@@ -1361,7 +1383,7 @@ export class Router {
    * Detects the group for a model reference based on GDPval thresholds
    */
   detectGroup(ref: string): string | null {
-    if (this.activeGroup) return this.activeGroup;
+    if (this.turn.activeGroup) return this.turn.activeGroup;
 
     // With dynamic model discovery, detect group based on GDPval thresholds
     const gdpval = lookupGdp(ref);
@@ -1548,10 +1570,10 @@ export class Router {
   // ── Getter ────────────────────────────────────────────────────────────────
 
   getActiveGroup(): string | null {
-    return this.activeGroup;
+    return this.turn.activeGroup;
   }
 
   setActiveGroup(group: string | null): void {
-    this.activeGroup = group;
+    this.turn.activeGroup = group;
   }
 }

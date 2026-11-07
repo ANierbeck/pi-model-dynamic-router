@@ -19,7 +19,7 @@
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 16
+      "count": 14
     },
     {
       "file": "index.ts",

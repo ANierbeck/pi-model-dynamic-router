@@ -10,6 +10,7 @@
 import { executeBulkRead } from './bulk-read.ts';
 import { routerLog } from './logger.ts';
 import { runAsSubCall } from './subcall-scope.ts';
+import { runInSession, sessionIdOf } from './turn-state.ts';
 import * as metricsModule from './metrics.ts';
 import { splitRef, textOf } from './utils.ts';
 import type { ExtensionContext, ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -73,7 +74,9 @@ export function createTools(rt: ToolDeps): void {
     ) {
       // The reader stream is a SUB-CALL: it must not become the turn's model
       // (see src/subcall-scope.ts).
-      const result = await runAsSubCall(() => executeBulkRead(params, ctx, rt.cfg, routerLog));
+      const result = await runInSession(sessionIdOf(ctx), () =>
+        runAsSubCall(() => executeBulkRead(params, ctx, rt.cfg, routerLog))
+      );
       return {
         ...result,
         details: { tool: 'bulk_read', files: params.paths.length },
@@ -105,9 +108,11 @@ export function createTools(rt: ToolDeps): void {
         const { provider, modelId } = splitRef(ref);
         const model = ctx.modelRegistry.find(provider, modelId);
         if (model && (await rt.pi.setModel(model))) {
-          rt.activeGroup = name;
-          rt.router.setActiveGroup(name); // Set active group in router for display
-          rt.router.setCurModel(ref); // Set current model in router for status line
+          runInSession(sessionIdOf(ctx), () => {
+            rt.activeGroup = name;
+            rt.router.setActiveGroup(name); // Set active group in router for display
+            rt.router.setCurModel(ref); // Set current model in router for status line
+          });
           const m = rt.getM(ref);
           return {
             content: [

@@ -97,7 +97,7 @@ Independent review of `38d2a27..fde54f8` (the structural question behind most of
       (it matches only the `openrouter/openrouter/free` meta-router, not the
       `…:free` variants).
 - **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`) — plan `docs/plans/2026-11-07-compaction-continuity.md`: the check is a parameter-size regex, so a free tier or meta-router (`openrouter/openrouter/free`) gets the compaction HINT. Proposal: decide by real context window and exclude `:free`/meta-routers.
-- **I2 remainder / M1 — turn state is per process, not per session** — plan `docs/plans/2026-11-07-session-keyed-turn-state.md`. Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
+- **I2 remainder / M1 — turn state is per process, not per session** — plan `docs/plans/2026-11-07-session-keyed-turn-state.md` (implemented on `fix/turn-state-round` 2026-11-07, not merged). Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
 - **M3 — turn latency includes tool and sub-call time** (`event-handlers.ts` turn_end), which inflates latency and deflates tokens/s for every turn that runs tools; ranking reads `benchmarks`.
 - **C2 data — benchmarks/health/breaker values written for reader models before the fix may be skewed.** They decay (EMA, health windows); a reset is possible but not needed unless a reader model ranks oddly.
 

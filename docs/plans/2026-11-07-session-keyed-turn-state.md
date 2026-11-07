@@ -1,8 +1,9 @@
 # Session-Keyed Turn State Implementation Plan
 
-**Status:** proposed (2026-11-07) — owner decision of 2026-11-07: no virtual-model
-migration, fix the turn-state problems in the current design
-(`2026-11-04-virtual-models-routing.md`). This is the first of those fixes.
+**Status:** in progress (2026-11-07) — implemented on `fix/turn-state-round`,
+not merged. Owner decisions of 2026-11-07: no virtual-model migration
+(`2026-11-04-virtual-models-routing.md`); open decisions 1-3 below answered
+"follow the proposal".
 
 **Problem:** The router's turn state lives in closure variables of the extension
 factory (`index.ts`): `turnStart` (196), `curModel` (200), `activeGroup` (202),
@@ -41,7 +42,7 @@ subagent's task into the parent's next short prompt.
    sub-call hijacks the turn model" bug. A regression test asserts both
    mechanisms together.
 
-**Open decisions (owner):**
+**Open decisions (owner) — answered 2026-11-07: follow the proposals.** Implemented: the three variables plus `activeGroup`/`turnStart` and the Router's turn fields; 64-session LRU; no persistence. `sessionCtx` got the same treatment (a child's shutdown restores the latest live session's context instead of nulling it), because the shutdown regression test hung on it.
 
 1. **Scope of the move.** Only the three variables behind I2/I3/I5 (`curModel`,
    `lastDynamicModel`, `lastClassifiedCategory` — 57 references, 8 files) or all
@@ -57,6 +58,8 @@ subagent's task into the parent's next short prompt.
 `index.ts:196-218`, `src/routing.ts:487-577`, the `sessionId` plumbing in
 `@earendil-works/pi-coding-agent` (`dist/core/sdk.js:276` passes
 `sessionManager.getSessionId()`, `pi-agent-core/dist/agent.js:311` forwards it),
-and the reference counts by grep. **Not checked:** whether the extension factory
-is re-invoked for an in-process subagent session (if it is, the bug is smaller
-than assumed — the test in step 1 answers it).
+and the reference counts by grep. **Checked while implementing:** `load()` runs on every `session_start`, including
+in-process subagent sessions (comment in `index.ts`, `pi-subagents`
+`child-session.js:287` per `src/event-handlers.ts`), and rebuilt the shared Router — the
+bug is real. **Not checked:** the `/tree` and compaction interplay (needs an
+interactive session).
