@@ -80,13 +80,13 @@ ADR, `docs/adr/0001` included.
 
 ## Open decisions (owner)
 
-- **V1:** the new name of the cloud chain. Proposal: config
+- ~~**V1:**~~ Owner 2026-11-07: `classifier_cloud_chain` (as proposed). Was: the new name of the cloud chain. Proposal: config
   `classifier_cloud_chain`, `allowCloudChain`, file
   `classifier-cloud-probe.ts`, cache key `classifier_cloud_models`.
-- **V2:** aliases for the renamed config keys. The group plan decided "no
+- ~~**V2:**~~ Owner 2026-11-07: no read-aliases, same as D3 for the groups. Was: aliases for the renamed config keys. The group plan decided "no
   read-aliases in 2.0" for groups (its D3); confirm that this applies to the
   cloud-chain keys too, or ask for a warning alias.
-- **V3:** when the rename ships (a release decision, AGENTS.md §1).
+- ~~**V3:**~~ Owner 2026-11-07: ships with 2.0.0 (incompatible config rename, belongs with the five-group breaking change). Was: when the rename ships (a release decision, AGENTS.md §1).
 
 ## Risks
 

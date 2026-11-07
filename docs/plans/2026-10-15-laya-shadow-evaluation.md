@@ -1,6 +1,6 @@
 # Laya shadow evaluation — protocol
 
-Status: **PROPOSED — owner to confirm the decision rule before the first label is written.**
+Status: **done 2026-11-07 — NO-GO** (decision rule confirmed; comparator run R2 parked until the owner gives a go for the Mistral API calls; live monitoring continues per the note). Supersedes the original PROPOSED header, which was never updated after the result.
 Date: 2026-10-15. Branch: `laya-spike`. Related: `docs/research/2026-10-14-laya-finetuning-state.md`.
 
 ## Question

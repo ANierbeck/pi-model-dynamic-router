@@ -62,14 +62,14 @@ today.
 
 ## Open decisions (owner)
 
-- **S1:** only `continue`, or every turn that stays in the same group? The
+- ~~**S1:**~~ Owner 2026-11-07: only `continue` (as decided). Was: only `continue`, or every turn that stays in the same group? The
   owner decided `continue`; the broader rule is noted only because the same
   cache argument applies.
-- **S2:** a previous model that is `usable` but now ranks far below the
+- ~~**S2:**~~ Owner 2026-11-07: keep, past no gap limit (cache stability is the reason). Was: a previous model that is `usable` but now ranks far below the
   group's best (the quality window moved): keep it anyway, or leave when the
   gap exceeds a limit? Proposal: keep — cache stability was the stated
   reason.
-- **S3:** the first prompt of a session has no previous model; D6 of the
+- ~~**S3:**~~ Owner 2026-11-07: first prompt of a session → `standard` (D6). Was: the first prompt of a session has no previous model; D6 of the
   group plan covers that case (`standard`).
 
 ## Risks

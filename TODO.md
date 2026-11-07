@@ -23,9 +23,10 @@
 ### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
 
 The gate is live (`npm run lint`, step in the required `test` job,
-`docs/plans/2026-11-04-lint-gate.md`). Baseline: **803 findings / 123 (file, rule)
-entries** after the S1+S2+S3+S4 burn-down (was 1217 / 299; S3 took it to 919 / 159, the
-Prettier reformat to 915, S4 to 810 / 130, S4 factory interfaces to 803 / 123). Each slice lowers
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: **732 findings / 121 (file, rule)
+entries** (was 1217 / 299; S3 took it to 919 / 159, the
+Prettier reformat to 915, S4 to 810 / 130, S4 factory interfaces to 803 / 123,
+the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowers
 `scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
 `test/lint-baseline.test.ts` in the same commit:
 
@@ -66,7 +67,7 @@ Prettier reformat to 915, S4 to 810 / 130, S4 factory interfaces to 803 / 123). 
       honest type is `any` (still baselined) (S5 territory: `sessionCtx` getter, `readJson`,
       `hasConfiguredAuth`, `createGroupRegistration`). Owner decision D3: keep
       and burn down, explicit return types are treated as an API contract
-- [ ] **S5** long tail (~836): `no-explicit-any` + the `no-unsafe-*` family,
+- [ ] **S5** long tail (~732): `no-explicit-any` + the `no-unsafe-*` family,
       per-file slices. May never reach zero; the ratchet only requires it never
       grows.
 
@@ -98,8 +99,16 @@ Independent review of `38d2a27..fde54f8` (the structural question behind most of
       `…:free` variants).
 - **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`) — plan `docs/plans/2026-11-07-compaction-continuity.md` (implemented and merged 2026-11-07, PR #120): the decision now uses the real context window via the reserve-aware `planOutputBudget`, fail-closed on unknown windows, with `:free`/meta-router refs excluded.
 - **I2 remainder / M1 — turn state is per process, not per session** — plan `docs/plans/2026-11-07-session-keyed-turn-state.md` (implemented and merged 2026-11-07, PR #120). Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
-- **M3 — turn latency includes tool and sub-call time** (`event-handlers.ts` turn_end), which inflates latency and deflates tokens/s for every turn that runs tools; ranking reads `benchmarks`.
-- **C2 data — benchmarks/health/breaker values written for reader models before the fix may be skewed.** They decay (EMA, health windows); a reset is possible but not needed unless a reader model ranks oddly.
+- **M3 — turn latency includes tool and sub-call time** — plan
+  `docs/plans/2026-11-07-turn-latency-tool-time.md` (owner go 2026-11-07,
+  approved, not started): `turn_end` books the whole turn
+  (`Date.now() - rt.turnStart`, `src/event-handlers.ts:303`) as the model's
+  latency sample, so tool/sub-call time inflates `avg_latency_ms` and deflates
+  `throughput_tps`/`benchmarks`, which the ranking reads. Fix per the plan:
+  measure the stream, not the turn.
+- [x] **C2 data — RESOLVED 2026-11-07 (owner): no reset.** Benchmarks/health/
+  breaker values written for reader models before the fix decay via EMA and the
+  health windows; intervene only if a reader model ranks oddly.
 
 ### ✅ **Categories and groups did not line up — CLOSED 2026-11-02 (five-group layout shipped)**
 
@@ -131,15 +140,17 @@ Same problem as review item I3 below, kept as ONE entry there (measured now:
 the 2026-11-03 incident is the live case). Structural answer proposed in
 `docs/plans/2026-11-04-virtual-models-routing.md`.
 
-The spike's steps 1–3 are done (2026-11-06,
-`docs/research/2026-11-06-virtual-model-spike.md`). Measured: on 100 real
-turns a pure virtual model would have finished 74 % unchanged, recovered 10 %
-through Pi's retry, and lost 16 % — 14 of them because Pi treats a
-`Claude quota exceeded` 429 as final, 2 because the chain needed eight
-candidates and Pi allows four. Pi also has no stall detection and does not
-retry a well-formed empty response. So the in-request failover has to stay
-and the migration candidate is the turn state (`route()` + `state`), not the
-failover. Step 4 (migrate / hybrid / stay) is the owner's decision.
+The spike is done and the decision is made 2026-11-07 (owner: **no
+migration**, merged in PR #119; re-evaluation trigger on Pi host upgrades,
+see `docs/plans/2026-11-04-virtual-models-routing.md`). Measured on real
+turns 2026-10-28..2026-11-06 (corrected figures — the report now classifies
+every failure of a turn, not only the first; `docs/research/2026-11-06-virtual-model-spike.md`
+§2): 93 turns, 68 (73.1 %) finished unchanged, 9 (9.7 %) recovered through
+Pi's retry, 16 (17.2 %) lost — 15 because Pi treats a `Claude quota exceeded`
+429 body as final, 1 a mid-chain empty response Pi is blind to. Pi also has
+no stall detection and does not retry a well-formed empty response, so the
+in-request failover stays. The turn-state problems (I2/M1, I3, I5) are fixed
+in the current design (PR #120).
 
 ### ✅ **`delegation.expensive_groups` omitted `planning` — CLOSED 2026-11-02 (already fixed)**
 
@@ -684,6 +695,38 @@ never auto-bumped. Host upgrades are deliberate, planned rounds (see
 docs/plans/2026-09-30-router-0.99.1-hardening.md); Dependabot PR #12
 (pi 1.0.2, green CI proving nothing — the suite mocks most of pi) was
 closed on exactly this ground.
+
+### ⏸️ Deferred 2026-11-07 (owner: "do these later" — all registered, none started)
+
+Recorded so nothing rots (AGENTS.md §7 escape: an explicit owner deferral).
+Pick up in a later round, each as its own plan where noted (§11):
+
+- **Laya sidecar distribution** (`docs/plans/2026-10-31-laya-sidecar-distribution.md`):
+  open decisions 3 (where the sidecar lives: subdirectory with its own release
+  vs. separate repo) and 4 (Python runtime acceptable for users vs.
+  in-process `onnxruntime-node` — not yet evaluated; recommended first step is
+  a small onnxruntime-node spike). Remaining steps: `/health` contract tests,
+  ONNX conversion of `r2` + parity run, Linux/Windows latency, packaging with
+  pinned revision + checksum.
+- **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
+  live check after restart, disagreement labeling, timeout failure test,
+  `continue` step, and whether the momentum observation (built, default off)
+  gets enabled and evaluated. Laya stays in the data-reconciliation phase
+  (owner 2026-11-07).
+- **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
+  own plan — how owner ratings per model and task type enter the ranking
+  (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
+- **Task-type balancing remainder** (`docs/plans/2026-10-05-task-type-balancing.md`):
+  Phase 4 (provider budget pacing), 5b (cache-aware auto-compaction, opt-in),
+  5d (compaction summary via a cheaper model, bulk_read thresholds). 5c stays
+  deferred to a later 2.0.x by owner decision.
+- **Release prep for 2.0.0** (owner 2026-11-07: target the next release as
+  2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the §1 whole-range code review
+  (requesting-code-review over v1.6.1..main), the `npm audit` summary in the
+  report, the pi devDependency vs. installed-host check (AGENTS.md §10), the
+  fallback-rename (V3) and M3 landing in 2.0.0. The release itself (tag /
+  publish) is a separate explicit owner approval per AGENTS.md §1 — never
+  implied by this list.
 
 ### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
 

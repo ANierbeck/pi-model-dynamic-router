@@ -26,8 +26,8 @@ Red-first-by-mutant, region by region, through the real `StreamOrchestrator` (no
 
 ## Open decisions (owner)
 
-1. **Slice 2 depth.** The cascade is also the code the Virtual Models spike may replace. Proposal: slice 2 only pins the behaviours the spike's inventory needs (they double as its test set) and does not chase equivalents.
-2. **Log-text mutants.** Router log lines are observability, not behaviour. Proposal: pin the log lines that name a decision (`HINT group not found`, `[escalation] Using escalated group`, `skipping unusable refs`, `HINT fallback candidates`) and ledger the rest as equivalent.
+1. ~~**Slice 2 depth.**~~ Owner 2026-11-07: with the no-migration decision the triaged code stays, so the 205 real gaps get full red-first tests — the pin-only rule is dropped. Was: The cascade is also the code the Virtual Models spike may replace. Proposal: slice 2 only pins the behaviours the spike's inventory needs (they double as its test set) and does not chase equivalents.
+2. ~~**Log-text mutants.**~~ Owner 2026-11-07: pin the decision-naming log lines, ledger the rest as equivalent (as proposed). Was: Router log lines are observability, not behaviour. Proposal: pin the log lines that name a decision (`HINT group not found`, `[escalation] Using escalated group`, `skipping unusable refs`, `HINT fallback candidates`) and ledger the rest as equivalent.
 
 ## Verified against
 
