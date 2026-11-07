@@ -988,6 +988,18 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set lastDynamicModel(v) {
       turn().lastDynamicModel = v;
     },
+    get runGroup(): string | null {
+      return turn().runGroup;
+    },
+    set runGroup(v) {
+      turn().runGroup = v;
+    },
+    get runDriver(): string {
+      return turn().runDriver;
+    },
+    set runDriver(v) {
+      turn().runDriver = v;
+    },
     get lastClassifiedCategory(): ClassificationResult['category'] | undefined {
       return turn().lastClassifiedCategory;
     },

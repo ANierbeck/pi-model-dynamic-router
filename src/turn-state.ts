@@ -25,6 +25,13 @@ export interface TurnState {
   activeGroup: string | null;
   /** Last concrete model that served a stream — the first candidate of a tool follow-up. */
   lastDynamicModel: string;
+  /**
+   * The agent run's group and intended driver, remembered at classification so a
+   * tool follow-up continues in the run's group instead of falling to `simple`
+   * (docs/plans/2026-11-07-tool-follow-up-group.md). null/'' = no run remembered.
+   */
+  runGroup: string | null;
+  runDriver: string;
   /** Category of the previous classified turn, inherited by terse follow-ups. */
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
   /** Start of the current turn (ms since epoch); 0 = no turn started. */
@@ -120,6 +127,8 @@ export function emptyTurnState(): TurnState {
     curModel: '',
     activeGroup: null,
     lastDynamicModel: '',
+    runGroup: null,
+    runDriver: '',
     lastClassifiedCategory: undefined,
     turnStart: 0,
   };

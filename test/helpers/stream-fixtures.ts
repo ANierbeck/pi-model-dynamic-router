@@ -88,3 +88,21 @@ export function paidCloudModel(overrides: Record<string, unknown> = {}): Record<
 export function hermeticCacheFlags(): { gdpval_scraped: boolean; lastScanTimestamp: number } {
   return { gdpval_scraped: true, lastScanTimestamp: Date.now() };
 }
+
+/**
+ * The message list of a tool follow-up step: one user message, then a bash
+ * tool result. groupStream treats a list whose last message is a toolResult as
+ * a follow-up; three orchestrator test files spelled it out identically.
+ */
+export function toolFollowUpMessages(userText = 'run it'): Record<string, unknown>[] {
+  return [
+    { role: 'user', content: userText, timestamp: 1 },
+    {
+      role: 'toolResult',
+      toolCallId: 't1',
+      toolName: 'bash',
+      content: [{ type: 'text', text: 'ok' }],
+      timestamp: 2,
+    },
+  ];
+}
