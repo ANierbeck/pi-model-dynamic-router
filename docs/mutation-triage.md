@@ -1516,7 +1516,8 @@ fixture asserts `looks wedged` only, so both survive.
 
 24 mutants, four small test additions — all landed and verified (see
 "Slice 2 test round, batch 4 + slice 3 (2026-11-08)" below): the outer-abort file
-(cluster A, `test/outer-abort-chaining.test.ts`), the detail-less `context_overflow`
+(cluster A, `test/outer-abort-chaining.test.ts` — 7 of its 9 mutants killed, 2
+equivalent), the detail-less `context_overflow`
 (cluster B — EQUIVALENT, see the round's note), a parametrised `breakerEvidencePhrase`
 test (cluster C, `test/breaker-evidence-narration.test.ts`), and the two narration
 assertions (cluster D, same file). Nothing here depended on the virtual-models
@@ -1525,7 +1526,9 @@ decision: the spike showed the in-request failover stays
 
 ## Slice 2 test round, batch 4 + slice 3 (2026-11-08)
 
-Closes the four open slice-2 batch-4 clusters and all four slice-3 clusters. Six new
+Closes the four open slice-2 batch-4 clusters and all four slice-3 clusters —
+49 mutants killed (28 batch 4 + 21 slice 3), 5 confirmed equivalent (671, 658,
+both openCandidateAttempt equivalents, the detail-less overflow). Six new
 test files plus one describe in an existing file; every mutant below was applied by
 hand to `src/stream-orchestrator.ts` (pristine backup `/tmp/so-pristine.bak`), the
 named file observed RED on the mutant and GREEN on the original.
@@ -1575,15 +1578,23 @@ model that still passes its own pre-flight, and an unknown-window model. Killed:
 (`!cw`→`cw` — the unknown-window model is starved), 722 (`>`→`>=` — the boundary
 twin is attempted next).
 
-**Outer-signal chaining (slice 3 cluster A, openCandidateAttempt)** —
-`test/outer-abort-chaining.test.ts`. Killed: `if (outer)`→`if (false)` (no chain
+**Outer-signal chaining (slice 3 cluster A, openCandidateAttempt — all nine
+mutants of the triage table)** — `test/outer-abort-chaining.test.ts`. Killed:
+the listener body `() => undefined` (the 2026-09-27 burn returns),
+`if (outer)`→`if (false)` and `if (outer) {…}`→`if (outer) {}` (no chain
 listener), `if (outer.aborted)`→`if (false)` and its `abort(…)`→`;` (an
-already-aborted caller burns the attempt — the assertion must run INSIDE the
-consume window, because the walk's own finally abandons the attempt later anyway),
-`if (outer.aborted)`→`if (true)` (every candidate aborted at creation), the
-listener event `''`→ (never fires). EQUIVALENT, confirmed: `{ once: true }`→`{}`
-(one abort per candidate; a stale listener fires once more into an
-already-aborted controller).
+already-aborted caller burns the attempt), `if (outer.aborted)`→`if (true)`
+(every candidate aborted at creation), the listener event `'abort'`→`''`
+(never fires), and both reason-forwarding drops (`controller.abort(outer?.reason)`
+→`controller.abort()` in the listener, `controller.abort(outer.reason)`→`controller.abort())`
+at creation — the assertions pin the caller's REASON, not only `.aborted`).
+EQUIVALENT, confirmed: `{ once: true }`→`{}` (one abort per candidate; a stale
+listener fires once more into an already-aborted controller) and
+`outer?.reason`→`outer.reason` (inside the listener `outer` is always defined —
+the listener is only registered `if (outer)`). Review-round hardening
+(Sourcery, PR #123): the consume hangs in a test-controlled deferred instead of
+a 400 ms timer — a timed consume lets the walk's finally abandon the attempt
+under event-loop delay and makes the assertions vacuously pass.
 
 **Breaker evidence phrase + narration (slice 3 clusters C and D)** —
 `test/breaker-evidence-narration.test.ts` (walk-level; the candidate fails with
@@ -1593,7 +1604,12 @@ the KIND_PHRASE table and each of its four phrases (parametrized over the four
 evidence kinds), the uniform-vs-mixed condition (→`true`/`false`/`!==`), the
 `Math.max(1, …)` floor and the `/ 1000` (a sub-second span must floor at
 "within 1 s"), the returned template, the cloud fix hint (line 206) and the whole
-narration sentence (line 208).
+narration sentence (line 208). Review-round hardening (Sourcery, PR #123): the
+clock is frozen (`vi.setSystemTime`) — the evidence spans are measured against
+`Date.now()` at narration time, so a paused runner could turn "within 5 s" into
+"within 6 s"; and the fix-hint assertion pins the FULL sentence up to the
+trailing blank line, so provider-specific advice appended after the generic
+hint (ADR-0025) fails it — red-verified by hand-appending ` Or switch to Ollama.`.
 
 **Detail-less `context_overflow` (slice 3 cluster B, 1 mutant): EQUIVALENT.** The
 mutant (`if (!detail) return null`→`if (false)`) needs a `context_overflow` result
@@ -1613,6 +1629,13 @@ Fixture findings worth keeping:
   in `test/helpers/rate-limit-fixtures.ts`); a reset baked at setup time is in the
   past by the next turn, the parse returns undefined and the walk cascades instead
   of waiting.
+
+Fixture-level review fix (Sourcery, PR #123): the scripted registry's
+`streamSimple` mock now resolves the model by provider AND id — two providers
+can serve the same model id, and the id-only lookup would script the first
+provider's ref for both. Behavior-preserving for the existing fixtures (their
+ids are unique); the wait-retry kill family was re-verified after the change
+(all 13 mutants still killed).
 
 Ratchet interactions resolved on the way (both ratchets only shrink): the third
 copy of the walk-level ctx stub tripped `repeatedBlocks` (30→33) → extracted

@@ -7,8 +7,10 @@
 //
 // Walk-level harness (test/helpers/walk-stub-ctx.ts): the real driveStream
 // walk; the outer signal is the `options` argument of driveStream. The one
-// candidate hangs 400 ms in consumeWithDetection — the window in which the
-// test aborts the outer signal and inspects the attempt's.
+// candidate hangs in consumeWithDetection until the test releases it — no
+// timer, so the attempt's state can only be changed by the abort chain (a
+// timed consume would let the walk's own finally abandon the attempt and
+// make the assertions vacuously pass under event-loop delay).
 
 import { describe, it, expect, vi } from 'vitest';
 
@@ -19,57 +21,68 @@ vi.mock('../src/logger.ts', async (orig) => {
   return { ...actual, debugLog: vi.fn(), routerLog: vi.fn(), warnLog: vi.fn(), errorLog: vi.fn() };
 });
 
-/** One candidate whose consume hangs 400 ms, then fails as a stall. */
+/** One candidate whose consume hangs until the test releases it. */
 function hangingCandidateWorld() {
-  return walkStubWorld({
-    consume: () =>
-      new Promise((resolve) =>
-        setTimeout(() => resolve({ ok: false, reason: 'stall_timeout' }), 400)
-      ),
+  let release!: () => void;
+  const hang = new Promise<unknown>((resolve) => {
+    release = () => resolve({ ok: false, reason: 'stall_timeout' });
   });
+  const w = walkStubWorld({ consume: () => hang });
+  return { w, release };
+}
+
+/** Waits until the walk has opened its (single) candidate attempt. */
+async function firstAttempt(w: { attempts: { ref: string }[] }): Promise<void> {
+  await vi.waitFor(() => expect(w.attempts).toHaveLength(1));
 }
 
 describe("openCandidateAttempt chains the caller's AbortSignal", () => {
-  it("a mid-stream outer abort reaches the candidate's attempt signal", async () => {
-    const w = hangingCandidateWorld();
+  it("a mid-stream outer abort reaches the candidate's attempt signal with the caller's reason", async () => {
+    const { w, release } = hangingCandidateWorld();
     const outer = new AbortController();
     const walkDone = w.run(['a/one'], { signal: outer.signal });
 
-    await new Promise((r) => setTimeout(r, 100));
-    expect(w.attempts).toHaveLength(1);
+    await firstAttempt(w);
     expect(w.attempts[0].signal!.aborted).toBe(false);
 
-    outer.abort(new Error('user cancelled'));
-    await new Promise((r) => setTimeout(r, 50));
-
-    // The chain listener fired: the provider-side query is cancelled with
-    // the caller's reason, not left running in the background.
+    // The chain listener fires synchronously on abort: the provider-side
+    // query is cancelled immediately, with the caller's reason — not left
+    // running in the background and not with a generic one.
+    const reason = new Error('user cancelled');
+    outer.abort(reason);
     expect(w.attempts[0].signal!.aborted).toBe(true);
+    expect(w.attempts[0].signal!.reason).toBe(reason);
+
+    release();
     await walkDone;
   }, 15_000);
 
-  it('an ALREADY-aborted caller aborts the attempt at creation', async () => {
-    const w = hangingCandidateWorld();
-    const walkDone = w.run(['a/one'], { signal: AbortSignal.abort(new Error('too late')) });
+  it('an ALREADY-aborted caller aborts the attempt at creation, with its reason', async () => {
+    const { w, release } = hangingCandidateWorld();
+    const reason = new Error('too late');
+    const walkDone = w.run(['a/one'], { signal: AbortSignal.abort(reason) });
 
-    // Inspect INSIDE the consume window: the walk's own finally would
+    // Inspect while the consume still hangs: the walk's own finally would
     // abandon the attempt later anyway, so only the state at open time
     // proves the caller's abort reached the attempt at creation.
-    await new Promise((r) => setTimeout(r, 100));
-    expect(w.attempts).toHaveLength(1);
+    await firstAttempt(w);
     expect(w.attempts[0].signal!.aborted).toBe(true);
+    expect(w.attempts[0].signal!.reason).toBe(reason);
+
+    release();
     await walkDone;
   }, 15_000);
 
   it('a live outer signal leaves the attempt signal live', async () => {
-    const w = hangingCandidateWorld();
+    const { w, release } = hangingCandidateWorld();
     const outer = new AbortController();
     const walkDone = w.run(['a/one'], { signal: outer.signal });
 
-    await new Promise((r) => setTimeout(r, 150));
-    expect(w.attempts).toHaveLength(1);
+    await firstAttempt(w);
     // No spurious abort: a healthy cascade must not cancel its candidates.
     expect(w.attempts[0].signal!.aborted).toBe(false);
+
+    release();
     await walkDone;
   }, 15_000);
 });

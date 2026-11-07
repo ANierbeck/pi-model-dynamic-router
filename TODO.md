@@ -504,11 +504,14 @@ judged sufficient.
 > 34 mutants verified killed) plus batch 4 (2026-11-08: lookahead guards
 > 498–503, repetition/truncation narrations 749/751/752, the wait-retry
 > abort/slot family 659–694, context-window persistence 706–708, the overflow
-> candidate filter 713/717/720/722 — 28 more killed, see
+> candidate filter 713/717/720/722 — 28 killed, see
 > `docs/mutation-triage.md`). Slice 3 (helpers) triaged 2026-11-06 and its test
-> round is done 2026-11-08 (outer-abort chaining, breaker evidence phrase +
-> narration killed; the detail-less overflow verdicted EQUIVALENT — production
-> unreachable). Still open: cluster H leftovers (848, 847–858/860 need a
+> round is done 2026-11-08 (outer-abort chaining 7 of 9 killed / 2 equivalent,
+> breaker evidence phrase + narration 14 killed; the detail-less overflow
+> verdicted EQUIVALENT — production unreachable). Round total: 49 killed, 5
+> equivalent; the Sourcery review round on PR #123 hardened the fixtures
+> (deferred consume, frozen clock, reason pins, provider+id lookup) with all
+> kills re-verified. Still open: cluster H leftovers (848, 847–858/860 need a
 > seam-throw fixture reading `session_errors`), the blocklist seam 677–683,
 > and 871 (thin). Plan:
 > `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.

@@ -10,8 +10,12 @@
 // site that narrates through the REAL narrateBreakerOpen, reading breaker
 // evidence seeded into the context's cache — the same shape
 // recordProviderFailure writes.
+//
+// The clock is frozen (vi.setSystemTime): the evidence spans are measured
+// against Date.now() when the narration is generated, so a paused test
+// runner would otherwise turn "within 5 s" into "within 6 s" and flake.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 import { walkStubWorld } from './helpers/walk-stub-ctx.ts';
 
@@ -21,6 +25,11 @@ vi.mock('../src/logger.ts', async (orig) => {
 });
 
 const WEDGE_REF = 'wedge-provider/wedge';
+const T0 = Date.parse('2026-11-08T12:00:00.000Z');
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /** Seed the cache the way recordProviderFailure does: evidence per model. */
 function breakerCache(evidence: Record<string, { kind: string; at: number }>) {
@@ -28,6 +37,8 @@ function breakerCache(evidence: Record<string, { kind: string; at: number }>) {
 }
 
 async function narratedBreakerSkip(cache: unknown): Promise<string> {
+  vi.useFakeTimers();
+  vi.setSystemTime(T0);
   const w = walkStubWorld({
     results: { '*': { ok: false, reason: 'provider_error', detail: 'boom' } },
     ctxOverrides: {
@@ -50,12 +61,11 @@ describe('the breaker-open narration names its evidence', () => {
   ])(
     'uniform %s evidence gets its kind phrase',
     async (kind, phrase) => {
-      const now = Date.now();
       const text = await narratedBreakerSkip(
         breakerCache({
-          m1: { kind, at: now - 5_000 },
-          m2: { kind, at: now - 4_000 },
-          m3: { kind, at: now - 3_000 },
+          m1: { kind, at: T0 - 5_000 },
+          m2: { kind, at: T0 - 4_000 },
+          m3: { kind, at: T0 - 3_000 },
         })
       );
       expect(text).toContain(
@@ -66,11 +76,10 @@ describe('the breaker-open narration names its evidence', () => {
   );
 
   it('mixed-kind evidence collapses to the generic "failed"', async () => {
-    const now = Date.now();
     const text = await narratedBreakerSkip(
       breakerCache({
-        m1: { kind: 'empty_response', at: now - 5_000 },
-        m2: { kind: 'stall_timeout', at: now - 3_000 },
+        m1: { kind: 'empty_response', at: T0 - 5_000 },
+        m2: { kind: 'stall_timeout', at: T0 - 3_000 },
       })
     );
     expect(text).toContain('2 distinct model(s) failed within 5 s.');
@@ -80,21 +89,22 @@ describe('the breaker-open narration names its evidence', () => {
   }, 15_000);
 
   it('sub-second spans floor at "within 1 s"', async () => {
-    const now = Date.now();
     const text = await narratedBreakerSkip(
-      breakerCache({ m1: { kind: 'empty_response', at: now - 100 } })
+      breakerCache({ m1: { kind: 'empty_response', at: T0 - 100 } })
     );
     expect(text).toContain('1 distinct model(s) returned empty responses within 1 s.');
   }, 15_000);
 
-  it('carries the cooldown and the cloud fix hint (ADR-0025: no provider-specific advice)', async () => {
-    const now = Date.now();
+  it('carries the cooldown and exactly the generic cloud fix hint (ADR-0025: no provider-specific advice)', async () => {
     const text = await narratedBreakerSkip(
-      breakerCache({ m1: { kind: 'provider_error', at: now - 2_000 } })
+      breakerCache({ m1: { kind: 'provider_error', at: T0 - 2_000 } })
     );
-    expect(text).toContain('Skipping wedge-provider models for 2 min.');
+    // The full sentence, up to the trailing blank line: anything appended
+    // after the hint (e.g. provider-specific advice) fails this assertion.
     expect(text).toContain(
-      'Fix: check the provider/extension (e.g. reload the session); the breaker clears on the next success.'
+      `> [router] wedge-provider looks wedged: 1 distinct model(s) reported provider errors within 2 s. ` +
+        `Skipping wedge-provider models for 2 min. ` +
+        `Fix: check the provider/extension (e.g. reload the session); the breaker clears on the next success.\n\n`
     );
   }, 15_000);
 });

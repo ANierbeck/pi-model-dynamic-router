@@ -33,7 +33,11 @@ export function makeScriptedRegistry(modelsByRef: Record<string, any>) {
   const modelList = Object.entries(modelsByRef).map(([ref, model]) => ({ ref, model }));
 
   const streamSimple = vi.fn((model: any, _context: any, options: any) => {
-    const ref = modelList.find((e) => e.model.id === model.id)!.ref;
+    // Match provider AND id: two providers can serve the same model id, and a
+    // lookup by id alone would script the first provider's ref for both.
+    const ref = modelList.find(
+      (e) => e.model.provider === model.provider && e.model.id === model.id
+    )!.ref;
     const signal: AbortSignal | undefined = options?.signal;
     calls.push({ ref, signal });
     const script = scripts[ref] ?? [];
