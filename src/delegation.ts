@@ -25,7 +25,8 @@
  */
 
 import type { Config } from './types.ts';
-import type { Usage } from '@earendil-works/pi-ai';
+import type { AssistantMessageEvent, Usage } from '@earendil-works/pi-ai';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { stripRouterNarration, textOf } from './utils.ts';
 
 // ── Settings ─────────────────────────────────────────────────────────────
@@ -136,9 +137,18 @@ export function delegationSettings(cfg: Config | undefined): DelegationSettings 
 export function extractTextContent(content: unknown): string | null {
   if (!Array.isArray(content) || content.length === 0) return null;
   const parts: string[] = [];
-  for (const block of content) {
-    if (!block || typeof block !== 'object' || block.type !== 'text') return null;
-    parts.push(String(block.text ?? ''));
+  for (const rawBlock of content) {
+    if (!rawBlock || typeof rawBlock !== 'object') return null;
+    const block = rawBlock as Record<string, unknown>;
+    if (block.type !== 'text') return null;
+    const text = block.text;
+    // Only primitives stringify unambiguously; a non-primitive `text` would
+    // print '[object Object]' — treat it as absent instead.
+    parts.push(
+      typeof text === 'string' || typeof text === 'number' || typeof text === 'boolean'
+        ? String(text)
+        : ''
+    );
   }
   return parts.join('\n');
 }
@@ -178,17 +188,20 @@ interface SubCallOutcome {
  * on stream events / message_end). Throws on error events so callers
  * fail open.
  */
-export async function drainSubCallStream(stream: AsyncIterable<any>): Promise<SubCallOutcome> {
+export async function drainSubCallStream(
+  stream: AsyncIterable<AssistantMessageEvent>
+): Promise<SubCallOutcome> {
   let text = '';
   let usage: Usage | undefined;
   for await (const ev of stream) {
-    const t = ev?.type;
-    if (t === 'text_delta') {
-      text += String(ev.delta ?? '');
-    } else if (t === 'error') {
-      throw new Error(`sub-model stream error: ${String(ev.error ?? 'unknown')}`);
-    } else {
-      const u = ev?.usage ?? ev?.message?.usage;
+    if (ev.type === 'text_delta') {
+      text += ev.delta ?? '';
+    } else if (ev.type === 'error') {
+      // ev.error is an AssistantMessage; textOf stringifies its content
+      // blocks readably (String() would collapse it to '[object Object]').
+      throw new Error(`sub-model stream error: ${textOf(ev.error)}`);
+    } else if (ev.type === 'done') {
+      const u = ev.message.usage;
       if (u) usage = u;
     }
   }
@@ -246,7 +259,7 @@ interface DelegationOutcome {
  */
 export async function handleReadDelegation(
   event: { toolName?: string; content?: unknown; isError?: boolean; input?: unknown },
-  ctx: any,
+  ctx: ExtensionContext | null | undefined,
   cfg: Config | undefined,
   log?: (msg: string) => void
 ): Promise<DelegationOutcome | undefined> {
@@ -269,18 +282,35 @@ export async function handleReadDelegation(
 
     // Resolve the delegation group through Pi's public registry API —
     // the router's group interception routes to the cheap model.
-    const model = ctx?.modelRegistry?.find?.(settings.group, settings.group);
-    if (!model) {
+    const model = ctx?.modelRegistry.find(settings.group, settings.group);
+    if (!ctx || !model) {
       log?.(`[delegation] group "${settings.group}" not registered — passing through`);
       return undefined;
     }
 
     const context = {
       messages: [
-        { role: 'user', content: buildSummaryPrompt(raw.slice(0, settings.max_raw_chars)) },
+        {
+          role: 'user' as const,
+          content: buildSummaryPrompt(raw.slice(0, settings.max_raw_chars)),
+          timestamp: Date.now(),
+        },
       ],
     };
-    const stream = ctx.modelRegistry.runtime.streamSimple(model, context, { signal: ctx?.signal });
+    // Reach-through to the registry facade's private `runtime.streamSimple`
+    // (verified against pi 1.5.0): the spike's streaming path. The facade's
+    // public `streamSimple()` is the candidate replacement; swapping it needs
+    // a live verification round, not a lint-slice commit.
+    const registryRuntime = (
+      ctx.modelRegistry as unknown as {
+        runtime: { streamSimple: typeof ctx.modelRegistry.streamSimple };
+      }
+    ).runtime;
+    const stream = registryRuntime.streamSimple(
+      model,
+      context,
+      ctx.signal !== undefined ? { signal: ctx.signal } : undefined
+    );
     const { text, usage } = await drainSubCallStream(stream);
 
     // Narration hygiene (spike finding) + trust check: a cascade that only

@@ -22,6 +22,7 @@ import {
   extractTextContent,
   buildSummaryPrompt,
   handleReadDelegation,
+  drainSubCallStream,
 } from '../src/delegation';
 import { stripRouterNarration } from '../src/utils';
 import type { Config } from '../src/types';
@@ -171,13 +172,40 @@ describe('buildSummaryPrompt', () => {
   });
 });
 
+describe('drainSubCallStream', () => {
+  it('accumulates text_delta content and keeps the done event message usage', async () => {
+    const stream = (async function* () {
+      yield { type: 'text_delta', delta: 'a', contentIndex: 0 } as any;
+      yield { type: 'text_delta', delta: 'b', contentIndex: 0 } as any;
+      yield {
+        type: 'done',
+        message: { usage: { input: 1, output: 2, totalTokens: 3 } },
+      } as any;
+    })();
+    const out = await drainSubCallStream(stream);
+    expect(out.text).toBe('ab');
+    expect(out.usage).toEqual({ input: 1, output: 2, totalTokens: 3 });
+  });
+
+  it('throws a readable error on error events (not [object Object])', async () => {
+    const stream = (async function* () {
+      yield {
+        type: 'error',
+        error: { role: 'assistant', content: [{ type: 'text', text: 'quota exceeded' }] },
+      } as any;
+    })();
+    await expect(drainSubCallStream(stream)).rejects.toThrow(/quota exceeded/);
+  });
+});
+
 // ── handleReadDelegation ────────────────────────────────────────────────
 
 /**
  * Mock Pi ExtensionContext: modelRegistry with find() for the delegation
- * group and runtime.streamSimple yielding the given events (same event
- * shapes the live spike observed: text_delta { delta }, usage carried on
- * stream events).
+ * group and runtime.streamSimple yielding the given events (current host
+ * protocol, pi 1.5.0: text_delta { delta }, usage on the done event's
+ * message — the 2026-09 spike saw a message_end event on pi 0.83, a
+ * protocol that no longer exists).
  */
 function makeCtx(events: any[] = [], opts: { groupModel?: unknown | null } = {}) {
   const model =
@@ -211,8 +239,8 @@ const summaryEvents = (text: string) => [
   { type: 'text_delta', delta: text },
   { type: 'text_end', content: text },
   {
-    type: 'message_end',
-    usage: { input: 11973, output: 108, totalTokens: 12081, cost: { total: 0.00048 } },
+    type: 'done',
+    message: { usage: { input: 11973, output: 108, totalTokens: 12081, cost: { total: 0.00048 } } },
   },
 ];
 
@@ -597,8 +625,8 @@ describe('default export wiring: tool_result returns the delegation replacement'
           delta: 'The fixture contains one long run of delegated filler characters.',
         };
         yield {
-          type: 'message_end',
-          usage: { input: 100, output: 20, totalTokens: 120, cost: { total: 0.001 } },
+          type: 'done',
+          message: { usage: { input: 100, output: 20, totalTokens: 120, cost: { total: 0.001 } } },
         };
       }
       const resultCtx = {

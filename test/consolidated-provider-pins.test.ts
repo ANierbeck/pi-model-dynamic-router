@@ -110,6 +110,9 @@ describe('free-model-on-demand-registration', () => {
           };
           const modelRegistry = {
             getAvailable: () => [freeModel],
+            // Real registries (pi 1.5.0 ModelRegistry facade) always expose
+            // this; the on-demand registration guard reads it.
+            getRegisteredProviderIds: () => [],
             find: (provider: string, modelId: string) => {
               if (provider === 'openrouter' && openrouterRegistered) {
                 return modelsByRef[`${provider}/${modelId}`] ?? null;
