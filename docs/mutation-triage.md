@@ -1706,3 +1706,41 @@ now fully closed** — every mutant is killed, ledgered equivalent, or removed
 as dead code. Remaining low-priority confirmations: metrics.ts (73) and
 routing.ts (54) nightlies remainders (likely equivalents; confirm before
 spending a round).
+
+## Nightly N11 (2026-11-08) — metrics.ts / routing.ts remainders
+
+> Run 42362620882, `main` @ `daa9623`: score 84.2 %, 2993 mutants. The
+> remainders of the two files were 74 (`metrics.ts`) + 74 (`routing.ts`)
+> undetected mutants. 89 were already ledgered EQUIVALENT
+> (`nightly-r1/r2/r4`), leaving **59** (56 new, 3 rechecks of earlier
+> verdicts). Dataset: `docs/mutation-data/nightly-n11.json`.
+
+Method: the 59 were applied by byte range to a pristine copy of the nightly
+commit and rechecked against the FULL suite
+(`scripts/mutation-recheck.ts --jobs 4 --max-workers 3`).
+
+| outcome | count | evidence |
+| --- | --- | --- |
+| killed by the existing suite (the earlier "survivors" were stale or partial-suite artefacts) | 10 | `metrics.ts` #135, `routing.ts` #805, #1066-1071 (group constant list), #1149, #1166 |
+| survives the full suite, EQUIVALENT | 22 | reasons per row in the dataset: dead `?.`/`?? []` guards, JS coercions (`null < n`, `undefined > 0`), early returns subsumed by the callee |
+| survives the full suite, REAL gap — pinned | 27 | `test/mutation-n11-remainders.test.ts`; every mutant hand-applied to `src` and observed dead (27/27) |
+
+The 27 real gaps: the registry `contextWindow` fall-through (positive-number
+guard), null entries in `capability_profiles`, the `gdpval_provenance` mirror
+kept when a cache omits the field, the EWMA blend from the second stream on
+(latency and throughput), `min_score: 0` meaning "no floor",
+`min_gdpval_pct` with no scored model, the health-aware fallback cascade
+(unhealthy primary skips unhealthy fallbacks; empty primary still takes an
+unhealthy first fallback), the lazy `pool` property descriptor, the five
+fields of the decision-time pool record (`limited`, `paced`, `cost: null`,
+score only for `best`, score follows `score_by`), `detectGroup`'s last tier
+(`design`) and the `why` column of a plain GDPval `best` group.
+
+**Boyscout fix found BY the round (AGENTS.md §7):** `getM` read
+`cfg.model_metrics[ref]` unguarded while its own cache branch and
+`updateMetrics` use `?.` — a config without a `model_metrics` block crashed
+the first metrics update. The pin is red on pristine (TypeError), green with
+`cfg.model_metrics?.[ref]`.
+
+With this round the `metrics.ts` / `routing.ts` remainders are closed: every
+undetected mutant is killed, ledgered equivalent, or covered by a pin.

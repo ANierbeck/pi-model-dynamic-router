@@ -743,7 +743,7 @@ export function getM(ref: string): Metrics {
     return metrics[ref];
   }
 
-  const cm = cfg.model_metrics[ref] ?? {};
+  const cm = cfg.model_metrics?.[ref] ?? {};
 
   // Start with user config; default to 0 (will be healed below)
   let costPerM: number | 'unknown' = cm.cost_per_m ?? 0;

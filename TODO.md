@@ -549,9 +549,10 @@ call itself), and the silent-skip path (871). 23 mutants hand-verified
 killed (`test/thrown-stream-blocklist-seams.test.ts`, ledger in
 `docs/mutation-triage.md`); a boyscout fix rode along (the thrown-open
 narration printed raw provider text — now sanitized like the consume-catch
-narration). The 205 slice-2 real gaps are fully closed. Remaining
-low-priority: metrics.ts (73) / routing.ts (54) nightlies remainders —
-likely equivalents, confirm before spending a round. Plan:
+narration). The 205 slice-2 real gaps are fully closed. The metrics.ts /
+routing.ts remainders are closed too (nightly N11, 2026-11-08: 59 triaged —
+10 killed by the suite, 22 EQUIVALENT, 27 real gaps pinned in
+`test/mutation-n11-remainders.test.ts`). Plan:
 > `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
 
 Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
@@ -593,9 +594,8 @@ rather than un-merged later. So this round triggers in EITHER ending:
 orchestrator changes (output-budget guard, prev logging) are cherry-picked
 to main first. In both cases: fresh nightly on the updated main, then triage.
 
-metrics.ts (73) and routing.ts (54) remainders are low priority — after
-batches 1–4 these look mostly like equivalents (slug/GDPval matching, group
-constant lists, round-robin fields); confirm before spending a round.
+metrics.ts / routing.ts remainders: CLOSED 2026-11-08 (nightly N11 — see
+`docs/mutation-triage.md`).
 
 ---
 
