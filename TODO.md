@@ -118,11 +118,16 @@ groups no category reached. Resolved by the five-group layout
 #81): each category now selects the group of the same name, and the shipped
 `router-config.json` has exactly the groups the categories reach.
 
-### 🔎 **Open (2026-10-25): "fallback" naming (code smell)**
+### ✅ **"fallback" naming — DONE 2026-11-08 (PR #127)**
 
-"fallback" names six different things (group, failover cascade, classifier
-candidates, decision-log stage, retired category, stream retry). Plan:
-`docs/plans/2026-10-25-fallback-naming.md`.
+"fallback" named six different things. Rounds 1 (dead vocabulary) and 2
+(cloud chain) are done; the ratchet is `test/fallback-naming.test.ts`
+(retired names cannot come back; a new `fallback` identifier must be added to
+an honest-meaning allowlist). Breaking config rename: `classifier_cloud_fallback`
+→ `classifier_cloud_chain` (warned, not aliased). Plan:
+`docs/plans/2026-10-25-fallback-naming.md`. **Open, owner-side:** the
+`~/.laya-ft` labeling tooling still uses `fallback` as a corpus label —
+renaming it migrates existing labels, so it needs the owner's go.
 
 ### ✅ **Compaction reason text named the wrong group — CLOSED 2026-11-02 (already fixed)**
 

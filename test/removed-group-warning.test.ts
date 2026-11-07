@@ -176,3 +176,38 @@ describe('a clean layer', () => {
     expect(warnings().filter((m) => m.includes('removed group'))).toEqual([]);
   });
 });
+
+// ── Renamed classifier key (docs/plans/2026-10-25-fallback-naming.md, V2) ──
+// The cloud chain stopped being called a "fallback" in 2.0: the key is
+// `classifier_cloud_chain`. Decision V2 = no read aliases, so a config that
+// still says `classifier_cloud_fallback` is dropped — but silently dropping it
+// would turn the cloud classifier off without a word, which is why the loader
+// warns. Same shape as the removed-group guard above.
+describe('a layer that still uses the pre-2.0 classifier key', () => {
+  it('warns, names the new key, and drops the old one', () => {
+    const { config } = loadWithProjectLayer({
+      model_groups: { simple: { classifier_cloud_fallback: true } },
+    });
+    const w = warnings().filter((m) => m.includes('classifier_cloud_fallback'));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('classifier_cloud_chain');
+    expect(
+      (config.model_groups.simple as Record<string, unknown>).classifier_cloud_fallback
+    ).toBeUndefined();
+  });
+
+  it('does not translate the value — the new key keeps the shipped default', () => {
+    const { config } = loadWithProjectLayer({
+      model_groups: { simple: { classifier_cloud_fallback: true } },
+    });
+    // The owner must rename the key; the old value is not carried over.
+    expect(
+      (config.model_groups.simple as Record<string, unknown>).classifier_cloud_chain
+    ).toBeUndefined();
+  });
+
+  it('says nothing about the new key', () => {
+    loadWithProjectLayer({ model_groups: { simple: { classifier_cloud_chain: true } } });
+    expect(warnings().filter((m) => m.includes('classifier_cloud'))).toEqual([]);
+  });
+});

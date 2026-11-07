@@ -14,7 +14,7 @@
 // Every test uses a UNIQUE prompt (module-level classification cache).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 import type { Config, Cache } from '../src/types.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
@@ -32,7 +32,7 @@ vi.mock('../src/logger.ts', async (importOriginal) => {
 
 const cfg: Config = { providers: {}, model_groups: {}, model_metrics: {} };
 const cloudCache = (...refs: string[]): Cache =>
-  ({ classifier_fallback_models: refs, classifier_fallback_probe_sig: PROBE_SIGNATURE }) as Cache;
+  ({ classifier_cloud_models: refs, classifier_cloud_probe_sig: PROBE_SIGNATURE }) as Cache;
 
 const textReply = (obj: Record<string, unknown>) => ({
   content: [{ type: 'text', text: JSON.stringify(obj) }],
@@ -51,7 +51,7 @@ function cloudOpts(
     opts: {
       cfg,
       cache: cloudCache(...refs),
-      allowCloudFallback: true,
+      allowCloudChain: true,
       completeSimple,
       findModel: (ref: string) => ({
         provider: ref.split('/')[0],

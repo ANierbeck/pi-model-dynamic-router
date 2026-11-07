@@ -76,7 +76,7 @@ let lastProbeDownAt = 0;
  * drop, suspended machine) would otherwise burn the full classification
  * timeouts (primary + fallback model) on every prompt. This probe bounds
  * that to a single short request, letting the classifier jump straight
- * to its cloud fallback chain.
+ * to its cloud chain.
  *
  * Note: availability != the model being loaded. If the daemon is up but
  * a model is missing, callOllama still fails — the existing

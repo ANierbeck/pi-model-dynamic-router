@@ -13,7 +13,7 @@
 // BEFORE completeSimple is ever called, with a distinct log reason.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import { isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
@@ -45,12 +45,12 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
     const result = await classifyPrompt(
       'Unconfigured provider candidate must be skipped, not tried',
       {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         allowStaticFallback: true,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['openrouter/free-model-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['openrouter/free-model-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -75,11 +75,11 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
     const hasConfiguredAuth = vi.fn().mockReturnValue(true);
 
     const result = await classifyPrompt('Configured provider candidate must still be tried', {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg: {} as any,
       cache: {
-        classifier_fallback_models: ['openrouter/free-model-a'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['openrouter/free-model-a'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,
@@ -104,11 +104,11 @@ describe('classifyPrompt cloud fallback: unconfigured provider', () => {
     const findModel = vi.fn().mockReturnValue(mockModel);
 
     const result = await classifyPrompt('No hasConfiguredAuth hook provided at all', {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg: {} as any,
       cache: {
-        classifier_fallback_models: ['openrouter/free-model-a'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['openrouter/free-model-a'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,

@@ -81,7 +81,7 @@ export function isExcluded(ref: string, ctx: ExcludeContext): boolean {
  * carrying the explicit `:free` tag. A catalog price of 0 is NOT enough: the
  * scan turns it into `cost_per_m: 0`, and the provider can change the price
  * afterwards. Routing keeps the price-based free rule; this guard only narrows
- * the classifier's cloud fallback, which had been spending on a paid model.
+ * the classifier's cloud chain, which had been spending on a paid model.
  */
 export function isPaidForClassifier(ref: string, rules: ExcludeRules | undefined): boolean {
   const paidFrom = rules?.paid_models_from;

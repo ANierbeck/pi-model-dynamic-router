@@ -5,12 +5,12 @@
 // user-prompt assembly, and the response-JSON extraction.
 //
 // Used by BOTH the production classifier (src/content-classifier.ts) and
-// the scan-time quality probe (src/classifier-fallback-probe.ts) — both
+// the scan-time quality probe (src/classifier-cloud-probe.ts) — both
 // exercise the IDENTICAL prompt, because a probe that validates a different
 // task lets unsuitable models (e.g. a speech model that spuriously copies
 // the hint example) pass the availability check while misclassifying in
 // production. The module also breaks the circular dependency
-// (content-classifier → classifier-fallback-probe) that a direct prompt
+// (content-classifier → classifier-cloud-probe) that a direct prompt
 // import between the two would create.
 
 /**

@@ -8,7 +8,7 @@
  */
 
 import { extractCapabilities } from './capabilities.ts';
-import { probeAndCache } from './classifier-fallback-probe.ts';
+import { probeAndCache } from './classifier-cloud-probe.ts';
 import { probeLocalClassifierCandidates } from './classifier-local-probe.ts';
 import { callOllama, isOllamaAvailable } from './ollama-utils.ts';
 import { type LocalLlmDeps, callLocalLlm } from './local-llm.ts';
@@ -527,7 +527,7 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
           ?.getApiKeyForProvider?.(provider)
           ?.catch?.(() => null)) ?? null,
       timeoutMs: 90_000, // large models need time; if the local model is too
-      // slow it fails and the cloud fallback (free OpenRouter) fires.
+      // slow it fails and the cloud chain (free OpenRouter) fires.
     };
     const callLlm = (prompt: string): Promise<string> => callLocalLlm(prompt, deps);
 
@@ -912,7 +912,7 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
       // candidate, stops at 8 successes) and non-fatal —
       // if it fails the classifier falls back to selectClassifierCandidates +
       // the try-each loop at classification time. See
-      // src/classifier-fallback-probe.ts.
+      // src/classifier-cloud-probe.ts.
       try {
         const registry = rt.sessionCtx?.modelRegistry;
         if (registry?.runtime?.completeSimple) {

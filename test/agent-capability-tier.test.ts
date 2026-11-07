@@ -195,7 +195,7 @@ describe('agent-capability tier — shipped defaults + classifier chain independ
   });
 
   it('classifier modules do not depend on the tier predicates (classification keeps small models)', () => {
-    const chainModules = ['src/classifier-fallback-probe.ts', 'src/content-classifier.ts'];
+    const chainModules = ['src/classifier-cloud-probe.ts', 'src/content-classifier.ts'];
     for (const rel of chainModules) {
       const src = fs.readFileSync(path.join(repoRoot, rel), 'utf-8');
       expect(src, `${rel} must not import the agent-capability tier`).not.toMatch(

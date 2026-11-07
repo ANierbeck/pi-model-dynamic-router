@@ -6,7 +6,7 @@
 // called.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 
 vi.mock('../src/ollama-utils', () => ({
   callOllama: vi.fn(),
@@ -92,11 +92,11 @@ describe('classifyPrompt — local models come from the derived chain', () => {
       stopReason: 'stop',
     }));
     const r = await classifyPrompt(prompt('no-local-cloud'), {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg: { model_groups: {} } as any,
       cache: {
-        classifier_fallback_models: ['acme/judge-1'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['acme/judge-1'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as Cache,
       completeSimple,
       findModel: () => ({}),

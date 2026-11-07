@@ -73,7 +73,7 @@ describe('formatClassifierStatus renders the day counters', () => {
     name: 'dynamic',
     method: 'dynamic',
     models: [],
-    classifier_cloud_fallback: true,
+    classifier_cloud_chain: true,
   } as unknown as Group;
 
   it('shows sources and categories, most frequent first', () => {

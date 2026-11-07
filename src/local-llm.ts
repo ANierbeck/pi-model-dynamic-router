@@ -1,5 +1,5 @@
 // src/local-llm.ts
-// Provider-agnostic local LLM caller with free-cloud fallback.
+// Provider-agnostic local LLM caller with a free-cloud chain.
 //
 // The router needs an LLM for two low-frequency tasks (prompt classification
 // and, now, model-name matching). Historically both hard-coded Ollama on
@@ -39,7 +39,7 @@ export interface LocalLlmDeps {
    * Pi-side API key resolution (ADR-0022): wired to
    * modelRegistry.getApiKeyForProvider in index.ts. The router never
    * resolves keys itself; a provider whose key Pi cannot resolve is
-   * skipped by the cloud fallback.
+   * skipped by the cloud chain.
    */
   resolveApiKey: (provider: string) => Promise<string | null>;
 }
@@ -161,13 +161,13 @@ export async function callLocalLlm(prompt: string, deps: LocalLlmDeps): Promise<
       });
       return content;
     } catch {
-      // Fall through to cloud fallback.
-      // (Intentionally swallowed; cloud fallback is the safety net.)
+      // Fall through to the cloud chain.
+      // (Intentionally swallowed; the cloud chain is the safety net.)
     }
   }
 
-  // Cloud fallback: free OpenRouter models.
-  const cloudResult = await callCloudFallback(prompt, deps);
+  // Cloud chain: free OpenRouter models.
+  const cloudResult = await callCloudChain(prompt, deps);
   if (cloudResult !== null) return cloudResult;
 
   throw new Error(
@@ -223,13 +223,13 @@ async function callOpenAiChat(args: OpenAiChatArgs): Promise<string> {
   return content;
 }
 
-// ── Cloud fallback (free OpenRouter models) ───────────────────────────────
+// ── Cloud chain (free OpenRouter models) ──────────────────────────────────
 
 /**
  * Try each configured free cloud model in order until one succeeds.
  * Returns the model's text response, or null if all fail.
  */
-async function callCloudFallback(prompt: string, deps: LocalLlmDeps): Promise<string | null> {
+async function callCloudChain(prompt: string, deps: LocalLlmDeps): Promise<string | null> {
   const { cfg, providers, resolveApiKey, timeoutMs = 30_000 } = deps;
   const freeModels = await collectFreeCloudModels(cfg, providers, resolveApiKey);
   if (freeModels.length === 0) return null;

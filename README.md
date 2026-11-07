@@ -168,7 +168,7 @@ gates → ranking → failure handling) as a Mermaid diagram, see
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_fallback: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`. Since 2.0 every category selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_chain: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`. Since 2.0 every category selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`.
 
 #### Categories for Classification
 
@@ -204,10 +204,10 @@ The **`dynamic`** group is a special group that classifies each prompt in real-t
 
 To use the **`dynamic`** group, you need:
 - **Ollama** installed and running locally (`ollama serve`) with at least one chat model pulled — optional when the cloud classifier chain is enabled
-- No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud fallback uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier_model` / `classifier_fallback` in the `dynamic` group of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
+- No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud chain uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier_model` / `classifier_fallback` in the `dynamic` group of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-Cloud-first (2026-09-27): with `classifier_cloud_fallback: true` (set on the
+Cloud-first (2026-09-27): with `classifier_cloud_chain: true` (set on the
 shipped `dynamic` group) the classifier tries a chain of free cloud models
 FIRST — pinned `classifier_cloud_model` → scan-time probe-verified list →
 tiered discovery → configured free models — and treats Ollama as the last
@@ -352,7 +352,7 @@ This provides **accurate feedback** about which model is currently generating re
 
 On startup, the router automatically:
 
-1. **Resolves nothing credential-related itself (ADR-0022).** The router never reads or writes Pi's credential store — Pi resolves API keys (auth.json incl. `!` secret-manager commands, models.json, env, CLI OAuth) via `modelRegistry.getApiKeyForProvider` whenever a router-internal path needs one (free-model registration, free-cloud fallback). If a key lives in a `pass` store or a shell command, reference it from Pi's own auth.json and Pi executes it.
+1. **Resolves nothing credential-related itself (ADR-0022).** The router never reads or writes Pi's credential store — Pi resolves API keys (auth.json incl. `!` secret-manager commands, models.json, env, CLI OAuth) via `modelRegistry.getApiKeyForProvider` whenever a router-internal path needs one (free-model registration, the free-cloud chain). If a key lives in a `pass` store or a shell command, reference it from Pi's own auth.json and Pi executes it.
 2. **Scans local models** (Ollama / LM Studio) and OpenRouter's public pricing catalog; cloud model inventory comes from Pi's catalog (ADR-0021 — the router registers no scan-discovered cloud models)
 3. **Scrapes GDPval scores** from [Artificial Analysis](https://artificialanalysis.ai/evaluations/gdpval-aa) with hardcoded fallbacks — a plain, unauthenticated GET of a public leaderboard page; no local data is sent
 4. **Caches pricing** per provider/model from OpenRouter's public pricing endpoint
@@ -363,7 +363,7 @@ All scanning is async and non-blocking.
 
 - **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
 - **Prompt content stays local by default.** The dynamic-group content classifier runs against a local Ollama model. If both local classifier models are unavailable, it falls back to static keyword matching (only if `allowStaticFallback` is enabled) rather than sending anything externally.
-- **Optional cloud classifier fallback (`classifier_cloud_fallback`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
+- **Optional cloud classifier fallback (`classifier_cloud_chain`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
 - **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
 
 ---
@@ -487,7 +487,7 @@ You're out of usage credits. Run /usage-credits to keep using Fable 5
     "models": [
       "claude-bridge/claude-opus-5",    // First choice (Max only)
       "claude-bridge/claude-sonnet-5",  // Fallback (Pro/Max)
-      "anthropic/claude-3-5-sonnet",    // Cloud fallback
+      "anthropic/claude-3-5-sonnet",    // Cloud chain
       "mistral/mistral-medium-3.5"     // Final fallback
     ],
     "fallback_groups": ["code_complex", "standard", "simple"]
@@ -893,10 +893,10 @@ The router uses a **modular architecture** with the following components:
 | **routing.ts** | Routing logic | Model selection, filtering, sorting |
 | **stream-orchestrator.ts** | Stream orchestration | `groupStream`/`driveStream` extraction from index.ts, `buildOrchestratorContext` factory with live getters for router/rateLimitManager/cacheManager |
 | **detection.ts** | Error event detection | Rate-limit/abort/overflow text patterns, `isRateLimitLikeReason()`, `isAbortLikeText()`, `parseResetAtMs()` |
-| **content-classifier.ts** | Content classification | derived local Ollama chain (classifier-local-probe.ts), cloud fallback via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
+| **content-classifier.ts** | Content classification | derived local Ollama chain (classifier-local-probe.ts), cloud chain via pi's `modelRegistry.completeSimple()` (see ADR 0004) |
 | **escalation.ts** | Session escalation | Loop detection, level tracking, session-safe reset |
 | **model-matcher.ts** | LLM-assisted model matching | Batched matching, plausibility guard, hallucination rejection |
-| **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud fallback |
+| **local-llm.ts** | Provider-agnostic LLM caller | Ollama OR LM Studio, OpenRouter free cloud chain |
 | **exclude.ts** | Personalized exclude rules | Provider/pattern/paid-model filtering for all groups |
 | **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
 

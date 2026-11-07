@@ -66,7 +66,7 @@ this module asks a local LLM to match it to a known GDPval slug.
   against known leaderboard slugs) -- the prompt sent here is built from
   model IDs/labels, never user conversation content. Unconditional (not
   gated by an opt-in flag) because no user data is involved; contrast with
-  the content-classifier's `classifier_cloud_fallback`, which does carry raw
+  the content-classifier's `classifier_cloud_chain`, which does carry raw
   user prompt text and is opt-in for that reason.
 
 ### `src/rate-limit.ts` — Single source of truth for cooldown checks
@@ -143,12 +143,12 @@ Previously `index.ts` had `isRateLimitText` (15 patterns) AND
 ### `src/discovery.ts` — `getCheapestCloudModels()`
 
 `getCheapestCloudModels()` dynamically discovers the cheapest cloud models
-for the classifier's cloud fallback (when `classifier_cloud_fallback: true`
+for the classifier's cloud chain (when `classifier_cloud_chain: true`
 is set on the `dynamic` group). It filters by `lookupPrice(ref)` and requires
 `price.output <= $5/M`. **Known limitation (finding F3, 2026-09-02):**
 subscription models (`mistral-zai/*`, including the user's free-to-them
 GLM-5.2) have no pricing data in the OpenRouter pricing cache → `lookupPrice`
-returns `null` → they are filtered out. The classifier's cloud fallback
+returns `null` → they are filtered out. The classifier's cloud chain
 therefore never tries `mistral-zai/glm-5-2`, only free OpenRouter models. A
 correct fix needs real per-token pricing data, not a bigger scope; documented
 inline in `src/discovery.ts`.
@@ -224,7 +224,7 @@ delegates.
   (divergent, the latter dead code) in `index.ts` consolidated into
   `src/detection.ts` (`isRateLimitText`, `isRateLimitLikeReason`,
   `isAbortLikeText`, `parseResetAtMs`). Custom HTTP client `src/cloud-client.ts`
-  deleted; classifier cloud fallback now uses pi's `modelRegistry.completeSimple`
+  deleted; the classifier cloud chain now uses pi's `modelRegistry.completeSimple`
   (see ADR 0004).
 
 ## Testing

@@ -1,4 +1,4 @@
-// test/classifier-fallback-probe.test.ts
+// test/classifier-cloud-probe.test.ts
 // Tests for the dynamic, probe-based classifier fallback discovery.
 //
 // Replaces the old hardcoded CURATED_FREE_MODELS tests. The probe module
@@ -7,15 +7,15 @@
 // provider setup, not just one user with mistral-zai/mistral-small-latest.
 
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import {
   selectClassifierCandidates,
-  getCachedFallbackModels,
+  getCachedCloudModels,
   probeAndCache,
-  hasProbedFallback,
+  hasProbedCloudChain,
   PROBE_CASES,
   type ProbeContext,
-} from '../src/classifier-fallback-probe.js';
+} from '../src/classifier-cloud-probe.js';
 import * as metrics from '../src/metrics.js';
 import type { Config, Cache } from '../src/types.ts';
 
@@ -351,7 +351,7 @@ describe('probeAndCache', () => {
     const result = await probeAndCache(baseCfg, cache, pctx, (m) => logs.push(m));
     expect(result).toContain('openrouter/working-model');
     expect(result).not.toContain('openrouter/broken-model');
-    expect(cache.classifier_fallback_models).toEqual(result);
+    expect(cache.classifier_cloud_models).toEqual(result);
     expect(logs.some((l) => l.includes('working-model OK'))).toBe(true);
     expect(logs.some((l) => l.includes('broken-model failed'))).toBe(true);
   });
@@ -577,47 +577,47 @@ describe('probeAndCache', () => {
     expect(isUnhealthy(cache, 'openrouter/broken')).toBe(true);
   });
 
-  it('writes the working list to cache.classifier_fallback_models', async () => {
+  it('writes the working list to cache.classifier_cloud_models', async () => {
     const cache: Cache = {
       available_models: [{ id: 'ok', provider: 'openrouter', cost_per_m: 0 }],
       openrouter_pricing: { 'openrouter/ok': { input: 0, output: 0 } },
     };
     seedMetrics(baseCfg, cache);
-    expect(cache.classifier_fallback_models).toBeUndefined();
+    expect(cache.classifier_cloud_models).toBeUndefined();
     const pctx: ProbeContext = {
       findModel: (_ref) => ({ provider: 'openrouter', id: 'ok' }),
       completeSimple: goodClassifierMock(),
     };
     await probeAndCache(baseCfg, cache, pctx);
-    expect(cache.classifier_fallback_models).toEqual(['openrouter/ok']);
+    expect(cache.classifier_cloud_models).toEqual(['openrouter/ok']);
   });
 });
 
-describe('getCachedFallbackModels + hasProbedFallback', () => {
+describe('getCachedCloudModels + hasProbedCloudChain', () => {
   it('returns empty array when probe has not run', () => {
     const cache: Cache = {};
-    expect(getCachedFallbackModels(cache)).toEqual([]);
-    expect(hasProbedFallback(cache)).toBe(false);
+    expect(getCachedCloudModels(cache)).toEqual([]);
+    expect(hasProbedCloudChain(cache)).toBe(false);
   });
 
   it('returns the cached list when probe has run (even if empty)', () => {
     const cache: Cache = {
-      classifier_fallback_models: ['openrouter/model-a'],
-      classifier_fallback_probe_sig: PROBE_SIGNATURE,
+      classifier_cloud_models: ['openrouter/model-a'],
+      classifier_cloud_probe_sig: PROBE_SIGNATURE,
     };
-    expect(getCachedFallbackModels(cache)).toEqual(['openrouter/model-a']);
-    expect(hasProbedFallback(cache)).toBe(true);
+    expect(getCachedCloudModels(cache)).toEqual(['openrouter/model-a']);
+    expect(hasProbedCloudChain(cache)).toBe(true);
   });
 
-  it('hasProbedFallback is true even when the probe found nothing (empty array = probe ran)', () => {
+  it('hasProbedCloudChain is true even when the probe found nothing (empty array = probe ran)', () => {
     // An empty array is a valid result — means the probe ran but all failed.
     // The classifier should then fall back to selectClassifierCandidates.
     const cache: Cache = {
-      classifier_fallback_models: [],
-      classifier_fallback_probe_sig: PROBE_SIGNATURE,
+      classifier_cloud_models: [],
+      classifier_cloud_probe_sig: PROBE_SIGNATURE,
     };
-    expect(getCachedFallbackModels(cache)).toEqual([]);
-    expect(hasProbedFallback(cache)).toBe(true);
+    expect(getCachedCloudModels(cache)).toEqual([]);
+    expect(hasProbedCloudChain(cache)).toBe(true);
   });
 });
 

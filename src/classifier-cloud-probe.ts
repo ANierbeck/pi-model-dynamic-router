@@ -1,7 +1,8 @@
-// src/classifier-fallback-probe.ts
-// Dynamic discovery + availability probe for the classifier's cloud fallback.
+// src/classifier-cloud-probe.ts
+// Dynamic discovery + availability probe for the classifier's cloud chain.
 //
-// PROBLEM: the classifier's cloud fallback (when Ollama is down) needs a list
+// PROBLEM: the classifier's cloud chain (the path taken when no local model
+// is available) needs a list
 // of cheap, capable-enough cloud models. Two prior approaches both failed:
 //
 //  1. Hardcoded free_models in router-config.json — only listed openrouter
@@ -20,7 +21,8 @@
 //   Tier B:        real per-token price ≤ threshold, gdpval unknown.
 //   Tier C:        placeholder $0 (provider-level cost_per_m:0, no real
 //                  pricing) — probe decides if they actually work.
-//   Excluded: local providers (ollama/lm-studio — primary path, not fallback),
+//   Excluded: local providers (ollama/lm-studio — the local path, not the
+//             cloud chain),
 //             models currently marked unhealthy in model_health.
 //
 // PROBE: at scan time (after the scan saves the cache), each candidate must
@@ -36,9 +38,9 @@
 // candidate, once per /router scan.
 //
 // CACHE: verified-working refs are stored in
-// `cache.classifier_fallback_models` (a string[]) and persisted with the rest
-// of the scan cache. The classifier reads this list at fallback time — no
-// re-probing per classification.
+// `cache.classifier_cloud_models` (a string[]) and persisted with the rest
+// of the scan cache. The classifier reads this list when it needs the cloud
+// chain — no re-probing per classification.
 //
 // DESIGN NOTE: this module has NO hard dependency on any specific provider.
 // Whatever providers the user has keys for, the scan discovers models and
@@ -63,7 +65,7 @@ import {
   isHintCategory,
 } from './classification-prompt.ts';
 
-/** Max output price ($/M tokens) for a classification-fallback candidate. */
+/** Max output price ($/M tokens) for a cloud-chain classification candidate. */
 const MAX_OUTPUT_PRICE_PER_M = 5;
 
 /**
@@ -84,7 +86,7 @@ const MAX_PROBE_CANDIDATES = 20;
 const MAX_WORKING_MODELS = 8;
 
 /**
- * Per-case probe timeout (ms). Exported because the runtime cloud fallback
+ * Per-case probe timeout (ms). Exported because the runtime cloud chain
  * chain (src/content-classifier.ts) defaults its per-candidate cap to this
  * value — probe/runtime parity must be structural, not two coincidentally
  * equal literals (roborev review of 6efa6d2, LOW).
@@ -210,7 +212,7 @@ export interface ProbeContext {
 }
 
 /**
- * Selects candidate models for the classifier's cloud fallback, tiered by
+ * Selects candidate models for the classifier's cloud chain, tiered by
  * price + gdpval. Returns refs sorted best-first. Does NOT probe — that's
  * {@link probeAndCache}.
  *
@@ -235,7 +237,7 @@ export function selectClassifierCandidates(
 
   for (const m of cache.available_models ?? []) {
     const ref = `${m.provider}/${m.id}`;
-    // Skip local providers — that's the primary classifier path, not fallback.
+    // Skip local providers — that's the local classifier path, not the cloud chain.
     if (ref.startsWith('ollama/') || ref.startsWith('lm-studio/')) continue;
     // Skip models currently marked unhealthy (failed ≥2× recently).
     // Health decays after 15 min, so a recovered model gets re-probed next scan.
@@ -285,8 +287,7 @@ export function selectClassifierCandidates(
   // AND their OpenRouter guardrails blocked several free models (404). The
   // 12 Tier-B OpenRouter candidates filled every slot, so Tier C (Mistral
   // models with a working key) was never probed → 0 working models cached →
-  // classifier fell through to `fallback → tactical` (a heavy model) for
-  // every prompt.
+  // classifier fell through to a heavy model for every prompt.
   //
   // Round-robin by provider prevents this: we take turns picking one
   // candidate per provider across all tiers, so a single down/rate-limited
@@ -330,14 +331,14 @@ export function selectClassifierCandidates(
 }
 
 /**
- * Returns the cached, verified-working classifier fallback model list.
+ * Returns the cached, verified-working cloud-chain model list.
  * Empty array if the probe hasn't run yet (or the cache was invalidated by a
  * fresh scan). The classifier should fall back to {@link selectClassifierCandidates}
  * + the existing try-each-model loop in that case.
  */
-export function getCachedFallbackModels(cache: Cache): string[] {
-  if (cache.classifier_fallback_probe_sig !== PROBE_SIGNATURE) return [];
-  return cache.classifier_fallback_models ?? [];
+export function getCachedCloudModels(cache: Cache): string[] {
+  if (cache.classifier_cloud_probe_sig !== PROBE_SIGNATURE) return [];
+  return cache.classifier_cloud_models ?? [];
 }
 
 /**
@@ -349,7 +350,7 @@ export function getCachedFallbackModels(cache: Cache): string[] {
  * The probe is bounded: at most {@link MAX_PROBE_CANDIDATES} candidates, each
  * with a {@link PROBE_TIMEOUT_MS} timeout, and it stops as soon as
  * {@link MAX_WORKING_MODELS} successes are found (we don't need more than
- * that for a fallback chain).
+ * that for a chain).
  *
  * @returns the list of verified-working refs (also written to cache).
  */
@@ -361,7 +362,7 @@ export async function probeAndCache(
 ): Promise<string[]> {
   const candidates = selectClassifierCandidates(cfg, cache);
   const log = onLog ?? ((): void => {});
-  log(`[classifier-probe] probing ${candidates.length} candidate(s) for fallback availability`);
+  log(`[classifier-probe] probing ${candidates.length} candidate(s) for cloud-chain availability`);
 
   const working: string[] = [];
 
@@ -443,8 +444,8 @@ export async function probeAndCache(
     }
   }
 
-  cache.classifier_fallback_models = working;
-  cache.classifier_fallback_probe_sig = PROBE_SIGNATURE;
+  cache.classifier_cloud_models = working;
+  cache.classifier_cloud_probe_sig = PROBE_SIGNATURE;
   log(
     `[classifier-probe] ${working.length} working model(s) cached: ${working.join(', ') || '(none)'}`
   );
@@ -452,14 +453,14 @@ export async function probeAndCache(
 }
 
 /**
- * True if the cached fallback list is present (probe has run this scan cycle).
+ * True if the cached cloud-chain list is present (probe has run this scan cycle).
  * Note: an empty list IS valid (means the probe ran but everything failed) —
  * the classifier should then fall back to selectClassifierCandidates + the
  * try-each loop. This function only reports presence, not usability.
  */
-export function hasProbedFallback(cache: Cache): boolean {
+export function hasProbedCloudChain(cache: Cache): boolean {
   return (
-    Array.isArray(cache.classifier_fallback_models) &&
-    cache.classifier_fallback_probe_sig === PROBE_SIGNATURE
+    Array.isArray(cache.classifier_cloud_models) &&
+    cache.classifier_cloud_probe_sig === PROBE_SIGNATURE
   );
 }

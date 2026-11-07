@@ -21,7 +21,8 @@ vi.mock('../src/ollama-utils.ts', () => ({
 }));
 
 // More than CONTINUATION_MAX_WORDS so short-prompt momentum does not fire:
-// only the LLM-said-'fallback' path is under test.
+// only the LLM-said-'continue' path is under test. (The file was named after
+// the retired category `fallback`, which `continue` replaced in v2-r3.)
 // Unique per call: identical context-free prompts hit the classification cache.
 let promptSeq = 0;
 const continuation = () =>
@@ -33,7 +34,7 @@ function llmSays(category: string, confidence = 0.9): void {
   );
 }
 
-describe('fallback classification inherits the previous category (Phase 2)', () => {
+describe('continue classification inherits the previous category (Phase 2)', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(ollamaUtils.isOllamaAvailable).mockResolvedValue(true);
@@ -54,7 +55,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     expect(result.reason).toContain('inherit');
   });
 
-  it('counts the inherited category, not the raw fallback', async () => {
+  it('counts the inherited category, not the raw continue', async () => {
     llmSays('continue');
     await classifyPrompt(continuation(), {
       cache: localModelCache(),
@@ -65,7 +66,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     expect(counts.byCategory.continue).toBeUndefined();
   });
 
-  it('inherits on the static path too (LLM unavailable, static classifier says fallback)', async () => {
+  it('inherits on the static path too (LLM unavailable, static classifier says continue)', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
     const result = await classifyPrompt(continuation(), {
       cache: localModelCache(),
@@ -75,7 +76,7 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     expect('category' in result && result.category).toBe('planning');
   });
 
-  it('inherits when the classifier is unavailable and static fallback is disabled', async () => {
+  it('inherits when the classifier is unavailable and the static classifier is disabled', async () => {
     vi.mocked(ollamaUtils.callOllama).mockRejectedValue(new Error('down'));
     const result = await classifyPrompt(continuation(), {
       cache: localModelCache(),

@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Router } from '../src/routing.ts';
-import { selectClassifierCandidates } from '../src/classifier-fallback-probe.ts';
+import { selectClassifierCandidates } from '../src/classifier-cloud-probe.ts';
 import * as metricsModule from '../src/metrics.ts';
 import type { Config, Cache } from '../src/types.ts';
 import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';

@@ -184,7 +184,7 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
         classifier_model: 'ollama/judge:1b',
         classifier_fallback: 'ollama/judge:0.5b',
         classifier_cloud_model: 'acme/cloud-judge',
-        classifier_cloud_fallback: true,
+        classifier_cloud_chain: true,
       },
     },
     model_metrics: { 'claude-bridge/acme-5': { cost_per_m: 0.000001 } },

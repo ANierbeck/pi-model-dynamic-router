@@ -36,7 +36,7 @@ describe('compaction context-window routing', () => {
   it('routes to strategic when last model was a small local model', async () => {
     const result = await classifyPrompt('Compact this conversation', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {
@@ -58,7 +58,7 @@ describe('compaction context-window routing', () => {
   it('reuses last model when it was a large cloud model', async () => {
     const result = await classifyPrompt('Compact this conversation', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {
@@ -80,7 +80,7 @@ describe('compaction context-window routing', () => {
   it('routes to strategic when no last model is known', async () => {
     const result = await classifyPrompt('Compact this conversation', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {
@@ -98,7 +98,7 @@ describe('compaction context-window routing', () => {
   it('reuses last model when it was a medium cloud model (not small-local)', async () => {
     const result = await classifyPrompt('Compact this conversation', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {
@@ -119,7 +119,7 @@ describe('compaction context-window routing', () => {
     // 3B model should route to strategic, not be reused
     const result3b = await classifyPrompt('Compact', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {
@@ -134,7 +134,7 @@ describe('compaction context-window routing', () => {
     // 35B model — should still be detected as local-small if from ollama
     const result35b = await classifyPrompt('Compact', {
       allowStaticFallback: true,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg,
       cache,
       context: {

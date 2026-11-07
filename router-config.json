@@ -72,7 +72,7 @@
     "dynamic": {
       "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
       "method": "dynamic",
-      "classifier_cloud_fallback": true
+      "classifier_cloud_chain": true
     },
     "bulk_reader": {
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",
