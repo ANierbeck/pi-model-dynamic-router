@@ -100,6 +100,31 @@ describe('fallback classification inherits the previous category (Phase 2)', () 
     expect('category' in result && result.category).toBe('simple');
   });
 
+  // docs/plans/2026-10-26-continue-keeps-model.md: the orchestrator keeps the
+  // previous MODEL (not only the category) on a continue turn, so it must be
+  // able to tell an inherited result from a genuinely classified one.
+  it('marks an inherited result, so the router can keep the previous model', async () => {
+    llmSays('continue');
+    const result = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
+    expect(result).toMatchObject({ category: 'design', inheritedFromContinue: true });
+  });
+
+  it('does not mark a concrete classification, nor a continue without a predecessor', async () => {
+    llmSays('simple');
+    const concrete = await classifyPrompt(continuation(), {
+      cache: localModelCache(),
+      context: { lastCategory: 'design' },
+    });
+    expect(concrete).not.toHaveProperty('inheritedFromContinue');
+
+    llmSays('continue');
+    const orphan = await classifyPrompt(continuation(), { cache: localModelCache() });
+    expect(orphan).not.toHaveProperty('inheritedFromContinue');
+  });
+
   it('a HINT turn is never overridden by inheritance', async () => {
     const result = await classifyPrompt('HINT: planning please carry on with the list', {
       context: { lastCategory: 'design' },

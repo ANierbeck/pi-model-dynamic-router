@@ -58,6 +58,13 @@ export interface ClassificationResult {
     | 'continue';
   reason: string;
   confidence?: number;
+  /**
+   * Set only by inheritPreviousCategory: the classifier said `continue` and
+   * the category is the previous turn's. The router keeps the previous MODEL
+   * on such a turn (docs/plans/2026-10-26-continue-keeps-model.md); a result
+   * that was classified for real never carries it.
+   */
+  inheritedFromContinue?: true;
 }
 
 export type FullClassificationResult = ClassificationResult | HintClassificationResult;
@@ -692,6 +699,7 @@ function inheritPreviousCategory(
     ...result,
     category: lastCategory,
     reason: `Continue classification — inheriting previous task category (${lastCategory})`,
+    inheritedFromContinue: true,
   };
 }
 

@@ -51,6 +51,7 @@ const followUpMessages = toolFollowUpMessages('plan the refactor');
 function followUpWorld(opts: { limited?: string[]; free?: string[]; pools?: typeof POOLS } = {}) {
   const pools = { ...POOLS, ...opts.pools };
   const limited = new Set(opts.limited ?? []);
+  const breakerOpen = new Set<string>();
   let classification: any = { category: 'planning' };
   const ctx: any = {
     cfg: {
@@ -73,6 +74,7 @@ function followUpWorld(opts: { limited?: string[]; free?: string[]; pools?: type
     detectHintDirectly: vi.fn(() => null),
     isCompactionTurn: () => false,
     isLimited: (ref: string) => limited.has(ref),
+    isBreakerOpen: (ref: string) => breakerOpen.has(ref),
     isLocalProvider: () => false,
     clearLimit: () => {},
     lookupGdp: () => null,
@@ -100,6 +102,10 @@ function followUpWorld(opts: { limited?: string[]; free?: string[]; pools?: type
     open,
     classifyPrompt: ctx.classifyPrompt as ReturnType<typeof vi.fn>,
     limit: (ref: string) => limited.add(ref),
+    openBreaker: (ref: string) => breakerOpen.add(ref),
+    setPool: (name: string, p: { candidates: string[]; selected: string }) => {
+      pools[name] = p;
+    },
     unlimit: (ref: string) => limited.delete(ref),
     classifyAs: (c: any) => {
       classification = c;
@@ -262,5 +268,109 @@ describe('tool follow-up of a simple run is unchanged', () => {
     const d = await w.open(followUpMessages);
     expect(d.group).toBe('simple');
     expect(d.candidates).toEqual(['mistral/large', 'openrouter/cheap:free', 'mistral/tiny']);
+  });
+});
+
+// docs/plans/2026-10-26-continue-keeps-model.md: a `continue` prompt says
+// "nothing new, keep going". The category was always inherited; the MODEL used
+// to be re-ranked, so a ranking change between two turns switched models on a
+// cold prompt cache. Now the previous model leads the candidate list when it is
+// a candidate of the inherited group and usable now. Owner decisions 2026-11-07:
+// only `continue` (S1), keep past any quality gap (S2), first prompt -> normal (S3).
+describe('a continue turn keeps the previous model', () => {
+  const continueTurn = [...turnMessages, { role: 'user', content: 'ok, go on', timestamp: 5 }];
+  const inherited = { category: 'planning', inheritedFromContinue: true };
+
+  async function flippedRanking(w: ReturnType<typeof followUpWorld>) {
+    await w.open(turnMessages); // planning: opus leads and serves
+    w.ctx.lastDynamicModel = 'claude/opus';
+    // Health, pacing or a cost tie flips the group ranking between the turns.
+    w.setPool('planning', {
+      candidates: ['claude/sonnet', 'claude/opus'],
+      selected: 'claude/sonnet',
+    });
+    w.classifyAs(inherited);
+  }
+
+  it('keeps the previous model first although the ranking flipped; the rest stays ranked', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    const d = await w.open(continueTurn);
+    expect(d.group).toBe('planning');
+    expect(d.candidates.slice(0, 2)).toEqual(['claude/opus', 'claude/sonnet']);
+    // the failure cascade behind it is the group's ranking plus its fallback groups, unchanged
+    expect(d.candidates).toEqual(['claude/opus', 'claude/sonnet', 'mistral/glm', 'mistral/small']);
+  });
+
+  it('the kept model also drives the run: the tool follow-up that follows starts on it', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    await w.open(continueTurn);
+    expect(w.ctx.lastDynamicModel).toBe('claude/opus');
+    expect(w.ctx.runDriver).toBe('claude/opus'); // the run was started on the kept model
+    const d = await w.open(followUpMessages);
+    expect(d.candidates[0]).toBe('claude/opus');
+  });
+
+  it('without the marker (a real new task) the ranking decides, as before', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.classifyAs({ category: 'planning' });
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/sonnet');
+  });
+
+  it('does not keep a rate-limited previous model', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.limit('claude/opus');
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/sonnet');
+  });
+
+  it('does not keep a previous model whose provider breaker is open', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.openBreaker('claude/opus');
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/sonnet');
+  });
+
+  it('does not keep a previous model the inherited group does not contain', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.ctx.lastDynamicModel = 'mistral/tiny'; // from another group, not a planning candidate
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/sonnet');
+  });
+
+  it('keeps a previous model that served from the group’s fallback groups', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.ctx.lastDynamicModel = 'mistral/glm'; // planning failed over to standard
+    const d = await w.open(continueTurn);
+    expect(d.candidates).toEqual(['mistral/glm', 'claude/sonnet', 'claude/opus', 'mistral/small']);
+  });
+
+  it('the first prompt of a session has no previous model: normal ranking', async () => {
+    const w = followUpWorld();
+    w.classifyAs(inherited);
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/opus');
+  });
+
+  it('an escalated session keeps the escalation group’s ranking', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    w.ctx.escalation = { level: 'planning' };
+    const d = await w.open(continueTurn);
+    expect(d.candidates[0]).toBe('claude/sonnet');
+  });
+
+  it('a router-internal sub-call never keeps the turn model', async () => {
+    const w = followUpWorld();
+    await flippedRanking(w);
+    const d = await runAsSubCall(() => w.open(continueTurn));
+    expect(d.candidates[0]).toBe('claude/sonnet');
   });
 });

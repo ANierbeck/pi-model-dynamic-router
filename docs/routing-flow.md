@@ -116,7 +116,13 @@ flowchart TD
 2. **Category adjustments (Phase 2/3 of task-type balancing).** `continue`
    ("a short continuation/confirmation", not a self-contained task) inherits
    the previous turn's category; low-confidence replies do too. With no
-   previous category, `continue` goes to `standard` (D6). `category_groups`
+   previous category, `continue` goes to `standard` (D6). A `continue` turn
+   that inherited a category also keeps the previous MODEL: it leads the
+   candidate list when it is a candidate of the inherited group (fallback
+   groups included), is not rate-limited and its provider breaker is closed
+   — a ranking change between two turns no longer switches models on a cold
+   prompt cache. Escalated sessions and router sub-calls are excluded.
+   `category_groups`
    user overrides win over the built-in `CATEGORY_TO_GROUP`, which maps every
    category to the group named like it (`simple` and `code_simple` share
    `simple`; `continue` shares `standard`).

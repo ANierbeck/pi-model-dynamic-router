@@ -5,14 +5,16 @@ Step 1 (measurement) done 2026-11-08: 8 same-group switches on 152 `continue`
 pairs (5.3 %), 7 without a failure cause — the premise holds, the share is
 small; whether the change is worth its code is the owner's call
 (`docs/research/2026-11-08-continue-switch-measurement.md`, committed script
-`scripts/continue-switch-measure.ts`). Steps 2–4 not started.
+`scripts/continue-switch-measure.ts`). Owner go 2026-11-08 to implement:
+steps 2–4 done (branch `feat/continue-keeps-model`).
 
 **Verified against:** `laya-spike` at `492243f` — `src/stream-orchestrator.ts`
 (`:332-358` tool follow-up, `:403-407` classifier context, `:604`
 `lastDynamicModel` assignment) and `src/content-classifier.ts`
 (`inheritPreviousCategory`, `:595-612`). Not verified: how often a
-`continue` turn lands on a different model than the turn before it (Step 1
-measures it).
+`continue` turn lands on a different model than the turn before it — Step 1
+measured it on 2026-11-08 (8 same-group switches on 152 pairs,
+`docs/research/2026-11-08-continue-switch-measurement.md`).
 
 **Related:** `docs/plans/2026-10-25-category-group-mismatch.md` (D6: the
 catch-all group for `continue` without a predecessor);
@@ -49,18 +51,18 @@ today.
 
 ### Steps
 
-1. **Measure** from the router log and the decision log: share of `continue`
+1. ✅ **Measure** (2026-11-08) from the router log and the decision log: share of `continue`
    turns whose selected model differs from the previous turn's, split by
    cause (ranking change, limit, breaker). Result goes to `docs/research/`.
    If the share is negligible, say so and decide with the owner whether the
    change is still worth its code.
-2. **Red-first test** with synthetic data: two consecutive turns, the second
+2. ✅ **Red-first test** (2026-11-08, `test/tool-follow-up-group.test.ts`) with synthetic data: two consecutive turns, the second
    a `continue`, the group ranking flipped between them — the second turn
    must keep the first turn's model; and a limited previous model must not
    be kept.
-3. **Implementation** next to the tool follow-up path, sharing the
+3. ✅ **Implementation** (2026-11-08, `previousModelToKeep` + `usableNow` in `src/stream-orchestrator.ts`) next to the tool follow-up path, sharing the
    "usable now" check instead of copying it.
-4. `npx tsc --noEmit`, `npx vitest run`, coverage thresholds unchanged,
+4. ✅ (pending PR) `npx tsc --noEmit`, `npx vitest run`, coverage thresholds unchanged,
    `npm run build`.
 
 ## Open decisions (owner)
