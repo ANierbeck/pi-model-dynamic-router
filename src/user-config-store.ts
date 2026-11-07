@@ -67,7 +67,7 @@ function readObjectFile(file: string): {
 } {
   if (!fs.existsSync(file)) return { config: undefined };
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { config: undefined, error: `${file} is not a JSON object` };
     }

@@ -45,6 +45,8 @@ import {
   type Cache,
 } from './types.ts';
 import { norm, baseTokens, splitRef, textOf } from './utils.ts';
+import type { Api, Model } from '@earendil-works/pi-ai';
+import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { PROVIDER_MAP } from './providers.ts';
 import { matchSlug, variantVeto } from './slug-matcher.ts';
 
@@ -374,7 +376,7 @@ export function resolveSlug(ref: string): string | null | undefined {
   // may bundle two instances of this module, and the routing.ts instance
   // doesn't share in-memory state with index.ts. A cached match may point at
   // a duplicate spelling — canonicalize like a fresh match.
-  const cached = (cache as any)?.model_score_cache?.[ref];
+  const cached = cache?.model_score_cache?.[ref];
   if (cached && typeof cached === 'string' && !variantVeto(ref, cached))
     return canon.get(cached) ?? cached;
 
@@ -497,11 +499,10 @@ let piRegisteredProviders: Set<string> = new Set();
  * (extensions, models.json, CLI flags) — the router cannot know which
  * source Pi used, only the registry is guaranteed to have the data.
  *
- * Held as `any` because the router never imports Pi's registry type (it
- * only calls the public `.find(provider, modelId)` and `.getAvailable()`
- * methods documented in core/model-registry.d.ts).
+ * Typed as the host's own ModelRegistry facade (lint S5): the router calls
+ * only the public `.find(provider, modelId)` / `.getAvailable()` methods.
  */
-let modelRegistry: any = null;
+let modelRegistry: ModelRegistry | null = null;
 
 /**
  * Reports the set of provider IDs pi's modelRegistry has registered, so
@@ -530,13 +531,13 @@ export function getPiRegisteredProviders(): Set<string> {
  * so a `getM()` that ran before the registry was published would otherwise
  * pin `'unknown'` forever even after the registry becomes available.
  */
-export function setModelRegistry(registry: any): void {
+export function setModelRegistry(registry: ModelRegistry | null): void {
   modelRegistry = registry;
   metrics = {};
 }
 
 /** For tests: read back the registry handle. */
-export function getModelRegistry(): any {
+export function getModelRegistry(): ModelRegistry | null {
   return modelRegistry;
 }
 
@@ -958,7 +959,11 @@ export function hasRegistryModel(provider: string, modelId: string): boolean {
   return !!findRegistryModel(provider, modelId);
 }
 
-function findRegistryModel(provider: string, modelId: string): any {
+function findRegistryModel(provider: string, modelId: string): Model<Api> | undefined {
+  // Not yet published (pre-session_start) / cleared in tests: nothing to
+  // find. Mirrors registryCost's own guard; the old `any` form crashed with
+  // a TypeError on this path instead.
+  if (!modelRegistry) return undefined;
   let model = modelRegistry.find(provider, modelId);
   // Retry with the `:free` suffix stripped if the full-id lookup failed.
   // Pi's registry stores OpenRouter model ids WITHOUT the `:free` suffix

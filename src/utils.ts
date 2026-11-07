@@ -105,8 +105,14 @@ export function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
-      .filter((b: any) => b?.type === 'text')
-      .map((b: any) => b.text as string)
+      .filter(
+        (b): b is { type: 'text'; text: string } =>
+          typeof b === 'object' &&
+          b !== null &&
+          (b as { type?: unknown }).type === 'text' &&
+          typeof (b as { text?: unknown }).text === 'string'
+      )
+      .map((b) => b.text)
       .join('');
   }
   return '';

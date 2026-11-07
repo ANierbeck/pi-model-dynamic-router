@@ -54,7 +54,7 @@ import {
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
@@ -100,7 +100,7 @@ interface CommandDeps {
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
   readonly router: Router;
   readonly scan: (force?: boolean) => Promise<void>;
-  sessionCtx: any;
+  sessionCtx: ExtensionContext | null;
   readonly sessionStart: number;
 }
 

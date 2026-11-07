@@ -31,7 +31,8 @@ import { isVirtualGroupRef, Router } from './routing.ts';
 import type { RouterTurnState, SessionStore } from './turn-state.ts';
 import { checkScanSanity } from './scan-sanity.ts';
 import { isStreamableRef } from './streamable-refs.ts';
-import type { Config, Cache } from './types.ts';
+import type { Config, Cache, Group } from './types.ts';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { serialized } from './utils.ts';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -57,7 +58,7 @@ interface DynamicConfigRunnerDeps {
   readonly routerStartedAt: number;
   readonly SCAN_REFUSAL_MAX_AGE_MS: number;
   readonly scanning: boolean;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
   settleRetryScheduled: boolean;
   readonly stateDir: string;
   readonly staticCfg: Config;
@@ -74,7 +75,11 @@ function readStoredGroupsFingerprint(stateDir: string): string | null | undefine
   const file = path.join(stateDir, 'router-config.dynamic.json');
   if (!fs.existsSync(file)) return null;
   try {
-    const fp = JSON.parse(fs.readFileSync(file, 'utf-8'))?._dynamic?.groups_fingerprint;
+    const fp = (
+      JSON.parse(fs.readFileSync(file, 'utf-8')) as {
+        _dynamic?: { groups_fingerprint?: unknown };
+      }
+    )?._dynamic?.groups_fingerprint;
     return typeof fp === 'string' ? fp : undefined;
   } catch {
     return undefined;
@@ -294,8 +299,15 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
           // the one synchronous, authoritative "can pi actually authenticate
           // this provider" answer — getAvailable()-derived registryRefs
           // already gets this right; only the free-model shortcut didn't ask.
-          hasConfiguredAuth: (provider: string) => {
-            const runtime = rt.sessionCtx?.modelRegistry?.runtime;
+          hasConfiguredAuth: (provider: string): boolean => {
+            // Reach-through to the private ModelRuntime (verified against
+            // pi 1.5.0): the RUNTIME overload takes a provider id; the public
+            // facade overload takes a Model — this call needs the former.
+            const runtime = (
+              rt.sessionCtx?.modelRegistry as unknown as {
+                runtime?: { hasConfiguredAuth?: (providerId: string) => boolean };
+              }
+            )?.runtime;
             return typeof runtime?.hasConfiguredAuth === 'function'
               ? runtime.hasConfiguredAuth(provider)
               : true;
@@ -365,7 +377,11 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       try {
         const prevPath = path.join(rt.stateDir, 'router-config.dynamic.json');
         if (!force && fs.existsSync(prevPath)) {
-          const prev = JSON.parse(fs.readFileSync(prevPath, 'utf-8'))?._dynamic;
+          const prev = (
+            JSON.parse(fs.readFileSync(prevPath, 'utf-8')) as {
+              _dynamic?: { model_count?: unknown; config_fingerprint?: unknown };
+            }
+          )?._dynamic;
           if (typeof prev?.model_count === 'number') previousSurvivorCount = prev.model_count;
           if (typeof prev?.config_fingerprint === 'string')
             configChanged = prev.config_fingerprint !== configFingerprint;
@@ -449,7 +465,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       const clusterRepModels = collapseSameSlugClusters(modelsWithMetadata);
 
       // 5. Generate the dynamic group configuration
-      const dynamicGroups: Record<string, any> = {};
+      const dynamicGroups: Record<string, Group> = {};
 
       for (const [groupName, groupConfig] of Object.entries(rt.staticCfg.model_groups)) {
         // Skip dynamic group (handled separately)

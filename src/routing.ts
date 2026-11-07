@@ -644,11 +644,18 @@ export class Router {
     // user's trivial/simple groups still ranked dead openrouter/* refs in the
     // pre-scan window. Fail-open: a registry that cannot answer keeps the
     // pre-fix behavior instead of silently emptying the pool.
-    const runtime = (this.sessionCtx?.modelRegistry as any)?.runtime;
+    // Reach-through to the private ModelRuntime (verified against pi 1.5.0):
+    // the RUNTIME overload answers hasConfiguredAuth(providerId); the public
+    // facade overload takes a Model.
+    const runtime = (
+      this.sessionCtx?.modelRegistry as unknown as {
+        runtime?: { hasConfiguredAuth?: (providerId: string) => boolean };
+      }
+    )?.runtime;
     const canAnswerAuth = typeof runtime?.hasConfiguredAuth === 'function';
     for (const [provId, provConfig] of Object.entries(this.cfg.providers ?? {})) {
       if (provConfig.free_models && Array.isArray(provConfig.free_models)) {
-        if (canAnswerAuth && !runtime.hasConfiguredAuth(provId)) continue;
+        if (canAnswerAuth && !runtime?.hasConfiguredAuth?.(provId)) continue;
         for (const freeModel of provConfig.free_models) {
           refs.add(freeModel);
         }

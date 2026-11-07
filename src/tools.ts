@@ -64,7 +64,7 @@ export function createTools(rt: ToolDeps): void {
     parameters: Type.Object({
       question: Type.String({ description: 'What to find out about the files' }),
       paths: Type.Array(Type.String(), { description: 'File paths to read and answer from' }),
-    }) as any,
+    }),
     async execute(
       _id: string,
       params: { question: string; paths: string[] },
@@ -89,7 +89,7 @@ export function createTools(rt: ToolDeps): void {
     label: 'Set Model from Group',
     description:
       'Resolve a model group and immediately switch the current session to use the selected model. Combines resolve_model_group + model switch in one step.',
-    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }) as any,
+    parameters: Type.Object({ group: Type.String({ description: 'Model group name' }) }),
     async execute(
       _id: string,
       params: { group: string },
@@ -139,7 +139,7 @@ export function createTools(rt: ToolDeps): void {
         description:
           'Model group name: planning, design, code_complex, standard, simple, or any custom group',
       }),
-    }) as any,
+    }),
     execute(
       _id: string,
       params: { group: string },
@@ -184,7 +184,7 @@ export function createTools(rt: ToolDeps): void {
       gdpval: Type.Optional(Type.Number()),
       throughput_tps: Type.Optional(Type.Number()),
       avg_latency_ms: Type.Optional(Type.Number()),
-    }) as any,
+    }),
     execute(
       _id: string,
       p: { model_ref: string; gdpval?: number; throughput_tps?: number; avg_latency_ms?: number },
@@ -206,13 +206,13 @@ export function createTools(rt: ToolDeps): void {
       // here clobbers the embedded defaults with one machine's state: user
       // overrides and computed model_groups leak into the shipped file and
       // from there into every other layer source (final v1.6.0 review I1).
-      let base: Record<string, any>;
+      let base: Record<string, unknown>;
       try {
-        const raw = JSON.parse(fs.readFileSync(rt.cfgPath, 'utf-8'));
+        const raw: unknown = JSON.parse(fs.readFileSync(rt.cfgPath, 'utf-8'));
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
           throw new Error('embedded config is not a JSON object');
         }
-        base = raw;
+        base = raw as Record<string, unknown>;
       } catch (err) {
         // Unreadable/missing/corrupted/non-object embedded file — REFUSE to
         // write. Persisting a delta-only stub ({ model_metrics: { … } } and
@@ -233,9 +233,10 @@ export function createTools(rt: ToolDeps): void {
           details: { model_ref: p.model_ref, metrics: e },
         });
       }
-      const existingEntry = base.model_metrics?.[p.model_ref] ?? {};
+      const metricsBase = (base.model_metrics ?? {}) as Record<string, unknown>;
+      const existingEntry = (metricsBase[p.model_ref] ?? {}) as Record<string, unknown>;
       base.model_metrics = {
-        ...(base.model_metrics ?? {}),
+        ...metricsBase,
         [p.model_ref]: { ...existingEntry, ...e },
       };
       fs.writeFileSync(rt.cfgPath, JSON.stringify(base, null, 2));

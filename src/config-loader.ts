@@ -97,7 +97,7 @@ export function loadLayeredConfig(
 
   // 1. Embedded defaults (always present).
   const defaultPath = path.join(extDir, 'router-config.json');
-  let config: Config = JSON.parse(fs.readFileSync(defaultPath, 'utf-8'));
+  let config: Config = JSON.parse(fs.readFileSync(defaultPath, 'utf-8')) as Config;
   sources.push(defaultPath);
 
   // 2. Global user override (<agent dir>/router-config.user.json).
@@ -354,9 +354,9 @@ function tryReadPartial(
   try {
     if (!fs.existsSync(filePath)) return undefined;
     const raw = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Partial<Config>;
+      return parsed;
     }
     log?.(`[router] Override config at ${filePath} is not a JSON object, ignoring`);
     return undefined;

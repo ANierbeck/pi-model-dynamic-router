@@ -277,7 +277,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get REASONING_EMPTY_RESPONSE_TIMEOUT_MS() {
       return REASONING_EMPTY_RESPONSE_TIMEOUT_MS;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     get STALL_TIMEOUT_MS() {
@@ -394,7 +394,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set scanning(v) {
       scanning = v;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
   });
@@ -445,7 +445,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get scanning() {
       return scanning;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     get settleRetryScheduled() {
@@ -472,7 +472,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get pi() {
       return pi;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     // ADR-0022: the router never resolves keys itself — pi does.
@@ -538,7 +538,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get resolve() {
       return resolve;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     get contextWindow() {
@@ -616,7 +616,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set sessionAnchorInit(v) {
       sessionAnchorInit = v;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     set sessionCtx(v) {
@@ -766,7 +766,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get scan() {
       return scan;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     set sessionCtx(v) {
@@ -806,7 +806,9 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
     try {
       if (fs.existsSync(dynamicConfigPath)) {
-        const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8'));
+        const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8')) as Config & {
+          _dynamic?: { groups_fingerprint?: unknown };
+        };
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
           // Merge review 2026-11-01 (Important 3a): a snapshot whose stored
@@ -1022,7 +1024,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set lastClassifiedCategory(v) {
       turn().lastClassifiedCategory = v;
     },
-    get sessionCtx() {
+    get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
     get cfg(): Config {
@@ -1181,8 +1183,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
   // (best-effort), and dedupe the registration per process — the file's own
   // comments note the esbuild double-bundle hazard, which would otherwise
   // stack one handler per extension load.
-  if (!(globalThis as any).__ROUTER_SIGNAL_CLEANUP__) {
-    (globalThis as any).__ROUTER_SIGNAL_CLEANUP__ = true;
+  // Process-global dedupe flag (not part of any module's type surface —
+  // the double-bundle hazard this guards against is exactly why it lives on
+  // globalThis instead of module state).
+  const signalCleanupFlag = globalThis as { __ROUTER_SIGNAL_CLEANUP__?: boolean };
+  if (!signalCleanupFlag.__ROUTER_SIGNAL_CLEANUP__) {
+    signalCleanupFlag.__ROUTER_SIGNAL_CLEANUP__ = true;
     process.on('exit', () => costTracker.destroy());
     const persistAndExit = (): never => {
       try {
@@ -1197,8 +1203,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
   }
 
   // Export groupStream for testing
-  (defaultExport as any).groupStream = streamOrchestrator.groupStream.bind(streamOrchestrator);
-  (defaultExport as any).driveStream = streamOrchestrator.driveStream.bind(streamOrchestrator);
+  const testHooks = defaultExport as unknown as {
+    groupStream?: unknown;
+    driveStream?: unknown;
+  };
+  testHooks.groupStream = streamOrchestrator.groupStream.bind(streamOrchestrator);
+  testHooks.driveStream = streamOrchestrator.driveStream.bind(streamOrchestrator);
 };
 
 export default defaultExport;

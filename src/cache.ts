@@ -64,7 +64,12 @@ function fileStateOf(file: string): string {
 
 function readJsonIfExists(file: string): Record<string, unknown> {
   try {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (fs.existsSync(file)) {
+      const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    }
   } catch {
     /* absent or torn */
   }
@@ -161,7 +166,7 @@ export class CacheManager {
     try {
       fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
       if (fs.existsSync(this.cachePath)) {
-        const disk: Cache = JSON.parse(fs.readFileSync(this.cachePath, 'utf-8'));
+        const disk: Cache = JSON.parse(fs.readFileSync(this.cachePath, 'utf8')) as Cache;
         const volatile = disk as unknown as Record<string, unknown>;
         for (const k of VOLATILE_KEYS) delete volatile[k];
         return disk;

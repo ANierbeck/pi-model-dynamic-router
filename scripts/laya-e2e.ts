@@ -23,6 +23,7 @@ import { classifyPrompt, getLastClassificationSource } from '../src/content-clas
 import { validateClassifierLaya } from '../src/config-loader.ts';
 import { getLastProbeError, layaAvailabilityState } from '../src/laya-classifier.ts';
 import type { Config } from '../src/types.ts';
+import { textOf } from '../src/utils.ts';
 import { arg } from './lib/cli.ts';
 
 const checkpoint = arg('checkpoint');
@@ -102,12 +103,20 @@ const log = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 if (existsSync(log)) {
   console.log('decision log (what Laya said vs what was decided):');
   for (const line of readFileSync(log, 'utf8').trim().split('\n')) {
-    const rec = JSON.parse(line);
+    const rec = JSON.parse(line) as {
+      stage?: unknown;
+      laya?: { category?: unknown; confidence?: unknown; acted?: unknown; ms?: unknown } | null;
+      final?: { category?: unknown; hint?: { target?: unknown } | null };
+    };
     const l = rec.laya
-      ? `${rec.laya.category} ${rec.laya.confidence} acted=${rec.laya.acted} ${rec.laya.ms}ms`
+      ? `${textOf(rec.laya.category)} ${textOf(rec.laya.confidence)} acted=${textOf(
+          rec.laya.acted
+        )} ${textOf(rec.laya.ms)}ms`
       : '-';
     console.log(
-      `  stage=${String(rec.stage).padEnd(9)} final=${rec.final.category ?? rec.final.hint?.target}  laya: ${l}`
+      `  stage=${String(rec.stage).padEnd(9)} final=${textOf(
+        rec.final?.category ?? rec.final?.hint?.target
+      )}  laya: ${l}`
     );
   }
 }
