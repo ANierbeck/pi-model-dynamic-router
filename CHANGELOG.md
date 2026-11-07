@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.0-SNAPSHOT] — unreleased
+
+Next release is **2.0.0** (owner decision 2026-11-07): the five-group layout
+shipped since 2026-11-02 is a breaking change, and the `fallback`-rename and the
+M3 latency fix are planned into 2.0. `package.json` carries the
+`2.0.0-SNAPSHOT` prerelease so a development install identifies itself; the
+published 2.0.0 is cut from the release tag only (AGENTS.md §1 — no publish
+without the owner's explicit release approval).
+
 ## [Unreleased]
 
 ### Added
