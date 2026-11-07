@@ -30,9 +30,12 @@ import {
   type SimpleStreamOptions,
   type AssistantMessageEvent,
   type AssistantMessageEventStream,
+  type AssistantMessage,
+  type TranscriptContext,
   createAssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
 import type { Config } from './types.ts';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { StreamOrchestrator } from './stream-orchestrator.ts';
 
 /**
@@ -48,9 +51,9 @@ import type { StreamOrchestrator } from './stream-orchestrator.ts';
  * never be classified as one (an `aborted` error without `error` is a stream
  * failure, not a user cancellation).
  */
-function isMalformedTerminal(event: any): boolean {
-  if (event?.type === 'done') return typeof event.message !== 'object' || event.message === null;
-  if (event?.type === 'error') return typeof event.error !== 'object' || event.error === null;
+function isMalformedTerminal(event: AssistantMessageEvent): boolean {
+  if (event.type === 'done') return typeof event.message !== 'object' || event.message === null;
+  if (event.type === 'error') return typeof event.error !== 'object' || event.error === null;
   return false;
 }
 
@@ -60,7 +63,7 @@ interface StreamProxyDeps {
   readonly OLLAMA_MAX_CONCURRENT_STREAMS: number;
   readonly registerFreeModelOnDemand: (provider: string, modelId: string) => Promise<boolean>;
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
   skipReasons: Map<string, string>;
   readonly streamOrchestrator: StreamOrchestrator;
 }
@@ -104,21 +107,40 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
    * native pi turn), falls back to the public Provider object.
    */
   function hostStreamSimple(
-    model: Model<any>,
+    model: Model<Api>,
     context: Context,
     options: SimpleStreamOptions | undefined
   ): AssistantMessageEventStream | null {
     const registry = rt.sessionCtx?.modelRegistry;
     if (!registry) return null;
 
-    const runtime = registry.runtime;
+    // Reach-through to the facade's private ModelRuntime (verified against
+    // pi 1.5.0): resolves auth, baseUrl and headers exactly like a native
+    // pi turn. The public facade exposes streamSimple() only from pi 1.5
+    // — this path predates it and is kept for the getProvider fallback
+    // symmetry; the narrow cast documents the private seam.
+    const runtime = (
+      registry as unknown as {
+        runtime?: {
+          streamSimple?: (
+            model: Model<Api>,
+            context: Context,
+            options?: SimpleStreamOptions
+          ) => AssistantMessageEventStream;
+        };
+      }
+    ).runtime;
     if (typeof runtime?.streamSimple === 'function') {
       return runtime.streamSimple(model, context, options);
     }
 
-    const provider = registry.getProvider?.(model.provider);
+    const provider = registry.getProvider(model.provider);
     if (typeof provider?.streamSimple === 'function') {
-      return provider.streamSimple(model, context, options);
+      // TranscriptContext is a branded Context (normalizeContext() output).
+      // This fallback forwards the caller's context structurally unchanged —
+      // the same object the runtime path would hand the provider — so the
+      // cast only satisfies the compile-time brand.
+      return provider.streamSimple(model, context as unknown as TranscriptContext, options);
     }
 
     // Neither access path resolved — this is the exact interop mismatch this
@@ -215,14 +237,14 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
     const apiKey = await rt.sessionCtx.modelRegistry
       .getApiKeyForProvider(realModel.provider)
       .catch(() => null);
-    const isLocal = (PROVIDER_MAP as any)[realModel.provider]?.local ?? false;
+    const isLocal = PROVIDER_MAP[realModel.provider]?.local ?? false;
     // Providers the router itself does not manage (not in PROVIDER_MAP — e.g. models
     // registered by other extensions like claude-bridge) are not subject to the
     // router-managed API-key requirement. The model was already found in Pi's own
     // model registry, which means Pi/the extension can stream it on its own (same
     // mechanism the /model command uses). Only enforce apiKey/local for providers
     // the router actually registers itself.
-    const routerManaged = Boolean((PROVIDER_MAP as any)[realModel.provider]);
+    const routerManaged = PROVIDER_MAP[realModel.provider] !== undefined;
     if (routerManaged && !apiKey && !isLocal) {
       if (reservedLocalSlot && rt.localStreamsInFlight > 0) rt.localStreamsInFlight--;
       return skip(`no API key for provider "${realModel.provider}"`);
@@ -231,10 +253,10 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
     // requested output budget against the window as well as the input: cap an
     // explicit output budget to what the window leaves, skip only when even the
     // minimum output does not fit. Without this the reservation is unbounded.
-    const window = realModel.contextWindow as number | undefined;
+    const window = realModel.contextWindow;
     const budget = planOutputBudget({
       windowTokens: window,
-      inputTokens: estimateInputTokens(context, (context as any).tools),
+      inputTokens: estimateInputTokens(context, context.tools),
       requestedOutput: options?.maxTokens,
     });
     if (budget.kind === 'skip') {
@@ -507,7 +529,7 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
             // providerErrorDetected branch below and get escalated to a hard
             // cooldown + key rotation ("likely rate limit") even though
             // nothing was wrong with the provider (roborev job 345 HIGH).
-            if ((event as any).reason === 'aborted') {
+            if (event.reason === 'aborted') {
               userAborted = true;
               // Forward the real event so the caller sees a proper
               // stopReason:'aborted' message — pi-ai's own retry/abort
@@ -523,9 +545,17 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
             // pi-ai's openai-completions provider puts the message on
             // `.errorMessage` (the assistant-message shape), not `.message` —
             // check both so this works across provider families.
-            const errObj = (event as any).error;
-            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-            const errorMsg = String(errObj?.errorMessage || errObj?.message || errObj || '');
+            // Some provider families put the human-readable text on a
+            // `.message` field instead of AssistantMessage.errorMessage —
+            // probe both, then fall back to the object itself.
+            const errObj = event.error as AssistantMessage & { message?: unknown };
+            const errText =
+              typeof errObj.errorMessage === 'string'
+                ? errObj.errorMessage
+                : typeof errObj.message === 'string'
+                  ? errObj.message
+                  : textOf(errObj);
+            const errorMsg = errText || '';
             // A provider/transport can also report a client-side or
             // cascade-induced abort as free-text inside an `error` event
             // whose `.reason` is NOT 'aborted' (observed from claude-bridge,
@@ -554,7 +584,7 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
               // error event they might not recognize as a cancellation.
               flushHeld();
               proxy.push({
-                ...(event as any),
+                ...event,
                 reason: 'aborted',
                 error: { ...errObj, stopReason: 'aborted' },
               });
@@ -617,8 +647,7 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
           // ..."), handled above, and its yellow warning is a piUI.notify UI
           // notification that never enters this stream.
           if (event.type === 'text_delta') {
-            // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-            const delta = String((event as any).delta || (event as any).text || '');
+            const delta = deltaOf(event);
             accumulatedText += delta;
             // Some providers return overflow rejections as text content rather
             // than as an error event. Detect it so driveStream can emit the
@@ -674,8 +703,8 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
           // forwarding it would terminate the proxy stream and silently drop
           // every later event of the cascade (same pattern as the rate-limit /
           // overflow / repetition early returns above).
-          if ((event as any).type === 'done') {
-            const doneReason = String((event as any).reason ?? '');
+          if (event.type === 'done') {
+            const doneReason = String(event.reason ?? '');
             routerLog(
               `[stream] ${ref} finished (stopReason: ${doneReason}, ${accumulatedText.length} chars)`
             );
@@ -740,7 +769,8 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
           // the failure below is classified as before.
         }
         const message = err instanceof Error ? err.message : textOf(err);
-        if ((err as any)?.name === 'AbortError') {
+        const errName = (err as { name?: unknown } | null | undefined)?.name;
+        if (errName === 'AbortError') {
           // Upstream cancellation (the caller aborted) — the same meaning as a
           // structured aborted event: the cascade must stop, not fall over.
           // The consumer still needs a terminal event, or it waits forever.
@@ -751,7 +781,7 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
               type: 'error',
               reason: 'aborted',
               error: { ...buildErrorAssistantMessage('Aborted', message), stopReason: 'aborted' },
-            } as any);
+            });
           }
         } else if (!terminalForwarded) {
           // Stream threw before any terminal event was forwarded: a soft
@@ -883,7 +913,7 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
   function groupStream(
-    model: Model<any>,
+    model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {

@@ -81,7 +81,7 @@ export function buildOllamaProviderModels(
   id: string;
   name: string;
   reasoning: boolean;
-  input: string[];
+  input: ('text' | 'image')[];
   cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
   contextWindow: number;
   maxTokens: number;

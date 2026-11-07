@@ -18,8 +18,7 @@ import type { Group } from './types.ts';
 export interface ModelRegistryLike {
   find(provider: string, modelId: string): unknown;
   getApiKeyForProvider(provider: string): Promise<string | null | undefined>;
-  runtime?: { streamSimple?: (...args: any[]) => any };
-  getProvider?: (provider: string) => { streamSimple?: (...args: any[]) => any } | undefined;
+  getProvider?: (provider: string) => { streamSimple?: (...args: never[]) => unknown } | undefined;
 }
 
 /**
@@ -42,8 +41,17 @@ export async function isRefUsable(
   if (modelGroups[provider]) return false;
   const model = modelRegistry.find(provider, modelId);
   if (!model) return false;
+  // Reach-through to the facade's private ModelRuntime (verified against
+  // pi 1.5.0): streamSimple is not on the public facade. The cast is needed
+  // because the real class declares `runtime` private — it cannot appear on
+  // the structural interface without breaking assignability.
+  const runtime = (
+    modelRegistry as unknown as {
+      runtime?: { streamSimple?: (...args: never[]) => unknown };
+    }
+  ).runtime;
   const hasHandler =
-    typeof modelRegistry.runtime?.streamSimple === 'function' ||
+    typeof runtime?.streamSimple === 'function' ||
     typeof modelRegistry.getProvider?.(provider)?.streamSimple === 'function';
   if (!hasHandler) return false;
   // Providers the router does not manage (e.g. claude-bridge) carry their own
