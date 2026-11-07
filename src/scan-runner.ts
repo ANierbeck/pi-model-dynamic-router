@@ -19,6 +19,14 @@ import { estimateOllamaModelsGdpvalAsSlugs } from './ollama-gdpval.ts';
 import { redundantAliasProviders, pruneRedundantCacheEntries } from './provider-shadow.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import type { Cache, ModelCapabilities, Config } from './types.ts';
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  ModelsSimpleStreamOptions,
+} from '@earendil-works/pi-ai';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { CacheManager } from './cache.ts';
 import { textOf } from './utils.ts';
 
@@ -37,7 +45,7 @@ interface ScanRunnerDeps {
   readonly MODELS_TTL: number;
   readonly saveCache: () => void;
   scanning: boolean;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
 }
 
 /**
@@ -194,7 +202,7 @@ export function extractGdpvalScores(html: string): Record<string, number> {
   const scriptJsonMatch = html.match(/window\.__MODELS_DATA__\s*=\s*({[\s\S]*?});/);
   if (scriptJsonMatch) {
     try {
-      const modelsData = JSON.parse(scriptJsonMatch[1]);
+      const modelsData = JSON.parse(scriptJsonMatch[1]) as Record<string, unknown>;
       for (const [slug, model] of Object.entries(modelsData)) {
         const m = model as { gdpval?: number; shortName?: string; name?: string };
         if (m.gdpval !== undefined) {
@@ -523,9 +531,8 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
       cache: rt.cache,
       cfg: rt.cfg,
       resolveApiKey: async (provider: string) =>
-        (await rt.sessionCtx?.modelRegistry
-          ?.getApiKeyForProvider?.(provider)
-          ?.catch?.(() => null)) ?? null,
+        (await rt.sessionCtx?.modelRegistry.getApiKeyForProvider(provider).catch(() => null)) ??
+        null,
       timeoutMs: 90_000, // large models need time; if the local model is too
       // slow it fails and the cloud chain (free OpenRouter) fires.
     };
@@ -586,7 +593,7 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
   async function fetchJson(
     url: string,
     opts?: { headers?: Record<string, string>; timeoutMs?: number; method?: string; body?: string }
-  ): Promise<any> {
+  ): Promise<unknown> {
     const init: RequestInit = {
       method: opts?.method ?? 'GET',
       headers: { 'User-Agent': 'pi-model-dynamic-router/1.0', ...opts?.headers },
@@ -755,7 +762,11 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
         // for cost sorting.
         {
           try {
-            const d = await fetchJson('https://openrouter.ai/api/v1/models', { timeoutMs: 25_000 });
+            const d = (await fetchJson('https://openrouter.ai/api/v1/models', {
+              timeoutMs: 25_000,
+            })) as {
+              data?: Array<{ id: string; pricing?: { prompt?: string; completion?: string } }>;
+            };
             const pricing: Record<string, { input: number; output: number }> =
               rt.cache.openrouter_pricing ?? {};
             for (const m of d.data ?? []) {
@@ -784,10 +795,12 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
           }
         }
         try {
-          const d = await fetchJson('http://localhost:11434/api/tags', { timeoutMs: 5_000 });
+          const d = (await fetchJson('http://localhost:11434/api/tags', {
+            timeoutMs: 5_000,
+          })) as { models?: Array<{ name?: unknown }> };
           const ollamaModelNames = (d.models ?? [])
-            .map((m: any) => m.name)
-            .filter((id: string) => id);
+            .map((m) => m.name)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
           // Estimate GDPval for Ollama models as SLUG → score (compatible with
           // cache.gdpval_scores, which the lookup pipeline consumes as slug
           // keys — NOT raw "ollama/<id>" refs). These are FALLBACK scores only;
@@ -820,7 +833,7 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
                   headers: { 'Content-Type': 'application/json' },
                   timeoutMs: 8_000,
                 });
-                return { name, show };
+                return { name, show: show as Record<string, unknown> | null };
               } catch {
                 return { name, show: null };
               }
@@ -828,8 +841,8 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
           );
           for (const m of d.models ?? []) {
             const id = m.name;
-            if (!id) continue;
-            const showData = ollamaShowResults.find((r) => r.name === id)?.show;
+            if (typeof id !== 'string' || !id) continue;
+            const showData = ollamaShowResults.find((r) => r.name === id)?.show ?? null;
             const caps = extractCapabilities('ollama', showData ?? m);
             const existing = models.find((x) => x.provider === 'ollama' && x.id === id);
             if (existing) {
@@ -915,7 +928,23 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
       // src/classifier-cloud-probe.ts.
       try {
         const registry = rt.sessionCtx?.modelRegistry;
-        if (registry?.runtime?.completeSimple) {
+        // Reach-through to the facade's private ModelRuntime (verified
+        // against pi 1.5.0): completeSimple is not on the public facade,
+        // only on the runtime — same documented seam as the classifier
+        // wiring in src/stream-orchestrator.ts.
+        const registryRuntime = (
+          registry as unknown as {
+            runtime?: {
+              completeSimple?: (
+                model: Model<Api>,
+                ctx: Context,
+                options?: ModelsSimpleStreamOptions
+              ) => Promise<AssistantMessage>;
+            };
+          }
+        )?.runtime;
+        const completeSimpleFn = registryRuntime?.completeSimple;
+        if (registry && completeSimpleFn) {
           await probeAndCache(
             rt.cfg,
             rt.cache,
@@ -925,10 +954,13 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
                 if (i === -1) return undefined;
                 return registry.find(ref.slice(0, i), ref.slice(i + 1));
               },
-              completeSimple: (model: any, ctx: any, options: any) =>
-                registry.runtime.completeSimple(model, ctx, options),
-              hasConfiguredAuth: (model: any) =>
-                typeof registry?.hasConfiguredAuth === 'function'
+              completeSimple: (
+                model: Model<Api>,
+                ctx: Context,
+                options?: ModelsSimpleStreamOptions
+              ) => completeSimpleFn(model, ctx, options),
+              hasConfiguredAuth: (model: Model<Api>) =>
+                typeof registry.hasConfiguredAuth === 'function'
                   ? Boolean(registry.hasConfiguredAuth(model))
                   : true,
             },

@@ -13,12 +13,17 @@ import { buildOllamaProviderModels } from './ollama-context.ts';
 import { PI_BUILTIN_PROVIDER_IDS } from './providers.ts';
 import type { Cache, Config, Metrics } from './types.ts';
 import type {
+  Api,
   Model,
   Context,
   SimpleStreamOptions,
   AssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ProviderConfig,
+} from '@earendil-works/pi-coding-agent';
 
 /**
  * Dependencies createGroupRegistration reads from index.ts's extension closure. Exposed as
@@ -31,13 +36,13 @@ interface GroupRegistrationDeps {
   readonly cfg: Config;
   readonly getM: (ref: string) => Metrics;
   readonly groupStream: (
-    model: Model<any>,
+    model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
   ) => AssistantMessageEventStream;
   readonly pi: ExtensionAPI;
   readonly resolve: (name: string) => { selected: string; candidates: string[] } | null;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
   /** Real context window of a model ref (registry first, scan cache second), or null if unknown. */
   readonly contextWindow: (ref: string) => number | null;
 }
@@ -85,7 +90,25 @@ export function virtualGroupContextWindow(
   );
 }
 
-export function createGroupRegistration(rt: GroupRegistrationDeps) {
+/**
+ * A registry model plus the forward-compat metadata fields the ADR-0019
+ * round-trip preserves. `providerOptions` is not on Model's public type
+ * (roborev 719: pi-ai never reads it at request time — it is registered as
+ * forward-compat metadata), so the intersection documents exactly which
+ * extra field the merge path reads.
+ */
+type RegistryModel = Model<Api> & {
+  providerOptions?: unknown;
+  /** Image/audio models carry output modality fields chat Model does not. */
+  output?: unknown;
+};
+
+export interface GroupRegistration {
+  registerGroupProviders: () => void;
+  registerGroupModels: (ctx: ExtensionContext) => void;
+}
+
+export function createGroupRegistration(rt: GroupRegistrationDeps): GroupRegistration {
   /**
    * Group provider names the router itself registered. Own-set tracking so
    * the session_start re-register can distinguish "id we own → re-register"
@@ -145,9 +168,9 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         continue;
       }
       if (
-        rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds &&
+        rt.sessionCtx?.modelRegistry &&
         !registeredGroupProviderNames.has(groupName) &&
-        (rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds?.() as string[]).includes(groupName)
+        rt.sessionCtx.modelRegistry.getRegisteredProviderIds().includes(groupName)
       ) {
         routerLog(
           `[groups] Refusing to register model group "${groupName}" as a provider: ` +
@@ -166,17 +189,20 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         ? `${groupName} → auto-classify`
         : `${groupName} → ${resolvedRef}`;
 
-      (rt.pi as any).registerProvider(groupName, {
+      rt.pi.registerProvider(groupName, {
         baseUrl: 'https://router.local', // not used — streamSimple overrides
         apiKey: 'router-virtual', // not used — streamSimple overrides
-        api: `router-group-${groupName}`, // unique per group to avoid overwriting global API providers
+        // A unique placeholder api name — never a real Api: streamSimple
+        // overrides every request, the value only has to be distinct per
+        // group so two groups cannot overwrite each other's provider.
+        api: `router-group-${groupName}` as Api,
         streamSimple: rt.groupStream,
         models: [
           {
             id: groupName,
             name: label,
             reasoning: true,
-            input: ['text', 'image'] as any,
+            input: ['text', 'image'] as ('text' | 'image')[],
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             contextWindow,
             maxTokens: 64_000,
@@ -187,14 +213,14 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
                   id: `${groupName}:use-static`,
                   name: `${groupName} → auto-classify (static fallback allowed)`,
                   reasoning: true,
-                  input: ['text', 'image'] as any,
+                  input: ['text', 'image'] as ('text' | 'image')[],
                   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
                   contextWindow,
                   maxTokens: 64_000,
                 },
               ]
             : []),
-        ],
+        ] as NonNullable<ProviderConfig['models']>,
       });
       registeredGroupProviderNames.add(groupName);
     }
@@ -202,7 +228,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
 
   // ── Events ─────────────────────────────────────────────────────────────
 
-  function registerGroupModels(ctx: any): void {
+  function registerGroupModels(ctx: ExtensionContext): void {
     // ADR-0021 (2026-10-02): the router NEVER registers models — or
     // providers — Pi does not already know. This block used to be the
     // scan-union: it resolved keys, round-tripped Pi's own registered models
@@ -290,10 +316,10 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         // local Ollama models are chat models and Pi ships no builtin
         // ollama catalog with non-chat inventory. find() fallback (over
         // the scanned ids) keeps hosts without getAll() working.
-        let piKnownModels: any[] = [];
+        let piKnownModels: RegistryModel[] = [];
         try {
           piKnownModels = (ctx.modelRegistry.getAll?.() ?? []).filter(
-            (m: any) => m.provider === 'ollama'
+            (m: Model<Api>) => m.provider === 'ollama'
           );
         } catch {
           piKnownModels = [];
@@ -320,7 +346,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
         // are the user's intent). Other tags are genuinely different models.
         const normId = (id: string): string =>
           id.endsWith(':latest') ? id.slice(0, -':latest'.length) : id;
-        const knownByNorm = new Map<string, any>();
+        const knownByNorm = new Map<string, RegistryModel>();
         for (const m of piKnownModels) knownByNorm.set(normId(m.id), m);
         const newScanModels = ollamaModels.filter((m) => !knownByNorm.has(normId(m.id)));
 
@@ -328,7 +354,7 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
           // Pi does not know Ollama at all: register the scan inventory
           // with real num_ctx (the original pre-guard-fix behavior).
           const providerModels = buildOllamaProviderModels(ollamaModels);
-          (rt.pi as any).registerProvider('ollama', {
+          rt.pi.registerProvider('ollama', {
             name: 'Ollama (local)',
             baseUrl: 'http://localhost:11434/v1',
             apiKey: 'ollama',
@@ -343,28 +369,36 @@ export function createGroupRegistration(rt: GroupRegistrationDeps) {
           // allow-list — applyExtension would otherwise drop the
           // models.json entries; a user-set providerOptions is preserved,
           // never enriched/overwritten), then add the scan-only models.
-          const existingModels = piKnownModels.map((m: any) => ({
-            id: m.id,
-            name: m.name,
-            ...(m.api !== undefined ? { api: m.api } : {}),
-            ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
-            ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
-            ...(m.thinkingLevelMap !== undefined ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
-            ...(m.input !== undefined ? { input: m.input } : {}),
-            ...(m.cost !== undefined ? { cost: m.cost } : {}),
-            ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
-            ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
-            ...(m.headers !== undefined ? { headers: m.headers } : {}),
-            ...(m.compat !== undefined ? { compat: m.compat } : {}),
-            ...(m.type !== undefined ? { type: m.type } : {}),
-            ...(m.output !== undefined ? { output: m.output } : {}),
-            ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
-            ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
-            ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
-            ...(m.providerOptions !== undefined ? { providerOptions: m.providerOptions } : {}),
-          }));
+          // The conditional spreads make every field optional to TS; at
+          // runtime a field is only spread when defined, so the entries
+          // satisfy ProviderModelConfig. The cast documents that gap.
+          const existingModels = piKnownModels.map(
+            (m) =>
+              ({
+                id: m.id,
+                name: m.name,
+                ...(m.api !== undefined ? { api: m.api } : {}),
+                ...(m.baseUrl !== undefined ? { baseUrl: m.baseUrl } : {}),
+                ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
+                ...(m.thinkingLevelMap !== undefined
+                  ? { thinkingLevelMap: m.thinkingLevelMap }
+                  : {}),
+                ...(m.input !== undefined ? { input: m.input } : {}),
+                ...(m.cost !== undefined ? { cost: m.cost } : {}),
+                ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+                ...(m.maxTokens !== undefined ? { maxTokens: m.maxTokens } : {}),
+                ...(m.headers !== undefined ? { headers: m.headers } : {}),
+                ...(m.compat !== undefined ? { compat: m.compat } : {}),
+                ...(m.type !== undefined ? { type: m.type } : {}),
+                ...(m.output !== undefined ? { output: m.output } : {}),
+                ...(m.inputLimits !== undefined ? { inputLimits: m.inputLimits } : {}),
+                ...(m.promptCache !== undefined ? { promptCache: m.promptCache } : {}),
+                ...(m.samplingParams !== undefined ? { samplingParams: m.samplingParams } : {}),
+                ...(m.providerOptions !== undefined ? { providerOptions: m.providerOptions } : {}),
+              }) as NonNullable<ProviderConfig['models']>[number]
+          );
           const providerModels = [...existingModels, ...buildOllamaProviderModels(newScanModels)];
-          (rt.pi as any).registerProvider('ollama', {
+          rt.pi.registerProvider('ollama', {
             name: 'Ollama (local)',
             baseUrl: 'http://localhost:11434/v1',
             apiKey: 'ollama',

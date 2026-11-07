@@ -16,11 +16,15 @@
  * index.ts and are passed as bound-call fields on the context.
  */
 import type {
+  Api,
+  AssistantMessage,
   Model,
   Context,
   SimpleStreamOptions,
+  ModelsSimpleStreamOptions,
   AssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { SourceModelInfo } from './stream-driver.ts';
 import type { Config, Cache } from './types.ts';
 import { Router } from './routing.ts';
@@ -101,8 +105,10 @@ function extractContextWindowFromError(detail: string | undefined): {
 }
 
 import {
+  type ClassificationOptions,
   type ClassificationResult,
   type FullClassificationResult,
+  type HintClassificationResult,
   stripHintHead,
 } from './content-classifier.ts';
 import { localClassifierPins } from './classifier-local-probe.ts';
@@ -229,7 +235,7 @@ export interface StreamOrchestratorContext {
   runGroup?: string | null;
   runDriver?: string | undefined;
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
-  sessionCtx: any;
+  sessionCtx: ExtensionContext | null;
   // Core objects (updated on config reload)
   cfg: Config;
   cache: Cache;
@@ -314,8 +320,11 @@ export interface StreamOrchestratorContext {
    */
   limitFreeDayCap?: (candidates: string[], untilMs: number) => number;
   // Classification helpers
-  classifyPrompt: (prompt: string, opts: any) => Promise<FullClassificationResult>;
-  detectHintDirectly: (prompt: string) => any;
+  classifyPrompt: (
+    prompt: string,
+    opts: ClassificationOptions
+  ) => Promise<FullClassificationResult>;
+  detectHintDirectly: (prompt: string) => HintClassificationResult | null;
   getGroupForCategory: (category: string, cfg?: Config) => string;
   // Context helpers
   extractLastUserPrompt: (context: Context) => string | undefined;
@@ -507,7 +516,7 @@ export class StreamOrchestrator {
    * stays (a stream opened from inside a handler).
    */
   groupStream(
-    model: Model<any>,
+    model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions
   ): AssistantMessageEventStream {
@@ -590,7 +599,7 @@ export class StreamOrchestrator {
         // classification stays unchanged.
         const isCompaction = this.ctx.isCompactionTurn(context);
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
-        const classifyOpts: any = {
+        const classifyOpts: ClassificationOptions = {
           allowStaticFallback: useStatic,
           allowCloudChain: dynamicGroupCfg?.classifier_cloud_chain === true,
           cfg,
@@ -607,14 +616,31 @@ export class StreamOrchestrator {
             if (i === -1) return undefined;
             return registry.find(ref.slice(0, i), ref.slice(i + 1));
           },
-          completeSimple: (model: any, ctx: any, options: any) => {
+          completeSimple: (
+            model: Model<Api>,
+            ctx: Context,
+            options?: ModelsSimpleStreamOptions
+          ) => {
             // completeSimple is on the private ModelRuntime (registry.runtime),
             // not the public ModelRegistry facade — same reach-through pattern
-            // hostStreamSimple (src/stream-proxy.ts) uses for streamSimple. The
-            // pinned harness (pi-coding-agent@0.83.0) exposes neither method
-            // on the facade itself.
+            // hostStreamSimple (src/stream-proxy.ts) uses for streamSimple
+            // (verified against pi 1.5.0).
             const registry = this.ctx.sessionCtx?.modelRegistry;
-            return registry?.runtime?.completeSimple?.(model, ctx, options);
+            const runtime = (
+              registry as unknown as {
+                runtime?: {
+                  completeSimple?: (
+                    model: Model<Api>,
+                    ctx: Context,
+                    options?: ModelsSimpleStreamOptions
+                  ) => Promise<AssistantMessage>;
+                };
+              }
+            )?.runtime;
+            // Pinned contract (test/orchestrator-hint-wiring.test.ts):
+            // undefined — NOT a throw — when the runtime or the method is
+            // missing, so a host interop mismatch stays inert.
+            return runtime?.completeSimple?.(model, ctx, options);
           },
           // Bug 2026-10-06: findModel resolving a ref only proves pi's catalog
           // knows its shape, not that the provider has credentials — an
@@ -622,7 +648,7 @@ export class StreamOrchestrator {
           // resolved and failed inside completeSimple on every candidate,
           // every classification. hasConfiguredAuth IS on the public
           // ModelRegistry facade (unlike completeSimple).
-          hasConfiguredAuth: (model: any) => {
+          hasConfiguredAuth: (model: Model<Api>) => {
             const registry = this.ctx.sessionCtx?.modelRegistry;
             // typeof guard mirrors dynamic-config-runner: a future pi
             // version dropping the facade method fails OPEN, not with a
@@ -797,8 +823,8 @@ export class StreamOrchestrator {
               if (this.ctx.sessionCtx?.modelRegistry) {
                 const availableModels = this.ctx.sessionCtx.modelRegistry
                   .getAvailable()
-                  .map((m: any) => `${m.provider}/${m.id}`)
-                  .filter((ref: string) => {
+                  .map((m) => `${m.provider}/${m.id}`)
+                  .filter((ref) => {
                     if (isBlocked(cache, ref)) return false;
                     if (!cfg.exclude) return true;
                     return !isExcluded(ref, { rules: cfg.exclude, cfg, cache });
@@ -811,7 +837,7 @@ export class StreamOrchestrator {
                 const fallbackPool = sortedByGdpval.filter((ref) => !candidates.includes(ref));
                 const fallbackUsability = await Promise.all(
                   fallbackPool.map((ref) =>
-                    isRefUsable(ref, cfg.model_groups, this.ctx.sessionCtx.modelRegistry)
+                    isRefUsable(ref, cfg.model_groups, this.ctx.sessionCtx?.modelRegistry)
                   )
                 );
                 const fallbackCandidates = fallbackPool
@@ -998,7 +1024,7 @@ export class StreamOrchestrator {
   private async classifyBehindPin(
     classification: FullClassificationResult,
     prompt: string,
-    classifyOpts: Record<string, unknown>
+    classifyOpts: ClassificationOptions
   ): Promise<FullClassificationResult> {
     if (!('hintType' in classification) || classification.origin === 'auto') return classification;
     const content = stripHintHead(prompt);
@@ -1061,7 +1087,7 @@ export class StreamOrchestrator {
     const contextTokens = ctx.estimateContextTokens(context);
     // Planning input = message text + system prompt + tool schemas (the
     // provider counts all three against the window).
-    const planningTokens = estimateInputTokens(context, (context as any).tools);
+    const planningTokens = estimateInputTokens(context, context.tools);
 
     // Narration lookahead (live finding 2026-10-03): the ", trying X …"
     // suffix previously picked the first candidate not in a cooldown — but
@@ -1152,9 +1178,10 @@ export class StreamOrchestrator {
       // cadence. `!target` must only record the SILENT-skip path (tryStream
       // returned null with a skipReason and never threw).
       let openFailureText: string | undefined;
-      const target = await ctx.tryStream(ref, context, attempt.options).catch((err) => {
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-        const errorMsg = String(err.message || err);
+      const target = await ctx.tryStream(ref, context, attempt.options).catch((err: unknown) => {
+        // An Error's own message when present, else an honest stringify
+        // (textOf JSON-serializes objects instead of '[object Object]').
+        const errorMsg = err instanceof Error && err.message ? err.message : textOf(err);
         const isExpectedError = isExpectedTransientError(errorMsg);
         if (!isExpectedError) warnLog(`[router] Skipping ${ref}: ${errorMsg}`);
         pushError(ref, errorMsg);
@@ -1863,7 +1890,7 @@ export class StreamOrchestrator {
     // they sit right before every real prompt and used to BE the "previous"
     // message for most of the live traffic.
     try {
-      const userMsgs = (context.messages as any[]).filter((m) => m.role === 'user');
+      const userMsgs = context.messages.filter((m) => m.role === 'user');
       // The last user message is the current prompt (by position); the
       // previous one is the last REAL user turn before it.
       const earlier = realUserMessages(userMsgs.slice(0, -1));

@@ -13,6 +13,13 @@ import { isMetaRouterRef } from './providers.ts';
 import { planOutputBudget } from './context-budget.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  ModelsSimpleStreamOptions,
+} from '@earendil-works/pi-ai';
 import {
   getCachedCloudModels,
   selectClassifierCandidates,
@@ -83,7 +90,7 @@ export interface ClassificationContext {
    */
   lastModelContextWindow?: number | null;
   /** Estimated input tokens of the current (possibly compacted) context. */
-  contextTokens?: number;
+  contextTokens?: number | undefined;
   /**
    * Whether `lastModel` is currently in the router's rate-limit/soft-failure
    * cooldown. When true, compaction-continuity must NOT hint back to it —
@@ -126,7 +133,7 @@ export interface HintClassificationResult {
 // user HINT/MHINT in the prompt; every category (including upgrade
 // categories) routes via CATEGORY_TO_GROUP alone (five-group layout).
 
-interface ClassificationOptions {
+export interface ClassificationOptions {
   model?: string;
   timeoutMs?: number;
   fallbackModel?: string;
@@ -159,23 +166,25 @@ interface ClassificationOptions {
    * client so pi owns auth + provider quirks — the user's keys live in pi's
    * auth store, not in router-config.json, so the router must NOT roll its
    * own key resolution. The model is resolved from the ref via findModel.
+   * May resolve undefined when the host seam is missing (the orchestrator
+   * wiring's reach-through is inert, not throwing — pinned contract).
    */
   completeSimple?: (
-    model: any,
-    ctx: any,
-    options?: any
-  ) => Promise<{ content?: any[]; errorMessage?: string; stopReason?: string }>;
+    model: Model<Api>,
+    ctx: Context,
+    options?: ModelsSimpleStreamOptions
+  ) => Promise<AssistantMessage> | undefined;
   /**
    * Resolves a model ref ("provider/id") to a pi Model object from the
    * registry, so completeSimple can be called. Returns undefined if pi
    * doesn't know the model.
    */
-  findModel?: (ref: string) => any;
+  findModel?: (ref: string) => Model<Api> | undefined;
   /**
    * Pi's available models (modelRegistry.getAvailable()), pre-resolved so the
    * classifier can pick the cheapest without a second round-trip. Optional.
    */
-  availableModels?: readonly any[];
+  availableModels?: readonly Model<Api>[];
   /**
    * modelRegistry.hasConfiguredAuth, given the Model findModel resolved.
    * Bug 2026-10-06: findModel() succeeding only proves pi's builtin catalog
@@ -187,7 +196,7 @@ interface ClassificationOptions {
    * Optional and fail-open: omitting it keeps the pre-fix behavior (a
    * caller that doesn't wire it is not newly broken).
    */
-  hasConfiguredAuth?: (model: any) => boolean;
+  hasConfiguredAuth?: (model: Model<Api>) => boolean;
 }
 
 // ── Defaults ────────────────────────────────────────────────────────────
@@ -524,10 +533,13 @@ export function stripHintHead(prompt: string): string {
  * loop inside classifyPrompt so both produce identical hint semantics.
  * Returns null when the hint target is empty or malformed — callers degrade
  * (Ollama: explicit fallback classification; cloud: skip to next model).
- * Takes the raw parsed JSON object (any, guarded internally with typeof
- * checks — same convention as isValidFullClassification).
+ * Takes the raw parsed JSON object (unknown fields, guarded internally with
+ * typeof checks — same convention as isValidFullClassification).
  */
-function toHintClassification(parsed: any): FullClassificationResult | null {
+function toHintClassification(parsed: {
+  category?: unknown;
+  reason?: unknown;
+}): FullClassificationResult | null {
   const category = typeof parsed.category === 'string' ? parsed.category : '';
   if (!isHintCategory(category)) return null;
   const hintTarget = category.slice(5).trim(); // Remove 'hint:' prefix
@@ -538,8 +550,10 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
     const groupName = hintTarget.slice(6).trim(); // Remove 'group:' prefix
     if (!groupName) return null;
     return {
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-      reason: parsed.reason || 'User specified group via HINT',
+      reason:
+        typeof parsed.reason === 'string' && parsed.reason
+          ? parsed.reason
+          : 'User specified group via HINT',
       confidence: 1.0,
       hintType: 'group',
       hintTarget: groupName,
@@ -566,8 +580,10 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
   }
   if (!cleanHintTarget) return null; // e.g. "hint:use" with nothing after the verb
   return {
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-    reason: parsed.reason || 'User specified model via HINT',
+    reason:
+      typeof parsed.reason === 'string' && parsed.reason
+        ? parsed.reason
+        : 'User specified model via HINT',
     confidence: 1.0,
     hintType: 'model',
     hintTarget: cleanHintTarget,
@@ -910,9 +926,9 @@ async function classifyPromptUncounted(
     const trace = callSource.getStore()?.trace;
     if (trace) {
       trace.raw = {
-        category: (extracted as any).category ?? null,
-        confidence: (extracted as any).confidence ?? null,
-        reason: (extracted as any).reason ?? null,
+        category: typeof extracted.category === 'string' ? extracted.category : null,
+        confidence: typeof extracted.confidence === 'number' ? extracted.confidence : null,
+        reason: typeof extracted.reason === 'string' ? extracted.reason : null,
       };
     }
     // The model answered — record it so /router status shows the classifier
@@ -921,19 +937,14 @@ async function classifyPromptUncounted(
     const parsed = extracted as ClassificationResult;
     if (!isValidFullClassification(parsed)) {
       // If category is invalid but structure is valid, map to fallback
-      const rawParsed = parsed as any;
-      if (
-        rawParsed &&
-        typeof rawParsed.category === 'string' &&
-        typeof rawParsed.reason === 'string'
-      ) {
+      if (typeof extracted.category === 'string' && typeof extracted.reason === 'string') {
         warnLog(
-          `[classifier] Invalid category "${rawParsed.category}" from LLM, falling back to 'continue'`
+          `[classifier] Invalid category "${extracted.category}" from LLM, falling back to 'continue'`
         );
         return {
           category: 'continue',
-          reason: rawParsed.reason,
-          confidence: rawParsed.confidence ?? 0,
+          reason: extracted.reason,
+          confidence: typeof extracted.confidence === 'number' ? extracted.confidence : 0,
         };
       }
       throw new Error(`Invalid format: ${response}`);
@@ -1128,8 +1139,8 @@ async function classifyPromptUncounted(
         );
       }
 
-      const classifyCtx: any = {
-        messages: [{ role: 'user', content: ollamaPrompt }],
+      const classifyCtx: Context = {
+        messages: [{ role: 'user' as const, content: ollamaPrompt, timestamp: Date.now() }],
       };
 
       for (const modelRef of modelsToTry) {
@@ -1182,6 +1193,19 @@ async function classifyPromptUncounted(
               rejectTimeout = reject;
             }),
           ]);
+          // The wiring's reach-through resolves undefined when the host
+          // seam is missing (pinned inert, not throwing) — fail this
+          // candidate readably instead of crashing on the property access.
+          if (!result) {
+            trace?.chain.push({
+              ref: modelRef,
+              outcome: 'failed',
+              why: 'unparseable',
+              ms: Date.now() - t0,
+            });
+            warnLog(`[classifier] Cloud model ${modelRef} resolved no completion`);
+            continue;
+          }
           if (result.errorMessage || result.stopReason === 'error') {
             trace?.chain.push({
               ref: modelRef,
@@ -1195,8 +1219,11 @@ async function classifyPromptUncounted(
           // AssistantMessage.content is an array of TextContent | ThinkingContent
           // | ToolCall. Concatenate the text blocks (skip <think> blocks).
           const raw = (result.content ?? [])
-            .filter((b: any) => b.type === 'text' && typeof b.text === 'string')
-            .map((b: any) => b.text)
+            .filter(
+              (b): b is Extract<(typeof result.content)[number], { type: 'text' }> =>
+                b.type === 'text'
+            )
+            .map((b) => b.text)
             .join('');
           // Shared extraction helper (identical to the former inline
           // extraction; null means unparseable, which degrades exactly
@@ -1220,9 +1247,9 @@ async function classifyPromptUncounted(
           // Decision log: what the model said before post-processing.
           if (trace) {
             trace.raw = {
-              category: (extracted as any).category ?? null,
-              confidence: (extracted as any).confidence ?? null,
-              reason: (extracted as any).reason ?? null,
+              category: typeof extracted.category === 'string' ? extracted.category : null,
+              confidence: typeof extracted.confidence === 'number' ? extracted.confidence : null,
+              reason: typeof extracted.reason === 'string' ? extracted.reason : null,
             };
           }
           const parsed = extracted as FullClassificationResult;
@@ -1238,16 +1265,16 @@ async function classifyPromptUncounted(
             // model copied HINT narration out of the context block (voxtral
             // incident 2026-09-26) and the candidate is skipped like any other
             // bad reply.
-            if (isHintCategory((extracted as any).category)) {
+            if (isHintCategory(extracted.category)) {
               if (!containsHintMarker(prompt)) {
                 throw new Error(
-                  `Cloud model ${modelRef} echoed a spurious HINT (${(extracted as any).category}) — no HINT in the current request`
+                  `Cloud model ${modelRef} echoed a spurious HINT (${String(extracted.category)}) — no HINT in the current request`
                 );
               }
               const hint = toHintClassification(extracted);
               if (!hint) {
                 throw new Error(
-                  `Cloud model ${modelRef} returned an unusable HINT: ${(extracted as any).category}`
+                  `Cloud model ${modelRef} returned an unusable HINT: ${String(extracted.category)}`
                 );
               }
               routerLog(
@@ -1267,7 +1294,7 @@ async function classifyPromptUncounted(
           // the chain still moves on to the next candidate — a model that
           // answers with a made-up category is better replaced than trusted.
           warnLog(
-            `[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String((extracted as any).category)}") — trying the next candidate`
+            `[classifier] Cloud model ${modelRef} returned an invalid classification (category "${String(extracted.category)}") — trying the next candidate`
           );
           trace?.chain.push({
             ref: modelRef,
@@ -1462,18 +1489,23 @@ async function classifyPromptUncounted(
   return classifyViaLlmChain();
 }
 
-function isValidClassification(obj: any): obj is ClassificationResult {
+/** Minimal shape the guards below narrow from: a parsed JSON object. */
+function isParsedObject(obj: unknown): obj is Record<string, unknown> {
+  return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
+}
+
+function isValidClassification(obj: unknown): obj is ClassificationResult {
   return (
-    obj &&
+    isParsedObject(obj) &&
     typeof obj.category === 'string' &&
     (VALID_CATEGORIES as readonly string[]).includes(obj.category) &&
     typeof obj.reason === 'string'
   );
 }
 
-function isValidHintClassification(obj: any): obj is HintClassificationResult {
+function isValidHintClassification(obj: unknown): obj is HintClassificationResult {
   return (
-    obj &&
+    isParsedObject(obj) &&
     (obj.hintType === 'model' || obj.hintType === 'group') &&
     typeof obj.hintTarget === 'string' &&
     obj.hintTarget.length > 0 &&
@@ -1482,14 +1514,14 @@ function isValidHintClassification(obj: any): obj is HintClassificationResult {
   );
 }
 
-function isValidFullClassification(obj: any): obj is FullClassificationResult {
+function isValidFullClassification(obj: unknown): obj is FullClassificationResult {
   // Check for normal classification
   if (isValidClassification(obj)) return true;
 
   // Check for raw HINT response from LLM (before extraction)
   // These have category starting with 'hint:' but no hintType/hintTarget yet
   if (
-    obj &&
+    isParsedObject(obj) &&
     typeof obj.category === 'string' &&
     obj.category.startsWith('hint:') &&
     typeof obj.reason === 'string'
