@@ -15,7 +15,11 @@
 import { routerLog, warnLog } from './logger.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import type { Config } from './types.ts';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ProviderConfig,
+} from '@earendil-works/pi-coding-agent';
 
 /**
  * Dependencies createFreeModelRegistration reads from index.ts's extension closure. Exposed as
@@ -26,7 +30,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 interface FreeModelRegistrationDeps {
   readonly cfg: Config;
   readonly pi: ExtensionAPI;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
   /** Pi-side key resolution (ADR-0022): modelRegistry.getApiKeyForProvider. */
   readonly resolveApiKey: (provider: string) => Promise<string | null>;
 }
@@ -52,7 +56,7 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps): Free
    * an existing provider registration (Ü1 invariant).
    */
   async function registerFreeModelOnDemand(provider: string, modelId: string): Promise<boolean> {
-    const def = (PROVIDER_MAP as any)[provider];
+    const def = PROVIDER_MAP[provider];
     if (!def?.baseUrl || !def?.api) return false;
     const freeModels = rt.cfg.providers?.[provider]?.free_models;
     if (!freeModels?.length) return false;
@@ -70,8 +74,8 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps): Free
     // still get wiped. Use getRegisteredProviderIds (already used by the
     // session_start diagnostics) for the authoritative 'is the provider known'
     // check.
-    const registeredProviderIds: string[] =
-      rt.sessionCtx?.modelRegistry?.getRegisteredProviderIds?.() ?? [];
+    const registeredProviderIds: readonly string[] =
+      rt.sessionCtx?.modelRegistry.getRegisteredProviderIds() ?? [];
     if (registeredProviderIds.includes(provider)) return false;
     // 0.99.1 note (ADR-0019): getRegisteredProviderIds() includes every
     // builtin-catalog provider there, so this guard degrades to 'never
@@ -95,12 +99,12 @@ export function createFreeModelRegistration(rt: FreeModelRegistrationDeps): Free
           const id = r.slice(provider.length + 1);
           return { id, name: id };
         });
-      (rt.pi as any).registerProvider(provider, {
+      rt.pi.registerProvider(provider, {
         name: `${provider} (free, on-demand)`,
         baseUrl: def.baseUrl,
         apiKey,
         api: def.api,
-        models: allFreeModelEntries,
+        models: allFreeModelEntries as NonNullable<ProviderConfig['models']>,
       });
       routerLog(
         `[router] On-demand registered ${allFreeModelEntries.length} free model(s) for ${provider} (triggered by ${ref})`

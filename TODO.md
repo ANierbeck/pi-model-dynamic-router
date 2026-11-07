@@ -67,9 +67,22 @@ the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowe
       honest type is `any` (still baselined) (S5 territory: `sessionCtx` getter, `readJson`,
       `hasConfiguredAuth`, `createGroupRegistration`). Owner decision D3: keep
       and burn down, explicit return types are treated as an API contract
-- [ ] **S5** long tail (~732): `no-explicit-any` + the `no-unsafe-*` family,
-      per-file slices. May never reach zero; the ratchet only requires it never
-      grows.
+- [ ] **S5** long tail (732 → **654** after the first slice, 2026-11-08,
+      PR #131): `no-explicit-any` + the `no-unsafe-*` family, per-file
+      slices. Slice 1 typed `src/context-utils.ts` (19→0),
+      `src/error-signatures.ts` (20→0), `src/delegation.ts` (21→0) and
+      `src/free-model-registration.ts` (18→0) against the real host types
+      (`ExtensionContext`, `AssistantMessageEvent`, `ProviderConfig`); the
+      delegation drain now follows the CURRENT host stream protocol
+      (`done` with `message.usage` — the old fixtures still used the pi-0.83
+      spike shape `message_end`), and the thrown sub-call error is readable
+      (`textOf`, not `[object Object]`). Boyscout finds along the way: the
+      thrown-open narration raw-text fix (PR #129) and the
+      `no-base-to-string` collapses in error-signatures/delegation (objects
+      now stringify as JSON, not `[object Object]`). May never reach zero;
+      the ratchet only requires it never grows. Biggest remaining files:
+      content-classifier (101), group-registration (94), stream-proxy (84),
+      scan-runner (72), stream-orchestrator (64).
 
 Note: the dev-only `minimatch` alert (CVE-2026-118764) is closed by an
 `overrides` entry (2026-11-08, see the dependency-security round below), not

@@ -202,8 +202,8 @@ describe('executeBulkRead', () => {
     { type: 'text_delta', delta: text },
     { type: 'text_end', content: text },
     {
-      type: 'message_end',
-      usage: { input: 4200, output: 90, totalTokens: 4290, cost: { total: 0.0002 } },
+      type: 'done',
+      message: { usage: { input: 4200, output: 90, totalTokens: 4290, cost: { total: 0.0002 } } },
     },
   ];
 

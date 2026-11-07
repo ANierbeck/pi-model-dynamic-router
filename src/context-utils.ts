@@ -7,6 +7,7 @@
 import { stripRouterNarration, splitRef, messageText } from './utils.ts';
 import { estimateInputTokens } from './context-budget.ts';
 import type { Context } from '@earendil-works/pi-ai';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Config } from './types.ts';
 
 /**
@@ -22,7 +23,7 @@ interface ContextUtilsDeps {
   previousTokenCount: number;
   readonly RATE_LIMIT_WAIT_MAX_MS: number;
   readonly REASONING_EMPTY_RESPONSE_TIMEOUT_MS: number;
-  readonly sessionCtx: any;
+  readonly sessionCtx: ExtensionContext | null;
   readonly STALL_TIMEOUT_MS: number;
 }
 
@@ -122,12 +123,13 @@ export function createContextUtils(d: ContextUtilsDeps): ContextUtils {
     try {
       const model = d.sessionCtx.modelRegistry.find(provider, modelId);
       if (!model) return false;
-      // pi-ai's Model type carries `reasoning?: boolean` when the model
+      // pi-ai's Model type carries `reasoning: boolean` when the model
       // supports thinking (not to be confused with SimpleStreamOptions.reasoning,
       // which is a `ThinkingLevel` string on the request side, not the model
-      // capability flag read here). Some custom providers may expose it as a
-      // `thinking` flag instead, so accept either.
-      return Boolean(model.reasoning) || Boolean(model.thinking);
+      // capability flag read here). Some custom providers may expose a
+      // `thinking` flag instead — not part of Model's type surface — so
+      // probe it through a narrow cast and accept either.
+      return Boolean(model.reasoning) || Boolean((model as { thinking?: unknown }).thinking);
     } catch {
       return false;
     }
@@ -212,9 +214,23 @@ export function createContextUtils(d: ContextUtilsDeps): ContextUtils {
       const c = last.content as unknown;
       if (typeof c === 'string') return stripRouterNarration(c).slice(0, 150);
       if (Array.isArray(c)) {
-        const textContent = c
-          .filter((b: any) => b.type === 'text')
-          .map((b: any) => b.text as string)
+        // The blocks arrive as `any[]` (Array.isArray on unknown), so narrow
+        // each element minimally: keep blocks typed `text`, and stringify
+        // their `text` the way Array.prototype.join did before (nullish
+        // members join as '', everything else via String()).
+        const textContent = (c as unknown[])
+          .filter(
+            (b): b is Record<string, unknown> =>
+              typeof b === 'object' && b !== null && (b as Record<string, unknown>).type === 'text'
+          )
+          .map((b) => {
+            const t = b.text;
+            // Only primitives stringify unambiguously; a non-primitive `text`
+            // would print '[object Object]' — treat it as absent instead.
+            return typeof t === 'string' || typeof t === 'number' || typeof t === 'boolean'
+              ? String(t)
+              : '';
+          })
           .join('');
         return stripRouterNarration(textContent).slice(0, 150);
       }

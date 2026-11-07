@@ -222,51 +222,6 @@
       "count": 3
     },
     {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-explicit-any",
-      "count": 3
-    },
-    {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 4
-    },
-    {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
-      "count": 3
-    },
-    {
-      "file": "src/context-utils.ts",
-      "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 9
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-explicit-any",
-      "count": 2
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-unsafe-argument",
-      "count": 1
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 6
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
-      "count": 2
-    },
-    {
-      "file": "src/delegation.ts",
-      "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 10
-    },
-    {
       "file": "src/dynamic-config-runner.ts",
       "rule": "@typescript-eslint/explicit-function-return-type",
       "count": 1
@@ -302,36 +257,6 @@
       "count": 1
     },
     {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-explicit-any",
-      "count": 1
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-unsafe-argument",
-      "count": 1
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 5
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
-      "count": 1
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 11
-    },
-    {
-      "file": "src/error-signatures.ts",
-      "rule": "@typescript-eslint/no-unsafe-return",
-      "count": 1
-    },
-    {
       "file": "src/event-handlers.ts",
       "rule": "@typescript-eslint/no-explicit-any",
       "count": 12
@@ -360,26 +285,6 @@
       "file": "src/event-handlers.ts",
       "rule": "@typescript-eslint/no-unsafe-return",
       "count": 2
-    },
-    {
-      "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/no-explicit-any",
-      "count": 3
-    },
-    {
-      "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 4
-    },
-    {
-      "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
-      "count": 3
-    },
-    {
-      "file": "src/free-model-registration.ts",
-      "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 8
     },
     {
       "file": "src/group-registration.ts",

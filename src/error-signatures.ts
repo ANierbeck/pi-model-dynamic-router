@@ -15,6 +15,7 @@
 // `ollama pull`).
 
 import { isRateLimitText, isOverflowErrorText, isAbortLikeText } from './detection.ts';
+import { textOf } from './utils.ts';
 
 type FailureVerdict = 'permanent' | 'request' | 'transient' | 'unknown';
 
@@ -136,13 +137,18 @@ const REQUEST_TEXT = /does not support tools|support tool use/i;
  * brace never closed), so after a failed parse we re-close up to a few open
  * braces and retry. Returns undefined when nothing JSON-shaped is found.
  */
-function tryParseJsonObject(s: string): Record<string, any> | undefined {
+function isJsonObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function tryParseJsonObject(s: string): Record<string, unknown> | undefined {
   const start = s.indexOf('{');
   if (start < 0) return undefined;
   let body = s.slice(start, s.lastIndexOf('}') + 1);
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      return JSON.parse(body);
+      const parsed: unknown = JSON.parse(body);
+      return isJsonObject(parsed) ? parsed : undefined;
     } catch {
       body += '}';
     }
@@ -152,24 +158,35 @@ function tryParseJsonObject(s: string): Record<string, any> | undefined {
 
 function parseBody(text: string): {
   message: string;
-  routingStep?: string;
+  routingStep: string | undefined;
   ineligibility: string[];
 } {
   const start = text.indexOf('{');
   if (start >= 0) {
     try {
-      const body = JSON.parse(text.slice(start, text.lastIndexOf('}') + 1));
-      const meta = body?.metadata ?? body?.error?.metadata ?? {};
+      const parsed: unknown = JSON.parse(text.slice(start, text.lastIndexOf('}') + 1));
+      if (!isJsonObject(parsed))
+        return { message: text, routingStep: undefined, ineligibility: [] };
+      const body = parsed;
+      const bodyError = isJsonObject(body.error) ? body.error : undefined;
+      const meta: Record<string, unknown> = isJsonObject(body.metadata)
+        ? body.metadata
+        : bodyError !== undefined && isJsonObject(bodyError.metadata)
+          ? bodyError.metadata
+          : {};
       // OpenRouter wraps the upstream error as a JSON STRING in
       // metadata.raw — body.message is then just the generic "Provider
       // returned error" wrapper (which TRANSIENT_TEXT also matches, so the
       // real deterministic cause inside raw was never classified before;
       // 2026-10-03 live qwen 400 incident). Prefer the unwrapped
       // upstream message when it parses.
-      let message = String(body?.message ?? body?.error?.message ?? text);
+      // textOf stringifies a non-string message readably (JSON) instead of
+      // collapsing an object-valued message to '[object Object]'.
+      let message = textOf(body.message ?? bodyError?.message ?? text);
       if (typeof meta.raw === 'string') {
         const raw = tryParseJsonObject(meta.raw);
-        const rawMsg = raw?.error?.message ?? raw?.message;
+        const rawError = raw !== undefined && isJsonObject(raw.error) ? raw.error : undefined;
+        const rawMsg = rawError?.message ?? raw?.message;
         if (typeof rawMsg === 'string' && rawMsg.trim()) message = rawMsg;
       }
       return {
@@ -177,8 +194,8 @@ function parseBody(text: string): {
         routingStep:
           typeof meta.failed_routing_step === 'string' ? meta.failed_routing_step : undefined,
         ineligibility: Array.isArray(meta.ineligibility_reasons)
-          ? meta.ineligibility_reasons.map((r: { reason?: unknown }) =>
-              typeof r?.reason === 'string' ? r.reason : ''
+          ? meta.ineligibility_reasons.map((r) =>
+              isJsonObject(r) && typeof r.reason === 'string' ? r.reason : ''
             )
           : [],
       };
@@ -186,7 +203,7 @@ function parseBody(text: string): {
       // Truncated or non-JSON body: fall back to substring matching below.
     }
   }
-  return { message: text, ineligibility: [] };
+  return { message: text, routingStep: undefined, ineligibility: [] };
 }
 
 // Known-transient wording. Includes generic upstream and stream-level
