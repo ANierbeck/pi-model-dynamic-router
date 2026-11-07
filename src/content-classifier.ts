@@ -9,6 +9,7 @@ import {
 import { DiscoveryManager } from './discovery.ts';
 import { isExcluded, isPaidForClassifier } from './exclude.ts';
 import { isFreeModelRef } from './metrics.ts';
+import { isMetaRouterRef } from './providers.ts';
 import { planOutputBudget } from './context-budget.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
@@ -803,12 +804,14 @@ async function classifyPromptUncounted(
     if (context.lastModel && !context.lastModelLimited) {
       const lastRef = context.lastModel;
       // Free-tier and meta-router refs must not be asked to hold the one
-      // context the router must not lose. Derived from cfg/cache (ADR-0025),
-      // plus the openrouter meta-router prefix (a router, not a model).
+      // context the router must not lose. Derived from cfg/cache (ADR-0025);
+      // a meta-router is a router, not a model (provider adapter data).
       const freeTier = isFreeModelRef(lastRef, cfg?.providers, cache?.available_models);
-      const metaRouter = lastRef.startsWith('openrouter/openrouter/');
+      const metaRouter = isMetaRouterRef(lastRef);
+      // No token estimate = unknown, like an unknown window: not large enough.
       const budget = planOutputBudget({
-        windowTokens: context.lastModelContextWindow ?? null,
+        windowTokens:
+          context.contextTokens === undefined ? null : (context.lastModelContextWindow ?? null),
         inputTokens: context.contextTokens ?? 0,
         requestedOutput: undefined,
       });

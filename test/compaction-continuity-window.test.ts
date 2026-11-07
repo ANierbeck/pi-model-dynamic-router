@@ -20,6 +20,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { classifyPrompt } from '../src/content-classifier.ts';
+import { MIN_OUTPUT_TOKENS, safetyTokens } from '../src/context-budget.ts';
 
 const COMPACT_PROMPT = 'please continue the refactor';
 /** Token estimate of the compacted context the fixtures describe. */
@@ -113,13 +114,27 @@ describe('compaction continuity by real context window', () => {
     expect(r).toMatchObject({ category: 'code_complex' });
   });
 
-  it('lets the reserve decide the boundary: window that only fits input is refused', async () => {
-    // planOutputBudget reserves safety tokens + a minimum output below the
-    // window; a window of exactly the input estimate cannot fit output.
+  it('lets the output reserve decide the boundary: one token short is refused, exact fit is hinted', async () => {
+    // At this size the safety margin is its 2048-token floor, so the smallest
+    // fitting window is input + 2048 + the minimum useful output.
+    const fit = COMPACTED_TOKENS + 2048 + MIN_OUTPUT_TOKENS;
+    expect(safetyTokens(fit)).toBe(2048);
+    const refused = await classify(
+      compactionContext({ lastModel: 'mistral/boundary-model', lastModelContextWindow: fit - 1 })
+    );
+    expect('hintType' in refused).toBe(false);
+    const hinted = await classify(
+      compactionContext({ lastModel: 'mistral/boundary-model', lastModelContextWindow: fit })
+    );
+    expect(hinted).toMatchObject({ hintType: 'model', hintTarget: 'mistral/boundary-model' });
+  });
+
+  it('refuses continuity when the caller gave no token estimate (unknown = not large enough)', async () => {
     const r = await classify(
       compactionContext({
-        lastModel: 'mistral/boundary-model',
-        lastModelContextWindow: COMPACTED_TOKENS,
+        lastModel: 'mistral/zai-glm-5-3',
+        lastModelContextWindow: 1_000_000,
+        contextTokens: undefined,
       })
     );
     expect('hintType' in r).toBe(false);

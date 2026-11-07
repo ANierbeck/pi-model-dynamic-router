@@ -54,8 +54,6 @@ interface Opts {
   compaction?: boolean;
   /** Real context window per ref, for the compaction-continuity decision. */
   window?: Record<string, number>;
-  /** Estimated context tokens, for the compaction-continuity decision. */
-  tokens?: number;
   hintDirect?: boolean;
   messages?: any[];
   /** what extractLastUserPrompt returns; pass undefined explicitly for "no prompt" */
@@ -113,9 +111,8 @@ function world(o: Opts) {
     isCompactionTurn: () => o.compaction === true,
     // Compaction continuity reads the last model's real window and the
     // context token estimate (TODO I5). Configurable per test via
-    // o.window / o.tokens; a ref without a window entry is unknown (null).
+    // o.window; a ref without a window entry is unknown (null).
     getModelContextWindow: (ref: string) => o.window?.[ref] ?? null,
-    estimateContextTokens: () => o.tokens ?? 20_000,
     isLimited: (r: string) => (o.limited ?? []).includes(r),
     clearLimit: (r: string) => cleared.push(r),
     lookupGdp: (r: string) => o.gdp?.[r] ?? null,

@@ -48,7 +48,8 @@ const POOLS: Record<string, { candidates: string[]; selected: string }> = {
 const turnMessages = [{ role: 'user', content: 'plan the refactor', timestamp: 1 }];
 const followUpMessages = toolFollowUpMessages('plan the refactor');
 
-function followUpWorld(opts: { limited?: string[]; free?: string[] } = {}) {
+function followUpWorld(opts: { limited?: string[]; free?: string[]; pools?: typeof POOLS } = {}) {
+  const pools = { ...POOLS, ...opts.pools };
   const limited = new Set(opts.limited ?? []);
   let classification: any = { category: 'planning' };
   const ctx: any = {
@@ -64,7 +65,7 @@ function followUpWorld(opts: { limited?: string[]; free?: string[] } = {}) {
     escalation: { level: 'standard' },
     sessionCtx: undefined,
     resolve: (name: string) => {
-      const p = POOLS[name];
+      const p = pools[name];
       return p ? { candidates: [...p.candidates], selected: p.selected } : null;
     },
     extractLastUserPrompt: () => 'plan the refactor',
@@ -150,6 +151,16 @@ describe('tool follow-up keeps the run’s group', () => {
     expect(d.group).toBe('code_complex');
   });
 
+  it('a turn whose classification throws does not inherit the previous run', async () => {
+    const w = followUpWorld();
+    await w.open(turnMessages); // run = planning
+    w.classifyPrompt.mockRejectedValueOnce(new Error('classifier down'));
+    await w.open([...turnMessages, { role: 'user', content: 'and now?', timestamp: 3 }]); // served from simple
+    w.ctx.lastDynamicModel = 'mistral/tiny';
+    const d = await w.open(followUpMessages);
+    expect(d.group).toBe('simple');
+  });
+
   it('a router sub-call (bulk_read) does not become the run', async () => {
     const w = followUpWorld();
     await w.open(turnMessages); // planning
@@ -173,6 +184,38 @@ describe('tool follow-up and free-tier models', () => {
     expect(d.group).toBe('code_complex');
     expect(d.candidates).not.toContain('openrouter/cheap:free');
     expect(d.candidates[0]).toBe('mistral/large');
+  });
+
+  it('keeps a free driver the run itself started on (a pinned or group-selected free model)', async () => {
+    const w = followUpWorld({
+      free: ['openrouter/pinned:free'],
+      pools: {
+        code_complex: {
+          candidates: ['openrouter/pinned:free', 'mistral/large'],
+          selected: 'openrouter/pinned:free',
+        },
+      },
+    });
+    w.classifyAs({ category: 'code_complex' });
+    await w.open(turnMessages); // driver = the free model
+    w.ctx.lastDynamicModel = 'openrouter/pinned:free';
+    const d = await w.open(followUpMessages, tools);
+    expect(d.candidates[0]).toBe('openrouter/pinned:free');
+  });
+
+  it('skips a meta-router ref like a free model while tools are in the context', async () => {
+    const w = followUpWorld({
+      pools: {
+        code_complex: {
+          candidates: ['mistral/large', 'openrouter/openrouter/free'],
+          selected: 'mistral/large',
+        },
+      },
+    });
+    w.classifyAs({ category: 'code_complex' });
+    await w.open(turnMessages);
+    const d = await w.open(followUpMessages, tools);
+    expect(d.candidates).not.toContain('openrouter/openrouter/free');
   });
 
   it('keeps free models when no tools are in the context', async () => {

@@ -118,7 +118,7 @@ import {
 } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
-import { PROVIDER_MAP } from './providers.ts';
+import { PROVIDER_MAP, isMetaRouterRef } from './providers.ts';
 import { isExcluded } from './exclude.ts';
 import { isFreeModelRef } from './metrics.ts';
 import { isBlocked } from './model-blocklist.ts';
@@ -228,7 +228,7 @@ export interface StreamOrchestratorContext {
    * did before: the follow-up falls back to the `simple` pool.
    */
   runGroup?: string | null;
-  runDriver?: string;
+  runDriver?: string | undefined;
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
   sessionCtx: any;
   // Core objects (updated on config reload)
@@ -359,6 +359,31 @@ export class StreamOrchestrator {
     this.ctx.runDriver = driver;
   }
 
+  /** A new, non-follow-up turn starts without a run until classification names one. */
+  private clearRun(): void {
+    if (inSubCall()) return;
+    this.ctx.runGroup = null;
+    this.ctx.runDriver = '';
+  }
+
+  /**
+   * The group a turn falls back to when it has no run of its own: `simple`,
+   * or any other non-dynamic group when `simple` is gone. Null when none
+   * resolves.
+   */
+  private resolveBaseGroup(): {
+    group: string;
+    res: { candidates: string[]; selected: string };
+  } | null {
+    const simple = this.ctx.resolve('simple');
+    if (simple) return { group: 'simple', res: simple };
+    const alt = Object.keys(this.ctx.cfg.model_groups).find(
+      (k) => this.ctx.cfg.model_groups[k].method !== 'dynamic'
+    );
+    const res = alt ? this.ctx.resolve(alt) : null;
+    return alt && res ? { group: alt, res } : null;
+  }
+
   /** Candidates of the group's `fallback_groups` (one level deep) that `own` does not already hold. */
   private fallbackGroupCandidates(group: string, own: readonly string[]): string[] {
     const seen = new Set<string>(own);
@@ -385,50 +410,48 @@ export class StreamOrchestrator {
    * then the `simple` pool (any other non-dynamic group when `simple` is gone).
    */
   private planToolFollowUp(context: Context): { group: string; candidates: string[] } {
-    const { cfg, lastDynamicModel: current } = this.ctx;
+    const { lastDynamicModel: current } = this.ctx;
     const runGroup = this.ctx.runGroup;
     if (runGroup && runGroup !== 'simple') {
       const res = this.ctx.resolve(runGroup);
       if (res) {
         const driver = this.ctx.runDriver;
+        const driverFirst = driver && !this.ctx.isLimited(driver) ? driver : undefined;
         const ordered = [
-          ...(driver && !this.ctx.isLimited(driver) ? [driver] : []),
+          ...(driverFirst ? [driverFirst] : []),
           current,
           ...res.candidates,
           ...this.fallbackGroupCandidates(runGroup, res.candidates),
         ];
         return {
           group: runGroup,
-          candidates: this.withoutFreeTier([...new Set(ordered)], context),
+          candidates: this.withoutFreeTier([...new Set(ordered)], context, driverFirst),
         };
       }
     }
-    let group = 'simple';
-    let res = this.ctx.resolve(group);
-    if (!res) {
-      const alt = Object.keys(cfg.model_groups).find(
-        (k) => cfg.model_groups[k].method !== 'dynamic'
-      )!;
-      group = alt;
-      res = this.ctx.resolve(alt);
-    }
-    if (!res) throw new Error('No fallback model for tool follow-up');
+    const base = this.resolveBaseGroup();
+    if (!base) throw new Error('No fallback model for tool follow-up');
+    const { group, res } = base;
     return { group, candidates: [current, ...res.candidates.filter((r) => r !== current)] };
   }
 
   /**
-   * With tools in the context a free-tier model cannot be trusted to continue a
-   * tool loop (the run's group is not `simple`, so it was not meant to run
-   * there). Free means what the rest of the router means by it — `:free` tag,
-   * `free_models`, discovered price 0 — not a model list (ADR-0025); local
-   * models stay. Fail-open: when nothing else is left, keep the list.
+   * With tools in the context a free-tier model or a meta-router cannot be
+   * trusted to continue a tool loop (the run's group is not `simple`, so it was
+   * not meant to run there). Free means what the rest of the router means by it
+   * — `:free` tag, `free_models`, discovered price 0 — not a model list
+   * (ADR-0025); local models stay. The run's own driver stays too: a pinned or
+   * group-selected free model is where the run deliberately started. Fail-open:
+   * when nothing else is left, keep the list.
    */
-  private withoutFreeTier(refs: string[], context: Context): string[] {
+  private withoutFreeTier(refs: string[], context: Context, keep?: string): string[] {
     if ((context.tools?.length ?? 0) === 0) return refs;
     const { cfg, cache } = this.ctx;
     const kept = refs.filter(
       (ref) =>
-        this.ctx.isLocalProvider(ref) || !isFreeModelRef(ref, cfg.providers, cache.available_models)
+        ref === keep ||
+        this.ctx.isLocalProvider(ref) ||
+        (!isMetaRouterRef(ref) && !isFreeModelRef(ref, cfg.providers, cache.available_models))
     );
     return kept.length > 0 ? kept : refs;
   }
@@ -514,6 +537,9 @@ export class StreamOrchestrator {
           );
           return;
         }
+        // A new turn: no run until classification (or a pin) names one, so a
+        // classification that throws cannot leave the previous run behind.
+        this.clearRun();
 
         const lastAssistantSnippet = this.ctx.extractLastAssistantSnippet(context);
         const previousUserMessage = this.extractPreviousUserMessage(context);
@@ -575,7 +601,7 @@ export class StreamOrchestrator {
               isCompaction && this.ctx.lastDynamicModel
                 ? this.ctx.getModelContextWindow(this.ctx.lastDynamicModel)
                 : null,
-            contextTokens: isCompaction ? this.ctx.estimateContextTokens(context) : undefined,
+            contextTokens: isCompaction ? estimateInputTokens(context, context.tools) : undefined,
             lastModelLimited: this.ctx.lastDynamicModel
               ? this.ctx.isLimited(this.ctx.lastDynamicModel)
               : false,
@@ -835,15 +861,7 @@ export class StreamOrchestrator {
       } catch (err) {
         warnLog('[dynamic] classification failed, using fallback:', err);
         // D4: the three exits of the former 'fallback' group point at 'simple'.
-        resolvedGroup = 'simple';
-        let fb = this.ctx.resolve('simple');
-        if (!fb) {
-          const alt = Object.keys(cfg.model_groups).find(
-            (k) => cfg.model_groups[k].method !== 'dynamic'
-          )!;
-          resolvedGroup = alt;
-          fb = this.ctx.resolve(alt);
-        }
+        const fb = this.resolveBaseGroup();
         if (!fb) {
           pushStreamError(
             proxy,
@@ -853,7 +871,8 @@ export class StreamOrchestrator {
           );
           return;
         }
-        candidates = [...fb.candidates];
+        resolvedGroup = fb.group;
+        candidates = [...fb.res.candidates];
       }
       await this.driveStream(
         proxy,

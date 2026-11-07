@@ -70,7 +70,8 @@ export function createContextUtils(d: ContextUtilsDeps): ContextUtils {
 
   /**
    * Returns the context window (in tokens) for a model ref, or null if unknown.
-   * Uses the model registry's contextWindow property (default 128K in Pi).
+   * Uses the model registry's contextWindow property; null when the registry
+   * has no such model or no usable value (callers treat that as unknown).
    * Small local models (e.g. gemma4:12b @ 8K) will return their actual limit.
    */
   function getModelContextWindow(ref: string): number | null {

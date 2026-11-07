@@ -721,6 +721,15 @@ export interface ProviderDef {
    * models (ADR-0025 class A) — it never admits or ranks a model.
    */
   modelIdVendorPrefix?: string;
+  /**
+   * Id prefix under which this provider lists its own meta-routers — entries
+   * that pick an upstream model per request instead of being one model (an
+   * "auto"/"free" router). A router has no stable context window or quality,
+   * so it must not be asked to continue a tool loop or hold a compacted
+   * context. Protocol knowledge about HOW the provider names its routers
+   * (ADR-0025 class A) — it never admits or ranks a model.
+   */
+  metaRouterIdPrefix?: string;
 }
 
 // ── Utility Types ────────────────────────────────────────────────────────
