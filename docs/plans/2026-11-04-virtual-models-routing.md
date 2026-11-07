@@ -1,10 +1,11 @@
 # Route through Pi's Virtual Models: evaluate whether the router's own turn-state machine can go
 
-**Status:** proposed 2026-11-04. Spike steps 1–3 done 2026-11-06
-(`docs/research/2026-11-06-virtual-model-spike.md`: Pi's retry measured, shadow
-agreement 74 % same / 10 % recovered / 16 % lost on 100 real turns). Step 4
-(two layers, state separation, attribution) measured 2026-11-07, same note §5.
-Cost comparison against a session-keyed store in today's design measured 2026-11-07, note §6. Step 5 — the decision — is open. No routing code has been written for this plan.
+**Status:** done 2026-11-07 — owner decision: **no migration**. The turn-state
+problems are fixed in the current design (own plans: session-keyed turn state,
+tool follow-up group, compaction continuity — see Open decisions 2). The
+migration is re-evaluated on Pi host upgrades (trigger below). Evidence:
+`docs/research/2026-11-06-virtual-model-spike.md` §1–§6; probes in
+`spikes/virtual-models/`. No routing code was written for this plan.
 
 AGENTS.md §11: one problem per plan. This plan covers ONE problem — the router keeps its own copy of "which model drives this turn" and a failover loop that has to be protected against its own sub-calls. Pi has offered a first-class feature for routing since 0.99.0. The measurements and the item-by-item mapping live in `docs/research/2026-11-04-virtual-models-fit.md`.
 
@@ -38,14 +39,21 @@ Spike, in order, each step stops the plan if it fails:
 3. ~~**Retry behaviour.**~~ Done 2026-11-06 against a local fake provider, §1 of
    the research note. Force a rate-limit and an empty response through a probe provider and record what Pi does (delay, number of attempts, what `failed` contains, whether the user sees an error).
 4. ~~**Two layers.**~~ Done 2026-11-07, note §5: state separated for direct, fork, resume and independent sessions; attribution in the assistant message names the physical model with or without a group layer; `previous` names the physical model, so the group must come from `state`.
-5. **Decision.** Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
+5. ~~**Decision.**~~ Decided 2026-11-07 by the owner: stay. Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
+
+**Re-evaluation trigger.** At every Pi host alignment round (AGENTS.md §10) run
+`spikes/virtual-models/run-retry-matrix.sh` and compare it with the baseline in
+`spikes/virtual-models/README.md`. The migration is worth re-opening when Pi
+detects stalls, retries a well-formed empty response, lets an extension decide
+whether a provider error is retried, or raises the four-request budget; then
+re-run `scripts/virtual-route-shadow.ts` on current logs before deciding.
 
 ## Open decisions (owner)
 
-1. **Is the spike wanted?** Cost: roughly the shadow route plus the inventory; no routing risk.
-2. **Interim fixes in the meantime?** I3 (follow-up group), I5 (compaction continuity), I4 (tool-call markup as text) and M3 (latency incl. tool time) are needed whether or not we migrate, except I3/I5/I2 which a migration would make obsolete. Proposal: I4 and M3 now (independent); I3/I5 only as small interim guards.
-3. **Order against the owner-mandated mutation triage** of the `stream-orchestrator` classification/HINT region (TODO, 2026-10-15: 710 undetected mutants, "do this first after laya-spike merges"). A migration would delete much of that region; triaging code that may go is waste. Proposal: decide this plan's spike first.
-4. **Version line.** The five-group layout is already the 2.0 breaking change. Migration inside 2.0 or after it?
+1. ~~**Is the spike wanted?**~~ Yes (2026-11-06), done. Cost: roughly the shadow route plus the inventory; no routing risk.
+2. ~~**Interim fixes in the meantime?**~~ Superseded by the decision: I2/M1, I3 and I5 are fixed in the current design, each in its own plan (`2026-11-07-session-keyed-turn-state.md`, `2026-11-07-tool-follow-up-group.md`, `2026-11-07-compaction-continuity.md`); I4 is merged (PR #101/#104); M3 stays its own item. I3 (follow-up group), I5 (compaction continuity), I4 (tool-call markup as text) and M3 (latency incl. tool time) are needed whether or not we migrate, except I3/I5/I2 which a migration would make obsolete. Proposal: I4 and M3 now (independent); I3/I5 only as small interim guards.
+3. ~~**Order against the owner-mandated mutation triage**~~ Resolved: the cascade stays, so the triage continues on it. of the `stream-orchestrator` classification/HINT region (TODO, 2026-10-15: 710 undetected mutants, "do this first after laya-spike merges"). A migration would delete much of that region; triaging code that may go is waste. Proposal: decide this plan's spike first.
+4. ~~**Version line.**~~ No migration in 2.0; re-evaluation per the trigger above. The five-group layout is already the 2.0 breaking change. Migration inside 2.0 or after it?
 
 ## Verified against
 

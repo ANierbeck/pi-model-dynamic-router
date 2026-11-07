@@ -19,10 +19,12 @@ owner's.
 Setup: a local OpenAI-compatible fake provider (`127.0.0.1:8791`) that fails in
 one chosen way, plus a throwaway extension registering a virtual model whose
 `route()` logs `reason`, `previous`, `failed`, `state` and the model it picks.
-Run as `pi -p "say hi" --no-extensions -e ext.ts --model spike/auto --no-session
---no-tools` (Pi 1.5.0, `settings.retry` at its defaults: 3 retries, 2000 ms base
-delay). The probe is not part of the repo; it is reproducible from this
-description in about twenty lines per case.
+Run as `pi -p "say hi" --no-extensions -e retry-probe.ts --model spike/auto
+--no-session --no-tools` (Pi 1.5.0, `settings.retry` at its defaults: 3 retries,
+2000 ms base delay). The probes are in `spikes/virtual-models/` (outside the lint
+and format scope, not shipped) so the matrix can be re-run after a host upgrade:
+`spikes/virtual-models/run-retry-matrix.sh`, re-verified 2026-11-07 with the same
+seven rows.
 
 | provider behaviour | `route()` calls | what the user saw |
 |---|---|---|
@@ -321,4 +323,5 @@ Virtual-model migration (hybrid, failover stays):
 - Not decidable from measurements: whether branch-correct, persistent turn state
   is worth a ~445-line split and a test rewrite. That is a product decision.
 
-Probe artefacts (`ext7`, run logs) are not committed, as in §5.
+The probe is `spikes/virtual-models/session-id-probe.ts`; run logs are not
+committed.
