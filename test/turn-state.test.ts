@@ -35,6 +35,18 @@ describe('SessionStore', () => {
     expect(store.forSession('b').lastDynamicModel).toBe('x/two');
   });
 
+  it('reports the evicted session id, and only on eviction', () => {
+    const evicted: string[] = [];
+    const store = new SessionStore(emptyTurnState, 2, (id) => evicted.push(id));
+    store.forSession('a');
+    store.forSession('b');
+    store.reset('a'); // a reset is not an eviction
+    expect(evicted).toEqual([]);
+    store.forSession('c');
+    store.forSession('d'); // size 3 > 2: the least recently used one ('b') goes
+    expect(evicted).toEqual(['b']);
+  });
+
   it('evicts the least recently used session past the cap, not the oldest-created one', () => {
     const store = new SessionStore(emptyTurnState, 3);
     store.forSession('a').curModel = 'A';

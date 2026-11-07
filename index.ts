@@ -45,6 +45,7 @@ import {
   currentSessionId,
   emptyRouterTurnState,
   LiveSessionContexts,
+  DEFAULT_MAX_SESSIONS,
   sessionIdOf,
   emptyTurnState,
   SessionStore,
@@ -63,7 +64,7 @@ import { costTracker } from './src/cost-tracker.ts';
 // Shared router logger (D2): the log functions live in src/logger.ts so every
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
 // and can land in the user's input field). Re-imported here for index.ts's own use.
-import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
+import { routerLog, warnLog, errorLog, debugLog, setLogLevel } from './src/logger.ts';
 import { homedir } from 'node:os';
 import {
   buildPoolRecord,
@@ -215,15 +216,18 @@ const defaultExport = function (pi: ExtensionAPI): void {
   // used to be closure variables — one copy per process, shared (and overwritten)
   // by in-process subagent sessions. The ambient session comes from
   // runInSession() at the handler/stream entry points.
-  const turnStates = new SessionStore(emptyTurnState);
-  const routerTurnStates = new SessionStore(emptyRouterTurnState);
+  // An evicted session loses its turn model silently otherwise: leave a trace.
+  const onEvict = (id: string): void =>
+    debugLog(`[turn-state] evicted session ${id || '(default)'} (store full)`);
+  const turnStates = new SessionStore(emptyTurnState, DEFAULT_MAX_SESSIONS, onEvict);
+  const routerTurnStates = new SessionStore(emptyRouterTurnState, DEFAULT_MAX_SESSIONS, onEvict);
   const turn = (): TurnState => turnStates.forSession(currentSessionId());
-  let sessionCtx: any = null;
+  let sessionCtx: ExtensionContext | null = null;
   // Contexts of the sessions still alive: a session's shutdown restores the
   // latest remaining one instead of clearing the current context (a subagent's
   // shutdown used to take the parent's model registry with it).
-  const liveSessions = new LiveSessionContexts<unknown>();
-  const setSessionCtx = (ctx: unknown): void => {
+  const liveSessions = new LiveSessionContexts<ExtensionContext>();
+  const setSessionCtx = (ctx: ExtensionContext | null): void => {
     sessionCtx = ctx;
     if (ctx) liveSessions.start(sessionIdOf(ctx) ?? '', ctx);
   };
@@ -458,9 +462,6 @@ const defaultExport = function (pi: ExtensionAPI): void {
     },
     get staticContributions() {
       return staticContributions;
-    },
-    get turnStart() {
-      return turn().turnStart;
     },
   });
 
@@ -1137,7 +1138,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     const id = sessionIdOf(ctx) ?? '';
     // Only THIS session's state goes: a child's shutdown must not wipe the
     // parent's turn model, group or category (plan 2026-11-07-session-keyed-turn-state.md).
-    const remaining = liveSessions.end(id) as ExtensionContext | null;
+    const remaining = liveSessions.end(id);
     sessionCtx = remaining;
     router.setSessionCtx(remaining);
     turnStates.reset(id);

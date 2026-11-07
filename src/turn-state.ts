@@ -38,11 +38,27 @@ export interface TurnState {
   turnStart: number;
 }
 
-/** Router-side per-session fields (the driving-model pin and the factual ref). */
+/**
+ * Router-side per-session fields (the driving-model pin and the factual ref).
+ *
+ * NOTE: `activeGroup` and `curModel` also exist on TurnState — the extension
+ * side tracks the ref pi shows, the Router the one that factually streamed.
+ * They are set by different code paths (tools.ts sets both, model_select only
+ * the extension side), so they are kept apart until they can be merged.
+ */
 export interface RouterTurnState {
   activeGroup: string | null;
   curModel: string;
   curModelAt: number;
+  /**
+   * The turn's DRIVING model: the FIRST ref that opened a stream in the
+   * current turn. Distinct from `curModel`, which every nested stream
+   * overwrites — the bulk_reader delegation sub-call sets it to a cheap
+   * ref mid-turn (stream-orchestrator groupStream), after which
+   * getCurModel() would report the CHEAP ref and the expensive-model
+   * read block (bulk-read checkReadBlock) would let the expensive model's
+   * subsequent full-file reads through.
+   */
   turnDriverRef: string;
   turnDriverAt: number;
   turnBoundaryAt: number;
@@ -61,7 +77,9 @@ export class SessionStore<T> {
 
   constructor(
     private readonly create: () => T,
-    private readonly maxSessions: number = DEFAULT_MAX_SESSIONS
+    private readonly maxSessions: number = DEFAULT_MAX_SESSIONS,
+    /** Called with the id of a session dropped to make room (not on reset). */
+    private readonly onEvict?: (id: string) => void
   ) {}
 
   /** The session's state, created on first use; a hit marks it most recently used. */
@@ -76,7 +94,10 @@ export class SessionStore<T> {
     this.entries.set(id, fresh);
     if (this.entries.size > this.maxSessions) {
       const oldest = this.entries.keys().next().value;
-      if (oldest !== undefined) this.entries.delete(oldest);
+      if (oldest !== undefined) {
+        this.entries.delete(oldest);
+        this.onEvict?.(oldest);
+      }
     }
     return fresh;
   }

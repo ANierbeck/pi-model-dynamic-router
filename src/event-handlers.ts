@@ -170,86 +170,94 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
             clearInterval(timer);
           },
           invalidate(): void {},
+          // Pi's TUI calls render() from its own callbacks (key input, agent
+          // events, the 30 s timer), not from inside a router handler, so the
+          // ambient session is whichever one the call stack happens to carry.
+          // The footer belongs to the session it was built for.
           render(w: number): string[] {
-            const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
-            // The router never swaps the session's active model (see driveStream) —
-            // ctx.model stays the virtual group model (e.g. "standard/standard") for
-            // the whole session. Detect that here so the footer can show the actually
-            // resolved model (lastDynamicModel, updated by driveStream on every
-            // successful stream) instead of the static virtual model id.
-            const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
-            const isGroupModel = groupBase
-              ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase)
-              : false;
-            const grp = isGroupModel ? groupBase! : ref ? rt.detectGroup(ref) : null;
-            const m = ref
-              ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref)
-              : null;
-            const modelDisplay =
-              isGroupModel && rt.lastDynamicModel
-                ? rt.lastDynamicModel
-                : `${ctx.model?.provider ?? '?'}/${ctx.model?.id ?? '?'}`;
-            const rStr = theme.fg('accent', `${grp ?? '—'}/${modelDisplay}`);
-            const iStr = m ? theme.fg('warning', `int:${m.gdpval}`) : '';
-            const tStr = m ? theme.fg('success', `tps:${Math.round(m.throughput_tps)}`) : '';
-
-            let inp = 0,
-              out = 0,
-              cost = 0,
-              steps = 0;
-            let lastUsage: AssistantMessage['usage'] | undefined;
-            for (const e of ctx.sessionManager.getBranch()) {
-              if (e.type === 'message' && e.message.role === 'assistant') {
-                const a = e.message;
-                inp += a.usage.input;
-                out += a.usage.output;
-                cost += a.usage.cost.total;
-                steps++;
-                lastUsage = a.usage;
-              }
-            }
-            // Phase 5a: context size, cache share of the last step and the
-            // session-average cost per step ("ctx 182.0k · cache 97% · ~$0.03/step").
-            const cacheStr = formatCacheStatus(lastUsage, steps, cost);
-            const u = ctx.getContextUsage(),
-              pct = u?.percent ?? 0;
-            const pCol = pct > 75 ? 'error' : pct > 50 ? 'warning' : 'success';
-            const tok = [
-              theme.fg('accent', `${fmt(inp)}/${fmt(out)}`),
-              theme.fg('warning', `$${cost.toFixed(2)}`),
-              theme.fg(pCol, `${pct.toFixed(0)}%`),
-            ].join(' ');
-            const el = theme.fg('dim', `⏱${fmtTime(Date.now() - rt.sessionStart)}`);
-            const pp = process.cwd().split('/');
-            const cwd = theme.fg(
-              'muted',
-              `⌂ ${pp.length > 2 ? pp.slice(-2).join('/') : process.cwd()}`
-            );
-            const br = fd.getGitBranch();
-            const brS = br ? theme.fg('accent', `⎇ ${br}`) : '';
-            const rlN = [...rt.rateLimitManager.getLimits().keys()].filter((r) =>
-              rt.isLimited(r)
-            ).length;
-            const rlS = rlN > 0 ? theme.fg('error', `⛔${rlN}`) : '';
-            // Session error counter (review C1): this footer REPLACES pi's
-            // built-in footer — the only renderer of ctx.ui.setStatus extension
-            // statuses — so the counter MUST be a part here. Same single source
-            // of truth as /router errors: entries with ts >= sessionStart.
-            const errN = countSessionErrorsSince(rt.cache, rt.sessionStart, process.pid);
-            const errS = errN > 0 ? theme.fg('error', `⚠${errN} err`) : '';
-
-            const sep = theme.fg('dim', ' | ');
-            const parts = [rStr];
-            if (iStr && tStr) parts.push(`${iStr} ${tStr}`);
-            parts.push(tok);
-            if (cacheStr) parts.push(theme.fg('dim', cacheStr));
-            parts.push(el, cwd);
-            if (brS) parts.push(brS);
-            if (rlS) parts.push(rlS);
-            if (errS) parts.push(errS);
-            return [truncateToWidth(parts.join(sep), w)];
+            return runInSession(sessionIdOf(ctx), () => renderFooter(w));
           },
         };
+
+        function renderFooter(w: number): string[] {
+          const ref = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : '';
+          // The router never swaps the session's active model (see driveStream) —
+          // ctx.model stays the virtual group model (e.g. "standard/standard") for
+          // the whole session. Detect that here so the footer can show the actually
+          // resolved model (lastDynamicModel, updated by driveStream on every
+          // successful stream) instead of the static virtual model id.
+          const groupBase = ctx.model?.id?.replace(/:use-static$/, '');
+          const isGroupModel = groupBase
+            ? Object.prototype.hasOwnProperty.call(rt.cfg.model_groups, groupBase)
+            : false;
+          const grp = isGroupModel ? groupBase! : ref ? rt.detectGroup(ref) : null;
+          const m = ref
+            ? rt.getM(isGroupModel && rt.lastDynamicModel ? rt.lastDynamicModel : ref)
+            : null;
+          const modelDisplay =
+            isGroupModel && rt.lastDynamicModel
+              ? rt.lastDynamicModel
+              : `${ctx.model?.provider ?? '?'}/${ctx.model?.id ?? '?'}`;
+          const rStr = theme.fg('accent', `${grp ?? '—'}/${modelDisplay}`);
+          const iStr = m ? theme.fg('warning', `int:${m.gdpval}`) : '';
+          const tStr = m ? theme.fg('success', `tps:${Math.round(m.throughput_tps)}`) : '';
+
+          let inp = 0,
+            out = 0,
+            cost = 0,
+            steps = 0;
+          let lastUsage: AssistantMessage['usage'] | undefined;
+          for (const e of ctx.sessionManager.getBranch()) {
+            if (e.type === 'message' && e.message.role === 'assistant') {
+              const a = e.message;
+              inp += a.usage.input;
+              out += a.usage.output;
+              cost += a.usage.cost.total;
+              steps++;
+              lastUsage = a.usage;
+            }
+          }
+          // Phase 5a: context size, cache share of the last step and the
+          // session-average cost per step ("ctx 182.0k · cache 97% · ~$0.03/step").
+          const cacheStr = formatCacheStatus(lastUsage, steps, cost);
+          const u = ctx.getContextUsage(),
+            pct = u?.percent ?? 0;
+          const pCol = pct > 75 ? 'error' : pct > 50 ? 'warning' : 'success';
+          const tok = [
+            theme.fg('accent', `${fmt(inp)}/${fmt(out)}`),
+            theme.fg('warning', `$${cost.toFixed(2)}`),
+            theme.fg(pCol, `${pct.toFixed(0)}%`),
+          ].join(' ');
+          const el = theme.fg('dim', `⏱${fmtTime(Date.now() - rt.sessionStart)}`);
+          const pp = process.cwd().split('/');
+          const cwd = theme.fg(
+            'muted',
+            `⌂ ${pp.length > 2 ? pp.slice(-2).join('/') : process.cwd()}`
+          );
+          const br = fd.getGitBranch();
+          const brS = br ? theme.fg('accent', `⎇ ${br}`) : '';
+          const rlN = [...rt.rateLimitManager.getLimits().keys()].filter((r) =>
+            rt.isLimited(r)
+          ).length;
+          const rlS = rlN > 0 ? theme.fg('error', `⛔${rlN}`) : '';
+          // Session error counter (review C1): this footer REPLACES pi's
+          // built-in footer — the only renderer of ctx.ui.setStatus extension
+          // statuses — so the counter MUST be a part here. Same single source
+          // of truth as /router errors: entries with ts >= sessionStart.
+          const errN = countSessionErrorsSince(rt.cache, rt.sessionStart, process.pid);
+          const errS = errN > 0 ? theme.fg('error', `⚠${errN} err`) : '';
+
+          const sep = theme.fg('dim', ' | ');
+          const parts = [rStr];
+          if (iStr && tStr) parts.push(`${iStr} ${tStr}`);
+          parts.push(tok);
+          if (cacheStr) parts.push(theme.fg('dim', cacheStr));
+          parts.push(el, cwd);
+          if (brS) parts.push(brS);
+          if (rlS) parts.push(rlS);
+          if (errS) parts.push(errS);
+          return [truncateToWidth(parts.join(sep), w)];
+        }
       });
     })
   );

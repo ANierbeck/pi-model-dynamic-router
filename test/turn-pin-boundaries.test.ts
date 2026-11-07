@@ -1,6 +1,6 @@
 // test/turn-pin-boundaries.test.ts — nightly R1 triage (2026-10-07),
 // routing.ts Router turn-driver pin (noteTurnStart / setCurModel /
-// adoptTurnDriverRef / getCurModel). The pin protects the expensive-model
+// getCurModel). The pin protects the expensive-model
 // read block (test/expensive-model-read-block.test.ts covers the end-to-end
 // story with real timestamps); the nightly found the BOUNDARY behavior
 // unpinned because those tests never control the clock:
@@ -8,7 +8,6 @@
 //   - the turn boundary only moves FORWARD (a late/stale noteTurnStart for
 //     an older turn must not drag it back and freeze the pin)
 //   - without any turn_start the very first ref of the session is pinned
-//   - adoptTurnDriverRef('') carries nothing and must not wipe a live pin
 //   - a stream ref set exactly AT the turn start belongs to that turn
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -50,13 +49,6 @@ describe('Router turn pin — clock-controlled boundaries', () => {
     r.setCurModel('prov/session-first');
     r.setCurModel('prov/nested');
     expect(r.getTurnDriverRef()).toBe('prov/session-first');
-  });
-
-  it('adoptTurnDriverRef("") does not wipe a live pin', () => {
-    const r = mkRouter();
-    r.setCurModel('prov/driver');
-    r.adoptTurnDriverRef('');
-    expect(r.getTurnDriverRef()).toBe('prov/driver');
   });
 
   it('a stream ref set exactly at the turn start belongs to that turn', () => {

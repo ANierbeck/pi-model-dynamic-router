@@ -32,7 +32,7 @@ const CONFIG = {
     dynamic: { method: 'dynamic' },
     standard: { fallback_groups: [], min_gdpval: 0 },
   },
-  gdpval_builtin: { 'paid-model': 1000 },
+  gdpval_builtin: { 'paid-model': 1000, 'other-model': 900 },
 };
 
 const session = (id: string): any => ({ sessionManager: { getSessionId: () => id } });
@@ -49,6 +49,7 @@ async function boot(
   fn: (h: {
     defaultExport: any;
     onHandlers: Record<string, any>;
+    modelRegistry: any;
     classifierCalls: () => number;
   }) => Promise<void>
 ): Promise<void> {
@@ -59,15 +60,32 @@ async function boot(
       const { ctx: pi, onHandlers } = makeExtensionContext();
       defaultExport(pi);
       const paidModel = paidCloudModel();
-      const streamSimple = vi.fn(() =>
+      const otherModel = paidCloudModel({ id: 'other-model' });
+      // Session 'child' cannot use paid-model (429), so it lands on other-model
+      // while 'parent' stays on paid-model: the two sessions' turn models differ.
+      const streamSimple = vi.fn((model: any, _ctx: any, options: any) =>
         (async function* () {
+          if (options?.sessionId === 'child' && model.id === 'paid-model') {
+            yield {
+              type: 'error',
+              reason: 'error',
+              error: {
+                role: 'assistant',
+                content: [],
+                errorMessage: '429 rate limit exceeded',
+                stopReason: 'error',
+                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+              },
+            };
+            return;
+          }
           yield { type: 'text_delta', delta: 'reply' };
           yield doneEvent();
         })()
       );
       const modelRegistry = {
-        getAvailable: () => [paidModel],
-        find: () => paidModel,
+        getAvailable: () => [paidModel, otherModel],
+        find: (_provider: string, id: string) => (id === 'other-model' ? otherModel : paidModel),
         getApiKeyForProvider: async () => null,
         runtime: { streamSimple },
       };
@@ -75,6 +93,7 @@ async function boot(
       await fn({
         defaultExport,
         onHandlers,
+        modelRegistry,
         classifierCalls: () => vi.mocked(classifier.classifyPrompt).mock.calls.length,
       });
     },
@@ -147,6 +166,97 @@ describe('turn state is keyed by session, not by process', () => {
       expect(await followUp(h, 'parent')).toBe(0);
       // ...and the child's is gone: its follow-up is classified again.
       expect(await followUp(h, 'child')).toBeGreaterThan(0);
+    });
+  }, 30000);
+});
+
+// ── the footer, the category, and sub-calls ─────────────────────────────────
+
+const theme = { fg: (_color: string, text: string): string => text };
+
+/**
+ * Starts session `id` with a real footer and returns its render function.
+ * Pi's TUI renders from its own callbacks (key input, agent events, a 30 s
+ * timer), so the footer is called OUTSIDE any router handler scope — it must
+ * name the session it was built for, not whichever one the call stack carries.
+ */
+async function footerOf(
+  h: { onHandlers: Record<string, any>; modelRegistry: any },
+  id: string
+): Promise<() => string> {
+  let render: (() => string) | undefined;
+  const ctx: any = {
+    cwd: process.cwd(),
+    model: { provider: 'standard', id: 'standard' },
+    modelRegistry: h.modelRegistry,
+    sessionManager: { getSessionId: () => id, getBranch: () => [] },
+    getContextUsage: () => null,
+    ui: {
+      setFooter: (factory: any) => {
+        const footer = factory({ requestRender: () => {} }, theme, {
+          onBranchChange: () => () => {},
+          getGitBranch: () => '',
+        });
+        render = () => footer.render(400).join('');
+      },
+    },
+  };
+  await h.onHandlers['session_start']?.({}, ctx);
+  expect(render, 'session_start installs the footer').toBeDefined();
+  return render!;
+}
+
+describe('footer, category and sub-calls follow the session', () => {
+  it('each footer names its own session’s resolved model, rendered outside any scope', async () => {
+    await boot(async (h) => {
+      const parentFooter = await footerOf(h, 'parent');
+      const childFooter = await footerOf(h, 'child');
+      await serveTurn(h.defaultExport, 'parent'); // paid-model
+      await serveTurn(h.defaultExport, 'child'); // paid-model is 429 for the child -> other-model
+      expect(parentFooter()).toContain('paid-cloud-provider/paid-model');
+      expect(parentFooter()).not.toContain('other-model');
+      expect(childFooter()).toContain('paid-cloud-provider/other-model');
+      expect(childFooter()).not.toContain('paid-cloud-provider/paid-model');
+    });
+  }, 30000);
+
+  it('a sub-call inside a session leaves every session’s turn model alone', async () => {
+    await boot(async (h) => {
+      const parentFooter = await footerOf(h, 'parent');
+      const childFooter = await footerOf(h, 'child');
+      await serveTurn(h.defaultExport, 'parent');
+      // The child serves ONLY a router sub-call (e.g. bulk_read): it must not
+      // become the child's turn model, nor touch the parent's.
+      // (imported here: withRouterEnv reset the module graph, so the extension's
+      // sub-call scope is a different instance from a top-level import's)
+      const { runAsSubCall } = await import('../src/subcall-scope.ts');
+      await runAsSubCall(() => serveTurn(h.defaultExport, 'child'));
+      expect(parentFooter()).toContain('paid-cloud-provider/paid-model');
+      expect(childFooter()).not.toContain('paid-cloud-provider/other-model');
+    });
+  }, 30000);
+
+  it('the classified category belongs to its session and goes with its shutdown', async () => {
+    await boot(async (h) => {
+      const classifier = await import('../src/content-classifier.ts');
+      const lastCategoryOfCall = (n: number): unknown =>
+        (vi.mocked(classifier.classifyPrompt).mock.calls[n]?.[1] as any)?.context?.lastCategory;
+      const dynamicTurn = async (id: string): Promise<void> =>
+        drain(
+          h.defaultExport.groupStream(
+            { provider: 'dynamic', id: 'dynamic' },
+            { messages: [{ role: 'user', content: 'refactor the parser module' }] },
+            { sessionId: id }
+          )
+        );
+      await dynamicTurn('parent'); // call 0: classified, category remembered for 'parent'
+      await dynamicTurn('child'); // call 1: must NOT see the parent's category
+      expect(lastCategoryOfCall(1)).toBeUndefined();
+      await dynamicTurn('parent'); // call 2: sees its own
+      expect(lastCategoryOfCall(2)).toBeDefined();
+      await h.onHandlers['session_shutdown']?.({}, session('parent'));
+      await dynamicTurn('parent'); // call 3: the shutdown dropped it
+      expect(lastCategoryOfCall(3)).toBeUndefined();
     });
   }, 30000);
 });

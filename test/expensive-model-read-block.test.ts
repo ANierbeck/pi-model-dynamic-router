@@ -34,6 +34,7 @@ import {
 } from '../src/bulk-read.ts';
 import { delegationSettings } from '../src/delegation.ts';
 import { Router } from '../src/routing.ts';
+import { SessionStore, emptyRouterTurnState } from '../src/turn-state.ts';
 import type { Config } from '../src/types.ts';
 import { rmTmpDir } from './helpers/router-env.ts';
 
@@ -491,21 +492,19 @@ describe('Router turn driver pin', () => {
     expect(out?.expensive).to.equal(true);
   });
 
-  it('load()-reset: a Router replacement mid-turn keeps the pin via adoptTurnDriverRef', () => {
+  it('load()-reset: a Router replacement mid-turn keeps the pin (shared turn-state store)', () => {
     const turnStart = Date.now();
-    const before = mkRouter();
+    const store = new SessionStore(emptyRouterTurnState);
+    const mk = () => new Router(makeCfg(), {} as never, new Map() as never, store);
+    const before = mk();
     before.noteTurnStart(turnStart);
     before.setCurModel(EXPENSIVE_GROUP_MEMBER);
     before.setCurModel(CHEAP_LOCAL);
 
-    // load() builds a fresh Router — curModelAt starts at 0, so the live
-    // ref alone would return '' and the block would fall back to the
-    // session ref. The pin is carried over explicitly.
-    const after = mkRouter();
-    after.noteTurnStart(turnStart);
-    after.adoptTurnDriverRef(before.getTurnDriverRef(turnStart));
+    // load() builds a fresh Router; the per-session state lives in the store
+    // the extension shares across rebuilds, so nothing has to be carried.
+    const after = mk();
 
-    expect(after.getCurModel(turnStart)).to.equal('');
     expect(after.getTurnDriverRef(turnStart)).to.equal(EXPENSIVE_GROUP_MEMBER);
     const out = checkReadBlock(
       { toolName: 'read', input: { path: smallFile } },
@@ -541,12 +540,6 @@ describe('Router turn driver pin', () => {
     // …and the caller then falls back to the live/session ref.
     const out = checkReadBlock({ toolName: 'read', input: { path: smallFile } }, makeCfg(), '');
     expect(out).to.equal(undefined);
-  });
-
-  it('adoptTurnDriverRef("") is a no-op (nothing to carry)', () => {
-    const r = mkRouter();
-    r.adoptTurnDriverRef('');
-    expect(r.getTurnDriverRef()).to.equal('');
   });
 });
 

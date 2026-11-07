@@ -63,7 +63,6 @@ interface DynamicConfigRunnerDeps {
   readonly staticCfg: Config;
   /** Clean-by-construction contribution snapshot; taken in load() after loadLayeredConfig. */
   readonly staticContributions: StaticContributions;
-  readonly turnStart: number;
 }
 
 /**
