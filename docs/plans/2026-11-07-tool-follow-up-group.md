@@ -1,6 +1,6 @@
 # Tool Follow-Up Keeps the Run's Group Implementation Plan
 
-**Status:** in progress (2026-11-07) — implemented on `fix/turn-state-round`, not merged; owner answered the open decisions with the proposals (run = agent run, HINT pin counts as the run's group; the others in the plan) — second fix of the "no migration" decision
+**Status:** done 2026-11-07 — merged (PR #120, with its review round); owner answered the open decisions with the proposals (run = agent run, HINT pin counts as the run's group; the others in the plan) — second fix of the "no migration" decision
 (`2026-11-04-virtual-models-routing.md`); item I3 in `TODO.md`.
 
 **Problem:** A tool follow-up always falls back to the `simple` group, whatever
