@@ -60,3 +60,19 @@ export function offsetOf(source: string, line: number, column: number): number {
 export function pct(k: number, n: number): string {
   return n ? `${((k / n) * 100).toFixed(1)} %` : '–';
 }
+
+/**
+ * A --since/--until date bound. An unparseable value is an error the caller
+ * exits on, not a silently open bound (a typo in --since must not turn into
+ * "the whole log").
+ */
+export function bound(name: string, argv: string[], open: number): number {
+  const raw = arg(name, argv);
+  if (raw === undefined) return open;
+  const ms = Date.parse(raw);
+  if (Number.isNaN(ms)) {
+    console.error(`--${name}=${raw} is not a date`);
+    process.exit(2);
+  }
+  return ms;
+}

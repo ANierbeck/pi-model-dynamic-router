@@ -21,7 +21,7 @@ Consequences, all found in the last week:
 
 Each fix adds another guard around the same hand-rolled state machine. The question is whether the state machine should exist at all.
 
-## Solution (proposed): a shadow spike first, then decide
+## Solution: a shadow spike first, then decide (done)
 
 Pi's `pi.registerVirtualModel({ provider, id, route(request, ctx) })` runs `route()` before every request made with the virtual model and returns one physical `{ model, thinkingLevel, state? }`. The request carries `reason` (`user`, `continuation`, `retry`, `direct`), `previous` (last successful physical model), `failed` (model, level, error message of a failed request) and `state` (JSON per session branch, survives compaction, follows fork and `/tree`). Providers only ever receive physical models; assistant messages name the physical model; `/session` shows cost per physical model; Pi sizes compaction by the routed model's window.
 
@@ -35,11 +35,14 @@ Spike, in order, each step stops the plan if it fails:
 2. ~~**Shadow mode.**~~ Done 2026-11-06 as an offline report instead of a
    registered second model: `scripts/virtual-route-shadow.ts` replays the real
    logs and answers per turn whether Pi's retry would have finished it. No
-   routing change, no registration. Register a second virtual model (config-gated, off by default) whose `route()` only LOGS the choice it would make, next to the choice the current chain made, into the decision log. Measure agreement on real sessions; no routing change.
+   routing change, no registration (the original idea was a config-gated second
+   virtual model whose `route()` only logs its choice next to the chain's).
 3. ~~**Retry behaviour.**~~ Done 2026-11-06 against a local fake provider, §1 of
-   the research note. Force a rate-limit and an empty response through a probe provider and record what Pi does (delay, number of attempts, what `failed` contains, whether the user sees an error).
+   the research note: a rate limit and an empty response through a probe provider,
+   recording delay, number of attempts, what `failed` contains and whether the user
+   sees an error.
 4. ~~**Two layers.**~~ Done 2026-11-07, note §5: state separated for direct, fork, resume and independent sessions; attribution in the assistant message names the physical model with or without a group layer; `previous` names the physical model, so the group must come from `state`.
-5. ~~**Decision.**~~ Decided 2026-11-07 by the owner: stay. Full migration, hybrid (virtual model selects, router keeps detection as event hooks), or stay and keep patching.
+5. ~~**Decision.**~~ Decided 2026-11-07 by the owner: stay. Considered: full migration, hybrid (virtual model selects, router keeps detection as event hooks), stay and fix the turn-state problems in the current design. Chosen: the last.
 
 **Re-evaluation trigger.** At every Pi host alignment round (AGENTS.md §10) run
 `spikes/virtual-models/run-retry-matrix.sh` and compare it with the baseline in
@@ -51,12 +54,12 @@ re-run `scripts/virtual-route-shadow.ts` on current logs before deciding.
 ## Open decisions (owner)
 
 1. ~~**Is the spike wanted?**~~ Yes (2026-11-06), done. Cost: roughly the shadow route plus the inventory; no routing risk.
-2. ~~**Interim fixes in the meantime?**~~ Superseded by the decision: I2/M1, I3 and I5 are fixed in the current design, each in its own plan (`2026-11-07-session-keyed-turn-state.md`, `2026-11-07-tool-follow-up-group.md`, `2026-11-07-compaction-continuity.md`); I4 is merged (PR #101/#104); M3 stays its own item. I3 (follow-up group), I5 (compaction continuity), I4 (tool-call markup as text) and M3 (latency incl. tool time) are needed whether or not we migrate, except I3/I5/I2 which a migration would make obsolete. Proposal: I4 and M3 now (independent); I3/I5 only as small interim guards.
-3. ~~**Order against the owner-mandated mutation triage**~~ Resolved: the cascade stays, so the triage continues on it. of the `stream-orchestrator` classification/HINT region (TODO, 2026-10-15: 710 undetected mutants, "do this first after laya-spike merges"). A migration would delete much of that region; triaging code that may go is waste. Proposal: decide this plan's spike first.
-4. ~~**Version line.**~~ No migration in 2.0; re-evaluation per the trigger above. The five-group layout is already the 2.0 breaking change. Migration inside 2.0 or after it?
+2. ~~**Interim fixes in the meantime?**~~ Superseded by the decision: I2/M1, I3 and I5 are fixed in the current design, each in its own plan (`2026-11-07-session-keyed-turn-state.md`, `2026-11-07-tool-follow-up-group.md`, `2026-11-07-compaction-continuity.md`); I4 is merged (PR #101/#104); M3 stays its own item. I4 (tool-call markup as text) and M3 (latency incl. tool time) were needed whether or not we migrate; the spike showed that I2/I3/I5 are rule fixes a migration would not have removed (note §6).
+3. ~~**Order against the owner-mandated mutation triage**~~ Resolved: the cascade stays, so the mutation triage of the `stream-orchestrator` classification/HINT region (TODO, 2026-10-15: 710 undetected mutants) continues on it; no triage of code that may go was avoided.
+4. ~~**Version line.**~~ No migration in 2.0; re-evaluation per the trigger above. The five-group layout is already the 2.0 breaking change.
 
 ## Verified against
 
-`main` at `fde54f8` plus branch `fix/subcall-scope-async-local` (`ade8102`), 2026-11-04. Checked: `docs/virtual-models.md`, `dist/core/extensions/types.d.ts` and `CHANGELOG.md` of `@earendil-works/pi-coding-agent` 1.5.0 (feature present since 0.99.0, so also in the installed 1.4.0); the retry defaults in `docs/settings.md`; the router's state writers by grep (`lastDynamicModel`, `setCurModel`); TODO.md; the 17 stream-error test groups by name.
+`main` at `fde54f8` plus branch `fix/subcall-scope-async-local` (`ade8102`), 2026-11-04 for the design claims; re-checked on 2026-11-07 against the installed Pi 1.5.0 for the retry behaviour (`spikes/virtual-models/run-retry-matrix.sh`, all seven rows reproduced) and `options.sessionId` (note §6). Checked: `docs/virtual-models.md`, `dist/core/extensions/types.d.ts` and `CHANGELOG.md` of `@earendil-works/pi-coding-agent` 1.5.0 (feature present since 0.99.0, so also in the installed 1.4.0); the retry defaults in `docs/settings.md`; the router's state writers by grep (`lastDynamicModel`, `setCurModel`); TODO.md; the 17 stream-error test groups by name.
 
-**Not checked:** how Pi's retry behaves with a virtual model under real failures (spike step 3); whether Pi detects stalls, empty responses and repetition loops itself; whether `previous` survives a model that left the catalog; the `jev-router.ts` example; the stability of the API (the 0.99.0 changelog calls it "experimental", the current docs do not); how a user-selected `HINT:` model pin maps onto `route()`; resume behaviour when the virtual model is unregistered; any measurement of agreement between a virtual route and the current chain.
+**Not checked:** whether `previous` survives a model that left the catalog; the `jev-router.ts` example; the stability of the API (the 0.99.0 changelog calls it "experimental", the current docs do not); how a user-selected `HINT:` model pin maps onto `route()`; resume behaviour when the virtual model is unregistered; compaction, `/tree`, footer and `/session` cost with a virtual model (note §5). Measured since the first version of this plan: Pi's retry behaviour, stall/empty-response handling, state separation and the agreement estimate (offline shadow report).

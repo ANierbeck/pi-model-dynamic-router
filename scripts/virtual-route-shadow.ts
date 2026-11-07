@@ -4,6 +4,10 @@
 //   node scripts/virtual-route-shadow.ts [--log=<router.log>]
 //                                        [--decisions=<file>]
 //                                        [--since=<iso>] [--until=<iso>]
+//                                        [--detail=1]
+//
+// router.log rotates and the decision log grows, so a result is only
+// reproducible with BOTH bounds: quote --since and --until next to any figure.
 //
 // The plan asks whether the router's own failover could be replaced by Pi's
 // virtual models. A virtual model picks ONE physical model per request; when
@@ -26,14 +30,20 @@
 //   identical.
 // - A turn is attributed to the group that was decided; attempts of a
 //   cross-group cascade count for that group.
+// - Every failed attempt of a turn is classified, not only the first: a turn
+//   counts as recovered only when all of them are errors Pi would retry and the
+//   chain fits Pi's budget. Counts are TURNS, not outages: one provider outage
+//   spread over several turns (e.g. a spent five-hour quota) counts once per
+//   turn, and a stateful route() would exclude the model after the first
+//   failure, so the lost share of such a class is an upper bound.
 // - Model refs and counts only; never prompt text.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readDecisionLog } from './lib/decision-log.ts';
 import { walkDecisions, type WalkDecision } from './failover-walk.ts';
-import { arg, invokedDirectly } from './lib/cli.ts';
+import { arg, bound, invokedDirectly, pct } from './lib/cli.ts';
 
 /** Pi's retry budget: one request plus three retries. */
 export const PI_MAX_ATTEMPTS = 4;
@@ -164,9 +174,11 @@ export function shadowTurns(lines: string[], decisions: WalkDecision[]): ShadowR
     if (row.firstAttempt === null || row.success === row.firstAttempt) {
       return { ...base, verdict: null, reason: null, virtualOutcome: 'same', lostBecause: null };
     }
-    const fail = fails.find(
-      (f) => f.proc === row.proc && f.ref === row.firstAttempt && f.ts >= row.ts
-    );
+    // The turn's own window: no failure of a later turn can bind to it.
+    const inTurn = <E extends { proc: string; ts: number }>(e: E): boolean =>
+      e.proc === row.proc && e.ts >= row.ts && e.ts <= row.end;
+    const turnFails = fails.filter(inTurn);
+    const fail = turnFails.find((f) => f.ref === row.firstAttempt);
     if (!fail) {
       return {
         ...base,
@@ -176,10 +188,9 @@ export function shadowTurns(lines: string[], decisions: WalkDecision[]): ShadowR
         lostBecause: 'no failure narrated for the first attempt',
       };
     }
-    const body = bodies.find(
-      (b) => b.proc === row.proc && b.ref === row.firstAttempt && b.ts >= row.ts
-    );
-    const { verdict, reason } = classifyPiRetry(fail.narration, body?.body);
+    const classify = (f: FailEvent): { verdict: PiVerdict; reason: string } =>
+      classifyPiRetry(f.narration, bodies.find((b) => inTurn(b) && b.ref === f.ref)?.body);
+    const { verdict, reason } = classify(fail);
     if (row.success === null) {
       return {
         ...base,
@@ -188,6 +199,21 @@ export function shadowTurns(lines: string[], decisions: WalkDecision[]): ShadowR
         virtualOutcome: 'lost',
         lostBecause: `${verdict}: ${reason}`,
       };
+    }
+    // Any later failure Pi would not retry ends the chain there, whatever the
+    // first one was: the router's cascade carried on, Pi's retry would not.
+    for (const later of turnFails) {
+      if (later === fail) continue;
+      const c = classify(later);
+      if (c.verdict !== 'pi-retry') {
+        return {
+          ...base,
+          verdict,
+          reason,
+          virtualOutcome: 'lost',
+          lostBecause: `later failure, ${c.verdict}: ${c.reason}`,
+        };
+      }
     }
     if (verdict === 'pi-retry' && base.attempts <= PI_MAX_ATTEMPTS) {
       return { ...base, verdict, reason, virtualOutcome: 'recovered', lostBecause: null };
@@ -234,8 +260,12 @@ export function summarizeShadow(rows: ShadowRow[]): Record<string, ShadowGroupSu
 function main(): void {
   const logPath = arg('log') ?? join(homedir(), '.pi/logs/router.log');
   const decPath = arg('decisions') ?? join(homedir(), '.pi/logs/classifier-decisions.jsonl');
-  const since = arg('since') ? Date.parse(arg('since') as string) : -Infinity;
-  const until = arg('until') ? Date.parse(arg('until') as string) : Infinity;
+  const since = bound('since', process.argv.slice(2), -Infinity);
+  const until = bound('until', process.argv.slice(2), Infinity);
+  if (!existsSync(logPath)) {
+    console.error(`no router log at ${logPath}`);
+    process.exit(2);
+  }
   const lines = readFileSync(logPath, 'utf8').split('\n');
   const decisions: WalkDecision[] = readDecisionLog(decPath, { since, until })
     .filter((row) => row.proc !== null)
@@ -255,12 +285,10 @@ function main(): void {
     total.recovered += s.recovered;
     total.lost += s.lost;
   }
-  const pct = (n: number): string =>
-    total.turns === 0 ? '0' : ((100 * n) / total.turns).toFixed(1);
   console.log(
-    `total turns=${total.turns} same=${total.same} (${pct(total.same)}%) recovered=${total.recovered} (${pct(total.recovered)}%) lost=${total.lost} (${pct(total.lost)}%)`
+    `total turns=${total.turns} same=${total.same} (${pct(total.same, total.turns)}) recovered=${total.recovered} (${pct(total.recovered, total.turns)}) lost=${total.lost} (${pct(total.lost, total.turns)})`
   );
-  if (arg('detail') !== undefined) {
+  if (process.argv.includes('--detail') || arg('detail') !== undefined) {
     console.log('lost turns:');
     for (const row of rows.filter((r) => r.virtualOutcome === 'lost')) {
       console.log(
