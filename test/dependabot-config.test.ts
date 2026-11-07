@@ -8,9 +8,12 @@
 //
 // 1. The host dependency is NEVER auto-bumped — host upgrades are
 //    deliberate, planned rounds (docs/plans/2026-09-30-...hardening.md).
-// 2. vitest majors are muted until the dedicated vitest-5 migration
-//    round (AGENTS.md §4 forbids lowering the coverage threshold to
-//    unblock the red run such a bump currently causes).
+// 2. vitest majors are NO LONGER muted: the vitest-5 migration round
+//    (2026-11-08) landed vitest 5.1.0 with the pinned coverage thresholds
+//    unchanged and green (85.19 % branches vs the pinned 76 % floor —
+//    the 74.27 % red-run prediction was measured 2026-10-04 on a much
+//    smaller suite). Future vitest majors update through normal grouped
+//    Dependabot PRs like everything else.
 // 3. Minor/patch updates are grouped (review noise stays low) and run
 //    weekly — dependency PRs must not flood the PR queue again.
 
@@ -40,16 +43,21 @@ describe('dependabot config policy', () => {
     expect(ignored).toContainEqual({ 'dependency-name': '@earendil-works/pi-coding-agent' });
   });
 
-  it('vitest majors are muted until the dedicated migration round', () => {
+  it('vitest majors are no longer muted (the vitest-5 round landed 2026-11-08)', () => {
     const ignored = npm.ignore ?? [];
-    expect(ignored).toContainEqual({
-      'dependency-name': 'vitest',
-      'update-types': ['version-update:semver-major'],
-    });
-    expect(ignored).toContainEqual({
-      'dependency-name': '@vitest/*',
-      'update-types': ['version-update:semver-major'],
-    });
+    // The migration is done: vitest 5.1.0 runs the suite green with the
+    // pinned coverage thresholds unchanged. A re-added major-ignore would
+    // silently freeze vitest again — the exact drift the 2026-10-04 mute
+    // was meant to prevent, now in reverse.
+    expect(
+      ignored.find(
+        (e: any) =>
+          (e['dependency-name'] === 'vitest' ||
+            String(e['dependency-name']).startsWith('@vitest/')) &&
+          Array.isArray(e['update-types']) &&
+          e['update-types'].includes('version-update:semver-major')
+      )
+    ).toBeUndefined();
   });
 
   it('github-actions updates are configured weekly', () => {

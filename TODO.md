@@ -633,19 +633,18 @@ statically; the red-first rule (AGENTS.md §4, hard requirement since
   (tested), 5 redundant (removed); projected ~93.5 %. New reports start
   with `scripts/mutation-carryover.ts`, then recheck, then triage.
 
-**vitest 5 migration round (registered 2026-10-04, muted in Dependabot):**
-UPDATE 2026-10-06: vitest is now on 4.1.11 (security round, see CHANGELOG) —
-it passes the pinned coverage thresholds unchanged, so only the 4 -> 5 step
-(the coverage-v8 5.x accounting below; the Node >= 22.12 requirement is met
-since the package floor is node >= 22.19.0, 2026-11-04) is still open.
-Dependabot proposed vitest 3.2.6 -> 5.0.3 (two majors, PRs #10/#13, both
-closed). Red CI: coverage-v8 5.x counts branches differently and the run
-lands at 74.27% against the pinned 76% threshold — AGENTS.md §4 forbids
-lowering thresholds to unblock a red run. When this round is scheduled:
-migrate the API surface, re-derive a JUSTIFIED branch threshold from the
-new accounting (documented, not fitted to pass), and remove the
-vitest-majors ignore in .github/dependabot.yml (guarded by
-test/dependabot-config.test.ts).
+**vitest 5 migration round — DONE 2026-11-08 (PR #130):** vitest
+4.1.12 -> 5.1.0 (+ @vitest/coverage-v8 5.1.0, @stryker-mutator/core and
+vitest-runner 10.0.0 -> 10.1.1 for the `>=2.0.0` peer). No API breaks: the
+suite (2866 passed / 3 skipped) and tsc are green unchanged. The predicted
+red coverage run (74.27 % branches vs the pinned 76 % threshold, measured
+2026-10-04 on a much smaller suite) did NOT materialize: coverage-v8 5.x
+accounting lands at 85.19 % branches — the pinned thresholds
+(63/76/63/63) pass UNCHANGED, no re-derivation needed (§4 satisfied: nothing
+was lowered). Stryker dry run (1259 tests) passes on the vitest-5 runner.
+The vitest-majors ignore is removed from .github/dependabot.yml and the
+guard test now pins that it STAYS removed (a re-added ignore would silently
+freeze vitest again).
 
 **Host-pinned security alerts (evaluated 2026-10-06): RESOLVED** by the
 host alignment round the same day: devDependencies pinned to
