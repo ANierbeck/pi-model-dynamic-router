@@ -39,7 +39,7 @@ const cmp = (a: string, b: string): number => {
   return 0;
 };
 
-describe('dependency lock security (Dependabot #42-#45, #48)', () => {
+describe('dependency lock security (Dependabot #42-#45, #48, #51)', () => {
   it('resolves only patched fast-uri (>= 3.1.9)', () => {
     const versions = resolvedVersions('fast-uri');
     expect(versions.length, 'fast-uri must appear in the lockfile').toBeGreaterThan(0);
@@ -71,5 +71,20 @@ describe('dependency lock security (Dependabot #42-#45, #48)', () => {
       lock.packages['node_modules/undici']?.version,
       'top-level undici must equal the host pin'
     ).toBe(pinned);
+  });
+
+  // Dependabot #51 (minimatch >= 7.0.0, < 11.0.1, DoS via glob amplification).
+  // ESLint, typescript-estree and Stryker still depend on minimatch 10.x and
+  // no release of theirs allows 11, so the fix path is `overrides` (AGENTS.md
+  // section 10, third step). Dev-tool scope only: not bundled into dist.
+  it('resolves only patched minimatch (>= 11.0.1)', () => {
+    const versions = resolvedVersions('minimatch');
+    expect(versions.length, 'minimatch must appear in the lockfile').toBeGreaterThan(0);
+    for (const v of versions) {
+      expect(
+        cmp(v, '11.0.1'),
+        `minimatch ${v} is below the patched 11.0.1 (the package.json override was dropped?)`
+      ).toBeGreaterThanOrEqual(0);
+    }
   });
 });

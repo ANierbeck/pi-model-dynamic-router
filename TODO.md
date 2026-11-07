@@ -71,9 +71,9 @@ the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowe
       per-file slices. May never reach zero; the ratchet only requires it never
       grows.
 
-Note: keeping ESLint keeps the dev-only `minimatch` alert
-(CVE-2026-118764) open until ESLint 11 / typescript-eslint / Stryker move to
-minimatch 11 (see the dependency-security round below).
+Note: the dev-only `minimatch` alert (CVE-2026-118764) is closed by an
+`overrides` entry (2026-11-08, see the dependency-security round below), not
+by an ESLint move — there is no ESLint 11.
 
 ### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
 
@@ -650,19 +650,23 @@ clean; the Dependabot alerts auto-close.
   @earendil-works/pi-ai -> @anthropic-ai/sdk 0.129.0 and openai 7.19.0;
   fix in range, refreshed. Full audit now: 0 prod, only the minimatch
   cascade left (12 moderate, dev-only).
-- `minimatch` 10.2.6 (open Dependabot alert, medium, CVE-2026-118764,
-  DoS via globparts amplification, patched only in 11.0.1): dev-only via
-  eslint / typescript-eslint / Stryker. The pi host is NOT the blocker
-  since 1.5.0: it ships minimatch 11.0.3 nested (patched). NOT REACHABLE
-  (all consumers match our own repo-controlled globs, no attacker input)
-  and BLOCKED: no fixed 10.x exists, and eslint (^10.2.4),
-  typescript-eslint (^10.2.2) and Stryker (~10.2.4) keep the top-level copy
-  on 10.x. An `overrides` force to 11 would be a major under three packages
-  that do not declare support. `npm audit`'s suggested "fixes" are
-  downgrades (eslint 9.39.5, typescript-eslint 6.15.0) — not applied per
-  section 10. Re-evaluate when eslint / typescript-eslint / Stryker ship
-  minimatch 11 support; the alert stays open as the tracker (dismissal
-  needs the owner's go).
+- `minimatch` (Dependabot alert #51, medium, CVE-2026-118764, DoS via
+  globparts amplification, patched only in 11.0.1) — **FIXED 2026-11-08 by
+  `"overrides": { "minimatch": "^11.0.1" }`** (section 10, third step). The
+  premise "blocked until ESLint 11 / typescript-eslint / Stryker support 11"
+  was wrong: there is no ESLint 11 (latest 10.14.0 keeps `^10.2.6`,
+  typescript-estree 8.72.1 `^10.2.2`, Stryker 10.1.1 `~10.2.4`), so waiting
+  never ends. Checked before applying: minimatch 11 needs Node `20 || >=22`
+  (engines `>=22.19`), ships ESM + CJS, the lock diff is upgrades only
+  (minimatch 10.2.6 -> 11.0.5 plus its own `@isaacs/nonrecursive-glob-match`
+  1.1.0; the host's nested 11.0.3 copy dedupes away), `npm audit` 0 (was 11
+  moderate), tsc / lint gate (732) / suite / coverage thresholds / build
+  green, a Stryker dry run (1238 tests) passes on minimatch 11. Reach was
+  already nil (dev tools, our own repo-controlled globs, not in dist).
+  Pinned by `test/dependency-lock-security.test.ts`. **Remove the override
+  once eslint, typescript-eslint and Stryker themselves allow minimatch
+  11** (re-check at the next ESLint/Stryker bump); the Dependabot alert
+  closes with the merged lock — dismissal is not needed.
 
 **Host-pinned undici alert — RESOLVED by the host (2026-11-04):** pi 1.5.0
 pins undici 8.12.3 itself, so the `"overrides": { "undici": "8.12.2" }` from
