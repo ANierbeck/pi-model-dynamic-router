@@ -275,6 +275,13 @@ export interface StreamOrchestratorContext {
   isLocalProvider: (ref: string) => boolean;
   localStreamLimit: () => number;
   releaseLocalSlot: (ref: string) => void;
+  /**
+   * M3 (plan 2026-11-07-turn-latency-tool-time.md): book one finished model
+   * stream's duration into the current turn. `turn_end` uses the sum as the
+   * per-model latency sample instead of the whole turn, which used to include
+   * every tool run and delegation sub-call.
+   */
+  addTurnStreamMs: (ms: number) => void;
   recordOk: (ref: string) => void;
   /** Feeds a failure text into the learned blocklist (ADR-0008). */
   observeFailure: (ref: string, failureText: string) => void;
@@ -1187,6 +1194,9 @@ export class StreamOrchestrator {
       recordServedRef(ctx, ref);
 
       let attemptSucceeded = false;
+      // M3: the stream's own duration — the only honest latency sample for
+      // this model (the turn also contains tools and sub-calls).
+      const streamT0 = Date.now();
       try {
         const result = await ctx.consumeWithDetection(
           target.stream,
@@ -1280,6 +1290,9 @@ export class StreamOrchestrator {
             if (!retryTarget) retryAttempt.abandon();
             if (retryTarget) {
               let retrySucceeded = false;
+              // M3: a retried stream is time the user waited for — book it too
+              // (open decision 2).
+              const retryT0 = Date.now();
               try {
                 const retryResult = await ctx.consumeWithDetection(
                   retryTarget.stream,
@@ -1314,6 +1327,7 @@ export class StreamOrchestrator {
                   `> [router] ${ref} — still failing after waiting (${retryResult.reason}), trying next…\n\n`
                 );
               } finally {
+                ctx.addTurnStreamMs(Date.now() - retryT0);
                 if (!retrySucceeded) retryAttempt.abandon();
                 ctx.releaseLocalSlot(ref);
               }
@@ -1501,6 +1515,7 @@ export class StreamOrchestrator {
         // Cancel the provider-side work of every attempt that did not win
         // (see openCandidateAttempt) — including timeouts, where the
         // upstream is otherwise still running.
+        ctx.addTurnStreamMs(Date.now() - streamT0);
         if (!attemptSucceeded) attempt.abandon();
         // Release the local concurrency slot acquired in tryStream. Must
         // run on every path: success (return), soft-failure (continue),
@@ -1606,6 +1621,7 @@ export class StreamOrchestrator {
         if (!probeTarget) probeAttempt.abandon();
         if (probeTarget) {
           let probeSucceeded = false;
+          const probeT0 = Date.now(); // M3
           try {
             const result = await ctx.consumeWithDetection(
               probeTarget.stream,
@@ -1644,6 +1660,7 @@ export class StreamOrchestrator {
             ctx.recordStreamFailure(probeRef, 'provider_error', undefined, errorMsg);
             ctx.observeProviderFailure(probeRef, 'provider_error', errorMsg);
           } finally {
+            ctx.addTurnStreamMs(Date.now() - probeT0);
             if (!probeSucceeded) probeAttempt.abandon();
             ctx.releaseLocalSlot(probeRef);
           }
@@ -1730,6 +1747,7 @@ export class StreamOrchestrator {
         if (!target) collapseAttempt.abandon();
         if (target) {
           let collapseSucceeded = false;
+          const collapseT0 = Date.now(); // M3
           try {
             const result = await ctx.consumeWithDetection(
               target.stream,
@@ -1794,6 +1812,7 @@ export class StreamOrchestrator {
             ctx.observeFailure(bestRef, errorMsg);
             ctx.recordStreamFailure(bestRef, 'provider_error', undefined, errorMsg);
           } finally {
+            ctx.addTurnStreamMs(Date.now() - collapseT0);
             if (!collapseSucceeded) collapseAttempt.abandon();
             // Release the local concurrency slot acquired in tryStream for
             // the force-retry candidate. Same guard as the main loop's finally.

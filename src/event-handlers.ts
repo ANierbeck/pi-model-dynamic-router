@@ -62,6 +62,12 @@ interface EventHandlerDeps {
   sessionStart: number;
   statusUpdater: ((key: string, text: string) => void) | null;
   turnStart: number;
+  /** M3: model-stream ms booked for this turn (0 when nothing was measured). */
+  readonly turnStreamMs: number;
+  /** M3: number of streams that contributed to `turnStreamMs`. */
+  readonly turnStreamCount: number;
+  /** M3: reset the per-turn stream accumulator at the turn boundary. */
+  readonly resetTurnStreams: () => void;
   readonly updateErrorStatusLine: () => void;
   readonly updateMetrics: (ref: string, latMs: number, tokens: number, durMs: number) => void;
 }
@@ -278,6 +284,11 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
     'turn_start',
     inSessionOf((_ev, ctx) => {
       rt.turnStart = Date.now();
+      // M3: the latency sample of this turn is the sum of its model streams,
+      // not the turn wall time (tool runs and delegation sub-calls inflated
+      // it). Reset the accumulator at the boundary so a turn whose turn_end
+      // never fires cannot leak its streams into the next turn.
+      rt.resetTurnStreams?.();
       // Mark the turn boundary on the router so the first setCurModel() of
       // this turn re-pins the driving ref (a nested delegation stream must
       // not be able to overwrite the pin — see Router.noteTurnStart).
@@ -300,8 +311,17 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
     'turn_end',
     inSessionOf((ev) => {
       if (!rt.curModel || !rt.turnStart) return;
-      const ms = Date.now() - rt.turnStart,
+      const turnMs = Date.now() - rt.turnStart,
         msg = ev.message;
+      // M3 (plan 2026-11-07-turn-latency-tool-time.md): the per-model latency
+      // and throughput sample is the time spent in MODEL STREAMS, not the
+      // whole turn — a 30 s bulk_read sub-call or a slow tool must not land on
+      // the model that merely answered. Fail-open: a turn with no measured
+      // stream (a fixed-session model the router never streamed, or a harness
+      // without the accumulator) keeps the old turn-level sample rather than
+      // dropping the sample entirely.
+      const streamMs = rt.turnStreamMs ?? 0;
+      const ms = streamMs > 0 ? streamMs : turnMs;
 
       // ── Session Escalation Logic ────────────────────────────────────────
       if (msg?.role === 'user' || msg?.role === 'assistant') {

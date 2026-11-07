@@ -36,6 +36,15 @@ export interface TurnState {
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
   /** Start of the current turn (ms since epoch); 0 = no turn started. */
   turnStart: number;
+  /**
+   * Wall-clock ms this turn spent inside MODEL STREAMS (M3, plan
+   * 2026-11-07-turn-latency-tool-time.md). Excludes tool execution and
+   * delegation sub-calls, which is exactly what a per-model latency sample
+   * must not contain. Reset at every turn boundary.
+   */
+  streamMs: number;
+  /** How many streams contributed to `streamMs` (diagnostics + log line). */
+  streamCount: number;
 }
 
 /**
@@ -152,6 +161,8 @@ export function emptyTurnState(): TurnState {
     runDriver: '',
     lastClassifiedCategory: undefined,
     turnStart: 0,
+    streamMs: 0,
+    streamCount: 0,
   };
 }
 

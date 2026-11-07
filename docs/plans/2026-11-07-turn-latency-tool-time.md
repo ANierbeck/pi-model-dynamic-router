@@ -1,7 +1,8 @@
 # Turn latency includes tool and sub-call time (M3)
 
-**Status:** approved 2026-11-07 (owner decision, TODO post-merge review
-2026-11-04 item M3) — not started. Plan opened 2026-11-07.
+**Status:** done 2026-11-08 (implemented, PR #126). Approved 2026-11-07
+(owner decision, TODO post-merge review 2026-11-04 item M3); plan opened
+2026-11-07.
 
 **Problem:** `turn_end` computes `ms = Date.now() - rt.turnStart`
 (`src/event-handlers.ts`) — the WHOLE turn duration, including every tool
@@ -33,21 +34,19 @@ and `avg_latency_ms` drifts down the ranking sort. Throughput
    turn's stream durations (`inSubCall()` guard, same scope as
    `recordServedRef`) — they already do not touch the parent's turn model.
 
-**Open decisions:**
+**Open decisions — all decided 2026-11-08:**
 
-1. `latMs` = sum of the turn's stream durations, or max? Proposal: **sum** —
-   a turn with three model calls really took that long, and the turn is the
-   unit the user waits for; max would hide multi-call turns. To be decided
-   against the first measurement (step 3 of the steps).
-2. Streams that fail (soft failure, retry) — do they contribute their partial
-   duration? Proposal: yes for the winning stream only, plus the failed
-   attempts' durations, because the user waited for them too (the failover
-   narration already counts the wait). Fail-closed alternative: winning
-   stream only.
-3. Migration of existing `avg_latency_ms` / `benchmarks` values (written with
-   turn-level durations): the values decay via EMA and `samples` counters;
-   proposal is NO reset (same call as TODO C2, owner 2026-11-07), unless a
-   model ranks oddly after the change.
+1. `latMs` = **sum** of the turn's stream durations (not max). The
+   measurement (`docs/research/2026-11-08-turn-latency-stream-share.md`)
+   shows multi-step turns dominate the non-model share; the sum keeps the
+   sample comparable to the wall time the user waited for.
+2. Failed attempts **count** their duration too — the user waited for them,
+   and the failover narration already counts the wait. Implemented as one
+   timer around the whole `consumeWithDetection` call, so the winning stream
+   and every retry inside it are booked once each.
+3. **No reset** of existing `avg_latency_ms` / `benchmarks` values (same call
+   as TODO C2, owner 2026-11-07): they decay via EMA and the health windows.
+   Intervene only if a model ranks oddly after the change.
 
 **Verified against:** `main` `31eb726` (2026-11-07). Checked: the `turn_end`
 handler and `ms` at `src/event-handlers.ts:303`, the `updateMetrics` call at
@@ -61,12 +60,24 @@ usage payload in the next host alignment round).
 
 **Steps:**
 
-1. Measure on real session logs: share of turn duration that is tool/sub-call
-   time (parse `router.log` try/finished lines per turn).
-2. Red-first test: a turn with a slow tool step must not book the tool time
-   as model latency (drive a fake slow tool through the harness, assert the
-   `updateMetrics` input).
-3. Implement stream-duration stamping (per session, sub-call excluded) and
-   feed `updateMetrics`.
-4. Decide open decisions 1–3 against the measurement; adjust if needed.
-5. Full suite + tsc + lint gate + format gate; review round before merge.
+1. ✅ Measured: `docs/research/2026-11-08-turn-latency-stream-share.md`
+   (20 270 paired streams; 11–32 % of active time is not stream time).
+2. ✅ Red-first test: `test/turn-latency-stream-time.test.ts` (8 tests).
+   Red evidence: with the pre-fix handler the two `turn_end` cases book
+   ~5000 ms instead of the 37/120 ms stream time; with the four
+   `addTurnStreamMs` calls removed the three walk cases fail; without the
+   boundary reset the reset case fails; with `ms = streamMs` (no fail-open)
+   the fail-open case fails.
+3. ✅ Implemented: `TurnState.streamMs`/`streamCount` (per session, reset at
+   the turn boundary); the walk books each stream at the four
+   `consumeWithDetection` sites in `src/stream-orchestrator.ts` (main attempt,
+   post-wait retry, forced half-open probe, cooldown-collapse retry) — NOT in
+   the stream proxy: an extra `await` layer there released the local
+   concurrency slot one microtask after the stream ended, which
+   `test/rate-limit-retry-abort.test.ts` catches (a real ordering change, so
+   the measurement lives in the existing `finally` blocks instead).
+   `turn_end` uses the sum and falls back to the turn time when nothing was
+   measured (fixed-session models). Sub-calls run in their own session scope,
+   so they never reach the parent's accumulator.
+4. ✅ Decisions 1–3 above.
+5. ✅ tsc, lint gate, format gate, full suite, coverage thresholds, build.
