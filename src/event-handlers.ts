@@ -53,12 +53,12 @@ interface EventHandlerDeps {
   readonly pi: ExtensionAPI;
   readonly rateLimitManager: RateLimitManager;
   readonly recordOk: (ref: string) => void;
-  readonly registerGroupModels: (ctx: any) => void;
+  readonly registerGroupModels: (ctx: ExtensionContext) => void;
   readonly router: Router;
   readonly saveCache: () => void;
   readonly scan: (force?: boolean) => Promise<void>;
   sessionAnchorInit: boolean;
-  sessionCtx: any;
+  sessionCtx: ExtensionContext | null;
   sessionStart: number;
   statusUpdater: ((key: string, text: string) => void) | null;
   turnStart: number;
@@ -92,7 +92,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       setProjectLogDir(ctx.cwd);
       try {
         const piAiPath = fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'));
-        const providerIds = (ctx.modelRegistry as any).getRegisteredProviderIds?.() ?? [];
+        const providerIds = ctx.modelRegistry.getRegisteredProviderIds();
         debugLog(`[diag] pi-ai resolved from: ${piAiPath}`);
         debugLog(
           `[diag] registered providers visible to router: ${[...providerIds].join(', ') || '(none)'}`
@@ -115,7 +115,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
         // Uses the same public `ctx.modelRegistry` API the router already uses
         // for `getAvailable()`/`find()` elsewhere — never reads Pi's setup
         // files directly.
-        setModelRegistry((ctx as any).modelRegistry);
+        setModelRegistry(ctx.modelRegistry);
       } catch (e) {
         debugLog('[diag] version diagnostics failed:', e);
       }
@@ -128,7 +128,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       // (pi-subagents child-session.js:287) — resetting there would silently
       // drop the main session's errors from the status count. 'reload' keeps the
       // anchor: the session continues, its errors stay counted.
-      const startReason = (ev as any)?.reason;
+      const startReason = ev?.reason;
       if (
         !rt.sessionAnchorInit ||
         startReason === 'new' ||
@@ -147,9 +147,9 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       // only the immediate-re-render trigger, not the display path. index.ts is
       // not duplicated by the esbuild double-bundle hazard; the BUFFER state
       // stays in the cache object per project rule.
-      if (typeof (ctx.ui as any).setStatus === 'function') {
+      if (typeof ctx.ui.setStatus === 'function') {
         rt.statusUpdater = (key: string, text: string): void => {
-          (ctx.ui as any).setStatus(key, text);
+          ctx.ui.setStatus(key, text);
         };
       }
       rt.updateErrorStatusLine();
@@ -329,8 +329,8 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           typeof msg.content === 'string'
             ? msg.content
             : (msg.content ?? [])
-                .filter((b: any) => b.type === 'text')
-                .map((b: any) => b.text)
+                .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+                .map((b) => b.text)
                 .join('');
         rt.escalation.recordTurn(
           msg.role === 'user' ? content : '',
@@ -370,8 +370,8 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           typeof msg.content === 'string'
             ? msg.content
             : (msg.content ?? [])
-                .filter((b: any) => b.type === 'text')
-                .map((b: any) => b.text)
+                .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+                .map((b) => b.text)
                 .join('');
         // usage_log basis (review I1): REAL tokens when the provider reported
         // usage (the old text.length/4 was an output-only approximation that
@@ -446,7 +446,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
         routerLog(
           (block as { expensive?: boolean }).expensive
             ? `[bulk_read] blocked a full-file read by expensive model "${streamRef}" — redirected to bulk_read/targeted read`
-            : `[bulk_read] blocked a full-file read of "${(ev as any)?.input?.path}" — redirected to bulk_read/targeted read`
+            : `[bulk_read] blocked a full-file read of "${textOf((ev as { input?: { path?: unknown } })?.input?.path)}" — redirected to bulk_read/targeted read`
         );
         return block;
       }

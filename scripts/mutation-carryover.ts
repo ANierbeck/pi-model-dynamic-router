@@ -217,13 +217,13 @@ function main(argv: string[]): number {
     const i = args.indexOf(flag);
     return i < 0 ? undefined : args.splice(i, n + 1).slice(1);
   };
-  const readJson = (p: string) => JSON.parse(readFileSync(p, 'utf8'));
+  const readJson = (p: string): unknown => JSON.parse(readFileSync(p, 'utf8'));
   const backfill = take('--backfill', 2);
   if (backfill) {
     const [reportPath, ledgerPath] = backfill;
     writeFileSync(
       ledgerPath,
-      formatLedger(backfillLedger(readJson(reportPath), readJson(ledgerPath)))
+      formatLedger(backfillLedger(readJson(reportPath) as Report, readJson(ledgerPath) as Ledger))
     );
     process.stdout.write(`backfilled original + context into ${ledgerPath}\n`);
     return 0;
@@ -239,7 +239,7 @@ function main(argv: string[]): number {
     return 2;
   }
   const ledgers = ledgerArg.split(',').map((p) => ({ name: p, ledger: readJson(p) as Ledger }));
-  const rows = carryOver(readJson(reportPath), ledgers);
+  const rows = carryOver(readJson(reportPath) as Report, ledgers);
   if (outPath) writeFileSync(outPath, JSON.stringify(rows, null, 1) + '\n');
   const count = (a: string): number => rows.filter((r) => r.action === a).length;
   process.stdout.write(

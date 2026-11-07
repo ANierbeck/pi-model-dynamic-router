@@ -8,7 +8,7 @@
 // so the replay must first model the failover order. Its earlier attempt used the
 // scan cache, which does not carry the claude-bridge models (docs/research/2026-10-27-pool-replay.md).
 
-import type { Config, Group } from '../src/types.ts';
+import type { Cache, Config, Group } from '../src/types.ts';
 
 const CATEGORY_TARGET: Record<string, string | null> = {
   simple: 'simple',
@@ -165,10 +165,10 @@ function replayMain(): void {
   if (until) bounds.until = Date.parse(until);
   const log = arg('log') ?? join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
   const routerLog = arg('router-log') ?? join(homedir(), '.pi', 'logs', 'router.log');
-  const shipped = JSON.parse(readFileSync('router-config.json', 'utf8')) as Config;
+  const shipped: Config = JSON.parse(readFileSync('router-config.json', 'utf8')) as Config;
   const cache = JSON.parse(
     readFileSync(arg('scan-cache') ?? 'dist/.cache/scan-cache.json', 'utf8')
-  );
+  ) as Cache;
   // Billing classification needs the user's provider billing (e.g. a subscription
   // provider); take ONLY the billing fields of the user layer, nothing else.
   const userPath = arg('user-config') ?? join(homedir(), '.pi', 'agent', 'router-config.user.json');
@@ -189,7 +189,11 @@ function replayMain(): void {
   }
   metrics.setConfig(shipped);
   metrics.setCache(cache);
-  metrics.setModelRegistry({ find: () => undefined } as any);
+  // Replay runs offline: an empty registry stand-in whose find() always
+  // misses (the real ModelRegistry type has no such minimal shape).
+  metrics.setModelRegistry({ find: () => undefined } as unknown as Parameters<
+    typeof metrics.setModelRegistry
+  >[0]);
   const designFloor = targetLayout(shipped).model_groups.design.min_gdpval!;
   const planningScoreBy = shipped.model_groups.planning.score_by;
   const score = (ref: string): number => metrics.calculateScore(ref, planningScoreBy, shipped);

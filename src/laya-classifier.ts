@@ -196,7 +196,11 @@ export async function classifyWithLayaRaw(
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
     }
-    const raw = await res.json();
+    const raw = (await res.json()) as {
+      category?: unknown;
+      confidence?: unknown;
+      probabilities?: unknown;
+    };
     if (!raw || typeof raw.category !== 'string' || typeof raw.confidence !== 'number') {
       throw new Error('malformed response: expected {category, confidence, probabilities, ms}');
     }
@@ -208,10 +212,11 @@ export async function classifyWithLayaRaw(
     ) {
       throw new Error('malformed response: probabilities must be an object');
     }
+    const probabilitiesRecord = probabilities as Record<string, number>;
     return {
       category: raw.category,
       confidence: raw.confidence,
-      probabilities: probabilities as Record<string, number>,
+      probabilities: probabilitiesRecord,
       ms: Math.round(performance.now() - t0),
     };
   } catch (err) {

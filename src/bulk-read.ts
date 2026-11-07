@@ -31,6 +31,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Config } from './types.ts';
+import type { Context, Usage } from '@earendil-works/pi-ai';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import {
   delegationSettings,
   type DelegationSettings,
@@ -280,7 +282,7 @@ interface BulkReadParams {
 interface BulkReadOutcome {
   content: Array<{ type: 'text'; text: string }>;
   /** Nested sub-model usage for accounting (Pi persists it on the result). */
-  usage?: any;
+  usage?: Usage;
 }
 
 /** Reads the requested files from disk, honoring the max_raw_chars cap. */
@@ -330,7 +332,7 @@ function loadFiles(paths: string[], maxRawChars: number): BulkReadFile[] {
  */
 export async function executeBulkRead(
   params: BulkReadParams,
-  ctx: any,
+  ctx: ExtensionContext | null,
   cfg: Config | undefined,
   log?: (msg: string) => void
 ): Promise<BulkReadOutcome> {
@@ -349,13 +351,37 @@ export async function executeBulkRead(
 
   // Resolve the delegation group through Pi's public registry API — the
   // router's group interception routes to the cheap model.
-  const model = ctx?.modelRegistry?.find?.(settings.group, settings.group);
-  if (!model) throw new Error(`bulk_read: delegation group "${settings.group}" is not registered`);
+  // Existence guard keeps the pinned fail-open contract: a malformed ctx
+  // (harness without a registry) surfaces the honest "not registered"
+  // error, not a TypeError (test/bulk-read.test.ts).
+  const registry = ctx?.modelRegistry;
+  const model = registry ? registry.find(settings.group, settings.group) : undefined;
+  if (!model || !ctx || !registry) {
+    throw new Error(`bulk_read: delegation group "${settings.group}" is not registered`);
+  }
 
-  const context = {
-    messages: [{ role: 'user', content: buildBulkReadPrompt(question, files) }],
+  const context: Context = {
+    messages: [
+      {
+        role: 'user' as const,
+        content: buildBulkReadPrompt(question, files),
+        timestamp: Date.now(),
+      },
+    ],
   };
-  const stream = ctx.modelRegistry.runtime.streamSimple(model, context, { signal: ctx?.signal });
+  // Reach-through to the registry facade's private runtime (same documented
+  // seam as src/delegation.ts — the public facade gained streamSimple only
+  // in later hosts; the spike path is kept).
+  const registryRuntime = (
+    ctx.modelRegistry as unknown as {
+      runtime: { streamSimple: typeof ctx.modelRegistry.streamSimple };
+    }
+  ).runtime;
+  const stream = registryRuntime.streamSimple(
+    model,
+    context,
+    ctx.signal !== undefined ? { signal: ctx.signal } : undefined
+  );
   const { text, usage } = await drainSubCallStream(stream);
 
   // Router-narration hygiene (same as the shrinker): a cascade that only

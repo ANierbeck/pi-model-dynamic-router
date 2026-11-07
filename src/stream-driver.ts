@@ -105,9 +105,9 @@ export function pushRouterInfo(
     stopReason: 'end_turn',
     timestamp: Date.now(),
   } as unknown as AssistantMessage;
-  proxy.push({ type: 'text_start', contentIndex, partial } as any);
-  proxy.push({ type: 'text_delta', contentIndex, delta: text, partial } as any);
-  proxy.push({ type: 'text_end', contentIndex, content: text, partial } as any);
+  proxy.push({ type: 'text_start', contentIndex, partial });
+  proxy.push({ type: 'text_delta', contentIndex, delta: text, partial });
+  proxy.push({ type: 'text_end', contentIndex, content: text, partial });
 }
 
 /**

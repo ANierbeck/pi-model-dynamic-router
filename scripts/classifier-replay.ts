@@ -93,24 +93,41 @@ export function extractSessionPrompts(paths: string[]): SessionPrompt[] {
     if (!existsSync(p)) continue;
     const lines = readFileLinesSync(p);
     for (const line of lines) {
-      let entry: any;
+      let entry: unknown;
       try {
         entry = JSON.parse(line);
       } catch {
         continue;
       }
-      if (entry?.type !== 'message' || entry?.message?.role !== 'user') continue;
-      const blocks = entry.message.content;
+      // Pi session JSONL: { type: 'message', message: UserMessage, ... }
+      const record = entry as {
+        type?: unknown;
+        message?: { role?: unknown; content?: unknown };
+        timestamp?: unknown;
+      };
+      if (record?.type !== 'message' || record?.message?.role !== 'user') continue;
+      const blocks = record.message?.content;
       if (!Array.isArray(blocks)) continue;
       let text = '';
       let hasAttachment = false;
       for (const b of blocks) {
-        if (b?.type === 'text' && typeof b.text === 'string') text += b.text;
-        else hasAttachment = true;
+        if (
+          typeof b === 'object' &&
+          b !== null &&
+          (b as { type?: unknown }).type === 'text' &&
+          typeof (b as { text?: unknown }).text === 'string'
+        ) {
+          text += (b as { text: string }).text;
+        } else hasAttachment = true;
       }
       text = text.trim();
       if (!text) continue;
-      out.push({ text, ts: entry.timestamp ?? '', source: p, hasAttachment });
+      out.push({
+        text,
+        ts: typeof record.timestamp === 'string' ? record.timestamp : '',
+        source: p,
+        hasAttachment,
+      });
     }
   }
   return out;
@@ -225,11 +242,11 @@ async function classifyViaEndpoint(
       }),
     });
     if (!res.ok) return { category: null, invalid: false, error: true };
-    const body = await res.json().catch(() => null);
+    const body = (await res.json().catch(() => null)) as { category?: unknown } | null;
     const category = typeof body?.category === 'string' ? body.category : null;
     return {
       category,
-      invalid: category !== null && !KNOWN_CATEGORIES.has(category),
+      invalid: category !== null && !(KNOWN_CATEGORIES as Set<string>).has(category),
       error: category === null,
     };
   } catch {

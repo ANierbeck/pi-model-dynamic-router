@@ -112,17 +112,36 @@ export function readSessionTurns(dir: string, bounds: Bounds): SessionTurn[] {
     .filter((f) => f.endsWith('.jsonl'))
     .sort()) {
     let pending: SessionTurn | null = null;
-    for (const rec of parseLines(join(dir, file)) as Array<Record<string, any>>) {
+    for (const recRaw of parseLines(join(dir, file))) {
+      // Pi session JSONL: { type: 'message', message: UserMessage | AssistantMessage, ... }
+      if (typeof recRaw !== 'object' || recRaw === null) continue;
+      const rec = recRaw as {
+        type?: unknown;
+        message?: unknown;
+        timestamp?: unknown;
+      };
       if (rec?.type !== 'message' || !rec.message || typeof rec.message !== 'object') continue;
-      const m = rec.message;
+      const m = rec.message as {
+        role?: unknown;
+        content?: unknown;
+        timestamp?: unknown;
+        provider?: unknown;
+        model?: unknown;
+      };
       if (m.role === 'user') {
         const text = userText(m.content);
         if (text.startsWith('<memory>')) continue; // memory block, not a prompt
-        const ts = typeof m.timestamp === 'number' ? m.timestamp : Date.parse(rec.timestamp);
+        const ts =
+          typeof m.timestamp === 'number'
+            ? m.timestamp
+            : typeof rec.timestamp === 'string'
+              ? Date.parse(rec.timestamp)
+              : NaN;
         pending = { session: file, ts, sha: promptSha(text), served: null };
         if (inBounds(ts, bounds)) turns.push(pending);
       } else if (m.role === 'assistant' && pending?.served === null) {
-        if (m.provider && m.model) pending.served = `${m.provider}/${m.model}`;
+        if (typeof m.provider === 'string' && typeof m.model === 'string')
+          pending.served = `${m.provider}/${m.model}`;
         pending = null;
       }
     }

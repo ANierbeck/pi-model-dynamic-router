@@ -50,6 +50,13 @@
 import type { Cache, Config } from './types.ts';
 import { lookupPrice } from './metrics.ts';
 import { isExcluded, isPaidForClassifier } from './exclude.ts';
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  ModelsSimpleStreamOptions,
+} from '@earendil-works/pi-ai';
 import { isUnhealthy, recordModelFailure } from './model-health.ts';
 import {
   formatBlockLogLine,
@@ -196,9 +203,13 @@ export function judgeProbeReply(
  */
 export interface ProbeContext {
   /** Resolves a "provider/id" ref to a pi Model object. */
-  findModel: (ref: string) => any;
+  findModel: (ref: string) => Model<Api> | undefined;
   /** Pi's one-shot completion API (modelRegistry.runtime.completeSimple). */
-  completeSimple: (model: any, ctx: any, options: any) => Promise<any>;
+  completeSimple: (
+    model: Model<Api>,
+    ctx: Context,
+    options?: ModelsSimpleStreamOptions
+  ) => Promise<AssistantMessage> | undefined;
   /**
    * modelRegistry.hasConfiguredAuth, given the Model findModel resolved.
    * Bug 2026-10-06: candidates in cache.available_models can belong to a
@@ -208,7 +219,7 @@ export interface ProbeContext {
    * provided, such a candidate is skipped before completeSimple is called.
    * Optional and fail-open: omitting it keeps every candidate eligible.
    */
-  hasConfiguredAuth?: (model: any) => boolean;
+  hasConfiguredAuth?: (model: Model<Api>) => boolean;
 }
 
 /**
@@ -394,7 +405,7 @@ export async function probeAndCache(
         try {
           const result = await pctx.completeSimple(
             model,
-            { messages: [{ role: 'user', content: prompt }] },
+            { messages: [{ role: 'user' as const, content: prompt, timestamp: Date.now() }] },
             { signal: ac.signal }
           );
           if (!result || result.errorMessage || result.stopReason === 'error') {
@@ -404,8 +415,11 @@ export async function probeAndCache(
           }
           answered = true;
           const raw = (result.content ?? [])
-            .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
-            .map((b: any) => b.text)
+            .filter(
+              (b): b is Extract<(typeof result.content)[number], { type: 'text' }> =>
+                b?.type === 'text' && typeof b.text === 'string'
+            )
+            .map((b) => b.text)
             .join('');
           const verdict = judgeProbeReply(raw, tc);
           if (!verdict.ok) {
