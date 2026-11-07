@@ -20,12 +20,30 @@ import {
 import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cache.ts';
 import { doneEvent, testModelCost } from './helpers/stream-fixtures.ts';
 import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
+import { walkStubWorld } from './helpers/walk-stub-ctx.ts';
 
 const { dynamicConfigPath, scanCachePath } = routerStatePaths();
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/ollama-utils.ts')>();
-  return { ...actual, isOllamaAvailable: vi.fn() };
+  // isOllamaProbablyDown feeds the walk's LOOKAHEAD guard (the "trying X …"
+  // suffix must not name a candidate the walk would skip); pinned true so
+  // the guard is deterministic. The existing tests below never read it.
+  return { ...actual, isOllamaAvailable: vi.fn(), isOllamaProbablyDown: vi.fn(() => true) };
+});
+
+// The walk-level lookahead tests below drive the orchestrator directly;
+// without this the narrations' routerLog calls would append to the real
+// project log (the full-stack tests above boot a tmp project instead).
+vi.mock('../src/logger.ts', async (orig) => {
+  const actual = await orig<typeof import('../src/logger.ts')>();
+  return {
+    ...actual,
+    appendRawLog: vi.fn(),
+    routerLog: vi.fn(),
+    warnLog: vi.fn(),
+    errorLog: vi.fn(),
+  };
 });
 
 async function withIsolatedRouter(
@@ -243,4 +261,42 @@ describe('driveStream: ollama availability guard', () => {
       }
     );
   }, 30000);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mutation slice 2 batch 4 (docs/mutation-data/slice2-triage/pre.md cluster D):
+// the LOOKAHEAD guards of the "trying X …" narration suffix. The suffix names
+// the next candidate the walk will REALLY attempt, so it must apply the walk's
+// own pre-flight predicates — a breaker-open provider or a down ollama daemon
+// must not be announced (live finding 2026-10-03). Walk-level harness: the
+// candidate order is part of the fixture (the full-stack pool sorts cost-0
+// ollama models to the front, which is exactly the order this must NOT have).
+// These tests live HERE because the ollamaMockFiles ratchet forbids a new
+// file that mocks ollama-utils, and the lookahead guard needs the daemon
+// probe pinned to "down".
+
+describe('narration lookahead: the suffix names a ref the walk will REALLY try', () => {
+  it('skips a breaker-open provider and a down ollama daemon', async () => {
+    // The full-stack tests above share this file's mock instances; pin the
+    // probe state instead of inheriting whatever the last test left behind.
+    const ollamaUtils: any = await import('../src/ollama-utils.ts');
+    ollamaUtils.isOllamaAvailable.mockReset().mockReturnValue(false);
+    ollamaUtils.isOllamaProbablyDown.mockReset().mockReturnValue(true);
+    const w = walkStubWorld({
+      results: {
+        '*': { ok: false, reason: 'empty_response' },
+        'c/two': { ok: true },
+      },
+      breakerOpen: ['wedge-provider/wedge'],
+    });
+    const { text } = await w.run(['a/one', 'wedge-provider/wedge', 'ollama/nemo:latest', 'c/two']);
+
+    // The suffix names the ref that can actually serve next …
+    expect(text).toMatch(/a\/one —[^]*?trying c\/two …/);
+    // … not the wedged provider, not the dead daemon.
+    expect(text).not.toContain('trying wedge-provider/wedge');
+    expect(text).not.toContain('trying ollama/nemo');
+    // And the walk attempted exactly the two attemptable refs.
+    expect(w.attempts.map((a) => a.ref)).toEqual(['a/one', 'c/two']);
+  });
 });

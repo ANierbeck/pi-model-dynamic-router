@@ -1512,10 +1512,125 @@ fixture asserts `looks wedged` only, so both survive.
 | 99 | `\|\|` → `&&`, `!cw && !req`, → `false` | needs both regexes to match and `parseInt` to yield 0/NaN — not constructible from a provider message |
 | 203 | `'several distinct models failed'` → `''` | unreachable: both call sites run right after `observeProviderFailure` returned true, which requires live evidence in the window |
 
-### Slice 3 test round (open)
+### Slice 3 test round (done 2026-11-08)
 
-24 mutants, four small test additions: the outer-abort file (cluster A), the detail-less
-`context_overflow` (cluster B, shared with the slice-2 row for 751), a parametrised
-`breakerEvidencePhrase` test (cluster C), and two narration assertions (cluster D). Nothing here
-depends on the virtual-models decision: the spike showed the in-request failover stays
+24 mutants, four small test additions — all landed and verified (see
+"Slice 2 test round, batch 4 + slice 3 (2026-11-08)" below): the outer-abort file
+(cluster A, `test/outer-abort-chaining.test.ts`), the detail-less `context_overflow`
+(cluster B — EQUIVALENT, see the round's note), a parametrised `breakerEvidencePhrase`
+test (cluster C, `test/breaker-evidence-narration.test.ts`), and the two narration
+assertions (cluster D, same file). Nothing here depended on the virtual-models
+decision: the spike showed the in-request failover stays
 (`docs/research/2026-11-06-virtual-model-spike.md`), so these helpers stay as well.
+
+## Slice 2 test round, batch 4 + slice 3 (2026-11-08)
+
+Closes the four open slice-2 batch-4 clusters and all four slice-3 clusters. Six new
+test files plus one describe in an existing file; every mutant below was applied by
+hand to `src/stream-orchestrator.ts` (pristine backup `/tmp/so-pristine.bak`), the
+named file observed RED on the mutant and GREEN on the original.
+
+**Lookahead guards (pre.md cluster D, mutants 498–503)** —
+`test/ollama-fallback-skip-when-down.test.ts` (new describe; the file already mocks
+ollama-utils and the `ollamaMockFiles` ratchet forbids a new mock file, so the
+walk-level tests live there). Walk-level harness (`test/helpers/walk-stub-ctx.ts`):
+the real `driveStream` over explicit candidates — the full-stack pool sorts cost-0
+ollama models to the FRONT, which is exactly the order the fixture must not have.
+Killed: 498 (breaker check dropped), 500 (ollama check dropped), 501 (`&&`→`||`),
+502 (`startsWith`→`endsWith`), 503 (empty prefix).
+
+**Repetition/truncation narrations (core.md cluster D, mutants 749/751/752)** —
+`test/walk-narration-pins.test.ts` (walk-level). Killed: 749 (branch dropped), 751
+(narration text emptied), 752 (whole block emptied — the first hand-run only emptied
+the first two statements and survived; the real mutant empties the whole block).
+
+**Wait-retry abort/slot family (core.md cluster A, mutants 659–694)** —
+`test/rate-limit-retry-abort.test.ts` (full-stack, one session for all turns).
+Killed: 659 (inverted null-target guard — the retried stream itself is aborted),
+660/661/662 (null-target abandon dropped/always/never), 663 (`if (retryTarget)`→
+`if (true)` — the null-deref surfaces as a spurious "— error:" narration), 666
+(`retrySucceeded` starts true — a timed-out retry is never abandoned), 670 (success
+block emptied), 672 (`recordOk` dropped — the hits counter never resets and the
+third rate limit escalates to the 60 s backoff), 674 (aborted retry falls through —
+the armed 30 s soft cooldown blocks the next turn), 689 (whole retry finally
+emptied), 692/693 (the finally abandon dropped), 694 (the retry-finally slot
+release dropped — a local model's leaked slot refuses the next turn's retry,
+cap 2: the MAIN attempt's slot is only released in the main finally, AFTER the
+wait block). EQUIVALENT, confirmed: 671 (abandons an already-completed retry —
+no-op on a finished controller) and 658 (null-vs-undefined target).
+
+**Context-window persistence (core.md cluster C, mutants 706/707/708, old
+918/919)** — `test/overflow-window-persistence.test.ts`. The registry entry is
+mutated in place, so the fixture object itself is the persistence proof — the
+next-turn skip alone would NOT distinguish, because the soft failure also puts the
+model on a cooldown that skips it anyway. Killed: 706 (`if (errInfo)`→`if (false)`),
+707 (block emptied), 708 (the `updateModelContextWindow` call dropped).
+
+**Overflow candidate filter (core.md cluster C, mutants 713/717/720/722)** —
+`test/overflow-larger-candidates.test.ts`. One fixture kills all four: pool order
+small → boundary → tiny → unknown → big (gdpval), a parseable overflow on `small`
+(minNeeded 200,123), a boundary model with window EXACTLY minNeeded, a too-small
+model that still passes its own pre-flight, and an unknown-window model. Killed:
+713 (filter neutralized — `tiny` is attempted), 717 (`true ||` — same), 720
+(`!cw`→`cw` — the unknown-window model is starved), 722 (`>`→`>=` — the boundary
+twin is attempted next).
+
+**Outer-signal chaining (slice 3 cluster A, openCandidateAttempt)** —
+`test/outer-abort-chaining.test.ts`. Killed: `if (outer)`→`if (false)` (no chain
+listener), `if (outer.aborted)`→`if (false)` and its `abort(…)`→`;` (an
+already-aborted caller burns the attempt — the assertion must run INSIDE the
+consume window, because the walk's own finally abandons the attempt later anyway),
+`if (outer.aborted)`→`if (true)` (every candidate aborted at creation), the
+listener event `''`→ (never fires). EQUIVALENT, confirmed: `{ once: true }`→`{}`
+(one abort per candidate; a stale listener fires once more into an
+already-aborted controller).
+
+**Breaker evidence phrase + narration (slice 3 clusters C and D)** —
+`test/breaker-evidence-narration.test.ts` (walk-level; the candidate fails with
+`provider_error` and `observeProviderFailure` returns true — the narrating call
+site; the pre-flight breaker skip does NOT narrate). Killed: the whole phrase body,
+the KIND_PHRASE table and each of its four phrases (parametrized over the four
+evidence kinds), the uniform-vs-mixed condition (→`true`/`false`/`!==`), the
+`Math.max(1, …)` floor and the `/ 1000` (a sub-second span must floor at
+"within 1 s"), the returned template, the cloud fix hint (line 206) and the whole
+narration sentence (line 208).
+
+**Detail-less `context_overflow` (slice 3 cluster B, 1 mutant): EQUIVALENT.** The
+mutant (`if (!detail) return null`→`if (false)`) needs a `context_overflow` result
+with a falsy detail; both overflow paths in `src/stream-proxy.ts` set a non-empty
+detail text, so the state is unreachable in production.
+
+Fixture findings worth keeping:
+- A fresh `session_start` per turn RELOADS persisted state from disk, so a
+  per-turn-session harness reads a stale snapshot (an in-memory `recordOk` deletion
+  only reaches disk on the next save). Multi-turn fixtures must share ONE session —
+  the real shape anyway.
+- `recordOk` (limit-glue) resets the rate-limit hits counter AND the model-health
+  streak; the 429 cooldown itself (`cooldown_until`) is NOT cleared by it.
+- The wait-retry of a LOCAL model needs TWO concurrency slots: the main attempt's
+  slot is released only in the main finally, AFTER the wait block.
+- Near-reset fixtures must compute the reset per INVOCATION (`rateLimitNearReset`
+  in `test/helpers/rate-limit-fixtures.ts`); a reset baked at setup time is in the
+  past by the next turn, the parse returns undefined and the walk cascades instead
+  of waiting.
+
+Ratchet interactions resolved on the way (both ratchets only shrink): the third
+copy of the walk-level ctx stub tripped `repeatedBlocks` (30→33) → extracted
+`test/helpers/walk-stub-ctx.ts`; the second ollama mock file tripped
+`ollamaMockFiles` (27→29) → the local-slot test uses `lm-studio` (local slot,
+no daemon guard) and the lookahead tests moved into
+`test/ollama-fallback-skip-when-down.test.ts`. The shared
+`test/helpers/rate-limit-fixtures.ts` itself re-tripped `repeatedBlocks` (its
+registry preamble and base config mirrored `rate-limit-wait.test.ts` and
+`stream-abandon-and-text-scan.test.ts`) → the helper's registry is a named const
+and `rate-limit-wait.test.ts` now imports the shared `rateLimitBaseCfg`
+(`rate_limit_wait_max_ms` stays per-test — the shipped default is 120 s).
+Back to 30 / 27 with `rate-limit-wait` genuinely deduplicated.
+
+Still open after this round: the cluster H leftovers (848 — the catch path's
+`pushError` is only visible via `session_errors`; 847–858/860 need a
+seam-throw fixture that reads `session_errors`), the blocklist seam 677–683
+(expensive multi-turn fixture), and 871 (thin: a silent-skip-without-reason
+candidate). The 205 slice-2 real gaps are now down to these plus the batches
+already ledgered; re-instrument before the next batch
+(`docs/mutation-data/slice2-driveStream.json` predates PR #115).

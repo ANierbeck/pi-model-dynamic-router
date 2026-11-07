@@ -497,16 +497,21 @@ judged sufficient.
 
 ### Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator (OWNER-MANDATED 2026-10-15 — do this first after laya-spike merges to main)
 
-> **Status 2026-11-06:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
+> **Status 2026-11-08:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
 > (`driveStream`) triaged 2026-11-05: of 329 non-killed mutants, 205 REAL GAP
 > (sketches in `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 false
-> survivor, 1 dead store removed. The slice-2 test round started 2026-11-06:
-> cascade head / overflow / breaker-probe gate, the collapse guard+duration+
-> tie-break+signal cases, the pre-flight skip reasons and the post-wait retry
-> block are pinned (34 mutants verified killed, see
-> `docs/mutation-triage.md`); the repetition/truncation narrations, the paid
-> labels and the recorded-state seams are still open. Then slice 3 (helpers).
-> Plan: `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
+> survivor, 1 dead store removed. Slice-2 test round: batches 1–3 (2026-11-06,
+> 34 mutants verified killed) plus batch 4 (2026-11-08: lookahead guards
+> 498–503, repetition/truncation narrations 749/751/752, the wait-retry
+> abort/slot family 659–694, context-window persistence 706–708, the overflow
+> candidate filter 713/717/720/722 — 28 more killed, see
+> `docs/mutation-triage.md`). Slice 3 (helpers) triaged 2026-11-06 and its test
+> round is done 2026-11-08 (outer-abort chaining, breaker evidence phrase +
+> narration killed; the detail-less overflow verdicted EQUIVALENT — production
+> unreachable). Still open: cluster H leftovers (848, 847–858/860 need a
+> seam-throw fixture reading `session_errors`), the blocklist seam 677–683,
+> and 871 (thin). Plan:
+> `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
 
 Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
 the first nightly with the v2-r3 taxonomy): 3-file scope (stream-orchestrator,
