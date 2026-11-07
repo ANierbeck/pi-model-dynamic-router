@@ -204,7 +204,13 @@ export function judgeProbeReply(
 export interface ProbeContext {
   /** Resolves a "provider/id" ref to a pi Model object. */
   findModel: (ref: string) => Model<Api> | undefined;
-  /** Pi's one-shot completion API (modelRegistry.runtime.completeSimple). */
+  /**
+   * Pi's one-shot completion API (modelRegistry.runtime.completeSimple).
+   * The `| undefined` sits OUTSIDE the Promise on purpose: the private
+   * runtime method may be absent on older hosts, in which case the
+   * reach-through resolves to undefined BEFORE any promise exists.
+   * Callers guard with `if (!result)` and then `await` (PR #133 review M7).
+   */
   completeSimple: (
     model: Model<Api>,
     ctx: Context,

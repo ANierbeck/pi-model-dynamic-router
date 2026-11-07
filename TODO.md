@@ -20,13 +20,14 @@
 
 ## 🎯 **Prioritized Tasks (Next Steps)**
 
-### 🟡 **Lint burn-down (gate shipped 2026-11-04, baseline open)**
+### 🟢 **Lint burn-down (gate shipped 2026-11-04, baseline 0 — DONE 2026-11-08)**
 
 The gate is live (`npm run lint`, step in the required `test` job,
-`docs/plans/2026-11-04-lint-gate.md`). Baseline: **732 findings / 121 (file, rule)
-entries** (was 1217 / 299; S3 took it to 919 / 159, the
+`docs/plans/2026-11-04-lint-gate.md`). Baseline: **0 findings / 0 entries** —
+the burn-down is complete (was 1217 / 299; S3 took it to 919 / 159, the
 Prettier reformat to 915, S4 to 810 / 130, S4 factory interfaces to 803 / 123,
-the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowers
+the sessionCtx typing in the PR #120 review round to 732 / 121, S5 in PRs
+#131-#133 to 0 / 0; `CEILING_FINDINGS` is 0). Each slice lowered
 `scripts/lint-baseline.json` **and** `CEILING_FINDINGS` in
 `test/lint-baseline.test.ts` in the same commit:
 
@@ -67,8 +68,9 @@ the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowe
       honest type is `any` (still baselined) (S5 territory: `sessionCtx` getter, `readJson`,
       `hasConfiguredAuth`, `createGroupRegistration`). Owner decision D3: keep
       and burn down, explicit return types are treated as an API contract
-- [ ] **S5** long tail (732 → 654 → **235** after slices 1–2, 2026-11-08,
-      PRs #131/#132): `no-explicit-any` + the `no-unsafe-*` family, per-file
+- [x] **S5** long tail — **done 2026-11-08, PR #133: baseline 0 findings /
+      0 entries, `CEILING_FINDINGS` 0** (732 → 654 → 235 → 0, PRs
+      #131/#132/#133): `no-explicit-any` + the `no-unsafe-*` family, per-file
       slices. Slice 1 typed `context-utils` (19→0), `error-signatures`
       (20→0), `delegation` (21→0), `free-model-registration` (18→0); slice 2
       typed the five biggest files — `content-classifier` (101→0),
@@ -86,10 +88,11 @@ the sessionCtx typing in the PR #120 review round to 732 / 121). Each slice lowe
       completeSimple hook may resolve `undefined` (pinned inert contract,
       now guarded readably in the cloud loop instead of a TypeError); the
       delegation fixtures were modernized to the current host protocol
-      (done/message.usage, not the pi-0.83 `message_end`). May never reach
-      zero; the ratchet only requires it never grows. Biggest remaining:
-      event-handlers (30), classifier-cloud-probe (28),
-      dynamic-config-runner (25), metrics (25).
+      (done/message.usage, not the pi-0.83 `message_end`). Slice 3 (PR #133)
+      typed the remaining 23 files, including event-handlers (30),
+      classifier-cloud-probe (28), dynamic-config-runner (25), metrics (25),
+      tools (15), bulk-read (11) and every JSON.parse site. The ratchet is
+      closed: the gate fails on ANY new finding.
 
 Note: the dev-only `minimatch` alert (CVE-2026-118764) is closed by an
 `overrides` entry (2026-11-08, see the dependency-security round below), not

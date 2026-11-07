@@ -562,6 +562,14 @@ describe('state contracts', () => {
     expect(m.getModelRegistry()).toBe(registry);
   });
 
+  // PR #133 review I1: the pre-session (registry not yet published) path
+  // must read "no such model", not crash. The old `any` form threw a
+  // TypeError here, which callers had to swallow upstream.
+  it('hasRegistryModel with no registry set reads false, not a TypeError', () => {
+    m.setModelRegistry(null);
+    expect(m.hasRegistryModel('openrouter', 'some/model')).toBe(false);
+  });
+
   it('getCapabilityProfiles exposes the profiles merged by setCache', () => {
     world({ cache: { capability_profiles: { 'cap-slug': { briefcase: 5 } } as any } });
     expect(m.getCapabilityProfiles()['cap-slug']).toEqual({ briefcase: 5 });

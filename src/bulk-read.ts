@@ -355,7 +355,10 @@ export async function executeBulkRead(
   // (harness without a registry) surfaces the honest "not registered"
   // error, not a TypeError (test/bulk-read.test.ts).
   const registry = ctx?.modelRegistry;
-  const model = registry ? registry.find(settings.group, settings.group) : undefined;
+  const model =
+    registry && typeof registry.find === 'function'
+      ? registry.find(settings.group, settings.group)
+      : undefined;
   if (!model || !ctx || !registry) {
     throw new Error(`bulk_read: delegation group "${settings.group}" is not registered`);
   }

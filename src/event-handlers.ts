@@ -91,6 +91,10 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       rt.router.setSessionCtx(ctx);
       setProjectLogDir(ctx.cwd);
       try {
+        // Publish the registry FIRST: a host without getRegisteredProviderIds
+        // (older than the pinned typings) must not skip setModelRegistry,
+        // or registry-based pricing silently degrades (PR #133 review I2).
+        setModelRegistry(ctx.modelRegistry);
         const piAiPath = fileURLToPath(import.meta.resolve('@earendil-works/pi-ai'));
         const providerIds = ctx.modelRegistry.getRegisteredProviderIds();
         debugLog(`[diag] pi-ai resolved from: ${piAiPath}`);
@@ -115,7 +119,6 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
         // Uses the same public `ctx.modelRegistry` API the router already uses
         // for `getAvailable()`/`find()` elsewhere — never reads Pi's setup
         // files directly.
-        setModelRegistry(ctx.modelRegistry);
       } catch (e) {
         debugLog('[diag] version diagnostics failed:', e);
       }
