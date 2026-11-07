@@ -1,6 +1,6 @@
 # Compaction Continuity Decides by Context Window Implementation Plan
 
-**Status:** proposed (2026-11-07) — third fix of the "no migration" decision
+**Status:** in progress (2026-11-07) — implemented on `fix/turn-state-round`, not merged; both open decisions taken as proposed (reserve-aware threshold via `planOutputBudget`; unknown window = unusable)
 (`2026-11-04-virtual-models-routing.md`); item I5 in `TODO.md`.
 
 **Problem:** Compaction continuity trusts any model whose id does not look small.

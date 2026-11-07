@@ -380,6 +380,7 @@ describe('compaction model-continuity hint', () => {
       context: {
         isCompaction: true,
         lastModel: 'mistral-zai/zai-glm-5-2',
+        lastModelContextWindow: 1_000_000,
         lastModelLimited: false,
       },
     });
@@ -395,6 +396,7 @@ describe('compaction model-continuity hint', () => {
       context: {
         isCompaction: true,
         lastModel: 'mistral-zai/zai-glm-5-2',
+        lastModelContextWindow: 1_000_000,
         lastModelLimited: true,
       },
     });

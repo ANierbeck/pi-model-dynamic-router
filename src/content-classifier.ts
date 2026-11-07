@@ -8,6 +8,8 @@ import {
 } from './provider-watchdog.ts';
 import { DiscoveryManager } from './discovery.ts';
 import { isExcluded, isPaidForClassifier } from './exclude.ts';
+import { isFreeModelRef } from './metrics.ts';
+import { planOutputBudget } from './context-budget.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import {
@@ -65,6 +67,15 @@ export interface ClassificationContext {
   lastAssistantSnippet?: string | undefined;
   lastModel?: string | undefined; // Model to reuse (e.g., after compaction)
   isCompaction?: boolean; // NEW: Explicit compaction flag
+  /**
+   * Real context window of `lastModel` (registry/scan value via
+   * getModelContextWindow), null when unknown. Compaction continuity decides
+   * by this value, never by the model's name; unknown = not large enough
+   * (fail-closed, plan 2026-11-07-compaction-continuity).
+   */
+  lastModelContextWindow?: number | null;
+  /** Estimated input tokens of the current (possibly compacted) context. */
+  contextTokens?: number;
   /**
    * Whether `lastModel` is currently in the router's rate-limit/soft-failure
    * cooldown. When true, compaction-continuity must NOT hint back to it —
@@ -783,19 +794,31 @@ async function classifyPromptUncounted(
   // to code_complex instead — the context-window guard in driveStream will
   // skip any model that's too small.
   if (context.isCompaction) {
-    // Check if the last model has a large enough context window for compaction.
-    // Local models (ollama, lm-studio) often have small windows (4K-8K).
+    // Does the last model have a large enough context window for compaction?
+    // Decided by the REAL window (context.lastModelContextWindow, wired by the
+    // orchestrator from getModelContextWindow) against the estimated compacted
+    // context, through the same reserve-aware budget the driveStream
+    // pre-flight guard uses — never by the model's name (TODO I5: a 200k
+    // "qwen3-4b" was refused, a 4k "granite-instant" was allowed).
     if (context.lastModel && !context.lastModelLimited) {
-      const isSmallLocal =
-        /ollama\/|lm-studio\//i.test(context.lastModel) ||
-        /\b(2b|3b|4b|7b|8b|9b|12b|14b)\b/i.test(context.lastModel);
-      if (!isSmallLocal) {
+      const lastRef = context.lastModel;
+      // Free-tier and meta-router refs must not be asked to hold the one
+      // context the router must not lose. Derived from cfg/cache (ADR-0025),
+      // plus the openrouter meta-router prefix (a router, not a model).
+      const freeTier = isFreeModelRef(lastRef, cfg?.providers, cache?.available_models);
+      const metaRouter = lastRef.startsWith('openrouter/openrouter/');
+      const budget = planOutputBudget({
+        windowTokens: context.lastModelContextWindow ?? null,
+        inputTokens: context.contextTokens ?? 0,
+        requestedOutput: undefined,
+      });
+      if (!freeTier && !metaRouter && budget.kind === 'fits') {
         noteSource('compaction');
         return {
           reason: 'Model continuity during compaction (large model)',
           confidence: 1.0,
           hintType: 'model',
-          hintTarget: context.lastModel,
+          hintTarget: lastRef,
           origin: 'auto',
         };
       }

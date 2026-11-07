@@ -517,6 +517,12 @@ export class StreamOrchestrator {
 
         const lastAssistantSnippet = this.ctx.extractLastAssistantSnippet(context);
         const previousUserMessage = this.extractPreviousUserMessage(context);
+        // Compaction continuity decides by the last model's REAL window
+        // (TODO I5, plan 2026-11-07-compaction-continuity); the window and the
+        // token estimate are only read on a compaction turn, so they are
+        // computed lazily below and the per-turn cost of every ordinary
+        // classification stays unchanged.
+        const isCompaction = this.ctx.isCompactionTurn(context);
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
         const classifyOpts: any = {
           allowStaticFallback: useStatic,
@@ -564,7 +570,12 @@ export class StreamOrchestrator {
             previousUserMessage,
             lastCategory: this.ctx.lastClassifiedCategory,
             lastModel: this.ctx.lastDynamicModel || undefined,
-            isCompaction: this.ctx.isCompactionTurn(context),
+            isCompaction,
+            lastModelContextWindow:
+              isCompaction && this.ctx.lastDynamicModel
+                ? this.ctx.getModelContextWindow(this.ctx.lastDynamicModel)
+                : null,
+            contextTokens: isCompaction ? this.ctx.estimateContextTokens(context) : undefined,
             lastModelLimited: this.ctx.lastDynamicModel
               ? this.ctx.isLimited(this.ctx.lastDynamicModel)
               : false,
