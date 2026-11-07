@@ -12,7 +12,7 @@
 // (the hang IS the bug).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import { isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 
@@ -45,11 +45,11 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
     const findModel = vi.fn().mockReturnValue(mockModel);
 
     const result = await classifyPrompt('Hanging cloud candidate must not stall classification', {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg: {} as any,
       cache: {
-        classifier_fallback_models: ['prov/hang-model', 'prov/good-model'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['prov/hang-model', 'prov/good-model'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,
@@ -73,12 +73,12 @@ describe('classifyPrompt cloud fallback: per-candidate timeout', () => {
     // allowStaticFallback keeps the promise from never resolving at all —
     // the chain must degrade, not hang. Static classification answers.
     const result = await classifyPrompt('All hanging cloud candidates must degrade to static', {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       allowStaticFallback: true,
       cfg: {} as any,
       cache: {
-        classifier_fallback_models: ['prov/hang-a', 'prov/hang-b'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['prov/hang-a', 'prov/hang-b'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple,
       findModel,

@@ -69,20 +69,20 @@ describe('CacheManager shares one cache object with its callers', () => {
   it('updateCache and setLastScanTimestamp mutate that object in place', () => {
     const { cm, file } = manager();
     const cache = cm.loadCache();
-    cache.classifier_fallback_models = ['fresh/model'];
+    cache.classifier_cloud_models = ['fresh/model'];
     cm.setLastScanTimestamp(1234);
     cm.updateCache({ scan_sanity_refusal: { survivors: 3, previous: 37, at: 1 } });
     expect(cache.lastScanTimestamp).toBe(1234);
     expect(cache.scan_sanity_refusal).toMatchObject({ survivors: 3 });
     const onDisk = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    expect(onDisk.classifier_fallback_models).toEqual(['fresh/model']);
+    expect(onDisk.classifier_cloud_models).toEqual(['fresh/model']);
     expect(onDisk.lastScanTimestamp).toBe(1234);
   });
 
   it("a manager rebuilt on reload adopts the caller's in-memory object", () => {
     const { cm } = manager();
     const live = cm.loadCache();
-    live.classifier_fallback_models = ['unsaved/in-memory'];
+    live.classifier_cloud_models = ['unsaved/in-memory'];
     const rebuilt = new CacheManager(path.dirname(path.dirname(manager().file)), live);
     expect(rebuilt.getCache()).toBe(live);
   });

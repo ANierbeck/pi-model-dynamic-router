@@ -19,16 +19,16 @@ import type { Config, Cache } from './types.ts';
 // here has been REMOVED. It only worked for one user's provider setup (a user
 // with mistral-zai/mistral-small-latest configured); every other user got a
 // list of models they couldn't use. It has been replaced by a dynamic,
-// probe-based discovery in src/classifier-fallback-probe.ts:
+// probe-based discovery in src/classifier-cloud-probe.ts:
 //   1. selectClassifierCandidates() picks cheap + low-gdpval candidates
 //      from the scan cache (works for ANY user's providers).
 //   2. probeAndCache() quality-probes each candidate at scan time (real
 //      classification cases, incl. the HINT-narration trap) and caches the
-//      ones that classify correctly in cache.classifier_fallback_models.
+//      ones that classify correctly in cache.classifier_cloud_models.
 //   3. The classifier reads that cached list at fallback time.
 // getCheapestCloudModels() was also removed (dead code: no production callers
 // after the classifier moved to the probe-based path). Its pricing-lookup
-// logic is now covered by test/classifier-fallback-probe.test.ts.
+// logic is now covered by test/classifier-cloud-probe.test.ts.
 
 // ── Discovery Manager ─────────────────────────────────────────────────────
 

@@ -176,7 +176,7 @@ export interface Group {
   classifier_fallback?: string;
   /**
    * Pinned cloud classifier model ref ("provider/id") for the dynamic
-   * group's cloud fallback. When set, the classifier tries this model
+   * group's cloud chain. When set, the classifier tries this model
    * FIRST — before the probe-verified cached list — so a specific (e.g.
    * subscription-covered) model classifies deterministically, regardless
    * of what the scan-time probe ranked first. If pi's model registry
@@ -192,7 +192,7 @@ export interface Group {
    * internal classification purpose). Requires a provider with free_models
    * and a resolvable key configured in router-config.json.
    */
-  classifier_cloud_fallback?: boolean;
+  classifier_cloud_chain?: boolean;
   /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */
   fallback_groups?: string[];
 }
@@ -663,7 +663,7 @@ export interface Cache {
     }
   >;
   /**
-   * Verified-working cloud models for the classifier's cloud fallback.
+   * Verified-working cloud models for the classifier's cloud chain.
    * Populated by probeAndCache() at scan time (a quality probe with real
    * classification cases — incl. the HINT-narration trap — filters out
    * broken/unavailable and misclassifying candidates). Reused by the
@@ -671,9 +671,9 @@ export interface Cache {
    * scan regenerates the cache. Empty array = probe ran but all failed;
    * absent = probe hasn't run yet this scan cycle.
    */
-  classifier_fallback_models?: string[];
-  /** Probe-surface signature the cached list was recorded under (see classifier-fallback-probe.ts). */
-  classifier_fallback_probe_sig?: string;
+  classifier_cloud_models?: string[];
+  /** Probe-surface signature the cached list was recorded under (see classifier-cloud-probe.ts). */
+  classifier_cloud_probe_sig?: string;
   /**
    * Probe-verified LOCAL classifier chain (ADR-0025 C): Ollama model names in
    * size order, written at scan time by probeLocalClassifierCandidates.

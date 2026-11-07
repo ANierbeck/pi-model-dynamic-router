@@ -705,26 +705,26 @@ describe('classifier call wiring', () => {
     expect(args[1].context.lastModelLimited).toBe(false);
   });
 
-  it('allowStaticFallback follows the :use-static suffix, allowCloudFallback only an explicit true', async () => {
+  it('allowStaticFallback follows the :use-static suffix, allowCloudChain only an explicit true', async () => {
     const plain = await opts({});
     expect(plain.args[1].allowStaticFallback).toBe(false);
-    expect(plain.args[1].allowCloudFallback).toBe(false);
+    expect(plain.args[1].allowCloudChain).toBe(false);
 
     const cloud = await opts({
       groups: {
         ...DEFAULT_GROUPS,
-        dynamic: { method: 'dynamic', classifier_cloud_fallback: true },
+        dynamic: { method: 'dynamic', classifier_cloud_chain: true },
       },
     });
-    expect(cloud.args[1].allowCloudFallback).toBe(true);
+    expect(cloud.args[1].allowCloudChain).toBe(true);
 
     const truthyButNotTrue = await opts({
       groups: {
         ...DEFAULT_GROUPS,
-        dynamic: { method: 'dynamic', classifier_cloud_fallback: 'yes' as any },
+        dynamic: { method: 'dynamic', classifier_cloud_chain: 'yes' as any },
       },
     });
-    expect(truthyButNotTrue.args[1].allowCloudFallback).toBe(false);
+    expect(truthyButNotTrue.args[1].allowCloudChain).toBe(false);
   });
 
   it('passes the pinned cloud model through verbatim (provider/id form, not stripped)', async () => {
@@ -972,7 +972,7 @@ describe('classifier wiring — config shapes', () => {
 
   it('works when the dynamic group is not literally named "dynamic" (no config object to read)', async () => {
     const { args } = await run({ groups: named() }, 'auto');
-    expect(args[1].allowCloudFallback).toBe(false);
+    expect(args[1].allowCloudChain).toBe(false);
     expect('pinnedCloudModel' in args[1]).toBe(false);
   });
 

@@ -10,7 +10,7 @@
 // state — no hardcoded model claims.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 
 vi.mock('../src/ollama-utils', () => {
   const ollamaUtils = {
@@ -43,7 +43,7 @@ function baseDynamicGroup(overrides: Partial<Group> = {}): Group {
     method: 'dynamic',
     description: 'content-based routing',
     models: [],
-    classifier_cloud_fallback: true,
+    classifier_cloud_chain: true,
     ...overrides,
   } as unknown as Group;
 }
@@ -65,11 +65,11 @@ describe('getLastClassificationSource — who actually classified', () => {
   it('records the cloud model after a cloud-fallback classification', async () => {
     vi.mocked(callOllama).mockReset(); // cloud path must not need Ollama
     const result = await classifyPrompt('please structure the module list carefully for us', {
-      allowCloudFallback: true,
+      allowCloudChain: true,
       cfg: { model_groups: {} } as any,
       cache: {
-        classifier_fallback_models: ['mistral/ministral-3b-latest'],
-        classifier_fallback_probe_sig: PROBE_SIGNATURE,
+        classifier_cloud_models: ['mistral/ministral-3b-latest'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
       } as any,
       completeSimple: vi.fn(async () => ({
         content: [{ type: 'text', text: VALID_JSON }],
@@ -152,9 +152,9 @@ describe('formatClassifierStatus — honest /router status lines', () => {
     expect(lines.some((l) => l.includes('none yet this session'))).toBe(true);
   });
 
-  it('omits the cloud leg when classifier_cloud_fallback is disabled', () => {
+  it('omits the cloud leg when classifier_cloud_chain is disabled', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup({ classifier_cloud_fallback: false }),
+      group: baseDynamicGroup({ classifier_cloud_chain: false }),
       last: last('ollama:foo:3b'),
       probedCount: 0,
       ollamaUp: true,

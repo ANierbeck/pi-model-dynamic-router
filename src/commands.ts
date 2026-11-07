@@ -29,7 +29,7 @@ import {
   layaAvailabilityState,
   type LayaAvailabilityState,
 } from './laya-classifier.ts';
-import { getCachedFallbackModels } from './classifier-fallback-probe.ts';
+import { getCachedCloudModels } from './classifier-cloud-probe.ts';
 import {
   localClassifierPins,
   resolveLocalClassifierChain,
@@ -173,7 +173,7 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
   if (input.laya?.mode === 'active') legs.push('Laya');
-  if (g.classifier_cloud_fallback) {
+  if (g.classifier_cloud_chain) {
     legs.push(
       g.classifier_cloud_model
         ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
@@ -207,8 +207,9 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
       `│ Laya (${laya.mode}): laya:${laya.checkpoint} @ ${laya.endpoint} — ${stateText} · threshold ${laya.confidence_threshold}`
     );
   }
-  // Today's mix (Phase 0): makes a skew like "60% fallback" visible without
-  // digging through the router log.
+  // Today's mix (Phase 0): makes a category skew visible without digging
+  // through the router log. (The old example here said "60 % fallback" — the
+  // retired category, which `continue` replaced in v2-r3.)
   const counts = input.counts;
   if (counts && counts.total > 0) {
     const byFreq = (m: Record<string, number>): [string, number][] =>
@@ -804,14 +805,14 @@ export function createCommands(rt: CommandDeps): void {
               lines.push('│ Routes per prompt via content classification:');
               formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
               // Honest classifier state (2026-10-02 owner finding): the old block
-              // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
+              // hardcoded "via Ollama (gemma2:2b)" while the cloud chain
               // was doing the actual work whenever Ollama is down. Show the backend
               // that last classified plus the live chain state instead.
               lines.push(
                 ...formatClassifierStatus({
                   group: g,
                   last: getLastClassificationSource(),
-                  probedCount: getCachedFallbackModels(rt.cache).length,
+                  probedCount: getCachedCloudModels(rt.cache).length,
                   ollamaUp: await isOllamaAvailable(),
                   localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
                   localProbed: Array.isArray(rt.cache.classifier_local_models),

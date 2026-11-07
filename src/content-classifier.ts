@@ -14,11 +14,11 @@ import { planOutputBudget } from './context-budget.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
 import type { Config, Cache } from './types.ts';
 import {
-  getCachedFallbackModels,
+  getCachedCloudModels,
   selectClassifierCandidates,
-  hasProbedFallback,
+  hasProbedCloudChain,
   PROBE_TIMEOUT_MS,
-} from './classifier-fallback-probe.ts';
+} from './classifier-cloud-probe.ts';
 import {
   LOCAL_CLASSIFIER_TIMEOUT_MS,
   NO_SCHEMA_MARKER,
@@ -136,10 +136,10 @@ interface ClassificationOptions {
   allowStaticFallback?: boolean;
   cfg?: Config;
   cache?: Cache;
-  allowCloudFallback?: boolean;
+  allowCloudChain?: boolean;
   /**
    * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
-   * cloud fallback chain — probe parity (PROBE_TIMEOUT_MS). A candidate
+   * cloud chain — probe parity (PROBE_TIMEOUT_MS). A candidate
    * that neither answers nor errors within this window is abandoned and
    * the chain advances to the next candidate. Defaults to
    * CLASSIFIER_CLOUD_TIMEOUT_MS (15s).
@@ -148,7 +148,7 @@ interface ClassificationOptions {
   /**
    * Pinned cloud classifier model ref ("provider/id") from the dynamic
    * group's classifier_cloud_model config. When set and resolvable, it is
-   * tried FIRST in the cloud fallback chain — before the probe-verified
+   * tried FIRST in the cloud chain — before the probe-verified
    * cached list. Deterministic override for users who want a specific
    * (e.g. subscription-covered) model to classify, regardless of what
    * the scan-time probe ranked first.
@@ -156,7 +156,7 @@ interface ClassificationOptions {
   pinnedCloudModel?: string;
   /**
    * Pi's one-shot completion API (modelRegistry.completeSimple). When the
-   * cloud fallback runs, the classifier uses this instead of its own HTTP
+   * cloud chain runs, the classifier uses this instead of its own HTTP
    * client so pi owns auth + provider quirks — the user's keys live in pi's
    * auth store, not in router-config.json, so the router must NOT roll its
    * own key resolution. The model is resolved from the ref via findModel.
@@ -230,7 +230,7 @@ let lastClassificationSource: ClassificationSourceInfo | null = null;
  * or the model that actually answered ('ollama:<id>', 'cloud:<provider/id>').
  * Null before the first classification. /router status reads this so it can
  * never claim a classifier that isn't the one in use (the old status
- * hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain was
+ * hardcoded "via Ollama (gemma2:2b)" while the cloud chain was
  * doing all the work — 2026-10-02 owner finding).
  */
 export function getLastClassificationSource(): ClassificationSourceInfo | null {
@@ -368,7 +368,7 @@ function classifyCacheSet(prompt: string, result: FullClassificationResult): voi
   });
 }
 const FALLBACK_TIMEOUT = 10_000;
-// Per-candidate timeout for the RUNTIME cloud fallback chain (S3, final
+// Per-candidate timeout for the RUNTIME cloud chain (S3, final
 // v1.6.0 review): probe parity — the scan-time probe caps each candidate at
 // PROBE_TIMEOUT_MS, but the runtime loop previously had no cap at all, so a
 // single hung cloud request stalled the whole turn forever. Defaulting to
@@ -521,7 +521,7 @@ export function stripHintHead(prompt: string): string {
 /**
  * Converts a raw LLM `hint:*` classification (e.g. {category:
  * 'hint:group:tactical', reason}) into a processed HintClassificationResult
- * (hintType + hintTarget). Shared by the Ollama path and the cloud fallback
+ * (hintType + hintTarget). Shared by the Ollama path and the cloud chain
  * loop inside classifyPrompt so both produce identical hint semantics.
  * Returns null when the hint target is empty or malformed — callers degrade
  * (Ollama: explicit fallback classification; cloud: skip to next model).
@@ -579,7 +579,7 @@ function toHintClassification(parsed: any): FullClassificationResult | null {
  * True when the user request itself carries a HINT marker ANYWHERE — not
  * only at the start (start-position hints are handled by detectHintDirectly
  * before any LLM path). This is the spurious guard for raw hint:* LLM
- * replies in the cloud fallback loop: without a marker in the CURRENT
+ * replies in the cloud chain loop: without a marker in the CURRENT
  * request, such a reply means the model copied HINT narration out of the
  * context block (voxtral incident 2026-09-26) and must not be trusted.
  * Mirrors detectHintDirectly's colon/verb-lookahead disambiguation so prose
@@ -780,7 +780,7 @@ async function classifyPromptUncounted(
     fallbackTimeoutMs = FALLBACK_TIMEOUT,
     context = {},
     allowStaticFallback = false,
-    allowCloudFallback = false,
+    allowCloudChain = false,
     cloudTimeoutMs = CLASSIFIER_CLOUD_TIMEOUT_MS,
     cfg,
     cache,
@@ -941,7 +941,7 @@ async function classifyPromptUncounted(
     }
 
     // Check for HINT override in the classification result.
-    // Conversion is shared with the cloud fallback loop via
+    // Conversion is shared with the cloud chain loop via
     // toHintClassification so both paths produce identical hint semantics
     // (code review 2026-09-26, Important #1).
     if (isHintCategory(parsed.category)) {
@@ -1060,7 +1060,7 @@ async function classifyPromptUncounted(
     }
   };
 
-  // Cloud fallback: classify using pi's own model registry (completeSimple)
+  // Cloud chain: classify using pi's own model registry (completeSimple)
   // — pi already owns the model list, the auth (keys live in pi's auth
   // store, not router-config.json), and the provider HTTP quirks. The
   // router must NOT roll its own HTTP client + key resolution (the old
@@ -1068,23 +1068,23 @@ async function classifyPromptUncounted(
   // wasn't duplicated into router-config.json).
   //
   // Model selection: prefer the probe-verified cached list
-  // (cache.classifier_fallback_models, populated at scan time by
+  // (cache.classifier_cloud_models, populated at scan time by
   // probeAndCache — a quality probe with real classification cases, incl.
   // the HINT-narration trap, filters broken/misclassifying candidates). If
   // the probe hasn't run yet this scan cycle, fall back to
   // selectClassifierCandidates (price + gdpval tiered discovery) and the
-  // try-each loop acts as a lazy probe. Only activate when allowCloudFallback
+  // try-each loop acts as a lazy probe. Only activate when allowCloudChain
   // is true AND cfg/cache + the pi completeSimple/findModel hooks are
   // available.
   const tryCloud = async (): Promise<FullClassificationResult | null> => {
-    if (!(allowCloudFallback && cfg && cache && completeSimple && findModel)) return null;
+    if (!(allowCloudChain && cfg && cache && completeSimple && findModel)) return null;
     try {
       // Prefer the probe-verified cached list (fast path — no probing at
       // classification time, the probe ran at scan time).
-      let modelsToTry = getCachedFallbackModels(cache);
+      let modelsToTry = getCachedCloudModels(cache);
       let source = 'probed';
       if (modelsToTry.length === 0) {
-        // Probe hasn't run or found nothing — lazy discovery as a fallback.
+        // Probe hasn't run or found nothing — lazy discovery as a last resort.
         // This also handles the first classification before the first scan
         // completes the probe.
         modelsToTry = selectClassifierCandidates(cfg, cache);
@@ -1118,14 +1118,14 @@ async function classifyPromptUncounted(
         );
       }
       routerLog(
-        `[classifier] Cloud fallback trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`
+        `[classifier] Cloud chain trying ${modelsToTry.length} model(s) (${source}): ${modelsToTry.join(', ')}`
       );
       // Distinguish "probe ran but all candidates failed" from "probe hasn't
       // run yet" so the empty-list case is diagnosable from logs (roborev
       // job 445 LOW).
-      if (modelsToTry.length === 0 && source === 'discovered' && hasProbedFallback(cache)) {
+      if (modelsToTry.length === 0 && source === 'discovered' && hasProbedCloudChain(cache)) {
         warnLog(
-          '[classifier] Cloud fallback: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.'
+          '[classifier] Cloud chain: probe ran at scan time but all probed candidates failed — falling back through discovered/static-free tiers.'
         );
       }
 
@@ -1292,8 +1292,8 @@ async function classifyPromptUncounted(
           if (candidateTimer) clearTimeout(candidateTimer);
         }
       }
-    } catch (cloudFallbackError) {
-      warnLog(`[classifier] Cloud fallback failed`, (cloudFallbackError as Error).message);
+    } catch (cloudChainError) {
+      warnLog(`[classifier] Cloud chain failed`, (cloudChainError as Error).message);
     }
     return null;
   };
@@ -1311,7 +1311,7 @@ async function classifyPromptUncounted(
   // the same chain. Cache writes inside are suppressed per-holder for the
   // comparator (see classifyCacheSet).
   const classifyViaLlmChain = async (): Promise<FullClassificationResult> => {
-    if (allowCloudFallback) {
+    if (allowCloudChain) {
       const cloudResult = await tryCloud();
       if (cloudResult) {
         if (!contextBlock) classifyCacheSet(prompt, cloudResult);

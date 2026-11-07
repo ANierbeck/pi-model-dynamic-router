@@ -105,6 +105,7 @@ export function loadLayeredConfig(
   const globalOverride = tryReadPartial(globalOverridePath, log);
   if (globalOverride) {
     validateRemovedGroups(globalOverride, globalOverridePath);
+    validateRenamedClassifierKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   }
@@ -114,6 +115,7 @@ export function loadLayeredConfig(
   const projectOverride = tryReadPartial(projectOverridePath, log);
   if (projectOverride) {
     validateRemovedGroups(projectOverride, projectOverridePath);
+    validateRenamedClassifierKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   }
@@ -196,6 +198,33 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
     if (kept.length === expensive.length) return;
     if (kept.length > 0) layer.delegation.expensive_groups = kept;
     else delete layer.delegation.expensive_groups;
+  }
+}
+
+/**
+ * Classifier config keys renamed in 2.0 (docs/plans/2026-10-25-fallback-naming.md,
+ * meaning C: the cloud chain is the classifier's normal cloud path, not a
+ * fallback, so the key stopped saying "fallback"). Decision V2: no read
+ * aliases — the old key is dropped, not translated — but never silently: a
+ * config that still names it would otherwise lose the setting and fall back to
+ * the shipped default (off) without a word. Same shape as REMOVED_GROUPS.
+ */
+const RENAMED_CLASSIFIER_KEYS: Readonly<Record<string, string>> = {
+  classifier_cloud_fallback: 'classifier_cloud_chain',
+};
+
+function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): void {
+  const groups = layer.model_groups as Record<string, Record<string, unknown>> | undefined;
+  if (!groups || typeof groups !== 'object') return;
+  for (const [name, g] of Object.entries(groups)) {
+    if (!g || typeof g !== 'object') continue;
+    for (const [oldKey, newKey] of Object.entries(RENAMED_CLASSIFIER_KEYS)) {
+      if (!Object.hasOwn(g, oldKey)) continue;
+      warnLog(
+        `[router] ${source} model_groups.${name}.${oldKey}: renamed to "${newKey}" in 2.0 — ignored; rename the key to keep the setting`
+      );
+      delete g[oldKey];
+    }
   }
 }
 

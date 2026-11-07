@@ -21,7 +21,7 @@ flowchart TD
         PROBED -- "non-empty" --> PROBEDM["First healthy entry of the<br/>probe-verified local list<br/>(completion-capable, size-sorted)"]
         PROBED -- "EMPTY = FINAL,<br/>no provisional fallback" --> CLOUD
         PROBED -- "no cache yet" --> PROV["Provisional: candidate order,<br/>completion:true models only"]
-        PINM --> CLOUD{"Cloud fallback chain?<br/>(classifier_cloud_fallback)"}
+        PINM --> CLOUD{"Cloud chain?<br/>(classifier_cloud_chain)"}
         PROBEDM --> CLOUD
         PROV --> CLOUD
         CLOUD -- "fails / disabled" --> STATIC["Static classifier<br/>(heuristic last resort)"]

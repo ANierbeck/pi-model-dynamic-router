@@ -597,10 +597,10 @@ export class StreamOrchestrator {
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
         const classifyOpts: any = {
           allowStaticFallback: useStatic,
-          allowCloudFallback: dynamicGroupCfg?.classifier_cloud_fallback === true,
+          allowCloudChain: dynamicGroupCfg?.classifier_cloud_chain === true,
           cfg,
           cache,
-          // Cloud fallback uses pi's own model registry (completeSimple) so pi
+          // The cloud chain uses pi's own model registry (completeSimple) so pi
           // owns auth + provider HTTP — the user's keys live in pi's auth store,
           // not router-config.json, so the router must NOT roll its own key
           // resolution / HTTP client. findModel resolves a ref to a pi Model;

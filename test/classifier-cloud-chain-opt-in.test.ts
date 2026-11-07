@@ -1,7 +1,7 @@
 // test/classifier-cloud-fallback-opt-in.test.ts
 // Data-minimization regression: classifyPrompt() must never send prompt
 // content to a cloud model unless the caller explicitly passes
-// allowCloudFallback: true. A provider configured with free_models (for
+// allowCloudChain: true. A provider configured with free_models (for
 // normal answering fallback) must not silently also receive prompt content
 // for classification purposes.
 
@@ -41,7 +41,7 @@ describe('classifyPrompt cloud fallback opt-in', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('does not call any cloud model when allowCloudFallback is omitted, even with a configured free_models provider', async () => {
+  it('does not call any cloud model when allowCloudChain is omitted, even with a configured free_models provider', async () => {
     const result = await classifyPrompt('a reasonably long prompt to avoid short-circuiting', {
       cfg: cfgWithFreeModel,
       cache,
@@ -51,17 +51,17 @@ describe('classifyPrompt cloud fallback opt-in', () => {
     expect(result.category).toBe('continue');
   });
 
-  it('does not call any cloud model when allowCloudFallback is explicitly false', async () => {
+  it('does not call any cloud model when allowCloudChain is explicitly false', async () => {
     await classifyPrompt('a reasonably long prompt to avoid short-circuiting', {
       cfg: cfgWithFreeModel,
       cache,
-      allowCloudFallback: false,
+      allowCloudChain: false,
     });
 
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('does call the cloud model when allowCloudFallback is explicitly true', async () => {
+  it('does call the cloud model when allowCloudChain is explicitly true', async () => {
     // New architecture: the cloud fallback uses pi's modelRegistry.completeSimple
     // (pi owns auth + HTTP), NOT a raw fetch. The test supplies a fake
     // completeSimple + findModel so the classifier drives pi's path without a
@@ -79,7 +79,7 @@ describe('classifyPrompt cloud fallback opt-in', () => {
     const result = await classifyPrompt('a reasonably long prompt to avoid short-circuiting', {
       cfg: cfgWithFreeModel,
       cache,
-      allowCloudFallback: true,
+      allowCloudChain: true,
       completeSimple,
       findModel,
     });

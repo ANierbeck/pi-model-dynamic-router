@@ -1,8 +1,10 @@
 # "fallback" — one word, too many meanings
 
-**Status:** approved 2026-10-26 with a reduced scope (owner decisions
-below). Nothing is renamed yet. Opened 2026-10-25 as an owner request: the
-many meanings of "fallback" are a code smell.
+**Status:** done 2026-11-08 (Round 1 = dead vocabulary, Round 2 = cloud
+chain, PR #127; the ratchet guard is `test/fallback-naming.test.ts`).
+Approved 2026-10-26 with a reduced scope (owner decisions below); decisions
+V1-V3 taken 2026-11-07. Opened 2026-10-25 as an owner request: the many
+meanings of "fallback" are a code smell.
 
 **Verified against:** `origin/main` 6f4ac08 and the laya-spike line
 (`feat/laya-active-snapshot`) on 2026-10-25 — counts by `grep -i
@@ -63,20 +65,34 @@ ADR, `docs/adr/0001` included.
 1. **Characterization tests** for the literal `'fallback'` exits (unresolved
    target, classification failure, unknown category, tool follow-up). They
    are Step 1 of the group plan; this plan does not duplicate them.
-2. **Round 1 — dead vocabulary (E):** delete the category remnants in
-   `src/`, tests and comments (`commands.ts` text included); the legacy
-   label survives only in data tooling, named `legacy_fallback`. Red-first:
-   a taxonomy test that fails while code still accepts `fallback` as a
-   category.
-3. **Round 2 — cloud chain (C):** rename the identifiers, the probe file and
-   the two cache keys (read both, write new) and the config keys. Touches
-   `content-classifier.ts`; sequence it after the Laya verdict, because the
-   Laya branch changes the same file. Red-first: a test that the new key is
-   read and the old string is handled per the alias decision (V2).
-4. **Verification per round:** `npx tsc --noEmit`, `npx vitest run`,
-   coverage thresholds unchanged, `npm run build`, plus a ratchet test: a
-   new identifier containing `fallback` fails unless it belongs to an
-   honest meaning above or to category G.
+2. ✅ **Round 1 — dead vocabulary (E):** the taxonomy no longer accepts
+   `fallback` (`VALID_CATEGORIES`, checked 2026-11-08); the remnants fixed
+   were the stale `commands.ts` comment, `test/fallback-inherits-category.test.ts`
+   (renamed to `continue-inherits-category.test.ts`, its comments still said
+   "LLM-said-'fallback'"), and a "fell through to `fallback → tactical`"
+   comment in the probe (both groups are gone). `docs/adr/0001` is untouched
+   (ADRs are immutable, §12). Still open, owner-side: the `~/.laya-ft`
+   labeling tooling still uses `fallback` as a corpus label — renaming it
+   would migrate existing labels, so it is the owner's call, not a silent
+   edit here.
+3. ✅ **Round 2 — cloud chain (C):** `classifier_cloud_fallback` →
+   `classifier_cloud_chain`, `allowCloudFallback` → `allowCloudChain`,
+   `callCloudFallback` → `callCloudChain`, `classifier-fallback-probe.ts` →
+   `classifier-cloud-probe.ts`, `getCachedFallbackModels` →
+   `getCachedCloudModels`, `hasProbedFallback` → `hasProbedCloudChain`, cache
+   keys `classifier_fallback_models`/`classifier_fallback_probe_sig` →
+   `classifier_cloud_models`/`classifier_cloud_probe_sig`, plus the prose that
+   called the normal cloud path a fallback. V2 = no read aliases: the old
+   cache keys are simply not read (the scan re-probes once) and the old config
+   key is dropped — but **loudly**: `validateRenamedClassifierKeys` in
+   `src/config-loader.ts` warns and names the new key, the same shape as
+   `REMOVED_GROUPS`, so a user config does not lose the setting in silence.
+4. ✅ **Verification:** `npx tsc --noEmit`, `npx vitest run`, coverage
+   thresholds unchanged, `npm run build`, plus the ratchet
+   `test/fallback-naming.test.ts`: (a) none of the retired cloud-chain names
+   may reappear, (b) a new identifier containing `fallback` fails unless it is
+   in the honest-meaning allowlist (B/C/D/F/G). Both guards verified red by
+   hand (an old name and a new `cloudFallbackModels` added to `src/`).
 
 ## Open decisions (owner)
 
@@ -91,7 +107,8 @@ ADR, `docs/adr/0001` included.
 ## Risks
 
 - Python tooling in `~/.laya-ft` reads stage strings and the legacy
-  category → update it in the same round as E, with its own test.
+  category → **open, owner-side** (see Round 1): renaming the corpus label
+  migrates existing labels, so it is not done silently.
 - Silent behaviour change if a literal `'fallback'` is renamed in one place
   and not another → the Step 1 pins plus the ratchet test.
 - Merge conflicts with the Laya branch in Round 2 → sequencing above.

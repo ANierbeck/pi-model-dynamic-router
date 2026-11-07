@@ -11,7 +11,7 @@
 // across tests would hit that cache and skip the code under test.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { classifyPrompt } from '../src/content-classifier.ts';
 import type { FullClassificationResult } from '../src/content-classifier.ts';
@@ -95,7 +95,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('How do we test the router fallback chain here', {
         model: 'gemma-primary',
         fallbackModel: 'gemma-backup',
-        allowCloudFallback: false,
+        allowCloudChain: false,
         allowStaticFallback: false,
       });
 
@@ -120,11 +120,11 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Probe reports down so use the cloud classifiers', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cloud-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cloud-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -139,7 +139,7 @@ describe('classifyPrompt fallback chain', () => {
       vi.mocked(isOllamaAvailable).mockResolvedValue(false);
 
       const result = await classifyPrompt('refactor the whole parser when ollama is unreachable', {
-        allowCloudFallback: false,
+        allowCloudChain: false,
         allowStaticFallback: true,
       });
 
@@ -159,11 +159,11 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Please add a small import statement to that file', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cloud-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cloud-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -193,11 +193,11 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       await classifyPrompt('Rename this helper so the excluded stealth model never sees it', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: { exclude: { models: ['openrouter/stealth/*'] } } as any,
         cache: {
-          classifier_fallback_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['openrouter/stealth/space-bunny-alpha', 'prov/cloud-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -223,11 +223,11 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Explain the difference between let and const briefly', {
         model: 'gemma-primary',
         fallbackModel: 'gemma-backup',
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cloud-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cloud-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -252,11 +252,11 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Design a database schema for user settings', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cloud-a', 'prov/cloud-b'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cloud-a', 'prov/cloud-b'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -266,17 +266,17 @@ describe('classifyPrompt fallback chain', () => {
       expect(result).toEqual({ category: 'design', reason: 'from cloud b', confidence: 0.9 });
     });
 
-    it('never calls the cloud fallback when allowCloudFallback is false', async () => {
+    it('never calls the cloud fallback when allowCloudChain is false', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi.fn();
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Compare the two sorting algorithms for me now', {
-        allowCloudFallback: false,
+        allowCloudChain: false,
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cloud-a'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cloud-a'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -312,12 +312,12 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt(
         'Check the pull request comments about our middleware stack',
         {
-          allowCloudFallback: true,
+          allowCloudChain: true,
           pinnedCloudModel: 'prov/pinned',
           cfg: {} as any,
           cache: {
-            classifier_fallback_models: ['prov/cached'],
-            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+            classifier_cloud_models: ['prov/cached'],
+            classifier_cloud_probe_sig: PROBE_SIGNATURE,
           } as any,
           completeSimple,
           findModel,
@@ -359,11 +359,11 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt(
         'Please review the auth refactor and HINT: use group strategic for the follow-up question',
         {
-          allowCloudFallback: true,
+          allowCloudChain: true,
           cfg: {} as any,
           cache: {
-            classifier_fallback_models: ['prov/cloud-a'],
-            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+            classifier_cloud_models: ['prov/cloud-a'],
+            classifier_cloud_probe_sig: PROBE_SIGNATURE,
           } as any,
           completeSimple,
           findModel,
@@ -386,11 +386,11 @@ describe('classifyPrompt fallback chain', () => {
       // the cloud loop has nothing to try and must fall through to the
       // static classifier (allowStaticFallback: true).
       const result = await classifyPrompt('Explain what a closure is briefly to me', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         cfg: { providers: {} } as any,
         cache: {
-          classifier_fallback_models: [],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: [],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
           available_models: [],
         } as any,
         completeSimple: vi.fn(),
@@ -415,12 +415,12 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn().mockReturnValue(mockModel);
 
       const result = await classifyPrompt('Summarize the router config differences for me', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cached'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cached'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -449,14 +449,14 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt(
         'Merge the release branch notes into our changelog today',
         {
-          allowCloudFallback: true,
+          allowCloudChain: true,
           // 'prov/cached-b' sits at list position 1 — the pinned contract says
           // it must still be tried FIRST, deduplicated, not skipped in place.
           pinnedCloudModel: 'prov/cached-b',
           cfg: {} as any,
           cache: {
-            classifier_fallback_models: ['prov/cached-a', 'prov/cached-b'],
-            classifier_fallback_probe_sig: PROBE_SIGNATURE,
+            classifier_cloud_models: ['prov/cached-a', 'prov/cached-b'],
+            classifier_cloud_probe_sig: PROBE_SIGNATURE,
           } as any,
           completeSimple,
           findModel,
@@ -478,12 +478,12 @@ describe('classifyPrompt fallback chain', () => {
       const findModel = vi.fn((ref: string) => (ref === 'prov/pinned' ? undefined : mockModel));
 
       const result = await classifyPrompt('Prioritize the open tasks on our roadmap now', {
-        allowCloudFallback: true,
+        allowCloudChain: true,
         pinnedCloudModel: 'prov/pinned',
         cfg: {} as any,
         cache: {
-          classifier_fallback_models: ['prov/cached'],
-          classifier_fallback_probe_sig: PROBE_SIGNATURE,
+          classifier_cloud_models: ['prov/cached'],
+          classifier_cloud_probe_sig: PROBE_SIGNATURE,
         } as any,
         completeSimple,
         findModel,
@@ -560,7 +560,7 @@ describe('classifyPrompt fallback chain', () => {
       const result = await classifyPrompt('Tell me how the classifier handles broken replies', {
         model: 'gemma-primary',
         fallbackModel: 'gemma-backup',
-        allowCloudFallback: false,
+        allowCloudChain: false,
         allowStaticFallback: false,
       });
 

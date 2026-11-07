@@ -1,6 +1,6 @@
 // src/classifier-local-probe.ts
 // Derived local classifier chain (ADR-0025 Phase C) — the local counterpart of
-// classifier-fallback-probe.ts's cloud derivation.
+// classifier-cloud-probe.ts's cloud derivation.
 //
 // WHY: the local leg of the classifier used to be a shipped pair of model
 // names (a primary and a fallback). That is a claim about somebody else's
@@ -30,7 +30,7 @@ import type { Cache, Config } from './types.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { isProviderWedged } from './provider-watchdog.ts';
-import { PROBE_CASES, judgeProbeReply } from './classifier-fallback-probe.ts';
+import { PROBE_CASES, judgeProbeReply } from './classifier-cloud-probe.ts';
 import { buildClassificationPrompt } from './classification-prompt.ts';
 
 /** Generous cold-start bound for a local model (also the runtime primary timeout). */

@@ -6,7 +6,7 @@
 // classification cache).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PROBE_SIGNATURE } from '../src/classifier-fallback-probe.ts';
+import { PROBE_SIGNATURE } from '../src/classifier-cloud-probe.ts';
 import { existsSync, readFileSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -48,7 +48,7 @@ const modelFor = (ref: string) => ({
   id: ref.split('/').slice(1).join('/'),
 });
 const cloudCache = (...refs: string[]): Cache =>
-  ({ classifier_fallback_models: refs, classifier_fallback_probe_sig: PROBE_SIGNATURE }) as Cache;
+  ({ classifier_cloud_models: refs, classifier_cloud_probe_sig: PROBE_SIGNATURE }) as Cache;
 
 function cloud(
   refs: string[],
@@ -62,7 +62,7 @@ function cloud(
   return {
     cfg: cfgWith(),
     cache: cloudCache(...refs),
-    allowCloudFallback: true,
+    allowCloudChain: true,
     completeSimple,
     findModel: modelFor,
     ...extra,
