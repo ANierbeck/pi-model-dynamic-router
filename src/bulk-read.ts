@@ -88,7 +88,7 @@ interface ReadBlockResult {
 
 /**
  * Whether `ref` belongs to a delegation-expensive group (default:
- * strategic, tactical) or sits behind an expensive provider prefix
+ * planning, code_complex) or sits behind an expensive provider prefix
  * (default: none). Expensive models never do full-file reads — they
  * orchestrate; file inspection belongs to the cheap delegation group.
  *
@@ -227,7 +227,7 @@ export function checkReadBlock(
     }
 
     // ADR-0007 escalation (2026-09-26): members of expensive groups
-    // (default strategic/tactical) never read full files, regardless of
+    // (default planning/code_complex) never read full files, regardless of
     // size — their context is paid for orchestration, file inspection
     // goes to the cheap delegation group. Sits AFTER the stat check
     // (fail-open: a read we cannot assess is never blocked) and BEFORE

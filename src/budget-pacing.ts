@@ -171,6 +171,8 @@ export function pacedProviders(
     memo?.cfg === cfg &&
     memo.log === usageLog &&
     now - memo.at < MEMO_TTL_MS &&
+    // Not redundant: rejects a backwards wall clock (memo.at in the future,
+    // where the TTL check alone would pass on a negative delta).
     now >= memo.now
   ) {
     return memo.set;

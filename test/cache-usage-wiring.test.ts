@@ -70,3 +70,48 @@ describe('turn_end usage_log wiring (Phase 5a)', () => {
     expect(rt.cache.usage_log[0]).not.toHaveProperty('cacheRead');
   });
 });
+
+// Release review 2026-11-08 (lane B, finding I1): pi's agent loop emits
+// `turn_end` even for a failed turn (stopReason 'error'/'aborted' —
+// node_modules/@earendil-works/pi-agent-core agent-loop.js:148-156), and the
+// router's all-candidates-failed path ends the proxy with exactly such a
+// synthetic error message (buildErrorAssistantMessage, src/stream-driver.ts).
+// The handler must NOT treat that as a model success: recordOk() closes the
+// provider's circuit breaker (ADR-0026 D5), clears the ref's health streak and
+// blocklist entry, and resets the rate-limit hit counter — right after the
+// cascade failed on that provider. Metrics/usage must not be booked either:
+// the error text is router narration, not model output.
+//
+// Red evidence: before the stopReason gate, both error/aborted cases called
+// recordOk + updateMetrics (2 failures).
+describe('turn_end with a failed stopReason records no success', () => {
+  const failedMsg = (stopReason: string) => ({
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text: '[router] All 2 candidate(s) failed: …' }],
+      usage: { input: 5, output: 0 },
+      stopReason,
+    },
+  });
+
+  it.each(['error', 'aborted'])(
+    'stopReason %s: no recordOk, no metrics, no usage_log',
+    async (sr) => {
+      const { rt, turnEnd } = harness();
+      await turnEnd(failedMsg(sr));
+      expect(rt.recordOk).not.toHaveBeenCalled();
+      expect(rt.updateMetrics).not.toHaveBeenCalled();
+      expect(rt.cache.usage_log).toHaveLength(0);
+    }
+  );
+
+  it.each(['stop', 'toolUse', 'length'])(
+    'stopReason %s: success is recorded as before',
+    async (sr) => {
+      const { rt, turnEnd } = harness();
+      await turnEnd(failedMsg(sr));
+      expect(rt.recordOk).toHaveBeenCalledTimes(1);
+      expect(rt.updateMetrics).toHaveBeenCalledTimes(1);
+    }
+  );
+});

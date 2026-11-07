@@ -123,9 +123,8 @@ export interface HintClassificationResult {
 // categories, target from CATEGORY_TO_GROUP) routed EXACTLY like the plain
 // category path — pure narration — so the whole synthesis layer is removed.
 // Hints in a classification result now only originate from an explicit
-// user HINT/MHINT in the prompt; upgrade categories route via their
-// category alone (code_complex/design/planning → tactical, pinned in
-// classifier-mapping-hints.test.ts).
+// user HINT/MHINT in the prompt; every category (including upgrade
+// categories) routes via CATEGORY_TO_GROUP alone (five-group layout).
 
 interface ClassificationOptions {
   model?: string;
