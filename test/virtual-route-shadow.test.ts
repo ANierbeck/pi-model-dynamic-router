@@ -175,6 +175,58 @@ describe('shadowTurns — would a virtual model have survived the turn?', () => 
     expect(row.lostBecause).toBe('retry budget: needed 5 attempts, Pi allows 4');
   });
 
+  it('loses a turn whose LATER failure is not Pi-retryable (recovered was overstated)', () => {
+    // The old report classified only the FIRST failure: a retryable 429 on the
+    // first candidate, then a spent-quota 429 mid-chain, still counted as
+    // "recovered" although Pi's retry would have stopped at the second one.
+    const lines = [
+      POOL(0, 'p/1', 'standard', ['a/one', 'b/two', 'c/three']),
+      TRY(0.1, 'p/1', 'a/one'),
+      FAIL(1, 'p/1', 'a/one', 'provider error: 429: {"message":"rate limit exceeded"}', 'b/two'),
+      TRY(1.5, 'p/1', 'b/two'),
+      FAIL(2, 'p/1', 'b/two', 'provider error: 429: {"message":"quota exceeded"}', 'c/three'),
+      TRY(2.5, 'p/1', 'c/three'),
+      DONE(3, 'p/1', 'c/three'),
+    ];
+    const [row] = shadowTurns(lines, [dec(0, 'p/1', 'standard')]);
+    expect(row.virtualOutcome).toBe('lost');
+    expect(row.lostBecause).toContain('later failure');
+    expect(row.lostBecause).toContain('pi-no-retry');
+  });
+
+  it('keeps counting a turn as recovered when every failure is Pi-retryable', () => {
+    const lines = [
+      POOL(0, 'p/1', 'standard', ['a/one', 'b/two']),
+      TRY(0.1, 'p/1', 'a/one'),
+      FAIL(1, 'p/1', 'a/one', 'provider error: 429: {"message":"rate limit exceeded"}', 'b/two'),
+      TRY(1.5, 'p/1', 'b/two'),
+      FAIL(2, 'p/1', 'b/two', 'provider error: 503: overloaded', 'c/three'),
+      TRY(2.5, 'p/1', 'c/three'),
+      DONE(3, 'p/1', 'c/three'),
+    ];
+    const [row] = shadowTurns(lines, [dec(0, 'p/1', 'standard')]);
+    expect(row.virtualOutcome).toBe('recovered');
+  });
+
+  it('binds failures to the turn window, not to the next decision of the process', () => {
+    // A failure after the turn's success belongs to the NEXT turn and must not
+    // lose this one.
+    const lines = [
+      POOL(0, 'p/1', 'standard', ['a/one', 'b/two']),
+      TRY(0.1, 'p/1', 'a/one'),
+      FAIL(1, 'p/1', 'a/one', 'provider error: 429: {"message":"rate limit exceeded"}', 'b/two'),
+      TRY(1.5, 'p/1', 'b/two'),
+      DONE(2, 'p/1', 'b/two'),
+      // next turn, same process
+      POOL(10, 'p/1', 'code_complex', ['a/one']),
+      TRY(10.1, 'p/1', 'a/one'),
+      FAIL(11, 'p/1', 'a/one', 'provider error: 429: {"message":"quota exceeded"}', 'b/other'),
+    ];
+    const rows = shadowTurns(lines, [dec(0, 'p/1', 'standard'), dec(10, 'p/1', 'code_complex')]);
+    expect(rows[0].virtualOutcome).toBe('recovered');
+    expect(rows[1].virtualOutcome).toBe('lost');
+  });
+
   it('summarises per group', () => {
     const lines = [
       POOL(0, 'p/1', 'standard', ['a/one', 'b/two']),

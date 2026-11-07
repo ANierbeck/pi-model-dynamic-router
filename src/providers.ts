@@ -39,6 +39,8 @@ export const PROVIDER_MAP: Record<string, ProviderDef> = {
     billing: 'pay_per_token',
     baseUrl: 'https://openrouter.ai/api/v1',
     api: 'openai-completions',
+    // OpenRouter lists its routers ("auto", "free", …) under its own name.
+    metaRouterIdPrefix: 'openrouter/',
   },
 
   chutes: {
@@ -246,3 +248,14 @@ export const PARAM_SUFFIXES = [
   '-high-effort',
   '-max-effort',
 ];
+
+/**
+ * Whether `ref` ("provider/id") is a provider's meta-router rather than one
+ * model (see ProviderDef.metaRouterIdPrefix). Unknown providers are not.
+ */
+export function isMetaRouterRef(ref: string): boolean {
+  const slash = ref.indexOf('/');
+  if (slash === -1) return false;
+  const prefix = PROVIDER_MAP[ref.slice(0, slash)]?.metaRouterIdPrefix;
+  return !!prefix && ref.slice(slash + 1).startsWith(prefix);
+}

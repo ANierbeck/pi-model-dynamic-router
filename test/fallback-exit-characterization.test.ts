@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
 import { StreamOrchestrator } from '../src/stream-orchestrator.ts';
+import { toolFollowUpMessages } from './helpers/stream-fixtures.ts';
 
 // The orchestrator logs through the shared file logger; keep the tests off
 // the real log files.
@@ -85,16 +86,7 @@ function harness(opts: {
   let proxy: any;
 
   const messages = opts.toolFollowUp
-    ? [
-        { role: 'user', content: 'run it', timestamp: 1 },
-        {
-          role: 'toolResult',
-          toolCallId: 't1',
-          toolName: 'bash',
-          content: [{ type: 'text', text: 'ok' }],
-          timestamp: 2,
-        },
-      ]
+    ? toolFollowUpMessages()
     : [{ role: 'user', content: 'please do the thing', timestamp: 1 }];
 
   const call = () => {

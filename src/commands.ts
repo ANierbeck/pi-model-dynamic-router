@@ -57,6 +57,7 @@ import type { CacheManager } from './cache.ts';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
+import { runInSession, sessionIdOf } from './turn-state.ts';
 
 /**
  * Dependencies createCommands reads from index.ts's extension closure. Exposed as
@@ -570,376 +571,387 @@ export function createCommands(rt: CommandDeps): void {
       const filtered = prefix ? all.filter((a) => a.value.toLowerCase().startsWith(prefix)) : all;
       return filtered.length ? filtered : null;
     },
-    handler: async (args, ctx) => {
-      rt.load();
-      const arg = args?.trim();
+    handler: (args, ctx) =>
+      runInSession(sessionIdOf(ctx), async () => {
+        rt.load();
+        const arg = args?.trim();
 
-      // Temporarily set session context so allDiscoveredRefs() can access modelRegistry
-      // This allows /router command to show models from Pi's registry even outside a session
-      const previousSessionCtx = rt.sessionCtx;
+        // Temporarily set session context so allDiscoveredRefs() can access modelRegistry
+        // This allows /router command to show models from Pi's registry even outside a session
+        const previousSessionCtx = rt.sessionCtx;
 
-      try {
-        if (ctx.modelRegistry) {
-          rt.sessionCtx = ctx;
-          rt.router.setSessionCtx(ctx);
-        }
-
-        if (arg === 'config' || arg?.startsWith('config ')) {
-          ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
-          return;
-        }
-
-        if (arg === 'scan') {
-          ctx.ui.notify('Scanning...');
-          await rt.scan(true);
-          ctx.ui.notify(
-            `Done. ${Object.keys(metricsModule.getGdpval()).length} scores, ${rt.cache.available_models?.length ?? 0} models.`
-          );
-          return;
-        }
-
-        if (arg === 'cost') {
-          // On-demand snapshot via ctx.ui.notify — same channel as the rest of
-          // /router's output. Previously cost-tracker.ts printed unconditional
-          // console.log/warn on every request and on the daily/exit summary,
-          // which bypasses ctx.ui.notify entirely and corrupts the TUI's input
-          // prompt rendering. That automatic output is now opt-in only (via
-          // DEBUG_COST_TRACKER=true); this command is the supported way to see
-          // costs on demand, and formatCostReport() does NOT reset metrics, so
-          // repeated calls keep showing the same accumulating totals.
-          //
-          // Audit depth (owner decision 2026-09-27 "volle Audittiefe"): ALL
-          // session models with Req/In/Out/Marginal/Tier (subscription marked
-          // sunk — virtual prices, not real spend) + persistent token windows
-          // 1d/7d/30d from usage_log with a blended-price estimate (≈ —
-          // usage_log has only total tokens per request; honest labeling).
-          // Phase 5a: tokens include cacheRead/cacheWrite; the Cache30d column
-          // shows the cache-read share of the 30d window.
-          ctx.ui.notify(
-            costTracker.formatCostReport({
-              billingTier: (ref) => metricsModule.billingTier(ref),
-              // One pass per window over usage_log (getUsageAll), keyed by the
-              // refs that actually have usage — the report shows windows even
-              // right after a restart when the session table is empty (I1).
-              windowsAll: () => {
-                const d1 = metricsModule.getUsageAll(1);
-                const d7 = metricsModule.getUsageAll(7);
-                const d30 = metricsModule.getUsageAll(30);
-                const c30 = metricsModule.getCacheUsageAll(30);
-                const out: Record<
-                  string,
-                  { d1: number; d7: number; d30: number; cacheRead30: number }
-                > = {};
-                for (const ref of new Set([
-                  ...Object.keys(d1),
-                  ...Object.keys(d7),
-                  ...Object.keys(d30),
-                ])) {
-                  out[ref] = {
-                    d1: d1[ref] ?? 0,
-                    d7: d7[ref] ?? 0,
-                    d30: d30[ref] ?? 0,
-                    cacheRead30: c30[ref]?.cacheRead ?? 0,
-                  };
-                }
-                return out;
-              },
-              price: (ref) => {
-                const p = rt.lookupPrice(ref);
-                return p && typeof p.input === 'number' && typeof p.output === 'number'
-                  ? { input: p.input, output: p.output }
-                  : undefined;
-              },
-            }),
-            'info'
-          );
-          return;
-        }
-
-        if (arg === 'errors' || arg?.startsWith('errors ')) {
-          // Counterpart of the status-line ⚠N err (single source of truth:
-          // the cache.session_errors ring buffer pushed by
-          // recordStreamFailure). Headline count == status-line count by
-          // construction; entries from earlier processes appear below the
-          // divider (diagnosis context without breaking correlation).
-          const m = arg?.match(/^errors\s+(\d+)$/);
-          const limit = m ? Math.max(1, Math.min(50, parseInt(m[1], 10))) : 15;
-          ctx.ui.notify(formatErrorsReport(rt.cache, rt.sessionStart, limit, process.pid), 'info');
-          return;
-        }
-
-        if (arg === 'blocklist') {
-          ctx.ui.notify(rt.formatBlocklist(), 'info');
-          return;
-        }
-        if (arg?.startsWith('blocklist clear')) {
-          const target = arg.slice('blocklist clear'.length).trim() || undefined;
-          const removed = clearBlocklist(rt.cache, target);
-          rt.cacheManager.saveCache(rt.cache);
-          routerLog(
-            `[router] blocklist cleared manually (${target ?? 'all'}): ${removed} block(s) removed`
-          );
-          ctx.ui.notify(
-            target
-              ? removed
-                ? `Unblocked ${target}.`
-                : `${target} was not blocked.`
-              : `Blocklist cleared (${removed} model(s)).`,
-            'info'
-          );
-          return;
-        }
-
-        if (arg === 'cooldowns') {
-          const active = rt.rateLimitManager.listLimits();
-          const health = rt.cache.model_health ?? {};
-          const healthEntries = Object.entries(health)
-            .filter(([, v]) => v && typeof v.fails === 'number' && v.fails > 0)
-            .sort((a, b) => b[1].fails - a[1].fails);
-          const lines: string[] = ['Active cooldowns (shortest first):'];
-          if (active.length === 0) {
-            lines.push('  (none — no model is in cooldown)');
-          } else {
-            for (const c of active) {
-              const reset = c.resetAtMs
-                ? ` (provider reset ${new Date(c.resetAtMs).toLocaleTimeString()})`
-                : '';
-              lines.push(`  • ${c.ref}: ${c.secs}s remaining, ${c.hits} hit(s)${reset}`);
-            }
+        try {
+          if (ctx.modelRegistry) {
+            rt.sessionCtx = ctx;
+            rt.router.setSessionCtx(ctx);
           }
-          lines.push('', 'Model-health failure streaks (demotion):');
-          if (healthEntries.length === 0) {
-            lines.push('  (none — all models healthy)');
-          } else {
-            for (const [ref, h] of healthEntries) {
-              lines.push(`  • ${ref}: ${h.fails} recent fail(s)`);
-            }
+
+          if (arg === 'config' || arg?.startsWith('config ')) {
+            ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
+            return;
           }
-          ctx.ui.notify(lines.join('\n'), 'info');
-          return;
-        }
-        if (arg?.startsWith('cooldowns clear')) {
-          const cleared = rt.rateLimitManager.clearAllLimits();
-          const health = rt.cache.model_health;
-          let healthCleared = 0;
-          if (health) {
-            healthCleared = Object.keys(health).length;
-            rt.cache.model_health = {};
-          }
-          // Provider circuit breakers clear with the cooldowns (plan D6):
-          // incident relief without a restart — same contract as for model
-          // cooldowns. Only the volatile open state goes; the persisted
-          // trip/hop telemetry stays (plan D7).
-          const breakersCleared = clearBreakers(rt.cache);
-          rt.cacheManager.saveCache(rt.cache);
-          routerLog(
-            `[router] cooldowns cleared manually: ${cleared} cooldown(s) + ${healthCleared} model-health streak(s) + ${breakersCleared} breaker(s)`
-          );
-          ctx.ui.notify(
-            `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s), ${breakersCleared} breaker(s)). All models are immediately available for routing again.`,
-            'info'
-          );
-          return;
-        }
 
-        if (arg && rt.cfg.model_groups[arg]) {
-          const g = rt.cfg.model_groups[arg],
-            res = rt.resolve(arg);
-          const desc =
-            g.method === 'pipeline'
-              ? `pipeline(${g.pipeline!.map((s) => `${s.method}:${s.top_k ?? '∞'}`).join('→')})`
-              : g.method;
-          const lines = [`${arg} | ${desc}`, g.description ?? '', ''];
-          if (res) res.candidates.forEach((r, i) => lines.push(rt.fmtModel(r, i, i === 0)));
-          else lines.push('(no available models)');
-          ctx.ui.notify(lines.filter(Boolean).join('\n'), 'info');
-          return;
-        }
-
-        // Overview with table
-        const lines: string[] = ['Model Router', ''];
-        lines.push(
-          'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
-          '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
-          'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
-          ''
-        );
-
-        // Group tables with top 5 models (3 available + up to 2 limited)
-        for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
-          const n = 5;
-          const { models: topModels, total } = rt.getTopModels(groupName, n);
-          const method =
-            g.method === 'pipeline'
-              ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
-              : g.method === 'best'
-                ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
-                : g.method === 'tiered'
-                  ? g.min_gdpval != null
-                    ? `tiered ≥${g.min_gdpval}`
-                    : `tiered ≥${g.min_gdpval_pct ?? 0}%`
-                  : g.method === 'dynamic'
-                    ? 'dynamic (content-based)'
-                    : g.method;
-          const active = rt.curModel && rt.allDiscoveredRefs().includes(rt.curModel);
-          const activeMarker = active ? ' ◀' : '';
-
-          // Add fallback groups info if present
-          const fallbackInfo =
-            g.fallback_groups && g.fallback_groups.length > 0
-              ? ` (\u2192 ${g.fallback_groups.join(' \u2192 ')})`
-              : '';
-
-          // Group header
-          lines.push(
-            `┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`
-          );
-
-          if (topModels.length === 0 && g.method === 'dynamic') {
-            lines.push('│ Routes per prompt via content classification:');
-            formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
-            // Honest classifier state (2026-10-02 owner finding): the old block
-            // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
-            // was doing the actual work whenever Ollama is down. Show the backend
-            // that last classified plus the live chain state instead.
-            lines.push(
-              ...formatClassifierStatus({
-                group: g,
-                last: getLastClassificationSource(),
-                probedCount: getCachedFallbackModels(rt.cache).length,
-                ollamaUp: await isOllamaAvailable(),
-                localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
-                localProbed: Array.isArray(rt.cache.classifier_local_models),
-                counts: getClassificationCounts(),
-                ...(rt.cfg.classifier_laya?.enabled
-                  ? {
-                      laya: {
-                        checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
-                        endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
-                        confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
-                        // same safe reading as the chain: only an explicit 'active' decides
-                        mode:
-                          rt.cfg.classifier_laya.mode === 'active'
-                            ? ('active' as const)
-                            : ('shadow' as const),
-                        state: layaAvailabilityState(),
-                        probeError: getLastProbeError() ?? undefined,
-                      },
-                    }
-                  : {}),
-              })
+          if (arg === 'scan') {
+            ctx.ui.notify('Scanning...');
+            await rt.scan(true);
+            ctx.ui.notify(
+              `Done. ${Object.keys(metricsModule.getGdpval()).length} scores, ${rt.cache.available_models?.length ?? 0} models.`
             );
-          } else if (topModels.length === 0) {
-            lines.push('│ (no models configured)');
-          } else {
-            // Name column: the longest shown ref, capped so the table fits a standard terminal
-            const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
-            const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
-              const m = rt.getM(ref);
-              const prov = ref.split('/')[0];
-              const budgetInfo = rt.cache.budget_cache?.[prov];
-              let budget = '';
-              if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
-                if (Date.now() < budgetInfo.window_reset) {
-                  const windowType = budgetInfo.window_type ?? 'monthly';
-                  budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
-                }
+            return;
+          }
+
+          if (arg === 'cost') {
+            // On-demand snapshot via ctx.ui.notify — same channel as the rest of
+            // /router's output. Previously cost-tracker.ts printed unconditional
+            // console.log/warn on every request and on the daily/exit summary,
+            // which bypasses ctx.ui.notify entirely and corrupts the TUI's input
+            // prompt rendering. That automatic output is now opt-in only (via
+            // DEBUG_COST_TRACKER=true); this command is the supported way to see
+            // costs on demand, and formatCostReport() does NOT reset metrics, so
+            // repeated calls keep showing the same accumulating totals.
+            //
+            // Audit depth (owner decision 2026-09-27 "volle Audittiefe"): ALL
+            // session models with Req/In/Out/Marginal/Tier (subscription marked
+            // sunk — virtual prices, not real spend) + persistent token windows
+            // 1d/7d/30d from usage_log with a blended-price estimate (≈ —
+            // usage_log has only total tokens per request; honest labeling).
+            // Phase 5a: tokens include cacheRead/cacheWrite; the Cache30d column
+            // shows the cache-read share of the 30d window.
+            ctx.ui.notify(
+              costTracker.formatCostReport({
+                billingTier: (ref) => metricsModule.billingTier(ref),
+                // One pass per window over usage_log (getUsageAll), keyed by the
+                // refs that actually have usage — the report shows windows even
+                // right after a restart when the session table is empty (I1).
+                windowsAll: () => {
+                  const d1 = metricsModule.getUsageAll(1);
+                  const d7 = metricsModule.getUsageAll(7);
+                  const d30 = metricsModule.getUsageAll(30);
+                  const c30 = metricsModule.getCacheUsageAll(30);
+                  const out: Record<
+                    string,
+                    { d1: number; d7: number; d30: number; cacheRead30: number }
+                  > = {};
+                  for (const ref of new Set([
+                    ...Object.keys(d1),
+                    ...Object.keys(d7),
+                    ...Object.keys(d30),
+                  ])) {
+                    out[ref] = {
+                      d1: d1[ref] ?? 0,
+                      d7: d7[ref] ?? 0,
+                      d30: d30[ref] ?? 0,
+                      cacheRead30: c30[ref]?.cacheRead ?? 0,
+                    };
+                  }
+                  return out;
+                },
+                price: (ref) => {
+                  const p = rt.lookupPrice(ref);
+                  return p && typeof p.input === 'number' && typeof p.output === 'number'
+                    ? { input: p.input, output: p.output }
+                    : undefined;
+                },
+              }),
+              'info'
+            );
+            return;
+          }
+
+          if (arg === 'errors' || arg?.startsWith('errors ')) {
+            // Counterpart of the status-line ⚠N err (single source of truth:
+            // the cache.session_errors ring buffer pushed by
+            // recordStreamFailure). Headline count == status-line count by
+            // construction; entries from earlier processes appear below the
+            // divider (diagnosis context without breaking correlation).
+            const m = arg?.match(/^errors\s+(\d+)$/);
+            const limit = m ? Math.max(1, Math.min(50, parseInt(m[1], 10))) : 15;
+            ctx.ui.notify(
+              formatErrorsReport(rt.cache, rt.sessionStart, limit, process.pid),
+              'info'
+            );
+            return;
+          }
+
+          if (arg === 'blocklist') {
+            ctx.ui.notify(rt.formatBlocklist(), 'info');
+            return;
+          }
+          if (arg?.startsWith('blocklist clear')) {
+            const target = arg.slice('blocklist clear'.length).trim() || undefined;
+            const removed = clearBlocklist(rt.cache, target);
+            rt.cacheManager.saveCache(rt.cache);
+            routerLog(
+              `[router] blocklist cleared manually (${target ?? 'all'}): ${removed} block(s) removed`
+            );
+            ctx.ui.notify(
+              target
+                ? removed
+                  ? `Unblocked ${target}.`
+                  : `${target} was not blocked.`
+                : `Blocklist cleared (${removed} model(s)).`,
+              'info'
+            );
+            return;
+          }
+
+          if (arg === 'cooldowns') {
+            const active = rt.rateLimitManager.listLimits();
+            const health = rt.cache.model_health ?? {};
+            const healthEntries = Object.entries(health)
+              .filter(([, v]) => v && typeof v.fails === 'number' && v.fails > 0)
+              .sort((a, b) => b[1].fails - a[1].fails);
+            const lines: string[] = ['Active cooldowns (shortest first):'];
+            if (active.length === 0) {
+              lines.push('  (none — no model is in cooldown)');
+            } else {
+              for (const c of active) {
+                const reset = c.resetAtMs
+                  ? ` (provider reset ${new Date(c.resetAtMs).toLocaleTimeString()})`
+                  : '';
+                lines.push(`  • ${c.ref}: ${c.secs}s remaining, ${c.hits} hit(s)${reset}`);
               }
-              return {
-                rank,
-                ref,
-                // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
-                gdpval: metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
-                // Measured in this process or explicitly configured by the user
-                // (src/overview-table.ts displayMetricsFor — placeholders dash).
-                ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
-                price: costColumnFor(ref, rt),
-                usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
-                budget,
-                limited,
-                limitSecs: limited ? rt.limitSecs(ref) : 0,
-                costMux: rt.costMux(prov),
-                current: rt.curModel === ref,
-                ...(why ? { why } : {}),
-              };
-            });
-            lines.push(...formatOverviewTable(rows, MW));
+            }
+            lines.push('', 'Model-health failure streaks (demotion):');
+            if (healthEntries.length === 0) {
+              lines.push('  (none — all models healthy)');
+            } else {
+              for (const [ref, h] of healthEntries) {
+                lines.push(`  • ${ref}: ${h.fails} recent fail(s)`);
+              }
+            }
+            ctx.ui.notify(lines.join('\n'), 'info');
+            return;
           }
-          // Footer: show total count if more than shown
-          if (total > n) {
-            lines.push(`│    … +${total - n} more (sorted by ${g.method})`);
+          if (arg?.startsWith('cooldowns clear')) {
+            const cleared = rt.rateLimitManager.clearAllLimits();
+            const health = rt.cache.model_health;
+            let healthCleared = 0;
+            if (health) {
+              healthCleared = Object.keys(health).length;
+              rt.cache.model_health = {};
+            }
+            // Provider circuit breakers clear with the cooldowns (plan D6):
+            // incident relief without a restart — same contract as for model
+            // cooldowns. Only the volatile open state goes; the persisted
+            // trip/hop telemetry stays (plan D7).
+            const breakersCleared = clearBreakers(rt.cache);
+            rt.cacheManager.saveCache(rt.cache);
+            routerLog(
+              `[router] cooldowns cleared manually: ${cleared} cooldown(s) + ${healthCleared} model-health streak(s) + ${breakersCleared} breaker(s)`
+            );
+            ctx.ui.notify(
+              `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s), ${breakersCleared} breaker(s)). All models are immediately available for routing again.`,
+              'info'
+            );
+            return;
           }
-          lines.push('│');
-        }
 
-        // Rate-limited summary
-        const rl = [...rt.rateLimitManager.getLimits().keys()].filter((r) => rt.isLimited(r));
-        if (rl.length) {
-          lines.push('├─ Rate Limited '.padEnd(72, '─'));
-          for (const r of rl) {
-            const { provider, modelId } = splitRef(r);
-            lines.push(`│ ⛔ ${provider}/${modelId} (${rt.limitSecs(r)}s remaining)`);
+          if (arg && rt.cfg.model_groups[arg]) {
+            const g = rt.cfg.model_groups[arg],
+              res = rt.resolve(arg);
+            const desc =
+              g.method === 'pipeline'
+                ? `pipeline(${g.pipeline!.map((s) => `${s.method}:${s.top_k ?? '∞'}`).join('→')})`
+                : g.method;
+            const lines = [`${arg} | ${desc}`, g.description ?? '', ''];
+            if (res) res.candidates.forEach((r, i) => lines.push(rt.fmtModel(r, i, i === 0)));
+            else lines.push('(no available models)');
+            ctx.ui.notify(lines.filter(Boolean).join('\n'), 'info');
+            return;
           }
-        }
 
-        // Refused automatic scan (scan sanity check 3)
-        const refusal = rt.cache.scan_sanity_refusal;
-        if (refusal) {
-          lines.push('├─ Scan '.padEnd(72, '─'));
+          // Overview with table
+          const lines: string[] = ['Model Router', ''];
           lines.push(
-            `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
-              'Accepted if a settled scan agrees; /router scan accepts it now.'
+            'GDP: GDPval score (– = none). Lat / tok/s: measured in this session (– = no stream yet).',
+            '$/M: list price per million tokens, in / out. use: tokens used in the last 1 / 7 / 30 days.',
+            'cost ×N: cost penalty after rate-limit hits. ⛔ Ns: rate-limited for N more seconds.',
+            ''
           );
-        }
 
-        // Provider circuit breaker (ADR-0026, generalizes ADR-0016's
-        // local-only watchdog line): one line per open breaker — ANY provider,
-        // cloud included — with the remaining skip time and the persisted
-        // trip/avoided-hop counters (plan D6/D7). Providers whose breaker
-        // closed still show their telemetry: it is the tuning evidence that
-        // survives restarts. The fix hint is generic per provider class
-        // (ADR-0025 class A): local → restart the daemon, cloud → check the
-        // provider/extension.
-        {
-          const stats = rt.cache.provider_breaker_stats ?? {};
-          const openByProvider = new Map(openBreakers(rt.cache).map((b) => [b.provider, b.until]));
-          const providers = [...new Set([...Object.keys(stats), ...openByProvider.keys()])].sort();
-          if (providers.length > 0) {
-            lines.push('├─ Provider breaker '.padEnd(72, '─'));
-            for (const provider of providers) {
-              const st = stats[provider];
-              const counters = st ? `, ${st.trips} trip(s), ${st.avoided_hops} hop(s) avoided` : '';
-              const until = openByProvider.get(provider);
-              if (until !== undefined) {
-                const secs = Math.max(0, Math.ceil((until - Date.now()) / 1000));
-                const hint = isLocalProviderName(provider)
-                  ? wedgeFixHint(provider)
-                  : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
-                lines.push(
-                  `│ ⚠ ${provider} looks wedged — skipped for ${secs}s${counters}. Fix: ${hint}.`
-                );
-              } else {
-                lines.push(`│ ⏱ ${provider}: breaker closed${counters}.`);
+          // Group tables with top 5 models (3 available + up to 2 limited)
+          for (const [groupName, g] of Object.entries(rt.cfg.model_groups)) {
+            const n = 5;
+            const { models: topModels, total } = rt.getTopModels(groupName, n);
+            const method =
+              g.method === 'pipeline'
+                ? g.pipeline!.map((s) => `${s.method}${s.top_k ? `:${s.top_k}` : ''}`).join(' → ')
+                : g.method === 'best'
+                  ? describeBestMethod(g.score_by, rt.cfg.best_quality_window)
+                  : g.method === 'tiered'
+                    ? g.min_gdpval != null
+                      ? `tiered ≥${g.min_gdpval}`
+                      : `tiered ≥${g.min_gdpval_pct ?? 0}%`
+                    : g.method === 'dynamic'
+                      ? 'dynamic (content-based)'
+                      : g.method;
+            const active = rt.curModel && rt.allDiscoveredRefs().includes(rt.curModel);
+            const activeMarker = active ? ' ◀' : '';
+
+            // Add fallback groups info if present
+            const fallbackInfo =
+              g.fallback_groups && g.fallback_groups.length > 0
+                ? ` (\u2192 ${g.fallback_groups.join(' \u2192 ')})`
+                : '';
+
+            // Group header
+            lines.push(
+              `┌─ ${groupName}${activeMarker} `.padEnd(72, '─') + ` ${method}${fallbackInfo} ─`
+            );
+
+            if (topModels.length === 0 && g.method === 'dynamic') {
+              lines.push('│ Routes per prompt via content classification:');
+              formatCategoryRoutes().forEach((c) => lines.push(`│   ${c}`));
+              // Honest classifier state (2026-10-02 owner finding): the old block
+              // hardcoded "via Ollama (gemma2:2b)" while the cloud fallback chain
+              // was doing the actual work whenever Ollama is down. Show the backend
+              // that last classified plus the live chain state instead.
+              lines.push(
+                ...formatClassifierStatus({
+                  group: g,
+                  last: getLastClassificationSource(),
+                  probedCount: getCachedFallbackModels(rt.cache).length,
+                  ollamaUp: await isOllamaAvailable(),
+                  localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
+                  localProbed: Array.isArray(rt.cache.classifier_local_models),
+                  counts: getClassificationCounts(),
+                  ...(rt.cfg.classifier_laya?.enabled
+                    ? {
+                        laya: {
+                          checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
+                          endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
+                          confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
+                          // same safe reading as the chain: only an explicit 'active' decides
+                          mode:
+                            rt.cfg.classifier_laya.mode === 'active'
+                              ? ('active' as const)
+                              : ('shadow' as const),
+                          state: layaAvailabilityState(),
+                          probeError: getLastProbeError() ?? undefined,
+                        },
+                      }
+                    : {}),
+                })
+              );
+            } else if (topModels.length === 0) {
+              lines.push('│ (no models configured)');
+            } else {
+              // Name column: the longest shown ref, capped so the table fits a standard terminal
+              const MW = Math.min(30, Math.max(5, ...topModels.map((t) => t.ref.length)));
+              const rows: OverviewRow[] = topModels.map(({ ref, limited, rank, why }) => {
+                const m = rt.getM(ref);
+                const prov = ref.split('/')[0];
+                const budgetInfo = rt.cache.budget_cache?.[prov];
+                let budget = '';
+                if (budgetInfo?.window_reset && budgetInfo.remaining_tokens !== undefined) {
+                  if (Date.now() < budgetInfo.window_reset) {
+                    const windowType = budgetInfo.window_type ?? 'monthly';
+                    budget = `${Math.round(budgetInfo.remaining_tokens)}${windowType.substring(0, 1)}`;
+                  }
+                }
+                return {
+                  rank,
+                  ref,
+                  // Unscraped and unconfigured GDPval stays unknown: the ranking's 50 is not a score
+                  gdpval:
+                    metricsModule.lookupGdp(ref) ?? rt.cfg.model_metrics?.[ref]?.gdpval ?? null,
+                  // Measured in this process or explicitly configured by the user
+                  // (src/overview-table.ts displayMetricsFor — placeholders dash).
+                  ...displayMetricsFor(m, rt.cfg.model_metrics?.[ref]),
+                  price: costColumnFor(ref, rt),
+                  usage: [rt.getUsage(ref, 1), rt.getUsage(ref, 7), rt.getUsage(ref, 30)],
+                  budget,
+                  limited,
+                  limitSecs: limited ? rt.limitSecs(ref) : 0,
+                  costMux: rt.costMux(prov),
+                  current: rt.curModel === ref,
+                  ...(why ? { why } : {}),
+                };
+              });
+              lines.push(...formatOverviewTable(rows, MW));
+            }
+            // Footer: show total count if more than shown
+            if (total > n) {
+              lines.push(`│    … +${total - n} more (sorted by ${g.method})`);
+            }
+            lines.push('│');
+          }
+
+          // Rate-limited summary
+          const rl = [...rt.rateLimitManager.getLimits().keys()].filter((r) => rt.isLimited(r));
+          if (rl.length) {
+            lines.push('├─ Rate Limited '.padEnd(72, '─'));
+            for (const r of rl) {
+              const { provider, modelId } = splitRef(r);
+              lines.push(`│ ⛔ ${provider}/${modelId} (${rt.limitSecs(r)}s remaining)`);
+            }
+          }
+
+          // Refused automatic scan (scan sanity check 3)
+          const refusal = rt.cache.scan_sanity_refusal;
+          if (refusal) {
+            lines.push('├─ Scan '.padEnd(72, '─'));
+            lines.push(
+              `│ ⚠ last automatic scan refused: ${refusal.survivors} models vs ${refusal.previous} before. ` +
+                'Accepted if a settled scan agrees; /router scan accepts it now.'
+            );
+          }
+
+          // Provider circuit breaker (ADR-0026, generalizes ADR-0016's
+          // local-only watchdog line): one line per open breaker — ANY provider,
+          // cloud included — with the remaining skip time and the persisted
+          // trip/avoided-hop counters (plan D6/D7). Providers whose breaker
+          // closed still show their telemetry: it is the tuning evidence that
+          // survives restarts. The fix hint is generic per provider class
+          // (ADR-0025 class A): local → restart the daemon, cloud → check the
+          // provider/extension.
+          {
+            const stats = rt.cache.provider_breaker_stats ?? {};
+            const openByProvider = new Map(
+              openBreakers(rt.cache).map((b) => [b.provider, b.until])
+            );
+            const providers = [
+              ...new Set([...Object.keys(stats), ...openByProvider.keys()]),
+            ].sort();
+            if (providers.length > 0) {
+              lines.push('├─ Provider breaker '.padEnd(72, '─'));
+              for (const provider of providers) {
+                const st = stats[provider];
+                const counters = st
+                  ? `, ${st.trips} trip(s), ${st.avoided_hops} hop(s) avoided`
+                  : '';
+                const until = openByProvider.get(provider);
+                if (until !== undefined) {
+                  const secs = Math.max(0, Math.ceil((until - Date.now()) / 1000));
+                  const hint = isLocalProviderName(provider)
+                    ? wedgeFixHint(provider)
+                    : 'check the provider/extension (e.g. reload the session); the breaker clears on the next success';
+                  lines.push(
+                    `│ ⚠ ${provider} looks wedged — skipped for ${secs}s${counters}. Fix: ${hint}.`
+                  );
+                } else {
+                  lines.push(`│ ⏱ ${provider}: breaker closed${counters}.`);
+                }
               }
             }
           }
-        }
 
-        // Learned blocklist summary (details: /router blocklist)
-        const blocked = activeBlocks(rt.cache);
-        if (blocked.length) {
-          lines.push('├─ Blocked (permanent provider failures) '.padEnd(72, '─'));
-          lines.push(`│ 🚫 ${blocked.length} model(s) — see /router blocklist`);
-        }
+          // Learned blocklist summary (details: /router blocklist)
+          const blocked = activeBlocks(rt.cache);
+          if (blocked.length) {
+            lines.push('├─ Blocked (permanent provider failures) '.padEnd(72, '─'));
+            lines.push(`│ 🚫 ${blocked.length} model(s) — see /router blocklist`);
+          }
 
-        lines.push('└' + '─'.repeat(71));
-        lines.push('', '/router <group> | scan | cost | blocklist');
-        ctx.ui.notify(lines.join('\n'), 'info');
-      } finally {
-        // Always restore previous session context
-        rt.sessionCtx = previousSessionCtx;
-        rt.router.setSessionCtx(previousSessionCtx);
-      }
-    },
+          lines.push('└' + '─'.repeat(71));
+          lines.push('', '/router <group> | scan | cost | blocklist');
+          ctx.ui.notify(lines.join('\n'), 'info');
+        } finally {
+          // Always restore previous session context
+          rt.sessionCtx = previousSessionCtx;
+          rt.router.setSessionCtx(previousSessionCtx);
+        }
+      }),
   });
 }

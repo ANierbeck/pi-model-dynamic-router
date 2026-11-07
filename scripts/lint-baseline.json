@@ -9,32 +9,22 @@
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-explicit-any",
-      "count": 5
+      "count": 4
     },
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-unsafe-argument",
-      "count": 3
+      "count": 1
     },
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-unsafe-assignment",
-      "count": 16
-    },
-    {
-      "file": "index.ts",
-      "rule": "@typescript-eslint/no-unsafe-call",
       "count": 3
     },
     {
       "file": "index.ts",
       "rule": "@typescript-eslint/no-unsafe-member-access",
-      "count": 14
-    },
-    {
-      "file": "index.ts",
-      "rule": "@typescript-eslint/no-unsafe-return",
-      "count": 10
+      "count": 7
     },
     {
       "file": "scripts/classifier-replay.ts",

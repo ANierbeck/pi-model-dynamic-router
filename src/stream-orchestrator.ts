@@ -118,8 +118,9 @@ import {
 } from './utils.ts';
 import { rankHintCandidates, isRefUsable } from './hint-resolution.ts';
 import { getFallbackGroup } from './routing.ts';
-import { PROVIDER_MAP } from './providers.ts';
+import { PROVIDER_MAP, isMetaRouterRef } from './providers.ts';
 import { isExcluded } from './exclude.ts';
+import { isFreeModelRef } from './metrics.ts';
 import { isBlocked } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
 import {
@@ -148,6 +149,7 @@ import {
 } from './detection.ts';
 import { isOllamaProbablyDown } from './ollama-utils.ts';
 import { inSubCall } from './subcall-scope.ts';
+import { runInSession } from './turn-state.ts';
 
 /**
  * Narration label for an empty response on a PAID cloud model: stopReason
@@ -219,6 +221,14 @@ export interface StreamOrchestratorContext {
   // Mutable session state
   activeGroup: string | null;
   lastDynamicModel: string;
+  /**
+   * The agent run's group and the model the run was meant to be driven by, set
+   * when a turn is classified (or pinned). A tool follow-up step reads them to
+   * stay in the run's group. Optional so a ctx without run memory behaves as it
+   * did before: the follow-up falls back to the `simple` pool.
+   */
+  runGroup?: string | null;
+  runDriver?: string | undefined;
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
   sessionCtx: any;
   // Core objects (updated on config reload)
@@ -336,22 +346,136 @@ function recordServedRef(ctx: StreamOrchestratorContext, ref: string): void {
 export class StreamOrchestrator {
   constructor(public ctx: StreamOrchestratorContext) {}
 
+  // ── tool follow-up ──────────────────────────────────────────────────────
+
   /**
-   * Session boundary (session_shutdown in index.ts): the inheritable
-   * previous category must NOT survive into the next session — a 'continue'
-   * classification in a fresh session would otherwise inherit the previous
-   * session's category (cross-session context leak, PR #70 review).
+   * Remember which group (and intended driver) the current agent run belongs to,
+   * so its tool follow-up steps stay there. A router sub-call is the turn's own
+   * tool work, not a run of its own (src/subcall-scope.ts).
    */
-  resetLastCategory(): void {
-    this.ctx.lastClassifiedCategory = undefined;
+  private rememberRun(group: string, driver: string): void {
+    if (inSubCall()) return;
+    this.ctx.runGroup = group;
+    this.ctx.runDriver = driver;
+  }
+
+  /** A new, non-follow-up turn starts without a run until classification names one. */
+  private clearRun(): void {
+    if (inSubCall()) return;
+    this.ctx.runGroup = null;
+    this.ctx.runDriver = '';
+  }
+
+  /**
+   * The group a turn falls back to when it has no run of its own: `simple`,
+   * or any other non-dynamic group when `simple` is gone. Null when none
+   * resolves.
+   */
+  private resolveBaseGroup(): {
+    group: string;
+    res: { candidates: string[]; selected: string };
+  } | null {
+    const simple = this.ctx.resolve('simple');
+    if (simple) return { group: 'simple', res: simple };
+    const alt = Object.keys(this.ctx.cfg.model_groups).find(
+      (k) => this.ctx.cfg.model_groups[k].method !== 'dynamic'
+    );
+    const res = alt ? this.ctx.resolve(alt) : null;
+    return alt && res ? { group: alt, res } : null;
+  }
+
+  /** Candidates of the group's `fallback_groups` (one level deep) that `own` does not already hold. */
+  private fallbackGroupCandidates(group: string, own: readonly string[]): string[] {
+    const seen = new Set<string>(own);
+    const out: string[] = [];
+    for (const fbGroup of this.ctx.cfg.model_groups[group]?.fallback_groups ?? []) {
+      const fbRes = this.ctx.resolve(fbGroup);
+      if (!fbRes) continue;
+      for (const ref of fbRes.candidates) {
+        if (!seen.has(ref)) {
+          seen.add(ref);
+          out.push(ref);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Group and candidate order of a tool follow-up step (last message is a
+   * toolResult). A run that started in a group of its own continues there:
+   * the driver first once its cooldown is over, then the model currently
+   * serving, the run group's candidates, and its fallback groups. A `simple` run
+   * — or a ctx that remembers no run — keeps the former order: current model,
+   * then the `simple` pool (any other non-dynamic group when `simple` is gone).
+   */
+  private planToolFollowUp(context: Context): { group: string; candidates: string[] } {
+    const { lastDynamicModel: current } = this.ctx;
+    const runGroup = this.ctx.runGroup;
+    if (runGroup && runGroup !== 'simple') {
+      const res = this.ctx.resolve(runGroup);
+      if (res) {
+        const driver = this.ctx.runDriver;
+        const driverFirst = driver && !this.ctx.isLimited(driver) ? driver : undefined;
+        const ordered = [
+          ...(driverFirst ? [driverFirst] : []),
+          current,
+          ...res.candidates,
+          ...this.fallbackGroupCandidates(runGroup, res.candidates),
+        ];
+        return {
+          group: runGroup,
+          candidates: this.withoutFreeTier([...new Set(ordered)], context, driverFirst),
+        };
+      }
+    }
+    const base = this.resolveBaseGroup();
+    if (!base) throw new Error('No fallback model for tool follow-up');
+    const { group, res } = base;
+    return { group, candidates: [current, ...res.candidates.filter((r) => r !== current)] };
+  }
+
+  /**
+   * With tools in the context a free-tier model or a meta-router cannot be
+   * trusted to continue a tool loop (the run's group is not `simple`, so it was
+   * not meant to run there). Free means what the rest of the router means by it
+   * — `:free` tag, `free_models`, discovered price 0 — not a model list
+   * (ADR-0025); local models stay. The run's own driver stays too: a pinned or
+   * group-selected free model is where the run deliberately started. Fail-open:
+   * when nothing else is left, keep the list.
+   */
+  private withoutFreeTier(refs: string[], context: Context, keep?: string): string[] {
+    if ((context.tools?.length ?? 0) === 0) return refs;
+    const { cfg, cache } = this.ctx;
+    const kept = refs.filter(
+      (ref) =>
+        ref === keep ||
+        this.ctx.isLocalProvider(ref) ||
+        (!isMetaRouterRef(ref) && !isFreeModelRef(ref, cfg.providers, cache.available_models))
+    );
+    return kept.length > 0 ? kept : refs;
   }
 
   // ── groupStream ─────────────────────────────────────────────────────────
 
+  /**
+   * Entry point of every group provider. Pi sets `options.sessionId` on each
+   * stream call; running the whole turn (including its async work) inside that
+   * session keeps the per-session turn state (src/turn-state.ts) the session's
+   * own — an in-process subagent stream no longer reads or overwrites the
+   * parent's turn model and category. Without a session id the ambient one
+   * stays (a stream opened from inside a handler).
+   */
   groupStream(
     model: Model<any>,
     context: Context,
     options?: SimpleStreamOptions
+  ): AssistantMessageEventStream {
+    return runInSession(options?.sessionId, () => this.openGroupStream(model, context, options));
+  }
+
+  private openGroupStream(
+    ...[model, context, options]: Parameters<StreamOrchestrator['groupStream']>
   ): AssistantMessageEventStream {
     const { cfg, cache, router } = this.ctx;
     const useStaticMatch = model.id.match(/^(.+):use-static$/);
@@ -398,20 +522,9 @@ export class StreamOrchestrator {
           !!this.ctx.lastDynamicModel &&
           !this.ctx.detectHintDirectly(prompt ?? '');
         if (isToolFollowUp) {
-          let followUpGroup = 'simple';
-          let res = this.ctx.resolve(followUpGroup);
-          if (!res) {
-            const alt = Object.keys(cfg.model_groups).find(
-              (k) => cfg.model_groups[k].method !== 'dynamic'
-            )!;
-            followUpGroup = alt;
-            res = this.ctx.resolve(alt);
-          }
-          if (!res) throw new Error('No fallback model for tool follow-up');
-          candidates = [
-            this.ctx.lastDynamicModel,
-            ...res.candidates.filter((r) => r !== this.ctx.lastDynamicModel),
-          ];
+          const plan = this.planToolFollowUp(context);
+          const followUpGroup = plan.group;
+          candidates = plan.candidates;
           await this.driveStream(
             proxy,
             candidates,
@@ -424,9 +537,18 @@ export class StreamOrchestrator {
           );
           return;
         }
+        // A new turn: no run until classification (or a pin) names one, so a
+        // classification that throws cannot leave the previous run behind.
+        this.clearRun();
 
         const lastAssistantSnippet = this.ctx.extractLastAssistantSnippet(context);
         const previousUserMessage = this.extractPreviousUserMessage(context);
+        // Compaction continuity decides by the last model's REAL window
+        // (TODO I5, plan 2026-11-07-compaction-continuity); the window and the
+        // token estimate are only read on a compaction turn, so they are
+        // computed lazily below and the per-turn cost of every ordinary
+        // classification stays unchanged.
+        const isCompaction = this.ctx.isCompactionTurn(context);
         const dynamicGroupCfg = cfg.model_groups['dynamic'];
         const classifyOpts: any = {
           allowStaticFallback: useStatic,
@@ -474,7 +596,12 @@ export class StreamOrchestrator {
             previousUserMessage,
             lastCategory: this.ctx.lastClassifiedCategory,
             lastModel: this.ctx.lastDynamicModel || undefined,
-            isCompaction: this.ctx.isCompactionTurn(context),
+            isCompaction,
+            lastModelContextWindow:
+              isCompaction && this.ctx.lastDynamicModel
+                ? this.ctx.getModelContextWindow(this.ctx.lastDynamicModel)
+                : null,
+            contextTokens: isCompaction ? estimateInputTokens(context, context.tools) : undefined,
             lastModelLimited: this.ctx.lastDynamicModel
               ? this.ctx.isLimited(this.ctx.lastDynamicModel)
               : false,
@@ -521,6 +648,7 @@ export class StreamOrchestrator {
               }
               candidates = [...res.candidates];
               if (!inSubCall()) this.ctx.lastDynamicModel = res.selected;
+              this.rememberRun(classification.hintTarget, res.selected);
               dynamicLabel = `HINT: ${classification.hintTarget} → ${res.selected}`;
               const logLine = `${new Date().toISOString()}  ${dynamicLabel}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
               appendRawLog(logLine);
@@ -674,6 +802,7 @@ export class StreamOrchestrator {
                   : resolvedGdpval >= 300
                     ? 'code_complex'
                     : 'simple';
+              this.rememberRun(hintStartGroup, hintSiblings[0]);
               await this.driveStream(
                 proxy,
                 candidates,
@@ -718,22 +847,12 @@ export class StreamOrchestrator {
         }
         if (!res) throw new Error(`No models for dynamic target "${targetGroup}"`);
 
-        const seen = new Set<string>(res.candidates);
-        const fallbackCandidates: string[] = [];
-        const groupFallbacks = cfg.model_groups[targetGroup]?.fallback_groups ?? [];
-        for (const fbGroup of groupFallbacks) {
-          const fbRes = this.ctx.resolve(fbGroup);
-          if (!fbRes) continue;
-          for (const ref of fbRes.candidates) {
-            if (!seen.has(ref)) {
-              seen.add(ref);
-              fallbackCandidates.push(ref);
-            }
-          }
-        }
-
-        candidates = [...res.candidates, ...fallbackCandidates];
+        candidates = [
+          ...res.candidates,
+          ...this.fallbackGroupCandidates(targetGroup, res.candidates),
+        ];
         if (!inSubCall()) this.ctx.lastDynamicModel = res.selected;
+        this.rememberRun(resolvedGroup, res.selected);
         dynamicLabel = `${normalClassification.category} → ${targetGroup}`;
         const logLine = `${new Date().toISOString()}  ${dynamicLabel}  ${res.selected}  "${(prompt ?? '').slice(0, 80).replace(/\n/g, ' ')}"`;
         appendRawLog(logLine);
@@ -742,15 +861,7 @@ export class StreamOrchestrator {
       } catch (err) {
         warnLog('[dynamic] classification failed, using fallback:', err);
         // D4: the three exits of the former 'fallback' group point at 'simple'.
-        resolvedGroup = 'simple';
-        let fb = this.ctx.resolve('simple');
-        if (!fb) {
-          const alt = Object.keys(cfg.model_groups).find(
-            (k) => cfg.model_groups[k].method !== 'dynamic'
-          )!;
-          resolvedGroup = alt;
-          fb = this.ctx.resolve(alt);
-        }
+        const fb = this.resolveBaseGroup();
         if (!fb) {
           pushStreamError(
             proxy,
@@ -760,7 +871,8 @@ export class StreamOrchestrator {
           );
           return;
         }
-        candidates = [...fb.candidates];
+        resolvedGroup = fb.group;
+        candidates = [...fb.res.candidates];
       }
       await this.driveStream(
         proxy,

@@ -8,7 +8,7 @@
  *   - Exponential backoff on 429 + permanent costMux per provider
  *   - Passive throughput/latency tracking from observed turns
  */
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import * as fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
@@ -42,11 +42,21 @@ import {
 import { loadLayeredConfig } from './src/config-loader.ts';
 import { Router } from './src/routing.ts';
 import {
+  currentSessionId,
+  emptyRouterTurnState,
+  LiveSessionContexts,
+  DEFAULT_MAX_SESSIONS,
+  sessionIdOf,
+  emptyTurnState,
+  SessionStore,
+  type TurnState,
+} from './src/turn-state.ts';
+import {
   classifyPrompt,
+  type ClassificationResult,
   detectHintDirectly,
   getGroupForCategory,
   setCategoryGroupMapping,
-  ClassificationResult,
 } from './src/content-classifier.ts';
 import { SessionEscalation } from './src/escalation.ts';
 import { localClassifierPins, resolveLocalClassifierChain } from './src/classifier-local-probe.ts';
@@ -54,7 +64,7 @@ import { costTracker } from './src/cost-tracker.ts';
 // Shared router logger (D2): the log functions live in src/logger.ts so every
 // src/ module can log without reaching for console.* (which bypasses Pi's TUI
 // and can land in the user's input field). Re-imported here for index.ts's own use.
-import { routerLog, warnLog, errorLog, setLogLevel } from './src/logger.ts';
+import { routerLog, warnLog, errorLog, debugLog, setLogLevel } from './src/logger.ts';
 import { homedir } from 'node:os';
 import {
   buildPoolRecord,
@@ -193,20 +203,34 @@ const defaultExport = function (pi: ExtensionAPI): void {
     }, 2000);
     sessionErrorSaveTimer.unref?.();
   }
-  let turnStart = 0;
   // The router's own version, read lazily from package.json on the first
   // load() and logged once per process — so the log identifies WHICH
   // installation is active (important when several installs coexist).
   let routerVersion: string | null = null;
-  let curModel = '';
-  let activeGroup: string | null = null;
-  let lastDynamicModel = '';
   // Category the dynamic classifier picked on the previous turn — feeds
   // short-prompt momentum ('yes', 'do it', 'mach das') in classifyPrompt so a
   // terse follow-up inherits the prior task's complexity instead of
   // re-classifying from near-zero signal.
-  let lastClassifiedCategory: ClassificationResult['category'] | undefined;
-  let sessionCtx: any = null;
+  // Per-SESSION turn state (docs/plans/2026-11-07-session-keyed-turn-state.md):
+  // curModel, activeGroup, lastDynamicModel, lastClassifiedCategory and turnStart
+  // used to be closure variables — one copy per process, shared (and overwritten)
+  // by in-process subagent sessions. The ambient session comes from
+  // runInSession() at the handler/stream entry points.
+  // An evicted session loses its turn model silently otherwise: leave a trace.
+  const onEvict = (id: string): void =>
+    debugLog(`[turn-state] evicted session ${id || '(default)'} (store full)`);
+  const turnStates = new SessionStore(emptyTurnState, DEFAULT_MAX_SESSIONS, onEvict);
+  const routerTurnStates = new SessionStore(emptyRouterTurnState, DEFAULT_MAX_SESSIONS, onEvict);
+  const turn = (): TurnState => turnStates.forSession(currentSessionId());
+  let sessionCtx: ExtensionContext | null = null;
+  // Contexts of the sessions still alive: a session's shutdown restores the
+  // latest remaining one instead of clearing the current context (a subagent's
+  // shutdown used to take the parent's model registry with it).
+  const liveSessions = new LiveSessionContexts<ExtensionContext>();
+  const setSessionCtx = (ctx: ExtensionContext | null): void => {
+    sessionCtx = ctx;
+    if (ctx) liveSessions.start(sessionIdOf(ctx) ?? '', ctx);
+  };
 
   // Compaction detection state
   let previousMessageCount = 0;
@@ -403,6 +427,9 @@ const defaultExport = function (pi: ExtensionAPI): void {
     get rateLimitManager() {
       return rateLimitManager;
     },
+    get routerTurnStates() {
+      return routerTurnStates;
+    },
     get router() {
       return router;
     },
@@ -435,9 +462,6 @@ const defaultExport = function (pi: ExtensionAPI): void {
     },
     get staticContributions() {
       return staticContributions;
-    },
-    get turnStart() {
-      return turnStart;
     },
   });
 
@@ -524,10 +548,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
   createEventHandlers({
     get activeGroup() {
-      return activeGroup;
+      return turn().activeGroup;
     },
     set activeGroup(v) {
-      activeGroup = v;
+      turn().activeGroup = v;
     },
     get cache() {
       return cache;
@@ -536,10 +560,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return cfg;
     },
     get curModel() {
-      return curModel;
+      return turn().curModel;
     },
     set curModel(v) {
-      curModel = v;
+      turn().curModel = v;
     },
     get detectGroup() {
       return detectGroup;
@@ -557,7 +581,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return isLimited;
     },
     get lastDynamicModel() {
-      return lastDynamicModel;
+      return turn().lastDynamicModel;
     },
     get load() {
       return load;
@@ -596,7 +620,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return sessionCtx;
     },
     set sessionCtx(v) {
-      sessionCtx = v;
+      setSessionCtx(v);
     },
     get sessionStart() {
       return sessionStart;
@@ -611,10 +635,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
       statusUpdater = v;
     },
     get turnStart() {
-      return turnStart;
+      return turn().turnStart;
     },
     set turnStart(v) {
-      turnStart = v;
+      turn().turnStart = v;
     },
     get updateErrorStatusLine() {
       return updateErrorStatusLine;
@@ -626,10 +650,10 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
   createTools({
     get activeGroup() {
-      return activeGroup;
+      return turn().activeGroup;
     },
     set activeGroup(v) {
-      activeGroup = v;
+      turn().activeGroup = v;
     },
     get cfg() {
       return cfg;
@@ -677,7 +701,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return costMux;
     },
     get curModel() {
-      return curModel;
+      return turn().curModel;
     },
     get effCost() {
       return effCost;
@@ -731,7 +755,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       return sessionCtx;
     },
     set sessionCtx(v) {
-      sessionCtx = v;
+      setSessionCtx(v);
     },
     get sessionStart() {
       return sessionStart;
@@ -896,17 +920,11 @@ const defaultExport = function (pi: ExtensionAPI): void {
     cacheManager = new CacheManager(stateDir, cache, process.cwd());
     // load() does not only run at boot: tools call it directly
     // (resolve_model_group, update_model_metrics) and EVERY session_start
-    // fires it — including subagent sessions, which share this module-level
-    // Router while a parent turn is still running. Rebuilding without
-    // carrying the turn's pinned driver would silently un-protect the
-    // expensive-model read block for the rest of that turn (same carry as
-    // the Router rebuild in generateDynamicConfig — see the block there).
-    // router is undefined on the very first boot; getTurnDriverRef then has
-    // nothing to carry and adoptTurnDriverRef('') is a no-op.
-    const carriedTurnDriver = router?.getTurnDriverRef(turnStart) ?? '';
-    router = new Router(cfg, cache, rateLimitManager.getLimits());
-    if (turnStart > 0) router.noteTurnStart(turnStart);
-    router.adoptTurnDriverRef(carriedTurnDriver);
+    // fires it — including subagent sessions, which share this Router while a
+    // parent turn is still running. The Router's turn fields (driving-model
+    // pin, factual ref, turn boundary) live in the shared per-session store,
+    // so the replacement drops none of them and no carry-over is needed.
+    router = new Router(cfg, cache, rateLimitManager.getLimits(), routerTurnStates);
     // load() runs on every session_start (and other reload paths) and replaces
     // the Router instance wholesale, which drops its private sessionCtx field.
     // Without this, group resolution silently falls back to the stale on-disk
@@ -960,22 +978,34 @@ const defaultExport = function (pi: ExtensionAPI): void {
     // former ctx.curModel field was write-only dead wiring (final v1.6.0
     // review minor #8).
     get activeGroup(): string | null {
-      return activeGroup;
+      return turn().activeGroup;
     },
     set activeGroup(v) {
-      activeGroup = v;
+      turn().activeGroup = v;
     },
     get lastDynamicModel(): string {
-      return lastDynamicModel;
+      return turn().lastDynamicModel;
     },
     set lastDynamicModel(v) {
-      lastDynamicModel = v;
+      turn().lastDynamicModel = v;
+    },
+    get runGroup(): string | null {
+      return turn().runGroup;
+    },
+    set runGroup(v) {
+      turn().runGroup = v;
+    },
+    get runDriver(): string {
+      return turn().runDriver;
+    },
+    set runDriver(v) {
+      turn().runDriver = v;
     },
     get lastClassifiedCategory(): ClassificationResult['category'] | undefined {
-      return lastClassifiedCategory;
+      return turn().lastClassifiedCategory;
     },
     set lastClassifiedCategory(v) {
-      lastClassifiedCategory = v;
+      turn().lastClassifiedCategory = v;
     },
     get sessionCtx() {
       return sessionCtx;
@@ -1104,12 +1134,18 @@ const defaultExport = function (pi: ExtensionAPI): void {
 
   const streamOrchestrator = new StreamOrchestrator(buildOrchestratorContext());
 
-  pi.on('session_shutdown', () => {
-    sessionCtx = null;
-    router.setSessionCtx(null);
-    // The previous category is conversation state — it must not leak into
-    // the next session's first 'continue' classification (PR #70 review).
-    streamOrchestrator.resetLastCategory();
+  pi.on('session_shutdown', (_ev, ctx) => {
+    const id = sessionIdOf(ctx) ?? '';
+    // Only THIS session's state goes: a child's shutdown must not wipe the
+    // parent's turn model, group or category (plan 2026-11-07-session-keyed-turn-state.md).
+    const remaining = liveSessions.end(id);
+    sessionCtx = remaining;
+    router.setSessionCtx(remaining);
+    turnStates.reset(id);
+    routerTurnStates.reset(id);
+    // lastClassifiedCategory is conversation state — it must not leak into the
+    // next session's first 'continue' classification (PR #70 review); it goes
+    // with the session's entry.
   });
 
   // Cleanup CostTracker on process exit. Registered inside the dedupe

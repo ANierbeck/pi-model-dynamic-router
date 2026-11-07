@@ -74,41 +74,56 @@ What this establishes:
 ## 2. Shadow agreement on real traffic (measured)
 
 `scripts/virtual-route-shadow.ts` (tests `test/virtual-route-shadow.test.ts`,
-16 green) reads `router.log` and `classifier-decisions.jsonl`, takes the turn's
-first attempt from the failover walk, classifies the failure the router narrated
-for it against Pi's own retry rules (the two regexes above, mirrored), and
+20 green) reads `router.log` and `classifier-decisions.jsonl`, takes the turn's
+attempts from the failover walk, classifies EVERY failure the router narrated in
+the turn against Pi's own retry rules (the two regexes above, mirrored), and
 answers one question per turn: would a virtual model have finished it the same
 way, recovered through Pi's retry, or lost it?
 
-Reproduce: `node scripts/virtual-route-shadow.ts --detail=1 --since=2026-10-28T16:20:00Z`
-(the start of the five-group layout).
+Reproduce: `node scripts/virtual-route-shadow.ts --detail
+--since=2026-10-28T16:20:00Z --until=2026-11-06T12:00:00Z` — quote BOTH bounds
+next to any figure; `router.log` rotates, and the decision log keeps growing, so
+an open bound is not reproducible.
+
+**Correction 2026-11-07 (code review of the spike):** the first version of this
+report classified only the turn's FIRST failure, so a turn whose first failure
+was Pi-retryable but which hit a mid-chain failure Pi would NOT retry (a spent
+quota, an empty response) still counted as `recovered`. The corrected script
+classifies every failure; the table below is the corrected one. The correction
+moves one `standard` turn (mid-chain empty response) from `recovered` to `lost`
+and attributes the quota losses to their decisive mid-chain failure. The first
+version's figures (100 turns, 74/10/16) were measured with the then-current end
+of the log and are superseded.
 
 | group | turns | same | recovered | lost |
 |---|---:|---:|---:|---:|
 | planning | 14 | 14 | 0 | 0 |
 | design | 6 | 6 | 0 | 0 |
-| code_complex | 64 | 50 | 0 | 14 |
+| code_complex | 58 | 44 | 0 | 14 |
 | standard | 9 | 1 | 6 | 2 |
-| simple | 7 | 3 | 4 | 0 |
-| **total** | **100** | **74 (74 %)** | **10 (10 %)** | **16 (16 %)** |
+| simple | 6 | 3 | 3 | 0 |
+| **total** | **93** | **68 (73.1 %)** | **9 (9.7 %)** | **16 (17.2 %)** |
 
 Why the 16 are lost:
 
-- **14 × `pi-no-retry`.** First attempt `claude-bridge/claude-sonnet-5-5` (once
-  `claude-opus-5-5`), 429 body `Claude quota exceeded — rate limit (five_hour) —
-  resets 10:10:00 PM: You've hit your session limit`. Pi refuses to retry that
-  body; the current chain switches to `claude-bridge/claude-opus-5-5` and then
-  `mistral/zai-glm-5-3` and finishes the turn.
-- **2 × retry budget.** First attempt `openrouter/google/gemma-4-31b-it:free`,
-  429, and the chain needed eight attempts to find a model that served. Pi allows
-  four.
+- **15 × `pi-no-retry` (quota wording).** The turn's decisive mid-chain failure
+  is a 429 body `Claude quota exceeded — rate limit (five_hour) — resets
+  10:10:00 PM: You've hit your session limit` (14 in `code_complex`, 1 in
+  `standard`). Pi refuses to retry that body; the current chain switches to
+  `claude-bridge/claude-opus-5-5` and then `mistral/zai-glm-5-3` and finishes
+  the turn. Counted per TURN, not per outage: the five-hour quota sat over many
+  turns, and a stateful `route()` would have excluded the model after the first
+  failure — the lost share of this class is an upper bound.
+- **1 × `pi-blind` (empty response).** A `standard` turn whose first failure was
+  a retryable 429 but whose chain later hit an empty response; the router
+  detected it and moved on, Pi would have seen a normal end.
 
-What the 10 recovered cases are: free-tier 429s (`gemma-4-31b-it:free`,
+What the 9 recovered cases are: free-tier 429s (`gemma-4-31b-it:free`,
 `openrouter/free`) and the `simple` group's chains, where a retry with a
 `route()`-chosen different model finished the turn. The delay is 2–14 s; the
 current chain takes a similar amount of time for the same cases.
 
-The 74 `same` turns are untouched: the first choice served them, with or without
+The 68 `same` turns are untouched: the first choice served them, with or without
 a virtual model.
 
 ## 3. Inventory: what a migration must replace (step 1)
@@ -136,12 +151,12 @@ of `driveStream`:
 ## 4. Reading
 
 The pure shape the plan proposes — a virtual model chooses one physical model per
-request, Pi recovers — loses 16 % of this owner's turns today, and the loss sits
+request, Pi recovers — loses 17 % of this owner's turns today, and the loss sits
 in the most-used group (`code_complex` on `claude-bridge`). The losses are not
 noise: they are the five-hour quota, which Pi deliberately treats as final, and
-one chain that needed more than four candidates.
+one mid-chain empty response Pi cannot see.
 
-The `same` 74 % and the `recovered` 10 % say the opposite thing about the *turn
+The `same` 73 % and the `recovered` 10 % say the opposite thing about the *turn
 state*: nothing in the virtual-model contract is worse than today's module
 variables, and the parts that keep producing bugs (sub-call scope, I2 per-session
 state, I5 compaction continuity, pinned category memory) are exactly what

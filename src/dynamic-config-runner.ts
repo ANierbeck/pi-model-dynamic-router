@@ -28,6 +28,7 @@ import * as metricsModule from './metrics.ts';
 import { lookupGdp } from './metrics.ts';
 import { PROVIDER_MAP } from './providers.ts';
 import { isVirtualGroupRef, Router } from './routing.ts';
+import type { RouterTurnState, SessionStore } from './turn-state.ts';
 import { checkScanSanity } from './scan-sanity.ts';
 import { isStreamableRef } from './streamable-refs.ts';
 import type { Config, Cache } from './types.ts';
@@ -51,6 +52,7 @@ interface DynamicConfigRunnerDeps {
   readonly dynamicConfigFingerprint: (c: Config) => string;
   readonly populateLlmMatches: (allModelRefs: string[]) => Promise<void>;
   readonly rateLimitManager: RateLimitManager;
+  readonly routerTurnStates: SessionStore<RouterTurnState>;
   router: Router;
   readonly routerStartedAt: number;
   readonly SCAN_REFUSAL_MAX_AGE_MS: number;
@@ -61,7 +63,6 @@ interface DynamicConfigRunnerDeps {
   readonly staticCfg: Config;
   /** Clean-by-construction contribution snapshot; taken in load() after loadLayeredConfig. */
   readonly staticContributions: StaticContributions;
-  readonly turnStart: number;
 }
 
 /**
@@ -542,15 +543,15 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       // them delegation — user intent per the ADR-0007 revision) was already
       // re-synced from staticCfg by the loop above; no special case remains.
       rt.cfg = dynamicConfig;
-      // A mid-turn scan (a tool calling load()) replaces the Router, which
-      // would drop both curModel and the turn's pinned driving ref — leaving
-      // the expensive-model read block un-protected for the rest of the turn.
-      // Carry the pin (and the turn boundary) over to the new instance.
-      const carriedTurnDriver = rt.router.getTurnDriverRef(rt.turnStart);
-      const carriedTurnBoundary = rt.turnStart;
-      rt.router = new Router(rt.cfg, rt.cache, rt.rateLimitManager.getLimits());
-      if (carriedTurnBoundary > 0) rt.router.noteTurnStart(carriedTurnBoundary);
-      rt.router.adoptTurnDriverRef(carriedTurnDriver);
+      // A mid-turn scan (a tool calling load()) replaces the Router. Its turn
+      // fields live in the shared per-session store, so the driving-model pin
+      // and the turn boundary survive the replacement.
+      rt.router = new Router(
+        rt.cfg,
+        rt.cache,
+        rt.rateLimitManager.getLimits(),
+        rt.routerTurnStates
+      );
       // streamOrchestrator.ctx.router is now a live getter (see
       // buildOrchestratorContext) that always reads this module-level `router`
       // binding, so no explicit resync is needed here anymore — and assigning

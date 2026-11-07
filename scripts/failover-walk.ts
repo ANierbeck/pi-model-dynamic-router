@@ -17,13 +17,13 @@
 //
 // The report prints counts and model refs only, never prompt text.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readDecisionLog } from './lib/decision-log.ts';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseRoutingLine } from './route-pool-log.ts';
 import { isRoutingRecord } from '../src/classifier-decision-log.ts';
-import { arg, invokedDirectly } from './lib/cli.ts';
+import { arg, bound, invokedDirectly } from './lib/cli.ts';
 
 export interface WalkDecision {
   ts: number;
@@ -45,6 +45,8 @@ export interface WalkRow {
   attempts: string[];
   success: string | null;
   outcome: 'success' | 'no-success';
+  /** End of the turn's window: the success event, else the next decision / the longest window. */
+  end: number;
 }
 
 /** Longest window after a decision when no later decision of the process follows. */
@@ -133,6 +135,7 @@ export function walkDecisions(lines: string[], decisions: WalkDecision[]): WalkR
       attempts: walk.map((e) => e.ref),
       success: done?.kind === 'done' ? done.ref : null,
       outcome: done ? 'success' : 'no-success',
+      end: done ? done.ts : end,
     });
   }
   return rows;
@@ -181,8 +184,12 @@ export function summarizeWalk(rows: WalkRow[]): Record<string, WalkGroupSummary>
 function main(): void {
   const logPath = arg('log') ?? join(homedir(), '.pi/logs/router.log');
   const decPath = arg('decisions') ?? join(homedir(), '.pi/logs/classifier-decisions.jsonl');
-  const since = arg('since') ? Date.parse(arg('since') as string) : -Infinity;
-  const until = arg('until') ? Date.parse(arg('until') as string) : Infinity;
+  const since = bound('since', process.argv.slice(2), -Infinity);
+  const until = bound('until', process.argv.slice(2), Infinity);
+  if (!existsSync(logPath)) {
+    console.error(`no router log at ${logPath}`);
+    process.exit(2);
+  }
   const lines = readFileSync(logPath, 'utf8').split('\n');
   // One reader for the log (scripts/lib/decision-log.ts) owns the skipping and
   // bounds rules; this script projects the fields the walk needs.
@@ -190,7 +197,9 @@ function main(): void {
     .filter((row) => row.proc !== null)
     .map((row) => ({ ts: row.ts, proc: row.proc!, group: row.group, stage: row.stage }));
   const rows = walkDecisions(lines, decisions);
-  console.log(`bounds: since=${arg('since') ?? '-'} until=${arg('until') ?? '-'}`);
+  console.log(
+    `bounds: since=${arg('since') ?? '-'} until=${arg('until') ?? '-'} (quote both next to any figure: the log rotates)`
+  );
   console.log(
     `routed turns=${rows.length} success=${rows.filter((r) => r.outcome === 'success').length}`
   );

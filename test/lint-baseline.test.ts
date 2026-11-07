@@ -27,7 +27,7 @@ interface LintBaseline {
 }
 
 /** Total findings the baseline is allowed to hold. Only ever lowered. */
-const CEILING_FINDINGS = 768;
+const CEILING_FINDINGS = 732;
 
 const baseline = JSON.parse(
   readFileSync(join(process.cwd(), 'scripts/lint-baseline.json'), 'utf8')

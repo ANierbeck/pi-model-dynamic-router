@@ -42,6 +42,8 @@ describe('compaction context-window routing', () => {
       context: {
         isCompaction: true,
         lastModel: 'ollama/gemma4:12b-mlx',
+        lastModelContextWindow: 8_192,
+        contextTokens: 20_000,
       },
     });
 
@@ -62,6 +64,8 @@ describe('compaction context-window routing', () => {
       context: {
         isCompaction: true,
         lastModel: 'claude-bridge/claude-opus-5',
+        lastModelContextWindow: 200_000,
+        contextTokens: 20_000,
       },
     });
 
@@ -100,6 +104,8 @@ describe('compaction context-window routing', () => {
       context: {
         isCompaction: true,
         lastModel: 'mistral/mistral-medium-2604',
+        lastModelContextWindow: 128_000,
+        contextTokens: 20_000,
       },
     });
 
@@ -116,7 +122,12 @@ describe('compaction context-window routing', () => {
       allowCloudFallback: true,
       cfg,
       cache,
-      context: { isCompaction: true, lastModel: 'ollama/llama3.1:8b' },
+      context: {
+        isCompaction: true,
+        lastModel: 'ollama/llama3.1:8b',
+        lastModelContextWindow: 8_192,
+        contextTokens: 20_000,
+      },
     });
     expect('hintType' in result3b).toBe(false);
 
@@ -126,7 +137,12 @@ describe('compaction context-window routing', () => {
       allowCloudFallback: true,
       cfg,
       cache,
-      context: { isCompaction: true, lastModel: 'ollama/qwen3.6:35b-mlx' },
+      context: {
+        isCompaction: true,
+        lastModel: 'ollama/qwen3.6:35b-mlx',
+        lastModelContextWindow: 32_768,
+        contextTokens: 20_000,
+      },
     });
     expect('hintType' in result35b).toBe(false);
   });

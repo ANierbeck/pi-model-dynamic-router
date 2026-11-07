@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { StreamOrchestrator } from '../src/stream-orchestrator.ts';
+import { toolFollowUpMessages } from './helpers/stream-fixtures.ts';
 import { routerLog, appendRawLog, warnLog } from '../src/logger.ts';
 
 vi.mock('../src/logger.ts', async (orig) => {
@@ -51,6 +52,8 @@ interface Opts {
   lastCategory?: string;
   limited?: string[];
   compaction?: boolean;
+  /** Real context window per ref, for the compaction-continuity decision. */
+  window?: Record<string, number>;
   hintDirect?: boolean;
   messages?: any[];
   /** what extractLastUserPrompt returns; pass undefined explicitly for "no prompt" */
@@ -106,6 +109,10 @@ function world(o: Opts) {
     extractLastAssistantSnippet: () => 'last assistant words',
     detectHintDirectly: vi.fn(() => (o.hintDirect ? { hintType: 'model' } : null)),
     isCompactionTurn: () => o.compaction === true,
+    // Compaction continuity reads the last model's real window and the
+    // context token estimate (TODO I5). Configurable per test via
+    // o.window; a ref without a window entry is unknown (null).
+    getModelContextWindow: (ref: string) => o.window?.[ref] ?? null,
     isLimited: (r: string) => (o.limited ?? []).includes(r),
     clearLimit: (r: string) => cleared.push(r),
     lookupGdp: (r: string) => o.gdp?.[r] ?? null,
@@ -229,6 +236,19 @@ describe('HINT: <model> — matching', () => {
     expect(d.label).toBe('MHINT: claude-bridge/claude-opus-5-5');
     expect(d.label).not.toMatch(/^HINT/);
     expect(w.ctx.lastDynamicModel).toBe('claude-bridge/claude-opus-5-5');
+  });
+
+  it('remembers the run: the pinned model drives it, its score band is the group (tool follow-up reads both)', async () => {
+    const w = world({
+      ...base,
+      classification: { hintType: 'model', hintTarget: 'claude-bridge/claude-opus-5-5' },
+      discovered: ['claude-bridge/claude-opus-5-5'],
+      known: ['claude-bridge/claude-opus-5-5'],
+      gdp: { 'claude-bridge/claude-opus-5-5': 1900 },
+    });
+    await w.open();
+    expect(w.ctx.runGroup).toBe('planning');
+    expect(w.ctx.runDriver).toBe('claude-bridge/claude-opus-5-5');
   });
 
   it('a bare name matches the model id under every provider that offers it', async () => {
@@ -761,16 +781,7 @@ describe('classifier call wiring', () => {
 // ── tool follow-up shortcut ──────────────────────────────────────────────
 
 describe('tool follow-up step', () => {
-  const messages = [
-    { role: 'user', content: 'run it', timestamp: 1 },
-    {
-      role: 'toolResult',
-      toolCallId: 't1',
-      toolName: 'bash',
-      content: [{ type: 'text', text: 'ok' }],
-      timestamp: 2,
-    },
-  ];
+  const messages = toolFollowUpMessages();
   const simple = {
     simple: { candidates: ['openrouter/free', 'mistral/large'], selected: 'openrouter/free' },
   };
