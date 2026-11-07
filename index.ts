@@ -640,6 +640,21 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set turnStart(v) {
       turn().turnStart = v;
     },
+    // M3 (plan 2026-11-07-turn-latency-tool-time.md): the turn's model-stream
+    // time, written by the orchestrator per finished stream, read and reset by
+    // the turn handlers — so the latency sample measures the stream, not the
+    // turn (tool and sub-call time inflated it).
+    get turnStreamMs(): number {
+      return turn().streamMs;
+    },
+    get turnStreamCount(): number {
+      return turn().streamCount;
+    },
+    resetTurnStreams(): void {
+      const t = turn();
+      t.streamMs = 0;
+      t.streamCount = 0;
+    },
     get updateErrorStatusLine() {
       return updateErrorStatusLine;
     },
@@ -1066,6 +1081,14 @@ const defaultExport = function (pi: ExtensionAPI): void {
     localStreamLimit: () => localStreamLimit(),
     releaseLocalSlot: (ref: string): void => {
       if (isLocalProvider(ref) && localStreamsInFlight > 0) localStreamsInFlight--;
+    },
+    // M3: model-stream time of the current turn, sub-calls excluded (their
+    // own session scope keeps them off the parent's accumulator).
+    addTurnStreamMs: (ms: number): void => {
+      if (!(ms > 0)) return;
+      const t = turn();
+      t.streamMs += ms;
+      t.streamCount += 1;
     },
     // recordSoftFailure is no longer wired directly: every orchestrator
     // failure site goes through recordStreamFailure (review round 2,

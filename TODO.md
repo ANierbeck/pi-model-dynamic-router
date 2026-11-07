@@ -99,9 +99,9 @@ Independent review of `38d2a27..fde54f8` (the structural question behind most of
       `…:free` variants).
 - **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`) — plan `docs/plans/2026-11-07-compaction-continuity.md` (implemented and merged 2026-11-07, PR #120): the decision now uses the real context window via the reserve-aware `planOutputBudget`, fail-closed on unknown windows, with `:free`/meta-router refs excluded.
 - **I2 remainder / M1 — turn state is per process, not per session** — plan `docs/plans/2026-11-07-session-keyed-turn-state.md` (implemented and merged 2026-11-07, PR #120). Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
-- **M3 — turn latency includes tool and sub-call time** — plan
-  `docs/plans/2026-11-07-turn-latency-tool-time.md` (owner go 2026-11-07,
-  approved, not started): `turn_end` books the whole turn
+- [x] **M3 — turn latency includes tool and sub-call time** — FIXED
+  2026-11-08 (PR #126, plan `docs/plans/2026-11-07-turn-latency-tool-time.md`,
+  measurement `docs/research/2026-11-08-turn-latency-stream-share.md`): `turn_end` books the whole turn
   (`Date.now() - rt.turnStart`, `src/event-handlers.ts:303`) as the model's
   latency sample, so tool/sub-call time inflates `avg_latency_ms` and deflates
   `throughput_tps`/`benchmarks`, which the ranking reads. Fix per the plan:

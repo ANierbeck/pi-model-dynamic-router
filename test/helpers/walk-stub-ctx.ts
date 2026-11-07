@@ -70,6 +70,8 @@ export function walkStubWorld(config: WalkStubConfig = {}): WalkWorld {
     getRateLimitWaitMaxMs: () => 0,
     formatResetMsg: () => '',
     releaseLocalSlot: vi.fn(),
+    // M3: the walk books each finished stream's duration into the turn.
+    addTurnStreamMs: vi.fn(),
     wedgeCooldownText: () => '2 min',
     limitFreeDayCap: () => false,
     lookupGdp: () => null,
