@@ -35,6 +35,7 @@ import {
   makePiCtx,
 } from './helpers/extension-harness.ts';
 import { bootProjectDir, teardownBoot } from './helpers/router-env.ts';
+import { rateLimitBaseCfg } from './helpers/rate-limit-fixtures.ts';
 import { testModelCost } from './helpers/stream-fixtures.ts';
 
 // The 429-body assertions below need the log call, not the log file.
@@ -158,14 +159,7 @@ function healthyEvents(text: string, stopReason: string = 'stop'): AssistantMess
   ];
 }
 
-const baseCfg = {
-  free_models: [],
-  providers: { openrouter: { free_models: [] } },
-  model_groups: { standard: { fallback_groups: [], min_gdpval: 0 } },
-  empty_response_timeout_ms: 5_000,
-  reasoning_empty_response_timeout_ms: 5_000,
-  stall_timeout_ms: 30_000,
-};
+const baseCfg = rateLimitBaseCfg;
 
 describe('driveStream: bounded wait-for-short-reset', () => {
   it('waits for a near reset and retries the SAME model instead of cascading', async () => {

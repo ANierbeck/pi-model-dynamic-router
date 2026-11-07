@@ -1,8 +1,11 @@
 # `continue` keeps the model, not only the category
 
 **Status:** approved 2026-10-26 (owner decision, rationale: cache efficiency).
-Not started. Step 1 (measurement) is open: the first run on 2026-10-27 is not
-reproducible, see `docs/research/2026-10-27-continue-switch-measurement.md`.
+Step 1 (measurement) done 2026-11-08: 8 same-group switches on 152 `continue`
+pairs (5.3 %), 7 without a failure cause — the premise holds, the share is
+small; whether the change is worth its code is the owner's call
+(`docs/research/2026-11-08-continue-switch-measurement.md`, committed script
+`scripts/continue-switch-measure.ts`). Steps 2–4 not started.
 
 **Verified against:** `laya-spike` at `492243f` — `src/stream-orchestrator.ts`
 (`:332-358` tool follow-up, `:403-407` classifier context, `:604`
