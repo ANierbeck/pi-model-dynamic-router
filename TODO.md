@@ -516,9 +516,19 @@ judged sufficient.
 > verdicted EQUIVALENT — production unreachable). Round total: 49 killed, 5
 > equivalent; the Sourcery review round on PR #123 hardened the fixtures
 > (deferred consume, frozen clock, reason pins, provider+id lookup) with all
-> kills re-verified. Still open: cluster H leftovers (848, 847–858/860 need a
-> seam-throw fixture reading `session_errors`), the blocklist seam 677–683,
-> and 871 (thin). Plan:
+> kills re-verified. CLOSED 2026-11-08 (PR #129): the cluster H leftovers
+(the consume-reject catch path — the first fixture for it, the existing
+breaker fixtures all use error-EVENT streams), the thrown-OPEN seam (a
+rejecting tryStream is a different code path with its own mutants), the
+blocklist observer gates (main loop + post-wait-retry twin — the "expensive
+multi-turn fixture" was unnecessary, the observable is the observeFailure
+call itself), and the silent-skip path (871). 23 mutants hand-verified
+killed (`test/thrown-stream-blocklist-seams.test.ts`, ledger in
+`docs/mutation-triage.md`); a boyscout fix rode along (the thrown-open
+narration printed raw provider text — now sanitized like the consume-catch
+narration). The 205 slice-2 real gaps are fully closed. Remaining
+low-priority: metrics.ts (73) / routing.ts (54) nightlies remainders —
+likely equivalents, confirm before spending a round. Plan:
 > `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
 
 Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.

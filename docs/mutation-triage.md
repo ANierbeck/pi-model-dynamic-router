@@ -1657,3 +1657,52 @@ seam-throw fixture that reads `session_errors`), the blocklist seam 677–683
 candidate). The 205 slice-2 real gaps are now down to these plus the batches
 already ledgered; re-instrument before the next batch
 (`docs/mutation-data/slice2-driveStream.json` predates PR #115).
+
+## Slice 2 leftovers round: the thrown-stream and blocklist seams (2026-11-08)
+
+Closes the last open slice-2 real gaps. The stale IDs (`slice2-driveStream.json`
+predates PR #115) were re-located by CONTENT against current main, per the
+"re-instrument before the next batch" note — the round therefore kills the
+REGIONS the triage named, hand-verified mutant-by-mutant (23 mutants, 23
+killed), not a renumbered report:
+
+- **Cluster H — a stream CONSUME that rejects** (`test/thrown-stream-blocklist-seams.test.ts`,
+  "a stream CONSUME that rejects lands in the loop catch"): the loop `catch`
+  was never driven by a rejecting `consumeWithDetection` (the existing breaker
+  fixtures use empty/error-EVENT streams). Killed: the catch block emptied
+  (`{}`), `pushError`, `observeFailure`, `recordStreamFailure` (the
+  `session_errors` seam — asserted via the mock's call args, which is the
+  same observable the "fixture reading session_errors" sketch wanted),
+  `observeProviderFailure`→false, `narrateBreakerOpen`, the narration push,
+  and `sanitizeForLog` turned off.
+- **The thrown-OPEN seam** (same file, "a stream OPEN that throws"): a
+  rejecting `tryStream` lands in the `.catch` handler, a DIFFERENT code path
+  with its own mutants — killed: `pushError`, `recordStreamFailure`,
+  `observeProviderFailure`/`narrateBreakerOpen`, the "Trying next model"
+  narration push.
+- **The blocklist observer gates**: the main-loop
+  `reason === 'provider_error' && detail` gate (`&&`→`||`, `===`→`!==`,
+  `→true`) and its post-wait-retry twin (`===`→`!==`, `→false`, `→true`).
+  The triage's "expensive multi-turn fixture" turned out unnecessary: the
+  observable is the `observeFailure` call itself (args + count), which a
+  single scripted walk pins; the blocklist module's own streak/Tier-2
+  behavior is unit-tested in `test/model-blocklist.test.ts`.
+- **The silent-skip path (871)**: `if (why)` (→true/→false), the
+  `why ? String(why) : undefined` detail (both directions), and the
+  `openFailureText === undefined` guard (→false) — the "silent skip without
+  a skipReason" candidate the triage called thin.
+
+**Boyscout fix found BY the round (AGENTS.md §7):** the thrown-open narration
+printed the RAW error message — `> [router] Trying next model (ref unavailable:
+Connection error sk-live-…)` — while the consume-catch narration sanitizes
+(`sanitizeForLog`). A provider exception can quote request headers or auth
+material, and the narration is user-visible transcript. Fixed in the same
+commit; red evidence is the "sanitizes credentials out of the open-failure
+narration" test (red on pristine, green with `sanitizeForLog(errorMsg)`).
+
+Verdicts for the previously-EQ entries stay as ledgered (851/856/857/858/860 —
+reason-metadata and narration-text literals). **The 205 slice-2 real gaps are
+now fully closed** — every mutant is killed, ledgered equivalent, or removed
+as dead code. Remaining low-priority confirmations: metrics.ts (73) and
+routing.ts (54) nightlies remainders (likely equivalents; confirm before
+spending a round).

@@ -1172,7 +1172,10 @@ export class StreamOrchestrator {
           narrateBreakerOpen(ctx, proxy, ref);
         pushRouterInfoLogged(
           proxy,
-          `> [router] Trying next model (${ref} unavailable: ${errorMsg})\n\n`
+          // Same bar as the consume-catch narration: provider text can
+          // quote request headers or auth material (a 429 body echoing an
+          // API key), and the transcript is user-visible — sanitize.
+          `> [router] Trying next model (${ref} unavailable: ${sanitizeForLog(errorMsg)})\n\n`
         );
         return null;
       });
