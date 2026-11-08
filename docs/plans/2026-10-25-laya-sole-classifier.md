@@ -1,7 +1,8 @@
 # Laya as the sole classifier, chain as background comparator
 
 Status: owner decisions recorded 2026-10-25; implementation partly done (see
-"State"). Branch: `laya-spike` (the former feat/laya-active-snapshot was
+"State"). 2026-11-08: steps 1, 2 and 4 are done; open are the data-driven
+steps 3, 5 and 6, which need real Laya decisions to accumulate first. Branch: `laya-spike` (the former feat/laya-active-snapshot was
 folded into it in the 2026-10-25 branch cleanup; the live build runs from this
 branch).
 
@@ -65,7 +66,9 @@ ask Laya + the chain about those prompts too and log them as observations
 
 ## Steps
 
-1. **Verify live** after the restart: `laya` records with `acted: true` for
+1. **Verify live** after the restart — DONE 2026-11-08 (20 pairs so far; a
+   `laya` record at confidence 0.46 had `acted: true`, i.e. below the old 0.8
+   gate, and its `comparator` record carries the same `input.sha`): `laya` records with `acted: true` for
    (almost) every non-HINT/compaction prompt; a `comparator` record with the
    same `input.sha` follows. Latency per stage from `laya.ms` vs. comparator
    `ms`.
@@ -77,8 +80,14 @@ ask Laya + the chain about those prompts too and log them as observations
    grows.
 3. **Label the disagreements** (not the whole queue). They are the
    informative items and feed the next fine-tune.
-4. **Failure behaviour test**: sidecar down / timeout → chain decides, no
-   comparator, no error surfaced. (Covered for 500; add timeout.)
+4. **Failure behaviour test** — DONE 2026-11-08: sidecar down / timeout →
+   chain decides, no comparator, no error surfaced (`test/laya-chain.test.ts`;
+   500 was covered before). Writing it exposed a defect: ONE timeout disabled
+   the stage for five minutes (56 times in `router.log`), so a slow answer
+   silently handed the following prompts to the chain — against decisions 1
+   and 3. Fixed: a timeout affects only that prompt, three in a row take the
+   stage down (`test/laya-timeout-strikes.test.ts`). Measurements:
+   `docs/research/2026-11-08-laya-sidecar-latency.md`.
 5. **Momentum observation** — owner go 2026-10-29, implemented as `classifier_laya.observe_momentum` (default off; `observation` / `observation-comparator` stages, `acted: false`, listed in `NON_ROUTING_STAGES`). Cost note (2026-10-29 review): the observation also runs in shadow mode, on below-threshold answers and when Laya is down (the chain then answers in shadow), regardless of `compare_in_background` — short prompts can incur classifier spend. Needs a Pi restart and the flag in the user config; evaluate once enough short prompts have accumulated (about 1.5 % of prompts, so weeks).
 6. **Decide on `continue`** with data: Laya's `continue` precision/recall from
    the logged probabilities; whether the owner-defined inheritance is what

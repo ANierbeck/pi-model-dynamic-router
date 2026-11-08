@@ -134,7 +134,7 @@ experimental — start in `"shadow"` mode, which only logs.
 | `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
 | `confidence_threshold` | `0.8` | Minimum confidence to use the answer, `0`–`1`. The scale is uncalibrated, so the default keeps a gate; `0` switches the gate off (Laya's answer is used whatever its confidence — the cloud chain then only runs on failure or as the background comparator) |
 | `endpoint` | `http://127.0.0.1:8089` | Sidecar URL, `POST /classify` |
-| `timeout_ms` | `1500` | Fall through to the chain after this long |
+| `timeout_ms` | `1500` | Hand the prompt to the chain after this long. One timeout only affects that prompt; 3 in a row switch the stage off for 5 minutes. The sidecar's latency varies with GPU load, so leave headroom above the p90 of `laya.ms` in the decision log |
 | `compare_in_background` | `false` | In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027) |
 | `observe_momentum` | `false` | Log detached answers for short momentum prompts (can incur classifier spend) |
 

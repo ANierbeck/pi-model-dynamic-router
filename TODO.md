@@ -549,21 +549,20 @@ Pick up in a later round, each as its own plan where noted (§11):
   ONNX conversion of `r2` + parity run, Linux/Windows latency, packaging with
   pinned revision + checksum.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
-  live check after restart, disagreement labeling, timeout failure test,
-  `continue` step, and whether the momentum observation (built, default off)
-  gets enabled and evaluated. Laya stays in the data-reconciliation phase
-  (owner 2026-11-07).
+  live check and the timeout failure test are DONE (2026-11-08; the test
+  exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
+  disagreement labeling, the `continue` step (both need real Laya decisions
+  to accumulate; the post-restart log holds 20 pairs), and whether the
+  momentum observation (enabled in the owner's user layer) gets evaluated.
+  Laya stays in the data-reconciliation phase (owner 2026-11-07).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
-- **Task-type balancing remainder** (`docs/plans/2026-10-05-task-type-balancing.md`):
-  Phases 0–5b are DONE (budget pacing and cache-aware compaction included).
-  Open only: 5d — compaction summary via a cheaper model and the bulk_read
-  threshold review. Measured 2026-11-08
-  (`docs/research/2026-11-08-task-type-balancing-remainder.md`): all 27
-  November compactions cost $2.97, so a cheaper summarizer saves about $3 a
-  month at a quality risk; the bulk_read review needs the file size added to
-  the block log line first. Owner decision: build, or close 5d. 5c stays
+- **Task-type balancing — closed 2026-11-08**
+  (`docs/plans/2026-10-05-task-type-balancing.md`): Phases 0–5b are done;
+  5d is closed by the owner after the measurement
+  (`docs/research/2026-11-08-task-type-balancing-remainder.md`: all 27
+  November compactions cost $2.97). Only 5c (fresh-session suggestion) stays
   deferred to a later 2.0.x by owner decision.
 - **Release prep for 2.0.0** (owner 2026-11-07: target the next release as
   2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the fallback-rename (V3) and
@@ -636,9 +635,9 @@ wedges had no explicit "this whole provider is wedged" signal or
 narration; the owner confirmed the idea 2026-10-06.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phases 0–3, 4
-(budget pacing), 5a and 5b (cache-aware compaction) are DONE. Open: 5c
-(fresh-session suggestion — explicitly deferred to a 2.0.x version) and 5d
-(see the deferred list above).
+(budget pacing), 5a, 5b (cache-aware compaction) are DONE and 5d is closed
+(measured, see the closed entry in the deferred list above). Only 5c
+(fresh-session suggestion) is deferred to a later 2.0.x.
 
 **Laya classifier integration** — full 9-task plan already committed:
 `docs/plans/2026-10-05-laya-classifier-integration.md`. Ships disabled by
