@@ -42,6 +42,8 @@ const records = (): any[] =>
 let server: http.Server;
 let port = 0;
 let stubStatus = 200;
+/** When set, classification requests (not the probe) are held until the client gives up. */
+let stubHang = false;
 let stubAnswer: Record<string, unknown> = {};
 /** Bodies of every classification request (probe excluded), in order. */
 let bodies: any[] = [];
@@ -83,6 +85,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   resetLayaAvailability();
   stubStatus = 200;
+  stubHang = false;
   bodies = [];
   stubAnswer = {
     category: 'design',
@@ -103,6 +106,7 @@ beforeEach(async () => {
       }
       const body = JSON.parse(raw);
       if (!String(body.prompt).includes(FOX)) bodies.push(body);
+      if (stubHang && !String(body.prompt).includes(FOX)) return; // the client aborts at timeout_ms
       res.writeHead(stubStatus, { 'content-type': 'application/json' });
       res.end(stubStatus === 200 ? JSON.stringify(stubAnswer) : 'boom');
     });
@@ -166,6 +170,37 @@ describe('active mode', () => {
     const r = await run('Draft the module boundaries for the billing service epsilon', cfg());
     expect(callOllama).toHaveBeenCalled();
     expect(r).toMatchObject({ category: 'simple' });
+  });
+});
+
+describe('a sidecar that exceeds timeout_ms (plan 2026-10-25-laya-sole-classifier, step 4)', () => {
+  it('is transparent: the chain decides this prompt, nothing is logged for Laya, no comparator', async () => {
+    stubHang = true;
+    const r = await run(
+      'Draft the module boundaries for the billing service hang-one',
+      cfg({ timeout_ms: 150, compare_in_background: true })
+    );
+    expect(callOllama).toHaveBeenCalled();
+    expect(r).toMatchObject({ category: 'simple' });
+    await new Promise((res) => setTimeout(res, 100)); // a detached comparator would land here
+    const stages = records().map((rec) => rec.stage);
+    expect(stages).not.toContain('laya');
+    expect(stages).not.toContain('comparator');
+  });
+
+  it('is not an outage: the very next prompt is decided by Laya again', async () => {
+    stubHang = true;
+    await run(
+      'Draft the module boundaries for the billing service hang-two',
+      cfg({ timeout_ms: 150 })
+    );
+    stubHang = false;
+    const next = await run(
+      'Draft the module boundaries for the billing service hang-three',
+      cfg({ timeout_ms: 150 })
+    );
+    expect(next).toMatchObject({ category: 'design' });
+    expect(getLastClassificationSource()?.source).toBe(`laya:${CKPT}`);
   });
 });
 

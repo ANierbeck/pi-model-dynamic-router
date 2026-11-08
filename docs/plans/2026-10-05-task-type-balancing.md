@@ -2,14 +2,15 @@
 
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
 
-**Status:** In progress (2026-11-08) — approved by the owner 2026-10-05.
+**Status:** Done except 5c (2026-11-08) — approved by the owner 2026-10-05.
 Phases 0–3, 4 (budget pacing, `src/budget-pacing.ts`), 5a (cache
 measurement) and 5b (cache-aware compaction, `src/context-compaction.ts`) are
 implemented and merged (CHANGELOG); Phase 0 step 6 is closed by measurement
 (`docs/research/2026-11-08-task-type-balancing-remainder.md`: no router-side
-prefix break). Open: 5d — the measurement shows ~$3 a month at stake, so
-building it is an owner decision, not a default (research doc, conclusion);
-5c stays deferred to 2.0.x. **Verified against:** `main` @ `6e20d28`, session
+prefix break). 5d is CLOSED by the owner (2026-11-08): the measurement shows
+~$3 a month at stake, not worth the quality risk; the bulk_read threshold
+review happens only if the threshold ever feels wrong (the block log line
+would first need the file size). 5c stays deferred to 2.0.x. **Verified against:** `main` @ `6e20d28`, session
 files and logs of November 2026.
 
 **Goal:** Spread routed work across subscription tanks by *task type*

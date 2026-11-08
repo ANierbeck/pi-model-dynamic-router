@@ -34,11 +34,23 @@ import { textOf } from './utils.ts';
 /** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
+/**
+ * Consecutive classify timeouts that take the stage down. One slow answer is
+ * latency (the sidecar shares the GPU: the same work took 22 ms to 2.6 s on the
+ * owner's machine), not an outage — it must not hand the next five minutes of
+ * prompts to the cloud chain. A run of timeouts is a hung sidecar, which must
+ * not tax every prompt with the full timeout either.
+ */
+export const TIMEOUT_STRIKES_BEFORE_DOWN = 3;
 /** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
 export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 
 let _availability: { ok: boolean; until: number } | null = null;
 let _lastProbeError: string | null = null;
+let _timeoutStrikes = 0;
+
+/** The request ran into `timeout_ms` (as opposed to failing outright). */
+class LayaTimeoutError extends Error {}
 
 /** Conservative chars-per-token ratio for the router's coarse cap (EN ≈ 4, DE ≈ 3.5, code/logs lower). */
 const CHARS_PER_TOKEN = 3;
@@ -97,6 +109,7 @@ function markUnavailable(error?: string): void {
 export function resetLayaAvailability(): void {
   _availability = null;
   _lastProbeError = null;
+  _timeoutStrikes = 0;
 }
 
 /** Probe with a real classification task (never a bare ping). TTL-gated per session. */
@@ -221,7 +234,9 @@ export async function classifyWithLayaRaw(
     };
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error(`classify request timed out after ${timeoutMs}ms`, { cause: err });
+      throw new LayaTimeoutError(`classify request timed out after ${timeoutMs}ms`, {
+        cause: err,
+      });
     }
     throw err;
   } finally {
@@ -293,11 +308,19 @@ export async function classifyWithLayaDetailed(
   let answer: LayaAnswer;
   try {
     answer = await classifyWithLayaRaw(prompt, context, cfg.endpoint!, cfg.timeout_ms!);
+    _timeoutStrikes = 0;
   } catch (err) {
-    markUnavailable(err instanceof Error ? err.message : textOf(err));
-    warnLog(
-      `[router] classifier_laya: classify failed — ${err instanceof Error ? err.message : textOf(err)}; stage disabled`
-    );
+    const message = err instanceof Error ? err.message : textOf(err);
+    if (err instanceof LayaTimeoutError && ++_timeoutStrikes < TIMEOUT_STRIKES_BEFORE_DOWN) {
+      // Latency, not an outage: the chain answers THIS prompt, Laya stays on.
+      warnLog(
+        `[router] classifier_laya: ${message} (${_timeoutStrikes}/${TIMEOUT_STRIKES_BEFORE_DOWN}); the chain decides this prompt`
+      );
+      return null;
+    }
+    // Going down needs no reset: the next probe (resetLayaAvailability) clears the count.
+    markUnavailable(message);
+    warnLog(`[router] classifier_laya: classify failed — ${message}; stage disabled`);
     return null;
   }
   return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };
