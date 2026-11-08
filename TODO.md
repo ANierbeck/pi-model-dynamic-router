@@ -149,9 +149,11 @@ groups no category reached. Resolved by the five-group layout
 (retired names cannot come back; a new `fallback` identifier must be added to
 an honest-meaning allowlist). Breaking config rename: `classifier_cloud_fallback`
 → `classifier_cloud_chain` (warned, not aliased). Plan:
-`docs/plans/2026-10-25-fallback-naming.md`. **Open, owner-side:** the
-`~/.laya-ft` labeling tooling still uses `fallback` as a corpus label —
-renaming it migrates existing labels, so it needs the owner's go.
+`docs/plans/2026-10-25-fallback-naming.md`. **Owner go given 2026-11-08
+(part of the 2.0.0 Laya gate):** the `~/.laya-ft` labeling tooling's
+`fallback` corpus label is renamed before 2.0.0 — migrating existing labels
+(corpus, queue, labels, golden set) is owner-side work that does not ship
+with the router.
 
 ### ✅ **Compaction reason text named the wrong group — CLOSED 2026-11-02 (already fixed)**
 
@@ -286,13 +288,16 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
 - [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
 ### Integration & Extensibility
 - **Optional integrations: one contract, one config block**
-  (`docs/plans/2026-11-08-optional-integrations-config.md`, proposed, not
-  started): Laya is wired ad hoc (own block, own validator, own health state);
+  (`docs/plans/2026-11-08-optional-integrations-config.md`, proposed; the
+  contract + rename are a 2.0.0 blocker since decision 1 is DECIDED,
+  2026-11-08): Laya is wired ad hoc (own block, own validator, own health state);
   unknown config keys are silently ignored and a project layer can enable
   integrations. The plan proposes `integrations.*` with per-layer trust and a
-  core-only invariant test. BLOCKED on owner decisions 1–3 (rename
-  `classifier_laya` → `integrations.laya` before 2.0.0? known-key/schema
-  source? project-layer trust rule?). Prerequisite for the CodexBar plan.
+  core-only invariant test. Decision 1 DECIDED 2026-11-08: rename
+  `classifier_laya` → `integrations.laya` before 2.0.0 (with `RENAMED_*`
+  warning, no alias). Decisions 2 (known-key/schema source) and 3
+  (project-layer trust) remain open and do not block 2.0.0. Prerequisite
+  for the CodexBar plan.
 - **External usage source: CodexBar**
   (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
   started): the router only sees its own counters — quota windows, reset
@@ -558,7 +563,8 @@ Recorded so nothing rots (AGENTS.md §7 escape: an explicit owner deferral).
 Pick up in a later round, each as its own plan where noted (§11):
 
 - **Laya sidecar distribution** (`docs/plans/2026-10-31-laya-sidecar-distribution.md`):
-  open decision 3 (where the sidecar lives: subdirectory with its own release
+  **2.0.0 blocker** (owner 2026-11-08: everything Laya before the release).
+  Open decision 3 (where the sidecar lives: subdirectory with its own release
   vs. separate repo). Decision 4 is evaluated: the 2026-11-08 spike
   (`docs/research/2026-11-08-onnxruntime-node-spike.md`) shows
   `onnxruntime-node` reaches 100 % golden-set argmax parity with the MLX
@@ -566,7 +572,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   runtime requirement for inference — the tradeoff moves to the 290 MB native
   dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
   agreement). Remaining steps: `/health` contract tests, live-queue parity
-  run, Linux/Windows latency, packaging with pinned revision + checksum.
+  run, packaging with pinned revision + checksum, r2 weights publish (own
+  §1 approval). Linux/Windows latency WAIVED by the owner 2026-11-08
+  (modern PCs assumed similar).
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
@@ -595,11 +603,19 @@ Pick up in a later round, each as its own plan where noted (§11):
   hasNewRegistryRefs, budget-pacing clock-skew guard documented).
   `npm audit` 0 / 0 prod (minimatch fixed by override, PR #125); pi devDep
   1.5.0 = installed host 1.5.0; shipped `log_level: "warn"`. Remaining before
-  a release may be proposed: nothing from the review, but the Laya gate
-  (owner 2026-11-08): the disagreement labeling, the momentum decision and
-  the `continue` decision must be through first — exit criteria proposed in
-  `docs/plans/2026-10-25-laya-sole-classifier.md` ("Release gate"), awaiting
-  the owner's confirmation. The release itself
+  a release may be proposed: nothing from the review, but the Laya gate:
+  **"everything Laya" ships before 2.0.0** (owner 2026-11-08, expanded the
+  same day from the labeling-only gate): (1) sole-classifier steps 3/5/6 —
+  disagreement labeling, momentum decision, `continue` decision, closing
+  numbers (exit criteria proposed in
+  `docs/plans/2026-10-25-laya-sole-classifier.md`, "Release gate");
+  (2) sidecar distribution COMPLETE — `/health` contract tests, live-queue
+  parity, packaging with pinned revision + checksum + install docs, r2
+  weights publish (own §1 approval); Linux/Windows latency WAIVED (owner:
+  modern PCs assumed similar); (3) rename `classifier_laya` ->
+  `integrations.laya` before 2.0.0 (decided 2026-11-08) — integration
+  contract + rename + migration warning land pre-release; (4) the
+  `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.
 

@@ -93,24 +93,43 @@ ask Laya + the chain about those prompts too and log them as observations
    the logged probabilities; whether the owner-defined inheritance is what
    the traffic needs.
 
-## Release gate (owner decision 2026-11-08)
+## Release gate (owner decisions 2026-11-08)
 
-Release 2.0.0 does not ship before steps 3, 5 and 6 are through: the
-labeling keeps running (`~/.laya-ft/shadow_eval/live_label.py`), but it has
-to reach a verdict first. "Through" needs a measurable end, which the owner
-has not set yet. **Proposed (agent, not an owner decision):**
+**Expanded the same day by the owner: "everything Laya" is through before
+2.0.0** — not just this plan's steps. The full gate:
 
-- step 3: every `laya` vs `comparator` disagreement of the window since the
-  2026-11-08 restart is labeled, and at least 100 pairs exist;
-- step 5: the momentum observations of that window are read once and the
-  keep-or-change decision for momentum routing is written down;
-- step 6: `continue` precision/recall from the logged probabilities is
-  reported and the owner decides whether the inheritance stays;
-- the closing numbers (group accuracy of Laya vs chain with confidence
-  intervals, as in "Risk the owner accepted") are recorded in
-  `docs/research/` and the CHANGELOG states the outcome.
+1. **This plan** (steps 3, 5, 6): the labeling keeps running
+   (`~/.laya-ft/shadow_eval/live_label.py`), but it has to reach a verdict
+   first. "Through" needs a measurable end, which the owner has not set yet.
+   **Proposed (agent, not an owner decision):**
+   - step 3: every `laya` vs `comparator` disagreement of the window since
+     the 2026-11-08 restart is labeled, and at least 100 pairs exist;
+   - step 5: the momentum observations of that window are read once and the
+     keep-or-change decision for momentum routing is written down;
+   - step 6: `continue` precision/recall from the logged probabilities is
+     reported and the owner decides whether the inheritance stays;
+   - the closing numbers (group accuracy of Laya vs chain with confidence
+     intervals, as in "Risk the owner accepted") are recorded in
+     `docs/research/` and the CHANGELOG states the outcome.
+2. **Sidecar distribution COMPLETE**
+   ([`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md)):
+   `/health` contract tests, live-queue parity run, packaging with pinned
+   revision + checksum + install docs, and the r2 weights publish — the
+   publish itself stays a separate explicit approval (AGENTS.md §1). The
+   Linux/Windows latency measurement is WAIVED by the owner 2026-11-08
+   (modern PCs are assumed similar); decision 3 (sidecar location) is still
+   open.
+3. **Rename `classifier_laya` → `integrations.laya`**
+   ([`2026-11-08-optional-integrations-config.md`](2026-11-08-optional-integrations-config.md),
+   decision 1): DECIDED by the owner 2026-11-08 — rename before 2.0.0, so
+   the integration contract (at least contract + rename + migration
+   warning) lands before the release.
+4. **`~/.laya-ft` fallback label migration**: the labeling tooling's
+   `fallback` corpus label is renamed before 2.0.0 (owner go 2026-11-08;
+   see the fallback-naming plan). Owner-side, not shipped with the router.
 
-The release itself stays a separate explicit approval (AGENTS.md §1).
+The release itself stays a separate explicit approval (AGENTS.md §1) — the
+gate is a prerequisite, not a substitute for it.
 
 ## Separate: fallback naming
 
