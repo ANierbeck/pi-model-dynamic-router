@@ -3,7 +3,8 @@
 **Status:** in progress 2026-11-08 — manifest, head parity gate and the
 `pi-laya-model` installer are done (measurements:
 [`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
-`/health` identity, `/router status`, the skill and the docs are next. Part of the 2.0.0 "everything
+the `/health` identity (router and reference sidecar) and `/router status`
+are done; the skill and the docs are next. Part of the 2.0.0 "everything
 Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
@@ -65,8 +66,15 @@ nobody can tell what they got.
    before download, HTTP Range resume, progress on a TTY, `--json` for the
    skill. Logic in a testable CLI, not in skill prose.
 5. **Identity comes back at runtime.** The sidecar contract gains
-   `GET /health` → `{ status, model, version, backend, weights_sha256,
-   head_sha256 }`. The router records the **reported** identity in the decision
+   `GET /health` → `{ status, model, version, backend, artifact_sha256,
+   head_sha256 }` (`artifact_sha256` — first drafted as `weights_sha256` — is
+   `artifactSha256()` over the whole set's file hashes, config and tokenizer
+   included, not the weights alone; `pi-laya-model install --json` prints the
+   same value). Every field is optional; the reference sidecar
+   (`spikes/laya-http/identity.py`) takes model/version/backend from the
+   install record and computes `head_sha256` from the head it SERVES, and an
+   install directory without `--head-json` serves the head its record names.
+   The router records the **reported** identity in the decision
    log (`laya:<model>@<version>`) and falls back to the configured string only
    when `/health` is unavailable — and then says so in the log. `/router status`
    shows reported vs. configured and warns on a mismatch.
@@ -177,10 +185,25 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
       (separate esbuild entry, Node built-ins only; a test bundles it and runs
       it outside the repo). `piAgentDir()` moved to `src/agent-dir.ts` so the
       bundle does not pull in the config loader.
-- [ ] Red-first: `/health` client contract test (identity fields, fallback to
+- [x] Red-first: `/health` client contract test (identity fields, fallback to
       the configured string when `/health` fails) and the decision-log label
-      change to `laya:<model>@<version>`.
-- [ ] `/router status`: reported vs. configured identity, mismatch warning.
+      change to `laya:<model>@<version>`. `fetchLayaHealth` /
+      `layaRef` (`src/laya-classifier.ts`): the probe reads `/health` once
+      per TTL; the record carries `identity: reported | configured`; a head
+      mismatch is warned once per probe. Sidecar side:
+      `spikes/laya-http/identity.py` + `GET /health` in `server.py`, hashes
+      pinned byte for byte against the TypeScript ones
+      (`test/laya-sidecar-identity.test.ts`). Red evidence: the new tests red
+      against the unchanged code (contract, chain, status, fingerprint,
+      sidecar script missing); 14 router-side and 9 sidecar-side hand-applied
+      mutations all red (one survivor, a schema-version check hidden by an
+      incomplete fixture, closed with a complete fixture). Live check: an
+      MLX install from a local `file://` release, served without
+      `--head-json`, reports `r2@1.0.0` with the router's head; the router
+      labels it `laya:r2@1.0.0` (reported) and answers equal the live sidecar.
+- [x] `/router status`: reported vs. configured identity, mismatch warning
+      (configured `<model>@<version>` ≠ reported; served head ≠ router head;
+      a free-form checkpoint is not comparable, so not a mismatch).
 - [ ] `skills/router-laya-install/SKILL.md`, modelled on `router-login`.
 - [ ] Docs: `docs/config-override.md` (checkpoint semantics), README (install
       path), CHANGELOG under 2.0.0.

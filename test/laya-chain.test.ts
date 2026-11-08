@@ -22,6 +22,9 @@ import { join } from 'node:path';
 import { classifyPrompt, getLastClassificationSource } from '../src/content-classifier.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
 import { resetLayaAvailability, TIMEOUT_STRIKES_BEFORE_DOWN } from '../src/laya-classifier.ts';
+import { headSha256 } from '../src/laya-model-manifest.ts';
+import { LAYA_HEAD_V2_INSTRUCTIONS, VALID_CATEGORIES } from '../src/classification-prompt.ts';
+import * as loggerModule from '../src/logger.ts';
 import type { Config } from '../src/types.ts';
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
@@ -46,6 +49,8 @@ let stubStatus = 200;
 let stubHang = false;
 let stubAnswer: Record<string, unknown> = {};
 /** Replaces the response for requests it returns a value for (probe included when it says so). */
+/** GET /health answer; null = the pre-artifact wrapper, which has no /health (404). */
+let stubHealth: Record<string, unknown> | null = null;
 let stubOverride: ((isProbe: boolean) => { status: number; body: string } | null) | null = null;
 /** Bodies of every classification request (probe excluded), in order. */
 let bodies: any[] = [];
@@ -89,6 +94,7 @@ beforeEach(async () => {
   stubStatus = 200;
   stubHang = false;
   stubOverride = null;
+  stubHealth = null;
   bodies = [];
   stubAnswer = {
     category: 'design',
@@ -102,6 +108,11 @@ beforeEach(async () => {
     let raw = '';
     req.on('data', (c) => (raw += c));
     req.on('end', () => {
+      if (req.method === 'GET' && req.url === '/health' && stubHealth) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(stubHealth));
+        return;
+      }
       if (req.method !== 'POST' || req.url !== '/classify') {
         res.writeHead(404);
         res.end();
@@ -209,6 +220,88 @@ describe('a sidecar that exceeds timeout_ms (plan 2026-10-25-laya-sole-classifie
       cfg({ timeout_ms: 150 })
     );
     expect(next).toMatchObject({ category: 'design' });
+    expect(getLastClassificationSource()?.source).toBe(`laya:${CKPT}`);
+  });
+});
+
+// plan 2026-11-08-laya-model-artifact.md, Solution 5: the label names what the
+// sidecar SERVES, not what the user typed — the owner's own config named the
+// base HF checkpoint while the sidecar served the fine-tuned r2 (Problem 2).
+describe('identity: the label comes from /health, the configured string is the fallback', () => {
+  const routerHead = headSha256({
+    instructions: LAYA_HEAD_V2_INSTRUCTIONS,
+    categories: [...VALID_CATEGORIES],
+  });
+  const reports = (extra: Record<string, unknown> = {}) =>
+    (stubHealth = {
+      status: 'ok',
+      model: 'r9',
+      version: '1.0.0',
+      backend: 'onnx',
+      head_sha256: routerHead,
+      ...extra,
+    });
+
+  it('a reporting sidecar names the model in the source, the chain and the decision log', async () => {
+    reports();
+    await run('Draft the module boundaries for the billing service id-1', cfg());
+    expect(getLastClassificationSource()?.source).toBe('laya:r9@1.0.0');
+    const [rec] = records();
+    expect(rec.laya).toMatchObject({ ref: 'laya:r9@1.0.0', identity: 'reported' });
+    expect(rec.chain[0]).toMatchObject({ ref: 'laya:r9@1.0.0', outcome: 'ok' });
+  });
+
+  it('shadow mode logs the reported identity too', async () => {
+    reports();
+    await run('Draft the module boundaries for the billing service id-2', cfg({ mode: 'shadow' }));
+    expect(records()[0].laya).toMatchObject({ ref: 'laya:r9@1.0.0', identity: 'reported' });
+  });
+
+  it('without /health the configured checkpoint is the label, and the record says so', async () => {
+    await run('Draft the module boundaries for the billing service id-3', cfg());
+    expect(getLastClassificationSource()?.source).toBe(`laya:${CKPT}`);
+    expect(records()[0].laya).toMatchObject({ ref: `laya:${CKPT}`, identity: 'configured' });
+  });
+
+  it('a /health without a usable model@version falls back to the configured label', async () => {
+    reports({ model: '../escape' });
+    await run('Draft the module boundaries for the billing service id-4', cfg());
+    expect(records()[0].laya).toMatchObject({ ref: `laya:${CKPT}`, identity: 'configured' });
+  });
+
+  it('a head mismatch is warned once per probe, not per prompt — and the stage still decides', async () => {
+    const warn = vi.spyOn(loggerModule, 'warnLog');
+    try {
+      reports({ head_sha256: 'e'.repeat(64) });
+      await run('Draft the module boundaries for the billing service id-5', cfg());
+      await run('Draft the module boundaries for the billing service id-6', cfg());
+      const headWarnings = warn.mock.calls.filter(([m]) => String(m).includes('head'));
+      expect(headWarnings).toHaveLength(1);
+      expect(String(headWarnings[0]![0])).toContain('r9@1.0.0');
+      expect(getLastClassificationSource()?.source).toBe('laya:r9@1.0.0');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a matching head is not warned about', async () => {
+    const warn = vi.spyOn(loggerModule, 'warnLog');
+    try {
+      reports();
+      await run('Draft the module boundaries for the billing service id-7', cfg());
+      expect(warn.mock.calls.filter(([m]) => String(m).includes('head'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a re-probe re-reads the identity: a sidecar restarted without /health loses the label', async () => {
+    reports();
+    await run('Draft the module boundaries for the billing service id-8', cfg());
+    expect(getLastClassificationSource()?.source).toBe('laya:r9@1.0.0');
+    stubHealth = null;
+    resetLayaAvailability(); // what the TTL expiry does
+    await run('Draft the module boundaries for the billing service id-9', cfg());
     expect(getLastClassificationSource()?.source).toBe(`laya:${CKPT}`);
   });
 });

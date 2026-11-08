@@ -19,7 +19,9 @@
 //   ping) with a TTL; on first use in a session without a valid probe the stage
 //   attempts a probe, and a failed probe disables the stage for the TTL.
 //
-// Source string for the chain: `laya:<checkpoint>`.
+// Source string for the chain: `laya:<model>@<version>` as the sidecar
+// reports it on GET /health, else `laya:<checkpoint>` as configured (plan
+// 2026-11-08-laya-model-artifact.md, Solution 5).
 
 import { warnLog } from './logger.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
@@ -30,6 +32,7 @@ import {
   buildContextBlock,
 } from './classification-prompt.ts';
 import { textOf } from './utils.ts';
+import { headSha256, isSafeName } from './laya-model-manifest.ts';
 
 /** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
@@ -48,6 +51,8 @@ export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 let _availability: { ok: boolean; until: number } | null = null;
 let _lastProbeError: string | null = null;
 let _timeoutStrikes = 0;
+/** What the sidecar reported on /health at the last successful probe; null = nothing usable. */
+let _identity: LayaReportedIdentity | null = null;
 
 /** The request ran into `timeout_ms` (as opposed to failing outright). */
 class LayaTimeoutError extends Error {}
@@ -110,6 +115,7 @@ export function resetLayaAvailability(): void {
   _availability = null;
   _lastProbeError = null;
   _timeoutStrikes = 0;
+  _identity = null;
 }
 
 /** Probe with a real classification task (never a bare ping). TTL-gated per session. */
@@ -123,6 +129,17 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     }
     _availability = { ok: true, until: Date.now() + UNAVAILABLE_TTL_MS };
     _lastProbeError = null;
+    // Identity is optional: a sidecar without /health stays fully usable.
+    const health = await fetchLayaHealth(endpoint, timeoutMs);
+    _identity = health.ok ? withHeadCheck(health.identity) : null;
+    if (_identity?.headMatches === false) {
+      const who = labelOf(_identity) ?? endpoint;
+      warnLog(
+        `[router] classifier_laya: ${who} serves a different head than the router builds ` +
+          `(sidecar head_sha256 ${_identity.head_sha256}) — its answers measure prompt drift, ` +
+          `not the model; install a matching artifact (pi-laya-model)`
+      );
+    }
     return true;
   } catch (err) {
     markUnavailable(err instanceof Error ? err.message : textOf(err));
@@ -242,6 +259,110 @@ export async function classifyWithLayaRaw(
   } finally {
     clearTimeout(id);
   }
+}
+
+/** The identity fields a sidecar may report on GET /health; each only when it is trustworthy. */
+export interface LayaIdentity {
+  model?: string;
+  version?: string;
+  backend?: string;
+  /** Fingerprint of the loaded artifact set (`artifactSha256` in laya-model-manifest.ts). */
+  artifact_sha256?: string;
+  /** `headSha256` of the head the sidecar serves. */
+  head_sha256?: string;
+}
+
+/** A reported identity plus the router's verdict on its head (absent when no head was reported). */
+export interface LayaReportedIdentity extends LayaIdentity {
+  headMatches?: boolean;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const BACKEND_NAME = /^[a-z0-9_-]{1,32}$/;
+
+/**
+ * GET <endpoint>/health. Never throws: a sidecar without the route (404),
+ * a refused connection, a timeout or a malformed body all yield
+ * `{ ok: false, why }`. Fields that fail validation are dropped one by one,
+ * because the label is built from them and lands in logs and status.
+ */
+export async function fetchLayaHealth(
+  endpoint: string,
+  timeoutMs: number
+): Promise<{ ok: true; identity: LayaIdentity } | { ok: false; why: string }> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${endpoint.replace(/\/+$/, '')}/health`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      await res.body?.cancel();
+      return { ok: false, why: `HTTP ${res.status}` };
+    }
+    let raw: unknown;
+    try {
+      raw = await res.json();
+    } catch {
+      return { ok: false, why: 'malformed response: not JSON' };
+    }
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      return { ok: false, why: 'malformed response: not an object' };
+    }
+    const r = raw as Record<string, unknown>;
+    if (r.status !== 'ok') return { ok: false, why: `status ${JSON.stringify(r.status)}` };
+    const identity: LayaIdentity = {};
+    if (isSafeName(r.model)) identity.model = r.model;
+    if (isSafeName(r.version)) identity.version = r.version;
+    if (typeof r.backend === 'string' && BACKEND_NAME.test(r.backend)) identity.backend = r.backend;
+    if (typeof r.artifact_sha256 === 'string' && SHA256_HEX.test(r.artifact_sha256)) {
+      identity.artifact_sha256 = r.artifact_sha256;
+    }
+    if (typeof r.head_sha256 === 'string' && SHA256_HEX.test(r.head_sha256)) {
+      identity.head_sha256 = r.head_sha256;
+    }
+    return { ok: true, identity };
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === 'AbortError';
+    return { ok: false, why: timedOut ? `timed out after ${timeoutMs}ms` : textOf(err) };
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/** The head the router builds, hashed like the artifact manifest does. */
+function routerHeadSha256(): string {
+  const q = buildClassifierLayaQuestion();
+  return headSha256({ instructions: q.instructions, categories: q.criteria });
+}
+
+function withHeadCheck(identity: LayaIdentity): LayaReportedIdentity {
+  return identity.head_sha256 === undefined
+    ? identity
+    : { ...identity, headMatches: identity.head_sha256 === routerHeadSha256() };
+}
+
+/** `<model>@<version>` when both were reported, else null. */
+function labelOf(identity: LayaIdentity | null): string | null {
+  return identity?.model && identity.version ? `${identity.model}@${identity.version}` : null;
+}
+
+/** The identity from the last successful probe, for /router status; null = none reported. */
+export function layaReportedIdentity(): LayaReportedIdentity | null {
+  return _identity ? { ..._identity } : null;
+}
+
+/**
+ * The chain source / decision-log label for the stage: what the sidecar
+ * reported (`identity: 'reported'`), else the configured checkpoint
+ * (`identity: 'configured'`) — the record says which, so a configured label
+ * is never mistaken for a verified one.
+ */
+export function layaRef(checkpoint: string): { ref: string; identity: 'reported' | 'configured' } {
+  const label = labelOf(_identity);
+  return label
+    ? { ref: `laya:${label}`, identity: 'reported' }
+    : { ref: `laya:${checkpoint}`, identity: 'configured' };
 }
 
 /**

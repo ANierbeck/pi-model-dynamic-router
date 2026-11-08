@@ -262,12 +262,16 @@ export interface ClassifierLayaConfig {
   confidence_threshold?: number;
   /** Endpoint of the local Laya wrapper/sidecar (default http://127.0.0.1:8089).
    * The wrapper speaks POST /classify {prompt, context?} ->
-   * {category, confidence, probabilities, ms}. */
+   * {category, confidence, probabilities, ms}, and optionally GET /health ->
+   * {status, model?, version?, backend?, artifact_sha256?, head_sha256?}. */
   endpoint?: string;
-  /** Pinned Laya model checkpoint: the HF repo path of the laya-mlx weights,
-   * ideally with a revision hash (e.g. aac6fef/laya-multilingual-mlx:f2b4faf5...).
-   * REQUIRED when enabled. The router never downloads weights — fetching is a
-   * manual step (pip install laya-mlx + huggingface_hub.snapshot_download).
+  /** The model the user expects the sidecar to serve: `<model>@<version>` for a
+   * `pi-laya-model` install (e.g. r2@1.0.0), or an HF repo path with a revision.
+   * REQUIRED when enabled. It is the decision-log label only when the sidecar
+   * does not report its identity on GET /health; a reported `<model>@<version>`
+   * wins, and /router status warns when a configured `<model>@<version>`
+   * disagrees with it. The router never downloads weights — installing is an
+   * explicit `pi-laya-model install` (plan 2026-11-08-laya-model-artifact.md).
    * Shipped config must NOT name a checkpoint (ADR-0025).
    */
   checkpoint?: string;
@@ -323,7 +327,7 @@ export interface Config {
    * Opt-in local Laya typed-decision classifier stage (Apache 2.0; spike at
    * docs/research/2026-10-09-laya-spike.md, plan at
    * docs/plans/2026-10-09-laya-tasks1-5.md). Disabled by default; requires a
-   * pinned HF checkpoint ref when enabled — the router never downloads weights.
+   * `checkpoint` when enabled — the router never downloads weights.
    */
   classifier_laya?: ClassifierLayaConfig;
   /**

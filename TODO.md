@@ -575,8 +575,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   sidecar and p99 < 800 ms latency (Apple Silicon), so Python is not a hard
   runtime requirement for inference — the tradeoff moves to the 290 MB native
   dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
-  agreement). Remaining steps: `/health` contract tests, live-queue parity
-  run, packaging with pinned revision + checksum, r2 weights publish (own
+  agreement). Remaining steps (`/health` contract tests done 2026-11-08):
+  live-queue parity run, packaging with pinned revision + checksum, r2 weights publish (own
   §1 approval). Linux/Windows latency WAIVED by the owner 2026-11-08
   (modern PCs assumed similar).
 - **Laya model artifact + install skill**
@@ -585,8 +585,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   install — `checkpoint` is a hand-typed HF path, the router never downloads
   weights, nothing verifies what arrived, and the head was not pinned to the
   router's head. **In progress 2026-11-08:** manifest, head parity gate and the
-  `pi-laya-model` installer landed; `/health` identity, status, skill, docs
-  remain. Owner decisions 2026-11-08: weights as GitHub Release
+  `pi-laya-model` installer landed, then the `/health` identity (router +
+  reference sidecar) and the `/router status` mismatch warnings; skill and
+  docs remain. Owner decisions 2026-11-08: weights as GitHub Release
   assets + manifest in the repo, ONNX as the default backend, an install skill
   that asks first; install root `~/.pi/agent/laya-models/`, a Pi-independent
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
