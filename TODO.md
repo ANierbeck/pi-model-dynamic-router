@@ -542,12 +542,15 @@ Recorded so nothing rots (AGENTS.md §7 escape: an explicit owner deferral).
 Pick up in a later round, each as its own plan where noted (§11):
 
 - **Laya sidecar distribution** (`docs/plans/2026-10-31-laya-sidecar-distribution.md`):
-  open decisions 3 (where the sidecar lives: subdirectory with its own release
-  vs. separate repo) and 4 (Python runtime acceptable for users vs.
-  in-process `onnxruntime-node` — not yet evaluated; recommended first step is
-  a small onnxruntime-node spike). Remaining steps: `/health` contract tests,
-  ONNX conversion of `r2` + parity run, Linux/Windows latency, packaging with
-  pinned revision + checksum.
+  open decision 3 (where the sidecar lives: subdirectory with its own release
+  vs. separate repo). Decision 4 is evaluated: the 2026-11-08 spike
+  (`docs/research/2026-11-08-onnxruntime-node-spike.md`) shows
+  `onnxruntime-node` reaches 100 % golden-set argmax parity with the MLX
+  sidecar and p99 < 800 ms latency (Apple Silicon), so Python is not a hard
+  runtime requirement for inference — the tradeoff moves to the 290 MB native
+  dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
+  agreement). Remaining steps: `/health` contract tests, live-queue parity
+  run, Linux/Windows latency, packaging with pinned revision + checksum.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
