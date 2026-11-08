@@ -576,7 +576,11 @@ Pick up in a later round, each as its own plan where noted (§11):
   hasNewRegistryRefs, budget-pacing clock-skew guard documented).
   `npm audit` 0 / 0 prod (minimatch fixed by override, PR #125); pi devDep
   1.5.0 = installed host 1.5.0; shipped `log_level: "warn"`. Remaining before
-  a release may be proposed: nothing from the review. The release itself
+  a release may be proposed: nothing from the review, but the Laya gate
+  (owner 2026-11-08): the disagreement labeling, the momentum decision and
+  the `continue` decision must be through first — exit criteria proposed in
+  `docs/plans/2026-10-25-laya-sole-classifier.md` ("Release gate"), awaiting
+  the owner's confirmation. The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.
 
