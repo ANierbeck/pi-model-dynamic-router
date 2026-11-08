@@ -295,9 +295,13 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   integrations. The plan proposes `integrations.*` with per-layer trust and a
   core-only invariant test. Decision 1 DECIDED 2026-11-08: rename
   `classifier_laya` → `integrations.laya` before 2.0.0 (with `RENAMED_*`
-  warning, no alias). Decisions 2 (known-key/schema source) and 3
-  (project-layer trust) remain open and do not block 2.0.0. Prerequisite
-  for the CodexBar plan.
+  warning, no alias). Decision 3 DECIDED 2026-11-08: a project layer may
+  enable an integration (the core-only invariant test and the loopback rule
+  make that harmless; both pinned). The invariant test for Laya exists
+  (`test/laya-chain.test.ts`). Decision 4 DECIDED: the router gets
+  a way to start the sidecar, later (see below). Only decision 2
+  (known-key/schema source) remains open; it does not block 2.0.0.
+  Prerequisite for the CodexBar plan.
 - **External usage source: CodexBar**
   (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
   started): the router only sees its own counters — quota windows, reset
@@ -586,6 +590,13 @@ Pick up in a later round, each as its own plan where noted (§11):
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
   weights in a dedicated release line of this repo. Open: whether the first
   weights publish stays a 2.0.0 blocker (publish itself needs its own §1 go).
+- **Router-managed sidecar start** (owner 2026-11-08, "can happen later"; not
+  a 2.0.0 blocker; needs its own plan per AGENTS.md §11 when scheduled): the
+  router should be able to start an installed sidecar itself instead of
+  leaving that to a user-level extension. Prototype: the sidecar manager the
+  owner runs outside the repository (health-first adoption, start lock,
+  last-client shutdown). Depends on the model artifact plan below and the
+  integration contract.
 - **Router config UI: guided path for integrations**
   (`docs/plans/2026-11-08-router-config-ui.md`, proposed 2026-11-08; depends
   on the integrations contract): `/router config` is read-mostly, enabling

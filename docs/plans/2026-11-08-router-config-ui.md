@@ -38,8 +38,10 @@ integration by knowing key names and editing JSON.
    - offers the actions that apply (enable, disable, change mode, change port);
    - validates through the integration contract **before** writing, so the
      wizard cannot produce a config the loader would reject;
-   - writes the global user layer only (the trust rule of the integrations
-     plan), applies live, and prints what changed.
+   - writes the global user layer (the wizard's own choice, so one setting
+     follows the user across projects — not a trust rule: the owner decided
+     2026-11-08 that a project layer may enable an integration too), applies
+     live, and prints what changed.
    Non-interactive (`/router config integration laya mode=shadow`) stays
    available for scripts and for the print/RPC modes where `select` is not
    available.

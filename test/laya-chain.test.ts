@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { classifyPrompt, getLastClassificationSource } from '../src/content-classifier.ts';
 import { callOllama, isOllamaAvailable } from '../src/ollama-utils.ts';
-import { resetLayaAvailability } from '../src/laya-classifier.ts';
+import { resetLayaAvailability, TIMEOUT_STRIKES_BEFORE_DOWN } from '../src/laya-classifier.ts';
 import type { Config } from '../src/types.ts';
 
 vi.mock('../src/ollama-utils.ts', async (importOriginal) =>
@@ -45,6 +45,8 @@ let stubStatus = 200;
 /** When set, classification requests (not the probe) are held until the client gives up. */
 let stubHang = false;
 let stubAnswer: Record<string, unknown> = {};
+/** Replaces the response for requests it returns a value for (probe included when it says so). */
+let stubOverride: ((isProbe: boolean) => { status: number; body: string } | null) | null = null;
 /** Bodies of every classification request (probe excluded), in order. */
 let bodies: any[] = [];
 
@@ -86,6 +88,7 @@ beforeEach(async () => {
   resetLayaAvailability();
   stubStatus = 200;
   stubHang = false;
+  stubOverride = null;
   bodies = [];
   stubAnswer = {
     category: 'design',
@@ -107,6 +110,12 @@ beforeEach(async () => {
       const body = JSON.parse(raw);
       if (!String(body.prompt).includes(FOX)) bodies.push(body);
       if (stubHang && !String(body.prompt).includes(FOX)) return; // the client aborts at timeout_ms
+      const over = stubOverride?.(String(body.prompt).includes(FOX));
+      if (over) {
+        res.writeHead(over.status, { 'content-type': 'application/json' });
+        res.end(over.body);
+        return;
+      }
       res.writeHead(stubStatus, { 'content-type': 'application/json' });
       res.end(stubStatus === 200 ? JSON.stringify(stubAnswer) : 'boom');
     });
@@ -474,4 +483,170 @@ describe('decision log', () => {
     await run('Draft the module boundaries for the billing service lambda', cfg(null));
     expect(records()[0]).not.toHaveProperty('laya');
   });
+});
+
+// Core-only invariant (plan 2026-11-08-optional-integrations-config.md, Solution
+// 5; owner decision 2026-11-08: "if it is not there, the default chain
+// applies"): a Laya that is disabled, unreachable, failing or too slow must
+// leave routing EXACTLY as if the integration did not exist — same results,
+// same classification sources, same chain calls, same decision-log trail.
+//
+// Method: one fixed scenario list runs once with Laya absent (the baseline) and
+// once per degraded state; everything is compared against the baseline, so the
+// test says "identical to core-only" instead of re-asserting a hand-written
+// expectation per state. The states are a table: the next integration adds rows.
+//
+// Not compared: timestamps, durations and input hashes (they differ per run by
+// design); a sidecar that ANSWERS with an unusable category (a vetoed answer,
+// not an outage — its record carries the stage's trace on purpose, see
+// 'decision log'); `observe_momentum`, whose detached observations may spend a
+// chain call by design and so has its own routing-only block.
+describe('core-only invariant: a degraded integration is invisible to routing', () => {
+  /** A port nothing listens on: bound once, then released. */
+  let closedPort = 0;
+  beforeEach(async () => {
+    const probe = http.createServer();
+    await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+    closedPort = (probe.address() as { port: number }).port;
+    await new Promise<void>((r) => probe.close(() => r()));
+  });
+
+  /** The classification cache is keyed by prompt text: every run needs prompts no earlier run saw. */
+  let runCounter = 0;
+  /** Plain prompts reach the stage; more than the strike limit, so a slow sidecar crosses "taken out of service". */
+  const PLAIN_PROMPTS = TIMEOUT_STRIKES_BEFORE_DOWN + 2;
+
+  /** Healthy probe, then real requests fail: the realistic "fine at start, broken under load" outage. */
+  const afterProbe = (status: number, body: string) => () => {
+    stubOverride = (isProbe) => (isProbe ? null : { status, body });
+  };
+
+  interface DegradedState {
+    name: string;
+    layaOverrides: (flags: Record<string, unknown>) => Record<string, unknown>;
+    sidecar: () => void;
+  }
+  const states: DegradedState[] = [
+    { name: 'disabled', layaOverrides: (f) => ({ ...f, enabled: false }), sidecar: () => {} },
+    {
+      name: 'connection refused',
+      layaOverrides: (f) => ({ ...f, endpoint: `http://127.0.0.1:${closedPort}` }),
+      sidecar: () => {},
+    },
+    { name: 'HTTP 500', layaOverrides: (f) => f, sidecar: () => (stubStatus = 500) },
+    {
+      name: 'HTTP 500 after a healthy probe',
+      layaOverrides: (f) => f,
+      sidecar: afterProbe(500, 'boom'),
+    },
+    {
+      name: 'timeout',
+      layaOverrides: (f) => ({ ...f, timeout_ms: 150 }),
+      sidecar: () => (stubHang = true),
+    },
+    {
+      name: 'unparseable answer',
+      layaOverrides: (f) => f,
+      sidecar: () => (stubOverride = () => ({ status: 200, body: '<html>not json</html>' })),
+    },
+    {
+      name: 'unparseable answer after a healthy probe',
+      layaOverrides: (f) => f,
+      sidecar: afterProbe(200, '<html>not json</html>'),
+    },
+  ];
+  const flagSets: [string, Record<string, unknown>][] = [
+    ['no flags', {}],
+    ['compare_in_background', { compare_in_background: true }],
+    ['shadow mode', { mode: 'shadow' }],
+  ];
+
+  /** Runs the fixed scenario list and returns everything routing could depend on. */
+  async function playScenario(config: Config, sidecar: () => void) {
+    const tag = `run${runCounter++}`;
+    rmSync(join(homedir(), '.pi'), { recursive: true, force: true });
+    vi.clearAllMocks();
+    vi.mocked(isOllamaAvailable).mockResolvedValue(true);
+    ollamaSays('simple');
+    resetLayaAvailability();
+    stubStatus = 200;
+    stubHang = false;
+    stubOverride = null;
+    sidecar();
+
+    const play = async (prompt: string, extra: Record<string, unknown> = {}) => ({
+      result: await run(prompt, config, extra),
+      source: getLastClassificationSource()?.source,
+    });
+    const outcomes = [];
+    for (let i = 0; i < PLAIN_PROMPTS; i++) {
+      outcomes.push(await play(`Draft the module boundaries for the billing service ${tag} ${i}`));
+    }
+    outcomes.push(await play(`HINT: use group tactical\nfix the typo ${tag}`));
+    outcomes.push(await play('ok do it', { context: { lastCategory: 'code_complex' } }));
+    outcomes.push(
+      await play(`Sketch the retry policy for the export worker ${tag}`, {
+        context: { previousUserMessage: 'we were talking about the export worker' },
+      })
+    );
+    // A detached comparator or observation would land here; nothing may.
+    await new Promise((r) => setTimeout(r, 120));
+
+    return {
+      outcomes,
+      ollamaCalls: vi.mocked(callOllama).mock.calls.length,
+      trail: records().map((rec) => ({
+        stage: rec.stage,
+        answered_by: rec.answered_by,
+        category: rec.final?.category,
+        hasLayaTrace: 'laya' in rec,
+        chain: (rec.chain ?? []).map((a: any) => ({ ref: a.ref, outcome: a.outcome })),
+      })),
+    };
+  }
+
+  for (const [flagName, flags] of flagSets) {
+    for (const state of states) {
+      it(`${state.name} (${flagName}) routes exactly like an absent integration`, async () => {
+        const baseline = await playScenario(cfg(null), () => {});
+        const degraded = await playScenario(cfg(state.layaOverrides(flags)), state.sidecar);
+        expect(degraded.outcomes).toEqual(baseline.outcomes);
+        expect(degraded.ollamaCalls).toBe(baseline.ollamaCalls);
+        expect(degraded.trail).toEqual(baseline.trail);
+      });
+    }
+  }
+
+  // Guards against vacuity: if the baseline were empty or answered by something
+  // else, "identical to the baseline" would prove nothing.
+  it('the baseline itself is the chain: every plain prompt is answered by ollama', async () => {
+    const baseline = await playScenario(cfg(null), () => {});
+    expect(baseline.outcomes.slice(0, PLAIN_PROMPTS).map((o) => o.source)).toEqual(
+      Array(PLAIN_PROMPTS).fill('ollama:gemma-primary')
+    );
+    expect(baseline.ollamaCalls).toBeGreaterThanOrEqual(PLAIN_PROMPTS);
+    expect(baseline.trail.length).toBeGreaterThanOrEqual(PLAIN_PROMPTS);
+  });
+
+  // The mirror image: with a working sidecar the scenarios must differ, or the
+  // invariant above could never fail.
+  it('a healthy integration is NOT invisible — the comparison can tell the difference', async () => {
+    const baseline = await playScenario(cfg(null), () => {});
+    const healthy = await playScenario(cfg(), () => {});
+    expect(healthy.outcomes).not.toEqual(baseline.outcomes);
+    expect(healthy.outcomes[0]?.source).toBe(`laya:${CKPT}`);
+  });
+
+  it.each([
+    ['connection refused', () => ({ endpoint: `http://127.0.0.1:${closedPort}` }), () => {}],
+    ['HTTP 500', () => ({}), () => (stubStatus = 500)],
+    ['timeout', () => ({ timeout_ms: 150 }), () => (stubHang = true)],
+  ] as const)(
+    'observe_momentum, %s: the momentum route is unchanged (the observation is logging only)',
+    async (_name, overrides, sidecar) => {
+      const baseline = await playScenario(cfg(null), () => {});
+      const degraded = await playScenario(cfg({ observe_momentum: true, ...overrides() }), sidecar);
+      expect(degraded.outcomes).toEqual(baseline.outcomes);
+    }
+  );
 });
