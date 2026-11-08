@@ -122,6 +122,10 @@ export function resetLayaAvailability(): void {
 export async function probeLaya(endpoint: string, timeoutMs: number): Promise<boolean> {
   resetLayaAvailability();
   const probePrompt = 'The quick brown fox jumps over the lazy dog.'; // neutral, obvious category
+  // Identity is optional: a sidecar without /health stays fully usable. Read in
+  // parallel — the probe runs inline on a user prompt, and a slow /health must
+  // not add its latency on top. fetchLayaHealth never rejects.
+  const healthP = fetchLayaHealth(endpoint, timeoutMs);
   try {
     const res = await classifyWithLayaRaw(probePrompt, undefined, endpoint, timeoutMs);
     if (!res || typeof res.category !== 'string' || res.category.length === 0) {
@@ -129,8 +133,7 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     }
     _availability = { ok: true, until: Date.now() + UNAVAILABLE_TTL_MS };
     _lastProbeError = null;
-    // Identity is optional: a sidecar without /health stays fully usable.
-    const health = await fetchLayaHealth(endpoint, timeoutMs);
+    const health = await healthP;
     _identity = health.ok ? withHeadCheck(health.identity) : null;
     if (_identity?.headMatches === false) {
       const who = labelOf(_identity) ?? endpoint;

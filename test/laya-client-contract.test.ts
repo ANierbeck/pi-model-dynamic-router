@@ -23,6 +23,9 @@ import * as http from 'node:http';
 import {
   classifyWithLayaRaw,
   fetchLayaHealth,
+  layaReportedIdentity,
+  probeLaya,
+  resetLayaAvailability,
   truncatePromptForLaya,
   layaPromptBudgetChars,
 } from '../src/laya-classifier.ts';
@@ -151,12 +154,28 @@ describe('laya prompt truncation (emergency brake, wrapper is exact)', () => {
 describe('GET /health — the identity the sidecar reports', () => {
   const HEX = (c: string) => c.repeat(64);
   let health: { status: number; body: string; delayMs?: number };
+  let classifyDelayMs = 0;
   let hits: { method: string | undefined; url: string | undefined }[];
 
   async function startHealthStub(): Promise<string> {
     hits = [];
     server = http.createServer((req, res) => {
       hits.push({ method: req.method, url: req.url });
+      if (req.method === 'POST' && req.url === '/classify') {
+        req.resume();
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              category: 'simple',
+              confidence: 0.9,
+              probabilities: { simple: 0.9 },
+              ms: 1,
+            })
+          );
+        }, classifyDelayMs);
+        return;
+      }
       if (req.method !== 'GET' || req.url !== '/health') {
         res.writeHead(404);
         res.end();
@@ -241,6 +260,24 @@ describe('GET /health — the identity the sidecar reports', () => {
     const res = await fetchLayaHealth(base, 80);
     expect(res.ok).toBe(false);
     expect(Date.now() - t0).toBeLessThan(400);
+  });
+
+  // The probe runs inline on the prompt that finds the TTL expired: a slow
+  // /health must not add its latency on top of the probe classification.
+  it('the probe reads /health in parallel with the probe classification', async () => {
+    resetLayaAvailability();
+    health = { status: 200, body: JSON.stringify(full), delayMs: 300 };
+    classifyDelayMs = 300;
+    try {
+      const base = await startHealthStub();
+      const t0 = Date.now();
+      expect(await probeLaya(base, 1000)).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(550); // sequential would be >= 600
+      expect(layaReportedIdentity()).toMatchObject({ model: 'r2', version: '1.0.0' });
+    } finally {
+      classifyDelayMs = 0;
+      resetLayaAvailability();
+    }
   });
 
   it('never throws on a refused connection', async () => {
