@@ -557,8 +557,13 @@ Pick up in a later round, each as its own plan where noted (§11):
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
 - **Task-type balancing remainder** (`docs/plans/2026-10-05-task-type-balancing.md`):
-  Phase 4 (provider budget pacing), 5b (cache-aware auto-compaction, opt-in),
-  5d (compaction summary via a cheaper model, bulk_read thresholds). 5c stays
+  Phases 0–5b are DONE (budget pacing and cache-aware compaction included).
+  Open only: 5d — compaction summary via a cheaper model and the bulk_read
+  threshold review. Measured 2026-11-08
+  (`docs/research/2026-11-08-task-type-balancing-remainder.md`): all 27
+  November compactions cost $2.97, so a cheaper summarizer saves about $3 a
+  month at a quality risk; the bulk_read review needs the file size added to
+  the block log line first. Owner decision: build, or close 5d. 5c stays
   deferred to a later 2.0.x by owner decision.
 - **Release prep for 2.0.0** (owner 2026-11-07: target the next release as
   2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the fallback-rename (V3) and
@@ -630,14 +635,10 @@ prompt-capture/empty-response failures (P0.4) — a cloud provider that
 wedges had no explicit "this whole provider is wedged" signal or
 narration; the owner confirmed the idea 2026-10-06.
 
-**`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phase 0, 1,
-2, 3 and 5a are DONE (Phase 0, 1, 5a merged in PR #36; Phase 2, 3 in the
-2026-10-07 work-round PR). Still open in that plan, each gated by the previous step or an
-explicit owner decision: Phase 4 (optional provider budget pacing, needs
-5a's cacheRead accounting — now available), 5b (cache-aware auto-compaction,
-opt-in, builds on 5a's measurement), 5c (fresh-session suggestion — explicitly
-deferred to a 2.0 version), 5d (compaction summary via a cheaper model,
-bulk_read threshold review).
+**`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phases 0–3, 4
+(budget pacing), 5a and 5b (cache-aware compaction) are DONE. Open: 5c
+(fresh-session suggestion — explicitly deferred to a 2.0.x version) and 5d
+(see the deferred list above).
 
 **Laya classifier integration** — full 9-task plan already committed:
 `docs/plans/2026-10-05-laya-classifier-integration.md`. Ships disabled by
