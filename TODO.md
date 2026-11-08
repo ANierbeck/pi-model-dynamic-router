@@ -285,6 +285,22 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   - *Benefit*: More accurate model selection based on combined requirements
 - [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
 ### Integration & Extensibility
+- **Optional integrations: one contract, one config block**
+  (`docs/plans/2026-11-08-optional-integrations-config.md`, proposed, not
+  started): Laya is wired ad hoc (own block, own validator, own health state);
+  unknown config keys are silently ignored and a project layer can enable
+  integrations. The plan proposes `integrations.*` with per-layer trust and a
+  core-only invariant test. BLOCKED on owner decisions 1–3 (rename
+  `classifier_laya` → `integrations.laya` before 2.0.0? known-key/schema
+  source? project-layer trust rule?). Prerequisite for the CodexBar plan.
+- **External usage source: CodexBar**
+  (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
+  started): the router only sees its own counters — quota windows, reset
+  times and balances surface only as errors (ADR-0003 Option C, deferred).
+  Read-only, loopback-only, background-polled adapter; identity stripped;
+  staged modes observe → pace → exhausted; needs a new ADR. Owner decisions:
+  who runs `codexbar serve`, providers in v1, complement vs replace the own
+  counter for pacing. Builds on the integration contract plan above.
 - [ ] **Create plugin system** - Extensible architecture for new features
 - [ ] **Add webhook support** - Notifications for model changes
 
