@@ -162,6 +162,41 @@ describe('loadLayeredConfig', () => {
     expect(sources).toEqual([path.join(extDir, 'router-config.json')]);
   });
 
+  // Owner decision 2026-11-08 (plan 2026-11-08-optional-integrations-config.md,
+  // decision 3): a project layer MAY switch an optional integration on. The
+  // integration is optional by construction — when it is not there, the default
+  // chain decides (test/laya-chain.test.ts) — so a project enabling
+  // it costs nothing. What keeps this safe is that validation runs on the MERGED
+  // config: the loopback rule below binds every layer.
+  it('a project layer may enable Laya', () => {
+    fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwdDir, '.pi', 'router-config.json'),
+      JSON.stringify({
+        classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: 'http://127.0.0.1:8089' },
+      })
+    );
+    const { config } = loadLayeredConfig(extDir, cwdDir);
+    expect(config.classifier_laya?.enabled).toBe(true);
+    expect(config.classifier_laya?.endpoint).toBe('http://127.0.0.1:8089');
+  });
+
+  it('a project layer cannot point Laya off the machine: the loopback rule binds every layer', () => {
+    fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwdDir, '.pi', 'router-config.json'),
+      JSON.stringify({
+        classifier_laya: {
+          enabled: true,
+          checkpoint: 'x/y',
+          endpoint: 'https://classify.example.com/hook',
+        },
+      })
+    );
+    const { config } = loadLayeredConfig(extDir, cwdDir);
+    expect(config.classifier_laya?.enabled).toBe(false);
+  });
+
   it('merges a global user override (~/.pi/agent/router-config.user.json)', () => {
     fs.writeFileSync(
       path.join(globalDir, 'router-config.user.json'),
