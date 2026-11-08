@@ -93,6 +93,25 @@ ask Laya + the chain about those prompts too and log them as observations
    the logged probabilities; whether the owner-defined inheritance is what
    the traffic needs.
 
+## Release gate (owner decision 2026-11-08)
+
+Release 2.0.0 does not ship before steps 3, 5 and 6 are through: the
+labeling keeps running (`~/.laya-ft/shadow_eval/live_label.py`), but it has
+to reach a verdict first. "Through" needs a measurable end, which the owner
+has not set yet. **Proposed (agent, not an owner decision):**
+
+- step 3: every `laya` vs `comparator` disagreement of the window since the
+  2026-11-08 restart is labeled, and at least 100 pairs exist;
+- step 5: the momentum observations of that window are read once and the
+  keep-or-change decision for momentum routing is written down;
+- step 6: `continue` precision/recall from the logged probabilities is
+  reported and the owner decides whether the inheritance stays;
+- the closing numbers (group accuracy of Laya vs chain with confidence
+  intervals, as in "Risk the owner accepted") are recorded in
+  `docs/research/` and the CHANGELOG states the outcome.
+
+The release itself stays a separate explicit approval (AGENTS.md §1).
+
 ## Separate: fallback naming
 
 Not part of this plan (AGENTS.md §11): its own plan,
