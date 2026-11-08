@@ -40,7 +40,13 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
 - [x] Owner decides 1 (publish r2 weights, 2026-11-01) and 2 (merge documents Laya as experimental, 2026-11-01).
 - [x] User docs as experimental (commit `fe9d913`).
 - [ ] Red-first: sidecar contract tests extended with `/health`; the router log carries the reported identity.
-- [ ] ONNX conversion of `r2` and the parity run (golden + queue); report goes to `docs/research/`, not into this plan.
+- [x] ONNX conversion of `r2` and the golden-set parity run, 2026-11-08: 100 %
+  argmax (180/180), confidence drift > 0.05 on 2/180 items. See
+  `docs/research/2026-11-08-onnxruntime-node-spike.md`, which also answers open
+  decision 4 (Python is not a hard runtime requirement for inference;
+  `onnxruntime-node` meets parity and the latency budget on Apple Silicon) and
+  rules out int8 (69 % argmax agreement, confidence destroyed).
+- [ ] Live-queue parity run through both backends (needs more queue items).
 - [ ] Latency measured on at least one Linux x86 and one Windows machine.
 - [ ] Packaging, pinned revision, checksum, install docs per platform.
 - [x] `test/package-contents.test.ts` pins the shipped file set (allowlist since commit `0dff78b`) — the spike directory and owner paths cannot ship.
