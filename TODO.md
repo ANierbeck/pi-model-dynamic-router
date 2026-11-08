@@ -575,6 +575,22 @@ Pick up in a later round, each as its own plan where noted (§11):
   run, packaging with pinned revision + checksum, r2 weights publish (own
   §1 approval). Linux/Windows latency WAIVED by the owner 2026-11-08
   (modern PCs assumed similar).
+- **Laya model artifact + install skill**
+  (`docs/plans/2026-11-08-laya-model-artifact.md`, proposed 2026-11-08;
+  **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
+  install — `checkpoint` is a hand-typed HF path, the router never downloads
+  weights, nothing verifies what arrived, and the head is not pinned to
+  `buildLayaHead()`. Owner decisions 2026-11-08: weights as GitHub Release
+  assets + manifest in the repo, ONNX as the default backend, an install skill
+  that asks first. Open decisions: install root, first `bin` in the package,
+  which backends ship in v1, who publishes the assets (own §1 approval).
+- **Router config UI: guided path for integrations**
+  (`docs/plans/2026-11-08-router-config-ui.md`, proposed 2026-11-08; depends
+  on the integrations contract): `/router config` is read-mostly, enabling
+  Laya needs six hand-edited keys, and a wrong value silently disables the
+  stage — while `ctx.ui.select/confirm/input` sit unused. Proposes an
+  interactive `config integration <name>` wizard plus one "Integrations"
+  section.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
@@ -612,7 +628,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   (2) sidecar distribution COMPLETE — `/health` contract tests, live-queue
   parity, packaging with pinned revision + checksum + install docs, r2
   weights publish (own §1 approval); Linux/Windows latency WAIVED (owner:
-  modern PCs assumed similar); (3) rename `classifier_laya` ->
+  modern PCs assumed similar); the versioned artifact + install skill are
+  `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
   `integrations.laya` before 2.0.0 (decided 2026-11-08) — integration
   contract + rename + migration warning land pre-release; (4) the
   `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
