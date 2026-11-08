@@ -30,7 +30,13 @@ import * as path from 'node:path';
 import { rmTmpDir } from './helpers/router-env.ts';
 
 const repoRoot = path.resolve(__dirname, '..');
-const BUILD_OUTPUTS = ['index.js', 'router-config.json', 'router-defaults.yaml', 'model-map.yaml'];
+const BUILD_OUTPUTS = [
+  'index.js',
+  'laya-model-install.js',
+  'router-config.json',
+  'router-defaults.yaml',
+  'model-map.yaml',
+];
 // Keep in sync with every stateDir write — see SYNC RULE in the header.
 // Currently: src/cache.ts CacheManager and the dynamic-config save in index.ts.
 const STATE_FILES = ['.cache/scan-cache.json', 'router-config.dynamic.json'];
@@ -151,10 +157,78 @@ describe('npm package contents', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
     const build: string = pkg.scripts.build;
     const fromScript = new Set<string>();
-    const outfile = build.match(/--outfile=(\S+)/);
-    if (outfile?.[1]?.startsWith('dist/')) fromScript.add(outfile[1].slice('dist/'.length));
+    // Every esbuild entry: the extension and the pi-laya-model installer.
+    for (const outfile of build.matchAll(/--outfile=(\S+)/g)) {
+      if (outfile[1]?.startsWith('dist/')) fromScript.add(outfile[1].slice('dist/'.length));
+    }
     const cp = build.match(/\bcp\s+([^&|;]+?)\s+dist\//);
     if (cp) for (const f of cp[1].trim().split(/\s+/)) fromScript.add(f);
     expect([...fromScript].sort()).toEqual([...BUILD_OUTPUTS].sort());
   });
+
+  it('ships the pi-laya-model installer: its bin target and exactly the manifest from laya-models/', () => {
+    // plan 2026-11-08-laya-model-artifact.md, Solution 1 + 4. `files` names the
+    // manifest FILE, not the directory: weights dropped into laya-models/ by
+    // hand (1.3 GB) must never ride into the tarball. The seeded stray below
+    // keeps that assertion non-vacuous.
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+    expect(pkg.bin).toEqual({ 'pi-laya-model': 'dist/laya-model-install.js' });
+
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-laya-'));
+    fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(tmpDir, 'package.json'));
+    for (const rel of BUILD_OUTPUTS) {
+      const file = path.join(tmpDir, 'dist', rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{}');
+    }
+    fs.mkdirSync(path.join(tmpDir, 'laya-models', 'r2', '1.0.0'), { recursive: true });
+    fs.copyFileSync(
+      path.join(repoRoot, 'laya-models', 'manifest.json'),
+      path.join(tmpDir, 'laya-models', 'manifest.json')
+    );
+    fs.writeFileSync(path.join(tmpDir, 'laya-models', 'r2', '1.0.0', 'model.safetensors'), 'x');
+
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const files: string[] = JSON.parse(out)[0].files.map((f: { path: string }) => f.path);
+    expect(files).toContain(pkg.bin['pi-laya-model']);
+    expect(files.filter((f) => f.startsWith('laya-models/'))).toEqual([
+      'laya-models/manifest.json',
+    ]);
+  }, 30_000);
+
+  it('the installer bundle runs on its own: shebang, no router code, finds the shipped manifest', async () => {
+    // Owner decision 2 of the artifact plan: pi-laya-model runs WITHOUT Pi and
+    // with Node built-ins only. Bundle the bin entry exactly like the build
+    // does, into a package-shaped temp tree, and run it.
+    const { build } = await import('esbuild');
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-laya-bin-'));
+    const bundle = path.join(tmpDir, 'dist', 'laya-model-install.js');
+    await build({
+      entryPoints: [path.join(repoRoot, 'src', 'laya-model-bin.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: bundle,
+      logLevel: 'silent',
+    });
+    fs.mkdirSync(path.join(tmpDir, 'laya-models'));
+    fs.copyFileSync(
+      path.join(repoRoot, 'laya-models', 'manifest.json'),
+      path.join(tmpDir, 'laya-models', 'manifest.json')
+    );
+    const code = fs.readFileSync(bundle, 'utf8');
+    expect(code.startsWith('#!/usr/bin/env node')).toBe(true);
+    // Router modules must not leak in (they would drag the whole extension along).
+    expect(code).not.toMatch(/src\/(content-classifier|config-loader|logger|routing)\.ts/);
+    expect(code.length).toBeLessThan(80_000);
+
+    const offer = JSON.parse(
+      execFileSync(process.execPath, [bundle, 'models', '--json'], { encoding: 'utf8' })
+    );
+    expect(offer.map((o: { model: string }) => o.model)).toContain('r2');
+  }, 30_000);
 });

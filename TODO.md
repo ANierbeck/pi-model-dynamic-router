@@ -299,8 +299,8 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   enable an integration (the core-only invariant test and the loopback rule
   make that harmless; both pinned). The invariant test for Laya exists
   (`test/laya-chain.test.ts`). Decision 4 DECIDED: the router gets
-  a way to start the sidecar, later (see below). Only decision 2
-  (known-key/schema source) remains open; it does not block 2.0.0.
+  a way to start the sidecar, later (see below). Decision 2 DECIDED
+  2026-11-08: a hand-maintained schema plus a test that it matches `Config`.
   Prerequisite for the CodexBar plan.
 - **External usage source: CodexBar**
   (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
@@ -580,11 +580,13 @@ Pick up in a later round, each as its own plan where noted (§11):
   §1 approval). Linux/Windows latency WAIVED by the owner 2026-11-08
   (modern PCs assumed similar).
 - **Laya model artifact + install skill**
-  (`docs/plans/2026-11-08-laya-model-artifact.md`, proposed 2026-11-08;
+  (`docs/plans/2026-11-08-laya-model-artifact.md`, in progress 2026-11-08;
   **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
   install — `checkpoint` is a hand-typed HF path, the router never downloads
-  weights, nothing verifies what arrived, and the head is not pinned to
-  `buildLayaHead()`. Owner decisions 2026-11-08: weights as GitHub Release
+  weights, nothing verifies what arrived, and the head was not pinned to the
+  router's head. **In progress 2026-11-08:** manifest, head parity gate and the
+  `pi-laya-model` installer landed; `/health` identity, status, skill, docs
+  remain. Owner decisions 2026-11-08: weights as GitHub Release
   assets + manifest in the repo, ONNX as the default backend, an install skill
   that asks first; install root `~/.pi/agent/laya-models/`, a Pi-independent
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,

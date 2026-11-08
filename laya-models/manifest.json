@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "model": "r2",
+      "version": "1.0.0",
+      "tag": "laya-r2-v1.0.0",
+      "published": false,
+      "base_url": "https://github.com/ANierbeck/pi-model-dynamic-router/releases/download/laya-r2-v1.0.0/",
+      "head": {
+        "sha256": "5f12495d95d8743a277aa668ad0c8d756f2de1e76b82d80a85b65067e2900883",
+        "categories": [
+          "simple",
+          "code_simple",
+          "standard",
+          "code_complex",
+          "design",
+          "planning",
+          "continue"
+        ]
+      },
+      "backends": {
+        "onnx": {
+          "head_file": {
+            "path": "head.json",
+            "format": "head-json"
+          },
+          "files": [
+            {
+              "path": "encoder.onnx",
+              "asset": "encoder.onnx",
+              "bytes": 166947,
+              "sha256": "48fd4ed8895c838f499d56517f0bad8d36698ae78cc2a0cb57056e556dd92e4b"
+            },
+            {
+              "path": "encoder.onnx.data",
+              "asset": "encoder.onnx.data",
+              "bytes": 1227758592,
+              "sha256": "8f32bafebe991aa0da232a93543f88cb37a7c42924139aa25cb2bbef8d4b6be6"
+            },
+            {
+              "path": "head.json",
+              "asset": "head.json",
+              "bytes": 801,
+              "sha256": "5f12495d95d8743a277aa668ad0c8d756f2de1e76b82d80a85b65067e2900883"
+            },
+            {
+              "path": "head.onnx",
+              "asset": "head.onnx",
+              "bytes": 23723,
+              "sha256": "c71a1c7cac6794f156a3a59f1a68cd74432dfb737a8661dd17d647d61583c46a"
+            },
+            {
+              "path": "head.onnx.data",
+              "asset": "head.onnx.data",
+              "bytes": 59877376,
+              "sha256": "92e17101049e632132004cdbf4cb7de48629793a9e8a71ce37f1724bb53f8038"
+            },
+            {
+              "path": "rl_agent_config.json",
+              "asset": "rl_agent_config.json",
+              "bytes": 4941,
+              "sha256": "332e7eb720a8e97dc2368a2d09a657adb4ff28adcd85f80049c163c1b3706577"
+            },
+            {
+              "path": "tokenizer.json",
+              "asset": "tokenizer.json",
+              "bytes": 34363285,
+              "sha256": "dbba919c6e5e492bc22beb80abb64e6fcc7e8744dc696e8388b8c977767afa4b"
+            }
+          ]
+        },
+        "mlx": {
+          "head_file": {
+            "path": "questions.json",
+            "format": "laya-questions"
+          },
+          "files": [
+            {
+              "path": "encoder/config.json",
+              "asset": "encoder-config.json",
+              "bytes": 1939,
+              "sha256": "81d6856137aeb1d9cfbc1c1776d5b8196eed2e6ff879e894f517a21a580cc9d3"
+            },
+            {
+              "path": "model.safetensors",
+              "asset": "model.safetensors",
+              "bytes": 643835524,
+              "sha256": "8d4ed3f0b5f671e24c990deb0abcc94150cdeaaec64644f89189ef681d6be3fd"
+            },
+            {
+              "path": "questions.json",
+              "asset": "questions.json",
+              "bytes": 908,
+              "sha256": "dd46847d58cf6f56f02e79249814ef477a95e97150152f9e8b9de4177654036f"
+            },
+            {
+              "path": "rl_agent_config.json",
+              "asset": "rl_agent_config.json",
+              "bytes": 4941,
+              "sha256": "332e7eb720a8e97dc2368a2d09a657adb4ff28adcd85f80049c163c1b3706577"
+            },
+            {
+              "path": "tokenizer/tokenizer.json",
+              "asset": "tokenizer.json",
+              "bytes": 34363285,
+              "sha256": "dbba919c6e5e492bc22beb80abb64e6fcc7e8744dc696e8388b8c977767afa4b"
+            },
+            {
+              "path": "tokenizer/tokenizer_config.json",
+              "asset": "tokenizer_config.json",
+              "bytes": 624,
+              "sha256": "f2ff584a8f78ac9f3b6fd0afcf9ab310e41c2d445ef628f9ab4b0d594e992b7a"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 # Laya model artifact: versioned, verifiable, installable
 
-**Status:** proposed 2026-11-08 — not started. Part of the 2.0.0 "everything
+**Status:** in progress 2026-11-08 — manifest, head parity gate and the
+`pi-laya-model` installer are done (measurements:
+[`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
+`/health` identity, `/router status`, the skill and the docs are next. Part of the 2.0.0 "everything
 Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
@@ -22,8 +25,9 @@ nobody can tell what they got.
    (Distribution plan, Problem 4.)
 3. **The head is not part of any artifact.** The sidecar reads its task
    definition from a local file (`HEAD_JSON` in the sidecar manager), while
-   `src/classification-prompt.ts:179 buildLayaHead()` is the production
-   definition. No test pins the two equal, so a drift silently measures prompt
+   the router's head (`LAYA_HEAD_V2_INSTRUCTIONS` + `VALID_CATEGORIES`,
+   `src/classification-prompt.ts:159,21`, served by
+   `buildClassifierLayaQuestion()`) is the production definition. No test pins the two equal, so a drift silently measures prompt
    drift instead of the model.
 4. **Nothing verifies what arrived.** No checksums, no size check, no resume —
    while the artifact is 1.29 GB (measured: `docs/research/2026-11-08-onnxruntime-node-spike.md`).
@@ -67,7 +71,8 @@ nobody can tell what they got.
    when `/health` is unavailable — and then says so in the log. `/router status`
    shows reported vs. configured and warns on a mismatch.
 6. **A head parity gate.** Red-first test: the head inside a shipped artifact
-   must equal `buildLayaHead()` (`src/classification-prompt.ts:179`). Without
+   must equal the router's head (`LAYA_HEAD_V2_INSTRUCTIONS` +
+   `VALID_CATEGORIES`, `src/classification-prompt.ts`). Without
    it, a retrained head can silently diverge from the production task
    definition.
 7. **`router-laya-install` skill** (`skills/router-laya-install/SKILL.md`,
@@ -119,8 +124,9 @@ Commit `a20ac9e` (`main`, 2026-11-08):
   never downloads weights"), `src/classifier-decision-log.ts:145`
   (`laya:<checkpoint>` label), `src/commands.ts:207` (status line prints the
   configured string).
-- `src/classification-prompt.ts:159,179` (`LAYA_HEAD_V2_INSTRUCTIONS`,
-  `buildLayaHead()`); no test references a head artifact
+- `src/classification-prompt.ts:159,178` (`LAYA_HEAD_V2_INSTRUCTIONS`,
+  `buildClassifierLayaQuestion()`; the first draft of this plan called it
+  `buildLayaHead()`, a name that never existed — corrected 2026-11-08); no test references a head artifact
   (`grep -rln "laya_head_v2\|head_sha" test/ scripts/` → empty).
 - `package.json` (`files` allowlist, no `bin`, no `dependencies`), build script
   (single esbuild bundle), `test/package-contents.test.ts:33` (`BUILD_OUTPUTS`).
@@ -132,22 +138,45 @@ Commit `a20ac9e` (`main`, 2026-11-08):
   100 % golden-set argmax parity with MLX).
 
 **Not checked:** whether GitHub release assets honour `Range` for resume (must
-be verified against a real release before the resume path is claimed); how Pi
+be verified against a real release before the resume path is claimed; the
+installer copes with both a 206 and a 200); whether `pi-laya-model` lands on
+the user's PATH when Pi installs the package (npm links a `bin` only for
+global or project installs — decision 2's "npm puts it on the PATH" holds for
+`npm install -g`; the skill can call `node <package>/dist/laya-model-install.js`
+either way); how Pi
 skills invoke an external binary in practice (needs a smoke test in the skill);
 whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
 
 ## Steps
 
 - [x] Owner decisions 1–4 (2026-11-08), see above; the 2.0.0-gate question under them is open.
-- [ ] Red-first: head parity test — artifact head vs `buildLayaHead()`, red
-      against a deliberately drifted fixture.
-- [ ] Red-first: manifest schema test — a manifest with a missing `sha256`, a
-      duplicate file name or an unknown backend fails validation.
-- [ ] Red-first: install/verify tests against a local `file://` manifest with
-      small fixtures — checksum mismatch aborts and leaves nothing behind;
-      resume continues a truncated file; `verify` detects a corrupted install.
-- [ ] `laya-models/manifest.json` + `src/laya-model-install.ts` (`install`,
-      `verify`, `list`, `remove`) + `bin` wiring.
+- [x] Head parity gate (`test/laya-model-manifest.test.ts`): every shipped
+      model's head hash = the router's head; drifted-by-one-character and
+      reordered-categories fixtures fail; the r2 head hash is pinned against
+      the artifact's real bytes.
+- [x] Manifest schema (`src/laya-model-manifest.ts`, same test file): missing
+      or malformed `sha256`, duplicate paths (case-insensitive), unknown
+      backend, path traversal, absolute/Windows paths, the reserved record
+      name, conflicting assets, non-https remote base URLs and more fail
+      validation. Red evidence: module missing, then 8 hand-applied
+      mutations all red.
+- [x] Install/verify tests (`test/laya-model-install.test.ts`) against
+      `file://` and a loopback HTTP server: checksum or head mismatch leaves
+      nothing behind; an interrupted download keeps its partial file and the
+      next run sends `Range` and fetches only the rest; a 200 on resume
+      replaces the partial; a 206 for the wrong range drops it; `verify`
+      catches a flipped, truncated or missing file and a drifted head; free
+      space is checked before downloading; without a version, an unpublished
+      newer version does not hide the published one. Red evidence: module
+      missing; two cases red against the first implementation (the wrong-range
+      206, the unpublished version hiding the published one); then 17
+      hand-applied mutations all red.
+- [x] `laya-models/manifest.json` (r2@1.0.0, onnx + mlx, `published: false`)
+      + `src/laya-model-install.ts` (`install`, `verify`, `list`, `remove`,
+      `models`) + `bin` `pi-laya-model` → `dist/laya-model-install.js`
+      (separate esbuild entry, Node built-ins only; a test bundles it and runs
+      it outside the repo). `piAgentDir()` moved to `src/agent-dir.ts` so the
+      bundle does not pull in the config loader.
 - [ ] Red-first: `/health` client contract test (identity fields, fallback to
       the configured string when `/health` fails) and the decision-log label
       change to `laya:<model>@<version>`.

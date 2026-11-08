@@ -1,7 +1,7 @@
 # Laya sidecar distribution: give every user a classifier they can actually run
 
 **Status:** in progress 2026-11-01; **2.0.0 blocker since 2026-11-08** (owner:
-"everything Laya" ships before the release). Owner decisions 1 and 2 are
+"everything Laya" ships before the release). Owner decisions 1–4 are
 made (see below); the merge documents Laya as experimental (commit
 `fe9d913`). Remaining work: `/health` contract tests, live-queue parity run,
 packaging, weights publish. The Linux/Windows latency measurement is WAIVED
@@ -35,7 +35,16 @@ Ship the router with Laya **off by default and honest about its setup**, and giv
 1. **Which weights can users get?** DECIDED 2026-11-01, option (a): publish `r2` as is. Evidence recorded in Problem 3 (secret-free corpus scan, Apache-2.0 base, memorisation risk assessed as negligible by the owner: weights are matrices, no text-extraction channel; the only residual risk is membership-inference on prompts an attacker already knows). Option (a) previously "broke the privacy rule" — the owner explicitly lifted the rule for the weights only, 2026-11-01.
 2. **What may the merge promise?** DECIDED 2026-11-01: merge with Laya documented as experimental, Apple Silicon only, bring-your-own-weights (commit `fe9d913`) — not waiting for the ONNX backend.
 3. **Where does the sidecar live?** A subdirectory of this repo with its own release, or a separate repository.
+   DECIDED 2026-11-08: a subdirectory of this repository with its own npm
+   package and its own release line (the `laya-<model>-v<version>` tags of
+   `2026-11-08-laya-model-artifact.md` live here too); one CI runs the
+   contract tests against it.
 4. **Is a Python runtime acceptable as a user requirement?** The alternative, in-process `onnxruntime-node`, removes Python but adds a native dependency to the bundled extension (AGENTS.md §10, smallest attack surface) and was not evaluated.
+   DECIDED 2026-11-08: Python is not required. The spike
+   (`docs/research/2026-11-08-onnxruntime-node-spike.md`) showed parity, and
+   ONNX ships as its own Node sidecar package, not in-process, so the router
+   bundle keeps zero runtime dependencies. Python stays a user choice (MLX on
+   Apple Silicon), per decision 3 of `2026-11-08-laya-model-artifact.md`.
 
 ## Verified against
 
@@ -44,6 +53,7 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
 ## Steps
 
 - [x] Owner decides 1 (publish r2 weights, 2026-11-01) and 2 (merge documents Laya as experimental, 2026-11-01).
+- [x] Owner decides 3 (sidecar in a subdirectory of this repo) and 4 (no Python requirement), 2026-11-08.
 - [x] User docs as experimental (commit `fe9d913`).
 - [ ] Red-first: sidecar contract tests extended with `/health`; the router log carries the reported identity.
 - [x] ONNX conversion of `r2` and the golden-set parity run, 2026-11-08: 100 %

@@ -1,12 +1,12 @@
 # Optional integrations: one contract, one config block, typo-safe user layers
 
-**Status:** proposed 2026-11-08 — not started. **Decision 1 is DECIDED
+**Status:** in progress 2026-11-08 — all four owner decisions made. **Decision 1 is DECIDED
 (2026-11-08): rename `classifier_laya` → `integrations.laya` before 2.0.0
 — the contract + rename + migration warning therefore land before the
 release** (part of the "everything Laya" release gate,
 `2026-10-25-laya-sole-classifier.md`). Decisions 3 and 4 are DECIDED too
-(2026-11-08, see Open decisions); decision 2 remains open and does not block
-2.0.0. The core-only invariant test (Solution 5) exists for Laya
+(2026-11-08, see Open decisions), and so is decision 2 (2026-11-08:
+hand-maintained schema plus a test that it matches `Config`). The core-only invariant test (Solution 5) exists for Laya
 (`test/laya-chain.test.ts`). Prerequisite for
 [`2026-11-08-external-usage-source-codexbar.md`](2026-11-08-external-usage-source-codexbar.md); touches the Laya config from [`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md) and [`2026-10-25-laya-sole-classifier.md`](2026-10-25-laya-sole-classifier.md) without changing their decisions.
 
@@ -55,6 +55,8 @@ The router is growing optional external components: Laya today, CodexBar next. E
    2026-11-08: yes — rename before 2.0.0, with a `RENAMED_*` warning and no
    read alias (the fallback-naming pattern, V2).
 2. **Source of the known-key set / schema:** (a) a JSON Schema generated from `src/types.ts` (adds a devDependency, so AGENTS.md §10 applies), shipped as `router-config.schema.json` for editors (`"$schema"`) and used for the runtime check; (b) a hand-maintained schema with a test that it matches `Config`; (c) a runtime-only known-key list derived from the defaults. Recommendation: (b). No new dependency, and the test keeps it honest.
+   DECIDED 2026-11-08: (b) — a hand-maintained schema plus a test that it
+   matches `Config`; no new dependency.
 3. **Project-layer trust rule (Solution 3):** DECIDED 2026-11-08: no
    restriction. A project layer may enable an integration; "if it is not
    there, the default chain applies". Laya ships only from 2.0, so no released
@@ -76,12 +78,12 @@ Commit `a9dc015` (`main`, 2026-11-08): `src/types.ts` (`Config`: 22 top-level ke
 
 ## Steps
 
-- [x] Owner decides 1, 3, 4 (2026-11-08); decision 2 (known-key source) is open.
+- [x] Owner decides 1–4 (2026-11-08).
 - [x] Core-only invariant test for Laya (`test/laya-chain.test.ts`, 26 cases; green at birth by nature — it pins existing behavior — so its strength was proven by five hand-applied mutations in `src/`, each driving it red).
 - [x] Project-layer pins in `test/config-loader.test.ts`: a project layer may enable Laya; the loopback rule binds it (two mutations, both red).
 - [ ] Red-first: unknown-key tests in the config-loader test file.
 - [ ] `src/integration.ts`: contract, `validateIntegration`, health registry; `validateClassifierLaya` and `layaAvailabilityState` reimplemented on top of it, behaviour-preserving (existing Laya tests stay green unchanged).
-- [ ] Schema / known-key source per decision 2, plus unknown-key warnings.
+- [ ] Hand-maintained schema + `Config` match test (decision 2), plus unknown-key warnings.
 - [ ] `/router status` "Integrations" section; `/router config integration …` subcommand.
 - [ ] Rename per decision 1 (`RENAMED_*` warning), config docs, CHANGELOG entry under 2.0.0.
 - [ ] CodexBar plan continues on this contract.

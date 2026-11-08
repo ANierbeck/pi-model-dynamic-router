@@ -20,12 +20,15 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { homedir } from 'node:os';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 import { textOf } from './utils.ts';
+import { piAgentDir } from './agent-dir.ts';
+
+// Re-exported: callers import it from here since before the move to agent-dir.ts.
+export { piAgentDir };
 
 /**
  * Deep-merge two config objects. `override` wins; nested plain objects are
@@ -62,22 +65,6 @@ export function deepMergeConfig(
 interface ConfigLoadResult {
   config: Config;
   sources: string[]; // paths that contributed (for logging)
-}
-
-/**
- * Pi's agent directory: follows Pi's own PI_CODING_AGENT_DIR (e.g. a separate
- * work profile in ~/.pi-work/agent) and defaults to ~/.pi/agent. A leading ~
- * is expanded like Pi's getAgentDir() does, because node:fs never expands it
- * and a value set without a shell (.env file, programmatic setter) would
- * otherwise silently hide Pi's auth file and the user config. Resolved per
- * call so a profile switch or a test stub is always observed.
- */
-export function piAgentDir(): string {
-  const dir = process.env.PI_CODING_AGENT_DIR;
-  if (!dir) return path.join(homedir(), '.pi', 'agent');
-  if (dir === '~') return homedir();
-  if (dir.startsWith('~/')) return path.join(homedir(), dir.slice(2));
-  return dir;
 }
 
 /**
