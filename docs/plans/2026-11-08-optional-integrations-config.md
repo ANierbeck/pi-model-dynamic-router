@@ -1,6 +1,12 @@
 # Optional integrations: one contract, one config block, typo-safe user layers
 
-**Status:** proposed 2026-11-08 — not started. Prerequisite for [`2026-11-08-external-usage-source-codexbar.md`](2026-11-08-external-usage-source-codexbar.md); touches the Laya config from [`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md) and [`2026-10-25-laya-sole-classifier.md`](2026-10-25-laya-sole-classifier.md) without changing their decisions.
+**Status:** proposed 2026-11-08 — not started. **Decision 1 is DECIDED
+(2026-11-08): rename `classifier_laya` → `integrations.laya` before 2.0.0
+— the contract + rename + migration warning therefore land before the
+release** (part of the "everything Laya" release gate,
+`2026-10-25-laya-sole-classifier.md`). Decisions 2 and 3 remain open and do
+not block 2.0.0. Prerequisite for
+[`2026-11-08-external-usage-source-codexbar.md`](2026-11-08-external-usage-source-codexbar.md); touches the Laya config from [`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md) and [`2026-10-25-laya-sole-classifier.md`](2026-10-25-laya-sole-classifier.md) without changing their decisions.
 
 ## Problem
 
@@ -27,7 +33,9 @@ The router is growing optional external components: Laya today, CodexBar next. E
 
 ## Open decisions
 
-1. **Rename `classifier_laya` → `integrations.laya` before 2.0.0?** 2.0.0 is not released yet (Laya labeling is its release gate, commit `5b343af`), so renaming now costs one break instead of a later one. The fallback-naming plan chose "no read aliases, but warn" for 2.0 (V2), and the same pattern (`RENAMED_*` + warning) applies here. Alternative: keep `classifier_laya` and use the contract only internally. Recommendation: rename before 2.0.0, with a warning and no alias.
+1. **Rename `classifier_laya` → `integrations.laya` before 2.0.0?** DECIDED
+   2026-11-08: yes — rename before 2.0.0, with a `RENAMED_*` warning and no
+   read alias (the fallback-naming pattern, V2).
 2. **Source of the known-key set / schema:** (a) a JSON Schema generated from `src/types.ts` (adds a devDependency, so AGENTS.md §10 applies), shipped as `router-config.schema.json` for editors (`"$schema"`) and used for the runtime check; (b) a hand-maintained schema with a test that it matches `Config`; (c) a runtime-only known-key list derived from the defaults. Recommendation: (b). No new dependency, and the test keeps it honest.
 3. **Project-layer trust rule (Solution 3):** is "disable or lower only" right, or should a project be allowed to enable an integration the user has globally allowed (`integrations.<name>.allow_project_enable: true`)?
 4. **Should the router ever manage sidecar lifecycles?** Recommendation: no. Integrations stay pure HTTP consumers, and starting them stays with the owning tool (CodexBar app, Laya sidecar package). That keeps the Laya distribution plan's decision 3 independent of this plan.

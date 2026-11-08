@@ -1,6 +1,12 @@
 # Laya sidecar distribution: give every user a classifier they can actually run
 
-**Status:** in progress 2026-11-01. Owner decisions 1 and 2 are made (see below); the merge documents Laya as experimental (commit `fe9d913`). Remaining work: ONNX backend, packaging, parity gate.
+**Status:** in progress 2026-11-01; **2.0.0 blocker since 2026-11-08** (owner:
+"everything Laya" ships before the release). Owner decisions 1 and 2 are
+made (see below); the merge documents Laya as experimental (commit
+`fe9d913`). Remaining work: `/health` contract tests, live-queue parity run,
+packaging, weights publish. The Linux/Windows latency measurement is WAIVED
+(owner 2026-11-08: modern PCs are assumed similar). The r2 weights publish
+is a release action — separate explicit approval per AGENTS.md §1.
 
 This plan decides what the merged feature can promise users (AGENTS.md §11: one problem per plan — the `laya-spike` → `main` merge itself is not a plan).
 
@@ -47,7 +53,10 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
   `onnxruntime-node` meets parity and the latency budget on Apple Silicon) and
   rules out int8 (69 % argmax agreement, confidence destroyed).
 - [ ] Live-queue parity run through both backends (needs more queue items).
-- [ ] Latency measured on at least one Linux x86 and one Windows machine.
+- [x] ~~Latency measured on at least one Linux x86 and one Windows machine.~~
+  WAIVED by the owner 2026-11-08: modern PCs are assumed similar; the Apple
+  Silicon fp32 numbers in
+  `docs/research/2026-11-08-onnxruntime-node-spike.md` stand as reference.
 - [ ] Packaging, pinned revision, checksum, install docs per platform.
 - [x] `test/package-contents.test.ts` pins the shipped file set (allowlist since commit `0dff78b`) — the spike directory and owner paths cannot ship.
 - [ ] Per-platform install docs with the packaged sidecar.
