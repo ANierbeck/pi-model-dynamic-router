@@ -13,7 +13,9 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LAYA_HEAD_V2_INSTRUCTIONS, VALID_CATEGORIES } from '../src/classification-prompt.ts';
+import { createHash } from 'node:crypto';
 import {
+  artifactSha256,
   checkHeadParity,
   headFromFile,
   headSha256,
@@ -253,5 +255,27 @@ describe('head files', () => {
   it('returns null for an unreadable head instead of throwing', () => {
     expect(headFromFile('head-json', 'not json')).toBeNull();
     expect(headFromFile('laya-questions', '{"category":{}}')).toBeNull();
+  });
+});
+
+describe('artifact fingerprint (what /health reports as artifact_sha256)', () => {
+  const files = [
+    { path: 'b.onnx', asset: 'b', bytes: 2, sha256: HEX('b') },
+    { path: 'a/x.json', asset: 'x', bytes: 1, sha256: HEX('a') },
+  ];
+
+  it('is sha256 over "<sha256>  <path>\\n" lines sorted by path (the format the sidecar reproduces)', () => {
+    const expected = createHash('sha256')
+      .update(`${HEX('a')}  a/x.json\n${HEX('b')}  b.onnx\n`)
+      .digest('hex');
+    expect(artifactSha256(files)).toBe(expected);
+  });
+
+  it('does not depend on file order or asset names, but on every file hash and path', () => {
+    const base = artifactSha256(files);
+    expect(artifactSha256([...files].reverse())).toBe(base);
+    expect(artifactSha256(files.map((f) => ({ ...f, asset: 'renamed' })))).toBe(base);
+    expect(artifactSha256([{ ...files[0]!, sha256: HEX('c') }, files[1]!])).not.toBe(base);
+    expect(artifactSha256([{ ...files[0]!, path: 'c.onnx' }, files[1]!])).not.toBe(base);
   });
 });

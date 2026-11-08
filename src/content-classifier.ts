@@ -33,7 +33,7 @@ import {
   markNoSchema,
   resolveLocalClassifierChain,
 } from './classifier-local-probe.ts';
-import { classifyWithLayaDetailed, validLayaDistribution } from './laya-classifier.ts';
+import { classifyWithLayaDetailed, layaRef, validLayaDistribution } from './laya-classifier.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { homedir } from 'node:os';
 import {
@@ -1442,12 +1442,13 @@ async function classifyPromptUncounted(
 
   const layaCfg = options.cfg?.classifier_laya;
   if (layaCfg?.enabled) {
-    const ref = `laya:${layaCfg.checkpoint}`;
     const t0 = Date.now();
     const out = await classifyWithLayaDetailed(prompt, context, {
       checkpoint: layaCfg.checkpoint!,
       ...(options.cfg ? { cfg: options.cfg } : {}),
     });
+    // After the call: the probe inside it is what learns the reported identity.
+    const { ref, identity } = layaRef(layaCfg.checkpoint!);
     const trace = callSource.getStore()?.trace;
     if (out) {
       const ms = Date.now() - t0;
@@ -1455,6 +1456,7 @@ async function classifyPromptUncounted(
       if (trace) {
         trace.laya = {
           ref,
+          identity,
           category: out.answer.category,
           confidence: out.answer.confidence,
           ...(validLayaDistribution(out.answer.probabilities)

@@ -20,7 +20,6 @@ import { writeNoOpScanCache, flushBackgroundScan } from './helpers/noop-scan-cac
 import {
   healthyEvents,
   makeScriptedRegistry,
-  rateLimitErrorEvents,
   rateLimitBaseCfg,
   rateLimitNearReset,
   rateLimitTestModel,
@@ -113,7 +112,7 @@ describe("driveStream: the wait-retry owns its attempt's cancellation", () => {
           'ok-provider/healthy-model': rateLimitTestModel('ok-provider', 'healthy-model'),
         });
         mock.scripts['lim-provider/limited-model'] = [
-          scripted(rateLimitErrorEvents(Date.now() + 1_500)),
+          rateLimitNearReset, // computed at call time: a setup-time reset is stale after the wait
           // The retry's tryStream throws → retryTarget null → the attempt
           // must be abandoned, not left running in the background.
           () => {
@@ -148,7 +147,7 @@ describe("driveStream: the wait-retry owns its attempt's cancellation", () => {
           'ok-provider/healthy-model': rateLimitTestModel('ok-provider', 'healthy-model'),
         });
         mock.scripts['lim-provider/limited-model'] = [
-          scripted(rateLimitErrorEvents(Date.now() + 1_500)),
+          rateLimitNearReset,
           scripted(healthyEvents('served after wait')),
         ];
         mock.scripts['ok-provider/healthy-model'] = [scripted(healthyEvents('SHOULD NOT SERVE'))];
@@ -180,10 +179,7 @@ describe("driveStream: the wait-retry owns its attempt's cancellation", () => {
           'lim-provider/limited-model': rateLimitTestModel('lim-provider', 'limited-model'),
           'ok-provider/healthy-model': rateLimitTestModel('ok-provider', 'healthy-model'),
         });
-        mock.scripts['lim-provider/limited-model'] = [
-          scripted(rateLimitErrorEvents(Date.now() + 1_500)),
-          silentUntilAborted,
-        ];
+        mock.scripts['lim-provider/limited-model'] = [rateLimitNearReset, silentUntilAborted];
         mock.scripts['ok-provider/healthy-model'] = [scripted(healthyEvents('healthy served'))];
 
         const turn = await openSession(defaultExport, mock.registry);

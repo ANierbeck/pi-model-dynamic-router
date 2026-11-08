@@ -3,8 +3,8 @@
 **Status:** in progress 2026-11-01; **2.0.0 blocker since 2026-11-08** (owner:
 "everything Laya" ships before the release). Owner decisions 1–4 are
 made (see below); the merge documents Laya as experimental (commit
-`fe9d913`). Remaining work: `/health` contract tests, live-queue parity run,
-packaging, weights publish. The Linux/Windows latency measurement is WAIVED
+`fe9d913`). Remaining work: live-queue parity run, packaging, weights
+publish (`/health` contract tests done 2026-11-08). The Linux/Windows latency measurement is WAIVED
 (owner 2026-11-08: modern PCs are assumed similar). The r2 weights publish
 is a release action — separate explicit approval per AGENTS.md §1.
 
@@ -55,7 +55,7 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
 - [x] Owner decides 1 (publish r2 weights, 2026-11-01) and 2 (merge documents Laya as experimental, 2026-11-01).
 - [x] Owner decides 3 (sidecar in a subdirectory of this repo) and 4 (no Python requirement), 2026-11-08.
 - [x] User docs as experimental (commit `fe9d913`).
-- [ ] Red-first: sidecar contract tests extended with `/health`; the router log carries the reported identity.
+- [x] Red-first: sidecar contract tests extended with `/health`; the router log carries the reported identity (2026-11-08, delivered with `2026-11-08-laya-model-artifact.md` Solution 5: `test/laya-client-contract.test.ts`, `test/laya-sidecar-identity.test.ts`, `test/laya-chain.test.ts`; reference sidecar `spikes/laya-http/identity.py`).
 - [x] ONNX conversion of `r2` and the golden-set parity run, 2026-11-08: 100 %
   argmax (180/180), confidence drift > 0.05 on 2/180 items. See
   `docs/research/2026-11-08-onnxruntime-node-spike.md`, which also answers open

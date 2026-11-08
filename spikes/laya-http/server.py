@@ -1,11 +1,13 @@
 """Throwaway spike: expose Laya-MLX over the router's replay contract.
 
     POST /classify {"prompt": "...", "context"?: {previousUserMessage?, lastAssistantSnippet?}} -> {"category", "confidence", "probabilities", "ms"}
+    GET  /health   -> {"status": "ok", "model"?, "version"?, "backend"?, "artifact_sha256"?, "head_sha256", "served_head"}
+                      (identity.py; model/version only for a `pi-laya-model install` directory)
 
 Usage (venv outside the repo, see docs/research/2026-10-09-laya-spike.md):
     python server.py --port 8089
 """
-import argparse, json, pathlib, re, time
+import argparse, importlib.util, json, pathlib, re, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from huggingface_hub import snapshot_download
 import laya_mlx as laya
@@ -20,6 +22,12 @@ REVISION = "f2b4faf51023039425946074e2cf1361d2db11d5"  # pinned
 # answer format are dropped: HINTs are detected deterministically before any
 # classifier runs, and Laya answers with probabilities instead of JSON.
 PROMPT_TS = pathlib.Path(__file__).resolve().parents[2] / "src" / "classification-prompt.ts"
+
+# identity.py sits next to this file; loaded by path so neither the cwd nor the
+# venv can shadow it.
+_spec = importlib.util.spec_from_file_location("laya_identity", pathlib.Path(__file__).resolve().parent / "identity.py")
+identity = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(identity)
 
 
 def production_task_text() -> tuple[str, list[str]]:
@@ -40,16 +48,25 @@ def production_task_text() -> tuple[str, list[str]]:
 # --head-json <file>: serve a fine-tuned model with EXACTLY the head it was trained on
 # ({"instructions": str, "categories": [str]}, written by ~/.laya-ft/to_laya_jsonl_v2.py).
 # Train/serve parity is the hard rule: a different head measures prompt drift, not the model.
-# Without the flag the head is the production prompt (zero-shot, v2-r3: 7 categories).
+# Without the flag, a `pi-laya-model install` directory (--model-dir with an install
+# record) serves the head file its record names; anything else serves the production
+# prompt (zero-shot, v2-r3: 7 categories).
+# --model-dir <path>: serve a fine-tuned local checkpoint instead of the pinned
+# HF snapshot (laya_mlx maps upstream PyTorch parameter names itself, so a
+# laya-train output directory loads directly - no separate conversion step).
 _early = argparse.ArgumentParser(add_help=False)
 _early.add_argument("--head-json")
-_head_path = _early.parse_known_args()[0].head_json
-if _head_path:
-    _h = json.loads(pathlib.Path(_head_path).read_text())
-    INSTRUCTIONS, CATEGORIES = _h["instructions"], list(_h["categories"])
+_early.add_argument("--model-dir")
+_args = _early.parse_known_args()[0]
+_model_dir = _args.model_dir
+_served, _served_from = identity.served_head(_model_dir, _args.head_json)
+if _served:
+    INSTRUCTIONS, CATEGORIES = _served
 else:
     INSTRUCTIONS, CATEGORIES = production_task_text()
+    _served_from = "production"
     assert len(CATEGORIES) == 7, CATEGORIES
+HEALTH = json.dumps(identity.health_payload(_model_dir, (INSTRUCTIONS, CATEGORIES), _served_from)).encode()
 QUESTION = {"category": {"type": "choice", "instructions": INSTRUCTIONS, "criteria": CATEGORIES}}
 
 
@@ -64,12 +81,6 @@ def build_state(prompt: str, context: dict | None) -> str:
     return f'{head}Current request: "{prompt}"'
 
 
-# --model-dir <path>: serve a fine-tuned local checkpoint instead of the pinned
-# HF snapshot (laya_mlx maps upstream PyTorch parameter names itself, so a
-# laya-train output directory loads directly - no separate conversion step).
-_early2 = argparse.ArgumentParser(add_help=False)
-_early2.add_argument("--model-dir")
-_model_dir = _early2.parse_known_args()[0].model_dir
 agent = laya.load(_model_dir if _model_dir else snapshot_download(REPO, revision=REVISION))
 agent.predict(build_state("warmup", None), QUESTION)
 
@@ -77,6 +88,15 @@ agent.predict(build_state("warmup", None), QUESTION)
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet
         pass
+
+    def do_GET(self):
+        if self.path != "/health":
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(HEALTH)))
+        self.end_headers()
+        self.wfile.write(HEALTH)
 
     def do_POST(self):
         if self.path != "/classify":

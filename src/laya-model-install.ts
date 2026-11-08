@@ -25,6 +25,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
 import {
+  artifactSha256,
   headFromFile,
   headSha256,
   INSTALL_RECORD,
@@ -77,6 +78,8 @@ export interface InstallResult {
   model: string;
   version: string;
   backend: LayaBackend;
+  /** Fingerprint of the installed set; a healthy sidecar reports the same on /health. */
+  artifact_sha256: string;
   bytesDownloaded: number;
   /** Paths continued from a partial file of an earlier, interrupted run. */
   resumed: string[];
@@ -334,6 +337,7 @@ export async function installModel(opts: InstallOptions): Promise<InstallResult>
     model: entry.model,
     version: entry.version,
     backend,
+    artifact_sha256: artifactSha256(set.files),
     bytesDownloaded,
     resumed,
   };
@@ -685,7 +689,11 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
           backends: Object.fromEntries(
             Object.entries(m.backends).map(([b, set]) => [
               b,
-              { files: set.files.length, bytes: set.files.reduce((n, f) => n + f.bytes, 0) },
+              {
+                files: set.files.length,
+                bytes: set.files.reduce((n, f) => n + f.bytes, 0),
+                artifact_sha256: artifactSha256(set.files),
+              },
             ])
           ),
         }));

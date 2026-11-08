@@ -226,8 +226,9 @@ unchanged. It is **experimental** and **disabled by default** — see
 
 - Requires **Apple Silicon**: Laya is served by an MLX sidecar exposing
   `POST /classify` (the current reference server lives in the GitHub repo at
-  `spikes/laya-http/server.py` — it is not part of the npm package; a
-  packaged cross-platform sidecar with `GET /health` is planned, see
+  `spikes/laya-http/server.py` — it is not part of the npm package, and it
+  reports what it serves on `GET /health`, which the decision log and
+  `/router status` use; a packaged cross-platform sidecar is planned, see
   `docs/plans/2026-10-31-laya-sidecar-distribution.md`). The router only
   talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` — enforced at
   config load) and never downloads weights.

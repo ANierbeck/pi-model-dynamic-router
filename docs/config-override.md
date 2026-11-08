@@ -116,7 +116,7 @@ experimental — start in `"shadow"` mode, which only logs.
 {
   "classifier_laya": {
     "enabled": true,
-    "checkpoint": "<hf-repo>:<revision>",
+    "checkpoint": "<model>@<version>",
     "mode": "shadow",
     "endpoint": "http://127.0.0.1:8089",
     "confidence_threshold": 0.8,
@@ -130,10 +130,10 @@ experimental — start in `"shadow"` mode, which only logs.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | Turn the stage on (requires `checkpoint`) |
-| `checkpoint` | — | Pinned weights, `<hf-repo>:<revision>`. Required when enabled — the router never downloads weights |
+| `checkpoint` | — | What you expect the sidecar to serve, e.g. `r2@1.0.0` or `<hf-repo>@<revision>`. Required when enabled. A sidecar that reports its identity on `GET /health` is logged by what it reports (`laya:<model>@<version>`, decision-log `identity: "reported"`); `checkpoint` is the label only when it does not (`identity: "configured"`). `/router status` warns when a `<model>@<version>` here disagrees with the reported one, or when the sidecar serves a different head than the router builds. The router never downloads weights |
 | `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
 | `confidence_threshold` | `0.8` | Minimum confidence to use the answer, `0`–`1`. The scale is uncalibrated, so the default keeps a gate; `0` switches the gate off (Laya's answer is used whatever its confidence — the cloud chain then only runs on failure or as the background comparator) |
-| `endpoint` | `http://127.0.0.1:8089` | Sidecar URL, `POST /classify` |
+| `endpoint` | `http://127.0.0.1:8089` | Sidecar base URL: `POST /classify`, optional `GET /health` (identity) |
 | `timeout_ms` | `1500` | Hand the prompt to the chain after this long. One timeout only affects that prompt; 3 in a row switch the stage off for 5 minutes. The sidecar's latency varies with GPU load, so leave headroom above the p90 of `laya.ms` in the decision log |
 | `compare_in_background` | `false` | In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027) |
 | `observe_momentum` | `false` | Log detached answers for short momentum prompts (can incur classifier spend) |

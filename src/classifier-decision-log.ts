@@ -142,8 +142,14 @@ export interface DecisionRecord {
 }
 
 export interface LayaObservation {
-  /** `laya:<checkpoint>` */
+  /** `laya:<model>@<version>` as the sidecar reported it, else `laya:<checkpoint>` as configured. */
   ref: string;
+  /**
+   * Where `ref` came from: `reported` = the sidecar's GET /health,
+   * `configured` = the user's `checkpoint` string (no usable /health). Absent
+   * on records written before 2026-11-08, which were all `configured`.
+   */
+  identity?: 'reported' | 'configured';
   category: string;
   confidence: number;
   /**

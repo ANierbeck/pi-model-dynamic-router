@@ -74,6 +74,58 @@ describe('formatClassifierStatus — Laya line', () => {
   });
 });
 
+// plan 2026-11-08-laya-model-artifact.md, Solution 5: reported vs configured
+// identity, and a warning where the two provably disagree.
+describe('formatClassifierStatus — Laya identity', () => {
+  const lines = (laya: Record<string, unknown>) =>
+    status({ ...base, mode: 'active', state: 'ok', ...laya } as any);
+  const warnings = (out: string[]) => out.filter((l) => l.includes('⚠'));
+  const reported = { model: 'r9', version: '1.0.0', backend: 'onnx', headMatches: true };
+
+  it('names the reported model and its backend, and says it was reported', () => {
+    const out = lines({ identity: reported });
+    const line = layaLine(out);
+    expect(line).toContain('laya:r9@1.0.0');
+    expect(line).toContain('reported by the sidecar');
+    expect(line).toContain('onnx');
+    expect(line).toContain('configured test/ckpt'); // the typed string stays visible
+    expect(warnings(out)).toEqual([]);
+  });
+
+  it('without a reported identity the configured string is shown as such', () => {
+    const line = layaLine(lines({ identity: null }));
+    expect(line).toContain('laya:test/ckpt');
+    expect(line).toContain('configured');
+    expect(line).not.toContain('reported by');
+  });
+
+  it('warns when a configured model@version disagrees with the reported one', () => {
+    const out = lines({ checkpoint: 'r9@0.9.0', identity: reported });
+    expect(warnings(out)).toHaveLength(1);
+    expect(warnings(out)[0]).toContain('r9@0.9.0');
+    expect(warnings(out)[0]).toContain('r9@1.0.0');
+  });
+
+  it('a matching configured model@version is not warned about', () => {
+    expect(warnings(lines({ checkpoint: 'r9@1.0.0', identity: reported }))).toEqual([]);
+  });
+
+  it('a free-form checkpoint (a repo path) is not comparable, so it is not a mismatch', () => {
+    expect(warnings(lines({ checkpoint: 'org/repo@abc123', identity: reported }))).toEqual([]);
+  });
+
+  it('warns when the sidecar serves a different head than the router builds', () => {
+    const out = lines({ identity: { ...reported, headMatches: false } });
+    expect(warnings(out)).toHaveLength(1);
+    expect(warnings(out)[0]).toContain('head');
+  });
+
+  it('says nothing about the head when the sidecar did not report one', () => {
+    const { headMatches: _h, ...noHead } = reported;
+    expect(warnings(lines({ identity: noHead }))).toEqual([]);
+  });
+});
+
 describe('layaAvailabilityState', () => {
   let server: http.Server;
   let port = 0;
@@ -133,6 +185,57 @@ describe('layaAvailabilityState', () => {
 });
 
 describe('/router overview (real handler)', () => {
+  // Wiring, not formatting: the handler must pass the identity the probe
+  // learned into formatClassifierStatus (plan 2026-11-08-laya-model-artifact.md).
+  it('names the sidecar-reported model after a classification probe learned it', async () => {
+    vi.spyOn(loggerModule, 'warnLog').mockImplementation(() => {});
+    const srv = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        if (req.method === 'GET' && req.url === '/health') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', model: 'r9', version: '1.0.0', backend: 'onnx' }));
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            category: 'simple',
+            confidence: 0.9,
+            probabilities: { simple: 0.9 },
+            ms: 1,
+          })
+        );
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as { port: number }).port;
+    try {
+      await classifyWithLaya('probe', undefined, {
+        cfg: {
+          classifier_laya: {
+            enabled: true,
+            checkpoint: 'c',
+            endpoint: `http://127.0.0.1:${port}`,
+            timeout_ms: 800,
+          },
+        } as any,
+        checkpoint: 'c',
+      });
+      const out = await overview({
+        enabled: true,
+        checkpoint: 'test/ckpt',
+        endpoint: `http://127.0.0.1:${port}`,
+      });
+      const line = out.split('\n').find((l) => l.startsWith('│ Laya (')) ?? '';
+      expect(line).toContain('laya:r9@1.0.0');
+      expect(line).toContain('reported by the sidecar');
+    } finally {
+      vi.restoreAllMocks();
+      await new Promise<void>((r) => srv.close(() => r()));
+    }
+  });
+
   async function overview(classifier_laya: unknown): Promise<string> {
     let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
     const pi = {

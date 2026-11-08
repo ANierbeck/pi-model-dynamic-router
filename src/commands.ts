@@ -27,7 +27,9 @@ import {
   LAYA_DEFAULT_ENDPOINT,
   getLastProbeError,
   layaAvailabilityState,
+  layaReportedIdentity,
   type LayaAvailabilityState,
+  type LayaReportedIdentity,
 } from './laya-classifier.ts';
 import { getCachedCloudModels } from './classifier-cloud-probe.ts';
 import {
@@ -157,6 +159,8 @@ export interface ClassifierStatusInput {
     state: LayaAvailabilityState;
     /** Why the sidecar is down (state `down` only). */
     probeError?: string | undefined;
+    /** What the sidecar reported on /health at the last probe; null/absent = nothing. */
+    identity?: LayaReportedIdentity | null;
   };
 }
 
@@ -203,9 +207,30 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         : laya.state === 'down'
           ? `unreachable${laya.probeError ? ` (${laya.probeError})` : ''}`
           : 'not probed yet (probes on first use)';
+    const id = laya.identity;
+    const reported = id?.model && id.version ? `${id.model}@${id.version}` : null;
+    const label = reported
+      ? `laya:${reported} (reported by the sidecar${id?.backend ? `, ${id.backend}` : ''}; ` +
+        `configured ${laya.checkpoint})`
+      : `laya:${laya.checkpoint} (configured)`;
     lines.push(
-      `│ Laya (${laya.mode}): laya:${laya.checkpoint} @ ${laya.endpoint} — ${stateText} · threshold ${laya.confidence_threshold}`
+      `│ Laya (${laya.mode}): ${label} @ ${laya.endpoint} — ${stateText} · threshold ${laya.confidence_threshold}`
     );
+    // A configured `<model>@<version>` is comparable; a free-form string (a
+    // repo path) is not, so only the former can be a mismatch.
+    const configuredId = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
+      laya.checkpoint
+    );
+    if (reported && configuredId && laya.checkpoint !== reported) {
+      lines.push(
+        `│   ⚠ configured checkpoint ${laya.checkpoint} ≠ reported ${reported} — the sidecar serves another model`
+      );
+    }
+    if (id?.headMatches === false) {
+      lines.push(
+        '│   ⚠ the sidecar serves a different head than the router builds — answers measure prompt drift, not the model'
+      );
+    }
   }
   // Today's mix (Phase 0): makes a category skew visible without digging
   // through the router log. (The old example here said "60 % fallback" — the
@@ -830,6 +855,7 @@ export function createCommands(rt: CommandDeps): void {
                               : ('shadow' as const),
                           state: layaAvailabilityState(),
                           probeError: getLastProbeError() ?? undefined,
+                          identity: layaReportedIdentity(),
                         },
                       }
                     : {}),

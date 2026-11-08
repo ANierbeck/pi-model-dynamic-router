@@ -83,6 +83,22 @@ export function headSha256(head: LayaHead): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
+/**
+ * Fingerprint of an artifact set: sha256 over one `<sha256>  <path>\n` line
+ * per file (the `sha256sum` line format), sorted by path. Cheap to report —
+ * a sidecar computes it from the install record without re-reading 1.3 GB —
+ * and it changes with every file hash or path, not with asset names. It
+ * fingerprints what the record CLAIMS; `pi-laya-model verify` checks that
+ * the bytes still match.
+ */
+export function artifactSha256(files: readonly { path: string; sha256: string }[]): string {
+  const lines = [...files]
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    .map((f) => `${f.sha256}  ${f.path}\n`)
+    .join('');
+  return createHash('sha256').update(lines, 'utf8').digest('hex');
+}
+
 /** Parses a head file of the given format; null when it is not a readable head. */
 export function headFromFile(format: HeadFileFormat, text: string): LayaHead | null {
   let raw: unknown;

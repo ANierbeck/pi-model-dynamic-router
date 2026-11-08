@@ -22,7 +22,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { LAYA_HEAD_V2_INSTRUCTIONS, VALID_CATEGORIES } from '../src/classification-prompt.ts';
-import { headSha256, type LayaManifest } from '../src/laya-model-manifest.ts';
+import { artifactSha256, headSha256, type LayaManifest } from '../src/laya-model-manifest.ts';
 import {
   defaultModelsRoot,
   installModel,
@@ -452,7 +452,12 @@ describe('the pi-laya-model command line', () => {
     expect(
       await run('install', 'r9@1.0.0', '--manifest', manifestPath, '--root', root, '--json')
     ).toBe(0);
-    expect(JSON.parse(out.join(''))).toMatchObject({ ok: true, dir: versionDir() });
+    const installed = JSON.parse(out.join(''));
+    expect(installed).toMatchObject({ ok: true, dir: versionDir() });
+    // The skill compares this with the artifact_sha256 the sidecar reports on /health.
+    expect(installed.artifact_sha256).toBe(
+      artifactSha256(manifestFor(fileBase()).models[0]!.backends.onnx!.files)
+    );
 
     out = [];
     expect(await run('list', '--root', root, '--json')).toBe(0);
@@ -485,6 +490,7 @@ describe('the pi-laya-model command line', () => {
     const [entry] = JSON.parse(out.join(''));
     expect(entry).toMatchObject({ model: 'r9', version: '1.0.0', published: true });
     expect(entry.backends.onnx.bytes).toBe(PAYLOAD.reduce((n, f) => n + f.content.length, 0));
+    expect(entry.backends.onnx.artifact_sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it.each([
