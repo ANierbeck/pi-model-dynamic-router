@@ -299,8 +299,8 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   enable an integration (the core-only invariant test and the loopback rule
   make that harmless; both pinned). The invariant test for Laya exists
   (`test/laya-chain.test.ts`). Decision 4 DECIDED: the router gets
-  a way to start the sidecar, later (see below). Only decision 2
-  (known-key/schema source) remains open; it does not block 2.0.0.
+  a way to start the sidecar, later (see below). Decision 2 DECIDED
+  2026-11-08: a hand-maintained schema plus a test that it matches `Config`.
   Prerequisite for the CodexBar plan.
 - **External usage source: CodexBar**
   (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
