@@ -582,8 +582,10 @@ Pick up in a later round, each as its own plan where noted (§11):
   weights, nothing verifies what arrived, and the head is not pinned to
   `buildLayaHead()`. Owner decisions 2026-11-08: weights as GitHub Release
   assets + manifest in the repo, ONNX as the default backend, an install skill
-  that asks first. Open decisions: install root, first `bin` in the package,
-  which backends ship in v1, who publishes the assets (own §1 approval).
+  that asks first; install root `~/.pi/agent/laya-models/`, a Pi-independent
+  `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
+  weights in a dedicated release line of this repo. Open: whether the first
+  weights publish stays a 2.0.0 blocker (publish itself needs its own §1 go).
 - **Router config UI: guided path for integrations**
   (`docs/plans/2026-11-08-router-config-ui.md`, proposed 2026-11-08; depends
   on the integrations contract): `/router config` is read-mostly, enabling

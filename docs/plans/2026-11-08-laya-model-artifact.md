@@ -71,30 +71,45 @@ nobody can tell what they got.
    it, a retrained head can silently diverge from the production task
    definition.
 7. **`router-laya-install` skill** (`skills/router-laya-install/SKILL.md`,
-   modelled on `router-login`): asks backend (ONNX default, MLX for Apple
+   modelled on `router-login`): detects the platform, asks sidecar runtime
+   (Node default, Python) and backend (ONNX default, MLX offered on Apple
    Silicon), port, and confirms the download size; checks platform, free space
    and existing versions; runs `pi-laya-model install`; writes the user-layer
    config; starts the sidecar; then shows the `/health` identity it actually
    got. It never downloads or writes config on its own — every action is a
    confirmed step.
 
-## Open decisions
+## Decisions (owner, 2026-11-08)
 
-1. **Install root:** `~/.pi/agent/laya-models/` (next to the router config,
-   discoverable) vs. an XDG path (`~/.local/share/pi-laya/`). Recommendation:
-   `~/.pi/agent/laya-models/`.
-2. **First `bin` in the package?** The router currently has none; adding one
-   needs a `files` entry, a `BUILD_OUTPUTS` entry and a `test/package-contents`
-   assertion. Alternative: expose the same commands as
-   `/router config integration laya install` and give the skill no external
-   binary. Recommendation: `bin`, because it works without Pi and is testable
-   in isolation.
-3. **Which backends ship in v1?** ONNX only (owner default) or ONNX + MLX in
-   the same release? MLX needs the Python sidecar and Apple Silicon; shipping
-   only ONNX keeps the first release small.
-4. **Who publishes the release assets?** The weights publish is a release
-   action (AGENTS.md §1) and needs the owner's explicit go, separate from the
-   npm release.
+1. **Install root:** `~/.pi/agent/laya-models/<model>/<version>/` — the
+   proposal, accepted.
+2. **A `bin` that runs without Pi:** accepted. `pi-laya-model` is a command
+   line program that `npm` puts on the user's PATH; it is not embedded in the
+   extension and needs no running Pi. It stays dependency-free (Node built-ins
+   only), so the router package keeps zero runtime dependencies.
+3. **Backends follow the user's runtime and choice, never an assumption.** The
+   skill detects the platform and proposes (a Mac gets MLX offered), but the
+   user decides between the **Python** and the **Node** sidecar. Node + ONNX is
+   the default. Resulting matrix:
+   - Node sidecar + ONNX (CPU) — default, every OS; measured in
+     `docs/research/2026-11-08-onnxruntime-node-spike.md`.
+   - Python sidecar + MLX — Apple Silicon only. MLX is Apple's own framework
+     and runs through its own runtime (the `laya_mlx` Python package here); it
+     is not an ONNX execution path.
+   - Python sidecar + ONNX — upstream Laya ships a Python `ONNXAgent`, so this
+     should work anywhere with Python; **not verified end to end**.
+   The manifest therefore carries one artifact set per backend (ONNX files,
+   MLX checkpoint), and the install records which one was chosen.
+4. **Publishing the weights is decided later** and stays part of this
+   repository as a **dedicated release line**, separate from the npm releases
+   of the extension (tags `laya-<model>-v<version>`). The owner expects further
+   model optimisations to ship the same way. Publishing remains a release
+   action needing an explicit owner go (AGENTS.md §1).
+
+**Open — owner to confirm:** the 2.0.0 gate (`2026-10-25-laya-sole-classifier.md`)
+still lists "r2 weights publish" as a pre-release item. Decision 4 defers *who
+and when*; whether the first publish stays a 2.0.0 blocker or becomes the
+first release of the model line after 2.0.0 is not settled.
 
 ## Verified against
 
@@ -123,7 +138,7 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
 
 ## Steps
 
-- [ ] Owner decides 1–3.
+- [x] Owner decisions 1–4 (2026-11-08), see above; the 2.0.0-gate question under them is open.
 - [ ] Red-first: head parity test — artifact head vs `buildLayaHead()`, red
       against a deliberately drifted fixture.
 - [ ] Red-first: manifest schema test — a manifest with a missing `sha256`, a
