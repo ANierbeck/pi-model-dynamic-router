@@ -44,7 +44,9 @@ const STATE_FILES = ['.cache/scan-cache.json', 'router-config.dynamic.json'];
 const STRAY_FILES = ['router-config.dynamic.json.bak-20261022-ghosts', 'scratch.txt'];
 // Release gate (owner 2026-10-29, hygiene Phase 2 Step 3a): the only skill
 // directories allowed in the tarball. Adding one is a deliberate act.
-const SHIPPED_SKILLS = ['content-based-router', 'router-login'];
+// router-laya-install: owner decision in docs/plans/2026-11-08-laya-model-artifact.md
+// (the install skill, "asks before it acts").
+const SHIPPED_SKILLS = ['content-based-router', 'router-laya-install', 'router-login'];
 // Top-level docs that ship. README links to the CHANGELOG's migration section,
 // so the two travel together; TODO.md is repo-only.
 const SHIPPED_DOCS = ['PI.md', 'README.md', 'CHANGELOG.md'];
@@ -107,7 +109,7 @@ describe('npm package contents', () => {
     expect(skillDirs).toEqual([...SHIPPED_SKILLS, 'laya-tooling'].sort());
   }, 30_000);
 
-  it('the repo ships exactly the two user-facing skills (release gate, owner 2026-10-29)', () => {
+  it('the repo ships exactly the three user-facing skills (release gate, owner 2026-10-29; router-laya-install per the 2026-11-08 artifact plan)', () => {
     // The Laya training tooling must not ship: /laya-label, /laya-sidecar and
     // /classifier-replay are Pi extensions outside this repo, and the training
     // scripts live in ~/.laya-ft. A new directory under skills/ is a
