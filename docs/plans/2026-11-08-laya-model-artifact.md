@@ -4,7 +4,8 @@
 `pi-laya-model` installer are done (measurements:
 [`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
 the `/health` identity (router and reference sidecar) and `/router status`
-are done; the skill and the docs are next. Part of the 2.0.0 "everything
+are done; the install skill (`skills/router-laya-install/`) is done and
+the docs are mostly done; the owner's weights release is the open step. Part of the 2.0.0 "everything
 Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
@@ -204,7 +205,17 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
 - [x] `/router status`: reported vs. configured identity, mismatch warning
       (configured `<model>@<version>` ≠ reported; served head ≠ router head;
       a free-form checkpoint is not comparable, so not a mismatch).
-- [ ] `skills/router-laya-install/SKILL.md`, modelled on `router-login`.
-- [ ] Docs: `docs/config-override.md` (checkpoint semantics), README (install
-      path), CHANGELOG under 2.0.0.
+- [x] `skills/router-laya-install/SKILL.md`, modelled on `router-login`.
+      Every step is confirmed (download, config, sidecar start is never the
+      skill's); it names only `pi-laya-model` commands, flags and error codes
+      the CLI has, and its config snippet is loaded by the real config loader
+      in `test/laya-install-skill.test.ts` (8 tests, 7 hand-applied mutations
+      all red). The package-contents release gate lists the skill as the third
+      shipped skill. **Not verified:** whether Pi's skill loader invokes
+      `pi-laya-model` as described (no smoke test in Pi yet). The installed
+      router of 2026-11-09 is 1.5.3, without the installer, so the skill
+      stops there with the version it found.
+- [x] Docs: `docs/config-override.md` (checkpoint semantics), README (install
+      path), CHANGELOG under [Unreleased]. Still open for 2.0.0: move the
+      CHANGELOG entries to the 2.0.0 heading at release.
 - [ ] Owner go for the weights release, then publish the assets.

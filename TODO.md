@@ -585,9 +585,11 @@ Pick up in a later round, each as its own plan where noted (§11):
   install — `checkpoint` is a hand-typed HF path, the router never downloads
   weights, nothing verifies what arrived, and the head was not pinned to the
   router's head. **In progress 2026-11-08:** manifest, head parity gate and the
-  `pi-laya-model` installer landed, then the `/health` identity (router +
-  reference sidecar) and the `/router status` mismatch warnings; skill and
-  docs remain. Owner decisions 2026-11-08: weights as GitHub Release
+  `pi-laya-model` installer, the `/health` identity (router + reference
+  sidecar) and the `/router status` mismatch warnings landed, and so did the
+  install skill `skills/router-laya-install/`. Remaining: the owner's
+  weights release go (§1) and a smoke test of the skill in Pi (unverified: the
+  skill's call of `pi-laya-model`, and whether the bin reaches the PATH). Owner decisions 2026-11-08: weights as GitHub Release
   assets + manifest in the repo, ONNX as the default backend, an install skill
   that asks first; install root `~/.pi/agent/laya-models/`, a Pi-independent
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
