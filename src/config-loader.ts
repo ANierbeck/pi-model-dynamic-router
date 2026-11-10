@@ -23,7 +23,9 @@ import * as path from 'node:path';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
-import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
+import { LAYA_SPEC } from './laya-classifier.ts';
+import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
+import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
 import { textOf } from './utils.ts';
 import { piAgentDir } from './agent-dir.ts';
 
@@ -93,6 +95,8 @@ export function loadLayeredConfig(
   if (globalOverride) {
     validateRemovedGroups(globalOverride, globalOverridePath);
     validateRenamedClassifierKeys(globalOverride, globalOverridePath);
+    validateRenamedTopLevelKeys(globalOverride, globalOverridePath);
+    warnUnknownKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   }
@@ -103,6 +107,8 @@ export function loadLayeredConfig(
   if (projectOverride) {
     validateRemovedGroups(projectOverride, projectOverridePath);
     validateRenamedClassifierKeys(projectOverride, projectOverridePath);
+    validateRenamedTopLevelKeys(projectOverride, projectOverridePath);
+    warnUnknownKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   }
@@ -111,6 +117,57 @@ export function loadLayeredConfig(
   validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Top-level config keys renamed in 2.0, mapped to where they went. Owner
+ * decision 2026-11-08 (plan 2026-11-08-optional-integrations-config.md,
+ * decision 1): no read alias, so the old key is dropped, not translated — but
+ * never silently: a config that still names it would otherwise lose the
+ * setting and sit at the shipped default (Laya off) without a word. Same shape
+ * as REMOVED_GROUPS and RENAMED_CLASSIFIER_KEYS.
+ */
+const RENAMED_TOP_LEVEL_KEYS: Readonly<Record<string, string>> = {
+  classifier_laya: 'integrations.laya',
+};
+
+function validateRenamedTopLevelKeys(layer: Partial<Config>, source: string): void {
+  const bag = layer as Record<string, unknown>;
+  for (const [oldKey, newKey] of Object.entries(RENAMED_TOP_LEVEL_KEYS)) {
+    const onceKey = `${source}:renamed:${oldKey}`;
+    if (!Object.hasOwn(bag, oldKey)) {
+      forgetWarnOnce(onceKey);
+      continue;
+    }
+    warnOnceFor(
+      onceKey,
+      `[router] ${source} ${oldKey}: renamed to "${newKey}" in 2.0 — ignored; move the block to keep the setting`
+    );
+    delete bag[oldKey];
+  }
+}
+
+/**
+ * Warn once per file about top-level keys `Config` does not know (a typo such
+ * as `classifer_log` would otherwise be merged and silently ignored), naming
+ * the closest known key. Only override layers are checked; the shipped defaults
+ * own their keys. Warn, never throw — the layer is still merged.
+ */
+function warnUnknownKeys(layer: Partial<Config>, source: string): void {
+  const unknown = unknownTopLevelKeys(layer);
+  if (unknown.length === 0) {
+    forgetWarnOnce(`${source}:unknown`);
+    return;
+  }
+  const known = Object.keys(KNOWN_TOP_LEVEL_KEYS);
+  const described = unknown.map((k) => {
+    const near = closestKey(k, known);
+    return near ? `${jsonKey(k)} (did you mean "${near}"?)` : jsonKey(k);
+  });
+  warnOnceFor(
+    `${source}:unknown`,
+    `[router] ${source}: unknown config key(s) ${described.join(', ')} — ignored`
+  );
 }
 
 /**
@@ -237,70 +294,11 @@ function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): 
  * during config load).
  */
 export function validateClassifierLaya(config: Config): void {
-  const c = config.classifier_laya;
-  if (!c?.enabled) return;
-  const disable = (why: string): void => {
-    warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
-    c.enabled = false;
-  };
-  if (!c.checkpoint) {
-    disable(
-      `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
-        `repo:revision — the router never downloads weights, ADR-0025)`
-    );
-    return;
-  }
-  const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
-  let hostname: string;
-  try {
-    const u = new URL(endpoint);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
-    hostname = u.hostname;
-  } catch {
-    disable(`endpoint ${JSON.stringify(endpoint)} is not a valid http(s) URL`);
-    return;
-  }
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  const loopback =
-    host === 'localhost' ||
-    host === '::1' ||
-    host === '0:0:0:0:0:0:0:1' ||
-    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-  if (!loopback) {
-    disable(
-      `endpoint host ${JSON.stringify(hostname)} is not loopback — the router only sends ` +
-        `prompts to 127.0.0.0/8, localhost or ::1`
-    );
-    return;
-  }
-  if (c.mode != null && c.mode !== 'active' && c.mode !== 'shadow') {
-    warnLog(
-      `[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`
-    );
-    c.mode = 'shadow';
-  }
-  if (
-    c.confidence_threshold != null &&
-    (typeof c.confidence_threshold !== 'number' ||
-      // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
-      !(c.confidence_threshold >= 0 && c.confidence_threshold <= 1))
-  ) {
-    warnLog(
-      `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`
-    );
-    c.confidence_threshold = 0.8;
-  }
-  if (c.timeout_ms != null && (typeof c.timeout_ms !== 'number' || !(c.timeout_ms > 0))) {
-    warnLog(
-      `[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`
-    );
-    c.timeout_ms = 1500;
-  }
-  c.endpoint ??= LAYA_DEFAULT_ENDPOINT;
-  c.timeout_ms ??= 1500;
-  c.confidence_threshold ??= 0.8;
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-  if (!c.mode) c.mode = 'shadow';
+  const c = config.integrations?.laya;
+  if (!c || typeof c !== 'object') return;
+  // Runs for a disabled or enabled-less block too: the typo check must see it.
+  validateIntegration(LAYA_SPEC, c as Record<string, unknown>);
+  if (c.enabled) c.confidence_threshold ??= 0.8;
 }
 
 /**

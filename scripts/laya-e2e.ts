@@ -40,16 +40,18 @@ const cfg = {
   model_groups: {},
   model_metrics: {},
   classifier_log: { enabled: true, store_text: 'none' },
-  classifier_laya: {
-    enabled: true,
-    checkpoint,
-    mode,
-    ...(arg('endpoint') ? { endpoint: arg('endpoint') } : {}),
+  integrations: {
+    laya: {
+      enabled: true,
+      checkpoint,
+      mode,
+      ...(arg('endpoint') ? { endpoint: arg('endpoint') } : {}),
+    },
   },
 } as unknown as Config;
 validateClassifierLaya(cfg); // the real validator fills the defaults, like a real config load
 
-console.log(`classifier_laya: ${JSON.stringify(cfg.classifier_laya)}`);
+console.log(`integrations.laya: ${JSON.stringify(cfg.integrations?.laya)}`);
 console.log(`state before first use: ${layaAvailabilityState()}`);
 
 const cases: Array<[string, string, Record<string, string>?]> = [

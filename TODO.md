@@ -288,7 +288,26 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
 - [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
 ### Integration & Extensibility
 - **Optional integrations: one contract, one config block**
-  (`docs/plans/2026-11-08-optional-integrations-config.md`, proposed; the
+  (`docs/plans/2026-11-08-optional-integrations-config.md`, in progress
+  2026-11-11). **Done 2026-11-11:** the contract (`src/integration.ts`),
+  the schema with unknown-key warnings (`src/config-schema.ts`) and the rename
+  `classifier_laya` → `integrations.laya` with a `RENAMED` warning.
+  **Open, in this order:**
+  (1) the `/router status` "Integrations" section and the
+  `/router config integration <name> on|off|<mode>` subcommand — needs a
+  nested `integrations.<name>` delta in `src/user-config-store.ts`, a renderer
+  over the health registry and the command wiring (details in the plan's
+  Steps); the Laya line of `/router status` is unchanged until then;
+  (2) **consumers outside the repository still read the old key** (owner
+  side): the sidecar manager extension reads `classifier_laya?.enabled !== false`
+  (after the rename it reads `undefined`, so it treats Laya as enabled and
+  would start a sidecar the router has switched off);
+  `~/.laya-ft/shadow_eval/common.py` reads
+  `["classifier_laya"]["confidence_threshold"]` (a `KeyError` after the
+  rename); and the owner's `router-config.user.json` carries the old block, so
+  **Laya is off at the next session start until it is moved** under
+  `integrations.laya`;
+  (3) the CodexBar plan continues on this contract. Original note — the
   contract + rename are a 2.0.0 blocker since decision 1 is DECIDED,
   2026-11-08): Laya is wired ad hoc (own block, own validator, own health state);
   unknown config keys are silently ignored and a project layer can enable
@@ -648,8 +667,10 @@ Pick up in a later round, each as its own plan where noted (§11):
   weights publish (own §1 approval); Linux/Windows latency WAIVED (owner:
   modern PCs assumed similar); the versioned artifact + install skill are
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
-  `integrations.laya` before 2.0.0 (decided 2026-11-08) — integration
-  contract + rename + migration warning land pre-release; (4) the
+  `integrations.laya` before 2.0.0 (decided 2026-11-08) — contract, rename and
+  migration warning DONE 2026-11-11; the status section and the config
+  subcommand are still open, as are the consumers outside the repo (see the
+  integrations item under "Integration & Extensibility"); (4) the
   `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.

@@ -145,12 +145,14 @@ describe('laya-classifier', () => {
     expect(classifier.isLayaAvailable()).toBe(true);
     const res = await classifier.classifyWithLaya('fix the typo', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(p),
-          timeout_ms: 500,
-          confidence_threshold: 0.4,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(p),
+            timeout_ms: 500,
+            confidence_threshold: 0.4,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -170,11 +172,13 @@ describe('laya-classifier', () => {
     expect(classifier.getLastProbeError()).toBeTruthy();
     const res = await classifier.classifyWithLaya('hello', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: 'http://127.0.0.1:9999',
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: 'http://127.0.0.1:9999',
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -191,11 +195,13 @@ describe('laya-classifier', () => {
     expect(classifier.getLastProbeError()).toBe('classify request timed out after 500ms');
     const res = await classifier.classifyWithLaya('hello', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(port),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(port),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -211,11 +217,13 @@ describe('laya-classifier', () => {
     expect(classifier.isLayaAvailable()).toBe(false);
     const res = await classifier.classifyWithLaya('hello', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(port),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(port),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -231,11 +239,13 @@ describe('laya-classifier', () => {
     expect(classifier.isLayaAvailable()).toBe(false);
     const res = await classifier.classifyWithLaya('hello', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(port),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(port),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -253,11 +263,13 @@ describe('laya-classifier', () => {
     const p2 = await startServer('http500');
     await classifier.classifyWithLaya('hello', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(p2),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(p2),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
@@ -265,22 +277,26 @@ describe('laya-classifier', () => {
     // ... repeated classify failures within the TTL do not log again
     await classifier.classifyWithLaya('a', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(p2),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(p2),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',
     });
     await classifier.classifyWithLaya('b', undefined, {
       cfg: {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: ENDPOINT(p2),
-          timeout_ms: 500,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: ENDPOINT(p2),
+            timeout_ms: 500,
+          },
         },
       } as any,
       checkpoint: 'x/y',

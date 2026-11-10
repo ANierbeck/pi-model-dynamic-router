@@ -176,7 +176,7 @@ inline in `src/discovery.ts`.
 
 ### `src/laya-classifier.ts` — Local Laya classifier stage (experimental)
 
-Opt-in stage of the content classifier (the `classifier_laya` config block):
+Opt-in stage of the content classifier (the `integrations.laya` config block):
 answers the category from a local MLX sidecar (Apple Silicon) over
 `POST /classify` and either routes (`mode: "active"`, above the confidence
 gate) or only logs (`mode: "shadow"`, ADR-0027). Disabled by default;

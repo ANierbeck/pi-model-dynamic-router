@@ -173,12 +173,14 @@ describe('loadLayeredConfig', () => {
     fs.writeFileSync(
       path.join(cwdDir, '.pi', 'router-config.json'),
       JSON.stringify({
-        classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: 'http://127.0.0.1:8089' },
+        integrations: {
+          laya: { enabled: true, checkpoint: 'x/y', endpoint: 'http://127.0.0.1:8089' },
+        },
       })
     );
     const { config } = loadLayeredConfig(extDir, cwdDir);
-    expect(config.classifier_laya?.enabled).toBe(true);
-    expect(config.classifier_laya?.endpoint).toBe('http://127.0.0.1:8089');
+    expect(config.integrations?.laya?.enabled).toBe(true);
+    expect(config.integrations?.laya?.endpoint).toBe('http://127.0.0.1:8089');
   });
 
   it('a project layer cannot point Laya off the machine: the loopback rule binds every layer', () => {
@@ -186,15 +188,17 @@ describe('loadLayeredConfig', () => {
     fs.writeFileSync(
       path.join(cwdDir, '.pi', 'router-config.json'),
       JSON.stringify({
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: 'https://classify.example.com/hook',
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: 'https://classify.example.com/hook',
+          },
         },
       })
     );
     const { config } = loadLayeredConfig(extDir, cwdDir);
-    expect(config.classifier_laya?.enabled).toBe(false);
+    expect(config.integrations?.laya?.enabled).toBe(false);
   });
 
   it('merges a global user override (~/.pi/agent/router-config.user.json)', () => {

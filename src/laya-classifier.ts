@@ -2,7 +2,7 @@
 // Local Laya typed-decision classifier (opt-in, disabled by default).
 //
 // Contract with the wrapper (spikes/laya-http/server.py) — the endpoint is
-// configurable via `classifier_laya.endpoint` (default http://127.0.0.1:8089):
+// configurable via `integrations.laya.endpoint` (default http://127.0.0.1:8089):
 //   POST /classify {prompt: string, context?: {previousUserMessage?, lastAssistantSnippet?}}
 //   -> { category: string, confidence: number, probabilities: Record<string, number>, ms: number }
 //
@@ -24,6 +24,12 @@
 // 2026-11-08-laya-model-artifact.md, Solution 5).
 
 import { warnLog } from './logger.ts';
+import {
+  type IntegrationSpec,
+  getIntegrationHealth,
+  resetIntegrationHealth,
+  setIntegrationHealth,
+} from './integration.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
 import type { Config } from './types.ts';
 import {
@@ -34,7 +40,7 @@ import {
 import { textOf } from './utils.ts';
 import { headSha256, isSafeName } from './laya-model-manifest.ts';
 
-/** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
+/** Where the sidecar listens unless `integrations.laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
 /**
@@ -48,8 +54,40 @@ export const TIMEOUT_STRIKES_BEFORE_DOWN = 3;
 /** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
 export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 
-let _availability: { ok: boolean; until: number } | null = null;
-let _lastProbeError: string | null = null;
+/** Laya's declaration for the integration contract (src/integration.ts). */
+export const LAYA_SPEC: IntegrationSpec = {
+  name: 'laya',
+  label: 'integrations.laya',
+  modes: ['active', 'shadow'],
+  defaultMode: 'shadow',
+  defaultTimeoutMs: 1500,
+  defaultEndpoint: LAYA_DEFAULT_ENDPOINT,
+  extraKeys: ['checkpoint', 'confidence_threshold', 'compare_in_background', 'observe_momentum'],
+  validateExtra: (block): string | undefined => {
+    if (!block.checkpoint) {
+      return (
+        `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
+        `repo:revision — the router never downloads weights, ADR-0025)`
+      );
+    }
+    const t = block.confidence_threshold;
+    if (
+      t != null &&
+      (typeof t !== 'number' ||
+        // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
+        !(t >= 0 && t <= 1))
+    ) {
+      warnLog(
+        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
+      );
+      block.confidence_threshold = 0.8;
+    }
+    return undefined;
+  },
+};
+
+/** Registry key of the Laya integration (src/integration.ts); availability lives there. */
+const LAYA_INTEGRATION = 'laya';
 let _timeoutStrikes = 0;
 /** What the sidecar reported on /health at the last successful probe; null = nothing usable. */
 let _identity: LayaReportedIdentity | null = null;
@@ -106,14 +144,21 @@ export function truncatePromptForLaya(
 }
 
 function markUnavailable(error?: string): void {
-  _availability = { ok: false, until: Date.now() + UNAVAILABLE_TTL_MS };
-  _lastProbeError = error ?? 'stage error';
+  // Keep what was last known good (reported version, last success): a status
+  // view of a down sidecar should still say which model it served.
+  const prev = getIntegrationHealth(LAYA_INTEGRATION);
+  setIntegrationHealth(LAYA_INTEGRATION, {
+    state: 'down',
+    lastError: error ?? 'stage error',
+    ...(prev.version ? { version: prev.version } : {}),
+    ...(prev.lastOkAt !== undefined ? { lastOkAt: prev.lastOkAt } : {}),
+    until: Date.now() + UNAVAILABLE_TTL_MS,
+  });
 }
 
 /** Reset availability — for tests only. */
 export function resetLayaAvailability(): void {
-  _availability = null;
-  _lastProbeError = null;
+  resetIntegrationHealth(LAYA_INTEGRATION);
   _timeoutStrikes = 0;
   _identity = null;
 }
@@ -131,14 +176,25 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     if (!res || typeof res.category !== 'string' || res.category.length === 0) {
       throw new Error('probe returned no valid category');
     }
-    _availability = { ok: true, until: Date.now() + UNAVAILABLE_TTL_MS };
-    _lastProbeError = null;
+    const now = Date.now();
+    setIntegrationHealth(LAYA_INTEGRATION, {
+      state: 'ok',
+      lastOkAt: now,
+      until: now + UNAVAILABLE_TTL_MS,
+    });
     const health = await healthP;
     _identity = health.ok ? withHeadCheck(health.identity) : null;
+    const reported = _identity ? labelOf(_identity) : null;
+    if (reported) {
+      setIntegrationHealth(LAYA_INTEGRATION, {
+        ...getIntegrationHealth(LAYA_INTEGRATION),
+        version: reported,
+      });
+    }
     if (_identity?.headMatches === false) {
       const who = labelOf(_identity) ?? endpoint;
       warnLog(
-        `[router] classifier_laya: ${who} serves a different head than the router builds ` +
+        `[router] integrations.laya: ${who} serves a different head than the router builds ` +
           `(sidecar head_sha256 ${_identity.head_sha256}) — its answers measure prompt drift, ` +
           `not the model; install a matching artifact (pi-laya-model)`
       );
@@ -160,7 +216,8 @@ let _probeInFlight: Promise<boolean> | null = null;
  * sidecar; nothing else in the router calls probeLaya().
  */
 async function ensureLayaAvailable(endpoint: string, timeoutMs: number): Promise<boolean> {
-  if (_availability && Date.now() <= _availability.until) return _availability.ok;
+  const state = layaAvailabilityState();
+  if (state !== 'unknown') return state === 'ok';
   _probeInFlight ??= probeLaya(endpoint, timeoutMs).finally(() => {
     _probeInFlight = null;
   });
@@ -169,12 +226,7 @@ async function ensureLayaAvailable(endpoint: string, timeoutMs: number): Promise
 
 /** True when the wrapper answered healthily and a recent probe succeeded. */
 export function isLayaAvailable(): boolean {
-  if (!_availability) return false;
-  if (Date.now() > _availability.until) {
-    _availability = null;
-    return false;
-  }
-  return _availability.ok;
+  return layaAvailabilityState() === 'ok';
 }
 
 /**
@@ -185,13 +237,13 @@ export function isLayaAvailable(): boolean {
 export type LayaAvailabilityState = 'ok' | 'down' | 'unknown';
 
 export function layaAvailabilityState(): LayaAvailabilityState {
-  if (!_availability || Date.now() > _availability.until) return 'unknown';
-  return _availability.ok ? 'ok' : 'down';
+  return getIntegrationHealth(LAYA_INTEGRATION).state;
 }
 
 /** Why the sidecar is considered down; null unless the state is `down`. */
 export function getLastProbeError(): string | null {
-  return layaAvailabilityState() === 'down' ? _lastProbeError : null;
+  const h = getIntegrationHealth(LAYA_INTEGRATION);
+  return h.state === 'down' ? (h.lastError ?? null) : null;
 }
 
 /** Low-level HTTP call to the wrapper (`endpoint` is the base URL; `/classify` is appended). */
@@ -425,7 +477,7 @@ export async function classifyWithLayaDetailed(
   context: ClassificationContext | undefined,
   options: { cfg?: Config; checkpoint: string }
 ): Promise<{ answer: LayaAnswer; result: ClassificationResult | null } | null> {
-  const cfg = options.cfg?.classifier_laya;
+  const cfg = options.cfg?.integrations?.laya;
   if (!cfg?.enabled) return null;
   if (!(await ensureLayaAvailable(cfg.endpoint!, cfg.timeout_ms!))) return null;
 
@@ -438,13 +490,13 @@ export async function classifyWithLayaDetailed(
     if (err instanceof LayaTimeoutError && ++_timeoutStrikes < TIMEOUT_STRIKES_BEFORE_DOWN) {
       // Latency, not an outage: the chain answers THIS prompt, Laya stays on.
       warnLog(
-        `[router] classifier_laya: ${message} (${_timeoutStrikes}/${TIMEOUT_STRIKES_BEFORE_DOWN}); the chain decides this prompt`
+        `[router] integrations.laya: ${message} (${_timeoutStrikes}/${TIMEOUT_STRIKES_BEFORE_DOWN}); the chain decides this prompt`
       );
       return null;
     }
     // Going down needs no reset: the next probe (resetLayaAvailability) clears the count.
     markUnavailable(message);
-    warnLog(`[router] classifier_laya: classify failed — ${message}; stage disabled`);
+    warnLog(`[router] integrations.laya: classify failed — ${message}; stage disabled`);
     return null;
   }
   return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };

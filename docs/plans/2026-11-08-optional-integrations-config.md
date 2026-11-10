@@ -1,6 +1,6 @@
 # Optional integrations: one contract, one config block, typo-safe user layers
 
-**Status:** in progress 2026-11-08 — all four owner decisions made. **Decision 1 is DECIDED
+**Status:** in progress 2026-11-11 — all four owner decisions made; the contract, the schema with unknown-key warnings and the rename are done, the `/router status` section and the `/router config integration` subcommand are open. **Decision 1 is DECIDED
 (2026-11-08): rename `classifier_laya` → `integrations.laya` before 2.0.0
 — the contract + rename + migration warning therefore land before the
 release** (part of the "everything Laya" release gate,
@@ -74,16 +74,18 @@ The router is growing optional external components: Laya today, CodexBar next. E
 
 Commit `a9dc015` (`main`, 2026-11-08): `src/types.ts` (`Config`: 22 top-level keys; `ClassifierLayaConfig`; other `enabled?` switches in `BreakerConfig`, `ClassifierLogConfig`, `ContextBudgetConfig`, `DelegationConfig`), `src/config-loader.ts` (layer order, `deepMergeConfig`, `REMOVED_GROUPS`, `RENAMED_CLASSIFIER_KEYS`, `validateClassifierLaya`; no unknown-key check, no per-layer restriction), shipped `router-config.json` (10 top-level keys, `classifier_laya: {enabled: false}`), `src/laya-classifier.ts` (`layaAvailabilityState`), `src/commands.ts` (`/router status` Laya branch, `/router config` subcommands), `test/laya-chain.test.ts` (lines 168 and 220), `docs/config-override.md` (sections). No JSON Schema file in the repo.
 
-**Not checked:** how many existing tests construct `classifier_laya` directly (the rename's test churn); whether `src/user-config-store.ts` can write nested keys generically or only the existing switches; the owner's current `router-config.user.json` (its Laya settings come from the Laya sole-classifier plan's "State" section, not read here).
+**Checked 2026-11-11:** nine test files constructed `classifier_laya` directly (migrated); consumers outside the repo that still read it: the sidecar manager extension and a labeling script (see TODO.md). **Not checked:** whether `src/user-config-store.ts` can write nested keys generically or only the existing switches; the owner's current `router-config.user.json` (its Laya settings come from the Laya sole-classifier plan's "State" section, not read here).
 
 ## Steps
 
 - [x] Owner decides 1–4 (2026-11-08).
 - [x] Core-only invariant test for Laya (`test/laya-chain.test.ts`, 26 cases; green at birth by nature — it pins existing behavior — so its strength was proven by five hand-applied mutations in `src/`, each driving it red).
 - [x] Project-layer pins in `test/config-loader.test.ts`: a project layer may enable Laya; the loopback rule binds it (two mutations, both red).
-- [ ] Red-first: unknown-key tests in the config-loader test file.
-- [ ] `src/integration.ts`: contract, `validateIntegration`, health registry; `validateClassifierLaya` and `layaAvailabilityState` reimplemented on top of it, behaviour-preserving (existing Laya tests stay green unchanged).
-- [ ] Hand-maintained schema + `Config` match test (decision 2), plus unknown-key warnings.
-- [ ] `/router status` "Integrations" section; `/router config integration …` subcommand.
-- [ ] Rename per decision 1 (`RENAMED_*` warning), config docs, CHANGELOG entry under 2.0.0.
+- [x] Red-first: unknown-key tests (`test/config-schema.test.ts`).
+- [x] `src/integration.ts`: contract, `validateIntegration`, health registry; `validateClassifierLaya` and `layaAvailabilityState` reimplemented on top of it, behaviour-preserving (the existing Laya suites stayed green unchanged; `test/integration.test.ts`, ten mutations red).
+- [x] Hand-maintained schema (`src/config-schema.ts`) + `Config` match test (decision 2), plus unknown-key warnings (thirteen mutations red).
+- [ ] `/router status` "Integrations" section; `/router config integration <name> on|off|<mode>` subcommand. **Open.** Needs: a renderer that lists every integration named in `config.integrations` (enabled, mode, state, last error, reported version), reading each one's health from the registry by name — the registry is a per-name lookup and is not the list of integrations, so an integration that was never probed still shows up as `unknown` (Sourcery review of PR #150, finding 8); a nested `integrations.<name>` delta in `src/user-config-store.ts` (`applyDelta` only knows `exclude` and `context_budget` today) that checks the mode against the integration's spec; the command wiring in `src/commands.ts` with its usage and autocomplete lines. The Laya line of `/router status` stays as it is until then.
+- [x] Rename per decision 1 (`RENAMED_*` warning, no alias), config docs, CHANGELOG entry. The CHANGELOG entry sits under `[Unreleased]` and moves to the 2.0.0 heading at release.
+- [ ] Consumers outside the repository: they still read `classifier_laya` and need the new path (owner side, see TODO.md).
+- [x] The install skill snippet and the test that loads it follow the new key.
 - [ ] CodexBar plan continues on this contract.

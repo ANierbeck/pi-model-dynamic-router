@@ -1,6 +1,8 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
+import type { IntegrationConfig } from './integration.ts';
+
 // ── Core Types ────────────────────────────────────────────────────────────
 
 /**
@@ -252,7 +254,18 @@ export interface ClassifierLogConfig {
  * the stage ships disabled (see docs/research/2026-10-09-laya-spike.md and
  * docs/plans/2026-10-09-laya-tasks1-5.md).
  */
-export interface ClassifierLayaConfig {
+/** The `integrations` block: one optional key per component. */
+export interface IntegrationsConfig {
+  /**
+   * Opt-in local Laya typed-decision classifier stage (Apache 2.0; spike at
+   * docs/research/2026-10-09-laya-spike.md, plan at
+   * docs/plans/2026-10-09-laya-tasks1-5.md). Disabled by default; requires a
+   * `checkpoint` when enabled — the router never downloads weights.
+   */
+  laya?: ClassifierLayaConfig;
+}
+
+export interface ClassifierLayaConfig extends IntegrationConfig {
   /** Enable the local Laya classifier stage. Default false — active use is gated
    * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
   enabled?: boolean;
@@ -324,12 +337,11 @@ export interface Config {
    */
   classifier_log?: ClassifierLogConfig;
   /**
-   * Opt-in local Laya typed-decision classifier stage (Apache 2.0; spike at
-   * docs/research/2026-10-09-laya-spike.md, plan at
-   * docs/plans/2026-10-09-laya-tasks1-5.md). Disabled by default; requires a
-   * `checkpoint` when enabled — the router never downloads weights.
+   * Optional external components, one block each, all following the contract
+   * in src/integration.ts (plan 2026-11-08-optional-integrations-config.md).
+   * Renamed from the top-level `classifier_laya` in 2.0 (no read alias).
    */
-  classifier_laya?: ClassifierLayaConfig;
+  integrations?: IntegrationsConfig;
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the
