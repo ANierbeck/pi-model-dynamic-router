@@ -161,13 +161,15 @@ describe('layaAvailabilityState', () => {
 
   const cfg = () =>
     ({
-      classifier_laya: {
-        enabled: true,
-        checkpoint: 'c',
-        endpoint: `http://127.0.0.1:${port}`,
-        timeout_ms: 800,
-        confidence_threshold: 0.8,
-        mode: 'active',
+      integrations: {
+        laya: {
+          enabled: true,
+          checkpoint: 'c',
+          endpoint: `http://127.0.0.1:${port}`,
+          timeout_ms: 800,
+          confidence_threshold: 0.8,
+          mode: 'active',
+        },
       },
     }) as any;
 
@@ -213,11 +215,13 @@ describe('/router overview (real handler)', () => {
     try {
       await classifyWithLaya('probe', undefined, {
         cfg: {
-          classifier_laya: {
-            enabled: true,
-            checkpoint: 'c',
-            endpoint: `http://127.0.0.1:${port}`,
-            timeout_ms: 800,
+          integrations: {
+            laya: {
+              enabled: true,
+              checkpoint: 'c',
+              endpoint: `http://127.0.0.1:${port}`,
+              timeout_ms: 800,
+            },
           },
         } as any,
         checkpoint: 'c',
@@ -236,7 +240,7 @@ describe('/router overview (real handler)', () => {
     }
   });
 
-  async function overview(classifier_laya: unknown): Promise<string> {
+  async function overview(laya: unknown): Promise<string> {
     let handler: ((args: string, ctx: any) => Promise<void>) | undefined;
     const pi = {
       registerCommand: (name: string, def: any) => {
@@ -246,7 +250,7 @@ describe('/router overview (real handler)', () => {
     const rt: any = {
       pi,
       cache: {},
-      cfg: { model_groups: { dynamic: group }, ...(classifier_laya ? { classifier_laya } : {}) },
+      cfg: { model_groups: { dynamic: group }, ...(laya ? { integrations: { laya } } : {}) },
       load: () => {},
       rateLimitManager: { getLimits: () => new Map() },
       isLimited: () => false,

@@ -39,12 +39,14 @@ const OK_ANSWER = {
 };
 
 const cfg = {
-  classifier_laya: { enabled: true, checkpoint: 'x/y', timeout_ms: 150, confidence_threshold: 0 },
+  integrations: {
+    laya: { enabled: true, checkpoint: 'x/y', timeout_ms: 150, confidence_threshold: 0 },
+  },
 } as never;
 
 const classify = (prompt: string) =>
   classifier.classifyWithLaya(prompt, undefined, {
-    cfg: { classifier_laya: { ...(cfg as any).classifier_laya, endpoint } } as never,
+    cfg: { integrations: { laya: { ...(cfg as any).integrations.laya, endpoint } } } as never,
     checkpoint: 'x/y',
   });
 

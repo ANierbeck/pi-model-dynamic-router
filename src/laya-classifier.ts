@@ -2,7 +2,7 @@
 // Local Laya typed-decision classifier (opt-in, disabled by default).
 //
 // Contract with the wrapper (spikes/laya-http/server.py) — the endpoint is
-// configurable via `classifier_laya.endpoint` (default http://127.0.0.1:8089):
+// configurable via `integrations.laya.endpoint` (default http://127.0.0.1:8089):
 //   POST /classify {prompt: string, context?: {previousUserMessage?, lastAssistantSnippet?}}
 //   -> { category: string, confidence: number, probabilities: Record<string, number>, ms: number }
 //
@@ -39,7 +39,7 @@ import {
 import { textOf } from './utils.ts';
 import { headSha256, isSafeName } from './laya-model-manifest.ts';
 
-/** Where the sidecar listens unless `classifier_laya.endpoint` says otherwise (a base URL). */
+/** Where the sidecar listens unless `integrations.laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
 /**
@@ -156,7 +156,7 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     if (_identity?.headMatches === false) {
       const who = labelOf(_identity) ?? endpoint;
       warnLog(
-        `[router] classifier_laya: ${who} serves a different head than the router builds ` +
+        `[router] integrations.laya: ${who} serves a different head than the router builds ` +
           `(sidecar head_sha256 ${_identity.head_sha256}) — its answers measure prompt drift, ` +
           `not the model; install a matching artifact (pi-laya-model)`
       );
@@ -439,7 +439,7 @@ export async function classifyWithLayaDetailed(
   context: ClassificationContext | undefined,
   options: { cfg?: Config; checkpoint: string }
 ): Promise<{ answer: LayaAnswer; result: ClassificationResult | null } | null> {
-  const cfg = options.cfg?.classifier_laya;
+  const cfg = options.cfg?.integrations?.laya;
   if (!cfg?.enabled) return null;
   if (!(await ensureLayaAvailable(cfg.endpoint!, cfg.timeout_ms!))) return null;
 
@@ -452,13 +452,13 @@ export async function classifyWithLayaDetailed(
     if (err instanceof LayaTimeoutError && ++_timeoutStrikes < TIMEOUT_STRIKES_BEFORE_DOWN) {
       // Latency, not an outage: the chain answers THIS prompt, Laya stays on.
       warnLog(
-        `[router] classifier_laya: ${message} (${_timeoutStrikes}/${TIMEOUT_STRIKES_BEFORE_DOWN}); the chain decides this prompt`
+        `[router] integrations.laya: ${message} (${_timeoutStrikes}/${TIMEOUT_STRIKES_BEFORE_DOWN}); the chain decides this prompt`
       );
       return null;
     }
     // Going down needs no reset: the next probe (resetLayaAvailability) clears the count.
     markUnavailable(message);
-    warnLog(`[router] classifier_laya: classify failed — ${message}; stage disabled`);
+    warnLog(`[router] integrations.laya: classify failed — ${message}; stage disabled`);
     return null;
   }
   return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };

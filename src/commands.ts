@@ -149,7 +149,7 @@ export interface ClassifierStatusInput {
   localProbed?: boolean;
   /** Today's classification mix; omitted or empty → no counter lines. */
   counts?: ClassificationCounts;
-  /** Laya stage, present when `classifier_laya.enabled` is true. */
+  /** Laya stage, present when `integrations.laya.enabled` is true. */
   laya?: {
     checkpoint: string;
     endpoint: string;
@@ -842,15 +842,16 @@ export function createCommands(rt: CommandDeps): void {
                   localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
                   localProbed: Array.isArray(rt.cache.classifier_local_models),
                   counts: getClassificationCounts(),
-                  ...(rt.cfg.classifier_laya?.enabled
+                  ...(rt.cfg.integrations?.laya?.enabled
                     ? {
                         laya: {
-                          checkpoint: rt.cfg.classifier_laya.checkpoint ?? '?',
-                          endpoint: rt.cfg.classifier_laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
-                          confidence_threshold: rt.cfg.classifier_laya.confidence_threshold ?? 0.8,
+                          checkpoint: rt.cfg.integrations.laya.checkpoint ?? '?',
+                          endpoint: rt.cfg.integrations.laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
+                          confidence_threshold:
+                            rt.cfg.integrations.laya.confidence_threshold ?? 0.8,
                           // same safe reading as the chain: only an explicit 'active' decides
                           mode:
-                            rt.cfg.classifier_laya.mode === 'active'
+                            rt.cfg.integrations.laya.mode === 'active'
                               ? ('active' as const)
                               : ('shadow' as const),
                           state: layaAvailabilityState(),

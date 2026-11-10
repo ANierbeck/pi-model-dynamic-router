@@ -1,6 +1,6 @@
 ---
 name: router-laya-install
-description: Guide the installation of the Laya classifier model for pi-model-router. Checks what is on offer, the platform and free space, asks before every step, runs pi-laya-model, writes the user-layer classifier_laya config and checks the identity the sidecar reports on /health. Use when the user asks to install, set up or verify the Laya classifier.
+description: Guide the installation of the Laya classifier model for pi-model-router. Checks what is on offer, the platform and free space, asks before every step, runs pi-laya-model, writes the user-layer integrations.laya config and checks the identity the sidecar reports on /health. Use when the user asks to install, set up or verify the Laya classifier.
 ---
 
 # Router Laya Install — Install the Laya Classifier Model
@@ -119,18 +119,23 @@ The result has `ok` and `problems`. Continue to the config only on `ok: true`.
 ### 7. Write the config (confirm first)
 
 The config belongs in the user layer, `<Pi agent dir>/router-config.user.json`.
-Merge only the `classifier_laya` key into the existing file. Keep every other
-key. Show the user the resulting `classifier_laya` block and ask before
-writing it.
+Merge only the `integrations.laya` block into the existing file. Keep every
+other key, including other entries under `integrations`. Show the user the
+resulting `integrations.laya` block and ask before writing it. If the file
+still has an old top-level `classifier_laya` block (the key was renamed in 2.0
+and the router now ignores it with a warning), offer to move its values into
+`integrations.laya` and remove the old block.
 
 <!-- laya-config-snippet -->
 ```json
 {
-  "classifier_laya": {
-    "enabled": true,
-    "mode": "shadow",
-    "checkpoint": "r2@1.0.0",
-    "endpoint": "http://127.0.0.1:8089"
+  "integrations": {
+    "laya": {
+      "enabled": true,
+      "mode": "shadow",
+      "checkpoint": "r2@1.0.0",
+      "endpoint": "http://127.0.0.1:8089"
+    }
   }
 }
 ```
@@ -138,10 +143,6 @@ writing it.
 Shadow mode only logs Laya's answer and does not change the route. The user
 can switch to `"active"` later, after reviewing `/router status` and the
 decision log.
-
-Maintainers: the config key is planned to become `integrations.laya`
-(`docs/plans/2026-11-08-optional-integrations-config.md`). This snippet changes
-with that rename.
 
 ### 8. Sidecar (not started by this skill)
 

@@ -14,16 +14,16 @@ describe('classifier-laya-config', () => {
   describe('shipped default', () => {
     it('stage is inactive (enabled:false) when the user does not configure it', () => {
       // the shipped router-config.json now ships a default block that is disabled
-      expect(base.classifier_laya?.enabled).toBe(false);
-      expect(base.classifier_laya?.checkpoint).toBeUndefined();
+      expect(base.integrations?.laya?.enabled).toBe(false);
+      expect(base.integrations?.laya?.checkpoint).toBeUndefined();
     });
 
     it('the shipped config block is enabled:false and carries no checkpoint', () => {
       const withBlock = deepMergeConfig(base, {
-        classifier_laya: { enabled: false },
+        integrations: { laya: { enabled: false } },
       }) as Config;
-      expect(withBlock.classifier_laya?.enabled).toBe(false);
-      expect(withBlock.classifier_laya?.checkpoint).toBeUndefined();
+      expect(withBlock.integrations?.laya?.enabled).toBe(false);
+      expect(withBlock.integrations?.laya?.checkpoint).toBeUndefined();
     });
   });
 
@@ -32,31 +32,33 @@ describe('classifier-laya-config', () => {
       // Merge-review Minor 2 (2026-11-01): validateClassifierLaya runs at
       // extension start and mid-turn from tools — a bad user edit must not
       // break the whole router. New contract: warn and set enabled:false.
-      const cfg = deepMergeConfig(base, { classifier_laya: { enabled: true } }) as Config;
+      const cfg = deepMergeConfig(base, { integrations: { laya: { enabled: true } } }) as Config;
       expect(() => validateClassifierLaya(cfg)).not.toThrow();
-      expect(cfg.classifier_laya?.enabled).toBe(false);
+      expect(cfg.integrations?.laya?.enabled).toBe(false);
     });
 
     it('rejects a non-loopback endpoint (privacy promise: prompts stay on 127.0.0.1)', () => {
       // Merge-review Important 2 (2026-11-01): README/types promise the router
       // only talks HTTP to 127.0.0.1 — the code must enforce it, not just document it.
       const cfg = deepMergeConfig(base, {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: 'https://classify.example.com/hook',
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: 'https://classify.example.com/hook',
+          },
         },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.enabled).toBe(false);
+      expect(cfg.integrations?.laya?.enabled).toBe(false);
     });
 
     it('rejects a non-http endpoint URL', () => {
       const cfg = deepMergeConfig(base, {
-        classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint: 'not a url' },
+        integrations: { laya: { enabled: true, checkpoint: 'x/y', endpoint: 'not a url' } },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.enabled).toBe(false);
+      expect(cfg.integrations?.laya?.enabled).toBe(false);
     });
 
     it('accepts loopback endpoints: 127.0.0.1, other 127/8, localhost, [::1]', () => {
@@ -67,30 +69,32 @@ describe('classifier-laya-config', () => {
         'http://[::1]:8089',
       ]) {
         const cfg = deepMergeConfig(base, {
-          classifier_laya: { enabled: true, checkpoint: 'x/y', endpoint },
+          integrations: { laya: { enabled: true, checkpoint: 'x/y', endpoint } },
         }) as Config;
         validateClassifierLaya(cfg);
-        expect(cfg.classifier_laya?.enabled).toBe(true);
-        expect(cfg.classifier_laya?.endpoint).toBe(endpoint);
+        expect(cfg.integrations?.laya?.enabled).toBe(true);
+        expect(cfg.integrations?.laya?.endpoint).toBe(endpoint);
       }
     });
 
     it('resets wrong-typed mode / confidence_threshold / timeout_ms to defaults', () => {
       // Merge-review Minor 2: no type check existed; invalid values reached the client.
       const cfg = deepMergeConfig(base, {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          mode: 'turbo',
-          confidence_threshold: 5,
-          timeout_ms: -1,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            mode: 'turbo',
+            confidence_threshold: 5,
+            timeout_ms: -1,
+          },
         },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.enabled).toBe(true);
-      expect(cfg.classifier_laya?.mode).toBe('shadow');
-      expect(cfg.classifier_laya?.confidence_threshold).toBe(0.8);
-      expect(cfg.classifier_laya?.timeout_ms).toBe(1500);
+      expect(cfg.integrations?.laya?.enabled).toBe(true);
+      expect(cfg.integrations?.laya?.mode).toBe('shadow');
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
+      expect(cfg.integrations?.laya?.timeout_ms).toBe(1500);
     });
 
     it('keeps confidence_threshold 0 — the owner-decided "no gate, Laya decides everything" setting', () => {
@@ -99,69 +103,75 @@ describe('classifier-laya-config', () => {
       // every start, so live traffic kept going to the cloud chain whenever Laya
       // was below 0.8 (found in the 2026-11-08 live check of the decision log).
       const cfg = deepMergeConfig(base, {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          mode: 'active',
-          confidence_threshold: 0,
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            mode: 'active',
+            confidence_threshold: 0,
+          },
         },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.confidence_threshold).toBe(0);
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0);
     });
 
     it('still rejects a negative, a NaN and a string confidence_threshold', () => {
       for (const bad of [-0.1, Number.NaN, '0.5' as unknown as number]) {
         const cfg = deepMergeConfig(base, {
-          classifier_laya: { enabled: true, checkpoint: 'x/y', confidence_threshold: bad },
+          integrations: { laya: { enabled: true, checkpoint: 'x/y', confidence_threshold: bad } },
         }) as Config;
         validateClassifierLaya(cfg);
-        expect(cfg.classifier_laya?.confidence_threshold).toBe(0.8);
+        expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
       }
     });
 
     it('accepts enabled:true with a pinned checkpoint and applies defaults', () => {
       const cfg = deepMergeConfig(base, {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'aac6fef/laya-multilingual-mlx:f2b4faf51023039425946074e2cf1361d2db11d5',
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'aac6fef/laya-multilingual-mlx:f2b4faf51023039425946074e2cf1361d2db11d5',
+          },
         },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.enabled).toBe(true);
-      expect(cfg.classifier_laya?.checkpoint).toBe(
+      expect(cfg.integrations?.laya?.enabled).toBe(true);
+      expect(cfg.integrations?.laya?.checkpoint).toBe(
         'aac6fef/laya-multilingual-mlx:f2b4faf51023039425946074e2cf1361d2db11d5'
       );
-      expect(cfg.classifier_laya?.endpoint).toBe('http://127.0.0.1:8089');
-      expect(cfg.classifier_laya?.timeout_ms).toBe(1500);
-      expect(cfg.classifier_laya?.confidence_threshold).toBe(0.8);
-      expect(cfg.classifier_laya?.mode).toBe('shadow');
+      expect(cfg.integrations?.laya?.endpoint).toBe('http://127.0.0.1:8089');
+      expect(cfg.integrations?.laya?.timeout_ms).toBe(1500);
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
+      expect(cfg.integrations?.laya?.mode).toBe('shadow');
     });
 
     it('respects user-provided endpoint / timeout / threshold / mode when enabled', () => {
       const cfg = deepMergeConfig(base, {
-        classifier_laya: {
-          enabled: true,
-          checkpoint: 'x/y',
-          endpoint: 'http://127.0.0.1:9999',
-          timeout_ms: 3000,
-          confidence_threshold: 0.9,
-          mode: 'active',
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: 'http://127.0.0.1:9999',
+            timeout_ms: 3000,
+            confidence_threshold: 0.9,
+            mode: 'active',
+          },
         },
       }) as Config;
       validateClassifierLaya(cfg);
-      expect(cfg.classifier_laya?.endpoint).toBe('http://127.0.0.1:9999');
-      expect(cfg.classifier_laya?.timeout_ms).toBe(3000);
-      expect(cfg.classifier_laya?.confidence_threshold).toBe(0.9);
-      expect(cfg.classifier_laya?.mode).toBe('active');
+      expect(cfg.integrations?.laya?.endpoint).toBe('http://127.0.0.1:9999');
+      expect(cfg.integrations?.laya?.timeout_ms).toBe(3000);
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.9);
+      expect(cfg.integrations?.laya?.mode).toBe('active');
     });
 
     it('enabled:false keeps checkpoint absent and needs no defaults', () => {
       const cfg = deepMergeConfig(base, {
-        classifier_laya: { enabled: false, checkpoint: 'x/y' },
+        integrations: { laya: { enabled: false, checkpoint: 'x/y' } },
       } as any) as Config;
       validateClassifierLaya(cfg); // throws nothing
-      expect(cfg.classifier_laya?.enabled).toBe(false);
+      expect(cfg.integrations?.laya?.enabled).toBe(false);
     });
   });
 });

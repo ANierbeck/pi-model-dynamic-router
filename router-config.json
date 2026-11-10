@@ -4,8 +4,10 @@
     "enabled": true,
     "store_text": "none"
   },
-  "classifier_laya": {
-    "enabled": false
+  "integrations": {
+    "laya": {
+      "enabled": false
+    }
   },
   "best_quality_window": 0.05,
   "exclude": {

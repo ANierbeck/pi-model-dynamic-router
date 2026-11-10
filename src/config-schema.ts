@@ -16,7 +16,7 @@ export const KNOWN_TOP_LEVEL_KEYS: Readonly<Record<keyof Config, true>> = {
   gdpval_builtin: true,
   log_level: true,
   classifier_log: true,
-  classifier_laya: true,
+  integrations: true,
   scan_settle_ms: true,
   empty_response_timeout_ms: true,
   reasoning_empty_response_timeout_ms: true,

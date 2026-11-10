@@ -106,7 +106,7 @@ describe('the config snippet the skill writes', () => {
     vi.stubEnv('PI_CODING_AGENT_DIR', agentDir);
 
     const { config } = loadLayeredConfig(repoRoot, cwd);
-    expect(config.classifier_laya).toMatchObject({
+    expect(config.integrations?.laya).toMatchObject({
       enabled: true,
       mode: 'shadow',
       checkpoint: 'r2@1.0.0',
@@ -115,6 +115,6 @@ describe('the config snippet the skill writes', () => {
   });
 
   it('writes shadow mode: the first run only observes, the owner switches to active later', () => {
-    expect(snippet()).toMatchObject({ classifier_laya: { mode: 'shadow' } });
+    expect(snippet()).toMatchObject({ integrations: { laya: { mode: 'shadow' } } });
   });
 });

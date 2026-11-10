@@ -66,14 +66,16 @@ function cfg(layaOverrides: Record<string, unknown> | null = {}): Config {
     ...(layaOverrides === null
       ? {}
       : {
-          classifier_laya: {
-            enabled: true,
-            checkpoint: CKPT,
-            endpoint: `http://127.0.0.1:${port}`,
-            timeout_ms: 800,
-            confidence_threshold: 0.8,
-            mode: 'active',
-            ...layaOverrides,
+          integrations: {
+            laya: {
+              enabled: true,
+              checkpoint: CKPT,
+              endpoint: `http://127.0.0.1:${port}`,
+              timeout_ms: 800,
+              confidence_threshold: 0.8,
+              mode: 'active',
+              ...layaOverrides,
+            },
           },
         }),
   } as unknown as Config;

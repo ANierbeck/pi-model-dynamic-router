@@ -95,6 +95,7 @@ export function loadLayeredConfig(
   if (globalOverride) {
     validateRemovedGroups(globalOverride, globalOverridePath);
     validateRenamedClassifierKeys(globalOverride, globalOverridePath);
+    validateRenamedTopLevelKeys(globalOverride, globalOverridePath);
     warnUnknownKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
@@ -106,6 +107,7 @@ export function loadLayeredConfig(
   if (projectOverride) {
     validateRemovedGroups(projectOverride, projectOverridePath);
     validateRenamedClassifierKeys(projectOverride, projectOverridePath);
+    validateRenamedTopLevelKeys(projectOverride, projectOverridePath);
     warnUnknownKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
@@ -115,6 +117,29 @@ export function loadLayeredConfig(
   validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Top-level config keys renamed in 2.0, mapped to where they went. Owner
+ * decision 2026-11-08 (plan 2026-11-08-optional-integrations-config.md,
+ * decision 1): no read alias, so the old key is dropped, not translated — but
+ * never silently: a config that still names it would otherwise lose the
+ * setting and sit at the shipped default (Laya off) without a word. Same shape
+ * as REMOVED_GROUPS and RENAMED_CLASSIFIER_KEYS.
+ */
+const RENAMED_TOP_LEVEL_KEYS: Readonly<Record<string, string>> = {
+  classifier_laya: 'integrations.laya',
+};
+
+function validateRenamedTopLevelKeys(layer: Partial<Config>, source: string): void {
+  const bag = layer as Record<string, unknown>;
+  for (const [oldKey, newKey] of Object.entries(RENAMED_TOP_LEVEL_KEYS)) {
+    if (!Object.hasOwn(bag, oldKey)) continue;
+    warnLog(
+      `[router] ${source} ${oldKey}: renamed to "${newKey}" in 2.0 — ignored; move the block to keep the setting`
+    );
+    delete bag[oldKey];
+  }
 }
 
 /**
@@ -258,7 +283,7 @@ function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): 
  * during config load).
  */
 export function validateClassifierLaya(config: Config): void {
-  const c = config.classifier_laya;
+  const c = config.integrations?.laya;
   if (!c?.enabled) return;
   validateIntegration(LAYA_SPEC, c as Record<string, unknown>);
   if (c.enabled) {
@@ -269,7 +294,7 @@ export function validateClassifierLaya(config: Config): void {
 /** Laya's declaration for the integration contract (src/integration.ts). */
 const LAYA_SPEC: IntegrationSpec = {
   name: 'laya',
-  label: 'classifier_laya',
+  label: 'integrations.laya',
   modes: ['active', 'shadow'],
   defaultMode: 'shadow',
   defaultTimeoutMs: 1500,
@@ -290,7 +315,7 @@ const LAYA_SPEC: IntegrationSpec = {
         !(t >= 0 && t <= 1))
     ) {
       warnLog(
-        `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
+        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
       );
       block.confidence_threshold = 0.8;
     }

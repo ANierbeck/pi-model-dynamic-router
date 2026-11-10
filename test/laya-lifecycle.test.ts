@@ -32,14 +32,16 @@ const classifyCount = () => requests.filter((p) => !isProbe(p)).length;
 
 function cfgFor(port: number, extra: Record<string, unknown> = {}): Config {
   return {
-    classifier_laya: {
-      enabled: true,
-      checkpoint: 'test/ckpt',
-      endpoint: `http://127.0.0.1:${port}`,
-      timeout_ms: 800,
-      confidence_threshold: 0.8,
-      mode: 'active',
-      ...extra,
+    integrations: {
+      laya: {
+        enabled: true,
+        checkpoint: 'test/ckpt',
+        endpoint: `http://127.0.0.1:${port}`,
+        timeout_ms: 800,
+        confidence_threshold: 0.8,
+        mode: 'active',
+        ...extra,
+      },
     },
   } as unknown as Config;
 }

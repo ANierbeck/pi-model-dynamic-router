@@ -867,7 +867,10 @@ async function classifyPromptUncounted(
   const wordCount = prompt.trim().split(/\s+/).length;
   if (!internal.skipMomentum && context.lastCategory && wordCount <= CONTINUATION_MAX_WORDS) {
     noteSource('momentum');
-    if (options.cfg?.classifier_laya?.enabled && options.cfg.classifier_laya.observe_momentum) {
+    if (
+      options.cfg?.integrations?.laya?.enabled &&
+      options.cfg.integrations.laya.observe_momentum
+    ) {
       spawnMomentumObservation(prompt, options);
     }
     return {
@@ -1440,7 +1443,7 @@ async function classifyPromptUncounted(
     })();
   };
 
-  const layaCfg = options.cfg?.classifier_laya;
+  const layaCfg = options.cfg?.integrations?.laya;
   if (layaCfg?.enabled) {
     const t0 = Date.now();
     const out = await classifyWithLayaDetailed(prompt, context, {

@@ -100,7 +100,7 @@ export interface DecisionRecord {
    * Same `input.sha` as the `laya` record of that classification — the pairing
    * key for evaluation. Never routed.
    * observation / observation-comparator — Laya's answer and the chain's answer
-   * for a short MOMENTUM prompt (`classifier_laya.observe_momentum`, owner go
+   * for a short MOMENTUM prompt (`integrations.laya.observe_momentum`, owner go
    * 2026-10-29). The prompt itself was routed by momentum (stage `momentum`,
    * same `input.sha`); these records say what the classifiers would have
    * decided without it. Never routed, `laya.acted` is always false. */

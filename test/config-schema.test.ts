@@ -147,6 +147,51 @@ describe('loadLayeredConfig: unknown-key warnings', () => {
     expect(warnings.filter((w) => w.includes('unknown'))).toEqual([]);
   });
 
+  // Owner decision 2026-11-08 (plan decision 1): the Laya block moved from the
+  // top-level `classifier_laya` to `integrations.laya` with no read alias —
+  // but never silently: an old block would otherwise lose the setting and the
+  // stage would sit at the shipped default (off) without a word.
+  describe('classifier_laya was renamed to integrations.laya', () => {
+    const OLD = { classifier_laya: { enabled: true, checkpoint: 'x/y' } };
+
+    it('warns once in the user layer, names the new key, and does not apply the old block', () => {
+      fs.writeFileSync(userFile(), JSON.stringify(OLD));
+      const { config } = loadLayeredConfig(extDir, cwdDir);
+      const hits = warnings.filter((w) => w.includes('classifier_laya'));
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toContain(userFile());
+      expect(hits[0]).toContain('integrations.laya');
+      expect(config.integrations?.laya?.enabled).not.toBe(true);
+      expect(Object.hasOwn(config, 'classifier_laya')).toBe(false);
+    });
+
+    it('warns in the project layer too', () => {
+      fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
+      fs.writeFileSync(projectFile(), JSON.stringify(OLD));
+      loadLayeredConfig(extDir, cwdDir);
+      expect(
+        warnings.some((w) => w.includes(projectFile()) && w.includes('integrations.laya'))
+      ).toBe(true);
+    });
+
+    it('is reported as renamed only, not additionally as an unknown key', () => {
+      fs.writeFileSync(userFile(), JSON.stringify(OLD));
+      loadLayeredConfig(extDir, cwdDir);
+      expect(warnings.filter((w) => w.includes('unknown'))).toEqual([]);
+    });
+
+    it('the new key works in a user layer', () => {
+      fs.writeFileSync(
+        userFile(),
+        JSON.stringify({ integrations: { laya: { enabled: true, checkpoint: 'r2@1.0.0' } } })
+      );
+      const { config } = loadLayeredConfig(extDir, cwdDir);
+      expect(config.integrations?.laya?.enabled).toBe(true);
+      expect(config.integrations?.laya?.mode).toBe('shadow');
+      expect(warnings).toEqual([]);
+    });
+  });
+
   it('warns, never throws, and still merges the layer (routing is not broken by a typo)', () => {
     fs.writeFileSync(userFile(), JSON.stringify({ bogus: 1, log_level: 'debug' }));
     const { config } = loadLayeredConfig(extDir, cwdDir);

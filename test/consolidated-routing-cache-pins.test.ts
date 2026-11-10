@@ -193,7 +193,7 @@ describe('dynamic-config-resync-keys', () => {
     'classifier_log',
     // Opt-in local Laya classifier stage (2026-10-09): enable/configure is
     // user intent — a stale dynamic file must not leave it stuck on or off.
-    'classifier_laya',
+    'integrations',
   ] as const;
 
   describe('DYNAMIC_CONFIG_RESYNC_KEYS whitelist', () => {
@@ -219,7 +219,7 @@ describe('dynamic-config-resync-keys', () => {
     category_groups: { code_complex: 'tactical' },
     context_budget: { enabled: true, soft_tokens: 999_999 },
     classifier_log: { enabled: false, store_text: 'stale' },
-    classifier_laya: { enabled: true, endpoint: 'http://127.0.0.1:9999' },
+    integrations: { laya: { enabled: true, endpoint: 'http://127.0.0.1:9999' } },
   };
 
   /** Fresh value in the PROJECT config layer (what the user changed TO). */
@@ -239,7 +239,7 @@ describe('dynamic-config-resync-keys', () => {
     category_groups: { code_complex: 'planning' },
     context_budget: { enabled: false, soft_tokens: 123 },
     classifier_log: { enabled: true, store_text: 'full', max_bytes: 999_888, keep: 9 },
-    classifier_laya: { enabled: false },
+    integrations: { laya: { enabled: false } },
   };
 
   function assertResynced(key: string, written: Record<string, any>): void {
