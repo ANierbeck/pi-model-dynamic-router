@@ -24,6 +24,7 @@ import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
+import { type IntegrationSpec, validateIntegration } from './integration.ts';
 import { textOf } from './utils.ts';
 import { piAgentDir } from './agent-dir.ts';
 
@@ -239,69 +240,43 @@ function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): 
 export function validateClassifierLaya(config: Config): void {
   const c = config.classifier_laya;
   if (!c?.enabled) return;
-  const disable = (why: string): void => {
-    warnLog(`[router] classifier_laya: ${why} — stage disabled (enabled:false)`);
-    c.enabled = false;
-  };
-  if (!c.checkpoint) {
-    disable(
-      `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
-        `repo:revision — the router never downloads weights, ADR-0025)`
-    );
-    return;
+  validateIntegration(LAYA_SPEC, c as Record<string, unknown>);
+  if (c.enabled) {
+    c.confidence_threshold ??= 0.8;
   }
-  const endpoint = c.endpoint ?? LAYA_DEFAULT_ENDPOINT;
-  let hostname: string;
-  try {
-    const u = new URL(endpoint);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('not http(s)');
-    hostname = u.hostname;
-  } catch {
-    disable(`endpoint ${JSON.stringify(endpoint)} is not a valid http(s) URL`);
-    return;
-  }
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  const loopback =
-    host === 'localhost' ||
-    host === '::1' ||
-    host === '0:0:0:0:0:0:0:1' ||
-    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
-  if (!loopback) {
-    disable(
-      `endpoint host ${JSON.stringify(hostname)} is not loopback — the router only sends ` +
-        `prompts to 127.0.0.0/8, localhost or ::1`
-    );
-    return;
-  }
-  if (c.mode != null && c.mode !== 'active' && c.mode !== 'shadow') {
-    warnLog(
-      `[router] classifier_laya: invalid mode ${JSON.stringify(c.mode)} — falling back to "shadow"`
-    );
-    c.mode = 'shadow';
-  }
-  if (
-    c.confidence_threshold != null &&
-    (typeof c.confidence_threshold !== 'number' ||
-      // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
-      !(c.confidence_threshold >= 0 && c.confidence_threshold <= 1))
-  ) {
-    warnLog(
-      `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(c.confidence_threshold)} — falling back to 0.8`
-    );
-    c.confidence_threshold = 0.8;
-  }
-  if (c.timeout_ms != null && (typeof c.timeout_ms !== 'number' || !(c.timeout_ms > 0))) {
-    warnLog(
-      `[router] classifier_laya: invalid timeout_ms ${JSON.stringify(c.timeout_ms)} — falling back to 1500`
-    );
-    c.timeout_ms = 1500;
-  }
-  c.endpoint ??= LAYA_DEFAULT_ENDPOINT;
-  c.timeout_ms ??= 1500;
-  c.confidence_threshold ??= 0.8;
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
-  if (!c.mode) c.mode = 'shadow';
 }
+
+/** Laya's declaration for the integration contract (src/integration.ts). */
+const LAYA_SPEC: IntegrationSpec = {
+  name: 'laya',
+  label: 'classifier_laya',
+  modes: ['active', 'shadow'],
+  defaultMode: 'shadow',
+  defaultTimeoutMs: 1500,
+  defaultEndpoint: LAYA_DEFAULT_ENDPOINT,
+  extraKeys: ['checkpoint', 'confidence_threshold', 'compare_in_background', 'observe_momentum'],
+  validateExtra: (block): string | undefined => {
+    if (!block.checkpoint) {
+      return (
+        `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
+        `repo:revision — the router never downloads weights, ADR-0025)`
+      );
+    }
+    const t = block.confidence_threshold;
+    if (
+      t != null &&
+      (typeof t !== 'number' ||
+        // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
+        !(t >= 0 && t <= 1))
+    ) {
+      warnLog(
+        `[router] classifier_laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
+      );
+      block.confidence_threshold = 0.8;
+    }
+    return undefined;
+  },
+};
 
 /**
  * Task-type-balancing Phase 3: validate the user's `category_groups`

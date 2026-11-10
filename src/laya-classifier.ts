@@ -24,6 +24,11 @@
 // 2026-11-08-laya-model-artifact.md, Solution 5).
 
 import { warnLog } from './logger.ts';
+import {
+  getIntegrationHealth,
+  resetIntegrationHealth,
+  setIntegrationHealth,
+} from './integration.ts';
 import type { ClassificationContext, ClassificationResult } from './content-classifier.ts';
 import type { Config } from './types.ts';
 import {
@@ -48,8 +53,8 @@ export const TIMEOUT_STRIKES_BEFORE_DOWN = 3;
 /** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
 export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
 
-let _availability: { ok: boolean; until: number } | null = null;
-let _lastProbeError: string | null = null;
+/** Registry key of the Laya integration (src/integration.ts); availability lives there. */
+const LAYA_INTEGRATION = 'laya';
 let _timeoutStrikes = 0;
 /** What the sidecar reported on /health at the last successful probe; null = nothing usable. */
 let _identity: LayaReportedIdentity | null = null;
@@ -106,14 +111,16 @@ export function truncatePromptForLaya(
 }
 
 function markUnavailable(error?: string): void {
-  _availability = { ok: false, until: Date.now() + UNAVAILABLE_TTL_MS };
-  _lastProbeError = error ?? 'stage error';
+  setIntegrationHealth(LAYA_INTEGRATION, {
+    state: 'down',
+    lastError: error ?? 'stage error',
+    until: Date.now() + UNAVAILABLE_TTL_MS,
+  });
 }
 
 /** Reset availability — for tests only. */
 export function resetLayaAvailability(): void {
-  _availability = null;
-  _lastProbeError = null;
+  resetIntegrationHealth(LAYA_INTEGRATION);
   _timeoutStrikes = 0;
   _identity = null;
 }
@@ -131,10 +138,21 @@ export async function probeLaya(endpoint: string, timeoutMs: number): Promise<bo
     if (!res || typeof res.category !== 'string' || res.category.length === 0) {
       throw new Error('probe returned no valid category');
     }
-    _availability = { ok: true, until: Date.now() + UNAVAILABLE_TTL_MS };
-    _lastProbeError = null;
+    const now = Date.now();
+    setIntegrationHealth(LAYA_INTEGRATION, {
+      state: 'ok',
+      lastOkAt: now,
+      until: now + UNAVAILABLE_TTL_MS,
+    });
     const health = await healthP;
     _identity = health.ok ? withHeadCheck(health.identity) : null;
+    const reported = _identity ? labelOf(_identity) : null;
+    if (reported) {
+      setIntegrationHealth(LAYA_INTEGRATION, {
+        ...getIntegrationHealth(LAYA_INTEGRATION),
+        version: reported,
+      });
+    }
     if (_identity?.headMatches === false) {
       const who = labelOf(_identity) ?? endpoint;
       warnLog(
@@ -160,7 +178,8 @@ let _probeInFlight: Promise<boolean> | null = null;
  * sidecar; nothing else in the router calls probeLaya().
  */
 async function ensureLayaAvailable(endpoint: string, timeoutMs: number): Promise<boolean> {
-  if (_availability && Date.now() <= _availability.until) return _availability.ok;
+  const state = layaAvailabilityState();
+  if (state !== 'unknown') return state === 'ok';
   _probeInFlight ??= probeLaya(endpoint, timeoutMs).finally(() => {
     _probeInFlight = null;
   });
@@ -169,12 +188,7 @@ async function ensureLayaAvailable(endpoint: string, timeoutMs: number): Promise
 
 /** True when the wrapper answered healthily and a recent probe succeeded. */
 export function isLayaAvailable(): boolean {
-  if (!_availability) return false;
-  if (Date.now() > _availability.until) {
-    _availability = null;
-    return false;
-  }
-  return _availability.ok;
+  return layaAvailabilityState() === 'ok';
 }
 
 /**
@@ -185,13 +199,13 @@ export function isLayaAvailable(): boolean {
 export type LayaAvailabilityState = 'ok' | 'down' | 'unknown';
 
 export function layaAvailabilityState(): LayaAvailabilityState {
-  if (!_availability || Date.now() > _availability.until) return 'unknown';
-  return _availability.ok ? 'ok' : 'down';
+  return getIntegrationHealth(LAYA_INTEGRATION).state;
 }
 
 /** Why the sidecar is considered down; null unless the state is `down`. */
 export function getLastProbeError(): string | null {
-  return layaAvailabilityState() === 'down' ? _lastProbeError : null;
+  const h = getIntegrationHealth(LAYA_INTEGRATION);
+  return h.state === 'down' ? (h.lastError ?? null) : null;
 }
 
 /** Low-level HTTP call to the wrapper (`endpoint` is the base URL; `/classify` is appended). */
