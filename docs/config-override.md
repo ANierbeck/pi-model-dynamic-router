@@ -106,7 +106,14 @@ Add or override benchmark scores for models not in the scraped table:
 }
 ```
 
-### `classifier_laya` — Experimental local classifier stage
+### `integrations.laya` — Experimental local classifier stage
+
+> **Renamed in 2.0.** This block was the top-level `classifier_laya` before.
+> There is no read alias: a user or project layer that still has
+> `classifier_laya` is warned about once per file and the old block is
+> ignored (Laya then stays off). Move the values under `integrations.laya`.
+> Top-level keys the router does not know (typos such as `classifer_log`) are
+> warned about too, with the closest known key; the layer is still merged.
 
 An opt-in stage that classifies with a **local Laya sidecar** (Apple
 Silicon / MLX) instead of the cloud chain. Disabled by default and
@@ -114,15 +121,17 @@ experimental — start in `"shadow"` mode, which only logs.
 
 ```json
 {
-  "classifier_laya": {
-    "enabled": true,
-    "checkpoint": "<model>@<version>",
-    "mode": "shadow",
-    "endpoint": "http://127.0.0.1:8089",
-    "confidence_threshold": 0.8,
-    "timeout_ms": 1500,
-    "compare_in_background": false,
-    "observe_momentum": false
+  "integrations": {
+    "laya": {
+      "enabled": true,
+      "checkpoint": "<model>@<version>",
+      "mode": "shadow",
+      "endpoint": "http://127.0.0.1:8089",
+      "confidence_threshold": 0.8,
+      "timeout_ms": 1500,
+      "compare_in_background": false,
+      "observe_momentum": false
+    }
   }
 }
 ```

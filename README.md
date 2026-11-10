@@ -222,7 +222,7 @@ An opt-in **local stage** can answer the category from a small multilingual
 encoder model (Laya, 322M parameters, Apache-2.0 base) instead of the chain:
 a confident Laya answer takes the route, everything else falls through
 unchanged. It is **experimental** and **disabled by default** — see
-`docs/config-override.md#classifier_laya` for every config key.
+`docs/config-override.md#integrationslaya--experimental-local-classifier-stage` for every config key.
 
 - Requires **Apple Silicon**: Laya is served by an MLX sidecar exposing
   `POST /classify` (the current reference server lives in the GitHub repo at
