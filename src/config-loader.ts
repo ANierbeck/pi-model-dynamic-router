@@ -25,6 +25,7 @@ import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 import { type IntegrationSpec, validateIntegration } from './integration.ts';
+import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
 import { textOf } from './utils.ts';
 import { piAgentDir } from './agent-dir.ts';
 
@@ -94,6 +95,7 @@ export function loadLayeredConfig(
   if (globalOverride) {
     validateRemovedGroups(globalOverride, globalOverridePath);
     validateRenamedClassifierKeys(globalOverride, globalOverridePath);
+    warnUnknownKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   }
@@ -104,6 +106,7 @@ export function loadLayeredConfig(
   if (projectOverride) {
     validateRemovedGroups(projectOverride, projectOverridePath);
     validateRenamedClassifierKeys(projectOverride, projectOverridePath);
+    warnUnknownKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   }
@@ -112,6 +115,23 @@ export function loadLayeredConfig(
   validateClassifierLaya(config);
 
   return { config, sources };
+}
+
+/**
+ * Warn once per file about top-level keys `Config` does not know (a typo such
+ * as `classifer_log` would otherwise be merged and silently ignored), naming
+ * the closest known key. Only override layers are checked; the shipped defaults
+ * own their keys. Warn, never throw — the layer is still merged.
+ */
+function warnUnknownKeys(layer: Partial<Config>, source: string): void {
+  const unknown = unknownTopLevelKeys(layer);
+  if (unknown.length === 0) return;
+  const known = Object.keys(KNOWN_TOP_LEVEL_KEYS);
+  const described = unknown.map((k) => {
+    const near = closestKey(k, known);
+    return near ? `"${k}" (did you mean "${near}"?)` : `"${k}"`;
+  });
+  warnLog(`[router] ${source}: unknown config key(s) ${described.join(', ')} — ignored`);
 }
 
 /**
