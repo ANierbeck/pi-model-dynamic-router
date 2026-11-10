@@ -23,8 +23,8 @@ import * as path from 'node:path';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
-import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
-import { type IntegrationSpec, validateIntegration } from './integration.ts';
+import { LAYA_SPEC } from './laya-classifier.ts';
+import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
 import { textOf } from './utils.ts';
 import { piAgentDir } from './agent-dir.ts';
@@ -134,8 +134,13 @@ const RENAMED_TOP_LEVEL_KEYS: Readonly<Record<string, string>> = {
 function validateRenamedTopLevelKeys(layer: Partial<Config>, source: string): void {
   const bag = layer as Record<string, unknown>;
   for (const [oldKey, newKey] of Object.entries(RENAMED_TOP_LEVEL_KEYS)) {
-    if (!Object.hasOwn(bag, oldKey)) continue;
-    warnLog(
+    const onceKey = `${source}:renamed:${oldKey}`;
+    if (!Object.hasOwn(bag, oldKey)) {
+      forgetWarnOnce(onceKey);
+      continue;
+    }
+    warnOnceFor(
+      onceKey,
       `[router] ${source} ${oldKey}: renamed to "${newKey}" in 2.0 — ignored; move the block to keep the setting`
     );
     delete bag[oldKey];
@@ -150,13 +155,19 @@ function validateRenamedTopLevelKeys(layer: Partial<Config>, source: string): vo
  */
 function warnUnknownKeys(layer: Partial<Config>, source: string): void {
   const unknown = unknownTopLevelKeys(layer);
-  if (unknown.length === 0) return;
+  if (unknown.length === 0) {
+    forgetWarnOnce(`${source}:unknown`);
+    return;
+  }
   const known = Object.keys(KNOWN_TOP_LEVEL_KEYS);
   const described = unknown.map((k) => {
     const near = closestKey(k, known);
-    return near ? `"${k}" (did you mean "${near}"?)` : `"${k}"`;
+    return near ? `${jsonKey(k)} (did you mean "${near}"?)` : jsonKey(k);
   });
-  warnLog(`[router] ${source}: unknown config key(s) ${described.join(', ')} — ignored`);
+  warnOnceFor(
+    `${source}:unknown`,
+    `[router] ${source}: unknown config key(s) ${described.join(', ')} — ignored`
+  );
 }
 
 /**
@@ -284,44 +295,11 @@ function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): 
  */
 export function validateClassifierLaya(config: Config): void {
   const c = config.integrations?.laya;
-  if (!c?.enabled) return;
+  if (!c || typeof c !== 'object') return;
+  // Runs for a disabled or enabled-less block too: the typo check must see it.
   validateIntegration(LAYA_SPEC, c as Record<string, unknown>);
-  if (c.enabled) {
-    c.confidence_threshold ??= 0.8;
-  }
+  if (c.enabled) c.confidence_threshold ??= 0.8;
 }
-
-/** Laya's declaration for the integration contract (src/integration.ts). */
-const LAYA_SPEC: IntegrationSpec = {
-  name: 'laya',
-  label: 'integrations.laya',
-  modes: ['active', 'shadow'],
-  defaultMode: 'shadow',
-  defaultTimeoutMs: 1500,
-  defaultEndpoint: LAYA_DEFAULT_ENDPOINT,
-  extraKeys: ['checkpoint', 'confidence_threshold', 'compare_in_background', 'observe_momentum'],
-  validateExtra: (block): string | undefined => {
-    if (!block.checkpoint) {
-      return (
-        `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
-        `repo:revision — the router never downloads weights, ADR-0025)`
-      );
-    }
-    const t = block.confidence_threshold;
-    if (
-      t != null &&
-      (typeof t !== 'number' ||
-        // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
-        !(t >= 0 && t <= 1))
-    ) {
-      warnLog(
-        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
-      );
-      block.confidence_threshold = 0.8;
-    }
-    return undefined;
-  },
-};
 
 /**
  * Task-type-balancing Phase 3: validate the user's `category_groups`

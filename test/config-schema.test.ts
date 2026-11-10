@@ -11,6 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { closestKey, KNOWN_TOP_LEVEL_KEYS, unknownTopLevelKeys } from '../src/config-schema.ts';
 import { loadLayeredConfig } from '../src/config-loader.ts';
+import { resetWarnOnce } from '../src/integration.ts';
 import { rmTmpDir } from './helpers/router-env.ts';
 
 const warnings: string[] = [];
@@ -98,6 +99,7 @@ describe('loadLayeredConfig: unknown-key warnings', () => {
 
   beforeEach(() => {
     warnings.length = 0;
+    resetWarnOnce();
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-schema-'));
     extDir = path.join(tmp, 'ext');
     cwdDir = path.join(tmp, 'cwd');
@@ -190,6 +192,54 @@ describe('loadLayeredConfig: unknown-key warnings', () => {
       expect(config.integrations?.laya?.mode).toBe('shadow');
       expect(warnings).toEqual([]);
     });
+  });
+
+  it('escapes control characters in an unknown key (a project file cannot forge log lines)', () => {
+    fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      projectFile(),
+      JSON.stringify({ 'bad\nFORGED  [router] all good\u001b[31m': 1 })
+    );
+    loadLayeredConfig(extDir, cwdDir);
+    const hit = warnings.find((w) => w.includes('unknown'));
+    expect(hit).toBeDefined();
+    expect([...(hit ?? '')].some((c) => c.charCodeAt(0) < 32)).toBe(false);
+  });
+
+  it('reports the same unchanged file once across reloads, and again when it changes', () => {
+    fs.writeFileSync(userFile(), JSON.stringify({ bogus: 1, classifier_laya: { enabled: true } }));
+    loadLayeredConfig(extDir, cwdDir);
+    loadLayeredConfig(extDir, cwdDir);
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(1);
+    expect(warnings.filter((w) => w.includes('renamed'))).toHaveLength(1);
+    fs.writeFileSync(userFile(), JSON.stringify({ other_bogus: 1 }));
+    loadLayeredConfig(extDir, cwdDir);
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(2);
+  });
+
+  it('reports a problem again when it returns after the file was fixed', () => {
+    fs.writeFileSync(userFile(), JSON.stringify({ bogus: 1, classifier_laya: { enabled: true } }));
+    loadLayeredConfig(extDir, cwdDir);
+    fs.writeFileSync(userFile(), JSON.stringify({ log_level: 'warn' }));
+    loadLayeredConfig(extDir, cwdDir);
+    fs.writeFileSync(userFile(), JSON.stringify({ bogus: 1, classifier_laya: { enabled: true } }));
+    loadLayeredConfig(extDir, cwdDir);
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(2);
+    expect(warnings.filter((w) => w.includes('renamed'))).toHaveLength(2);
+  });
+
+  it('warns about an unknown field inside integrations.laya, with a suggestion', () => {
+    fs.writeFileSync(
+      userFile(),
+      JSON.stringify({
+        integrations: {
+          laya: { enabled: true, checkpoint: 'r2@1.0.0', endpint: 'http://127.0.0.1:1' },
+        },
+      })
+    );
+    loadLayeredConfig(extDir, cwdDir);
+    const hit = warnings.find((w) => w.includes('integrations.laya') && w.includes('unknown'));
+    expect(hit).toContain('did you mean "endpoint"');
   });
 
   it('warns, never throws, and still merges the layer (routing is not broken by a typo)', () => {

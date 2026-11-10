@@ -1,6 +1,8 @@
 // src/types.ts
 // TypeScript type definitions for the pi-model-router
 
+import type { IntegrationConfig } from './integration.ts';
+
 // ── Core Types ────────────────────────────────────────────────────────────
 
 /**
@@ -263,7 +265,7 @@ export interface IntegrationsConfig {
   laya?: ClassifierLayaConfig;
 }
 
-export interface ClassifierLayaConfig {
+export interface ClassifierLayaConfig extends IntegrationConfig {
   /** Enable the local Laya classifier stage. Default false — active use is gated
    * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
   enabled?: boolean;

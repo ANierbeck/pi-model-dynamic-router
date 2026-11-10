@@ -25,6 +25,7 @@
 
 import { warnLog } from './logger.ts';
 import {
+  type IntegrationSpec,
   getIntegrationHealth,
   resetIntegrationHealth,
   setIntegrationHealth,
@@ -52,6 +53,38 @@ export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/res
 export const TIMEOUT_STRIKES_BEFORE_DOWN = 3;
 /** Context budget for the multilingual Laya checkpoint (1,024 tokens). */
 export const LAYA_CONTEXT_BUDGET_TOKENS = 1024;
+
+/** Laya's declaration for the integration contract (src/integration.ts). */
+export const LAYA_SPEC: IntegrationSpec = {
+  name: 'laya',
+  label: 'integrations.laya',
+  modes: ['active', 'shadow'],
+  defaultMode: 'shadow',
+  defaultTimeoutMs: 1500,
+  defaultEndpoint: LAYA_DEFAULT_ENDPOINT,
+  extraKeys: ['checkpoint', 'confidence_threshold', 'compare_in_background', 'observe_momentum'],
+  validateExtra: (block): string | undefined => {
+    if (!block.checkpoint) {
+      return (
+        `'checkpoint' is required when enabled:true (pinned HF checkpoint ref, ` +
+        `repo:revision — the router never downloads weights, ADR-0025)`
+      );
+    }
+    const t = block.confidence_threshold;
+    if (
+      t != null &&
+      (typeof t !== 'number' ||
+        // 0 is valid: "no gate, Laya decides" (owner decision 2026-10-25).
+        !(t >= 0 && t <= 1))
+    ) {
+      warnLog(
+        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
+      );
+      block.confidence_threshold = 0.8;
+    }
+    return undefined;
+  },
+};
 
 /** Registry key of the Laya integration (src/integration.ts); availability lives there. */
 const LAYA_INTEGRATION = 'laya';
@@ -111,9 +144,14 @@ export function truncatePromptForLaya(
 }
 
 function markUnavailable(error?: string): void {
+  // Keep what was last known good (reported version, last success): a status
+  // view of a down sidecar should still say which model it served.
+  const prev = getIntegrationHealth(LAYA_INTEGRATION);
   setIntegrationHealth(LAYA_INTEGRATION, {
     state: 'down',
     lastError: error ?? 'stage error',
+    ...(prev.version ? { version: prev.version } : {}),
+    ...(prev.lastOkAt !== undefined ? { lastOkAt: prev.lastOkAt } : {}),
     until: Date.now() + UNAVAILABLE_TTL_MS,
   });
 }

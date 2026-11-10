@@ -14,16 +14,24 @@ vi.mock('../src/logger.ts', async (importOriginal) => ({
     warnings.push(msg);
   },
 }));
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ClassifierLayaConfig } from '../src/types.ts';
 import {
+  BASE_INTEGRATION_KEYS,
   type IntegrationSpec,
   validateIntegration,
   setIntegrationHealth,
   getIntegrationHealth,
   resetIntegrationHealth,
   type IntegrationHealth,
+  type IntegrationConfig,
+  resetWarnOnce,
 } from '../src/integration.ts';
 import {
   UNAVAILABLE_TTL_MS,
+  LAYA_SPEC,
+  classifyWithLaya,
   getLastProbeError,
   layaAvailabilityState,
   probeLaya,
@@ -97,6 +105,7 @@ describe('validateIntegration (base contract)', () => {
 
   it('disables the integration on a non-loopback endpoint (prompts must not leave the machine)', () => {
     for (const endpoint of ['http://10.0.0.5:8089', 'http://example.com:8089']) {
+      warnings.length = 0; // each value must produce its own warning
       const block: Record<string, unknown> = { enabled: true, endpoint };
       validateIntegration(baseSpec, block);
       expect(block.enabled).toBe(false);
@@ -122,12 +131,96 @@ describe('validateIntegration (base contract)', () => {
 
   it('falls back to the default timeout_ms on a bad timeout, with a warning', () => {
     for (const timeout_ms of [0, -5, '1500']) {
+      warnings.length = 0; // each value must produce its own warning
       const block: Record<string, unknown> = { enabled: true, timeout_ms };
       validateIntegration(baseSpec, block);
       expect(block.timeout_ms).toBe(1500);
       expect(block.enabled).toBe(true);
       expect(warnings.some((w) => w.includes('probe') && w.includes('timeout_ms'))).toBe(true);
     }
+  });
+});
+
+describe('validateIntegration (types and typos)', () => {
+  beforeEach(() => {
+    warnings.length = 0;
+    resetWarnOnce();
+  });
+
+  it('disables the integration when `enabled` is not a boolean ("false" is truthy)', () => {
+    for (const enabled of ['false', 'true', 1, {}, []]) {
+      warnings.length = 0;
+      const block: Record<string, unknown> = { enabled };
+      validateIntegration(baseSpec, block);
+      expect(block.enabled).toBe(false);
+      expect(warnings.some((w) => w.includes('probe') && w.includes('enabled'))).toBe(true);
+    }
+  });
+
+  it('falls back to the default endpoint, with a warning, when `endpoint` is not a string', () => {
+    for (const endpoint of [123, {}, ['http://127.0.0.1:1']]) {
+      warnings.length = 0;
+      const block: Record<string, unknown> = { enabled: true, endpoint };
+      validateIntegration(baseSpec, block);
+      expect(block.enabled).toBe(true);
+      expect(block.endpoint).toBe('http://127.0.0.1:9999');
+      expect(warnings.some((w) => w.includes('probe') && w.includes('endpoint'))).toBe(true);
+    }
+  });
+
+  it('warns about an unknown field inside the block, naming the closest known one', () => {
+    const block: Record<string, unknown> = { enabled: true, endpint: 'http://127.0.0.1:1' };
+    validateIntegration(layaishSpec, block);
+    expect(block.enabled).toBe(false); // layaishSpec also lacks its checkpoint
+    const hit = warnings.find((w) => w.includes('unknown'));
+    expect(hit).toContain('"endpint"');
+    expect(hit).toContain('did you mean "endpoint"');
+  });
+
+  it('knows the base keys and the spec extras, and skips _ and $ annotations', () => {
+    const block: Record<string, unknown> = {
+      enabled: true,
+      mode: 'shadow',
+      endpoint: 'http://127.0.0.1:1',
+      timeout_ms: 100,
+      checkpoint: 'x/y',
+      confidence_threshold: 0.5,
+      _note: 'a comment',
+      $schema: 'x',
+    };
+    validateIntegration(layaishSpec, block);
+    expect(warnings.filter((w) => w.includes('unknown'))).toEqual([]);
+  });
+
+  it('checks a DISABLED or enabled-less block too: `enabld: true` is exactly the typo to catch', () => {
+    const block: Record<string, unknown> = { enabld: true };
+    validateIntegration(baseSpec, block);
+    const hit = warnings.find((w) => w.includes('unknown'));
+    expect(hit).toContain('did you mean "enabled"');
+    expect(block).toEqual({ enabld: true }); // untouched otherwise
+  });
+
+  it('escapes control characters in a reported key (no forged log lines)', () => {
+    const block: Record<string, unknown> = { enabled: false, ['x\nFORGED\u001b[31m']: 1 };
+    validateIntegration(baseSpec, block);
+    const hit = warnings.find((w) => w.includes('unknown'));
+    expect(hit).toBeDefined();
+    expect([...(hit ?? '')].some((c) => c.charCodeAt(0) < 32)).toBe(false);
+  });
+
+  it('reports a typo again when it returns after the block was fixed', () => {
+    validateIntegration(baseSpec, { enabled: false, bogus: 1 });
+    validateIntegration(baseSpec, { enabled: false });
+    validateIntegration(baseSpec, { enabled: false, bogus: 1 });
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(2);
+  });
+
+  it('reports the same problem once, until it changes (warnOnce)', () => {
+    validateIntegration(baseSpec, { enabled: false, bogus: 1 });
+    validateIntegration(baseSpec, { enabled: false, bogus: 1 });
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(1);
+    validateIntegration(baseSpec, { enabled: false, other: 1 });
+    expect(warnings.filter((w) => w.includes('unknown'))).toHaveLength(2);
   });
 });
 
@@ -205,6 +298,37 @@ describe('Laya availability lives in the registry', () => {
     resetLayaAvailability();
   });
 
+  it('a classify failure after a good probe keeps the last reported version and success time', async () => {
+    resetLayaAvailability();
+    setIntegrationHealth('laya', {
+      state: 'ok',
+      version: 'r2@1.0.0',
+      lastOkAt: 123,
+      until: Date.now() + 60_000,
+    });
+    const out = await classifyWithLaya('hello there', undefined, {
+      checkpoint: 'x/y',
+      cfg: {
+        integrations: {
+          laya: {
+            enabled: true,
+            checkpoint: 'x/y',
+            endpoint: 'http://127.0.0.1:1',
+            timeout_ms: 300,
+            confidence_threshold: 0,
+          },
+        },
+      } as never,
+    });
+    expect(out).toBeNull();
+    expect(getIntegrationHealth('laya')).toMatchObject({
+      state: 'down',
+      version: 'r2@1.0.0',
+      lastOkAt: 123,
+    });
+    expect(getIntegrationHealth('laya').lastError).toBeTruthy();
+  });
+
   it('a failed probe is down with its error, and reads unknown again after the TTL', async () => {
     resetLayaAvailability();
     // Port 1 on loopback refuses the connection.
@@ -216,5 +340,25 @@ describe('Laya availability lives in the registry', () => {
     vi.spyOn(Date, 'now').mockReturnValue(t0 + UNAVAILABLE_TTL_MS + 1);
     expect(layaAvailabilityState()).toBe('unknown');
     expect(getLastProbeError()).toBeNull();
+  });
+});
+
+describe('Laya declares exactly the keys of ClassifierLayaConfig', () => {
+  it('base keys + LAYA_SPEC.extraKeys equal the interface fields (a missing one would warn falsely)', () => {
+    const src = readFileSync(join(__dirname, '..', 'src', 'types.ts'), 'utf-8');
+    const start = src.indexOf('export interface ClassifierLayaConfig');
+    const body = src.slice(start, src.indexOf('\n}\n', start));
+    const fields = [...body.matchAll(/^ {2}([a-z_]+)\??:/gm)].map((m) => m[1] as string);
+    expect(fields.length).toBeGreaterThan(5);
+    expect([...BASE_INTEGRATION_KEYS, ...(LAYA_SPEC.extraKeys ?? [])].sort()).toEqual(
+      fields.sort()
+    );
+  });
+
+  it('the shared base shape is what ClassifierLayaConfig builds on (compile-time)', () => {
+    // tsc fails here if Laya's block stops being assignable to the shared shape.
+    const laya: ClassifierLayaConfig = { enabled: true, mode: 'shadow' };
+    const base: IntegrationConfig = laya;
+    expect(base.enabled).toBe(true);
   });
 });

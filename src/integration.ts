@@ -7,6 +7,7 @@
 // tools, so a bad block disables the integration (enabled:false) with a
 // warning instead of throwing and taking the router down.
 
+import { closestKey } from './config-schema.ts';
 import { warnLog } from './logger.ts';
 
 /** The shape shared by every integration block; specific fields live next to it. */
@@ -18,6 +19,9 @@ export interface IntegrationConfig {
   endpoint?: string;
   timeout_ms?: number;
 }
+
+/** The keys every integration block may carry; a spec adds its own via `extraKeys`. */
+export const BASE_INTEGRATION_KEYS = ['enabled', 'mode', 'endpoint', 'timeout_ms'] as const;
 
 /** What an integration declares about itself. */
 export interface IntegrationSpec {
@@ -39,6 +43,35 @@ export interface IntegrationSpec {
   validateExtra?: (block: Record<string, unknown>) => string | undefined;
 }
 
+/**
+ * A key for a log line: JSON-quoted, so newlines and terminal escapes in a
+ * hostile config key cannot forge log entries or move the cursor.
+ */
+export function jsonKey(key: string): string {
+  return JSON.stringify(key);
+}
+
+// A config problem is reported once until it changes: load() runs again from
+// tools and commands mid-turn, and the same typo must not refill the log.
+const lastWarned = new Map<string, string>();
+
+/** Warn unless the last warning under `key` was this very message. */
+export function warnOnceFor(key: string, message: string): void {
+  if (lastWarned.get(key) === message) return;
+  lastWarned.set(key, message);
+  warnLog(message);
+}
+
+/** The problem under `key` is gone; if it comes back, it is reported again. */
+export function forgetWarnOnce(key: string): void {
+  lastWarned.delete(key);
+}
+
+/** Forget every remembered warning (tests). */
+export function resetWarnOnce(): void {
+  lastWarned.clear();
+}
+
 /** Hostnames the router will send prompt text to: this machine only. */
 export function isLoopbackHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -57,15 +90,28 @@ export function isLoopbackHost(hostname: string): boolean {
  * with one warning; a fatal problem sets `enabled: false`.
  */
 export function validateIntegration(spec: IntegrationSpec, block: Record<string, unknown>): void {
-  if (!block?.enabled) return;
+  if (!block || typeof block !== 'object') return;
+  warnUnknownFields(spec, block);
+  if (!block.enabled) return;
   const disable = (why: string): void => {
     warnLog(`[router] ${spec.label}: ${why} — integration disabled (enabled:false)`);
     block.enabled = false;
   };
+  if (typeof block.enabled !== 'boolean') {
+    // "false" is truthy: an enabled-looking string must not switch a sidecar on.
+    disable(`'enabled' must be true or false, not ${JSON.stringify(block.enabled)}`);
+    return;
+  }
   const extra = spec.validateExtra?.(block);
   if (extra) {
     disable(extra);
     return;
+  }
+  if (block.endpoint != null && typeof block.endpoint !== 'string') {
+    warnLog(
+      `[router] ${spec.label}: invalid endpoint ${JSON.stringify(block.endpoint)} — falling back to ${spec.defaultEndpoint}`
+    );
+    block.endpoint = spec.defaultEndpoint;
   }
   const endpoint = (block.endpoint as string | undefined) ?? spec.defaultEndpoint;
   let hostname: string;
@@ -101,6 +147,24 @@ export function validateIntegration(spec: IntegrationSpec, block: Record<string,
   block.timeout_ms ??= spec.defaultTimeoutMs;
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
   if (!block.mode) block.mode = spec.defaultMode;
+}
+
+/** A misspelled field (`endpint`, `enabld`) would otherwise be ignored without a word. */
+function warnUnknownFields(spec: IntegrationSpec, block: Record<string, unknown>): void {
+  const known: readonly string[] = [...BASE_INTEGRATION_KEYS, ...(spec.extraKeys ?? [])];
+  const unknown = Object.keys(block).filter(
+    (k) => !k.startsWith('_') && !k.startsWith('$') && !known.includes(k)
+  );
+  const onceKey = `${spec.label}:unknown`;
+  if (unknown.length === 0) {
+    forgetWarnOnce(onceKey);
+    return;
+  }
+  const described = unknown.map((k) => {
+    const near = closestKey(k, known);
+    return near ? `${jsonKey(k)} (did you mean "${near}"?)` : jsonKey(k);
+  });
+  warnOnceFor(onceKey, `[router] ${spec.label}: unknown key(s) ${described.join(', ')} — ignored`);
 }
 
 // ── Health registry ────────────────────────────────────────────────────────
