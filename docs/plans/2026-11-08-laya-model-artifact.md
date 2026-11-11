@@ -5,7 +5,9 @@
 [`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
 the `/health` identity (router and reference sidecar) and `/router status`
 are done; the install skill (`skills/router-laya-install/`) is done and
-the docs are mostly done; the owner's weights release is the open step. Part of the 2.0.0 "everything
+the docs are mostly done; the model is renamed `r2` → `router` (2026-11-11,
+decision D7 of `2026-11-11-onnx-sidecar-package.md`, tag `laya-router-v1.0.0`); the
+owner's weights release is the open step. Part of the 2.0.0 "everything
 Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
@@ -218,4 +220,9 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
 - [x] Docs: `docs/config-override.md` (checkpoint semantics), README (install
       path), CHANGELOG under [Unreleased]. Still open for 2.0.0: move the
       CHANGELOG entries to the 2.0.0 heading at release.
-- [ ] Owner go for the weights release, then publish the assets.
+- [x] Rename `r2` → `router` (2026-11-11, D7 of the sidecar plan): manifest `model`,
+      `tag` and `base_url`, the skill's commands and checkpoint, `config-override.md`,
+      CHANGELOG. Red first: the two pin tests (`package-contents`, `laya-install-skill`)
+      expected `router` against the `r2` manifest and failed. Historical entries above
+      keep the name they were built under.
+- [ ] Owner go for the weights release, then publish the assets (`laya-router-v1.0.0`).

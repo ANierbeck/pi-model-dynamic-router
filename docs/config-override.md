@@ -143,7 +143,7 @@ experimental — start in `"shadow"` mode, which only logs.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | Turn the stage on (requires `checkpoint`) |
-| `checkpoint` | — | What you expect the sidecar to serve, e.g. `r2@1.0.0` or `<hf-repo>@<revision>`. Required when enabled. A sidecar that reports its identity on `GET /health` is logged by what it reports (`laya:<model>@<version>`, decision-log `identity: "reported"`); `checkpoint` is the label only when it does not (`identity: "configured"`). `/router status` warns when a `<model>@<version>` here disagrees with the reported one, or when the sidecar serves a different head than the router builds. The router never downloads weights |
+| `checkpoint` | — | What you expect the sidecar to serve, e.g. `router@1.0.0` or `<hf-repo>@<revision>`. Required when enabled. A sidecar that reports its identity on `GET /health` is logged by what it reports (`laya:<model>@<version>`, decision-log `identity: "reported"`); `checkpoint` is the label only when it does not (`identity: "configured"`). `/router status` warns when a `<model>@<version>` here disagrees with the reported one, or when the sidecar serves a different head than the router builds. The router never downloads weights |
 | `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
 | `confidence_threshold` | `0.8` | Minimum confidence to use the answer, `0`–`1`. The scale is uncalibrated, so the default keeps a gate; `0` switches the gate off (Laya's answer is used whatever its confidence — the cloud chain then only runs on failure or as the background comparator) |
 | `endpoint` | `http://127.0.0.1:8089` | Sidecar base URL: `POST /classify`, optional `GET /health` (identity) |

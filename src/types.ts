@@ -279,7 +279,7 @@ export interface ClassifierLayaConfig extends IntegrationConfig {
    * {status, model?, version?, backend?, artifact_sha256?, head_sha256?}. */
   endpoint?: string;
   /** The model the user expects the sidecar to serve: `<model>@<version>` for a
-   * `pi-laya-model` install (e.g. r2@1.0.0), or an HF repo path with a revision.
+   * `pi-laya-model` install (e.g. router@1.0.0), or an HF repo path with a revision.
    * REQUIRED when enabled. It is the decision-log label only when the sidecar
    * does not report its identity on GET /health; a reported `<model>@<version>`
    * wins, and /router status warns when a configured `<model>@<version>`

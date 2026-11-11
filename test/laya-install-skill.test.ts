@@ -109,7 +109,7 @@ describe('the config snippet the skill writes', () => {
     expect(config.integrations?.laya).toMatchObject({
       enabled: true,
       mode: 'shadow',
-      checkpoint: 'r2@1.0.0',
+      checkpoint: 'router@1.0.0',
       endpoint: 'http://127.0.0.1:8089',
     });
   });
