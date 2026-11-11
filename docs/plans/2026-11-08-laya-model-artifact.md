@@ -54,7 +54,8 @@ nobody can tell what they got.
    which model versions it was verified against; an override flag
    (`--manifest <path|url>`) allows testing newer artifacts without a release.
 2. **Weights as GitHub Release assets** (owner decision 2026-11-08), one
-   release per model version, tagged `laya-r2-v1.0.0` and up. The manifest is
+   release per model version, tagged `laya-router-v1.0.0` and up (first built as `laya-r2-v1.0.0`,
+   renamed 2026-11-11 before anything was published). The manifest is
    the contract; the assets are the payload. Checksums detect corruption and
    mixups — they are not a signature, and the plan says so instead of implying
    otherwise.

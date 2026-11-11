@@ -231,6 +231,7 @@ describe('npm package contents', () => {
     const offer = JSON.parse(
       execFileSync(process.execPath, [bundle, 'models', '--json'], { encoding: 'utf8' })
     );
-    expect(offer.map((o: { model: string }) => o.model)).toContain('router');
+    // Exact list: a leftover `r2` entry would still be offered and installable.
+    expect(offer.map((o: { model: string }) => o.model)).toEqual(['router']);
   }, 30_000);
 });
