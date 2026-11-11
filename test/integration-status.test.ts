@@ -94,3 +94,63 @@ describe('checkIntegrationPatch', () => {
     expect(checkIntegrationPatch(laya, { enabled: 'false' as unknown as boolean })).toBeDefined();
   });
 });
+
+describe('formatIntegrationLines — what it shows', () => {
+  beforeEach(() => {
+    resetIntegrationHealth();
+    resetLayaAvailability();
+  });
+
+  it('still shows the last health of a switched-off integration', () => {
+    setIntegrationHealth('laya', { state: 'down', lastError: 'connect ECONNREFUSED' });
+    const out = formatIntegrationLines({ laya: { enabled: false } }, SPECS).join('\n');
+    expect(out).toContain('laya: off');
+    expect(out).toContain('unreachable (connect ECONNREFUSED)');
+  });
+
+  it('does not present the configured checkpoint as the version the sidecar reported', () => {
+    setIntegrationHealth('laya', { state: 'ok' });
+    const out = formatIntegrationLines(
+      { laya: { enabled: true, mode: 'shadow', checkpoint: 'r2@1.0.0' } },
+      SPECS
+    ).join('\n');
+    expect(out).toContain('reachable (no version reported)');
+    expect(out).not.toContain('reachable (r2@1.0.0)');
+  });
+
+  it('keeps the version a down sidecar last served', () => {
+    setIntegrationHealth('laya', { state: 'down', version: 'r2@1.0.0', lastError: 'timeout' });
+    const out = formatIntegrationLines({ laya: { enabled: true, mode: 'shadow' } }, SPECS).join(
+      '\n'
+    );
+    expect(out).toContain('last served r2@1.0.0');
+    expect(out).toContain('timeout');
+  });
+
+  it('strips terminal control sequences and line breaks from the last error', () => {
+    setIntegrationHealth('laya', { state: 'down', lastError: 'boom\u001b[31m red\nFORGED line' });
+    const out = formatIntegrationLines({ laya: { enabled: true, mode: 'shadow' } }, SPECS).join(
+      '\n'
+    );
+    expect(out).not.toContain('\u001b');
+    expect(out).not.toContain('\nFORGED');
+    expect(out).toContain('boom');
+  });
+
+  it('redacts credentials in the endpoint URL', () => {
+    const out = formatIntegrationLines(
+      {
+        laya: {
+          enabled: true,
+          mode: 'shadow',
+          endpoint: 'http://ops-admin:s3cret@127.0.0.1:8089',
+          checkpoint: 'r2@1.0.0',
+        },
+      },
+      SPECS
+    ).join('\n');
+    expect(out).not.toContain('s3cret');
+    expect(out).not.toContain('ops-admin');
+    expect(out).toContain('127.0.0.1:8089');
+  });
+});

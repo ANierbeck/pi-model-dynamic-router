@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { PROVIDER_MAP } from './providers.ts';
-import { baseTokens } from './utils.ts';
+import { baseTokens, isPlainObject } from './utils.ts';
 import {
   effCost,
   lookupGdp,
@@ -502,9 +502,6 @@ export type StaticContributions = Record<MergeKey, Record<string, string[] | nul
 const STATIC_AUTHORITATIVE_FIELDS: Partial<Record<MergeKey, readonly string[]>> = {
   providers: ['free_models'],
 };
-
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * Registers a lightweight provider stub for each registry-discovered provider

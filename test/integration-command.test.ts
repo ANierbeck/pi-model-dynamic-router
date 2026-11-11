@@ -220,3 +220,33 @@ describe('/router config integration', () => {
     expect(completions('config int').map((c: any) => c.value)).toContain('config integration');
   });
 });
+
+describe('/router config integration — refusals and overrides', () => {
+  it('refuses extra arguments instead of acting on the first two', async () => {
+    const out = await setup().run('config integration laya on now');
+    expect(out).toMatch(/Not written/);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('reports a project-layer setting that overrides the request instead of a success', async () => {
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({ integrations: { laya: { checkpoint: 'r2@1.0.0' } } })
+    );
+    fs.mkdirSync(path.join(cwd, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, '.pi', 'router-config.json'),
+      JSON.stringify({ integrations: { laya: { enabled: false } } })
+    );
+    const out = await setup().run('config integration laya on');
+    expect(out).not.toMatch(/applies now/);
+    expect(out).toMatch(/project/);
+  });
+
+  it('refuses a user file whose integrations value is not an object, and keeps it', async () => {
+    fs.writeFileSync(userFile, JSON.stringify({ integrations: 'oops' }));
+    const out = await setup().run('config integration laya on');
+    expect(out).toMatch(/Not written/);
+    expect(JSON.parse(fs.readFileSync(userFile, 'utf-8'))).toEqual({ integrations: 'oops' });
+  });
+});

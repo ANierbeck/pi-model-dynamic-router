@@ -16,7 +16,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { piAgentDir } from './config-loader.ts';
 import type { ExcludeRules } from './types.ts';
-import { textOf } from './utils.ts';
+import { isPlainObject, textOf } from './utils.ts';
 
 const USER_CONFIG_FILE = 'router-config.user.json';
 
@@ -254,6 +254,8 @@ export interface ConfigLayerView {
   /** Set when the file exists but cannot be used (the loader ignores it too). */
   error?: string;
   exclude: ExcludeRules;
+  /** The layer's `integrations` object, when it has one (override check of `/router config integration`). */
+  integrations?: Record<string, unknown>;
 }
 
 /**
@@ -281,6 +283,7 @@ export function readConfigLayers(opts: {
       present,
       ...(error ? { error } : {}),
       exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : {},
+      ...(isPlainObject(config?.integrations) ? { integrations: config.integrations } : {}),
     };
   });
 }

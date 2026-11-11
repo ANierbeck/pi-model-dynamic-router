@@ -7,6 +7,7 @@
 // tools, so a bad block disables the integration (enabled:false) with a
 // warning instead of throwing and taking the router down.
 
+import { sanitizeForLog } from './detection.ts';
 import { closestKey } from './config-schema.ts';
 import { warnLog } from './logger.ts';
 
@@ -203,8 +204,8 @@ export function resetIntegrationHealth(name?: string): void {
 
 /**
  * Plain lines for every KNOWN integration, configured or not, so a switched-off
- * one stays visible and the way to switch it on is shown. A configured name
- * that is not known is reported, never ignored.
+ * one stays visible with its last health and the way to switch it on. A
+ * configured name that is not known is reported, never ignored.
  */
 export function formatIntegrationLines(
   configured: Record<string, unknown>,
@@ -213,16 +214,19 @@ export function formatIntegrationLines(
   const lines: string[] = [];
   for (const [name, spec] of Object.entries(specs)) {
     const block = configured[name] as
-      | { enabled?: unknown; mode?: unknown; endpoint?: unknown; checkpoint?: unknown }
+      | { enabled?: unknown; mode?: unknown; endpoint?: unknown }
       | undefined;
     if (block?.enabled !== true) {
       lines.push(`${name}: off — switch on: /router config integration ${name} on`);
+      if (getIntegrationHealth(name).state !== 'unknown') {
+        lines.push(`  last probe: ${healthText(name)}`);
+      }
       continue;
     }
     const mode = typeof block.mode === 'string' ? block.mode : spec.defaultMode;
     lines.push(`${name}: on (${mode})`);
     const endpoint = typeof block.endpoint === 'string' ? block.endpoint : spec.defaultEndpoint;
-    lines.push(`  endpoint ${endpoint} · ${healthText(name, block.checkpoint)}`);
+    lines.push(`  endpoint ${displayEndpoint(endpoint)} · ${healthText(name)}`);
   }
   for (const key of Object.keys(configured)) {
     if (!Object.hasOwn(specs, key) && !key.startsWith('_') && !key.startsWith('$')) {
@@ -232,12 +236,33 @@ export function formatIntegrationLines(
   return lines;
 }
 
-function healthText(name: string, checkpoint: unknown): string {
+/** Health for the status line. Sidecar-supplied text is sanitized and bounded before it is shown. */
+function healthText(name: string): string {
   const h = getIntegrationHealth(name);
-  const configuredVersion = typeof checkpoint === 'string' ? checkpoint : 'version unknown';
-  if (h.state === 'ok') return `reachable (${h.version ?? configuredVersion})`;
-  if (h.state === 'down') return `unreachable${h.lastError ? ` (${h.lastError})` : ''}`;
+  if (h.state === 'ok') {
+    return `reachable (${h.version ? sanitizeForLog(h.version) : 'no version reported'})`;
+  }
+  if (h.state === 'down') {
+    const parts = [
+      h.version ? `last served ${sanitizeForLog(h.version)}` : '',
+      h.lastError ? sanitizeForLog(h.lastError).slice(0, 160) : '',
+    ].filter(Boolean);
+    return `unreachable${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  }
   return 'not probed yet (probes on first use)';
+}
+
+/** The endpoint without URL credentials: a `user:password@` in a config file is never printed back. */
+function displayEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    if (!url.username && !url.password) return endpoint;
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return sanitizeForLog(endpoint);
+  }
 }
 
 /**
