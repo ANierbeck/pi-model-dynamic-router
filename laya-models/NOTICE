@@ -1,0 +1,22 @@
+Laya "router" model weights
+Copyright 2026 Achim Nierbeck
+
+These weights are a fine-tuned derivative work, licensed under the
+Apache License, Version 2.0 (see the LICENSE file next to this notice).
+They are distributed with the pi-model-dynamic-router project
+(https://github.com/ANierbeck/pi-model-dynamic-router) and are only the
+weights: the training corpus, labels and training scripts are not part of
+this distribution.
+
+Derived from
+  convaiinnovations/laya-multilingual (Hugging Face), the Laya multilingual
+  model, licensed under the Apache License, Version 2.0.
+  Laya: https://github.com/NandhaKishorM/laya
+
+That model is built on
+  jhu-clsp/mmBERT-base (Hugging Face), licensed under the MIT License,
+  as stated in the upstream model card.
+
+The files in this directory were changed from the upstream model: the encoder
+and the decision head were fine-tuned on routing decisions, and the ONNX
+files were exported from the fine-tuned checkpoint.
