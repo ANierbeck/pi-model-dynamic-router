@@ -7,6 +7,7 @@
 // tools, so a bad block disables the integration (enabled:false) with a
 // warning instead of throwing and taking the router down.
 
+import { sanitizeForLog } from './detection.ts';
 import { closestKey } from './config-schema.ts';
 import { warnLog } from './logger.ts';
 
@@ -199,4 +200,85 @@ export function getIntegrationHealth(name: string): IntegrationHealth {
 export function resetIntegrationHealth(name?: string): void {
   if (name === undefined) health.clear();
   else health.delete(name);
+}
+
+/**
+ * Plain lines for every KNOWN integration, configured or not, so a switched-off
+ * one stays visible with its last health and the way to switch it on. A
+ * configured name that is not known is reported, never ignored.
+ */
+export function formatIntegrationLines(
+  configured: Record<string, unknown>,
+  specs: Readonly<Record<string, IntegrationSpec>>
+): string[] {
+  const lines: string[] = [];
+  for (const [name, spec] of Object.entries(specs)) {
+    const block = configured[name] as
+      | { enabled?: unknown; mode?: unknown; endpoint?: unknown }
+      | undefined;
+    if (block?.enabled !== true) {
+      lines.push(`${name}: off — switch on: /router config integration ${name} on`);
+      if (getIntegrationHealth(name).state !== 'unknown') {
+        lines.push(`  last probe: ${healthText(name)}`);
+      }
+      continue;
+    }
+    const mode = typeof block.mode === 'string' ? block.mode : spec.defaultMode;
+    lines.push(`${name}: on (${mode})`);
+    const endpoint = typeof block.endpoint === 'string' ? block.endpoint : spec.defaultEndpoint;
+    lines.push(`  endpoint ${displayEndpoint(endpoint)} · ${healthText(name)}`);
+  }
+  for (const key of Object.keys(configured)) {
+    if (!Object.hasOwn(specs, key) && !key.startsWith('_') && !key.startsWith('$')) {
+      lines.push(`"${key}" is not a known integration (ignored)`);
+    }
+  }
+  return lines;
+}
+
+/** Health for the status line. Sidecar-supplied text is sanitized and bounded before it is shown. */
+function healthText(name: string): string {
+  const h = getIntegrationHealth(name);
+  if (h.state === 'ok') {
+    return `reachable (${h.version ? sanitizeForLog(h.version) : 'no version reported'})`;
+  }
+  if (h.state === 'down') {
+    const parts = [
+      h.version ? `last served ${sanitizeForLog(h.version)}` : '',
+      h.lastError ? sanitizeForLog(h.lastError).slice(0, 160) : '',
+    ].filter(Boolean);
+    return `unreachable${parts.length ? ` (${parts.join(', ')})` : ''}`;
+  }
+  return 'not probed yet (probes on first use)';
+}
+
+/** The endpoint without URL credentials: a `user:password@` in a config file is never printed back. */
+function displayEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    if (!url.username && !url.password) return endpoint;
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return sanitizeForLog(endpoint);
+  }
+}
+
+/**
+ * Why a switch patch is refused, or undefined when it is fine. Enabled must be
+ * a real boolean (the string "false" is truthy); the mode must be one the
+ * integration accepts.
+ */
+export function checkIntegrationPatch(
+  spec: IntegrationSpec,
+  patch: { enabled?: unknown; mode?: string }
+): string | undefined {
+  if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') {
+    return 'enabled must be true or false';
+  }
+  if (patch.mode !== undefined && !spec.modes.includes(patch.mode)) {
+    return `mode "${patch.mode}" is not one of ${spec.modes.join(', ')}`;
+  }
+  return undefined;
 }

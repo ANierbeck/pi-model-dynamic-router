@@ -189,6 +189,11 @@ describe('/router config — display', () => {
     expect(out).toContain('Shipped and project entries cannot be removed with unexclude');
   });
 
+  it('lists the integration switch in the usage hints', async () => {
+    const out = await setup().run('config');
+    expect(out).toContain('/router config integration <name> on|off|<mode>');
+  });
+
   it('answers "config compaction on|off" with the real Phase 5b toggle and persists to the user layer', async () => {
     const { run, rt } = setup();
     const out = await run('config compaction on');
@@ -220,6 +225,7 @@ describe('/router config — autocomplete', () => {
       'config',
       'config exclude <ref|glob|provider>',
       'config unexclude <ref|glob|provider>',
+      'config integration <name> on|off|<mode>',
       'config compaction on|off',
     ]);
   });

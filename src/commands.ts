@@ -31,6 +31,8 @@ import {
   type LayaAvailabilityState,
   type LayaReportedIdentity,
 } from './laya-classifier.ts';
+import { formatIntegrationLines, checkIntegrationPatch } from './integration.ts';
+import { INTEGRATION_SPECS } from './integration-registry.ts';
 import { getCachedCloudModels } from './classifier-cloud-probe.ts';
 import {
   localClassifierPins,
@@ -260,6 +262,7 @@ const CONFIG_USAGE_LINES = [
   '  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing',
   '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
   '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
+  '  /router config integration <name> on|off|<mode>  switch an optional integration (e.g. laya)',
 ];
 
 /**
@@ -289,6 +292,75 @@ function compactionStateLine(cfg: {
 }
 
 /** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
+/**
+ * `/router config integration <name> on|off|<mode>`: one write to the user
+ * layer, then the authoritative re-read. A mode implies on. The reply states
+ * what is in effect afterwards, not what was asked for.
+ */
+function setIntegration(rt: CommandDeps, arg: string): string {
+  const usage = 'Usage: /router config integration <name> on|off|<mode>';
+  const parts = arg.split(/\s+/).filter(Boolean);
+  if (parts.length > 2) return [`Not written: too many arguments.`, usage].join('\n');
+  const [name = '', word = ''] = parts;
+  const configured = { ...(rt.cfg.integrations ?? {}) };
+  if (!name) {
+    return [...formatIntegrationLines(configured, INTEGRATION_SPECS), '', usage].join('\n');
+  }
+  if (!Object.hasOwn(INTEGRATION_SPECS, name)) {
+    return [
+      `"${name}" is not a known integration. Known: ${Object.keys(INTEGRATION_SPECS).join(', ')}.`,
+      usage,
+    ].join('\n');
+  }
+  const spec = INTEGRATION_SPECS[name];
+  const patch =
+    word === 'on'
+      ? { enabled: true }
+      : word === 'off'
+        ? { enabled: false }
+        : word
+          ? { enabled: true, mode: word }
+          : undefined;
+  if (!patch) {
+    return [usage, `Allowed modes: ${spec.modes.join(', ')}`].join('\n');
+  }
+  const problem = checkIntegrationPatch(spec, patch);
+  if (problem) return [`Not written: ${problem}.`, usage].join('\n');
+
+  const res = openUserConfigStore().applyDelta({ integrations: { [name]: patch } });
+  if (!res.ok) return res.error;
+  rt.load();
+  // The validator turns an invalid block off and a higher layer can win; the
+  // reload shows what is actually in effect.
+  const block = (
+    (rt.cfg.integrations ?? {}) as Record<string, { enabled?: unknown; mode?: string } | undefined>
+  )[name];
+  const enabledNow = block?.enabled === true;
+  const matches =
+    (patch.enabled === undefined || block?.enabled === patch.enabled) &&
+    (patch.mode === undefined || block?.mode === patch.mode);
+  if (matches) {
+    const state = enabledNow ? `on (${block?.mode ?? spec.defaultMode})` : 'off';
+    return `${name} is ${state} — saved to ${res.written}; applies now.`;
+  }
+  const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
+    (layer) => layer.origin === 'project'
+  );
+  const overriding = (project?.integrations?.[name] ?? {}) as { enabled?: unknown; mode?: unknown };
+  const overridden =
+    (patch.enabled !== undefined &&
+      overriding.enabled !== undefined &&
+      overriding.enabled !== patch.enabled) ||
+    (patch.mode !== undefined && overriding.mode !== undefined && overriding.mode !== patch.mode);
+  if (overridden) {
+    return `${name} is not changed — the project config (${project?.path}) sets it. Saved to ${res.written}; remove that key from the project file to use this setting.`;
+  }
+  if (patch.enabled === true && !enabledNow) {
+    return `${name} is still off — saved to ${res.written}, but the block is invalid. See the router log warning for integrations.${name}.`;
+  }
+  return `${name} did not take effect — saved to ${res.written}; see the router log for integrations.${name}.`;
+}
+
 function setCompaction(rt: CommandDeps, on: boolean): string {
   const res = openUserConfigStore().applyDelta({ context_budget: { enabled: on } });
   if (!res.ok) return res.error;
@@ -508,6 +580,7 @@ function handleConfigCommand(
     if (arg === 'off') return setCompaction(rt, false);
     return [compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES].join('\n');
   }
+  if (sub === 'integration') return setIntegration(rt, arg);
   if (sub === 'exclude') return excludePattern(rt, ctx, arg);
   if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
@@ -518,7 +591,7 @@ export function createCommands(rt: CommandDeps): void {
 
   rt.pi.registerCommand('router', {
     description:
-      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>]]',
+      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
@@ -581,6 +654,12 @@ export function createCommands(rt: CommandDeps): void {
           value: 'config unexclude',
           label: 'config unexclude <ref|glob|provider>',
           description: 'Remove an exclusion from the user config',
+        },
+        {
+          value: 'config integration',
+          label: 'config integration <name> on|off|<mode>',
+          description:
+            'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
         },
         {
           value: 'config compaction',
@@ -963,6 +1042,15 @@ export function createCommands(rt: CommandDeps): void {
                 }
               }
             }
+          }
+
+          // Optional integrations (Laya, …): listed even when off, with the switch-on command
+          lines.push('├─ Integrations '.padEnd(72, '─'));
+          for (const line of formatIntegrationLines(
+            { ...(rt.cfg.integrations ?? {}) },
+            INTEGRATION_SPECS
+          )) {
+            lines.push(`│ ${line}`);
           }
 
           // Learned blocklist summary (details: /router blocklist)

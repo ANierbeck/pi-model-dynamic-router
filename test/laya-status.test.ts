@@ -296,4 +296,20 @@ describe('/router overview (real handler)', () => {
     expect(await overview({ enabled: false })).not.toContain('Laya');
     expect(await overview(undefined)).not.toContain('Laya');
   });
+
+  it('lists the Integrations section with Laya off when nothing is configured', async () => {
+    const out = await overview(undefined);
+    expect(out).toContain('Integrations');
+    expect(out).toContain('laya: off');
+  });
+
+  it('shows Laya as on in the Integrations section when the block enables it', async () => {
+    const out = await overview({
+      enabled: true,
+      mode: 'shadow',
+      checkpoint: 'r2@1.0.0',
+      endpoint: 'http://127.0.0.1:8089',
+    });
+    expect(out).toContain('laya: on (shadow)');
+  });
 });

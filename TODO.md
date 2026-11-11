@@ -293,11 +293,9 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   the schema with unknown-key warnings (`src/config-schema.ts`) and the rename
   `classifier_laya` → `integrations.laya` with a `RENAMED` warning.
   **Open, in this order:**
-  (1) the `/router status` "Integrations" section and the
-  `/router config integration <name> on|off|<mode>` subcommand — needs a
-  nested `integrations.<name>` delta in `src/user-config-store.ts`, a renderer
-  over the health registry and the command wiring (details in the plan's
-  Steps); the Laya line of `/router status` is unchanged until then;
+  (1) **DONE 2026-11-11:** the `/router status` "Integrations" section and
+  the `/router config integration <name> on|off|<mode>` subcommand (nested
+  delta in `src/user-config-store.ts`, renderer over the health registry);
   (2) consumers outside the repository: **DONE 2026-11-11** — the owner's
   `router-config.user.json` block moved under `integrations.laya` (loaded by
   the real loader: same values, no warnings), the sidecar manager extension
