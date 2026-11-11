@@ -298,15 +298,14 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
   nested `integrations.<name>` delta in `src/user-config-store.ts`, a renderer
   over the health registry and the command wiring (details in the plan's
   Steps); the Laya line of `/router status` is unchanged until then;
-  (2) **consumers outside the repository still read the old key** (owner
-  side): the sidecar manager extension reads `classifier_laya?.enabled !== false`
-  (after the rename it reads `undefined`, so it treats Laya as enabled and
-  would start a sidecar the router has switched off);
-  `~/.laya-ft/shadow_eval/common.py` reads
-  `["classifier_laya"]["confidence_threshold"]` (a `KeyError` after the
-  rename); and the owner's `router-config.user.json` carries the old block, so
-  **Laya is off at the next session start until it is moved** under
-  `integrations.laya`;
+  (2) consumers outside the repository: **DONE 2026-11-11** — the owner's
+  `router-config.user.json` block moved under `integrations.laya` (loaded by
+  the real loader: same values, no warnings), the sidecar manager extension
+  reads `integrations?.laya?.enabled === true` (a readable file without it now
+  means off, like the shipped default; an unreadable file stays fail-open), and
+  `~/.laya-ft/shadow_eval/common.py` reads the threshold from the new path.
+  A session that was already running keeps the old code in memory and sees no
+  Laya block after a config reload until Pi is restarted;
   (3) the CodexBar plan continues on this contract. Original note — the
   contract + rename are a 2.0.0 blocker since decision 1 is DECIDED,
   2026-11-08): Laya is wired ad hoc (own block, own validator, own health state);
@@ -669,8 +668,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
   `integrations.laya` before 2.0.0 (decided 2026-11-08) — contract, rename and
   migration warning DONE 2026-11-11; the status section and the config
-  subcommand are still open, as are the consumers outside the repo (see the
-  integrations item under "Integration & Extensibility"); (4) the
+  subcommand are still open (see the integrations item under "Integration &
+  Extensibility"); the consumers outside the repo are migrated; (4) the
   `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.
