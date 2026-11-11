@@ -114,11 +114,13 @@ ask Laya + the chain about those prompts too and log them as observations
 2. **Sidecar distribution COMPLETE**
    ([`2026-10-31-laya-sidecar-distribution.md`](2026-10-31-laya-sidecar-distribution.md)):
    `/health` contract tests, live-queue parity run, packaging with pinned
-   revision + checksum + install docs, and the r2 weights publish — the
-   publish itself stays a separate explicit approval (AGENTS.md §1). The
-   Linux/Windows latency measurement is WAIVED by the owner 2026-11-08
-   (modern PCs are assumed similar); decision 3 (sidecar location) is still
-   open.
+   revision + checksum + install docs, and the weights publish
+   (`laya-router-v1.0.0`, renamed from `r2` 2026-11-11) — the publish itself
+   stays a separate explicit approval (AGENTS.md §1). The Linux/Windows
+   latency measurement is WAIVED by the owner 2026-11-08 (modern PCs are
+   assumed similar); decision 3 (sidecar location) was decided 2026-11-08
+   (subdirectory with its own package and release line). Packaging plan:
+   [`2026-11-11-onnx-sidecar-package.md`](2026-11-11-onnx-sidecar-package.md).
 3. **Rename `classifier_laya` → `integrations.laya`**
    ([`2026-11-08-optional-integrations-config.md`](2026-11-08-optional-integrations-config.md),
    decision 1): DECIDED by the owner 2026-11-08 — rename before 2.0.0, so

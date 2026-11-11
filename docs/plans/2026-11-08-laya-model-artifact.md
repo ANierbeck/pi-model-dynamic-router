@@ -5,7 +5,9 @@
 [`docs/research/2026-11-08-laya-r2-artifact-set.md`](../research/2026-11-08-laya-r2-artifact-set.md));
 the `/health` identity (router and reference sidecar) and `/router status`
 are done; the install skill (`skills/router-laya-install/`) is done and
-the docs are mostly done; the owner's weights release is the open step. Part of the 2.0.0 "everything
+the docs are mostly done; the model is renamed `r2` → `router` (2026-11-11,
+decision D7 of `2026-11-11-onnx-sidecar-package.md`, tag `laya-router-v1.0.0`); the
+owner's weights release is the open step. Part of the 2.0.0 "everything
 Laya" release gate (`2026-10-25-laya-sole-classifier.md`, "Release gate").
 Owner decisions 2026-11-08: weights as **GitHub Release assets + manifest in
 the repo**; ONNX as the default backend; the install path is a **skill** that
@@ -52,7 +54,8 @@ nobody can tell what they got.
    which model versions it was verified against; an override flag
    (`--manifest <path|url>`) allows testing newer artifacts without a release.
 2. **Weights as GitHub Release assets** (owner decision 2026-11-08), one
-   release per model version, tagged `laya-r2-v1.0.0` and up. The manifest is
+   release per model version, tagged `laya-router-v1.0.0` and up (first built as `laya-r2-v1.0.0`,
+   renamed 2026-11-11 before anything was published). The manifest is
    the contract; the assets are the payload. Checksums detect corruption and
    mixups — they are not a signature, and the plan says so instead of implying
    otherwise.
@@ -105,7 +108,8 @@ nobody can tell what they got.
    skill detects the platform and proposes (a Mac gets MLX offered), but the
    user decides between the **Python** and the **Node** sidecar. Node + ONNX is
    the default. Resulting matrix:
-   - Node sidecar + ONNX (CPU) — default, every OS; measured in
+   - Node sidecar + ONNX (CPU) — default, every OS except Intel Macs (no
+     darwin/x64 binding, D6 of `2026-11-11-onnx-sidecar-package.md`); measured in
      `docs/research/2026-11-08-onnxruntime-node-spike.md`.
    - Python sidecar + MLX — Apple Silicon only. MLX is Apple's own framework
      and runs through its own runtime (the `laya_mlx` Python package here); it
@@ -120,10 +124,10 @@ nobody can tell what they got.
    model optimisations to ship the same way. Publishing remains a release
    action needing an explicit owner go (AGENTS.md §1).
 
-**Open — owner to confirm:** the 2.0.0 gate (`2026-10-25-laya-sole-classifier.md`)
-still lists "r2 weights publish" as a pre-release item. Decision 4 defers *who
-and when*; whether the first publish stays a 2.0.0 blocker or becomes the
-first release of the model line after 2.0.0 is not settled.
+**Decided 2026-11-11** (D8 of `2026-11-11-onnx-sidecar-package.md`): the
+first weights publish (`laya-router-v1.0.0`), the sidecar package and the
+router 2.0.0 are released together, each on its own explicit go. The publish
+therefore stays in the 2.0.0 gate (`2026-10-25-laya-sole-classifier.md`).
 
 ## Verified against
 
@@ -218,4 +222,9 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
 - [x] Docs: `docs/config-override.md` (checkpoint semantics), README (install
       path), CHANGELOG under [Unreleased]. Still open for 2.0.0: move the
       CHANGELOG entries to the 2.0.0 heading at release.
-- [ ] Owner go for the weights release, then publish the assets.
+- [x] Rename `r2` → `router` (2026-11-11, D7 of the sidecar plan): manifest `model`,
+      `tag` and `base_url`, the skill's commands and checkpoint, `config-override.md`,
+      CHANGELOG. Red first: the two pin tests (`package-contents`, `laya-install-skill`)
+      expected `router` against the `r2` manifest and failed. Historical entries above
+      keep the name they were built under.
+- [ ] Owner go for the weights release, then publish the assets (`laya-router-v1.0.0`).

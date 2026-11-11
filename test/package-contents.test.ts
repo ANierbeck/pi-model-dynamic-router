@@ -183,12 +183,12 @@ describe('npm package contents', () => {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, '{}');
     }
-    fs.mkdirSync(path.join(tmpDir, 'laya-models', 'r2', '1.0.0'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'laya-models', 'router', '1.0.0'), { recursive: true });
     fs.copyFileSync(
       path.join(repoRoot, 'laya-models', 'manifest.json'),
       path.join(tmpDir, 'laya-models', 'manifest.json')
     );
-    fs.writeFileSync(path.join(tmpDir, 'laya-models', 'r2', '1.0.0', 'model.safetensors'), 'x');
+    fs.writeFileSync(path.join(tmpDir, 'laya-models', 'router', '1.0.0', 'model.safetensors'), 'x');
 
     const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
       cwd: tmpDir,
@@ -231,6 +231,7 @@ describe('npm package contents', () => {
     const offer = JSON.parse(
       execFileSync(process.execPath, [bundle, 'models', '--json'], { encoding: 'utf8' })
     );
-    expect(offer.map((o: { model: string }) => o.model)).toContain('r2');
+    // Exact list: a leftover `r2` entry would still be offered and installable.
+    expect(offer.map((o: { model: string }) => o.model)).toEqual(['router']);
   }, 30_000);
 });

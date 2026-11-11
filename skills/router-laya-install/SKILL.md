@@ -27,7 +27,7 @@ Two things limit what this skill can finish today. Say them to the user
 before starting, so nothing surprises them later:
 
 1. **The weights release is not published yet.** The manifest marks
-   `r2@1.0.0` as unpublished, and the installer refuses it (step 1). Once the
+   `router@1.0.0` as unpublished, and the installer refuses it (step 1). Once the
    owner publishes the release, the same steps work unchanged.
 2. **No sidecar is packaged yet.** The ONNX sidecar is not packaged yet. For
    the MLX backend, the only sidecar is the reference server in the repository
@@ -77,7 +77,7 @@ pi-laya-model list --json
 ```
 
 - If the version is already installed, run
-  `pi-laya-model verify r2@1.0.0 --json`. If it passes, go to step 7. If it
+  `pi-laya-model verify router@1.0.0 --json`. If it passes, go to step 7. If it
   reports problems, show them and ask before any reinstall (step 5, `exists`).
 - Check the free space on the install root (`<Pi agent dir>/laya-models`, where
   the Pi agent dir is `PI_CODING_AGENT_DIR` or `~/.pi/agent`) with `df -k`. The
@@ -96,7 +96,7 @@ Ask: "Download and install now? (yes/no)" Continue only on a clear yes.
 ### 5. Install
 
 ```bash
-pi-laya-model install r2@1.0.0 --backend onnx --json
+pi-laya-model install router@1.0.0 --backend onnx --json
 ```
 
 Use the backend the user chose. An interrupted download resumes when the same
@@ -111,7 +111,7 @@ code as listed in the error codes section at the end of this file.
 ### 6. Verify
 
 ```bash
-pi-laya-model verify r2@1.0.0 --json
+pi-laya-model verify router@1.0.0 --json
 ```
 
 The result has `ok` and `problems`. Continue to the config only on `ok: true`.
@@ -133,7 +133,7 @@ and the router now ignores it with a warning), offer to move its values into
     "laya": {
       "enabled": true,
       "mode": "shadow",
-      "checkpoint": "r2@1.0.0",
+      "checkpoint": "router@1.0.0",
       "endpoint": "http://127.0.0.1:8089"
     }
   }
@@ -167,13 +167,13 @@ Compare the answer with the install:
 
 - `artifact_sha256` must equal the value from step 5. If it differs, a different
   model is being served. Tell the user and do not rely on it.
-- `model` and `version` must read `r2` and `1.0.0`.
+- `model` and `version` must read `router` and `1.0.0`.
 - `head_sha256`: the router warns in `/router status` if it differs from the
   router's own head.
 
 The stage probes on first use. Before the first classified prompt, `/router status`
 says "not probed yet". After it, the Laya line shows
-`laya:r2@1.0.0 (reported by the sidecar, …)`.
+`laya:router@1.0.0 (reported by the sidecar, …)`.
 
 ## Checklist
 

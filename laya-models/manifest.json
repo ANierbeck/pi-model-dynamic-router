@@ -2,11 +2,11 @@
   "schema_version": 1,
   "models": [
     {
-      "model": "r2",
+      "model": "router",
       "version": "1.0.0",
-      "tag": "laya-r2-v1.0.0",
+      "tag": "laya-router-v1.0.0",
       "published": false,
-      "base_url": "https://github.com/ANierbeck/pi-model-dynamic-router/releases/download/laya-r2-v1.0.0/",
+      "base_url": "https://github.com/ANierbeck/pi-model-dynamic-router/releases/download/laya-router-v1.0.0/",
       "head": {
         "sha256": "5f12495d95d8743a277aa668ad0c8d756f2de1e76b82d80a85b65067e2900883",
         "categories": [
