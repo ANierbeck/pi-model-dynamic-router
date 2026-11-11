@@ -67,6 +67,6 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
   WAIVED by the owner 2026-11-08: modern PCs are assumed similar; the Apple
   Silicon fp32 numbers in
   `docs/research/2026-11-08-onnxruntime-node-spike.md` stand as reference.
-- [ ] Packaging, pinned revision, checksum, install docs per platform. **Planned in** `docs/plans/2026-11-11-onnx-sidecar-package.md` (decisions D1–D8 open).
+- [ ] Packaging, pinned revision, checksum, install docs per platform. **Planned in** `docs/plans/2026-11-11-onnx-sidecar-package.md` (decisions D1–D8 taken 2026-11-11).
 - [x] `test/package-contents.test.ts` pins the shipped file set (allowlist since commit `0dff78b`) — the spike directory and owner paths cannot ship.
 - [ ] Per-platform install docs with the packaged sidecar.

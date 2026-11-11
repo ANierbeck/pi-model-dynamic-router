@@ -1,6 +1,6 @@
 # ONNX sidecar package: an installable Laya sidecar for Linux, Windows and macOS
 
-**Status:** proposed 2026-11-11 — nothing built yet. Waits for the owner decisions D1–D6 below. The first step that needs no decision is the parity runner (step 2), but it is blocked on the missing spike runner (see Problem 4), so the plan starts with the decisions.
+**Status:** approved 2026-11-11 — owner decisions D1–D8 taken (see Decisions). Build not started. Done means built, tested and documented, not published: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1).
 
 **Parent:** `docs/plans/2026-10-31-laya-sidecar-distribution.md`, open step "Packaging, pinned revision, checksum, install docs per platform". This plan is that one step, and nothing else from the parent.
 **Related:** `docs/plans/2026-11-08-laya-model-artifact.md` (manifest, installer and `/health` are done there; this plan consumes them). Measurements: `docs/research/2026-11-11-onnx-sidecar-package-facts.md`.
@@ -19,54 +19,52 @@ The installer and the install skill default to the ONNX backend, the only one th
 One Node sidecar package that serves the ONNX artifacts of a `pi-laya-model install` directory, built and tested in this repository, with its own release line. The router package stays dependency-free.
 
 1. **Location and package:** a subdirectory `laya-sidecar/` with its own `package.json`, its own lockfile and its own version. Not in the router's `files` allowlist, so `test/package-contents.test.ts` keeps the router package free of it. (Owner decision 3, 2026-11-08.)
-2. **Repeatable parity first.** Rewrite the runner as `laya-sidecar/scripts/parity.mjs`: it runs the golden set and the corpus sample through the ONNX sidecar and compares with a stored MLX reference output. Red first: the script fails when the stored reference is missing or the argmax differs. Acceptance: the golden set stays 180/180 and the corpus sample stays at or above 297/300, the numbers of the spike.
-3. **Pinned dependency, no install hook of our own.** `onnxruntime-node` pinned to an exact version (D3), with a committed lockfile. The sidecar package has no `postinstall` of its own.
+2. **Repeatable parity first.** Rewrite the runner as `laya-sidecar/scripts/parity.mjs`: it runs the golden set and the corpus sample through the ONNX sidecar and compares with a stored MLX reference output. Red first: the script fails when the stored reference is missing or the argmax differs. Acceptance: the same bar as the spike — golden set 180/180 and corpus sample at or above 297/300 against the MLX reference — but measured on the copied upstream code (D2).
+3. **Pinned dependency, no install hook of our own.** `onnxruntime-node` pinned to exactly 1.31.1 (D3), with a committed lockfile. The sidecar package has no `postinstall` of its own.
 4. **Skip the CUDA download, and prove it.** The install instructions set `ONNXRUNTIME_NODE_INSTALL=skip`. Red-first CI test: with `GLOBAL_AGENT_HTTPS_PROXY` pointing at a closed port, `npm install` without the flag must fail (proof that the download path exists), and with the flag it must succeed and CPU inference must run. This pins the install behaviour for the next version bump.
-5. **Vendor the needed part of `laya-ts`** (D2): copy the Node path (`agent`, `tokenizer`, the ONNX provider, what `predict` needs) into `laya-sidecar/src/laya/`, keep the Apache-2.0 `LICENSE`, and write the upstream commit (`6880462`) into a header. No `onnxruntime-web` (browser only).
+5. **Copy the needed part of `laya-ts`** (D2): the Node path (`agent`, `tokenizer`, the ONNX provider, what `predict` needs) from the latest upstream release into `laya-sidecar/src/laya/`, with the Apache-2.0 `LICENSE` and a header naming the upstream commit. No `onnxruntime-web` (browser only).
 6. **Identity:** `GET /health` returns the same fields as `spikes/laya-http/identity.py`. `head_sha256` and `artifact_sha256` are computed with the TypeScript helpers that the router already uses (`src/laya-model-manifest.ts`). Red-first cross-language test: the sidecar and `identity.py` must return identical hashes for the same install directory.
 7. **Input:** the sidecar reads an install directory `~/.pi/agent/laya-models/<model>/<version>/` written by `pi-laya-model install --backend onnx`. It never downloads anything (the same rule as the router, ADR-0021).
-8. **Platform matrix in the docs, not in a claim:** darwin/arm64, linux/x64, linux/arm64, win32/x64, win32/arm64 have a binding in the package. Each is listed as "supported" only after a smoke run (load + parity on the golden set) on that platform (D5). darwin/x64 is listed as unsupported.
-9. **Skill and installer follow the sidecar:** `skills/router-laya-install/SKILL.md` step 8 replaces "not packaged yet" with the install command and the start command, and offers `onnx` on Intel Macs only if a platform run exists. `test/laya-install-skill.test.ts` pins the new text, red first.
-10. **Release line:** tags `laya-sidecar-v<version>`. Publishing to npm and creating the GitHub Release are release actions (AGENTS.md §1) and are **not** part of this plan's done state. The plan is done when the package builds, its tests and `npm audit` are green in CI, and the docs describe the install. It is not done when it is published.
+8. **Platform matrix in the docs, not in a claim:** darwin/arm64 tested; linux/x64, linux/arm64, win32/x64, win32/arm64 "should work, not tested" (D5); darwin/x64 not supported (D6).
+9. **Skill and installer follow the sidecar:** `skills/router-laya-install/SKILL.md` step 8 replaces "not packaged yet" with the install command and the start command, and tells Intel Mac users that Laya is not supported there (D6). `test/laya-install-skill.test.ts` pins the new text, red first.
+10. **Release line:** tags `laya-sidecar-v<version>`, released together with the router (D1/D8). Publishing to npm and creating the GitHub Release are release actions (AGENTS.md §1) and are **not** part of this plan's done state. The plan is done when the package builds, its tests and `npm audit` are green in CI, and the docs describe the install.
 
-## Open decisions (owner)
+## Decisions (owner, 2026-11-11)
 
-Recommendations are mine, reasons in the research note.
+**D1 — Package name and channel: DECIDED.** Scoped npm package `@anierbeck/laya-sidecar`, tags `laya-sidecar-v<version>`. Prepared now, released only **together with the router release** ("the two belong together"); both need the owner's release-specific go.
 
-**D1 — Package name and channel.** Recommendation: scoped npm package `@anierbeck/laya-sidecar`, published from the `laya-sidecar-v*` tags. The publish itself needs a release-specific go. Alternative: GitHub Release tarball only (no registry, no `npm audit` on consumers' side).
+**D2 — How the inference code gets in: DECIDED, copy the latest upstream.** The Node path of upstream `laya-ts` is copied into this repository from the **latest upstream release** at build time (on 2026-11-11: `v0.4.31`, commit `3a38cbe`), with its Apache-2.0 licence and a header naming the upstream commit. Our fine-tuned model sits on top as a separate model directory; nothing is submitted to the Laya project. Reason: `laya-ts` is still not on npm (404 on 2026-11-11), and npm cannot install a subdirectory of a git repository. Consequence: upstream changed the tokenizer, the state-text budgets and the ONNX export since the spike (`6880462` → `3a38cbe`, research note), so the spike's parity result does not carry over; the parity runner (step 2) has to confirm it on the copied code. Updating the copy is a deliberate step: new commit in the header, parity run green.
 
-**D2 — How `laya-ts` gets into the package.** Recommendation: **vendor** the Node path with its Apache-2.0 licence and the pinned upstream commit. Alternatives: a git dependency pinned to `6880462` (installs unverified source from GitHub at install time), or wait for upstream to publish `laya-ts` on npm (no date, not in our hands).
+**D3 — `onnxruntime-node`: DECIDED, 1.31.1** (latest stable on 2026-11-11, and the version upstream `laya-ts` now declares). Pinned exactly, committed lockfile.
 
-**D3 — `onnxruntime-node` version.** Recommendation: **1.30.0**, the version the spike ran, until a parity run exists for a newer one. Alternative: 1.31.1 (latest, same binding set, not tested against our golden set).
+**D4 — CUDA download: DECIDED.** The install command documents `ONNXRUNTIME_NODE_INSTALL=skip`; the CI test of step 4 pins the behaviour.
 
-**D4 — How users skip the CUDA download.** Recommendation: the documented env var `ONNXRUNTIME_NODE_INSTALL=skip` in the install command, pinned by the CI test of step 4. Alternative: `npm install --ignore-scripts`, which also skips any future install script of any package, which is broader than we need but needs no env var.
+**D5 — Non-Apple platforms: DECIDED, no smoke runs.** The owner has no Linux or Windows machine. The docs say: binaries for linux/x64, linux/arm64, win32/x64 and win32/arm64 are in the package, it should work, **it is not tested**. Only darwin/arm64 is tested. The CI job on `ubuntu-latest` runs the unit and contract tests (no model), which is a build check, not a platform test.
 
-**D5 — Smoke runs on non-Apple platforms.** Your waiver of 2026-11-08 covered the Linux/Windows *latency* measurement. It does not cover "does it load and agree with MLX". Recommendation: one smoke run each on a Linux x64 machine and a Windows x64 machine before those platforms are called supported. Without it the docs say "binaries shipped, not tested" for them.
+**D6 — Intel Macs: DECIDED, not supported.** No ONNX binding for darwin/x64, MLX is Apple Silicon only, and local models only run well on Apple Silicon anyway. The skill and the docs say so; no Python fallback is pursued.
 
-**D6 — Intel Macs.** No ONNX binding for darwin/x64 in the package, and MLX is Apple Silicon only. Options: (a) document "no Laya on Intel Macs" as the outcome; (b) investigate a Python `onnxruntime` wheel for x86-64 macOS (not checked; a Python sidecar would also need a Python requirement, decision 4 of 2026-10-31).
+**D7 — Model name: DECIDED, `router`.** Tag `laya-router-v1.0.0`, log label `laya:router@1.0.0`, install path `laya-models/router/1.0.0/`. The rename of the existing `r2@1.0.0` entry and the release preparation of the weights belong to `docs/plans/2026-11-08-laya-model-artifact.md` (one problem per plan); this plan only uses the name.
 
-**D7 — Model name and tags.** You wanted to rename the weights line (e.g. `laya-router`). The manifest tags, asset names and `base_url` are in the artifact plan. Decide before step 9 pins install text to the tag name. This does not block steps 1–8: they run against a local install directory.
-
-**D8 — 2.0.0 gate.** The open question of `2026-11-08-laya-model-artifact.md` stays open: is the first asset publish a 2.0.0 blocker, or the first release of the model line after 2.0.0? This plan does not need the publish to reach its done state.
+**D8 — Release timing: DECIDED as part of D1.** Sidecar, weights (`laya-router-v1.0.0`) and the router 2.0.0 are released together. Each publish is still its own release action with an explicit go.
 
 ## Verified against
 
 - `main` @ `92a5eee` (2026-11-11): `laya-models/manifest.json` (r2@1.0.0, `published: false`), `package.json` `files` allowlist, `spikes/laya-http/server.py` and `identity.py`, `src/laya-model-manifest.ts`, `skills/router-laya-install/SKILL.md`.
 - Registry and tarballs of `onnxruntime-node` 1.30.0 and 1.31.1 read on 2026-11-11 (`npm view`, `npm pack`, `tar -t`, `script/install.js`, `script/install-metadata.js`, `script/install-utils.js`); `npm audit` on a lockfile of 1.30.0 (0 findings).
-- Upstream `laya-ts` at `6880462` (`~/.laya-ft/upstream-laya`).
+- Upstream `laya-ts` at `6880462` (spike) and at `3a38cbe` (`v0.4.31`, latest on 2026-11-11, fetched into `~/.laya-ft/upstream-laya`); `laya-ts` still 404 on npm.
 
-**Not checked:** any ONNX runtime executing on Linux, Windows or musl; the runtime use of `global-agent`; the `nuget_nightly` feed; the Python `onnxruntime` wheels for Intel Macs; whether the spike's `run_node.mjs` behaved as its notes describe (it is missing, see Problem 4).
+**Not checked:** any ONNX runtime executing on Linux, Windows or musl (D5: stays untested); the runtime use of `global-agent`; the `nuget_nightly` feed; the Python `onnxruntime` wheels for Intel Macs; whether the spike's `run_node.mjs` behaved as its notes describe (it is missing, see Problem 4).
 
 ## Steps
 
-- [ ] D1–D6 decided by the owner (D7 and D8 before the skill text and the release).
+- [x] D1–D8 decided by the owner, 2026-11-11.
 - [ ] Step 2: `laya-sidecar/scripts/parity.mjs` — red first against a missing reference, then green on the golden set (180/180) and the corpus sample (≥297/300).
 - [ ] Step 3: `laya-sidecar/package.json` with exact pin and committed lockfile; `npm audit` clean.
 - [ ] Step 4: CUDA-skip install test (red without the flag, green with it).
 - [ ] Step 5: vendored `laya-ts` Node path, licence and commit header; no `onnxruntime-web`.
 - [ ] Step 6: `/health` cross-language parity test against `identity.py`.
 - [ ] Step 7: sidecar reads an install directory; no network access in the sidecar code path (test).
-- [ ] Step 8: smoke runs on the platforms of D5; platform table in the docs follows the results.
+- [ ] Step 8: platform table in the docs (D5/D6 wording).
 - [ ] Step 9: skill step 8 and `test/laya-install-skill.test.ts` updated (red first).
 - [ ] Step 10: install docs per platform (README/`docs/config-override.md` links), CHANGELOG entry under Unreleased.
 - [ ] Release line set up but **not** published — publish and tag need the owner's release-specific go (AGENTS.md §1).

@@ -57,6 +57,14 @@ This is the registry advisory state today, not a guarantee. The plan makes `npm 
 - `providers.ts` verifies the artifacts' digests before importing the native runtime (comment at line ~480).
 - Licence: `LICENSE` is the Apache-2.0 text. A `NOTICE` file was not found in the checkout.
 
+## 4b. Upstream since the spike (fetched 2026-11-11)
+
+- Latest upstream release: tag `v0.4.31`, commit `3a38cbe` (2026-11-11). The spike used `6880462` (`release: 0.4.2`, 2026-10-10).
+- `laya-ts/package.json` at `3a38cbe`: still `name laya-ts`, `version 0.1.0`, Apache-2.0; `optionalDependencies` now `onnxruntime-node ^1.31.1` and `onnxruntime-web ^1.31.1`. Still 404 on npm.
+- `git diff --stat 6880462 3a38cbe -- laya-ts/src laya-ts/package.json`: 16 files, +2625 / −233. Relevant for inference: `tokenizer.ts` +64 (a decoder for windowed prediction), commits "cut stateText budgets at code points like Python" and "count code points in latinProfile like Python".
+- `laya-ts/scripts/export_onnx.py`: +59 / −41, including "publish the ONNX external-data sidecars, not just the two graphs". Our `r2` ONNX files were exported with the `6880462` script; whether the `3a38cbe` loader reads them unchanged was **not** checked.
+- The repository root has `LICENSE` (Apache-2.0) and no `NOTICE` file; `laya-ts/` has no own `LICENSE` file (checked at `3a38cbe`).
+
 ## 5. Model artifacts (`laya-models/manifest.json`, `r2@1.0.0`)
 
 | backend | files | total bytes |
