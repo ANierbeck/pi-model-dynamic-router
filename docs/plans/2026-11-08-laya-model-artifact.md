@@ -108,7 +108,8 @@ nobody can tell what they got.
    skill detects the platform and proposes (a Mac gets MLX offered), but the
    user decides between the **Python** and the **Node** sidecar. Node + ONNX is
    the default. Resulting matrix:
-   - Node sidecar + ONNX (CPU) — default, every OS; measured in
+   - Node sidecar + ONNX (CPU) — default, every OS except Intel Macs (no
+     darwin/x64 binding, D6 of `2026-11-11-onnx-sidecar-package.md`); measured in
      `docs/research/2026-11-08-onnxruntime-node-spike.md`.
    - Python sidecar + MLX — Apple Silicon only. MLX is Apple's own framework
      and runs through its own runtime (the `laya_mlx` Python package here); it
@@ -123,10 +124,10 @@ nobody can tell what they got.
    model optimisations to ship the same way. Publishing remains a release
    action needing an explicit owner go (AGENTS.md §1).
 
-**Open — owner to confirm:** the 2.0.0 gate (`2026-10-25-laya-sole-classifier.md`)
-still lists "r2 weights publish" as a pre-release item. Decision 4 defers *who
-and when*; whether the first publish stays a 2.0.0 blocker or becomes the
-first release of the model line after 2.0.0 is not settled.
+**Decided 2026-11-11** (D8 of `2026-11-11-onnx-sidecar-package.md`): the
+first weights publish (`laya-router-v1.0.0`), the sidecar package and the
+router 2.0.0 are released together, each on its own explicit go. The publish
+therefore stays in the 2.0.0 gate (`2026-10-25-laya-sole-classifier.md`).
 
 ## Verified against
 
