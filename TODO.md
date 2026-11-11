@@ -668,8 +668,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
   `integrations.laya` before 2.0.0 (decided 2026-11-08) — contract, rename and
   migration warning DONE 2026-11-11; the status section and the config
-  subcommand are still open, as are the consumers outside the repo (see the
-  integrations item under "Integration & Extensibility"); (4) the
+  subcommand are still open (see the integrations item under "Integration &
+  Extensibility"); the consumers outside the repo are migrated; (4) the
   `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.

@@ -1,6 +1,6 @@
 # Optional integrations: one contract, one config block, typo-safe user layers
 
-**Status:** in progress 2026-11-11 — all four owner decisions made; the contract, the schema with unknown-key warnings and the rename are done, the `/router status` section and the `/router config integration` subcommand are open. **Decision 1 is DECIDED
+**Status:** in progress 2026-11-11 — all four owner decisions made; the contract, the schema with unknown-key warnings and the rename are done, the consumers outside the repo are migrated, and the `/router status` section and the `/router config integration` subcommand are open. **Decision 1 is DECIDED
 (2026-11-08): rename `classifier_laya` → `integrations.laya` before 2.0.0
 — the contract + rename + migration warning therefore land before the
 release** (part of the "everything Laya" release gate,
@@ -74,7 +74,7 @@ The router is growing optional external components: Laya today, CodexBar next. E
 
 Commit `a9dc015` (`main`, 2026-11-08): `src/types.ts` (`Config`: 22 top-level keys; `ClassifierLayaConfig`; other `enabled?` switches in `BreakerConfig`, `ClassifierLogConfig`, `ContextBudgetConfig`, `DelegationConfig`), `src/config-loader.ts` (layer order, `deepMergeConfig`, `REMOVED_GROUPS`, `RENAMED_CLASSIFIER_KEYS`, `validateClassifierLaya`; no unknown-key check, no per-layer restriction), shipped `router-config.json` (10 top-level keys, `classifier_laya: {enabled: false}`), `src/laya-classifier.ts` (`layaAvailabilityState`), `src/commands.ts` (`/router status` Laya branch, `/router config` subcommands), `test/laya-chain.test.ts` (lines 168 and 220), `docs/config-override.md` (sections). No JSON Schema file in the repo.
 
-**Checked 2026-11-11:** nine test files constructed `classifier_laya` directly (migrated); consumers outside the repo that still read it: the sidecar manager extension and a labeling script (see TODO.md). **Not checked:** whether `src/user-config-store.ts` can write nested keys generically or only the existing switches; the owner's current `router-config.user.json` (its Laya settings come from the Laya sole-classifier plan's "State" section, not read here).
+**Checked 2026-11-11:** nine test files constructed `classifier_laya` directly (migrated); the consumers outside the repo that read it (the sidecar manager extension, a labeling script, the owner's user config) were migrated the same day and checked by loading the real user config with the real loader. **Not checked:** whether `src/user-config-store.ts` can write nested keys generically or only the existing switches.
 
 ## Steps
 
