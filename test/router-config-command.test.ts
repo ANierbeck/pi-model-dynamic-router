@@ -220,6 +220,7 @@ describe('/router config — autocomplete', () => {
       'config',
       'config exclude <ref|glob|provider>',
       'config unexclude <ref|glob|provider>',
+      'config integration <name> on|off|<mode>',
       'config compaction on|off',
     ]);
   });

@@ -26,6 +26,8 @@ export interface UserConfigDelta {
   /** Cache-aware compaction (Phase 5b): only the master switch is
    * command-settable; the thresholds stay hand-edited config. */
   context_budget?: { enabled?: boolean };
+  /** Per-integration switch (`/router config integration`): merged into the named block, other keys kept. */
+  integrations?: Record<string, { enabled?: boolean; mode?: string }>;
 }
 
 export interface UserConfigStore {
@@ -123,6 +125,23 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
             : {};
         Object.assign(budget, delta.context_budget);
         next.context_budget = budget;
+      }
+      if (delta.integrations) {
+        const blocks =
+          next.integrations &&
+          typeof next.integrations === 'object' &&
+          !Array.isArray(next.integrations)
+            ? { ...(next.integrations as Record<string, unknown>) }
+            : {};
+        for (const [name, patch] of Object.entries(delta.integrations)) {
+          const current = blocks[name];
+          const kept =
+            current && typeof current === 'object' && !Array.isArray(current)
+              ? (current as Record<string, unknown>)
+              : {};
+          blocks[name] = { ...kept, ...patch };
+        }
+        next.integrations = blocks;
       }
 
       const tmp = `${file}.tmp-${process.pid}`;

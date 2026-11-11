@@ -114,6 +114,10 @@ Add or override benchmark scores for models not in the scraped table:
 > ignored (Laya then stays off). Move the values under `integrations.laya`.
 > Top-level keys the router does not know (typos such as `classifer_log`) are
 > warned about too, with the closest known key; the layer is still merged.
+>
+> Switch it from Pi without editing the file: `/router config integration laya on`,
+> `… laya off`, or `… laya shadow` (a mode implies on). `/router status` lists
+> every integration with its state.
 
 An opt-in stage that classifies with a **local Laya sidecar** (Apple
 Silicon / MLX) instead of the cloud chain. Disabled by default and

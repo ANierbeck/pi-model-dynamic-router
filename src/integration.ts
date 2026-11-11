@@ -200,3 +200,60 @@ export function resetIntegrationHealth(name?: string): void {
   if (name === undefined) health.clear();
   else health.delete(name);
 }
+
+/**
+ * Plain lines for every KNOWN integration, configured or not, so a switched-off
+ * one stays visible and the way to switch it on is shown. A configured name
+ * that is not known is reported, never ignored.
+ */
+export function formatIntegrationLines(
+  configured: Record<string, unknown>,
+  specs: Readonly<Record<string, IntegrationSpec>>
+): string[] {
+  const lines: string[] = [];
+  for (const [name, spec] of Object.entries(specs)) {
+    const block = configured[name] as
+      | { enabled?: unknown; mode?: unknown; endpoint?: unknown; checkpoint?: unknown }
+      | undefined;
+    if (block?.enabled !== true) {
+      lines.push(`${name}: off — switch on: /router config integration ${name} on`);
+      continue;
+    }
+    const mode = typeof block.mode === 'string' ? block.mode : spec.defaultMode;
+    lines.push(`${name}: on (${mode})`);
+    const endpoint = typeof block.endpoint === 'string' ? block.endpoint : spec.defaultEndpoint;
+    lines.push(`  endpoint ${endpoint} · ${healthText(name, block.checkpoint)}`);
+  }
+  for (const key of Object.keys(configured)) {
+    if (!Object.hasOwn(specs, key) && !key.startsWith('_') && !key.startsWith('$')) {
+      lines.push(`"${key}" is not a known integration (ignored)`);
+    }
+  }
+  return lines;
+}
+
+function healthText(name: string, checkpoint: unknown): string {
+  const h = getIntegrationHealth(name);
+  const configuredVersion = typeof checkpoint === 'string' ? checkpoint : 'version unknown';
+  if (h.state === 'ok') return `reachable (${h.version ?? configuredVersion})`;
+  if (h.state === 'down') return `unreachable${h.lastError ? ` (${h.lastError})` : ''}`;
+  return 'not probed yet (probes on first use)';
+}
+
+/**
+ * Why a switch patch is refused, or undefined when it is fine. Enabled must be
+ * a real boolean (the string "false" is truthy); the mode must be one the
+ * integration accepts.
+ */
+export function checkIntegrationPatch(
+  spec: IntegrationSpec,
+  patch: { enabled?: unknown; mode?: string }
+): string | undefined {
+  if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') {
+    return 'enabled must be true or false';
+  }
+  if (patch.mode !== undefined && !spec.modes.includes(patch.mode)) {
+    return `mode "${patch.mode}" is not one of ${spec.modes.join(', ')}`;
+  }
+  return undefined;
+}
