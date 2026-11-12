@@ -101,6 +101,26 @@ describe('stale groups fingerprint in the persisted dynamic config', () => {
     }
   });
 
+  it('ignores a snapshot whose free_models fingerprint mismatches the configured free_models', async () => {
+    // Closed PR #103: free_models admit candidates into the frozen group
+    // lists, so a snapshot built before a free_models change is as stale as a
+    // groups-drifted one. The load-side guard matters because the background
+    // scan regenerates only later — until then the old group lists would be
+    // used (openrouter/openrouter/free never reached `simple`, live
+    // 2026-11-05).
+    const legacy = {
+      model_groups: { tactical: { method: 'best' } },
+      _dynamic: { generated_at: 'OLD', free_models_fingerprint: 'stale-fingerprint' },
+    };
+    const { registeredProviders, cleanup } = await startRouter(legacy);
+    try {
+      expect(registeredProviders).not.toContain('tactical');
+      expect(registeredProviders).toContain('planning');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('still accepts a snapshot without a fingerprint (legacy file, self-healed by the scan)', async () => {
     const legacy = {
       model_groups: { tactical: { method: 'best' } },

@@ -21,6 +21,7 @@ import {
   sortModelsForGroup,
   collectGroupModels,
   computeFallbackGroups,
+  staticFreeModelsFingerprint,
   staticGroupsFingerprint,
   type ModelWithMetadata,
 } from '../src/dynamic-config.ts';
@@ -507,5 +508,32 @@ describe('staticGroupsFingerprint', () => {
 
   it('is stable for an absent group map', () => {
     expect(staticGroupsFingerprint(undefined)).toBe(staticGroupsFingerprint({}));
+  });
+});
+
+describe('staticFreeModelsFingerprint', () => {
+  // Closed PR #103: an added free_models entry must change the fingerprint so the
+  // snapshot is rebuilt; reordering the list or unrelated provider fields must not.
+  const providers = (free: string[], extra: Record<string, unknown> = {}) =>
+    ({
+      openrouter: { billing: 'pay_per_token', free_models: free, ...extra },
+    }) as Config['providers'];
+
+  it('changes when a free_models entry is added', () => {
+    expect(staticFreeModelsFingerprint(providers(['openrouter/a', 'openrouter/b']))).not.toBe(
+      staticFreeModelsFingerprint(providers(['openrouter/a']))
+    );
+  });
+
+  it('ignores entry order and non-free_models provider fields', () => {
+    expect(staticFreeModelsFingerprint(providers(['openrouter/b', 'openrouter/a']))).toBe(
+      staticFreeModelsFingerprint(
+        providers(['openrouter/a', 'openrouter/b'], { billing: 'subscription' })
+      )
+    );
+  });
+
+  it('treats an empty list like no list', () => {
+    expect(staticFreeModelsFingerprint(providers([]))).toBe(staticFreeModelsFingerprint(undefined));
   });
 });
