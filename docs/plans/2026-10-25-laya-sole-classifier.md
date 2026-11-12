@@ -2,9 +2,7 @@
 
 Status: owner decisions recorded 2026-10-25; implementation partly done (see
 "State"). 2026-11-08: steps 1, 2 and 4 are done; open are the data-driven
-steps 3, 5 and 6, which need real Laya decisions to accumulate first. Branch: `laya-spike` (the former feat/laya-active-snapshot was
-folded into it in the 2026-10-25 branch cleanup; the live build runs from this
-branch).
+steps 3, 5 and 6, which need real Laya decisions to accumulate first. The spike branch `laya-spike` no longer exists locally or on `origin` (checked 2026-11-12); its code is on `main` (e.g. `src/laya-classifier.ts`, PRs #147-#150).
 
 ## Owner decisions (2026-10-25)
 

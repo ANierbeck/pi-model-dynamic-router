@@ -2,7 +2,7 @@
 
 > Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
 
-> **Fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router)** — adds content-based dynamic routing (prompt classification → model group) on top of the upstream's price/quality/availability routing.
+> **Origin:** this project started in 2026 as a fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) and has since been rewritten almost completely: content-based routing, failover, the Laya classifier and the test suite are new work. A small part of the original (about 0.5 % of today's lines, in 21 files) remains and keeps its copyright notice, see [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
 ## What You Get
 
@@ -228,7 +228,7 @@ unchanged. It is **experimental** and **disabled by default** — see
   `POST /classify` (the current reference server lives in the GitHub repo at
   `spikes/laya-http/server.py` — it is not part of the npm package, and it
   reports what it serves on `GET /health`, which the decision log and
-  `/router status` use; a packaged cross-platform sidecar is planned, see
+  the `/router` overview use; a packaged cross-platform sidecar is planned, see
   `docs/plans/2026-10-31-laya-sidecar-distribution.md`). The router only
   talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` — enforced at
   config load) and never downloads weights.
@@ -682,7 +682,7 @@ Arrays replace the shipped value in any layer, so set the full list you want.
 Absent or empty (the default) turns the filter off. The classifier chain never
 passes through this filter, so small models still classify.
 
-> Upgrading from a pre-1.7.0 version? The CHANGELOG's combined migration
+> Upgrading from a pre-2.0.0 version (any 1.x release)? The CHANGELOG's combined migration
 > snippet carries the concrete prefix list this filter used to ship with
 > (mistral-small-, magistral-small-, ministral-, voxtral-, codestral-).
 
@@ -820,7 +820,6 @@ discovers automatically.
 | `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
-| `/router reload` | Hot-reload config and cache |
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
 | `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
@@ -902,7 +901,7 @@ The router uses a **modular architecture** with the following components:
 | **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
 
 **index.ts wiring (2026-10 refactor):** index.ts is now a thin extension entry point
-(~640 lines, down from ~3750): it owns the shared mutable state (the one `cache`
+(~1200 lines, down from ~3750): it owns the shared mutable state (the one `cache`
 object, `cfg`, managers), `load()`/`loadCache()`, and
 `buildOrchestratorContext()`. All behavior lives in `createX(deps)` factory
 modules that receive **live getters** (plus setters for write access) so
@@ -957,6 +956,6 @@ repository a push is already a publication. See `AGENTS.md` §8.
 
 ## License
 
-The router code is MIT, see [`LICENSE`](LICENSE) (copyright a-canary, the author of the original `pi-model-router`, and Achim Nierbeck).
+The router code is MIT, see [`LICENSE`](LICENSE). Copyright is Achim Nierbeck's, except for the files that still contain code of the original `pi-model-router`: those keep the original author's notice (a-canary) next to it. The list and how it was measured: [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
 The Laya `router` model weights are a separate work under the Apache License 2.0, derived from the Apache-2.0 model `convaiinnovations/laya-multilingual`. Every installed model directory carries its own `LICENSE` and `NOTICE` (sources in [`laya-models/`](laya-models/)).

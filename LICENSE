@@ -1,5 +1,13 @@
 MIT License
 
+Copyright (c) 2026 Achim Nierbeck
+
+This notice applies to every file of this repository except the files named in
+the next paragraph.
+
+Files listed in docs/upstream-attribution.md contain code of the original
+pi-model-router and carry this notice instead:
+
 Copyright (c) 2026 a-canary
 Copyright (c) 2026 Achim Nierbeck
 

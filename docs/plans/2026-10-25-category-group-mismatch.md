@@ -1,11 +1,6 @@
 # Categories and groups do not line up
 
-**Status:** in progress (2026-10-28). Steps 1-6 are implemented on branch
-`feat/five-groups` (commits `eafa938` layout, `388d81e` removed-group
-warning), not pushed. Still open: the owner's own `router-config.user.json`
-(it names `tactical` and `scout`; the loader now warns and drops them) and
-the release decision. D1-D7 are decided; the replay behind Step 3 is
-`docs/research/2026-10-28-pool-content-replay.md`.
+**Status:** done (verified 2026-11-12 against `main` dc77245) — the five-group layout is on `main` (`eafa938`), unreleased until 2.0.0. Steps 1-6 landed; the owner's `router-config.user.json` no longer names `tactical` or `scout`. D1-D7 are decided; the replay behind Step 3 is `docs/research/2026-10-28-pool-content-replay.md`.
 
 **Verified against:** `origin/main` 6f4ac08 (`router-config.json`,
 `src/content-classifier.ts` `CATEGORY_TO_GROUP`, `src/stream-orchestrator.ts`,

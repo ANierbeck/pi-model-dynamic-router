@@ -141,7 +141,7 @@ and the router now ignores it with a warning), offer to move its values into
 ```
 
 Shadow mode only logs Laya's answer and does not change the route. The user
-can switch to `"active"` later, after reviewing `/router status` and the
+can switch to `"active"` later, after reviewing `/router` and the
 decision log.
 
 ### 8. Sidecar (not started by this skill)
@@ -168,10 +168,10 @@ Compare the answer with the install:
 - `artifact_sha256` must equal the value from step 5. If it differs, a different
   model is being served. Tell the user and do not rely on it.
 - `model` and `version` must read `router` and `1.0.0`.
-- `head_sha256`: the router warns in `/router status` if it differs from the
+- `head_sha256`: the router warns in `/router` if it differs from the
   router's own head.
 
-The stage probes on first use. Before the first classified prompt, `/router status`
+The stage probes on first use. Before the first classified prompt, `/router`
 says "not probed yet". After it, the Laya line shows
 `laya:router@1.0.0 (reported by the sidecar, …)`.
 
