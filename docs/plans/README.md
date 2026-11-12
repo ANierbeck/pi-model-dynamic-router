@@ -43,6 +43,7 @@ raises `plansMissingFromIndex` — both pinned, so neither can grow.
 | [`2026-10-08-laya-spike-brief.md`](2026-10-08-laya-spike-brief.md) | Laya spike — build brief (evening of 2026-10-08) | done — spike ran |  |  |
 | [`2026-10-08-mutation-r2-summary.md`](2026-10-08-mutation-r2-summary.md) | Mutation Nightly R2 — result and wrap-up (2026-10-08, run  | done — result doc |  |  |
 | [`2026-10-09-laya-tasks1-5.md`](2026-10-09-laya-tasks1-5.md) | Laya Integration — Tasks 1 to 5 (implementation-ready) | done |  |  |
+| [`2026-10-10-model-identity-and-quality-cascade.md`](2026-10-10-model-identity-and-quality-cascade.md) | Model Identity & Quality Cascade Implementation Plan | deferred — D1-D6 done or obsolete, cascade Phase C/D after 2.0 | Score every model by the right AA record (identity-exact) and rank by a cascaded quality score |  |
 | [`2026-10-11-category-model-alignment.md`](2026-10-11-category-model-alignment.md) | Category–Model Alignment Implementation Plan | superseded by 2026-10-25-category-group-mismat | Each classification category routes to a group whose *effective* |  |
 | [`2026-10-15-laya-shadow-evaluation.md`](2026-10-15-laya-shadow-evaluation.md) | Laya shadow evaluation — protocol | done 2026-11-07 — NO-GO (decision rule confirmed; comparator run R2 parked) |  |  |
 | [`2026-10-25-category-group-mismatch.md`](2026-10-25-category-group-mismatch.md) | Categories and groups do not line up | done — five-group layout shipped |  | D5 and D6 below |
