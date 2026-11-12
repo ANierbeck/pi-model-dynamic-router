@@ -1,0 +1,1208 @@
+// Vendored from NandhaKishorM/laya, laya-ts/src/router.ts, at commit 3a38cbe (v0.4.31).
+// Licence: Apache-2.0, see ../../LICENSE-laya. Changes to the body: none; this
+// header is the only addition. Plan: docs/plans/2026-11-11-onnx-sidecar-package.md (D2).
+import { analyse, validateExplain, type AnalyseOptions, type AnalyseResult } from "./lang.js";
+import { checkQuestion, type PredictOptions, type QuestionDef, type SystemOneResult } from "./agent.js";
+import { skippedLongResult, validateLongOptions, validateLongResult, type LongPredictOptions, type LongResult } from "./predict-long.js";
+import { checkMaxLoaded, checkMinConfidence, flagLowConfidence } from "./common.js";
+import { decide, decideBatch, type DecideOptions, type DecideBatchOptions, type DecisionResult } from "./structured.js";
+import {
+  HookRegistry,
+  PredictContext,
+  aggregateUsage,
+  composeHooks,
+  dispatch,
+  markDefaultsRan,
+  dispatchAsync,
+  normaliseHooks,
+  validateHooksTimeout,
+  type Hook,
+  type HookArg,
+  type PredictHook,
+} from "./hooks.js";
+
+export const BUNDLE_REPO = "convaiinnovations/laya";
+
+export interface ModelSpec {
+  repo: string;
+  subfolder: string | null;
+}
+
+export const DEFAULT_MODELS: Record<string, ModelSpec> = {
+  english: { repo: BUNDLE_REPO, subfolder: null },
+  multilingual: { repo: BUNDLE_REPO, subfolder: "multilingual" },
+  "typed-decisions": { repo: BUNDLE_REPO, subfolder: "typed-decisions" },
+};
+
+export const STANDALONE_MODELS: Record<string, string> = {
+  english: "convaiinnovations/laya",
+  multilingual: "convaiinnovations/laya-multilingual",
+  "typed-decisions": "convaiinnovations/laya-typed-decisions",
+};
+
+export type ModelName = "english" | "multilingual" | "typed-decisions";
+
+const ALIASES: Record<string, ModelName> = {
+  en: "english",
+  laya: "english",
+  default: "english",
+  multi: "multilingual",
+  ml: "multilingual",
+  "laya-multilingual": "multilingual",
+  typed: "typed-decisions",
+  typed_decisions: "typed-decisions",
+  "laya-typed-decisions": "typed-decisions",
+  decisions: "typed-decisions",
+};
+
+export function normaliseName(name: string): ModelName {
+  const raw = String(name).trim().toLowerCase();
+  const key = ALIASES[raw] ?? raw;
+  if (!(key in DEFAULT_MODELS)) {
+    throw new Error(
+      `unknown model ${JSON.stringify(name)}; choose one of ${JSON.stringify(
+        Object.keys(DEFAULT_MODELS).sort(),
+      )} (or an alias: ${JSON.stringify(Object.keys(ALIASES).sort())})`,
+    );
+  }
+  return key as ModelName;
+}
+
+const TYPED_DECISION_WORKFLOWS: Record<string, Set<string>> = {
+  agent_trace_observability: new Set(["action", "needs_review", "outcome", "risk", "urgency"]),
+  customer_service: new Set(["action", "category", "churn_risk", "needs_human", "urgency"]),
+  invoice_processing: new Set(["discrepancy_severity", "disposition", "duplicate", "matches_order", "urgency"]),
+  security_incidents: new Set(["credential_compromise", "disposition", "severity", "true_positive", "urgency"]),
+};
+
+export function matchTypedDecisionsWorkflow(
+  questions: Record<string, unknown> | null | undefined,
+): string | null {
+  const ids = new Set(Object.keys(questions ?? {}));
+  for (const [wf, sig] of Object.entries(TYPED_DECISION_WORKFLOWS)) {
+    if (sig.size === ids.size && [...sig].every((id) => ids.has(id))) return wf;
+  }
+  return null;
+}
+
+const ENGLISH_SUBTAGS = new Set(["en", "eng", "english"]);
+
+// Valid `$LANG` values that name no language, so they answer nothing about the state: `C`,
+// `POSIX` and `C.UTF-8` (the official Python image's default), plus the ISO 639-2 special codes
+// `und` (undetermined), `zxx` (no linguistic content) and `mul` (multiple). They abstain like a
+// blank code instead of forcing the multilingual checkpoint on English text (Python parity).
+const LANGUAGE_AGNOSTIC_CODES = new Set(["c", "posix", "und", "zxx", "mul"]);
+
+export function englishFromCode(value: unknown): boolean | null {
+  if (value === null || value === undefined) return null;
+  let code = String(value).trim().toLowerCase();
+  if (!code) return null;
+  code = code.split(".", 1)[0]; // en_US.UTF-8 -> en_US
+  const primary = code.replace(/_/g, "-").split("-", 1)[0]; // en_US -> en
+  if (!primary || LANGUAGE_AGNOSTIC_CODES.has(primary)) return null;
+  return ENGLISH_SUBTAGS.has(primary);
+}
+
+/** Parity alias for the Python `_english_from_code` name. */
+export const _englishFromCode = englishFromCode;
+
+export interface RouteDecision {
+  model: ModelName;
+  repo: string;
+  reason: string;
+  detection: AnalyseResult | null;
+  workflow: string | null;
+}
+
+export type RoutedResult = SystemOneResult & { routing: RouteDecision };
+export type RoutedLongResult = LongResult & { routing: RouteDecision };
+export type RoutedLongPredictOptions = RouteOptions & LongPredictOptions;
+
+function validLongRouting(routing: RouteDecision | undefined): boolean {
+  if (!routing || typeof routing !== "object" || Array.isArray(routing) ||
+      !Object.hasOwn(DEFAULT_MODELS, routing.model) || typeof routing.repo !== "string" ||
+      typeof routing.reason !== "string" ||
+      (routing.workflow !== null && typeof routing.workflow !== "string")) return false;
+  const d = routing.detection;
+  return d === null || (typeof d === "object" && !Array.isArray(d) &&
+    typeof d.script === "string" && (d.language === null || typeof d.language === "string") &&
+    typeof d.isEnglish === "boolean" && typeof d.languageUndecided === "boolean" &&
+    Number.isFinite(d.diacriticRate) && Number.isFinite(d.nonLatinFraction) &&
+    (d.mixedSegment === null || typeof d.mixedSegment === "string") &&
+    d.scriptProfile !== null && typeof d.scriptProfile === "object" && !Array.isArray(d.scriptProfile) &&
+    Object.values(d.scriptProfile).every((value) => typeof value === "number" && Number.isFinite(value)));
+}
+
+export type LangGuess = string | null | undefined | ((state: unknown) => unknown);
+
+export type AgentLoader = (name: ModelName, spec: ModelSpec) => unknown | Promise<unknown>;
+
+export interface RouterOptions {
+  models?: Record<string, string | ModelSpec | [string, string | null]>;
+  device?: string | null;
+  token?: string | null;
+  maxLoaded?: number;
+  max_loaded?: number;
+  /** Fallback for unidentified text. Defaults to "multilingual", matching Python 0.4.0. */
+  default?: string;
+  autoTaskDetection?: boolean;
+  auto_task_detection?: boolean;
+  standaloneRepos?: boolean;
+  standalone_repos?: boolean;
+  preload?: boolean | string[];
+  langGuess?: LangGuess;
+  lang_guess?: LangGuess;
+  loader?: AgentLoader;
+  /** Optional hub revision (commit SHA/branch/tag) applied to every checkpoint load. */
+  revision?: string | null;
+  /** Per-model revision overrides, keyed by model name or alias. */
+  revisions?: Record<string, string | null>;
+  /** Per-model artifact SHA-256 digest maps, keyed by model name or alias. */
+  sha256Digests?: Record<string, Record<string, string> | null> | null;
+  /** Python-parity snake_case alias for `sha256Digests`. */
+  sha256_digests?: Record<string, Record<string, string> | null> | null;
+  hooks?: HookArg;
+  onPredictStart?: PredictHook;
+  onPredictEnd?: PredictHook;
+  hooksRaise?: boolean;
+  /**
+   * Per-hook time limit in seconds, applied to every hook this Router waits for; null or absent
+   * means no limit. Python's `Router(hooks_timeout=...)`, the same bound `Agent` applies.
+   */
+  hooksTimeout?: number | null;
+  /** Python-parity snake_case alias for `hooksTimeout`. */
+  hooks_timeout?: number | null;
+}
+
+export interface RouteOptions {
+  model?: string | null;
+  task?: string | null;
+  lang?: string | null;
+  langGuess?: LangGuess;
+  lang_guess?: LangGuess;
+  hooks?: HookArg;
+  hooksRaise?: boolean;
+}
+
+/**
+ * Per-call options for `Router.predictBatch` / `predictMany`; `Router.routeBatch` takes the
+ * same bag less the threshold, as `RouteBatchOptions`.
+ * `hooks`, `onPredictStart` and `onPredictEnd` are composed the same way as on `predict`:
+ * `setDefaultHooks` defaults, then installed hooks, then this call's hooks.
+ * `null`, `undefined` and `[]` add nothing.
+ * `hooksRaise` overrides the Router's policy for this call, including `onRoute`.
+ * The start and end callables apply to each request's predict lifecycle, not to routing.
+ * `minConfidence` (Python's `min_confidence`, #361/#394) is the opt-in abstention threshold
+ * `predict` takes: either a number in [0.0, 1.0] or a per-bucket map. Every request's answers
+ * below it come back marked `low_confidence: true`, and each request's `onPredictEnd` hooks see
+ * the mark. `null` or absent writes nothing, exactly as on `predict`.
+ */
+export interface PredictBatchOptions {
+  hooks?: HookArg;
+  onPredictStart?: PredictHook;
+  onPredictEnd?: PredictHook;
+  hooksRaise?: boolean;
+  minConfidence?: PredictOptions["minConfidence"];
+  /** Python parity alias for minConfidence. */
+  min_confidence?: PredictOptions["min_confidence"];
+}
+
+/**
+ * What `Router.routeBatch` takes: `PredictBatchOptions` without the abstention threshold.
+ * Routing runs no inference, so there is nothing there for a threshold to gate, and Python's
+ * `route_batch` takes no `min_confidence` either. The type says so, rather than letting
+ * `router.routeBatch(requests, { minConfidence: 0.8 })` read like a request for gating that
+ * silently asked for none.
+ */
+export type RouteBatchOptions = Omit<PredictBatchOptions, "minConfidence" | "min_confidence"> & AnalyseOptions;
+
+/** One item of a Router.predictBatch/routeBatch batch: state, questions, route and budget overrides. */
+export interface BatchRequest {
+  state: unknown;
+  questions: Record<string, QuestionDef>;
+  model?: string | null;
+  task?: string | null;
+  lang?: string | null;
+  langGuess?: LangGuess;
+  lang_guess?: LangGuess;
+  /** Per-request token budgets; null = agent config. Start hooks may override them. */
+  maxLen?: number | null;
+  headMaxLen?: number | null;
+}
+
+function questionSchema(questions: Record<string, unknown>): string {
+  // Python groups on json.dumps(sort_keys=False, default=str): insertion order is significant
+  // at every nesting level because options are positional in the rendered sequence, so two
+  // equal schemas with different key orders must not share a forward pass. JSON.stringify
+  // preserves insertion order for string keys; the replacer stands in for default=str on
+  // the few value types JSON cannot represent.
+  return JSON.stringify(questions, (_key, value) =>
+    typeof value === "function" || typeof value === "symbol" || typeof value === "bigint"
+      ? String(value)
+      : value,
+  );
+}
+
+/** Turn `LAYA_SHA256_DIGESTS` into per-checkpoint digest maps when it names models. */
+export function digestsFromEnv(
+  models: Record<string, unknown>,
+): Record<string, Record<string, string> | null> {
+  if (typeof process === "undefined" || !process.env) return {};
+  const raw = (process.env["LAYA_SHA256_DIGESTS"] ?? "").trim();
+  if (!raw) return {};
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return {};
+  const entries = Object.entries(data);
+  if (entries.length === 0) return {};
+  const values = entries.map(([, v]) => v);
+  if (values.every((v) => typeof v === "string")) {
+    return {}; // flat: providers already applies it
+  }
+  if (!values.every((v) => typeof v === "object" && v !== null && !Array.isArray(v))) {
+    throw new Error(
+      `LAYA_SHA256_DIGESTS must be either {artifact: digest} for every checkpoint or {model: {artifact: digest}} per checkpoint; ${JSON.stringify(Object.keys(data).sort())} mixes the two or holds a value that is neither`,
+    );
+  }
+  const perModel: Record<string, Record<string, string> | null> = {};
+  for (const [k, v] of entries) {
+    perModel[normaliseName(k)] = v as Record<string, string>;
+  }
+  for (const name of Object.keys(models)) {
+    const norm = normaliseName(name);
+    if (!(norm in perModel)) {
+      perModel[norm] = {};
+    }
+  }
+  return perModel;
+}
+
+export const _digestsFromEnv = digestsFromEnv;
+export const _digests_from_env = digestsFromEnv;
+
+function toSpec(spec: string | ModelSpec | [string, string | null]): ModelSpec {
+  if (typeof spec === "string") return { repo: spec, subfolder: null };
+  if (Array.isArray(spec)) {
+    const [repo, sub] = [...spec, null].slice(0, 2) as [string, string | null];
+    return { repo, subfolder: sub ?? null };
+  }
+  return { repo: spec.repo, subfolder: spec.subfolder ?? null };
+}
+
+function repoStr(spec: ModelSpec): string {
+  return spec.subfolder ? `${spec.repo}/${spec.subfolder}` : spec.repo;
+}
+
+export class Router extends HookRegistry {
+  hooksRaise: boolean;
+  hooksTimeout: number | null;
+  models: Record<string, ModelSpec>;
+  device: string | null;
+  token: string | null | undefined;
+  revision: string | null;
+  revisions: Partial<Record<ModelName, string | null>>;
+  sha256Digests: Record<string, Record<string, string> | null>;
+  get sha256_digests(): Record<string, Record<string, string> | null> {
+    return this.sha256Digests;
+  }
+  maxLoaded: number;
+  default: ModelName;
+  autoTaskDetection: boolean;
+  langGuess: LangGuess;
+  loader: AgentLoader | null;
+  _agents: Map<string, unknown> = new Map();
+  _order: string[] = []; // least-recently-used first
+  private readonly _loading = new Map<string, Promise<unknown>>();
+
+  constructor(opts: RouterOptions = {}) {
+    super();
+    // Hooks are opt-in; an unset hook list is a no-op. Router-level onPredictStart /
+    // onPredictEnd hooks wrap the whole route+infer call and see ctx.decision; see hooks.ts.
+    this.hooks = normaliseHooks(opts.hooks, opts.onPredictStart, opts.onPredictEnd);
+    this.hooksRaise = opts.hooksRaise ?? true;
+    // `None if hooks_timeout is None else validate_timeout(hooks_timeout)` (laya/router.py): read
+    // the limit on the constructor line, so a caller who sets a deadline knows now that it is one.
+    this.hooksTimeout = validateHooksTimeout(opts.hooksTimeout ?? opts.hooks_timeout ?? null);
+    const base: Record<string, string | ModelSpec> = opts.standaloneRepos ?? opts.standalone_repos
+      ? { ...STANDALONE_MODELS }
+      : Object.fromEntries(Object.entries(DEFAULT_MODELS).map(([k, v]) => [k, { ...v }]));
+    this.models = Object.fromEntries(Object.entries(base).map(([k, v]) => [k, toSpec(v)]));
+    if (opts.models) {
+      for (const [k, v] of Object.entries(opts.models)) {
+        this.models[normaliseName(k)] = toSpec(v);
+      }
+    }
+    this.device = opts.device ?? null;
+    this.token = opts.token ?? (typeof process !== "undefined" ? process.env?.["HF_TOKEN"] : undefined);
+    // Optional hub revision applied to every checkpoint load. Per-model overrides support
+    // standalone repositories whose reviewed commits differ.
+    this.revision = opts.revision ?? null;
+    this.revisions = Object.fromEntries(
+      Object.entries(opts.revisions ?? {}).map(([name, value]) => [normaliseName(name), value]),
+    ) as Partial<Record<ModelName, string | null>>;
+    // Per checkpoint SHA-256 map: seeded from a model-named LAYA_SHA256_DIGESTS, then
+    // overridden checkpoint by checkpoint by the argument. Keyed and normalised exactly like
+    // revisions, so a misspelled model name fails here rather than leaving that checkpoint
+    // unverified.
+    this.sha256Digests = digestsFromEnv(this.models);
+    const rawDigests = opts.sha256Digests ?? opts.sha256_digests;
+    if (rawDigests) {
+      for (const [name, val] of Object.entries(rawDigests)) {
+        this.sha256Digests[normaliseName(name)] = val;
+      }
+    }
+    // `max(1, int(max_loaded))`, read the way `int()` reads: a cap `Number()` turns into NaN would
+    // leave `_evict`'s `length > maxLoaded` forever false, so check it instead of disabling it.
+    this.maxLoaded = checkMaxLoaded(opts.maxLoaded ?? opts.max_loaded ?? 2);
+    this.default = normaliseName(opts.default ?? "multilingual");
+    this.autoTaskDetection = Boolean(opts.autoTaskDetection ?? opts.auto_task_detection ?? false);
+    this.langGuess = opts.langGuess ?? opts.lang_guess ?? null;
+    this.loader = opts.loader ?? null;
+    if (opts.preload === true) {
+      void this.preload();
+    } else if (Array.isArray(opts.preload)) {
+      void this.preload(opts.preload);
+    }
+  }
+
+  /** `hooksTimeout` in the milliseconds `dispatchAsync` races against; null starts no timer. */
+  private get hooksTimeoutMs(): number | null {
+    return this.hooksTimeout === null ? null : this.hooksTimeout * 1000;
+  }
+
+  async load(name: string): Promise<unknown> {
+    const key = normaliseName(name);
+    if (this._agents.has(key)) {
+      this._touch(key);
+      return this._agents.get(key);
+    }
+    const loading = this._loading.get(key);
+    if (loading) return loading;
+    // Start in a microtask so even a synchronous loader sees its in-flight entry.
+    const pending = Promise.resolve().then(async () => {
+      let agent: unknown;
+      if (this.loader) {
+        agent = await this.loader(key, this.models[key]);
+      } else {
+        const { Agent } = await import("./agent.js");
+        const spec = this.models[key];
+        const revision = Object.prototype.hasOwnProperty.call(this.revisions, key)
+          ? this.revisions[key]
+          : this.revision;
+        const opts: Record<string, unknown> = {
+          subfolder: spec.subfolder,
+          device: this.device ?? undefined,
+          token: this.token ?? undefined,
+        };
+        if (revision) opts.revision = revision;
+        if (Object.prototype.hasOwnProperty.call(this.sha256Digests, key)) {
+          opts.expectedSha256 = this.sha256Digests[key] ?? {};
+        }
+        agent = await (Agent as unknown as {
+          load(repo: string, opts?: Record<string, unknown>): Promise<unknown>;
+        }).load(spec.repo, opts);
+      }
+      this._agents.set(key, agent);
+      this._order.push(key);
+      const evicted = this._evict();
+      // Lifecycle hooks fire after the maps settle, so a hook can safely call the Router.
+      for (const victim of evicted) {
+        await dispatchAsync(
+          composeHooks(this.hooks),
+          "onEvict",
+          new PredictContext({ states: [], questions: {}, model: victim, router: this }),
+          { raiseErrors: this.hooksRaise, timeoutMs: this.hooksTimeoutMs },
+        );
+      }
+      await dispatchAsync(
+        composeHooks(this.hooks),
+        "onLoad",
+        new PredictContext({ states: [], questions: {}, model: key, agent, router: this }),
+        { raiseErrors: this.hooksRaise, timeoutMs: this.hooksTimeoutMs },
+      );
+      return agent;
+    });
+    this._loading.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      this._loading.delete(key);
+    }
+  }
+
+  _touch(key: string): void {
+    const i = this._order.indexOf(key);
+    if (i !== -1) this._order.splice(i, 1);
+    this._order.push(key);
+  }
+
+  /** Drop least-recently-used agents until `maxLoaded` holds. Returns evicted names. */
+  _evict(): string[] {
+    const evicted: string[] = [];
+    while (this._order.length > this.maxLoaded) {
+      const victim = this._order.shift()!;
+      if (this._agents.delete(victim)) evicted.push(victim);
+    }
+    // Keep the two views consistent.
+    if (this._order.length < this._agents.size) {
+      for (const k of [...this._agents.keys()]) {
+        if (!this._order.includes(k)) {
+          this._agents.delete(k);
+          evicted.push(k);
+        }
+      }
+    }
+    return evicted;
+  }
+
+  attach(name: string, agent: unknown): unknown {
+    const key = normaliseName(name);
+    this._agents.set(key, agent);
+    this._touch(key);
+    this.maxLoaded = Math.max(this.maxLoaded, this._agents.size);
+    return agent;
+  }
+
+  async preload(names?: string[]): Promise<this> {
+    const keys = (names ?? Object.keys(this.models)).map((n) => normaliseName(n));
+    this.maxLoaded = Math.max(this.maxLoaded, new Set([...keys, ...this._agents.keys()]).size);
+    for (const n of keys) {
+      if (!this._agents.has(n)) await this.load(n);
+    }
+    return this;
+  }
+
+  unload(name?: string | null): void {
+    if (name === null || name === undefined) {
+      this._agents.clear();
+      this._order = [];
+    } else {
+      const key = normaliseName(name);
+      this._agents.delete(key);
+      const i = this._order.indexOf(key);
+      if (i !== -1) this._order.splice(i, 1);
+    }
+  }
+
+  get loaded(): string[] {
+    return [...this._order];
+  }
+
+  _resolveHint(hint: LangGuess, state: unknown): boolean | null {
+    if (hint === null || hint === undefined) return null;
+    const value = typeof hint === "function" ? (hint as (s: unknown) => unknown)(state) : hint;
+    return englishFromCode(value);
+  }
+
+  /**
+   * Decide which checkpoint to use, then let `onRoute` hooks observe or replace the decision.
+   *
+   * `ctx.decision` is the RouteDecision; a hook may replace it (for example to pin a
+   * checkpoint) and the replacement is what gets returned and used. `opts.hooks` are
+   * per-call hooks, appended after any installed on the Router.
+   */
+  route(
+    state: unknown,
+    questions: Record<string, unknown> | null = null,
+    opts: RouteOptions & AnalyseOptions = {},
+  ): RouteDecision {
+    if (questions !== null && questions !== undefined) {
+      if (typeof questions !== "object" || Array.isArray(questions)) {
+        throw new TypeError(
+          `questions must be a dict of question id -> definition, got ${Array.isArray(questions) ? "Array" : typeof questions}`,
+        );
+      }
+    }
+    const decision = this._route(state, questions, opts);
+    const raiseErrors = opts.hooksRaise ?? this.hooksRaise;
+    const active = composeHooks(this.hooks, opts.hooks);
+    const ctx = new PredictContext({
+      states: [state],
+      questions: (questions ?? {}) as Record<string, unknown>,
+      decision: decision as unknown as Record<string, unknown>,
+      router: this,
+    });
+    dispatch(active, "onRoute", ctx, { raiseErrors });
+    return ctx.decision as unknown as RouteDecision;
+  }
+
+  /** Decide which checkpoint to use, without loading, running, or hooking anything. */
+  _route(
+    state: unknown,
+    questions: Record<string, unknown> | null = null,
+    opts: RouteOptions & AnalyseOptions = {},
+  ): RouteDecision {
+    const explain = validateExplain(opts.explain);
+    const { model = null, task = null, lang = null } = opts;
+    const langGuessOpt = opts.langGuess ?? opts.lang_guess ?? null;
+
+    if (model !== null && model !== undefined) {
+      const key = normaliseName(model);
+      return {
+        model: key,
+        repo: repoStr(this.models[key]),
+        reason: `explicit model=${JSON.stringify(model)}`,
+        detection: null,
+        workflow: null,
+      };
+    }
+
+    if (task !== null && task !== undefined) {
+      const key = normaliseName(task);
+      return {
+        model: key,
+        repo: repoStr(this.models[key]),
+        reason: `explicit task=${JSON.stringify(task)}`,
+        detection: null,
+        workflow: null,
+      };
+    }
+
+    const workflow = matchTypedDecisionsWorkflow(questions ?? {});
+    if (workflow && this.autoTaskDetection) {
+      return {
+        model: "typed-decisions",
+        repo: repoStr(this.models["typed-decisions"]),
+        reason: `question ids match the ${JSON.stringify(workflow)} typed-decisions workflow`,
+        detection: null,
+        workflow,
+      };
+    }
+
+    // An explicit `lang` is decisive only when the code names a language. Blank or whitespace
+    // resolves to no usable hint, so it falls through to langGuess/detection exactly as an
+    // abstaining hint does (Python parity); real English/non-English codes still route now.
+    const resolvedLang = englishFromCode(lang);
+    if (resolvedLang !== null) {
+      const key: ModelName = resolvedLang ? "english" : "multilingual";
+      return {
+        model: key,
+        repo: repoStr(this.models[key]),
+        reason: `explicit lang=${JSON.stringify(lang)}`,
+        detection: null,
+        workflow,
+      };
+    }
+
+    const hints: Array<[string, LangGuess]> = [
+      ["lang_guess", langGuessOpt],
+      ["Router(lang_guess=...)", this.langGuess],
+    ];
+    for (const [source, hint] of hints) {
+      const resolved = this._resolveHint(hint, state);
+      if (resolved !== null && resolved !== undefined) {
+        const key: ModelName = resolved ? "english" : "multilingual";
+        return {
+          model: key,
+          repo: repoStr(this.models[key]),
+          reason: `${source}: the caller identified this as ${resolved ? "English" : "non-English"} text`,
+          detection: null,
+          workflow,
+        };
+      }
+    }
+
+    const det = analyse(state, { explain });
+    let key: ModelName;
+    let reason: string;
+    if (det.script === "unknown") {
+      key = this.default;
+      reason = `no letters detected in state; using default (${key})`;
+    } else if (det.script !== "latin") {
+      key = "multilingual";
+      reason =
+        `non-Latin script (${det.script}, ${Math.round(100 * det.nonLatinFraction)}% of letters); ` +
+        "the English checkpoint cannot read it";
+    } else if (!det.isEnglish) {
+      key = "multilingual";
+      if (det.mixedSegment) {
+        reason =
+          `Latin script, mostly English, but a line or field reads as ${JSON.stringify(det.language)} ` +
+          `(${JSON.stringify(det.mixedSegment.slice(0, 60))}); the English checkpoint cannot read it`;
+      } else if (det.language) {
+        reason = `Latin script but language looks like ${JSON.stringify(det.language)}, not English`;
+      } else {
+        reason =
+          `Latin script, language not identified but ${Math.round(100 * det.diacriticRate)}% ` +
+          "non-English letters; not safe for the English checkpoint";
+      }
+    } else if (det.languageUndecided) {
+      key = this.default;
+      reason = `Latin script, language not identified and no non-English letters; using default (${key})`;
+    } else {
+      key = "english";
+      reason = "English Latin text";
+    }
+    return { model: key, repo: repoStr(this.models[key]), reason, detection: det, workflow };
+  }
+
+  /**
+   * Route, then answer every question in one forward pass on the chosen checkpoint.
+   *
+   * The result is the usual systemOne payload plus a `routing` key recording the decision.
+   * Router-level `onPredictStart` / `onPredictEnd` hooks wrap the whole route+infer call and
+   * see `ctx.decision`; see hooks.ts.
+   */
+  async predict(
+    state: unknown,
+    questions: Record<string, QuestionDef>,
+    opts: RouteOptions & PredictOptions = {},
+  ): Promise<RoutedResult> {
+    return this._predict(state, questions, opts) as Promise<RoutedResult>;
+  }
+
+  /** Route the document once, then scan it using the selected Agent's window budget. */
+  async predictLong(
+    state: unknown,
+    questions: Record<string, QuestionDef>,
+    opts: RoutedLongPredictOptions = {},
+  ): Promise<RoutedLongResult> {
+    validateLongOptions(opts);
+    return this._predict(state, questions, opts, opts) as Promise<RoutedLongResult>;
+  }
+
+  private async _predict(
+    state: unknown,
+    questions: Record<string, QuestionDef>,
+    opts: RouteOptions & PredictOptions,
+    scan?: LongPredictOptions,
+  ): Promise<RoutedResult | RoutedLongResult> {
+    if (state === null || state === undefined) {
+      throw new TypeError("state must not be None; pass a string, dict, or list");
+    }
+    if (typeof questions !== "object" || questions === null || Array.isArray(questions)) {
+      throw new TypeError(
+        `questions must be a dict of question id -> definition, got ${questions === null ? "null" : Array.isArray(questions) ? "Array" : typeof questions}`,
+      );
+    }
+    const mcOpt = scan ? undefined : opts.minConfidence ?? opts.min_confidence;
+    const mc = mcOpt !== undefined && mcOpt !== null ? checkMinConfidence(mcOpt) : null;
+    const active = composeHooks(this.hooks, opts.hooks, opts.onPredictStart, opts.onPredictEnd);
+    const raiseErrors = opts.hooksRaise ?? this.hooksRaise;
+    // `self.hooks_timeout if hooks_timeout is None else validate_timeout(hooks_timeout)`
+    // (laya/router.py predict): a per-call limit replaces the Router's, it does not shorten it.
+    // One read covers both paths because `predictLong` hands the same object as `opts` and `scan`,
+    // and it gives the long path the Router default it did not have -- before, a limit there came
+    // only from `scan.hooksTimeout`, never from the Router the caller built.
+    const hooksTimeout = validateHooksTimeout(opts.hooksTimeout ?? this.hooksTimeout);
+    const timeoutMs = hooksTimeout === null ? null : hooksTimeout * 1000;
+    const hasStart = active.some((h) => typeof h.onPredictStart === "function");
+    // The per-call token-budget overrides seed the context, so a start hook can read and rewrite
+    // them exactly as it can `states`/`questions`; the values it leaves are what reaches the agent
+    // below. Python's Router.predict builds its context the same way (router.py: `PredictContext(
+    // ..., max_len=max_len, head_max_len=head_max_len)`).
+    const ctx = new PredictContext({
+      states: [state],
+      questions: questions as Record<string, unknown>,
+      decision: null,
+      model: null,
+      agent: null,
+      router: this,
+      maxLen: scan ? null : opts.maxLen ?? null,
+      headMaxLen: scan ? null : opts.headMaxLen ?? null,
+    });
+    try {
+      // Per-call hooks apply to the whole call, including onRoute inside route().
+      const decision = this.route(state, questions, opts);
+      ctx.decision = { ...decision } as unknown as Record<string, unknown>;
+      ctx.model = decision.model;
+      const agent = (await this.load(decision.model)) as {
+        systemOne(
+          s: unknown,
+          q: Record<string, QuestionDef>,
+          opts?: PredictOptions,
+        ): Promise<SystemOneResult>;
+      };
+      ctx.agent = agent;
+
+      await dispatchAsync(active, "onPredictStart", ctx, { raiseErrors, timeoutMs });
+      if (ctx.results === null) {
+        if (hasStart) {
+          if (typeof ctx.questions !== "object" || ctx.questions === null || Array.isArray(ctx.questions)) {
+            throw new TypeError(
+              `questions must be a dict of question id -> definition, got ${ctx.questions === null ? "null" : Array.isArray(ctx.questions) ? "Array" : typeof ctx.questions}`,
+            );
+          }
+        }
+        for (const [qid, qdef] of Object.entries(ctx.questions as Record<string, QuestionDef>)) {
+          checkQuestion(qid, qdef);
+        }
+        // Python parity (router.py predict): the request's language also shapes the answer
+        // distribution through the agent's lang_temperatures. An explicit lang wins; otherwise
+        // forward the language the router detected for the routing decision, "en" included --
+        // Python's `analyse` names English "en" too (laya/lang.py, `_latin_profile`), and
+        // `lang_temperatures` may carry an "en" entry, so replacing it with null made that
+        // override dead code on this path while the same agent honoured it when called directly.
+        const detected = decision.detection?.language;
+        const effectiveLang = opts.lang ?? detected ?? null;
+        const agentOpts: PredictOptions = { lang: effectiveLang };
+        if (mc !== null) agentOpts.minConfidence = mc;
+        // Forwarded only when set, as Python does: an absent override means "the agent's own
+        // config", and `null`/`undefined` must not overwrite a deployment's configured budget.
+        if (ctx.maxLen !== null && ctx.maxLen !== undefined) agentOpts.maxLen = ctx.maxLen;
+        if (ctx.headMaxLen !== null && ctx.headMaxLen !== undefined) agentOpts.headMaxLen = ctx.headMaxLen;
+        markDefaultsRan(agentOpts);
+        let result: RoutedResult | RoutedLongResult;
+        if (scan) {
+          // Read the context after start hooks, but run inference outside hook dispatch. A
+          // timeout or suppressed hook error must never turn a scan into one truncated pass.
+          const runner = ctx.agent as { predictLong?: (s: unknown, q: Record<string, QuestionDef>, o: LongPredictOptions) => Promise<LongResult> } | null;
+          if (typeof runner?.predictLong !== "function") {
+            throw new TypeError("Router.predictLong requires the routed agent to implement predictLong");
+          }
+          const detection = ctx.decision?.detection as AnalyseResult | null | undefined;
+          const longOpts: LongPredictOptions = {
+            window: scan.window, stride: scan.stride, aggregate: scan.aggregate,
+            batchSize: scan.batchSize, lang: scan.lang ?? detection?.language ?? null,
+          };
+          markDefaultsRan(longOpts);
+          const scanned = await runner.predictLong(ctx.states[0], ctx.questions as Record<string, QuestionDef>, longOpts);
+          validateLongResult(scanned, "Router.predictLong agent result");
+          result = { ...scanned, routing: (scanned as RoutedLongResult).routing ?? { ...decision } };
+        } else {
+          result = (await agent.systemOne(ctx.states[0], ctx.questions as Record<string, QuestionDef>, agentOpts)) as RoutedResult;
+          result.routing = { ...decision };
+        }
+        ctx.results = [result as unknown as Record<string, unknown>];
+      } else {
+        if (scan) {
+          if (!Array.isArray(ctx.results) || ctx.results.length !== 1) {
+            throw new Error("Router.predictLong: a skipping hook must return exactly one document result");
+          }
+          ctx.results = [skippedLongResult(ctx.results[0]) as unknown as Record<string, unknown>];
+          console.warn("laya: Router.predictLong: a start hook answered the document without scanning; usage.windows is 0");
+        }
+        // A cache hit short-circuits inference, but predict still promises a `routing` key.
+        // Add it without overwriting a routing the cached payload already has.
+        for (const result of ctx.results) {
+          if (result && typeof result === "object" && !("routing" in result)) {
+            (result as unknown as RoutedResult).routing = { ...decision };
+          }
+        }
+      }
+    } catch (err) {
+      ctx.error = err;
+      try {
+        await dispatchAsync(active, "onError", ctx, { raiseErrors, timeoutMs });
+      } catch {
+        // A failing onError hook must not hide the failure that triggered it.
+      }
+      throw err;
+    } finally {
+      ctx.markElapsed();
+      if (ctx.results !== null && (!scan || Array.isArray(ctx.results))) {
+        ctx.usage = aggregateUsage(ctx.results);
+        if (mc !== null) {
+          flagLowConfidence(ctx.results as unknown as Record<string, unknown>[], mc);
+        }
+      }
+      try {
+        await dispatchAsync(active, "onPredictEnd", ctx, { raiseErrors, timeoutMs });
+      } catch (hookErr) {
+        // End hooks run on the failure path too; do not let one mask the real error.
+        if (ctx.error === null) throw hookErr;
+      }
+    }
+    if (scan) {
+      if (!Array.isArray(ctx.results) || ctx.results.length !== 1) {
+        throw new Error("Router.predictLong must return exactly one document result");
+      }
+      validateLongResult(ctx.results[0], "Router.predictLong result");
+      const routing = ctx.results[0].routing as RouteDecision | undefined;
+      if (!validLongRouting(routing)) {
+        throw new TypeError("Router.predictLong result must include a valid routing decision");
+      }
+    }
+    return (ctx.results as unknown as (RoutedResult | RoutedLongResult)[])[0];
+  }
+
+  /**
+   * Answer `state` against a JSON schema (or explicit `opts.questions`) and return typed
+   * values — see `structured.ts`. Routing options (`model`, `task`, ...) are forwarded to
+   * `predict`.
+   */
+  async decide(
+    state: unknown,
+    schema: unknown,
+    opts: DecideOptions & RouteOptions & PredictOptions & { returnDetails: true },
+  ): Promise<DecisionResult>;
+  async decide(
+    state: unknown,
+    schema?: unknown,
+    opts?: DecideOptions & RouteOptions & PredictOptions,
+  ): Promise<Record<string, unknown>>;
+  async decide(
+    state: unknown,
+    schema?: unknown,
+    opts: DecideOptions & RouteOptions & PredictOptions = {},
+  ): Promise<Record<string, unknown> | DecisionResult> {
+    return decide(this, state, schema, opts);
+  }
+
+  /**
+   * Answer many states against one schema in one batched call (Python `Router.decide_batch` parity).
+   * Requests route per state and evaluate through `predictBatch` (grouped forward passes, results
+   * in input order). See `structured.ts`.
+   */
+  async decideBatch(
+    states: unknown[],
+    schema: unknown,
+    opts: DecideBatchOptions & RouteOptions & PredictOptions & { returnDetails: true },
+  ): Promise<DecisionResult[]>;
+  async decideBatch(
+    states: unknown[],
+    schema?: unknown,
+    opts?: DecideBatchOptions & RouteOptions & PredictOptions,
+  ): Promise<Record<string, unknown>[]>;
+  async decideBatch(
+    states: unknown[],
+    schema?: unknown,
+    opts: DecideBatchOptions & RouteOptions & PredictOptions = {},
+  ): Promise<Record<string, unknown>[] | DecisionResult[]> {
+    return decideBatch(this, states, schema, opts);
+  }
+
+  async systemOne(
+    state: unknown,
+    questions: Record<string, QuestionDef>,
+    opts: RouteOptions & PredictOptions = {},
+  ): Promise<RoutedResult> {
+    return this.predict(state, questions, opts);
+  }
+
+  /**
+   * Route many requests in one call (Python `Router.route_batch` parity). Every request is
+   * validated before anything loads, so a malformed batch fails fast. Entries keep input
+   * order; routing is deterministic, so repeated batches route identically.
+   */
+  routeBatch(requests: BatchRequest[], opts: RouteBatchOptions = {}): RouteDecision[] {
+    const explain = validateExplain(opts.explain);
+    if (!Array.isArray(requests)) {
+      throw new TypeError("requests must be an array of request objects");
+    }
+    const decisions: RouteDecision[] = [];
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i];
+      if (typeof request !== "object" || request === null || Array.isArray(request)) {
+        const got = Array.isArray(request) ? "list" : request === null ? "null" : typeof request;
+        throw new TypeError(`request ${i} must be an object, got ${got}`);
+      }
+      if (!("state" in request)) {
+        throw new Error(`request ${i} is missing required key 'state'`);
+      }
+      if (request.state === null || request.state === undefined) {
+        throw new TypeError(`request ${i} 'state' must not be None; pass a string, dict, or list`);
+      }
+      if (!("questions" in request)) {
+        throw new Error(`request ${i} is missing required key 'questions'`);
+      }
+      const questions = request.questions;
+      if (typeof questions !== "object" || questions === null || Array.isArray(questions)) {
+        const got =
+          Array.isArray(questions) ? "list" : questions === null ? "null" : typeof questions;
+        throw new TypeError(`request ${i} 'questions' must be an object, got ${got}`);
+      }
+      decisions.push(
+        this.route(request.state, questions, {
+          model: request.model ?? null,
+          task: request.task ?? null,
+          lang: request.lang ?? null,
+          langGuess: request.langGuess ?? request.lang_guess ?? null,
+          hooks: opts.hooks,
+          hooksRaise: opts.hooksRaise,
+          explain,
+        }),
+      );
+    }
+    return decisions;
+  }
+
+  /**
+   * Route and run many requests in one call (Python `Router.predict_batch` parity).
+   * Requests are routed first, then grouped by checkpoint so each loaded Agent scores its
+   * requests in as few forward passes as possible; results are restored to input order.
+   * The group key is the resolved checkpoint, so an `onRoute` pin that spells it as an alias
+   * ("ml") shares the canonical group's pass instead of splitting into a second forward pass.
+   * Requests routed to the same checkpoint still split into separate `predictBatch` calls
+   * when their question schemas differ (order-sensitively), when per-request start hooks
+   * set different maxLen/headMaxLen overrides, or — for an agent carrying
+   * `lang_temperatures` — when their languages differ: each request's effective language
+   * (an explicit `lang`, otherwise the detected non-English one) is forwarded so the
+   * batched path scores exactly like `predict`.
+   *
+   * Router-level predict hooks run per request: each request gets its own PredictContext
+   * carrying `decision`; `onPredictStart` may rewrite a request or `ctx.skip()` it, and
+   * `onPredictEnd` runs once per started request even when the batch fails.
+   * `opts.hooks`, `opts.onPredictStart` and `opts.onPredictEnd` are composed the way `predict`
+   * composes them: `setDefaultHooks` defaults, then installed hooks, then this call's hooks.
+   * `null` and `[]` add nothing. `hooks`
+   * also run `onRoute`. `opts.hooksRaise` overrides the Router's policy for this call, the way
+   * `predict` uses `opts.hooksRaise ?? this.hooksRaise`.
+   * `opts.minConfidence` (or `min_confidence`) is the abstention threshold `predict` takes, and it
+   * gates this call the same way: validated on the entry line, before anything routes or loads,
+   * and applied to every request's answers before its `onPredictEnd` runs. A batch is not a
+   * second-class entry point for it -- an audit hook on either path sees the same marker.
+   */
+  async predictBatch(
+    requests: BatchRequest[],
+    batchSize: number | null = null,
+    opts: PredictBatchOptions = {},
+  ): Promise<RoutedResult[]> {
+    // Validated on the entry line, before `routeBatch`, as Python does: a threshold the caller
+    // cannot gate at must not cost a routing pass, an `onRoute` hook or a checkpoint load.
+    const mcOpt = opts.minConfidence ?? opts.min_confidence;
+    const mc = mcOpt !== undefined && mcOpt !== null ? checkMinConfidence(mcOpt) : null;
+    const decisions = this.routeBatch(requests, opts);
+    if (decisions.length === 0) return [];
+
+    const groups = new Map<string, number[]>();
+    for (let i = 0; i < decisions.length; i++) {
+      // Indexed, not typed off `RouteDecision.model`: an `onRoute` hook may replace the decision
+      // with a plain object, which `predict` accepts too. Resolved, because such a hook may name
+      // the checkpoint by an alias ("ml") and that request must share its checkpoint's forward
+      // pass -- reading the raw spelling split it into a second `predictBatch` call on the same
+      // Agent. `normaliseName` is what `load` uses, so a pin naming a checkpoint this Router does
+      // not know is refused here, before any group loads or runs.
+      const model = normaliseName(decisions[i].model);
+      const bucket = groups.get(model);
+      if (bucket) bucket.push(i);
+      else groups.set(model, [i]);
+    }
+
+    const results: (RoutedResult | null)[] = new Array(requests.length).fill(null);
+    // `composeHooks`, not `this.hooks`: `setDefaultHooks` defaults, then installed hooks,
+    // then per-call `opts.hooks`, then `opts.onPredictStart` / `opts.onPredictEnd`. The instance
+    // list alone would drop every default `predict` keeps. `routeBatch` has already validated
+    // `opts.hooks`; start and end are validated here, after routing and before a checkpoint loads.
+    const active = composeHooks(this.hooks, opts.hooks, opts.onPredictStart, opts.onPredictEnd);
+    const raiseErrors = opts.hooksRaise ?? this.hooksRaise;
+    // Marks every request that has results, once its group settles and before any end hook runs,
+    // so a request skipped by a start hook and one that just ran through inference read the same
+    // `low_confidence` the caller does. Python's `Router.predict_batch` gates `ctx.results` from
+    // both paths -- the two `apply_confidence_gate(ctx.results, mc)` calls around `_end_contexts`
+    // in `laya/router.py`. With no threshold named this writes nothing: an ungated batch returns
+    // exactly the answers it returned before, marker absent rather than marker false.
+    const gate = (contexts: PredictContext[]): void => {
+      if (mc === null) return;
+      for (const ctx of contexts) {
+        if (ctx.results !== null) flagLowConfidence(ctx.results, mc);
+      }
+    };
+
+    for (const [modelName, indices] of groups) {
+      const agent = (await this.load(modelName)) as {
+        predictBatch?(
+          states: unknown[],
+          questions: Record<string, QuestionDef>,
+          opts?: {
+            batchSize?: number | null;
+            maxLen?: number | null;
+            headMaxLen?: number | null;
+            lang?: string | null;
+          },
+        ): Promise<SystemOneResult[]>;
+        systemOne(
+          state: unknown,
+          questions: Record<string, QuestionDef>,
+          opts?: { lang?: string | null; maxLen?: number | null; headMaxLen?: number | null },
+        ): Promise<SystemOneResult>;
+        langTemperatures?: Record<string, unknown>;
+      };
+      const started: PredictContext[] = [];
+      try {
+        for (const i of indices) {
+          const ctx = new PredictContext({
+            states: [requests[i].state],
+            questions: requests[i].questions as Record<string, unknown>,
+            decision: { ...decisions[i] } as unknown as Record<string, unknown>,
+            model: modelName,
+            agent,
+            router: this,
+            maxLen: requests[i].maxLen ?? null,
+            headMaxLen: requests[i].headMaxLen ?? null,
+          });
+          started.push(ctx);
+          dispatch(active, "onPredictStart", ctx, { raiseErrors });
+        }
+
+        // Order-sensitive at every nesting level (#166): options are positional, so two
+        // equal schemas with different key orders must not share a group.
+        //
+        // Python parity (router.py predict_batch): `predict` forwards the request's language so
+        // the agent can apply its per-language temperatures; the batched path forwarded only the
+        // token budgets, so the same request scored differently depending on the entry point.
+        // Only computed for an agent that actually carries overrides: `lang` is otherwise
+        // unused, and adding it to the group key would split a group that shares one forward
+        // pass today.
+        const hasLangOverrides = Object.keys(agent.langTemperatures ?? {}).length > 0;
+        const questionGroups: {
+          questions: Record<string, unknown>;
+          schema: string;
+          maxLen: number | null;
+          headMaxLen: number | null;
+          lang: string | null;
+          items: [number, PredictContext][];
+        }[] = [];
+        for (let s = 0; s < indices.length; s++) {
+          const i = indices[s];
+          const ctx = started[s];
+          if (ctx.results !== null) {
+            // A cache hit short-circuits inference, but predict still promises a `routing`
+            // key. Add it without overwriting a routing the cached payload already has.
+            for (const result of ctx.results) {
+              if (result && typeof result === "object" && !("routing" in result)) {
+                (result as unknown as RoutedResult).routing = { ...decisions[i] };
+              }
+            }
+            continue;
+          }
+          // An explicit `lang` wins; otherwise forward the language the router detected for the
+          // routing decision, "en" included, exactly as `predict` and Python's predict_batch do.
+          const detectedLang = decisions[i].detection?.language ?? null;
+          const effectiveLang = requests[i].lang ?? detectedLang;
+          const langKey = hasLangOverrides ? effectiveLang : null;
+          const schema = questionSchema(ctx.questions);
+          const found = questionGroups.find(
+            (g) =>
+              g.schema === schema &&
+              g.maxLen === ctx.maxLen &&
+              g.headMaxLen === ctx.headMaxLen &&
+              g.lang === langKey,
+          );
+          if (found) found.items.push([i, ctx]);
+          else {
+            questionGroups.push({
+              questions: ctx.questions,
+              schema,
+              maxLen: ctx.maxLen,
+              headMaxLen: ctx.headMaxLen,
+              lang: langKey,
+              items: [[i, ctx]],
+            });
+          }
+        }
+
+        for (const group of questionGroups) {
+          const agentOpts: {
+            batchSize: number | null;
+            maxLen?: number;
+            headMaxLen?: number;
+            lang?: string;
+          } = { batchSize };
+          // Only pass overrides when set, so an Agent-like object that does not accept
+          // them still works.
+          if (group.maxLen !== null) agentOpts.maxLen = group.maxLen;
+          if (group.headMaxLen !== null) agentOpts.headMaxLen = group.headMaxLen;
+          if (group.lang !== null) agentOpts.lang = group.lang;
+          markDefaultsRan(agentOpts);
+          let batchResults: SystemOneResult[];
+          if (typeof agent.predictBatch === "function") {
+            batchResults = await agent.predictBatch(
+              group.items.map(([, ctx]) => ctx.states[0]),
+              group.questions as Record<string, QuestionDef>,
+              agentOpts,
+            );
+          } else {
+            // Agent-like objects that only implement systemOne (light wrappers, tests)
+            // still work; their states simply share no forward pass.
+            batchResults = [];
+            for (const [, ctx] of group.items) {
+              const singleOpts: { lang?: string; maxLen?: number; headMaxLen?: number } =
+                group.lang === null ? {} : { lang: group.lang };
+              if (group.maxLen !== null) singleOpts.maxLen = group.maxLen;
+              if (group.headMaxLen !== null) singleOpts.headMaxLen = group.headMaxLen;
+              markDefaultsRan(singleOpts);
+              batchResults.push(
+                await agent.systemOne(
+                  ctx.states[0],
+                  group.questions as Record<string, QuestionDef>,
+                  singleOpts,
+                ),
+              );
+            }
+          }
+          if (batchResults.length !== group.items.length) {
+            throw new Error(
+              `internal error: Agent.predictBatch returned ${batchResults.length} results for ${group.items.length} states`,
+            );
+          }
+          for (let s = 0; s < group.items.length; s++) {
+            const [i, ctx] = group.items[s];
+            const result = batchResults[s] as RoutedResult;
+            result.routing = { ...decisions[i] };
+            ctx.results = [result as unknown as Record<string, unknown>];
+          }
+        }
+      } catch (err) {
+        gate(started);
+        for (const ctx of started) {
+          if (ctx.results === null) {
+            ctx.error = err;
+            try {
+              dispatch(active, "onError", ctx, { raiseErrors });
+            } catch {
+              // Chained onto the batch failure, which is the one that propagates.
+            }
+          }
+        }
+        try {
+          this._endContexts(active, started, raiseErrors);
+        } catch {
+          // A failing end hook is chained onto the batch failure, not raised instead.
+        }
+        throw err;
+      }
+      gate(started);
+      this._endContexts(active, started, raiseErrors);
+      for (let s = 0; s < indices.length; s++) {
+        results[indices[s]] = started[s].results![0] as unknown as RoutedResult;
+      }
+    }
+
+    if (results.some((r) => r === null)) {
+      throw new Error("internal error: batch execution did not produce every result");
+    }
+    return results as RoutedResult[];
+  }
+
+  /** Alias of predictBatch, mirroring Python's `Router.predict_many`. */
+  async predictMany(
+    requests: BatchRequest[],
+    batchSize: number | null = null,
+    opts: PredictBatchOptions = {},
+  ): Promise<RoutedResult[]> {
+    return this.predictBatch(requests, batchSize, opts);
+  }
+
+  /**
+   * Run onPredictEnd for every started per-request context and raise the first hook
+   * failure, if any. Elapsed and usage are stamped on every context before any end hook
+   * runs, so one request's end hooks never inflate another request's elapsed time.
+   *
+   * The end hooks run in REVERSE start order, because every request started before any
+   * ended: a hook that opens something in start and closes it in end (a tracing span, an
+   * `AsyncLocalStorage` frame, an in-flight counter) must unwind the last one first, or it
+   * closes the wrong frame and every request after the first inherits a corrupted context.
+   * Python's `Router.predict_batch` ends its contexts the same way and says so
+   * (`laya/router.py::_end_contexts`).
+   */
+  private _endContexts(active: Hook[], contexts: PredictContext[], raiseErrors: boolean): void {
+    for (const ctx of contexts) {
+      ctx.markElapsed();
+      if (ctx.results !== null) ctx.usage = aggregateUsage(ctx.results);
+    }
+    let firstError: unknown = null;
+    for (const ctx of [...contexts].reverse()) {
+      try {
+        dispatch(active, "onPredictEnd", ctx, { raiseErrors });
+      } catch (hookErr) {
+        if (ctx.error === null && firstError === null) firstError = hookErr;
+      }
+    }
+    if (firstError !== null) throw firstError;
+  }
+}

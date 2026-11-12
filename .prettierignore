@@ -17,6 +17,11 @@ archive/
 # Machine data
 docs/mutation-data/
 
+# Vendored upstream sources (laya-sidecar/src/laya) must stay byte-identical
+# to the vendored commit (see the provenance headers); reformatting would break
+# the provenance diff.
+laya-sidecar/src/laya/
+
 # Historical documents — AGENTS.md §12 forbids editing an ADR, and a plan is
 # history once committed; the research notes are measurements, not prose to
 # reflow
