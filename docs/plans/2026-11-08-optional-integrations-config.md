@@ -1,6 +1,6 @@
 # Optional integrations: one contract, one config block, typo-safe user layers
 
-**Status:** in progress 2026-11-11 — all four owner decisions made; the contract, the schema with unknown-key warnings and the rename are done, the consumers outside the repo are migrated, and the `/router status` Integrations section and the `/router config integration` subcommand are done (2026-11-11). The release-blocking open item is the running Pi session (restart to load the config). **Decision 1 is DECIDED
+**Status:** done 2026-11-12 — all four owner decisions made; contract, schema with unknown-key warnings, rename, status/config UI and every consumer (in and outside the repository) landed. The CodexBar follow-up lives in its own plan. Earlier state (2026-11-11): the consumers outside the repo are migrated, and the `/router status` Integrations section and the `/router config integration` subcommand are done (2026-11-11). The release-blocking open item is the running Pi session (restart to load the config). **Decision 1 is DECIDED
 (2026-11-08): rename `classifier_laya` → `integrations.laya` before 2.0.0
 — the contract + rename + migration warning therefore land before the
 release** (part of the "everything Laya" release gate,
@@ -88,4 +88,4 @@ Commit `a9dc015` (`main`, 2026-11-08): `src/types.ts` (`Config`: 22 top-level ke
 - [x] Rename per decision 1 (`RENAMED_*` warning, no alias), config docs, CHANGELOG entry. The CHANGELOG entry sits under `[Unreleased]` and moves to the 2.0.0 heading at release.
 - [x] Consumers outside the repository migrated 2026-11-11 (user config, sidecar manager extension, labeling threshold reader); verified by loading the real user config with the real loader.
 - [x] The install skill snippet and the test that loads it follow the new key.
-- [ ] CodexBar plan continues on this contract.
+- [x] The contract is ready for the next integration; the CodexBar adoption itself is the follow-up plan's own work ([`2026-11-08-external-usage-source-codexbar.md`](2026-11-08-external-usage-source-codexbar.md), proposed, not started).
