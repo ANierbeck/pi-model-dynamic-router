@@ -222,13 +222,13 @@ The upstream repository has no licence text of its own (`package.json` says
 MIT), so the notice must not be dropped before that is settled.
 
 > **Status 2026-11-12:** measured; copyright split decided by the owner and done
-> locally (`LICENSE`, `docs/upstream-attribution.md`: 21 files keep the original
-> notice, all others the owner's name). README banner reworded as an origin note; fetch scope
-> (upstream commits after 2026-04-02) still open.
-> Plan: `docs/plans/2026-11-12-fork-remainder.md` (proposed). Measurement:
+> and merged (PR #156; `LICENSE`, `docs/upstream-attribution.md`: 21 files keep the original
+> notice, all others the owner's name). README banner reworded as an origin note. Upstream is
+> archived and its tip has the same tree as our fork point, so nothing is missing; the package
+> metadata needs no change. **Done.**
+> Plan: `docs/plans/2026-11-12-fork-remainder.md` (done). Measurement:
 > `docs/research/2026-11-12-fork-remainder-measurement.md` — 571 of 2933 baseline
 > lines still at HEAD (at most 19.5 %), 0 of 15 upstream files byte-identical.
-> The banner, the second copyright line and the fetch scope need the owner's call.
 
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
@@ -652,7 +652,8 @@ Pick up in a later round, each as its own plan where noted (§11):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
   disagreement labeling, the `continue` step (both need real Laya decisions
-  to accumulate; the post-restart log holds 20 pairs), and whether the
+  to accumulate; measured 2026-11-12: 91 paired laya/comparator records since the
+  2026-11-08 restart, 49 distinct prompts, 23 raw-category disagreements), and whether the
   momentum observation (enabled in the owner's user layer) gets evaluated.
   Laya stays in the data-reconciliation phase (owner 2026-11-07).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its

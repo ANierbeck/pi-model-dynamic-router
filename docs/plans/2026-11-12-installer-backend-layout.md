@@ -1,6 +1,6 @@
 # Installer: one backend per version — MLX leaves the installer
 
-**Status:** in progress 2026-11-12 — owner decided both open questions the same day (see Decisions). Steps 1–4 are built on `feat/laya-installer-onnx-only`; the staging directory of the weights release still holds four MLX files (step 5, owner action).
+**Status:** done 2026-11-12 — owner decided both open questions the same day (see Decisions); built and merged (PR #159); the four MLX files are gone from the release staging directory and `laya-release-check` passes.
 
 **Problem:** The install layout `<root>/<model>/<version>/` holds one install per version (decision 3 of `docs/plans/2026-11-08-laya-model-artifact.md`), but the manifest offered two artifact sets for `router@1.0.0` (`onnx` and `mlx`). A second backend was refused with a message that hid the installed one, and `--force` replaced the whole version directory without saying so (reproduced in `docs/research/2026-11-12-installer-backend-repro.md`). The layout can still change without a migration only until the weights are published.
 
@@ -31,4 +31,4 @@ Red first (observed before the change): the shipped manifest lists exactly `onnx
 - [x] Step 2: MLX set removed from the manifest; usage text; skill; README; `docs/config-override.md`.
 - [x] Step 3: suites green (manifest, installer, skill, release-check, identity).
 - [x] Step 4: CHANGELOG entry.
-- [ ] Step 5: owner removes the four MLX files from the staging directory; `laya-release-check` then passes.
+- [x] Step 5: the four MLX files were removed from the staging directory (2026-11-12, with the owner's go; all four were hard links, the originals in `r2-1.0.0/mlx/` are intact); `laya-release-check` reports `ok` for `router@1.0.0`.

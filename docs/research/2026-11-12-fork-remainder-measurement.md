@@ -60,7 +60,7 @@ Files deleted since the fork point: `integration.test.ts`, `model-utils.ts`, `mo
 
 ## Caveats
 
-- **Only the history in this repository is measured.** The upstream repository may have commits after `2026-04-02` that were never fetched here; they are not in the baseline.
+- **Upstream completeness (checked 2026-11-12):** the baseline is complete. `a-canary/pi-model-router` is archived, last pushed 2026-04-02; `git fetch` of its `main` into `FETCH_HEAD` gives tip `aac4ab6`, whose tree hash equals the tree of our fork point `039d60f` (`46c6b88df479f5922f1b446e7da0519a4cb7a14b`) and whose history has the same 48 commits. Only the commit hash differs (same date and message), so no upstream content is missing.
 - **Attribution, not authorship.** Blame reports the commit that last wrote a line; a fork rewrite that keeps an identical line is invisible.
 - The `LICENSE` file did not exist at the fork point; the upstream `package.json` declares `"license": "MIT"`. HEAD's `LICENSE` (added in `2b74a5b`, 2026-11-11) carries both copyright lines.
 

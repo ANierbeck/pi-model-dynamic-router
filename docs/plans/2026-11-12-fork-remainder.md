@@ -1,6 +1,6 @@
 # How much of the original `pi-model-router` is left, and what the fork says about it
 
-**Status:** in progress 2026-11-12 — measured. Owner decision on the copyright lines taken 2026-11-12 (per-file split, implemented locally, not yet pushed); fetch scope still open.
+**Status:** done 2026-11-12 — measured; copyright split and README banner merged (PR #156); the fetch-scope question is closed by a read of the archived upstream (see decision 3); the package metadata needs no change (decision 4).
 
 **Problem:** This repository is a fork of `a-canary/pi-model-router` (README banner, the copyright line `a-canary` in `LICENSE`). The owner wants to separate from the base project before 2.0 and to decide what the fork relationship should say about the original. The upstream package declares `"license": "MIT"` but has no licence text of its own, so the notice must not be dropped before that is settled (TODO.md, review item of 2026-11-11).
 
@@ -16,7 +16,7 @@ No code or licence change follows from the measurement by itself. The next step 
 
 1. ~~Does the README banner stay?~~ **Reworded 2026-11-12:** the “fork … on top of the upstream” claim no longer matched the code (0.46 % of lines remain); it now reads as an origin note with the measured share and a link to `docs/upstream-attribution.md`. The credit stays.
 2. ~~Does the second copyright line in `LICENSE` stay?~~ **Decided 2026-11-12 (owner):** files that still contain original code keep the original notice; every other file carries the owner's name only. Implemented: `LICENSE` (two clauses), `docs/upstream-attribution.md` (21 files, method), `test/upstream-attribution.test.ts`. The upstream has no licence file to check the wording against; the notice stays on the MIT side.
-3. Is the measure as recorded sufficient? It counts lines in this repository's history only. The upstream repository may have commits after `2026-04-02` that were never fetched; fetching them would change the baseline. Decide whether that matters before 2.0.
-4. Is the fork relationship (`fork of`) kept in the package metadata and the `repository` field? Not checked yet; decide with item 1.
+3. ~~Is the measure as recorded sufficient?~~ **Closed 2026-11-12:** the upstream repository is archived (`pushed_at` 2026-04-02). Its tip `aac4ab6` has the same tree hash as our fork point `039d60f` (`46c6b88…`) and the same 48-commit history length; only the commit hash differs. Nothing is missing, so the baseline stands. Details in the measurement note.
+4. ~~Is the fork relationship kept in the package metadata?~~ **Closed 2026-11-12:** `package.json` has no “fork of” text; `repository` points to this repository and `author` is the owner. Nothing to change. The origin note stays in the README banner and `docs/upstream-attribution.md`.
 
-**Verified against:** `HEAD` `d7809f2` on branch `docs/audit-findings-2026-11-12` (based on `main` `dc77245`). Upstream history: the 48 commits by `a-canary` and `Aaron Canary` reachable from the fork point `039d60f` (2026-04-02). The first fork-authored commit is `784bebb` (2026-06-12). Not checked: the upstream repository on GitHub itself (not reachable from this repository; it may have commits after the fork point).
+**Verified against:** `main` `3eaab14` (decisions 1–2: PR #156 merged as `eb7015b`; decisions 3–4 checked on 2026-11-12 against `package.json` and a read-only `git fetch` of `a-canary/pi-model-router` main into `FETCH_HEAD`). Upstream history: the 48 commits by `a-canary` and `Aaron Canary` reachable from the fork point `039d60f` (2026-04-02). The first fork-authored commit is `784bebb` (2026-06-12). Not checked: the upstream repository on GitHub itself (not reachable from this repository; it may have commits after the fork point).
