@@ -71,6 +71,27 @@ note in this document, not a silent edit.
 - Any failure → NO-GO: Laya stays shadow or is parked.
 - R2 undecided without a comparator run → PENDING.
 
+**Dated note 2026-11-12 — evaluation tooling fixed, R2 now decidable.** The
+pre-registered constants are untouched; two defects in the owner-side evaluation
+helpers (`~/.laya-ft/shadow_eval/`, not in this repo) made the rule read wrong
+numbers and are now fixed with red-first unit tests (36 passing):
+
+- `common.py` `GROUP` still mirrored the pre-five-group v2-r3 mapping
+  (scout/operational/tactical, `continue` → tactical) instead of the shipped
+  five-group `CATEGORY_TO_GROUP`. Every group-accuracy number the rule produced
+  until 2026-11-12 used the stale table; the queue's stored answers are
+  unaffected. `continue` is evaluated as its own answer — its route inherits
+  the previous category, which the queue does not store.
+- `comparator_of` counted only era-1 records (stage `llm-cloud`, the chain
+  classifying live before the 2026-11-08 sole-classifier switch). Since the
+  switch the chain answer arrives as a detached `comparator` record with the
+  same `input.sha`; `join_comparator_answers` now backfills those onto the
+  queued rows via the `log_sha` join key that `live_label.py` always stored.
+
+Re-run on the same 246 labels after the fix: `comparator_n` 55 → 150, paired
+group delta −2.7 pp (95 % CI −11.7…+6.4, sign test p = 0.76). R2 is therefore
+decided — it fails — and the verdict stays NO-GO on all of R2, R3, R4.
+
 ## Known limits (read the verdict with these)
 
 - **Sample size:** at n ≈ 150, a 5 pp difference is within noise. R2 therefore
