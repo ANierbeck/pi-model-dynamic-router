@@ -2,7 +2,7 @@
 
 > Pi extension that routes model group names to concrete provider/model pairs. Auto-discovers models and pricing. Balances intelligence (GDPval), cost, and availability.
 
-> **Fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router)** — adds content-based dynamic routing (prompt classification → model group) on top of the upstream's price/quality/availability routing.
+> **Origin:** this project started in 2026 as a fork of [`a-canary/pi-model-router`](https://github.com/a-canary/pi-model-router) and has since been rewritten almost completely: content-based routing, failover, the Laya classifier and the test suite are new work. A small part of the original (about 0.5 % of today's lines, in 21 files) remains and keeps its copyright notice, see [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
 ## What You Get
 
