@@ -116,7 +116,7 @@ Add or override benchmark scores for models not in the scraped table:
 > warned about too, with the closest known key; the layer is still merged.
 >
 > Switch it from Pi without editing the file: `/router config integration laya on`,
-> `… laya off`, or `… laya shadow` (a mode implies on). `/router status` lists
+> `… laya off`, or `… laya shadow` (a mode implies on). `/router` lists
 > every integration with its state.
 
 An opt-in stage that classifies with a **local Laya sidecar** (Apple
@@ -164,7 +164,7 @@ experimental — start in `"shadow"` mode, which only logs.
 
 ## Verification
 
-After editing an override, run `/router reload` (or restart pi) and check the
+After editing an override, start a new pi session (the config loads on `session_start`) and check the
 router log — you'll see:
 
 ```

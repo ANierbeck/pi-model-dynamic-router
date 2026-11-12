@@ -87,7 +87,7 @@ the mapping is configurable per user via `category_groups`. There is no
 - **Workflow (shipped)**:
   1. User sends a prompt while the active model is the `dynamic` group.
   2. **Classification**: the prompt is analyzed (cloud-first chain when
-     `classifier_cloud_fallback` is enabled, then the local models above).
+     `classifier_cloud_chain` is enabled, then the local models above).
   3. **Routing**: a group is selected via `CATEGORY_TO_GROUP` (e.g.
      `code_simple` → `simple`).
   4. **Model selection**: the existing router picks the best model from

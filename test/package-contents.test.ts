@@ -125,7 +125,7 @@ describe('npm package contents', () => {
 
   it('top-level docs in the tarball are exactly PI.md, README.md, CHANGELOG.md', () => {
     // README.md tells the reader to use "the CHANGELOG's combined migration
-    // section" for the pre-1.7.0 upgrade — a reference that dangles when the
+    // section" for the pre-2.0.0 upgrade — a reference that dangles when the
     // tarball ships README.md without CHANGELOG.md. The doc allowlist is
     // pinned here so a new top-level doc is a deliberate act.
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-docs-'));

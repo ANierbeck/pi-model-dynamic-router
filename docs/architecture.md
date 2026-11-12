@@ -12,7 +12,7 @@ preferences.
 
 ### `index.ts` — Thin extension entry point (2026-10 refactor)
 
-index.ts shrank from ~3750 to ~640 lines via behavior-preserving code motion
+index.ts shrank from ~3750 to ~1200 lines via behavior-preserving code motion
 (plan: `docs/plans/2026-10-02-index-ts-refactor.md`). It keeps only what must
 live at the wiring level: shared mutable state (the ONE `cache` object,
 `cfg`, the managers), `load()`/`loadCache()`, and

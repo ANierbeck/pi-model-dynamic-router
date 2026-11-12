@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_fallback`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_chain`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
 2. **Group Mapping**: The category is mapped to the model group of the same name via the shipped `CATEGORY_TO_GROUP` table (`simple`, `standard`, `code_complex`, `design`, `planning`); `code_simple` shares `simple`, and `continue` inherits the previous category (or `standard` when there is none).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
@@ -26,7 +26,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### Implementation
 
-The dynamic routing is implemented in **`src/content-classifier.ts`** and integrated via the `before_user_prompt` hook in the extension.
+The dynamic routing is implemented in **`src/content-classifier.ts`** and run inline by the `dynamic` group's `groupStream` (`src/group-registration.ts`).
 
 ### Requirements
 
@@ -165,7 +165,7 @@ The actual configuration file contains provider definitions and model groups. Be
     "dynamic": {
       "description": "Classifies each prompt and routes to the appropriate group",
       "method": "dynamic",
-      "classifier_cloud_fallback": true
+      "classifier_cloud_chain": true
     }
   }
 }
@@ -299,9 +299,12 @@ Each `exclude_models` entry is an exact ref, or a glob where `*` matches any run
 | `/router` | Show status of all model groups |
 | `/router <group>` | Details for a specific group (e.g., `/router planning`) |
 | `/router scan` | Re-scan models and GDPval scores |
+| `/router cost` | Audit-depth cost report from the router's own token accounting |
+| `/router errors [n]` | Last n session errors (default 15, max 50) |
+| `/router cooldowns [clear]` | Active rate-limit cooldowns; `clear` also resets model-health streaks |
+| `/router config` | Config sources, exclude rules and compaction state; `config exclude\|unexclude\|compaction` edit the user layer |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
-| `/router reload` | Reload config and cache |
 
 ## Tools
 

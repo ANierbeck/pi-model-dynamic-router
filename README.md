@@ -228,7 +228,7 @@ unchanged. It is **experimental** and **disabled by default** — see
   `POST /classify` (the current reference server lives in the GitHub repo at
   `spikes/laya-http/server.py` — it is not part of the npm package, and it
   reports what it serves on `GET /health`, which the decision log and
-  `/router status` use; a packaged cross-platform sidecar is planned, see
+  the `/router` overview use; a packaged cross-platform sidecar is planned, see
   `docs/plans/2026-10-31-laya-sidecar-distribution.md`). The router only
   talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` — enforced at
   config load) and never downloads weights.
@@ -682,7 +682,7 @@ Arrays replace the shipped value in any layer, so set the full list you want.
 Absent or empty (the default) turns the filter off. The classifier chain never
 passes through this filter, so small models still classify.
 
-> Upgrading from a pre-1.7.0 version? The CHANGELOG's combined migration
+> Upgrading from a pre-2.0.0 version (any 1.x release)? The CHANGELOG's combined migration
 > snippet carries the concrete prefix list this filter used to ship with
 > (mistral-small-, magistral-small-, ministral-, voxtral-, codestral-).
 
@@ -820,7 +820,6 @@ discovers automatically.
 | `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
-| `/router reload` | Hot-reload config and cache |
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
 | `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
@@ -902,7 +901,7 @@ The router uses a **modular architecture** with the following components:
 | **config-loader.ts** | Layered configuration | Deep-merge defaults → global → project-local overrides |
 
 **index.ts wiring (2026-10 refactor):** index.ts is now a thin extension entry point
-(~640 lines, down from ~3750): it owns the shared mutable state (the one `cache`
+(~1200 lines, down from ~3750): it owns the shared mutable state (the one `cache`
 object, `cfg`, managers), `load()`/`loadCache()`, and
 `buildOrchestratorContext()`. All behavior lives in `createX(deps)` factory
 modules that receive **live getters** (plus setters for write access) so

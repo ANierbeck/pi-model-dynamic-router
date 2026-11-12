@@ -139,7 +139,7 @@ flowchart TD
 5. **Gates (src/routing.ts `applyGroupFilters`).** Order matters and is pinned
    by contract tests: provider/model excludes → dedup → non-agent prefixes →
    quality floor → quality ceiling → cost caps → context window. Null scores
-   fail strict gates (a regression class fixed in the v1.7.0 round). The
+   fail strict gates (a regression class fixed in the 1.7.0 work round; 1.7.0 was never released, the work shipped in 2.0.0). The
    classifier chain does not pass through these gates — classification keeps
    the small local models the groups filter out.
 6. **Budget filter.** Per-provider `budget` windows (default off) filter

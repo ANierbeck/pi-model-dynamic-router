@@ -390,7 +390,7 @@ export interface Config {
    * D8/ADR-0026). Defaults live in code (provider-breaker.ts); the shipped
    * config carries NO entry — set overrides in router-config.user.json.
    * `enabled: false` is the kill switch for CLOUD providers (restores the
-   * pre-1.7.0 behaviour exactly); the local watchdog of ADR-0016 always
+   * pre-breaker behaviour exactly); the local watchdog of ADR-0016 always
    * stays active. No provider names appear here — per-provider overrides
    * live in the user layer only, and the mechanism itself is provider-agnostic
    * (ADR-0025 class A).
