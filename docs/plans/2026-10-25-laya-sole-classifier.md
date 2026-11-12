@@ -39,6 +39,11 @@ steps 3, 5 and 6, which need real Laya decisions to accumulate first. The spike 
 
 ## Risk the owner accepted — and its measured size
 
+Re-measured 2026-11-12 on 246 labels with the five-group mapping (the figures
+below used the old group table): r2 22.8 % category / 24.0 % group accuracy,
+below the 30.5 % majority baseline; held-out golden 43.2 % vs 53.4 % for the
+cloud teachers — `docs/research/2026-11-12-laya-r2-owner-accuracy.md`.
+
 On the 151 owner-labelled items (shadow evaluation, 2026-10-15 protocol):
 Laya group accuracy 41.7 %; on the 55 items with a real live-chain answer
 Laya 47.3 % vs. chain 36.4 % (paired difference +10.9 pp, 95 % CI −7.9…+29.7,
