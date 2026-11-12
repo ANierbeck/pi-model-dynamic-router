@@ -21,7 +21,9 @@ describe('docs/architecture.md module map', () => {
     expect(modules.length).toBeGreaterThan(50);
 
     // A module counts as named when its path or its bare file name is backticked.
-    const missing = modules.filter((m) => !doc.includes(`\`src/${m}\``) && !doc.includes(`\`${m}\``));
+    const missing = modules.filter(
+      (m) => !doc.includes(`\`src/${m}\``) && !doc.includes(`\`${m}\``)
+    );
     expect(missing).toEqual([]);
   });
 });
