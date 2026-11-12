@@ -1,8 +1,8 @@
 # Plan: No hardcoded models (ADR-0025)
 
 > Implements [ADR-0025](../adr/0025-no-hardcoded-models.md). Status:
-> **proposed** — each phase needs the owner's go. Target release line:
-> **1.7.0** (behavior change for existing installs; see Phase B/C notes).
+> **done** — Phase E closed 2026-10-07 (baseline at 0, AGENTS.md §9); each phase needed the owner's go. Originally targeted line:
+> **1.7.0** (never tagged, shipped in 2.0.0; behavior change for existing installs; see Phase B/C notes).
 > All phases follow AGENTS.md §4 (red-first, tsc + suite green), §5
 > (commits), §8 (PR flow, all three review endpoints read before merge).
 > **No release action is part of this plan (§1).**

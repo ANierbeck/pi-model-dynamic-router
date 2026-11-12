@@ -103,7 +103,7 @@ by an ESLint move — there is no ESLint 11.
 
 Independent review of `38d2a27..fde54f8` (the structural question behind most of these — should the router keep its own turn-state machine at all? — is `docs/plans/2026-11-04-virtual-models-routing.md`; mapping of every item in `docs/research/2026-11-04-virtual-models-fit.md`). Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
 
-- **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** — plan `docs/plans/2026-11-07-tool-follow-up-group.md` (first registered 2026-10-25; `stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Implemented and merged 2026-11-07 (PR #120): the run's driver and group are remembered at classification and at a HINT pin; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context free-tier models are skipped (fail-open) unless the run group is `simple`.
+- [x] **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** — FIXED 2026-11-07 (PR #120). Plan `docs/plans/2026-11-07-tool-follow-up-group.md` (first registered 2026-10-25; `stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Implemented and merged 2026-11-07 (PR #120): the run's driver and group are remembered at classification and at a HINT pin; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context free-tier models are skipped (fail-open) unless the run group is `simple`.
 - [x] **I4 — tool-call markup emitted as text counted as a good answer** — FIXED
       2026-11-05 (`test/tool-markup-as-text.test.ts`). It happened again live on
       2026-11-05 10:53–10:54Z: `openrouter/openrouter/free` served ten
@@ -121,8 +121,8 @@ Independent review of `38d2a27..fde54f8` (the structural question behind most of
       has to carry the family judgement: `free` was added there on 2026-11-05
       (it matches only the `openrouter/openrouter/free` meta-router, not the
       `…:free` variants).
-- **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`) — plan `docs/plans/2026-11-07-compaction-continuity.md` (implemented and merged 2026-11-07, PR #120): the decision now uses the real context window via the reserve-aware `planOutputBudget`, fail-closed on unknown windows, with `:free`/meta-router refs excluded.
-- **I2 remainder / M1 — turn state is per process, not per session** — plan `docs/plans/2026-11-07-session-keyed-turn-state.md` (implemented and merged 2026-11-07, PR #120). Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Needs per-session turn state.
+- [x] **I5 — compaction continuity trusts any "large" last model** (`content-classifier.ts`) — FIXED 2026-11-07 (PR #120). Plan `docs/plans/2026-11-07-compaction-continuity.md` (implemented and merged 2026-11-07, PR #120): the decision now uses the real context window via the reserve-aware `planOutputBudget`, fail-closed on unknown windows, with `:free`/meta-router refs excluded.
+- [x] **I2 remainder / M1 — turn state is per process, not per session** — FIXED 2026-11-07 (PR #120). Plan `docs/plans/2026-11-07-session-keyed-turn-state.md` (implemented and merged 2026-11-07, PR #120). Subagent sessions in the same process share `lastDynamicModel`/`curModel`; clearing `lastDynamicModel` on `session_shutdown` would let a child wipe the parent's turn model, so it was NOT done. Turn state is now keyed per session.
 - [x] **M3 — turn latency includes tool and sub-call time** — FIXED
   2026-11-08 (PR #126, plan `docs/plans/2026-11-07-turn-latency-tool-time.md`,
   measurement `docs/research/2026-11-08-turn-latency-stream-share.md`): `turn_end` books the whole turn
@@ -165,7 +165,11 @@ context window" (and "... last model is in cooldown, routing to code_complex"
 for the cooldown case, lines 733-734). Verified by grep on 2026-11-02, no
 code change needed.
 
-### 🔍 **Open (2026-10-25): tool follow-up steps fail over into the free pool**
+### ✅ **Tool follow-up steps fail over into the free pool — group fixed 2026-11-07, migration decided against**
+
+> **Status 2026-11-12:** closed. The group part is fixed (review item I3 below, PR #120). The structural answer
+> (Pi virtual models) was decided against on 2026-11-07 and is re-evaluated on Pi host upgrades
+> (`docs/plans/2026-11-04-virtual-models-routing.md`). The measurement below is kept as the record.
 
 Same problem as review item I3 below, kept as ONE entry there (measured now:
 the 2026-11-03 incident is the live case). Structural answer proposed in
@@ -366,7 +370,7 @@ plan (AGENTS.md §11).
 
 ## 🔭 **Future Tasks (registered)**
 
-### Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator (OWNER-MANDATED 2026-10-15 — do this first after laya-spike merges to main)
+### ✅ **Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator — CLOSED 2026-11-08** (owner-mandated 2026-10-15; kept as the record)
 
 > **Status 2026-11-08:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
 > (`driveStream`) triaged 2026-11-05: of 329 non-killed mutants, 205 REAL GAP
