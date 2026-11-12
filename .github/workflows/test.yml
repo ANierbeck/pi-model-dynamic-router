@@ -49,6 +49,17 @@ jobs:
     - name: Build bundle
       run: npm run build
 
+    # The ONNX sidecar package (docs/plans/2026-11-11-onnx-sidecar-package.md,
+    # steps 2-7): its own lockfile, so its own `npm ci`. Build check and
+    # contract tests only; no model is loaded here (D5: no platform smoke runs).
+    # The CUDA-skip test needs the .npmrc in laya-sidecar/ to take effect.
+    - name: Sidecar build and tests (laya-sidecar)
+      working-directory: laya-sidecar
+      run: |
+        npm ci
+        npm run build
+        npm test
+
   # Required by the main ruleset (owner decision 2026-10-03). Scans every
   # commit of the push/PR range, not just the tree: this repository is
   # public, and two leaks found on 2026-10-03 had both been removed from

@@ -72,12 +72,31 @@ describe('router-laya-install SKILL.md', () => {
     for (const line of installLines) expect(line).not.toContain('--allow-unpublished');
   });
 
-  it('does not tell the user to start a sidecar — the skill has no process to start yet', () => {
-    // The router never starts a sidecar (deferred: "Router-managed sidecar
-    // start"); the ONNX sidecar is not packaged. The skill reports and hands
-    // over, it does not claim a start command that does not exist.
-    expect(skill).toMatch(/not packaged yet|not yet packaged/i);
-    expect(skill).not.toMatch(/npx .*sidecar|pi-laya-model\s+serve|pi-laya-model\s+start/);
+  it('does not start a sidecar itself and names no router-side start command', () => {
+    // The skill hands the sidecar over to the user; the router never starts one.
+    expect(skill).toMatch(/The skill does not start a sidecar/);
+    expect(skill).not.toMatch(/pi-laya-model\s+serve|pi-laya-model\s+start/);
+  });
+
+  it('no longer says the sidecar is not packaged (plan step 9)', () => {
+    expect(skill).not.toMatch(/not packaged yet|not yet packaged/i);
+  });
+
+  it('says the sidecar ships with release 2.0.0 and is not published before it', () => {
+    expect(skill).toMatch(/@anierbeck\/laya-sidecar/);
+    expect(skill).toMatch(/2\.0\.0/);
+    expect(skill).toMatch(/not published/i);
+  });
+
+  it('gives the ONNX install with the CUDA skip flag and the start command with the head', () => {
+    expect(skill).toMatch(/ONNXRUNTIME_NODE_INSTALL=skip npm install -g @anierbeck\/laya-sidecar/);
+    expect(skill).toMatch(/laya-sidecar\s+--model-dir\s+\S+\s+--head-json\s+\S+head\.json/);
+  });
+
+  it('refuses Intel Macs and marks the non-Apple platforms as untested (D5, D6)', () => {
+    expect(skill).toMatch(/Intel[^\n]*not supported/i);
+    expect(skill).toMatch(/Linux[^\n]*not tested|not tested[^\n]*Linux/i);
+    expect(skill).toMatch(/Windows[^\n]*not tested|not tested[^\n]*Windows/i);
   });
 });
 

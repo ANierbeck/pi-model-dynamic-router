@@ -1,6 +1,6 @@
 # ONNX sidecar package: an installable Laya sidecar for Linux, Windows and macOS
 
-**Status:** approved 2026-11-11 — owner decisions D1–D8 taken (see Decisions). Build not started. Done means built, tested and documented, not published: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1).
+**Status:** in progress since 2026-11-12 — owner decisions D1–D8 taken 2026-11-11 (see Decisions). Steps 2–10 are built and tested on `feat/laya-sidecar`; the release line stays open until the owner's release-specific go. Done means built, tested and documented, not published: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1).
 
 **Parent:** `docs/plans/2026-10-31-laya-sidecar-distribution.md`, open step "Packaging, pinned revision, checksum, install docs per platform". This plan is that one step, and nothing else from the parent.
 **Related:** `docs/plans/2026-11-08-laya-model-artifact.md` (manifest, installer and `/health` are done there; this plan consumes them). Measurements: `docs/research/2026-11-11-onnx-sidecar-package-facts.md`.
@@ -49,6 +49,7 @@ One Node sidecar package that serves the ONNX artifacts of a `pi-laya-model inst
 
 ## Verified against
 
+- `laya-sidecar/` at `83236e6` (steps 2–7) and the step 8–10 commit on `feat/laya-sidecar`; parity numbers in `docs/research/2026-11-12-onnx-sidecar-parity.md`.
 - `main` @ `92a5eee` (2026-11-11): `laya-models/manifest.json` (r2@1.0.0, `published: false`), `package.json` `files` allowlist, `spikes/laya-http/server.py` and `identity.py`, `src/laya-model-manifest.ts`, `skills/router-laya-install/SKILL.md`.
 - Registry and tarballs of `onnxruntime-node` 1.30.0 and 1.31.1 read on 2026-11-11 (`npm view`, `npm pack`, `tar -t`, `script/install.js`, `script/install-metadata.js`, `script/install-utils.js`); `npm audit` on a lockfile of 1.30.0 (0 findings).
 - Upstream `laya-ts` at `6880462` (spike) and at `3a38cbe` (`v0.4.31`, latest on 2026-11-11, fetched into `~/.laya-ft/upstream-laya`); `laya-ts` still 404 on npm.
@@ -58,13 +59,13 @@ One Node sidecar package that serves the ONNX artifacts of a `pi-laya-model inst
 ## Steps
 
 - [x] D1–D8 decided by the owner, 2026-11-11.
-- [ ] Step 2: `laya-sidecar/scripts/parity.mjs` — red first against a missing reference, then green on the golden set (180/180) and the corpus sample (≥297/300).
-- [ ] Step 3: `laya-sidecar/package.json` with exact pin and committed lockfile; `npm audit` clean.
-- [ ] Step 4: CUDA-skip install test (red without the flag, green with it).
-- [ ] Step 5: vendored `laya-ts` Node path, licence and commit header; no `onnxruntime-web`.
-- [ ] Step 6: `/health` cross-language parity test against `identity.py`.
-- [ ] Step 7: sidecar reads an install directory; no network access in the sidecar code path (test).
-- [ ] Step 8: platform table in the docs (D5/D6 wording).
-- [ ] Step 9: skill step 8 and `test/laya-install-skill.test.ts` updated (red first).
-- [ ] Step 10: install docs per platform (README/`docs/config-override.md` links), CHANGELOG entry under Unreleased.
+- [x] Step 2: `laya-sidecar/scripts/parity.mjs` — red first against a missing reference, then green on the golden set (180/180) and the corpus sample (≥297/300).
+- [x] Step 3: `laya-sidecar/package.json` with exact pin and committed lockfile; `npm audit` clean.
+- [x] Step 4: CUDA-skip install test (red without the flag, green with it).
+- [x] Step 5: vendored `laya-ts` Node path, licence and commit header; no `onnxruntime-web`.
+- [x] Step 6: `/health` cross-language parity test against `identity.py`.
+- [x] Step 7: sidecar reads an install directory; no network access in the sidecar code path (test).
+- [x] Step 8: platform table in the docs (D5/D6 wording).
+- [x] Step 9: skill step 8 and `test/laya-install-skill.test.ts` updated (red first).
+- [x] Step 10: install docs per platform (README/`docs/config-override.md` links), CHANGELOG entry under Unreleased.
 - [ ] Release line set up but **not** published — publish and tag need the owner's release-specific go (AGENTS.md §1).
