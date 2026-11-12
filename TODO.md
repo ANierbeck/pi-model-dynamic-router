@@ -209,6 +209,19 @@ are back in because they are frugal, and the newest Fable has no consumption
 measurement yet (zero turns in the session files). It also inherits the older
 Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
 
+**Quality cascade (closed as a branch 2026-11-12, feature deferred past 2.0).**
+The model-identity plan of 2026-10-10 (`feat/quality-cascade`, never merged)
+had six defects. D1-D3, D6 were already fixed on `main` by other changes
+(variant-token veto in `slug-matcher.ts`, working capability extraction), D4
+no longer applies (the Elo floors are now 1600-1700 per group), D5 (two
+sibling-pointing `model-map.yaml` entries) was fixed in PR #162. What remains
+is Phase C/D, an opt-in quality score built from percentiles of AA signals
+with the intelligence index as a ceiling. It is the same open question as the
+felt-quality item above and needs the owner's choice of weights and
+thresholds, so it gets its own plan (§11) after 2.0. The branch, its 775-line
+plan and an unfinished `model-identity.ts` were discarded; the plan commit is
+`70c84a5` (recoverable from the reflog for a while only).
+
 ---
 
 ### 🔎 **Open (2026-11-11): how much of the original `pi-model-router` is left? — before 2.0**
