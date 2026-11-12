@@ -12,6 +12,7 @@ without the owner's explicit release approval).
 ## [Unreleased]
 
 ### Changed
+- Two `model-map.yaml` entries pointed a model at its sibling's benchmark record: `openai/gpt-4o-mini` now maps to `gpt-4o-mini` (was `gpt-4o`), `Qwen/Qwen3-235B-A22B-Thinking-2507` to `qwen3-235b-a22b-instruct-2507-reasoning` (was the Instruct record). The map is the authoritative lookup and bypasses the variant-token veto, so `test/model-map-variant-audit.test.ts` now runs every shipped entry through that veto.
 - A change to the configured `providers.*.free_models` now regenerates the persisted `router-config.dynamic.json`, like a change to the static groups does (closed PR #103: `openrouter/openrouter/free` was added as the free model for `simple` but never reached it, because the snapshot froze the old group lists while the scan cache was valid). The snapshot records a `free_models_fingerprint`; on a mismatch `load()` ignores the snapshot and the next scan rebuilds it. Snapshots without the fingerprint are rebuilt once.
 - The Laya model installer offers the ONNX backend only (owner decision 2026-11-12, plan `docs/plans/2026-11-12-installer-backend-layout.md`): `laya-models/manifest.json` no longer lists the MLX set for `router@1.0.0`, so the weights release drops the 643 MB MLX checkpoint; `pi-laya-model --help` and the `router-laya-install` skill no longer offer a backend choice. One backend per version; `--backend mlx` is answered with "has no mlx artifact set". The MLX reference server stays in the repository as the parity reference.
 
