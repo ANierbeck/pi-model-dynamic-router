@@ -956,6 +956,6 @@ repository a push is already a publication. See `AGENTS.md` §8.
 
 ## License
 
-The router code is MIT, see [`LICENSE`](LICENSE) (copyright a-canary, the author of the original `pi-model-router`, and Achim Nierbeck).
+The router code is MIT, see [`LICENSE`](LICENSE). Copyright is Achim Nierbeck's, except for the files that still contain code of the original `pi-model-router`: those keep the original author's notice (a-canary) next to it. The list and how it was measured: [`docs/upstream-attribution.md`](docs/upstream-attribution.md).
 
 The Laya `router` model weights are a separate work under the Apache License 2.0, derived from the Apache-2.0 model `convaiinnovations/laya-multilingual`. Every installed model directory carries its own `LICENSE` and `NOTICE` (sources in [`laya-models/`](laya-models/)).

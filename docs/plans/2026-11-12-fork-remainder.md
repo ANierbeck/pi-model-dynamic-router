@@ -1,6 +1,6 @@
 # How much of the original `pi-model-router` is left, and what the fork says about it
 
-**Status:** proposed 2026-11-12 — measured; the decision is the owner's and is needed before 2.0.0. Nothing is changed yet.
+**Status:** in progress 2026-11-12 — measured. Owner decision on the copyright lines taken 2026-11-12 (per-file split, implemented locally, not yet pushed); banner and fetch scope still open.
 
 **Problem:** This repository is a fork of `a-canary/pi-model-router` (README banner, the copyright line `a-canary` in `LICENSE`). The owner wants to separate from the base project before 2.0 and to decide what the fork relationship should say about the original. The upstream package declares `"license": "MIT"` but has no licence text of its own, so the notice must not be dropped before that is settled (TODO.md, review item of 2026-11-11).
 
@@ -15,7 +15,7 @@ No code or licence change follows from the measurement by itself. The next step 
 **Open decisions (owner):**
 
 1. Does the README banner (“Fork of `a-canary/pi-model-router`”) stay as it is? Options: keep, reword, or remove.
-2. Does the second copyright line in `LICENSE` stay? The upstream has no licence file to check it against. Options: keep both lines; keep the upstream line only; or add the upstream licence text once it is confirmed.
+2. ~~Does the second copyright line in `LICENSE` stay?~~ **Decided 2026-11-12 (owner):** files that still contain original code keep the original notice; every other file carries the owner's name only. Implemented: `LICENSE` (two clauses), `docs/upstream-attribution.md` (21 files, method), `test/upstream-attribution.test.ts`. The upstream has no licence file to check the wording against; the notice stays on the MIT side.
 3. Is the measure as recorded sufficient? It counts lines in this repository's history only. The upstream repository may have commits after `2026-04-02` that were never fetched; fetching them would change the baseline. Decide whether that matters before 2.0.
 4. Is the fork relationship (`fork of`) kept in the package metadata and the `repository` field? Not checked yet; decide with item 1.
 

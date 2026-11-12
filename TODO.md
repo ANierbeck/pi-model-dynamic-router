@@ -221,7 +221,9 @@ the fork relationship, the README banner and the second copyright line stay.
 The upstream repository has no licence text of its own (`package.json` says
 MIT), so the notice must not be dropped before that is settled.
 
-> **Status 2026-11-12:** measured and planned, decision open with the owner.
+> **Status 2026-11-12:** measured; copyright split decided by the owner and done
+> locally (`LICENSE`, `docs/upstream-attribution.md`: 21 files keep the original
+> notice, all others the owner's name). Banner and fetch scope still open.
 > Plan: `docs/plans/2026-11-12-fork-remainder.md` (proposed). Measurement:
 > `docs/research/2026-11-12-fork-remainder-measurement.md` — 571 of 2933 baseline
 > lines still at HEAD (at most 19.5 %), 0 of 15 upstream files byte-identical.
