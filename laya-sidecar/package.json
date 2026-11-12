@@ -1,0 +1,31 @@
+{
+  "name": "@anierbeck/laya-sidecar",
+  "version": "0.1.0",
+  "description": "Local HTTP sidecar serving the Laya router model through ONNX Runtime (POST /classify, GET /health)",
+  "type": "module",
+  "private": true,
+  "license": "MIT AND Apache-2.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "laya-sidecar": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE-laya",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "parity": "node scripts/parity.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-node": "1.31.1"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.6.6"
+  }
+}

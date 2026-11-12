@@ -224,12 +224,15 @@ a confident Laya answer takes the route, everything else falls through
 unchanged. It is **experimental** and **disabled by default** — see
 `docs/config-override.md#integrationslaya--experimental-local-classifier-stage` for every config key.
 
-- Requires **Apple Silicon**: Laya is served by an MLX sidecar exposing
-  `POST /classify` (the current reference server lives in the GitHub repo at
-  `spikes/laya-http/server.py` — it is not part of the npm package, and it
-  reports what it serves on `GET /health`, which the decision log and
-  the `/router` overview use; a packaged cross-platform sidecar is planned, see
-  `docs/plans/2026-10-31-laya-sidecar-distribution.md`). The router only
+- **Platforms:** Apple Silicon is the tested path, served by the MLX reference
+  server (`spikes/laya-http/server.py`, not part of the npm package) or by the
+  ONNX sidecar `@anierbeck/laya-sidecar`. The ONNX sidecar should also work on
+  Linux and Windows, which are **not tested**; it ships with release 2.0.0.
+  Intel Macs are not supported. `laya-sidecar/README.md` has the platform table
+  and the install steps. Either sidecar exposes `POST /classify` and reports
+  what it serves on `GET /health`, which the decision log and the `/router`
+  overview use. The router only talks HTTP to loopback (`127.0.0.0/8`,
+  `localhost`, `::1` — enforced at config load) and never downloads weights.
   talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` — enforced at
   config load) and never downloads weights.
 - **Bring-your-own weights**: a pinned `checkpoint` is required when enabled.

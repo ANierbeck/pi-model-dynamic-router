@@ -29,10 +29,11 @@ before starting, so nothing surprises them later:
 1. **The weights release is not published yet.** The manifest marks
    `router@1.0.0` as unpublished, and the installer refuses it (step 1). Once the
    owner publishes the release, the same steps work unchanged.
-2. **No sidecar is packaged yet.** The ONNX sidecar is not packaged yet. For
-   the MLX backend, the only sidecar is the reference server in the repository
-   checkout (step 8). Until packaging lands, this skill can finish the install,
-   the verification and the config, and then hand over.
+2. **The ONNX sidecar is not published yet.** `@anierbeck/laya-sidecar` ships
+   with release 2.0.0, together with the weights. Until that release is
+   published, the install command in step 8 does not resolve. The install,
+   the verification and the config work without it, and the skill can finish
+   them and then hand over.
 
 ## Steps
 
@@ -64,9 +65,10 @@ yet, and that installing it needs the owner's release approval.
 
 Check the platform with `uname -s -m`.
 
-- **Apple Silicon (Darwin, arm64):** offer `mlx` or `onnx`.
-- **Anything else:** offer `onnx` only.
-- **Default: `onnx`**, the portable backend. `mlx` is the Apple Silicon path.
+- **Apple Silicon (Darwin, arm64):** offer `mlx` or `onnx`. This is the tested platform.
+- **Linux or Windows (x64 or arm64):** offer `onnx`. It should work there but is **not tested**; say so to the user.
+- **Intel Mac (Darwin, x86_64):** Laya is **not supported**. There is no ONNX Runtime binding for darwin/x64, and MLX is Apple Silicon only. Stop here and tell the user; the router keeps the classifier chain.
+- **Default: `onnx`** where it is offered, the portable backend. `mlx` is the Apple Silicon path.
 
 Ask the user which one. Do not pick for them.
 
@@ -152,8 +154,15 @@ The skill does not start a sidecar. Explain the options:
   `spikes/laya-http/server.py`. It needs a Python environment with `mlx` and
   `laya-mlx` installed. Give the command only if the user has that checkout:
   `python3 spikes/laya-http/server.py --port 8089 --model-dir <the install directory>`.
-- **ONNX:** the sidecar is not packaged yet. Say so and stop here. The install
-  and config stay valid for when it is.
+- **ONNX:** the sidecar ships as `@anierbeck/laya-sidecar` with release 2.0.0
+  and is not published yet. Once it is, the user installs it with
+  `ONNXRUNTIME_NODE_INSTALL=skip npm install -g @anierbeck/laya-sidecar` (the
+  skip flag keeps the CUDA download off) and starts it with
+  `laya-sidecar --model-dir "$HOME/.pi/agent/laya-models/router/1.0.0" --head-json "$HOME/.pi/agent/laya-models/router/1.0.0/head.json"`.
+  It listens on port 8089 by default, which is the router's default endpoint.
+  Windows PowerShell sets the variable with `$env:ONNXRUNTIME_NODE_INSTALL = "skip"`.
+  The platform table is in `laya-sidecar/README.md`. Until the release, say the
+  sidecar is not published yet and stop here; the install and config stay valid.
 
 ### 9. Check the identity the sidecar reports
 
