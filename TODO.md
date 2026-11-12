@@ -207,6 +207,17 @@ Fable's GDPval value by fuzzy slug match (a borrowed value, not a measured one).
 
 ---
 
+### 🔎 **Open (2026-11-11): how much of the original `pi-model-router` is left? — before 2.0**
+
+The repository is a fork of `a-canary/pi-model-router` and the MIT `LICENSE`
+names both authors. The owner wants to separate from the base project and
+decide this **before 2.0**: measure what remains of the original (lines still
+attributed to its commits, files that exist unchanged), then decide whether
+the fork relationship, the README banner and the second copyright line stay.
+The upstream repository has no licence text of its own (`package.json` says
+MIT), so the notice must not be dropped before that is settled. Needs its own
+plan (AGENTS.md §11).
+
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
 ### Locale Robustness (date/reset-time parsing)

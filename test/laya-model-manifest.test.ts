@@ -79,6 +79,23 @@ describe('the shipped manifest', () => {
   it('ships the default backend (onnx) for every model', () => {
     for (const m of shipped.models) expect(Object.keys(m.backends)).toContain('onnx');
   });
+
+  // The weights derive from an Apache-2.0 model: every install must carry the
+  // licence and the NOTICE, byte for byte the files kept in laya-models/.
+  it.each(['LICENSE', 'NOTICE'])(
+    'every backend of every model installs %s, identical to the repo copy',
+    (name) => {
+      const bytes = readFileSync(join(__dirname, '..', 'laya-models', name));
+      for (const m of shipped.models) {
+        for (const [backend, set] of Object.entries(m.backends)) {
+          const entry = set.files.find((f) => f.path === name);
+          expect(entry, `${m.model} ${backend} lists ${name}`).toBeDefined();
+          expect(entry!.sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+          expect(entry!.bytes).toBe(bytes.length);
+        }
+      }
+    }
+  );
 });
 
 describe('head parity gate', () => {

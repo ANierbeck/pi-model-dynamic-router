@@ -70,6 +70,19 @@ pi install npm:@anierbeck/pi-model-dynamic-router@<VERSION>
 - Copy the CHANGELOG.md entry as release notes
 - Attach no binaries (pure JS bundle)
 
+## Weights Release (`laya-<model>-v<version>`)
+
+A separate release line from the npm releases. Every step that publishes needs
+the owner's release-specific go (AGENTS.md §1); the steps before it do not.
+
+- [ ] Manifest entry final: `model`, `version`, `tag`, `base_url` agree; `head.sha256` is the router's head (`test/laya-model-manifest.test.ts` is green)
+- [ ] `laya-models/LICENSE` and `laya-models/NOTICE` are the files listed in the manifest (same test)
+- [ ] The release directory holds exactly the manifest's assets: `node scripts/laya-release-check.ts --dir <release dir>` prints `ok`
+- [ ] Largest asset is below GitHub's 2 GiB per-asset limit
+- [ ] **Owner go for this concrete tag**, then create the GitHub Release `laya-<model>-v<version>` and attach every file of the directory
+- [ ] From a clean machine state: `pi-laya-model install <model>@<version> --allow-unpublished` against the live release, then `verify` (the installer still refuses it while `published` is `false`)
+- [ ] Set `published: true` in the manifest and ship it through a PR (the manifest travels with the router package)
+
 ## Post-Release
 
 ### Sanity check

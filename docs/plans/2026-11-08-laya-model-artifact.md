@@ -227,4 +227,11 @@ whether `~/.pi/agent/laya-models/` collides with anything Pi owns.
       CHANGELOG. Red first: the two pin tests (`package-contents`, `laya-install-skill`)
       expected `router` against the `r2` manifest and failed. Historical entries above
       keep the name they were built under.
+- [x] Release preparation (2026-11-11): Apache-2.0 `LICENSE` + `NOTICE` for the
+      weights as manifest files of both backends (red first: two manifest
+      tests failed for the missing entries), `scripts/laya-release-check.ts`
+      (5 hand-applied mutations red), a "Weights Release" section in
+      `RELEASE_CHECKLIST.md`. **Not checked:** whether the Gemma 2 tokenizer
+      that mmBERT-base uses carries terms of its own; the upstream model card
+      declares Apache-2.0 for the files it ships.
 - [ ] Owner go for the weights release, then publish the assets (`laya-router-v1.0.0`).
