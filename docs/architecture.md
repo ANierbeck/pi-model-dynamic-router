@@ -185,6 +185,72 @@ low-confidence answer, a timeout, or a down sidecar is a plain fall-through
 for the chain in `src/content-classifier.ts`; nothing about the shipped
 routing depends on this stage.
 
+### Remaining modules
+
+Modules without their own heading above. One row per file, so every `src/` module is named here.
+
+| Module | Role |
+|--------|------|
+| `src/agent-capability.ts` | Curated non-agent model families (config-driven routing data); keeps them out of main-agent work |
+| `src/agent-dir.ts` | Pi's agent directory: follows `PI_CODING_AGENT_DIR`, defaults to `~/.pi/agent` |
+| `src/budget-pacing.ts` | Declared spend allowance per provider (user-layer key) and its pacing |
+| `src/bulk-read.ts` | `bulk_read` tool and the `read` pre-call block (ADR-0007) |
+| `src/cache-stats.ts` | Provider-reported usage block of an assistant message (all fields optional); cache statistics |
+| `src/cache.ts` | `CacheManager`: the scan cache file and the `usage_log` entry shape |
+| `src/capabilities.ts` | Raw entries of provider models-list responses (the shape varies per provider) |
+| `src/classification-prompt.ts` | Classifier prompt; `hint:*` categories only when the request starts with a HINT marker |
+| `src/classifier-cloud-probe.ts` | Probe for cloud-chain classifier candidates, including max output price |
+| `src/classifier-decision-log.ts` | One candidate attempt inside an LLM classifier chain, as recorded in the decision log (ADR-0027) |
+| `src/classifier-local-probe.ts` | Probe for local classifier models; cold-start bound, also the runtime primary timeout |
+| `src/commands.ts` | The `/router` slash command, extracted from `index.ts` |
+| `src/config-schema.ts` | Keys each config layer may contain; unknown keys are reported, `_`/`$` keys are annotations |
+| `src/context-budget.ts` | Minimum output budget; below it a candidate is skipped |
+| `src/context-compaction.ts` | Cache-aware compaction (Phase 5b): cold-MISS threshold and the between-turns decision |
+| `src/context-utils.ts` | Context and prompt inspection helpers, per-model timeout lookups (extracted from `index.ts`) |
+| `src/cost-tracker.ts` | `CostTracker`: per-request, per-model and daily cost summary |
+| `src/delegation.ts` | Enforced delegation (ADR-0007): summarizes oversized `read`/`bash` results before the main model sees them |
+| `src/dynamic-config-runner.ts` | Generates the dynamic config from scan data, extracted from `index.ts` |
+| `src/dynamic-config.ts` | Dynamic config logic: what the scan writes into `router-config.dynamic.json` |
+| `src/error-signatures.ts` | Stable reason keys for permanent and request-level error verdicts |
+| `src/escalation.ts` | Session escalation: frustration and failure signals, level tracking, loop detection |
+| `src/event-handlers.ts` | Core Pi event handlers, extracted from `index.ts` |
+| `src/free-model-registration.ts` | On-demand registration of the configured free models into Pi's model registry |
+| `src/group-registration.ts` | Virtual group provider registration and the groups' `groupStream`, extracted from `index.ts` |
+| `src/hint-resolution.ts` | Resolves HINT model refs against Pi's `ModelRegistry`, using its duck-typed fields |
+| `src/integration-registry.ts` | The optional integrations the router knows (plan `2026-11-08-optional-integrations-config.md`) |
+| `src/integration.ts` | Shape shared by every integration block (the contract); Laya-specific fields live next to Laya |
+| `src/laya-model-bin.ts` | Entry point of the `pi-laya-model` command, bundled to `dist/laya-model-install.js` |
+| `src/laya-model-install.ts` | Logic of `pi-laya-model`: download, verify and install record of a Laya artifact |
+| `src/laya-model-manifest.ts` | Manifest schema and validation of Laya artifact sets (backends, per-file `asset`) |
+| `src/limit-glue.ts` | Metrics, rate-limit, blocklist and cost glue, extracted from `index.ts` |
+| `src/logger.ts` | Log lines with their own size rotation, independent of `router.log` |
+| `src/model-blocklist.ts` | Learned blocklist: records permanent failures per model ref (ADR-0008) |
+| `src/model-health.ts` | Consecutive failures since the last success, per model |
+| `src/model-resolve-glue.ts` | Model resolution and display glue, extracted from `index.ts` |
+| `src/ollama-context.ts` | Context-length lookup for Ollama models (`/api/show`), with a conservative fallback |
+| `src/ollama-gdpval.ts` | Known Ollama model families and their typical GDPval ranges |
+| `src/ollama-utils.ts` | Calls the Ollama HTTP API |
+| `src/overview-table.ts` | Overview table for `/router`; rank 0 is the group's first choice |
+| `src/provider-breaker.ts` | Provider circuit breaker (ADR-0026): failure evidence, trip and cooldown ladder |
+| `src/provider-shadow.ts` | Minimal `PROVIDER_MAP` entry shape that a module needs, without the full provider table |
+| `src/provider-watchdog.ts` | Local watchdog (ADR-0016) and classifier-path tuning; installed from the `provider_breaker` config |
+| `src/providers.ts` | Definitions of all supported providers and their properties |
+| `src/rank-explain.ts` | Refs in ranked order, for the ranking explanation output |
+| `src/repetition-guard.ts` | Loop detection for streamed answers; checks only after enough text has accumulated |
+| `src/scan-runner.ts` | Model scan pipeline, extracted from `index.ts` |
+| `src/scan-sanity.ts` | Refs considered for scoring after exclude rules; the regression check on a smaller scan |
+| `src/session-errors.ts` | Per-session error history behind `/router errors` (FIFO, self-trimming) |
+| `src/slug-matcher.ts` | Model-name matching pipeline: normalize, exclude, exact, then fuzzy; no manual mapping |
+| `src/stream-driver.ts` | Identifies the model Pi's session has pinned as active; used for synthetic error messages |
+| `src/stream-proxy.ts` | Streaming helpers as one unit, extracted from `index.ts` |
+| `src/streamable-refs.ts` | Registry resolution helpers, e.g. the `findRegistryModel` wrapper used by metrics |
+| `src/subcall-scope.ts` | Marks router-internal sub-call chains so they never change the turn's model |
+| `src/tools.ts` | Pi tool registrations, extracted from `index.ts` |
+| `src/turn-state.ts` | What one session remembers between turns (session-keyed turn state) |
+| `src/types.ts` | Shared types: `Config`, `Group`, metrics and the capability columns; the field comments are the reference |
+| `src/user-config-store.ts` | Writes to the user layer (`router-config.user.json`); arrays are set-replaced |
+| `src/version.ts` | The router's own version, read from its `package.json` |
+
 ## Configuration
 
 See `docs/config-override.md` for the layered config system and exclude rules.
