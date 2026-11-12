@@ -392,6 +392,23 @@ export function staticGroupsFingerprint(groups: Record<string, Group> | undefine
     .slice(0, 12);
 }
 
+/**
+ * Fingerprint of the configured free models (`providers.*.free_models`) a
+ * dynamic snapshot was built from. They admit candidates (ADR-0021: the
+ * owner's explicit choice), but the snapshot freezes the group model lists,
+ * so an added or removed entry must regenerate it like a group change does
+ * (live 2026-11-05, closed PR #103: openrouter/openrouter/free never reached
+ * `simple`). Entry order does not matter.
+ */
+export function staticFreeModelsFingerprint(providers: Config['providers']): string {
+  const lists: Record<string, string[]> = {};
+  for (const [prov, pc] of Object.entries(providers ?? {})) {
+    const list = (pc as { free_models?: unknown } | undefined)?.free_models;
+    if (Array.isArray(list) && list.length > 0) lists[prov] = list.map(String).sort();
+  }
+  return createHash('sha1').update(canonicalJson(lists)).digest('hex').slice(0, 12);
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value !== null && typeof value === 'object') {

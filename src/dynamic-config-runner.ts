@@ -19,6 +19,7 @@ import {
   computeFallbackGroups,
   resyncDynamicFromStatic,
   registerRegistryProviderStubs,
+  staticFreeModelsFingerprint,
   staticGroupsFingerprint,
   type StaticContributions,
 } from './dynamic-config.ts';
@@ -67,19 +68,22 @@ interface DynamicConfigRunnerDeps {
 }
 
 /**
- * The groups fingerprint recorded in the dynamic snapshot on disk. `null` when
- * no snapshot exists (the missing-file case is handled by dynamicConfigMissing);
- * `undefined` when the file predates the fingerprint.
+ * A fingerprint recorded in the dynamic snapshot on disk. `null` when no
+ * snapshot exists (the missing-file case is handled by dynamicConfigMissing);
+ * `undefined` when the file predates that fingerprint.
  */
-function readStoredGroupsFingerprint(stateDir: string): string | null | undefined {
+function readStoredFingerprint(
+  stateDir: string,
+  field: 'groups_fingerprint' | 'free_models_fingerprint'
+): string | null | undefined {
   const file = path.join(stateDir, 'router-config.dynamic.json');
   if (!fs.existsSync(file)) return null;
   try {
     const fp = (
       JSON.parse(fs.readFileSync(file, 'utf-8')) as {
-        _dynamic?: { groups_fingerprint?: unknown };
+        _dynamic?: Record<string, unknown>;
       }
-    )?._dynamic?.groups_fingerprint;
+    )?._dynamic?.[field];
     return typeof fp === 'string' ? fp : undefined;
   } catch {
     return undefined;
@@ -183,18 +187,31 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       // even when the scan cache is still valid. A snapshot without the
       // fingerprint predates this check and is regenerated once (self-healing).
       const groupsFingerprint = staticGroupsFingerprint(rt.staticCfg.model_groups);
-      const storedGroupsFingerprint = readStoredGroupsFingerprint(rt.stateDir);
+      const storedGroupsFingerprint = readStoredFingerprint(rt.stateDir, 'groups_fingerprint');
+      // The configured free models admit candidates into the frozen group
+      // lists, so they drift the snapshot the same way (closed PR #103). A
+      // snapshot without this fingerprint is regenerated once (self-healing).
+      const freeModelsFingerprint = staticFreeModelsFingerprint(rt.staticCfg.providers);
+      const storedFreeModelsFingerprint = readStoredFingerprint(
+        rt.stateDir,
+        'free_models_fingerprint'
+      );
       // Fixture caches (dynamic_config_expected: false) own no snapshot and must
       // never be regenerated underneath, same as the missing-file rule above.
       const groupsDrifted =
         rt.cache.dynamic_config_expected !== false &&
         storedGroupsFingerprint !== null &&
         storedGroupsFingerprint !== groupsFingerprint;
+      const freeModelsDrifted =
+        rt.cache.dynamic_config_expected !== false &&
+        storedFreeModelsFingerprint !== null &&
+        storedFreeModelsFingerprint !== freeModelsFingerprint;
       if (
         !force &&
         rt.cacheManager.isScanCacheValid(rt.cache) &&
         !dynamicConfigMissing &&
-        !groupsDrifted
+        !groupsDrifted &&
+        !freeModelsDrifted
       ) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
@@ -206,6 +223,10 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       } else if (!force && groupsDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
         routerLog(
           '[router] Static group settings changed since router-config.dynamic.json was built — regenerating it'
+        );
+      } else if (!force && freeModelsDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
+        routerLog(
+          '[router] Configured free_models changed since router-config.dynamic.json was built — regenerating it'
         );
       }
 
@@ -542,6 +563,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
           scanned_models_count: scannedModels.length,
           config_fingerprint: configFingerprint,
           groups_fingerprint: groupsFingerprint,
+          free_models_fingerprint: freeModelsFingerprint,
           // static_contributions is recorded by resyncDynamicFromStatic below
           // (load() already pruned rt.cfg against the previous one).
         },

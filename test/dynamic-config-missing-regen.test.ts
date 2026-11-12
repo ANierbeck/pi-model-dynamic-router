@@ -299,3 +299,65 @@ describe('static group settings changed since the snapshot was built', () => {
     }
   });
 });
+
+describe('configured free models changed since the snapshot was built', () => {
+  // Live 2026-11-05 (closed PR #103): openrouter/openrouter/free was added to
+  // providers.*.free_models as the owner's free model for `simple`, but the
+  // persisted snapshot kept its frozen `simple.models` list: the scan cache was
+  // valid and the groups fingerprint covers model_groups only, so nothing was
+  // regenerated. free_models admit candidates (ADR-0021: the owner's explicit
+  // choice), so a change to them must regenerate the snapshot like a group
+  // change does.
+
+  async function freshSnapshot(): Promise<any> {
+    const first = await startRouterWithCache({});
+    try {
+      expect(await waitFor(() => fs.existsSync(first.dynamicPath))).toBe(true);
+      return JSON.parse(fs.readFileSync(first.dynamicPath, 'utf-8'));
+    } finally {
+      first.cleanup();
+    }
+  }
+
+  it('regenerates when a free_models entry was added', async () => {
+    const fresh = await freshSnapshot();
+    fresh._dynamic.generated_at = 'SENTINEL';
+    const second = await startRouterWithCache({}, fresh, {
+      providers: { 'healthy-provider': { free_models: ['healthy-provider/model-a'] } },
+    });
+    try {
+      const regenerated = await waitFor(
+        () =>
+          JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic?.generated_at !==
+          'SENTINEL'
+      );
+      expect(regenerated).toBe(true);
+    } finally {
+      second.cleanup();
+    }
+  });
+
+  it('keeps the snapshot when free_models are unchanged (guard: no regeneration storm)', async () => {
+    const project = {
+      providers: { 'healthy-provider': { free_models: ['healthy-provider/model-a'] } },
+    };
+    const first = await startRouterWithCache({}, undefined, project);
+    let fresh: any;
+    try {
+      expect(await waitFor(() => fs.existsSync(first.dynamicPath))).toBe(true);
+      fresh = JSON.parse(fs.readFileSync(first.dynamicPath, 'utf-8'));
+    } finally {
+      first.cleanup();
+    }
+    fresh._dynamic.generated_at = 'SENTINEL';
+    const second = await startRouterWithCache({}, fresh, project);
+    try {
+      await new Promise((r) => setTimeout(r, 500));
+      expect(JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic.generated_at).toBe(
+        'SENTINEL'
+      );
+    } finally {
+      second.cleanup();
+    }
+  });
+});

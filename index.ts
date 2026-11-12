@@ -36,6 +36,7 @@ import {
   resyncDynamicFromStatic,
   collectStaticContributions,
   registerRegistryProviderStubs,
+  staticFreeModelsFingerprint,
   staticGroupsFingerprint,
   type StaticContributions,
 } from './src/dynamic-config.ts';
@@ -807,7 +808,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
     try {
       if (fs.existsSync(dynamicConfigPath)) {
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8')) as Config & {
-          _dynamic?: { groups_fingerprint?: unknown };
+          _dynamic?: { groups_fingerprint?: unknown; free_models_fingerprint?: unknown };
         };
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
@@ -821,14 +822,23 @@ const defaultExport = function (pi: ExtensionAPI): void {
           // fingerprint (undefined) are still accepted — the scan regenerates
           // them once (self-healing, PR #68).
           const storedGroupsFp = dynamicCfg._dynamic.groups_fingerprint;
-          if (
+          const storedFreeModelsFp = dynamicCfg._dynamic.free_models_fingerprint;
+          const staleGroups =
             typeof storedGroupsFp === 'string' &&
-            storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups)
-          ) {
+            storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups);
+          // Closed PR #103: configured free_models admit candidates into the
+          // frozen group lists — a snapshot built before a free_models change
+          // misses new candidates (openrouter/openrouter/free and `simple`,
+          // live 2026-11-05). Same accept-undefined rule as the groups
+          // fingerprint: legacy snapshots self-heal on the next scan.
+          const staleFreeModels =
+            typeof storedFreeModelsFp === 'string' &&
+            storedFreeModelsFp !== staticFreeModelsFingerprint(staticCfg.providers);
+          if (staleGroups || staleFreeModels) {
             routerLog(
-              '[router] Stored router-config.dynamic.json has a stale groups fingerprint ' +
-                '(static model_groups changed since it was built) — ignoring it and using the static config; ' +
-                'the next scan regenerates the snapshot'
+              '[router] Stored router-config.dynamic.json has a stale fingerprint ' +
+                '(static model_groups or configured free_models changed since it was built) — ' +
+                'ignoring it and using the static config; the next scan regenerates the snapshot'
             );
           } else {
             // IMPORTANT: user-intent keys (exclude rules, timeout overrides,
