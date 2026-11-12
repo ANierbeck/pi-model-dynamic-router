@@ -218,7 +218,7 @@ do not cover. Defaults are the code defaults unless the shipped
 
 ## Verification
 
-After editing an override, start a new pi session (the config loads on `session_start`) and check the
+After editing an override, run any `/router` command (every call re-reads the config layers; so does every `session_start`) and check the
 router log — you'll see:
 
 ```
