@@ -1,34 +1,34 @@
-# Installer: one backend per version, and --force replaces it silently
+# Installer: one backend per version — MLX leaves the installer
 
-**Status:** proposed 2026-11-12 — not started. One owner decision is open (see Open decisions); the minimal fix needs none.
+**Status:** in progress 2026-11-12 — owner decided both open questions the same day (see Decisions). Steps 1–4 are built on `feat/laya-installer-onnx-only`; the staging directory of the weights release still holds four MLX files (step 5, owner action).
 
-**Problem:** The install layout `<root>/<model>/<version>/` holds one install per version (decision 3 of `docs/plans/2026-11-08-laya-model-artifact.md`). The manifest offers two artifact sets for `router@1.0.0` (`onnx` and `mlx`), so a user can ask for either, but only one can be installed:
+**Problem:** The install layout `<root>/<model>/<version>/` holds one install per version (decision 3 of `docs/plans/2026-11-08-laya-model-artifact.md`), but the manifest offered two artifact sets for `router@1.0.0` (`onnx` and `mlx`). A second backend was refused with a message that hid the installed one, and `--force` replaced the whole version directory without saying so (reproduced in `docs/research/2026-11-12-installer-backend-repro.md`). The layout can still change without a migration only until the weights are published.
 
-1. A second backend without `--force` is refused with `exists`. The message names the directory, not the backend that is installed, and does not say that `--force` would replace it.
-2. With `--force` the whole version directory is replaced. Nothing reports what was removed: the ONNX install disappears and `list` shows only `mlx`.
+## Decisions (owner, 2026-11-12)
 
-Measured in `docs/research/2026-11-12-installer-backend-repro.md`. Nothing is lost for good (the artifacts download again), but the sidecar then serves a different backend than the user thinks. Because the weights are not published yet, the layout can still change without a migration; after the first publish it cannot.
+1. **One backend per version.** Side-by-side installs (`<model>/<version>/<backend>/`) are not built.
+2. **MLX is not an installer target.** "The ONNX path is sufficient." The MLX reference server `spikes/laya-http/server.py` stays in the repository as the parity reference (`laya-sidecar/scripts/record-reference.mjs`), but its checkpoint is no longer part of the weights release.
 
-**Solution (minimal, recommended):** keep one backend per version and make the rule visible.
+**Solution:** Decision 2 removes the cause, so the visibility fix this plan first proposed (message naming the installed backend, a `replaced` result) is dropped: with one backend in the shipped manifest a second backend cannot be requested. It would be code for a case that cannot happen; if a second backend is ever shipped, that is a new plan.
 
-1. The `exists` message names the installed backend and says that a reinstall with another backend replaces it (`… already installed as onnx in <dir>; installing mlx replaces it — use --force`).
-2. A forced install reports what it replaced: the result carries `replaced: 'onnx'` (or nothing when the same backend is reinstalled), and the CLI prints a line for it.
-3. The skill (`skills/router-laya-install/SKILL.md`, step 5) and `laya-sidecar/README.md` state the one-backend rule and how to switch.
+1. `laya-models/manifest.json`: `router@1.0.0` ships the `onnx` set only. The MLX set (643 MB `model.safetensors`, `questions.json`, `encoder-config.json`, `tokenizer_config.json`) leaves the release assets.
+2. `pi-laya-model --help` offers `--backend onnx` only. The schema keeps `mlx` as a known backend name (`LAYA_BACKENDS`), so an older or custom manifest still validates; the installer answers `--backend mlx` with "has no mlx artifact set (known: onnx)".
+3. `skills/router-laya-install/SKILL.md`: no backend choice, no MLX path; Intel Macs stop because ONNX Runtime has no darwin/x64 binding.
+4. README and `docs/config-override.md` name the ONNX sidecar as the installable one.
+5. The release staging directory (`~/.laya-ft/artifacts/r2-1.0.0/release`) holds `encoder-config.json`, `model.safetensors`, `questions.json` and `tokenizer_config.json`, which `laya-release-check` now reports as "would be uploaded". They are hard links; the owner removes them before the weights release.
 
-Red first: (a) the refusal message contains the installed backend — fails now; (b) a forced install over another backend returns `replaced` — fails now. Each is confirmed red before the code change, and the change is checked by a mutation (dropping the name from the message turns (a) red again).
+Red first (observed before the change): the shipped manifest lists exactly `onnx`; the usage text has no `mlx`; the skill has no `mlx`. Each fails against the previous manifest, help text and skill.
 
-**Open decisions (owner):**
+**Open decisions (owner):** none for this plan. Whether the weights release stays a 2.0.0 blocker is tracked in `docs/plans/2026-11-08-laya-model-artifact.md`.
 
-1. **One backend per version (recommended for 2.0) or side-by-side?** Side-by-side means `<model>/<version>/<backend>/`: both can be installed, `list`, `verify` and `remove` take a backend, and the sidecar's `--model-dir` points at the backend directory. That changes the 2026-11-08 layout decision, the skill paths, the sidecar README and most installer tests. It has to be decided before the weights are published.
-2. **Is MLX an installer target for 2.0 at all?** The Mac path runs the reference server from a checkpoint directory. If MLX stays outside the installer, the MLX set can leave the manifest and the question goes away.
+**Verified against:** `main` @ `cb15ee2`. `laya-models/manifest.json`, `src/laya-model-install.ts`, `skills/router-laya-install/SKILL.md`, the tests named above, and `scripts/laya-release-check.ts` run against the real staging directory (four unexpected files).
 
-**Verified against:** `main` @ `44417ca`. `src/laya-model-install.ts` lines 251–257 and 326–333; `test/laya-model-install.test.ts` (the "does not overwrite" case); `laya-models/manifest.json` (backends `onnx`, `mlx` for `router@1.0.0`). Reproduction: `docs/research/2026-11-12-installer-backend-repro.md`.
-
-**Not checked:** a real MLX install end to end (weights unpublished); Windows behaviour of the directory rename in the forced path (the atomic rename is unchanged by this plan).
+**Not checked:** an ONNX install end to end from a published release (weights unpublished).
 
 ## Steps
 
-- [ ] Step 1: red tests (a) and (b) in `test/laya-model-install.test.ts`, confirmed red.
-- [ ] Step 2: message and `replaced` result in `src/laya-model-install.ts`; CLI line in `main`.
-- [ ] Step 3: skill step 5 and `laya-sidecar/README.md` state the one-backend rule.
-- [ ] Step 4: owner decision 1 recorded; if side-by-side, a new plan (one problem) replaces this step.
+- [x] Step 1: red tests (manifest, usage text, skill), confirmed red.
+- [x] Step 2: MLX set removed from the manifest; usage text; skill; README; `docs/config-override.md`.
+- [x] Step 3: suites green (manifest, installer, skill, release-check, identity).
+- [x] Step 4: CHANGELOG entry.
+- [ ] Step 5: owner removes the four MLX files from the staging directory; `laya-release-check` then passes.

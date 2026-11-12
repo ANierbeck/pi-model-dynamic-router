@@ -540,7 +540,7 @@ export interface CliIo {
 const USAGE = `Usage: pi-laya-model <command> [options]
 
   install <model>[@<version>]  download, verify and install a model
-      --backend onnx|mlx         artifact set (default: onnx)
+      --backend onnx             artifact set (default and only one: onnx)
       --force                    replace an existing install
       --allow-unpublished        install a version whose release is not out yet
   verify  <model>@<version>    re-check every file and the head of an install
