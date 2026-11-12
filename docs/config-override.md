@@ -151,6 +151,60 @@ experimental — start in `"shadow"` mode, which only logs.
 | `compare_in_background` | `false` | In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027) |
 | `observe_momentum` | `false` | Log detached answers for short momentum prompts (can incur classifier spend) |
 
+## Reference: remaining keys
+
+Every top-level key of the config and every group key that the sections above
+do not cover. Defaults are the code defaults unless the shipped
+`router-config.json` says otherwise.
+
+### Top-level keys
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `log_level` | `warn` (shipped) | `error`, `warn`, `info` or `debug`. `ROUTER_LOG_LEVEL` overrides it. |
+| `classifier_log` | `store_text: "none"` (shipped) | Classifier decision log, one JSONL record per classification in `~/.pi/logs/classifier-decisions.jsonl`. `store_text`: `none` (hashes and lengths only), `snippet` (first 120 characters of the prompt) or `full` (prompt and context text, for offline replay; the file is mode 0600). Absent = off. |
+| `best_quality_window` | `0.05` (shipped) | Fraction of the best score within which candidates count as equally good for the `best` method; the cheapest of them is picked first. `0` = pure score order. |
+| `category_groups` | none | `{ "<category>": "<group>" }` overrides of the built-in category-to-group mapping. Unknown categories or groups are rejected with a warning. |
+| `backoff_minutes` | `[1, 2, 4, 8, 16, 32, 64, 90]` | Rate-limit backoff in minutes, escalating per hit. |
+| `soft_backoff_ms` | `[30000, 60000, 120000, 300000]` | Backoff in milliseconds for empty responses and stalls. |
+| `empty_response_timeout_ms` | `30000` | First-token timeout for ordinary models. |
+| `reasoning_empty_response_timeout_ms` | `90000` | First-token timeout for reasoning models. |
+| `stall_timeout_ms` | `180000` | Inactivity timeout mid-stream, after the first token. |
+| `rate_limit_wait_max_ms` | `120000` | Longest wait for a rate-limited model whose reset time is near. `0` disables waiting. |
+| `ollama_max_concurrent_streams` | `1` | Simultaneous streams to one local model server (Ollama, LM Studio). |
+| `scan_settle_ms` | `60000` | Milliseconds after start before a scan counts as settled. Only a settled scan may confirm a smaller result that the scan-sanity check refused. |
+| `provider_breaker` | code defaults | Cloud provider circuit breaker. `enabled` (`false` is the kill switch for cloud providers; the local watchdog stays on), `min_models` (`{ "cloud": 3, "local": 2 }`, distinct models with evidence needed to trip), `window_s` (`600`), `cooldown_s` (`[120, 300, 900]`). |
+| `delegation` | off in code | Enforced delegation: oversized `read` and `bash` results go to a cheap summarizer group before the main model sees them. Fields: `enabled`, `min_chars` (`3500`), `group` (`bulk_reader`), `max_raw_chars` (`60000`), `tools` (`["read", "bash"]`), `block_lines` (`350`; `0` disables the pre-call block), `expensive_groups` (`["planning", "code_complex"]`), `expensive_providers` (none). The shipped config turns it on. |
+| `context_budget` | off | Cache-aware compaction, global. Fields: `enabled` (`false`; compacts automatically at turn boundaries), `soft_tokens` (compacts above this when the cache is cold), `hard_tokens` (compacts above this regardless of cache state), `cache_ttl_s` (an idle gap longer than this counts as cold). A group's `context_budget` overrides field by field. Compaction never runs mid-turn. |
+| `non_agent_model_prefixes` | none ships | Model-id families that must never do main-agent work, matched against any path segment of the id. Set it in the user layer; a layer replaces the whole array. |
+| `model_metrics` | `{}` | Per-model metrics (`gdpval`, `throughput_tps`, `avg_latency_ms`) as written by the `update_model_metrics` tool; display and ranking fall back to them. |
+| `integrations` | none | Optional components, one block each. See `integrations.laya` above. |
+
+### Group keys
+
+| Key | Meaning |
+|-----|---------|
+| `description` | Text shown by `/router <group>`. |
+| `method` | Ranking method: `best`, `min_cost`, `min_cost_if_all_priced`, `min_latency`, `max_throughput`, `max_gdpval`, `tiered`, `roundrobin`, `billing_preference`, `dynamic` (the classifier group) or `pipeline`. |
+| `pipeline` | With `method: "pipeline"`: ordered steps `{ "method": …, "top_k": … }`, each applied to the output of the step before. |
+| `top_k` | Keep only the first N candidates after the method. |
+| `min_gdpval_pct` | Quality floor as a percentage of the best GDPval in the pool. |
+| `max_gdpval` | Quality ceiling: models with a higher GDPval are excluded. Unscored models fail a positive cap. |
+| `score_by` | Column that ranks inside this group: `gdpval` (default), `briefcase`, `coding` or `reasoning`. Floors and caps still use GDPval. |
+| `require_score_column` | `true` drops models with no value in the `score_by` column. The gate stands down while no model has the column. |
+| `min_score` | Minimum value in the `score_by` column; models without a value fail. |
+| `max_cost` | Cost cap in the ranking's cost unit (input list price per million tokens for pay-per-token models). `0` admits only local and genuinely free models. |
+| `max_cost_per_m` | Cap on the input price in dollars per million tokens. Local and free token-based models always pass. |
+| `min_context_length` | Minimum context window in tokens; unknown windows fail. |
+| `exclude_providers` | Providers dropped from this group. |
+| `exclude_models` | Model refs or globs dropped from this group, e.g. `"*:free"`. |
+| `billing_preference` | Re-ranks by billing tier after the method: `default`, `local_first`, `strict_local`, `cloud_first` or `local_before_payg`. |
+| `context_budget` | Per-group override of the global `context_budget`, field by field. |
+| `classifier_model` | Pin for the local classifier, `ollama/<model>:<tag>` (dynamic group only). Unset = derived from the models Ollama reports and verified by a probe. |
+| `classifier_fallback` | Pin for the local classifier fallback. Unset = derived. |
+| `classifier_cloud_model` | Cloud classifier `provider/id`, tried first before the probe-verified list. |
+| `classifier_cloud_chain` | Allows sending the raw prompt to a free cloud model when the local classifiers are unavailable. Off in code (data minimization); the shipped `dynamic` group turns it on. |
+
 ## Merge semantics
 
 - **Plain objects** (`exclude`, `providers.openrouter`, …) are merged recursively.

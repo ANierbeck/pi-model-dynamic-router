@@ -66,7 +66,6 @@ export interface Group {
   top_k?: number;
   pipeline?: PipeStep[];
   models?: string[];
-  filter_free?: boolean;
   min_gdpval_pct?: number;
   min_gdpval?: number;
 
