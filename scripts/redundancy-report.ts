@@ -332,6 +332,8 @@ export const ROOT_ALLOWLIST = [
   'CHANGELOG.md',
   // Owner decisions 2026-10-29: CLAUDE.md stays at the root (local), PI.md ships and stays.
   'CLAUDE.md',
+  // Owner decision 2026-11-11: MIT licence text at the root (package.json said MIT without it).
+  'LICENSE',
   'PI.md',
   'README.md',
   'RELEASE_CHECKLIST.md',
