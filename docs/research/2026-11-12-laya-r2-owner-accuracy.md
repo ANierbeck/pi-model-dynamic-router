@@ -77,6 +77,15 @@ Confusion highlights (shadow, truth → r2): `standard` → `continue` 22,
    answers written since 2026-11-08 have stage `comparator` (1 queue item has
    it), so R2 stays at the 55 pre-switch items however much is labelled.
 
+## Update 2026-11-12 — evaluation tooling fixed, R2 decided
+
+Finding 5 above is resolved the same day: `comparator_of` now accepts the
+era-2 `comparator` records (joined on `input.sha`), and `GROUP` mirrors the
+five-group layout. Re-run on the same 246 labels: `comparator_n` 150
+(was 55), paired group delta **−2.7 pp** (95 % CI −11.7…+6.4, sign test
+p = 0.76) — Laya is not ahead of the chain, R2 fails, the verdict stays
+NO-GO. Dated note in `docs/plans/2026-10-15-laya-shadow-evaluation.md`.
+
 ## Limitations
 
 - The shadow queue has no `lastAssistantSnippet`, which production sends.
