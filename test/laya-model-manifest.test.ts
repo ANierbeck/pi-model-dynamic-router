@@ -76,6 +76,10 @@ describe('the shipped manifest', () => {
     );
   });
 
+  it('ships exactly one backend per model: onnx (MLX is not an installer target)', () => {
+    for (const m of shipped.models) expect(Object.keys(m.backends)).toEqual(['onnx']);
+  });
+
   it('ships the default backend (onnx) for every model', () => {
     for (const m of shipped.models) expect(Object.keys(m.backends)).toContain('onnx');
   });

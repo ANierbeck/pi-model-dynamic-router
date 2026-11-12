@@ -11,6 +11,9 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Changed
+- The Laya model installer offers the ONNX backend only (owner decision 2026-11-12, plan `docs/plans/2026-11-12-installer-backend-layout.md`): `laya-models/manifest.json` no longer lists the MLX set for `router@1.0.0`, so the weights release drops the 643 MB MLX checkpoint; `pi-laya-model --help` and the `router-laya-install` skill no longer offer a backend choice. One backend per version; `--backend mlx` is answered with "has no mlx artifact set". The MLX reference server stays in the repository as the parity reference.
+
 ### Added
 - ONNX sidecar package `laya-sidecar/` (`@anierbeck/laya-sidecar`, private until release 2.0.0, plan `docs/plans/2026-11-11-onnx-sidecar-package.md`): serves the Laya router model through ONNX Runtime on Linux, Windows and Apple Silicon. Platform table and install steps in `laya-sidecar/README.md`: darwin/arm64 is tested; the other platforms are not, and Intel Macs are not supported. The install needs `ONNXRUNTIME_NODE_INSTALL=skip`, which keeps the CUDA download off. The vendored inference code is `laya-ts` at `3a38cbe` (Apache-2.0, `LICENSE-laya`).
 - The sidecar's `/classify` answers match the MLX reference on the golden set (180/180) and on a 300-item corpus sample (298/300, gate 297), with production prompt truncation applied on both sides.

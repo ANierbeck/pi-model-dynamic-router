@@ -61,16 +61,15 @@ The result lists each model version with `published`, the backends with
 `published: false`, stop here. Tell the user that the release is not out
 yet, and that installing it needs the owner's release approval.
 
-### 2. Choose the backend
+### 2. Check the platform
 
 Check the platform with `uname -s -m`.
 
-- **Apple Silicon (Darwin, arm64):** offer `mlx` or `onnx`. This is the tested platform.
-- **Linux or Windows (x64 or arm64):** offer `onnx`. It should work there but is **not tested**; say so to the user.
-- **Intel Mac (Darwin, x86_64):** Laya is **not supported**. There is no ONNX Runtime binding for darwin/x64, and MLX is Apple Silicon only. Stop here and tell the user; the router keeps the classifier chain.
-- **Default: `onnx`** where it is offered, the portable backend. `mlx` is the Apple Silicon path.
+- **Apple Silicon (Darwin, arm64):** `onnx`. This is the tested platform.
+- **Linux or Windows (x64 or arm64):** `onnx`. It should work there but is **not tested**; say so to the user.
+- **Intel Mac (Darwin, x86_64):** Laya is **not supported**: ONNX Runtime has no darwin/x64 binding. Stop here and tell the user; the router keeps the classifier chain.
 
-Ask the user which one. Do not pick for them.
+`onnx` is the only backend the installer offers. There is nothing to choose; say which one is installed.
 
 ### 3. Check what is installed and the free space
 
@@ -101,7 +100,7 @@ Ask: "Download and install now? (yes/no)" Continue only on a clear yes.
 pi-laya-model install router@1.0.0 --backend onnx --json
 ```
 
-Use the backend the user chose. An interrupted download resumes when the same
+An interrupted download resumes when the same
 command runs again. On success the JSON has `ok: true`, `model`, `version`,
 `backend`, `dir`, `artifact_sha256`, `bytesDownloaded` and `resumed`. Keep
 `artifact_sha256` for step 9.
@@ -150,10 +149,6 @@ decision log.
 
 The skill does not start a sidecar. Explain the options:
 
-- **MLX (Apple Silicon):** the reference server in the repository checkout,
-  `spikes/laya-http/server.py`. It needs a Python environment with `mlx` and
-  `laya-mlx` installed. Give the command only if the user has that checkout:
-  `python3 spikes/laya-http/server.py --port 8089 --model-dir <the install directory>`.
 - **ONNX:** the sidecar ships as `@anierbeck/laya-sidecar` with release 2.0.0
   and is not published yet. Once it is, the user installs it with
   `ONNXRUNTIME_NODE_INSTALL=skip npm install -g @anierbeck/laya-sidecar` (the
@@ -188,7 +183,6 @@ says "not probed yet". After it, the Laya line shows
 
 - [ ] Installer found (router 2.0.0 or later)
 - [ ] Model version is published (`published: true`)
-- [ ] Backend chosen by the user
 - [ ] Free space and existing installs checked
 - [ ] Download confirmed by the user
 - [ ] Install succeeded, `artifact_sha256` recorded

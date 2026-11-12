@@ -78,6 +78,10 @@ describe('router-laya-install SKILL.md', () => {
     expect(skill).not.toMatch(/pi-laya-model\s+serve|pi-laya-model\s+start/);
   });
 
+  it('offers the ONNX backend only: MLX is not an installer target', () => {
+    expect(skill).not.toMatch(/mlx/i);
+  });
+
   it('no longer says the sidecar is not packaged (plan step 9)', () => {
     expect(skill).not.toMatch(/not packaged yet|not yet packaged/i);
   });

@@ -504,6 +504,12 @@ describe('the pi-laya-model command line', () => {
     expect(err.join('')).toContain('Usage');
   });
 
+  it('the usage text offers only the onnx backend', async () => {
+    expect(await main([], io())).toBe(2);
+    expect(err.join('')).toMatch(/--backend onnx\b/);
+    expect(err.join('')).not.toMatch(/mlx/i);
+  });
+
   it('human output names the install dir', async () => {
     expect(await run('install', 'r9', '--manifest', manifestPath, '--root', root)).toBe(0);
     expect(out.join('')).toContain(versionDir());

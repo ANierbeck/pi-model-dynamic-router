@@ -81,62 +81,6 @@
               "asset": "NOTICE"
             }
           ]
-        },
-        "mlx": {
-          "head_file": {
-            "path": "questions.json",
-            "format": "laya-questions"
-          },
-          "files": [
-            {
-              "path": "encoder/config.json",
-              "asset": "encoder-config.json",
-              "bytes": 1939,
-              "sha256": "81d6856137aeb1d9cfbc1c1776d5b8196eed2e6ff879e894f517a21a580cc9d3"
-            },
-            {
-              "path": "model.safetensors",
-              "asset": "model.safetensors",
-              "bytes": 643835524,
-              "sha256": "8d4ed3f0b5f671e24c990deb0abcc94150cdeaaec64644f89189ef681d6be3fd"
-            },
-            {
-              "path": "questions.json",
-              "asset": "questions.json",
-              "bytes": 908,
-              "sha256": "dd46847d58cf6f56f02e79249814ef477a95e97150152f9e8b9de4177654036f"
-            },
-            {
-              "path": "rl_agent_config.json",
-              "asset": "rl_agent_config.json",
-              "bytes": 4941,
-              "sha256": "332e7eb720a8e97dc2368a2d09a657adb4ff28adcd85f80049c163c1b3706577"
-            },
-            {
-              "path": "tokenizer/tokenizer.json",
-              "asset": "tokenizer.json",
-              "bytes": 34363285,
-              "sha256": "dbba919c6e5e492bc22beb80abb64e6fcc7e8744dc696e8388b8c977767afa4b"
-            },
-            {
-              "path": "tokenizer/tokenizer_config.json",
-              "asset": "tokenizer_config.json",
-              "bytes": 624,
-              "sha256": "f2ff584a8f78ac9f3b6fd0afcf9ab310e41c2d445ef628f9ab4b0d594e992b7a"
-            },
-            {
-              "path": "LICENSE",
-              "bytes": 10173,
-              "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
-              "asset": "LICENSE"
-            },
-            {
-              "path": "NOTICE",
-              "bytes": 957,
-              "sha256": "76291cb2a429567066cb6337929734d969cddc54d845ac10671a786653cd01c7",
-              "asset": "NOTICE"
-            }
-          ]
         }
       }
     }
