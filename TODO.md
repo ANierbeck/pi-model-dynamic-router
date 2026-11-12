@@ -219,8 +219,13 @@ decide this **before 2.0**: measure what remains of the original (lines still
 attributed to its commits, files that exist unchanged), then decide whether
 the fork relationship, the README banner and the second copyright line stay.
 The upstream repository has no licence text of its own (`package.json` says
-MIT), so the notice must not be dropped before that is settled. Needs its own
-plan (AGENTS.md §11).
+MIT), so the notice must not be dropped before that is settled.
+
+> **Status 2026-11-12:** measured and planned, decision open with the owner.
+> Plan: `docs/plans/2026-11-12-fork-remainder.md` (proposed). Measurement:
+> `docs/research/2026-11-12-fork-remainder-measurement.md` — 571 of 2933 baseline
+> lines still at HEAD (at most 19.5 %), 0 of 15 upstream files byte-identical.
+> The banner, the second copyright line and the fetch scope need the owner's call.
 
 ## 🚀 **Medium-term Improvements** (1-3 days)
 
