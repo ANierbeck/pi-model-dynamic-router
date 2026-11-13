@@ -129,9 +129,11 @@ ask Laya + the chain about those prompts too and log them as observations
    decision 1): DECIDED by the owner 2026-11-08 — rename before 2.0.0, so
    the integration contract (at least contract + rename + migration
    warning) lands before the release.
-4. **`~/.laya-ft` fallback label migration**: the labeling tooling's
-   `fallback` corpus label is renamed before 2.0.0 (owner go 2026-11-08;
-   see the fallback-naming plan). Owner-side, not shipped with the router.
+4. **`~/.laya-ft` fallback label migration**: DONE 2026-11-13 (owner go
+   2026-11-08; see the fallback-naming plan). Owner-side, not shipped with the
+   router: the tooling speaks v2-r3 + the five-group layout, and the stored
+   corpus labels migrated (`fallback` -> `continue` with `consensus_v1`
+   provenance; raw teacher answers and the owner's own ratings untouched).
 
 The release itself stays a separate explicit approval (AGENTS.md §1) — the
 gate is a prerequisite, not a substitute for it.
