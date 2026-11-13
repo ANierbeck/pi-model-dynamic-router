@@ -89,6 +89,9 @@ export function isLoopbackHost(hostname: string): boolean {
  * alone. On `enabled: true` the base fields are checked (loopback endpoint,
  * mode, timeout) and defaulted; a wrong-typed field falls back to its default
  * with one warning; a fatal problem sets `enabled: false`.
+ *
+ * Mutates `block` in place: defaults are written into the object the caller
+ * passed in, and a fatal problem writes `enabled: false` into it.
  */
 export function validateIntegration(spec: IntegrationSpec, block: Record<string, unknown>): void {
   if (!block || typeof block !== 'object') return;

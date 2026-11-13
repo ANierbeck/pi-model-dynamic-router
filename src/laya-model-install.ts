@@ -288,6 +288,12 @@ export async function installModel(opts: InstallOptions): Promise<InstallResult>
       fs.rmSync(dest);
       have = -1;
     }
+    // A resume point of the full size is only skipped when its digest matches;
+    // otherwise it is re-fetched from scratch instead of failing the install.
+    if (have === f.bytes && (await sha256Of(dest)) !== f.sha256) {
+      fs.rmSync(dest);
+      have = -1;
+    }
     if (have < f.bytes) {
       const url = new URL(encodeURIComponent(f.asset), entry.base_url);
       const got = await download(url, dest, Math.max(have, 0), f, opts);

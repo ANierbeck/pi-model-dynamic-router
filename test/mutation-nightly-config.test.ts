@@ -110,6 +110,8 @@ describe('nightly mutation testing', () => {
     );
     const m = wf.match(/retention-days:\s*(\d+)/);
     expect(m, 'upload step must set retention-days explicitly').not.toBeNull();
+    // The nightly report has to outlive a triage cycle; 90 days is the longest
+    // window this repo uses, so the floor pins it.
     expect(Number(m![1])).toBeGreaterThanOrEqual(90);
   });
 

@@ -85,7 +85,10 @@ function readStoredFingerprint(
       }
     )?._dynamic?.[field];
     return typeof fp === 'string' ? fp : undefined;
-  } catch {
+  } catch (err) {
+    // An unreadable snapshot is treated like one that predates the fingerprint:
+    // it is regenerated once. Logged, so the regeneration is explainable.
+    errorLog(`[router] Could not read ${field} from ${file}; regenerating: ${String(err)}`);
     return undefined;
   }
 }

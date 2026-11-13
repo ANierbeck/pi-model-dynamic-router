@@ -4,7 +4,7 @@
 //                   -> {"category", "confidence", "probabilities", "ms"}
 //   GET  /health    -> identity fields (see identity.ts)
 // Listens on 127.0.0.1 only. Nothing is downloaded (plan step 7).
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { healthPayload, servedHead } from './identity.js';
 import { openClassifier, type ClassifyContext } from './classify.js';
@@ -47,6 +47,32 @@ async function main(): Promise<void> {
   const health = JSON.stringify(healthPayload(args.modelDir, served));
   const classifier = await openClassifier(args.modelDir, served.head);
 
+  // Reads the whole request body; resolves with the UTF-8 text at end of input.
+  const readBody = (req: IncomingMessage): Promise<string> =>
+    new Promise((resolve, reject) => {
+      let raw = '';
+      req.on('data', (c: Buffer) => (raw += c.toString('utf8')));
+      req.on('end', () => resolve(raw));
+      req.on('error', reject);
+    });
+
+  const handleClassify = async (
+    req: IncomingMessage,
+    send: (code: number, body: string) => void
+  ): Promise<void> => {
+    try {
+      const body = JSON.parse(await readBody(req)) as {
+        prompt: unknown;
+        context?: ClassifyContext | null;
+      };
+      if (typeof body.prompt !== 'string') return send(400, '{"error":"prompt must be a string"}');
+      const out = await classifier.classify(body.prompt, body.context);
+      send(200, JSON.stringify(out));
+    } catch (e) {
+      send(500, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    }
+  };
+
   const server = createServer((req, res) => {
     const send = (code: number, body: string): void => {
       res.writeHead(code, {
@@ -57,21 +83,7 @@ async function main(): Promise<void> {
     };
     if (req.method === 'GET' && req.url === '/health') return send(200, health);
     if (req.method !== 'POST' || req.url !== '/classify') return send(404, '{"error":"not found"}');
-    let raw = '';
-    req.on('data', (c: Buffer) => (raw += c.toString('utf8')));
-    req.on('end', () => {
-      void (async () => {
-        try {
-          const body = JSON.parse(raw) as { prompt: unknown; context?: ClassifyContext | null };
-          if (typeof body.prompt !== 'string')
-            return send(400, '{"error":"prompt must be a string"}');
-          const out = await classifier.classify(body.prompt, body.context);
-          send(200, JSON.stringify(out));
-        } catch (e) {
-          send(500, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
-        }
-      })();
-    });
+    void handleClassify(req, send);
   });
   server.listen(args.port, '127.0.0.1', () => {
     console.log(`laya sidecar on 127.0.0.1:${args.port} (${served.source} head)`);

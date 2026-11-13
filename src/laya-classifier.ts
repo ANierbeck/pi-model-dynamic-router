@@ -89,7 +89,12 @@ export const LAYA_SPEC: IntegrationSpec = {
 /** Registry key of the Laya integration (src/integration.ts); availability lives there. */
 const LAYA_INTEGRATION = 'laya';
 let _timeoutStrikes = 0;
-/** What the sidecar reported on /health at the last successful probe; null = nothing usable. */
+/**
+ * What the sidecar reported on /health at the last successful probe; null =
+ * nothing usable. Module-level state on purpose: one sidecar serves one router
+ * process. Written by the probe, read by `/router status`; it is not reset by
+ * a session change.
+ */
 let _identity: LayaReportedIdentity | null = null;
 
 /** The request ran into `timeout_ms` (as opposed to failing outright). */

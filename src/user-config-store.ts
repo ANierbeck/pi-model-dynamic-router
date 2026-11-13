@@ -138,6 +138,31 @@ function badSection(
   return undefined;
 }
 
+/**
+ * The per-integration blocks the delta merges into (`integrations.<name>`) must
+ * be objects or absent, for the same reason as `badSection`: the write merges
+ * into the block, so a string there would be replaced silently. Release review
+ * 2026-11-13 (Config/CLI): the top-level check alone did not cover this.
+ */
+function badIntegrationBlock(
+  config: Record<string, unknown>,
+  delta: UserConfigDelta,
+  file: string
+): string | undefined {
+  const existing = config.integrations;
+  if (!delta.integrations || typeof existing !== 'object' || existing === null) return undefined;
+  for (const name of Object.keys(delta.integrations)) {
+    const block = (existing as Record<string, unknown>)[name];
+    if (
+      block !== undefined &&
+      (typeof block !== 'object' || block === null || Array.isArray(block))
+    ) {
+      return `Not written — "integrations.${name}" in ${file} is not an object; fix or remove it first.`;
+    }
+  }
+  return undefined;
+}
+
 export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfigStore {
   const file = userConfigPath(opts.agentDir ?? piAgentDir());
   return {
@@ -183,7 +208,7 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
           delta.context_budget && 'context_budget',
           delta.integrations && 'integrations',
         ].filter((key): key is string => Boolean(key));
-        const problem = badSection(next, touched, file);
+        const problem = badSection(next, touched, file) ?? badIntegrationBlock(next, delta, file);
         if (problem) return { ok: false, error: problem };
         if (delta.exclude?.models || delta.exclude?.providers) {
           const exclude =
