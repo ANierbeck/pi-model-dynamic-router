@@ -35,6 +35,13 @@ describe('dependabot config policy', () => {
     expect(npm.groups['minor-and-patch']['update-types']).toEqual(['minor', 'patch']);
   });
 
+  // Release review 2026-11-13 (scripts/tests): the open-PR cap was not pinned.
+  // Mutation-checked: a cap of 6 turns this red.
+  it('both ecosystems cap open update PRs at 5', () => {
+    expect(npm['open-pull-requests-limit']).toBe(5);
+    expect(actions['open-pull-requests-limit']).toBe(5);
+  });
+
   it('the host dependency is never auto-bumped', () => {
     // Host upgrades are deliberate, planned rounds (see the 0.99.1
     // hardening plan); a Dependabot "chore(deps)" PR must never decide

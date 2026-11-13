@@ -72,4 +72,14 @@ describe('UserConfigStore.applyDelta — non-object sections', () => {
     expect(res.ok).toBe(false);
     expect(readUser()).toEqual({ integrations: 'oops' });
   });
+
+  // Release review 2026-11-13 (Config/CLI, verified against the code): the
+  // check covered only the top-level section, so a non-object BLOCK inside an
+  // object section was silently replaced with { enabled: true }.
+  it('refuses an integration block that is not an object, and keeps it', () => {
+    fs.writeFileSync(userFile, JSON.stringify({ integrations: { laya: 'oops' } }));
+    const res = store().applyDelta({ integrations: { laya: { enabled: true } } });
+    expect(res.ok).toBe(false);
+    expect(readUser()).toEqual({ integrations: { laya: 'oops' } });
+  });
 });

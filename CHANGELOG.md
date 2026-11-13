@@ -35,6 +35,14 @@ without the owner's explicit release approval).
 
 
 ### Fixed
+- A user config whose `integrations.<name>` block is not an object is refused
+  by `/router config integration` instead of being silently replaced
+  (release review 2026-11-13).
+- A same-size partial model download with wrong content is re-fetched; it no
+  longer makes the whole install fail on the final digest check
+  (`laya-model-install`).
+- An unreadable `router-config.dynamic.json` snapshot is logged before it is
+  regenerated (it was silent).
 - User config writes (`/router config exclude|unexclude|compaction|integration`) take a lock file, so two routers writing at the same time no longer drop each other's edit. A user file whose `exclude`, `context_budget` or `integrations` section is not an object is refused with a repair message instead of being replaced by `{}`.
 - A single Laya classify timeout no longer disables the stage for five minutes. `classifyWithLayaDetailed` marked the sidecar unavailable on ANY failure, so one answer slower than `timeout_ms` handed every following prompt of that process to the cloud chain for `UNAVAILABLE_TTL_MS` — against the owner decision that Laya decides every prompt and the chain only answers on failure (`docs/plans/2026-10-25-laya-sole-classifier.md`, decisions 1 and 3). Live evidence 2026-11-08: 56 `classify request timed out after 1500ms; stage disabled` warnings in `router.log`; the real-prompt latency of the logged Laya answers had a median of 1.46 s and a p90 of 1.84 s (n=20), and the same sidecar answered identical work in 22 ms to 2.6 s depending on GPU contention. Now a timeout hands only THAT prompt to the chain and keeps the stage on; `TIMEOUT_STRIKES_BEFORE_DOWN` (3) timeouts in a row still take it down for the TTL (a hung sidecar must not tax every prompt), any answer resets the count, and connection errors, HTTP errors and malformed answers still disable it at once. Red-first in `test/laya-timeout-strikes.test.ts` (3 of 5 red) and `test/laya-chain.test.ts` (plan step 4: a hanging sidecar is transparent — no `laya`/`comparator` record — and the next prompt is Laya's again).
 - `classifier_laya.confidence_threshold: 0` is accepted again. The 2026-11-01 validation (`5d9427b`) required `0 < t <= 1` and silently reset 0 to 0.8 on every start, which defeated the owner-decided "Laya decides every prompt, no gate" setting (`docs/plans/2026-10-25-laya-sole-classifier.md`): live traffic kept going to the cloud chain whenever Laya was below 0.8. Found by the 2026-11-08 live check of the decision log (the startup warning `invalid confidence_threshold 0 — falling back to 0.8` appeared on every pi start). Negative, NaN and non-number values are still rejected. `docs/config-override.md` no longer says "keep the gate" as if 0 were invalid.

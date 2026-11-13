@@ -306,6 +306,25 @@ describe('install over HTTP: resume and Range', () => {
     expect(leftovers()).toEqual(['1.0.0']);
   });
 
+  // Release review 2026-11-13 (Laya, verified): a resume point of the FULL
+  // manifest size was accepted without a digest check; only the final sha256
+  // pass caught it, which discarded the whole install. Now the partial is
+  // digest-checked first and re-fetched when it does not match.
+  it('a same-size partial with wrong content is re-fetched, not accepted', async () => {
+    const big = PAYLOAD[1]!;
+    cutAfter = { [big.asset]: 100 * 1024 };
+    await installModel({ manifest: manifestFor(base), model: 'r9', root }).catch(() => {});
+    fs.writeFileSync(
+      path.join(versionDir() + '.tmp', big.path),
+      Buffer.alloc(big.content.length, 0x41)
+    );
+    cutAfter = {};
+    requests = [];
+    await installModel({ manifest: manifestFor(base), model: 'r9', root });
+    expect(requests.map((r) => r.asset)).toContain(big.asset);
+    expect((await verifyInstall({ root, model: 'r9', version: '1.0.0' })).ok).toBe(true);
+  });
+
   it('a server that ignores Range (200 instead of 206) still yields a correct install', async () => {
     const big = PAYLOAD[1]!;
     cutAfter = { [big.asset]: 100 * 1024 };
