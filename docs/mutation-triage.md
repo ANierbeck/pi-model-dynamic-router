@@ -1744,3 +1744,20 @@ the first metrics update. The pin is red on pristine (TypeError), green with
 
 With this round the `metrics.ts` / `routing.ts` remainders are closed: every
 undetected mutant is killed, ledgered equivalent, or covered by a pin.
+
+## Nightly state (2026-11-13)
+
+> Run 43413190826, `main` @ `70aefd8`: score **86.93 %** (3089 mutants:
+> 2686 killed, 354 survived, 50 no coverage; 23.05 tests per mutant).
+> By file: `metrics.ts` 90.35 %, `routing.ts` 95.03 %,
+> `stream-orchestrator.ts` 77.44 %.
+
+The score has been identical since run 42471132727 (2026-11-08): none of the
+three scope files changed after the N11 round and the slice closures, so the
+nightly's incremental mode reuses the stored results — a change to a scope
+file is the next triage trigger, and the run after it reports only the
+changed regions. The `survived` rows are the mutants the slice rounds and
+N11 ledgered as EQUIVALENT (each with its reason in the round's dataset) —
+not new findings. The no-coverage rows are the regions the rounds recorded
+as undriven by any test (see the slice sections); nothing in this entry
+re-triages them. No triage is open as of this entry.

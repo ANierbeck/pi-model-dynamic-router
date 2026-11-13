@@ -628,9 +628,13 @@ Pick up in a later round, each as its own plan where noted (§11):
   runtime requirement for inference — the tradeoff moves to the 290 MB native
   dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
   agreement). Remaining steps (`/health` contract tests done 2026-11-08):
-  live-queue parity run, packaging with pinned revision + checksum, r2 weights publish (own
-  §1 approval). Linux/Windows latency WAIVED by the owner 2026-11-08
-  (modern PCs assumed similar).
+  live-queue parity run, the per-platform install docs (part 2), and the r2
+  weights publish (own §1 approval). Packaging is DONE 2026-11-12: the ONNX
+  sidecar package `laya-sidecar/` (plan `2026-11-11-onnx-sidecar-package.md`,
+  PR #157 — npm package, parity 180/180 golden and 298/300 corpus) and the
+  one-backend installer (PR #159: MLX left the installer, `router@1.0.0`
+  ships the ONNX set only). Linux/Windows latency WAIVED by the owner
+  2026-11-08 (modern PCs assumed similar).
 - **Laya model artifact + install skill**
   (`docs/plans/2026-11-08-laya-model-artifact.md`, in progress 2026-11-08;
   **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
@@ -647,6 +651,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   `pi-laya-model` bin, runtime (Python/Node) and backend chosen by the user,
   weights in a dedicated release line of this repo. Open: whether the first
   weights publish stays a 2.0.0 blocker (publish itself needs its own §1 go).
+  **2026-11-12:** the release staging directory is cleaned (four hard-linked
+  MLX files removed, originals intact) and `laya-release-check` passes for
+  `router@1.0.0`; the installer offers the ONNX backend only (PR #159).
 - **Router-managed sidecar start** (owner 2026-11-08, "can happen later"; not
   a 2.0.0 blocker; needs its own plan per AGENTS.md §11 when scheduled): the
   router should be able to start an installed sidecar itself instead of
@@ -665,10 +672,18 @@ Pick up in a later round, each as its own plan where noted (§11):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
   disagreement labeling, the `continue` step (both need real Laya decisions
-  to accumulate; measured 2026-11-12: 91 paired laya/comparator records since the
-  2026-11-08 restart, 49 distinct prompts, 23 raw-category disagreements), and whether the
-  momentum observation (enabled in the owner's user layer) gets evaluated.
-  Laya stays in the data-reconciliation phase (owner 2026-11-07).
+  to accumulate; measured 2026-11-12: 91 paired laya/comparator records since
+  the 2026-11-08 restart, 49 distinct prompts, 23 raw-category
+  disagreements), and whether the momentum observation (enabled in the
+  owner's user layer) gets evaluated. Laya stays in the data-reconciliation
+  phase (owner 2026-11-07). **State 2026-11-12** (`docs/research/2026-11-12-laya-r2-owner-accuracy.md`):
+  all 248 owner labels re-classified with r2 — 22.8 % category accuracy on
+  live prompts (majority baseline 30.5 %), held-out golden 43.2 % vs 53.4 %
+  for the cloud teachers; the pre-registered rule re-run says NO-GO (R2 now
+  decided on 150 paired items, −2.7 pp, p = 0.76, after the evaluation
+  tooling fix). Laya nonetheless stays ACTIVE in the owner's live setup
+  (owner 2026-11-12: it works well for him; `continue` answering less often
+  may be the better read).
 - **Felt quality vs. benchmark ranking** (2026-10-31 observation): needs its
   own plan — how owner ratings per model and task type enter the ranking
   (user layer, allowed per ADR-0025 §2C) without model names in shipped code.
@@ -696,16 +711,17 @@ Pick up in a later round, each as its own plan where noted (§11):
   disagreement labeling, momentum decision, `continue` decision, closing
   numbers (exit criteria proposed in
   `docs/plans/2026-10-25-laya-sole-classifier.md`, "Release gate");
-  (2) sidecar distribution COMPLETE — `/health` contract tests, live-queue
-  parity, packaging with pinned revision + checksum + install docs, r2
-  weights publish (own §1 approval); Linux/Windows latency WAIVED (owner:
-  modern PCs assumed similar); the versioned artifact + install skill are
+  (2) sidecar distribution — `/health` contract tests DONE, packaging DONE
+  2026-11-12 (ONNX sidecar package, PR #157; one-backend installer, PR #159);
+  still open: the live-queue parity run and the per-platform install docs
+  (part 2); the r2 weights publish needs its own §1 approval;
+  Linux/Windows latency WAIVED (owner: modern PCs assumed similar); the
+  versioned artifact + install skill are
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
-  `integrations.laya` before 2.0.0 (decided 2026-11-08) — contract, rename and
-  migration warning DONE 2026-11-11; the status section and the config
-  subcommand are still open (see the integrations item under "Integration &
-  Extensibility"); the consumers outside the repo are migrated; (4) the
-  `~/.laya-ft` fallback label migration (owner go 2026-11-08). The release itself
+  `integrations.laya` — COMPLETE 2026-11-12 (contract, rename, migration
+  warning, status section, config subcommand, consumers in and outside the
+  repo; plan closed, PR #166); (4) the `~/.laya-ft` fallback label migration
+  (owner go 2026-11-08, still to do). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.
 
