@@ -26,6 +26,10 @@ Set `ONNXRUNTIME_NODE_INSTALL=skip`. Without it, `onnxruntime-node` downloads
 CUDA execution-provider libraries from NuGet while the package installs (on
 Linux x64). The sidecar runs on the CPU provider and does not need them.
 
+For a local (non-global) install, an `.npmrc` with
+`onnxruntime-node-install=skip` works too; global installs do not read it,
+which is why the variable is set per command above.
+
 macOS and Linux:
 
 ```bash
@@ -64,6 +68,14 @@ Check what it serves:
 curl -s http://127.0.0.1:8089/health
 ```
 
+Windows PowerShell (the model directory under the user profile):
+
+```powershell
+laya-sidecar `
+  --model-dir "$env:USERPROFILE\.pi\agent\laya-models\router\1.0.0" `
+  --head-json "$env:USERPROFILE\.pi\agent\laya-models\router\1.0.0\head.json"
+```
+
 `head_sha256` and `artifact_sha256` must equal the values in the install record.
 The router reads both fields from this answer; a mismatch means a different
 model is being served.
@@ -79,8 +91,11 @@ model is being served.
 
 `scripts/parity.mjs` compares a running sidecar with a stored reference
 recorded from the MLX reference server (`spikes/laya-http/server.py`, Apple
-Silicon). The gates are golden 180/180 and corpus at least 297/300 of the
-300-item sample. `scripts/record-reference.mjs` records the reference.
+Silicon). The gates are golden 180/180, corpus at least 297/300 of the
+300-item sample, and the live queue 259/260 (2026-11-13; the single
+disagreement is a planning/code_complex near-tie with a top-2 margin under
+0.005 — `docs/research/2026-11-13-laya-live-queue-parity.md`).
+`scripts/record-reference.mjs` records the reference.
 
 ## Licence
 
