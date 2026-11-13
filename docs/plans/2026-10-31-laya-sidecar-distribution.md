@@ -1,13 +1,13 @@
 # Laya sidecar distribution: give every user a classifier they can actually run
 
-**Status:** in progress 2026-11-01; **2.0.0 blocker since 2026-11-08** (owner:
+**Status:** done 2026-11-13 except the release action; **2.0.0 release blocker since 2026-11-08** (owner:
 "everything Laya" ships before the release). Owner decisions 1–4 are
 made (see below); the merge documents Laya as experimental (commit
 `fe9d913`). Remaining work: only the weights publish (live-queue parity DONE
 2026-11-13, 259/260; packaging DONE 2026-11-12 via PR #157/#159; per-platform
 install docs DONE; `/health` contract tests done 2026-11-08). The weights
 publish is a release action — separate explicit owner approval per AGENTS.md
-§1. The Linux/Windows latency measurement is WAIVED
+§1. All plan steps are checked; nothing in this plan is open except that action. The Linux/Windows latency measurement is WAIVED
 (owner 2026-11-08: modern PCs are assumed similar). The r2 weights publish
 is a release action — separate explicit approval per AGENTS.md §1.
 
@@ -51,6 +51,7 @@ Ship the router with Laya **off by default and honest about its setup**, and giv
 
 ## Verified against
 
+- 2026-11-13 status re-check on `main` @ `9fcc29f`: every checkbox in this plan is ticked; the only open item is the weights publish (`laya-release-check` `ok`, manifest `published: false`), a release action. Child plan `2026-11-11-onnx-sidecar-package.md` re-checked the same day.
 commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisions 1(a)/2 and the user docs recorded above), checked against the code, the user's sidecar manager extension, `~/.laya-ft/README.md`, `docs/research/2026-10-14-laya-finetuning-state.md` and the public model cards of `convaiinnovations/laya-multilingual`, `laya-mlx` (PyPI 0.4.0) and two community ONNX conversions. **Not checked:** that any ONNX build reproduces our fine-tuned weights (no conversion was run), CPU latency on non-Apple hardware (numbers below are third-party README claims), the licence obligations of publishing a fine-tuned derivative, whether the fine-tuned weights leak training prompts (only the memorisation figure from the research note exists).
 
 ## Steps

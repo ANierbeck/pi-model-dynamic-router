@@ -1,6 +1,6 @@
 # ONNX sidecar package: an installable Laya sidecar for Linux, Windows and macOS
 
-**Status:** in progress since 2026-11-12 — owner decisions D1–D8 taken 2026-11-11 (see Decisions). Steps 2–10 are built and tested on `feat/laya-sidecar`; the release line stays open until the owner's release-specific go. Done means built, tested and documented, not published: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1).
+**Status:** done 2026-11-13 — steps 2–10 built, tested and documented (PR #157, #159 merged; this plan's status re-checked against the code on 2026-11-13). Not published, by design: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1). The publish and tag are release actions, not plan steps; they are tracked in the release-prep entry of `TODO.md`.
 
 **Parent:** `docs/plans/2026-10-31-laya-sidecar-distribution.md`, open step "Packaging, pinned revision, checksum, install docs per platform". This plan is that one step, and nothing else from the parent.
 **Related:** `docs/plans/2026-11-08-laya-model-artifact.md` (manifest, installer and `/health` are done there; this plan consumes them). Measurements: `docs/research/2026-11-11-onnx-sidecar-package-facts.md`.
@@ -49,6 +49,7 @@ One Node sidecar package that serves the ONNX artifacts of a `pi-laya-model inst
 
 ## Verified against
 
+- 2026-11-13 status re-check on `main` @ `9fcc29f`: `laya-sidecar/package.json` pins `onnxruntime-node` 1.31.1 and the lockfile agrees; no `postinstall` of our own; `private: true`; `npm view @anierbeck/laya-sidecar` returns 404 (unpublished); PRs #157 and #159 merged; the test and script files named in the steps exist. Not re-run: the test suites (run in CI on the PRs).
 - `laya-sidecar/` at `83236e6` (steps 2–7) and the step 8–10 commit on `feat/laya-sidecar`; parity numbers in `docs/research/2026-11-12-onnx-sidecar-parity.md`.
 - `main` @ `92a5eee` (2026-11-11): `laya-models/manifest.json` (r2@1.0.0, `published: false`), `package.json` `files` allowlist, `spikes/laya-http/server.py` and `identity.py`, `src/laya-model-manifest.ts`, `skills/router-laya-install/SKILL.md`.
 - Registry and tarballs of `onnxruntime-node` 1.30.0 and 1.31.1 read on 2026-11-11 (`npm view`, `npm pack`, `tar -t`, `script/install.js`, `script/install-metadata.js`, `script/install-utils.js`); `npm audit` on a lockfile of 1.30.0 (0 findings).
@@ -68,4 +69,4 @@ One Node sidecar package that serves the ONNX artifacts of a `pi-laya-model inst
 - [x] Step 8: platform table in the docs (D5/D6 wording).
 - [x] Step 9: skill step 8 and `test/laya-install-skill.test.ts` updated (red first).
 - [x] Step 10: install docs per platform (README/`docs/config-override.md` links), CHANGELOG entry under Unreleased.
-- [ ] Release line set up but **not** published — publish and tag need the owner's release-specific go (AGENTS.md §1).
+- Release actions (npm publish of `@anierbeck/laya-sidecar`, tag `laya-sidecar-v<version>`, GitHub Release) are **not** plan steps. They need the owner's release-specific go (AGENTS.md §1) and are tracked in `TODO.md`. The package is `private: true` today.
