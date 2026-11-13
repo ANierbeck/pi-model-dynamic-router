@@ -71,10 +71,11 @@ ADR, `docs/adr/0001` included.
    (renamed to `continue-inherits-category.test.ts`, its comments still said
    "LLM-said-'fallback'"), and a "fell through to `fallback → tactical`"
    comment in the probe (both groups are gone). `docs/adr/0001` is untouched
-   (ADRs are immutable, §12). Still open, owner-side: the `~/.laya-ft`
-   labeling tooling still uses `fallback` as a corpus label — renaming it
-   would migrate existing labels, so it is the owner's call, not a silent
-   edit here.
+   (ADRs are immutable, §12). Closed owner-side 2026-11-13 (owner go
+   2026-11-08): the `~/.laya-ft` labeling tooling speaks the v2-r3 taxonomy
+   and the five-group layout, and the stored corpus labels were migrated
+   (`fallback` -> `continue` with a `consensus_v1` provenance field; raw
+   teacher answers and the owner's own rating columns untouched).
 3. ✅ **Round 2 — cloud chain (C):** `classifier_cloud_fallback` →
    `classifier_cloud_chain`, `allowCloudFallback` → `allowCloudChain`,
    `callCloudFallback` → `callCloudChain`, `classifier-fallback-probe.ts` →

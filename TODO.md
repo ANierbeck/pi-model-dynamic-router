@@ -720,8 +720,12 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
   `integrations.laya` — COMPLETE 2026-11-12 (contract, rename, migration
   warning, status section, config subcommand, consumers in and outside the
-  repo; plan closed, PR #166); (4) the `~/.laya-ft` fallback label migration
-  (owner go 2026-11-08, still to do). The release itself
+  repo; plan closed, PR #166); (4) the `~/.laya-ft` fallback label migration —
+  DONE 2026-11-13 (owner go 2026-11-08): the labeling tooling speaks the v2-r3
+  taxonomy and the five-group layout; the stored corpus labels were migrated
+  (`fallback` -> `continue` with a `consensus_v1` provenance field:
+  labels.jsonl 1251 rows, golden.jsonl 67; raw teacher files, `owner_cat`,
+  `continue_ok`, `truth_v2` untouched; backups next to the files). The release itself
   (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
   never implied by this list.
 
