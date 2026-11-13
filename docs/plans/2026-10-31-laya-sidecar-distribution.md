@@ -3,10 +3,11 @@
 **Status:** in progress 2026-11-01; **2.0.0 blocker since 2026-11-08** (owner:
 "everything Laya" ships before the release). Owner decisions 1–4 are
 made (see below); the merge documents Laya as experimental (commit
-`fe9d913`). Remaining work: the live-queue parity run, the per-platform
-install docs (part 2) and the weights publish (`/health` contract tests done
-2026-11-08; packaging done 2026-11-12 via the ONNX sidecar package, PR #157,
-and the one-backend installer, PR #159). The Linux/Windows latency measurement is WAIVED
+`fe9d913`). Remaining work: only the weights publish (live-queue parity DONE
+2026-11-13, 259/260; packaging DONE 2026-11-12 via PR #157/#159; per-platform
+install docs DONE; `/health` contract tests done 2026-11-08). The weights
+publish is a release action — separate explicit owner approval per AGENTS.md
+§1. The Linux/Windows latency measurement is WAIVED
 (owner 2026-11-08: modern PCs are assumed similar). The r2 weights publish
 is a release action — separate explicit approval per AGENTS.md §1.
 
@@ -64,11 +65,20 @@ commits `67c3cbd` (checked 2026-10-31) and `fe9d913` (checked 2026-11-01; decisi
   decision 4 (Python is not a hard runtime requirement for inference;
   `onnxruntime-node` meets parity and the latency budget on Apple Silicon) and
   rules out int8 (69 % argmax agreement, confidence destroyed).
-- [ ] Live-queue parity run through both backends (needs more queue items).
+- [x] Live-queue parity run through both backends — DONE 2026-11-13: 259/260
+  (99.6 %, gate 99 %), the single disagreement a planning/code_complex
+  near-tie (top-2 margin < 0.005 on both backends), max probability delta
+  0.0057, no confidence drift > 0.05. Items and reference are stored under
+  `~/.laya-ft/data/parity/` (mode 600); measurement:
+  `docs/research/2026-11-13-laya-live-queue-parity.md`.
 - [x] ~~Latency measured on at least one Linux x86 and one Windows machine.~~
   WAIVED by the owner 2026-11-08: modern PCs are assumed similar; the Apple
   Silicon fp32 numbers in
   `docs/research/2026-11-08-onnxruntime-node-spike.md` stand as reference.
 - [x] Packaging, pinned revision, checksum — DONE 2026-11-12 via the child plan (`docs/plans/2026-11-11-onnx-sidecar-package.md`, PR #157) plus the one-backend installer (PR #159). Install docs per platform: the tested darwin/arm64 path is documented; the other platforms' docs are part 2, still open. **Planned in** `docs/plans/2026-11-11-onnx-sidecar-package.md` (decisions D1–D8 taken 2026-11-11).
 - [x] `test/package-contents.test.ts` pins the shipped file set (allowlist since commit `0dff78b`) — the spike directory and owner paths cannot ship.
-- [ ] Per-platform install docs with the packaged sidecar.
+- [x] Per-platform install docs with the packaged sidecar — the
+  `laya-sidecar/README.md` covers install (bash and PowerShell), start
+  (bash and PowerShell), the platform table and the parity gates
+  (2026-11-13: Windows start example, the `.npmrc` note for local installs,
+  the live-queue gate). Linux/Windows remain documented as untested.

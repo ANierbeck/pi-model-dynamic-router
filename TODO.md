@@ -628,13 +628,16 @@ Pick up in a later round, each as its own plan where noted (§11):
   runtime requirement for inference — the tradeoff moves to the 290 MB native
   dependency (AGENTS.md §10) and 1.29 GB weights. int8 is ruled out (69 %
   agreement). Remaining steps (`/health` contract tests done 2026-11-08):
-  live-queue parity run, the per-platform install docs (part 2), and the r2
-  weights publish (own §1 approval). Packaging is DONE 2026-11-12: the ONNX
-  sidecar package `laya-sidecar/` (plan `2026-11-11-onnx-sidecar-package.md`,
-  PR #157 — npm package, parity 180/180 golden and 298/300 corpus) and the
-  one-backend installer (PR #159: MLX left the installer, `router@1.0.0`
-  ships the ONNX set only). Linux/Windows latency WAIVED by the owner
-  2026-11-08 (modern PCs assumed similar).
+  r2 weights publish (own §1 approval) — the last open step. Packaging is
+  DONE 2026-11-12: the ONNX sidecar package `laya-sidecar/` (plan
+  `2026-11-11-onnx-sidecar-package.md`, PR #157 — npm package, parity
+  180/180 golden and 298/300 corpus) and the one-backend installer (PR #159:
+  MLX left the installer, `router@1.0.0` ships the ONNX set only). The
+  live-queue parity run is DONE 2026-11-13: 259/260 vs the MLX reference, the
+  single disagreement a near-tie (top-2 margin < 0.005,
+  `docs/research/2026-11-13-laya-live-queue-parity.md`); the per-platform
+  install docs are complete (Windows start example included). Linux/Windows
+  latency WAIVED by the owner 2026-11-08 (modern PCs assumed similar).
 - **Laya model artifact + install skill**
   (`docs/plans/2026-11-08-laya-model-artifact.md`, in progress 2026-11-08;
   **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
@@ -713,8 +716,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-10-25-laya-sole-classifier.md`, "Release gate");
   (2) sidecar distribution — `/health` contract tests DONE, packaging DONE
   2026-11-12 (ONNX sidecar package, PR #157; one-backend installer, PR #159);
-  still open: the live-queue parity run and the per-platform install docs
-  (part 2); the r2 weights publish needs its own §1 approval;
+  the live-queue parity run is DONE 2026-11-13 (259/260 vs the MLX
+  reference, the single disagreement a near-tie) and so are the per-platform
+  install docs; only the r2 weights publish remains (own §1 approval);
   Linux/Windows latency WAIVED (owner: modern PCs assumed similar); the
   versioned artifact + install skill are
   `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
