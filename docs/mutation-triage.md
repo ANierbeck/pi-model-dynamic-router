@@ -1761,3 +1761,83 @@ N11 ledgered as EQUIVALENT (each with its reason in the round's dataset) —
 not new findings. The no-coverage rows are the regions the rounds recorded
 as undriven by any test (see the slice sections); nothing in this entry
 re-triages them. No triage is open as of this entry.
+
+## Closure record: classification/HINT triage (moved from TODO.md, 2026-11-13)
+
+The text below is the closed TODO entry as it stood on `main` before this move, kept verbatim so the measurements (baseline, slice counts, round totals) stay on record. Nothing in it was re-measured.
+
+### **Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator — CLOSED 2026-11-08** (owner-mandated 2026-10-15; kept as the record)
+
+> **Status 2026-11-08:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
+> (`driveStream`) triaged 2026-11-05: of 329 non-killed mutants, 205 REAL GAP
+> (sketches in `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 false
+> survivor, 1 dead store removed. Slice-2 test round: batches 1–3 (2026-11-06,
+> 34 mutants verified killed) plus batch 4 (2026-11-08: lookahead guards
+> 498–503, repetition/truncation narrations 749/751/752, the wait-retry
+> abort/slot family 659–694, context-window persistence 706–708, the overflow
+> candidate filter 713/717/720/722 — 28 killed, see
+> `docs/mutation-triage.md`). Slice 3 (helpers) triaged 2026-11-06 and its test
+> round is done 2026-11-08 (outer-abort chaining 7 of 9 killed / 2 equivalent,
+> breaker evidence phrase + narration 14 killed; the detail-less overflow
+> verdicted EQUIVALENT — production unreachable). Round total: 49 killed, 5
+> equivalent; the Sourcery review round on PR #123 hardened the fixtures
+> (deferred consume, frozen clock, reason pins, provider+id lookup) with all
+> kills re-verified. CLOSED 2026-11-08 (PR #129): the cluster H leftovers
+(the consume-reject catch path — the first fixture for it, the existing
+breaker fixtures all use error-EVENT streams), the thrown-OPEN seam (a
+rejecting tryStream is a different code path with its own mutants), the
+blocklist observer gates (main loop + post-wait-retry twin — the "expensive
+multi-turn fixture" was unnecessary, the observable is the observeFailure
+call itself), and the silent-skip path (871). 23 mutants hand-verified
+killed (`test/thrown-stream-blocklist-seams.test.ts`, ledger in
+`docs/mutation-triage.md`); a boyscout fix rode along (the thrown-open
+narration printed raw provider text — now sanitized like the consume-catch
+narration). The 205 slice-2 real gaps are fully closed. The metrics.ts /
+routing.ts remainders are closed too (nightly N11, 2026-11-08: 59 triaged —
+10 killed by the suite, 22 EQUIVALENT, 27 real gaps pinned in
+`test/mutation-n11-remainders.test.ts`). Plan:
+> `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
+
+Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
+the first nightly with the v2-r3 taxonomy): 3-file scope (stream-orchestrator,
+metrics, routing), 2784 mutants, score **69.94 %** — 1947 killed / 573
+survived / 264 no-coverage. Two consecutive nightlies are identical (+1 kill),
+so the picture is stable.
+
+**85 % of all undetected mutants sit in `src/stream-orchestrator.ts` (710)**,
+concentrated in the classification/HINT region that v2-r3 rewrote
+(line numbers for main @ 6f4ac08 — re-locate against the fresh report):
+
+- classifyOpts context build (L401 region, 17 survived): lastCategory,
+  lastModel, isCompaction, lastModelLimited wiring
+- HINT alias matching, `namesMatch` over `allDiscoveredRefs()` (L476, 26
+  survived) and the documented B3 follow-up clusters L465/L549
+  (dynamic-HINT match)
+- hint-not-found fallback cascade, including explicit-hint `clearLimit` and
+  registry/provider lookups (L520–570, ~120 no-coverage)
+- escalation gate after normal classification (L576+, ~32 undetected)
+- plus B3 follow-up: breaker-dead-end wait guard (L1107)
+
+The v2-r3 pin tests cover the classifier itself, but **no test drives the
+orchestrator wiring mutation-lethally** — the most consequential selection
+code in the router has the weakest mutation coverage. Round shape: red-first
+tests around the orchestrator integration surface (classifyOpts context,
+HINT resolution, hint-not-found cascade), mutant-by-mutant verification via
+`scripts/mutation-recheck.ts`, verdicts ledgered in `docs/mutation-triage.md`.
+
+**Why after the spike merge:** the laya-spike branch (prev logging,
+output-budget guard) shifts stream-orchestrator line numbers, so today's
+mutant references go stale. Re-run the nightly on merged main first, triage
+against the fresh report, use the regions above as orientation.
+
+**Owner decision 2026-10-15 (exit-cost rule):** laya-spike does NOT merge to
+main while the Laya verdict is open — if Laya fails, it gets removed entirely
+rather than un-merged later. So this round triggers in EITHER ending:
+(a) Laya succeeds -> spike merge, or (b) Laya is dropped -> the non-Laya
+orchestrator changes (output-budget guard, prev logging) are cherry-picked
+to main first. In both cases: fresh nightly on the updated main, then triage.
+
+metrics.ts / routing.ts remainders: CLOSED 2026-11-08 (nightly N11 — see
+`docs/mutation-triage.md`).
+
+---

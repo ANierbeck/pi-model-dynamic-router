@@ -3,7 +3,7 @@
 > **Status**: 2.0.0 prepared (`2.0.0-SNAPSHOT`), release awaits the owner's go
 > (AGENTS.md §1). Items closed in v1.6.1 or earlier are removed from this file;
 > their history lives in `CHANGELOG.md` and git.
-> **Last Updated**: 2026-11-08
+> **Last Updated**: 2026-11-13 (Dependabot: 0 open alerts, checked live 2026-11-13)
 
 ## 📌 **IMPORTANT RULES**
 
@@ -323,37 +323,15 @@ MIT), so the notice must not be dropped before that is settled.
   - *Benefit*: More accurate model selection based on combined requirements
 - [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
 ### Integration & Extensibility
-- **Optional integrations: one contract, one config block**
-  (`docs/plans/2026-11-08-optional-integrations-config.md`, in progress
-  2026-11-11). **Done 2026-11-11:** the contract (`src/integration.ts`),
-  the schema with unknown-key warnings (`src/config-schema.ts`) and the rename
-  `classifier_laya` → `integrations.laya` with a `RENAMED` warning.
-  **Open, in this order:**
-  (1) **DONE 2026-11-11:** the `/router status` "Integrations" section and
-  the `/router config integration <name> on|off|<mode>` subcommand (nested
-  delta in `src/user-config-store.ts`, renderer over the health registry);
-  (2) consumers outside the repository: **DONE 2026-11-11** — the owner's
-  `router-config.user.json` block moved under `integrations.laya` (loaded by
-  the real loader: same values, no warnings), the sidecar manager extension
-  reads `integrations?.laya?.enabled === true` (a readable file without it now
-  means off, like the shipped default; an unreadable file stays fail-open), and
-  `~/.laya-ft/shadow_eval/common.py` reads the threshold from the new path.
-  A session that was already running keeps the old code in memory and sees no
-  Laya block after a config reload until Pi is restarted;
-  (3) the CodexBar plan continues on this contract. Original note — the
-  contract + rename are a 2.0.0 blocker since decision 1 is DECIDED,
-  2026-11-08): Laya is wired ad hoc (own block, own validator, own health state);
-  unknown config keys are silently ignored and a project layer can enable
-  integrations. The plan proposes `integrations.*` with per-layer trust and a
-  core-only invariant test. Decision 1 DECIDED 2026-11-08: rename
-  `classifier_laya` → `integrations.laya` before 2.0.0 (with `RENAMED_*`
-  warning, no alias). Decision 3 DECIDED 2026-11-08: a project layer may
-  enable an integration (the core-only invariant test and the loopback rule
-  make that harmless; both pinned). The invariant test for Laya exists
-  (`test/laya-chain.test.ts`). Decision 4 DECIDED: the router gets
-  a way to start the sidecar, later (see below). Decision 2 DECIDED
-  2026-11-08: a hand-maintained schema plus a test that it matches `Config`.
-  Prerequisite for the CodexBar plan.
+- **Optional integrations: one contract, one config block** — ✅ DONE 2026-11-12
+  (`docs/plans/2026-11-08-optional-integrations-config.md`, status done; closed
+  in PR #166). Delivered: the contract (`src/integration.ts`), the schema with
+  unknown-key warnings (`src/config-schema.ts`), the rename `classifier_laya` →
+  `integrations.laya` with a `RENAMED` warning, the `/router status`
+  Integrations section, the `/router config integration <name> on|off|<mode>`
+  subcommand, and every consumer in and outside the repository. A session that
+  was already running keeps the old code in memory until Pi restarts. The
+  core-only invariant for Laya is pinned in `test/laya-chain.test.ts`.
 - **External usage source: CodexBar**
   (`docs/plans/2026-11-08-external-usage-source-codexbar.md`, proposed, not
   started): the router only sees its own counters — quota windows, reset
@@ -391,79 +369,10 @@ MIT), so the notice must not be dropped before that is settled.
 
 ## 🔭 **Future Tasks (registered)**
 
-### ✅ **Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator — CLOSED 2026-11-08** (owner-mandated 2026-10-15; kept as the record)
+### ✅ **Post-spike-merge mutation triage: classification/HINT region in stream-orchestrator — CLOSED 2026-11-08** (owner-mandated 2026-10-15)
 
-> **Status 2026-11-08:** slice 1 done (257/272 killed, 15 equivalent). Slice 2
-> (`driveStream`) triaged 2026-11-05: of 329 non-killed mutants, 205 REAL GAP
-> (sketches in `docs/mutation-data/slice2-triage/`), 118 EQUIVALENT, 1 false
-> survivor, 1 dead store removed. Slice-2 test round: batches 1–3 (2026-11-06,
-> 34 mutants verified killed) plus batch 4 (2026-11-08: lookahead guards
-> 498–503, repetition/truncation narrations 749/751/752, the wait-retry
-> abort/slot family 659–694, context-window persistence 706–708, the overflow
-> candidate filter 713/717/720/722 — 28 killed, see
-> `docs/mutation-triage.md`). Slice 3 (helpers) triaged 2026-11-06 and its test
-> round is done 2026-11-08 (outer-abort chaining 7 of 9 killed / 2 equivalent,
-> breaker evidence phrase + narration 14 killed; the detail-less overflow
-> verdicted EQUIVALENT — production unreachable). Round total: 49 killed, 5
-> equivalent; the Sourcery review round on PR #123 hardened the fixtures
-> (deferred consume, frozen clock, reason pins, provider+id lookup) with all
-> kills re-verified. CLOSED 2026-11-08 (PR #129): the cluster H leftovers
-(the consume-reject catch path — the first fixture for it, the existing
-breaker fixtures all use error-EVENT streams), the thrown-OPEN seam (a
-rejecting tryStream is a different code path with its own mutants), the
-blocklist observer gates (main loop + post-wait-retry twin — the "expensive
-multi-turn fixture" was unnecessary, the observable is the observeFailure
-call itself), and the silent-skip path (871). 23 mutants hand-verified
-killed (`test/thrown-stream-blocklist-seams.test.ts`, ledger in
-`docs/mutation-triage.md`); a boyscout fix rode along (the thrown-open
-narration printed raw provider text — now sanitized like the consume-catch
-narration). The 205 slice-2 real gaps are fully closed. The metrics.ts /
-routing.ts remainders are closed too (nightly N11, 2026-11-08: 59 triaged —
-10 killed by the suite, 22 EQUIVALENT, 27 real gaps pinned in
-`test/mutation-n11-remainders.test.ts`). Plan:
-> `docs/plans/2026-11-04-orchestrator-mutation-triage.md`.
-
-Baseline (nightly runs 38537058246 + 38704671387, both main @ 6f4ac08, i.e.
-the first nightly with the v2-r3 taxonomy): 3-file scope (stream-orchestrator,
-metrics, routing), 2784 mutants, score **69.94 %** — 1947 killed / 573
-survived / 264 no-coverage. Two consecutive nightlies are identical (+1 kill),
-so the picture is stable.
-
-**85 % of all undetected mutants sit in `src/stream-orchestrator.ts` (710)**,
-concentrated in the classification/HINT region that v2-r3 rewrote
-(line numbers for main @ 6f4ac08 — re-locate against the fresh report):
-
-- classifyOpts context build (L401 region, 17 survived): lastCategory,
-  lastModel, isCompaction, lastModelLimited wiring
-- HINT alias matching, `namesMatch` over `allDiscoveredRefs()` (L476, 26
-  survived) and the documented B3 follow-up clusters L465/L549
-  (dynamic-HINT match)
-- hint-not-found fallback cascade, including explicit-hint `clearLimit` and
-  registry/provider lookups (L520–570, ~120 no-coverage)
-- escalation gate after normal classification (L576+, ~32 undetected)
-- plus B3 follow-up: breaker-dead-end wait guard (L1107)
-
-The v2-r3 pin tests cover the classifier itself, but **no test drives the
-orchestrator wiring mutation-lethally** — the most consequential selection
-code in the router has the weakest mutation coverage. Round shape: red-first
-tests around the orchestrator integration surface (classifyOpts context,
-HINT resolution, hint-not-found cascade), mutant-by-mutant verification via
-`scripts/mutation-recheck.ts`, verdicts ledgered in `docs/mutation-triage.md`.
-
-**Why after the spike merge:** the laya-spike branch (prev logging,
-output-budget guard) shifts stream-orchestrator line numbers, so today's
-mutant references go stale. Re-run the nightly on merged main first, triage
-against the fresh report, use the regions above as orientation.
-
-**Owner decision 2026-10-15 (exit-cost rule):** laya-spike does NOT merge to
-main while the Laya verdict is open — if Laya fails, it gets removed entirely
-rather than un-merged later. So this round triggers in EITHER ending:
-(a) Laya succeeds -> spike merge, or (b) Laya is dropped -> the non-Laya
-orchestrator changes (output-budget guard, prev logging) are cherry-picked
-to main first. In both cases: fresh nightly on the updated main, then triage.
-
-metrics.ts / routing.ts remainders: CLOSED 2026-11-08 (nightly N11 — see
-`docs/mutation-triage.md`).
+The slice-by-slice record (slice 1, slice 2 with its test rounds, slice 3) is in
+`docs/mutation-triage.md`, the ledger this file points to. No triage is open.
 
 ---
 
@@ -696,42 +605,27 @@ Pick up in a later round, each as its own plan where noted (§11):
   (`docs/research/2026-11-08-task-type-balancing-remainder.md`: all 27
   November compactions cost $2.97). Only 5c (fresh-session suggestion) stays
   deferred to a later 2.0.x by owner decision.
-- **Release prep for 2.0.0** (owner 2026-11-07: target the next release as
-  2.0.0; `package.json` is on `2.0.0-SNAPSHOT`): the fallback-rename (V3) and
-  M3 landed in 2.0.0 (PR #126/#127). The §1 whole-range code review RAN
-  2026-11-08 (requesting-code-review over v1.6.1..main, four reviewer lanes
-  via the subagent fanout, run ab1760b9): 0 Critical, 1 Important — FIXED in
-  PR #128 (turn_end recorded a failed turn as a model success and closed the
-  provider breaker right after a failed cascade; red-first pin in
-  test/cache-usage-wiring.test.ts), 6 Minor fixed or justified (stale
-  comments, dead costTracker field, breakerState tuning at two sites, dead
-  hasNewRegistryRefs, budget-pacing clock-skew guard documented).
-  `npm audit` 0 / 0 prod (minimatch fixed by override, PR #125); pi devDep
-  1.5.0 = installed host 1.5.0; shipped `log_level: "warn"`. Remaining before
-  a release may be proposed: nothing from the review, but the Laya gate:
-  **"everything Laya" ships before 2.0.0** (owner 2026-11-08, expanded the
-  same day from the labeling-only gate): (1) sole-classifier steps 3/5/6 —
-  disagreement labeling, momentum decision, `continue` decision, closing
-  numbers (exit criteria proposed in
-  `docs/plans/2026-10-25-laya-sole-classifier.md`, "Release gate");
-  (2) sidecar distribution — `/health` contract tests DONE, packaging DONE
-  2026-11-12 (ONNX sidecar package, PR #157; one-backend installer, PR #159);
-  the live-queue parity run is DONE 2026-11-13 (259/260 vs the MLX
-  reference, the single disagreement a near-tie) and so are the per-platform
-  install docs; only the r2 weights publish remains (own §1 approval);
-  Linux/Windows latency WAIVED (owner: modern PCs assumed similar); the
-  versioned artifact + install skill are
-  `docs/plans/2026-11-08-laya-model-artifact.md`; (3) rename `classifier_laya` ->
-  `integrations.laya` — COMPLETE 2026-11-12 (contract, rename, migration
-  warning, status section, config subcommand, consumers in and outside the
-  repo; plan closed, PR #166); (4) the `~/.laya-ft` fallback label migration —
-  DONE 2026-11-13 (owner go 2026-11-08): the labeling tooling speaks the v2-r3
-  taxonomy and the five-group layout; the stored corpus labels were migrated
-  (`fallback` -> `continue` with a `consensus_v1` provenance field:
-  labels.jsonl 1251 rows, golden.jsonl 67; raw teacher files, `owner_cat`,
-  `continue_ok`, `truth_v2` untouched; backups next to the files). The release itself
-  (tag / publish) is a separate explicit owner approval per AGENTS.md §1 —
-  never implied by this list.
+- **Release prep for 2.0.0** (owner 2026-11-07: the next release is 2.0.0; `package.json`
+  is `2.0.0-SNAPSHOT`). Status 2026-11-13:
+  - §1 whole-range review: DONE. Round 1 on 2026-11-08 (PR #128); round 2 on
+    2026-11-13 over v1.6.1..main (PR #170, 0 Critical; every finding dispositioned
+    in `docs/research/2026-11-13-release-review-2_0_0.md`).
+  - Audit and pins: `npm audit` 0 findings; pi devDependency 1.5.2 = installed
+    host; shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-13).
+  - "Everything Laya" gate (owner 2026-11-08):
+    (1) sole-classifier steps 3/5/6 — OPEN, owner decision (proposal: close as
+    "stays experimental, research continues post-2.0", see
+    `docs/plans/2026-10-25-laya-sole-classifier.md`);
+    (2) sidecar distribution — packaging, parity (golden 180/180, corpus 298/300,
+    live queue 259/260) and per-platform docs DONE; the r2 weights publish OPEN
+    (own §1 approval; `laya-release-check` reports `ok` for `laya-router-v1.0.0`);
+    (3) rename `classifier_laya` → `integrations.laya` — DONE 2026-11-12 (PR #166);
+    (4) `~/.laya-ft` fallback label migration — DONE 2026-11-13.
+  - Open before a release proposal: the router version named explicitly, the
+    sidecar npm version (`@anierbeck/laya-sidecar` is `0.1.0` in its
+    `package.json`), and the sole-classifier closure.
+  Tag, GitHub Release and npm publish are each a separate explicit owner approval
+  that names the concrete version (AGENTS.md §1). Nothing in this list implies them.
 
 ### Owner backlog (registered 2026-10-06, awaiting owner's go to start)
 
@@ -762,8 +656,7 @@ at 0**; the owner's `router-config.user.json` needs the
 `model-map.yaml` guard-scope question is **RESOLVED 2026-10-07** (owner
 decision): explicitly class B (annotation, never admitting), single
 loader pinned by `test/model-map-class-b.test.ts`, ADR-0025 §2B updated —
-no guard-scope extension. Still open: the final §1 whole-range review
-before any release proposal.
+no guard-scope extension. The §1 whole-range review ran 2026-11-08 (round 1) and 2026-11-13 (round 2, PR #170, `docs/research/2026-11-13-release-review-2_0_0.md`), so no review gate is open.
 
 **`/router config` command** — ✅ DONE (Phases 1–2):
 `docs/plans/2026-10-06-router-config-command.md`. Implemented: `/router config` display (sources with origin, exclude rules with match counts), `/router config exclude <ref|glob>`, `/router config unexclude <ref|glob>` (user-layer only), `/router config compaction on|off` (Phase 5b stub). Writes to `router-config.user.json`; live exclusion applies immediately, persisted group lists regenerate at next scan cycle. Compaction flag gated on Phase 5b; un-exclude fully free after ADR-0025 B3 empties the shipped exclude list. Writes to `router-config.user.json` so changes survive the session but stay out of the shipped defaults.
@@ -792,22 +685,19 @@ narration; the owner confirmed the idea 2026-10-06.
 (measured, see the closed entry in the deferred list above). Only 5c
 (fresh-session suggestion) is deferred to a later 2.0.x.
 
-**Laya classifier integration** — full 9-task plan already committed:
-`docs/plans/2026-10-05-laya-classifier-integration.md`. Ships disabled by
-default; Task 0 (the spike: pinned checkpoint, ~1.7 GB local install)
-needs the owner's explicit go before any of it starts. **Unblocked
-2026-10-08**: the decision log (ADR-0027, Phases 0+1+3) and the replay
-harness are merged, so the spike can be verified against real session data
-and recorded known decisions (`docs/plans/2026-10-08-laya-spike-brief.md`);
-evening spike on branch `laya-spike`.
+**Laya classifier integration** — the spike is merged (PR #81, 2026-11-02,
+owner go). Laya ships disabled by default; its remaining release steps are in
+the "Release prep for 2.0.0" entry below. The 9-task plan
+`docs/plans/2026-10-05-laya-classifier-integration.md` is the history of that work.
 
 **Classifier decision log — remaining phases** (ADR-0027, plan
-`docs/plans/2026-10-08-classifier-decision-log.md`): Phase 2 (turn id +
-outcome join + correction signals — real accuracy proxies), Phase 4
-(shadow-classifier hook — live known-vs-candidate comparison, fire and
-forget, cannot change routing), Phase 5 (`/router classifier` summary).
-None blocks the Laya spike.
+`docs/plans/2026-10-08-classifier-decision-log.md`). Verified 2026-11-13 against
+the code: Phase 2 (turn id, outcome join, correction signals) and Phase 4 (the
+generic shadow hook) are not implemented, and the plan's own Status says so. The
+Laya shadow comparator is a separate mechanism and does not replace the Phase 4
+hook. Phase 5 (a `/router classifier` summary) is absent from `src/commands.ts`.
+None of them blocks the Laya release gate.
 
 ---
 
-*Last updated: 2026-11-08*
+*Last updated: 2026-11-13*
