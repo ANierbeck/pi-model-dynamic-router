@@ -36,7 +36,7 @@ without the owner's explicit release approval).
   correction is stored in `cache.hint_corrections` under the exact prompt text after the HINT (no case folding; at least five
   words; one entry per prompt, last write wins; capped at 64, least recently used dropped first). A saved category applies
   to the same prompt later with no classifier call; a saved name no longer in the taxonomy is ignored and logged as the
-  `correction-stale` step, and the stale entry is dropped. Compaction is never overridden by a correction. An unknown name
+  `correction-stale` step, and the stale entry is dropped. Unknown and stale names are also shown as a notice in the session. Compaction is never overridden by a correction. An unknown name
   classifies the content without the HINT head, so the marker never reaches the classifier. `/router corrections [list|clear]`
   lists or clears them. Decision-log records show the `correction` stage. Pins: `test/hint-corrections-store.test.ts`, `test/hint-category-syntax.test.ts`, `test/classification-cache.test.ts`,
   `test/classifier-decision-log.test.ts`, `test/orchestrator-hint-wiring.test.ts`, `test/router-corrections-command.test.ts`.

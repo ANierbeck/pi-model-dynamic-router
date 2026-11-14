@@ -90,6 +90,7 @@ function world(o: Opts) {
       };
   const cleared: string[] = [];
   const classifyPrompt = vi.fn(async () => o.classification);
+  const uiNotify = vi.fn();
   const ctx: any = {
     cfg: { model_groups: groups, model_metrics: {}, providers: {}, ...(o.cfgExtra ?? {}) },
     cache: o.cache ?? {},
@@ -101,7 +102,7 @@ function world(o: Opts) {
     lastDynamicModel: o.lastDynamicModel ?? '',
     lastClassifiedCategory: o.lastCategory,
     escalation: { level: o.escalation ?? 'standard' },
-    sessionCtx: registry ? { modelRegistry: registry } : undefined,
+    sessionCtx: { ...(registry ? { modelRegistry: registry } : {}), ui: { notify: uiNotify } },
     resolve: (name: string) => {
       const r = o.resolvable?.[name];
       return r ? { candidates: [...r.candidates], selected: r.selected } : null;
@@ -699,6 +700,13 @@ describe('classifier call wiring', () => {
     expect(typeof args[1].persistCache).toBe('function');
     args[1].persistCache();
     expect(w.ctx.cacheManager.saveCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('a correction notice is shown through the session UI as a warning (ADR-0030)', async () => {
+    const { w, args } = await opts({});
+    expect(typeof args[1].notify).toBe('function');
+    args[1].notify('a correction notice');
+    expect(w.ctx.sessionCtx.ui.notify).toHaveBeenCalledWith('a correction notice', 'warning');
   });
 
   it('reports no last model (undefined, not "") and not limited when there is none', async () => {

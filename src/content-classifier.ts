@@ -157,6 +157,8 @@ export interface ClassificationOptions {
    * still updated.
    */
   persistCache?: () => void;
+  /** Shows a correction notice to the user (ADR-0030); the log gets it too. */
+  notify?: (message: string) => void;
   allowCloudChain?: boolean;
   /**
    * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
@@ -872,7 +874,9 @@ async function classifyPromptUncounted(
     };
   }
   if (categoryHint?.kind === 'unknown') {
-    warnLog(unknownCategoryMessage(categoryHint.name));
+    const notice = unknownCategoryMessage(categoryHint.name);
+    warnLog(notice);
+    options.notify?.(notice);
     // The content is classified without the HINT head: the marker must not
     // reach the classifier, where a hint:* answer would become a pin.
     if (categoryHint.content.length > 0) {
@@ -903,7 +907,9 @@ async function classifyPromptUncounted(
     }
     if (hit && 'stale' in hit) {
       callSource.getStore()?.trace.steps.push('correction-stale');
-      warnLog(staleCorrectionMessage(hit.stale));
+      const notice = staleCorrectionMessage(hit.stale);
+      warnLog(notice);
+      options.notify?.(notice);
     }
   }
 

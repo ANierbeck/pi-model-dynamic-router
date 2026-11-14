@@ -174,3 +174,25 @@ describe("saved corrections never override the router's own decisions", () => {
     expect(sent).not.toContain('HINT: category');
   });
 });
+
+describe('a correction notice reaches the user, not only the log (ADR-0030)', () => {
+  it('an unknown category name is shown through options.notify', async () => {
+    const notify = vi.fn();
+    await classifyPrompt(`HINT: category roadmap ${THIRD}`, {
+      cache: localModelCache(),
+      allowStaticFallback: true,
+      notify,
+    } as any);
+    expect(notify).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
+  });
+
+  it('a stale saved name is shown through options.notify', async () => {
+    const notify = vi.fn();
+    const cache = localModelCache() as any;
+    cache.hint_corrections = {
+      [CONTENT]: { hintType: 'category', target: 'roadmap', savedAt: LONG_AGO },
+    };
+    await classifyPrompt(CONTENT, { cache, allowStaticFallback: true, notify } as any);
+    expect(notify).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
+  });
+});

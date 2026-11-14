@@ -94,6 +94,8 @@ Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions
 
 **Correcting a category.** `HINT: category <name> <your prompt>` applies the named category to that turn and saves the correction for the exact prompt text that follows (at least five words; shorter prompts are never saved). The same prompt later, without the HINT, gets the saved category with no classifier call. `/router corrections` lists the saved corrections, `/router corrections clear` drops them all. An unknown name is ignored with a warning that lists the valid names. Design: `docs/adr/0030-feedback-correction-sequencing.md`.
 
+A turn that is compacted is never answered from a saved correction. An unknown name is reported (in the log and as a notice) and the content is classified without the HINT head. A saved name that is no longer a category is reported once and dropped.
+
 ```jsonc
 {
   "classifier_log": {
