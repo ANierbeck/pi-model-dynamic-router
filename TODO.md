@@ -275,17 +275,13 @@ MIT), so the notice must not be dropped before that is settled.
   set (`docs/plans/2026-10-25-category-group-mismatch.md`); a new category
   is a taxonomy decision, not an open task.
 - [x] ~~Pinned continuation does not update the category memory~~ FIXED 2026-11-06
-  (`fix/pinned-turn-category-memory`, red-first in `test/orchestrator-hint-wiring.test.ts`,
-  `test/strip-hint-head.test.ts`). Original report (found 2026-10-22,
-  code read, not yet reproduced live). A `HINT:` model pin bypasses the
-  classifier, so the turn returns no `category`, and
-  `lastClassifiedCategory` (`src/stream-orchestrator.ts:419`) keeps the value
-  from before the pin. A following unpinned "weiter" then inherits a stale
-  category. Routing of the pinned turn itself is unaffected (the pin decides
-  the model); only the next turn's category and the calibration label are
-  wrong. Planned fix: a pinned turn classifies its content, but keeps the
-  model pin, and writes its category to the memory. Needs a red-first test.
-  Background: `docs/research/2026-10-22-hint-category-signal.md`.
+  (commit `695c377`, `fix: a pinned turn classifies its content and remembers the category`;
+  red-first pins in `test/orchestrator-hint-wiring.test.ts` and `test/strip-hint-head.test.ts`).
+  Original report (2026-10-22, code read): a `HINT:` model pin skipped the classifier, so the
+  next unpinned "weiter" inherited a stale category. Now the pinned turn's content is classified
+  behind the pin (`classifyBehindPin`, `src/stream-orchestrator.ts`); the pin still decides the
+  model. Checked 2026-11-14 against the code; not re-measured live. Background:
+  `docs/research/2026-10-22-hint-category-signal.md`.
 - [ ] **Use explicit HINT pins as owner category labels** (research, 2026-10-22).
   Hand-labelled, 96 unique pinned prompts in the local session logs: code_complex 67,
   planning 11, continue 9, design 5, simple 2, standard 2. A Sonnet pin mostly
@@ -318,10 +314,7 @@ MIT), so the notice must not be dropped before that is settled.
   router only enriches what Pi already resolves.
 
 ### Intelligent Routing
-- [ ] **Multi-label classification** - Assign multiple categories to a single prompt (needs an ADR before implementation)
-  - *Idea*: Allow prompts to match multiple categories (e.g., "code_simple" + "explanation")
-  - *Benefit*: More accurate model selection based on combined requirements
-- [ ] **Implement learning from user feedback** - Improve classification based on corrections (needs an ADR before implementation)
+- [ ] **Implement learning from user feedback** - Improve classification based on corrections. ADR 0002 (Option B, accepted, not implemented) and ADR 0030 (proposed 2026-11-14: build the exact-match HINT store first; similarity and multi-label stay separate) — awaiting the owner's decision on ADR 0030
 ### Integration & Extensibility
 - **Optional integrations: one contract, one config block** — ✅ DONE 2026-11-12
   (`docs/plans/2026-11-08-optional-integrations-config.md`, status done; closed
@@ -340,8 +333,6 @@ MIT), so the notice must not be dropped before that is settled.
   staged modes observe → pace → exhausted; needs a new ADR. Owner decisions:
   who runs `codexbar serve`, providers in v1, complement vs replace the own
   counter for pacing. Builds on the integration contract plan above.
-- [ ] **Create plugin system** - Extensible architecture for new features
-- [ ] **Add webhook support** - Notifications for model changes
 
 ---
 
