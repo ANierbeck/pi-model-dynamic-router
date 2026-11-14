@@ -11,6 +11,17 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scan-cache `cost_per_m: 0` placeholders no longer make paid models "free".**
+  `isFreeModelRef` read the cache placeholder as a price, so every paid model
+  in the scan cache (all 59 entries on 2026-11-14, including `zai-glm-5-3` at
+  $1.40/$4.40) ranked as tier-0 free in tiered groups, although Pi's registry
+  prices it (ADR-0011 §1: a placeholder is not a price). A registry price now
+  wins; a registry `{0,0}` or no registry price keeps the placeholder free.
+  Regression pins in `test/metrics-decision-core-r1.test.ts`, observed red
+  before the fix.
+
 ### Changed
 - Two `model-map.yaml` entries pointed a model at its sibling's benchmark record: `openai/gpt-4o-mini` now maps to `gpt-4o-mini` (was `gpt-4o`), `Qwen/Qwen3-235B-A22B-Thinking-2507` to `qwen3-235b-a22b-instruct-2507-reasoning` (was the Instruct record). The map is the authoritative lookup and bypasses the variant-token veto, so `test/model-map-variant-audit.test.ts` now runs every shipped entry through that veto.
 - A change to the configured `providers.*.free_models` now regenerates the persisted `router-config.dynamic.json`, like a change to the static groups does (closed PR #103: `openrouter/openrouter/free` was added as the free model for `simple` but never reached it, because the snapshot froze the old group lists while the scan cache was valid). The snapshot records a `free_models_fingerprint`; on a mismatch `load()` ignores the snapshot and the next scan rebuilds it. Snapshots without the fingerprint are rebuilt once.

@@ -92,6 +92,32 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.isFreeModelRef('fp/zero', providers([]), undefined)).toBe(false);
     expect(m.billingTier('fp/zero')).toBe(0);
   });
+
+  // ADR-0011 §1: the scan's cost_per_m 0 is a PLACEHOLDER, and a registry
+  // price beats it. Live evidence 2026-11-14: every one of the 59 entries in
+  // dist/.cache/scan-cache.json carried cost_per_m 0 — including
+  // mistral/zai-glm-5-3, which Pi's catalog prices at $1.40/$4.40. The
+  // placeholder therefore made a real, paid model look tier-0 "free" in
+  // every tiered group, despite providers.mistral.billing being
+  // pay_per_token.
+  it('a scan-cache 0 placeholder is NOT free when the registry prices the model', () => {
+    const registry = {
+      find: (p: string, id: string) =>
+        p === 'fp' && id === 'priced' ? priced(1.4, 4.4) : undefined,
+    };
+    const discovered = [{ provider: 'fp', id: 'priced', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/priced', providers([]), discovered)).toBe(false);
+    expect(m.billingTier('fp/priced')).toBe(3);
+  });
+
+  it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
+    const registry = { find: () => priced(0, 0) };
+    const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/zero-priced', providers([]), discovered)).toBe(true);
+    expect(m.billingTier('fp/zero-priced')).toBe(0);
+  });
 });
 
 // ── cost placeholder healing (getM / resolveCostPerM) ─────────────────────

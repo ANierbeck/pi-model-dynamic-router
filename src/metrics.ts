@@ -883,9 +883,20 @@ export function isFreeModelRef(
     // the check above already covered it).
     if (freeList.includes(ref.slice(ref.indexOf('/') + 1))) return true;
   }
-  // Discovered with cost_per_m === 0
+  // Discovered with cost_per_m === 0 — but that 0 is a PLACEHOLDER, not a
+  // price (ADR-0011 §1: "The system must not read 'not priced' as 'free'").
+  // A registry price wins over it, exactly as resolveCostPerM already does;
+  // only a registry that also says {0, 0} (or knows no price at all) leaves
+  // the discovery free. Without this guard, the stale scan cache made every
+  // paid Mistral model tier-0 "free" in tiered groups (2026-11-14: all 59
+  // cache entries carried cost_per_m 0, incl. zai-glm-5-3 at $1.40/$4.40).
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-  if (discovered?.cost_per_m === 0) return true;
+  if (discovered?.cost_per_m === 0) {
+    const slash = ref.indexOf('/');
+    const registryPrice =
+      slash > 0 && modelRegistry ? registryCost(ref.slice(0, slash), ref.slice(slash + 1)) : null;
+    return !registryPrice || (registryPrice.input === 0 && registryPrice.output === 0);
+  }
   return false;
 }
 
