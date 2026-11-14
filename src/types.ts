@@ -194,6 +194,13 @@ export interface Group {
    * in router-config.user.json to keep prompts on the machine.
    */
   classifier_cloud_chain?: boolean;
+  /**
+   * Opt-in (default off): a local classifier reply below the confidence gate
+   * (0.5) is escalated to the cloud chain once. Requires classifier_cloud_chain.
+   * Off keeps the local reply final, so prompt text leaves the machine only
+   * when no local model answers. Set in the user layer to enable.
+   */
+  classifier_escalate_low_confidence?: boolean;
   /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */
   fallback_groups?: string[];
 }

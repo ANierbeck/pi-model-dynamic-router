@@ -602,6 +602,7 @@ export class StreamOrchestrator {
         const classifyOpts: ClassificationOptions = {
           allowStaticFallback: useStatic,
           allowCloudChain: dynamicGroupCfg?.classifier_cloud_chain === true,
+          escalateLowConfidence: dynamicGroupCfg?.classifier_escalate_low_confidence === true,
           cfg,
           cache,
           // The cloud chain uses pi's own model registry (completeSimple) so pi

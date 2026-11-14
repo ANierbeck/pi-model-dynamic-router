@@ -677,3 +677,113 @@ describe('classifier chain order: local first, cloud second', () => {
     expect(completeSimple).not.toHaveBeenCalled();
   });
 });
+
+describe('low-confidence escalation to the cloud chain (opt-in)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isOllamaAvailable).mockResolvedValue(true);
+  });
+
+  const lowLocal = () =>
+    ollamaReply({ category: 'design', reason: 'unsure local', confidence: 0.3 });
+  const cloudCache = {
+    classifier_cloud_models: ['prov/cloud-a'],
+    classifier_cloud_probe_sig: PROBE_SIGNATURE,
+  } as any;
+
+  it('default (off): a low-confidence local reply is final and the cloud is not asked', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(lowLocal());
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(cloudReply({ category: 'planning', reason: 'cloud', confidence: 0.95 }));
+
+    const result = await classifyPrompt('Weigh two sharding strategies for the event store', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      cfg: {} as any,
+      cache: cloudCache,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).not.toHaveBeenCalled();
+    expect(result.confidence).toBe(0.3);
+  });
+
+  it('on: a low-confidence local reply is escalated and the cloud answer is used', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(lowLocal());
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(cloudReply({ category: 'planning', reason: 'cloud', confidence: 0.95 }));
+
+    const result = await classifyPrompt('Compare two replication topologies for the ledger', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      escalateLowConfidence: true,
+      cfg: {} as any,
+      cache: cloudCache,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ category: 'planning', reason: 'cloud', confidence: 0.95 });
+  });
+
+  it('on: a confident local reply is final, the cloud is not asked', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(
+      ollamaReply({ category: 'simple', reason: 'sure local', confidence: 0.9 })
+    );
+    const completeSimple = vi.fn();
+
+    const result = await classifyPrompt('Rename the counter variable in the loop body', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      escalateLowConfidence: true,
+      cfg: {} as any,
+      cache: cloudCache,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).not.toHaveBeenCalled();
+    expect(result).toEqual({ category: 'simple', reason: 'sure local', confidence: 0.9 });
+  });
+
+  it('on, but the cloud fails: the gated local answer is kept', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(lowLocal());
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue({ errorMessage: 'provider 500', stopReason: 'error' });
+
+    const result = await classifyPrompt('Draft a retry policy for the outbound webhook queue', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      escalateLowConfidence: true,
+      cfg: {} as any,
+      cache: cloudCache,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).toHaveBeenCalled();
+    expect(result.confidence).toBe(0.3);
+  });
+
+  it('on, but the cloud chain is off: nothing is escalated', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(lowLocal());
+    const completeSimple = vi.fn();
+
+    await classifyPrompt('Explain the trade-off between leases and fencing tokens', {
+      model: 'gemma-primary',
+      allowCloudChain: false,
+      escalateLowConfidence: true,
+      cfg: {} as any,
+      cache: cloudCache,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).not.toHaveBeenCalled();
+  });
+});

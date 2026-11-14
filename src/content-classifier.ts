@@ -144,6 +144,14 @@ export interface ClassificationOptions {
   cache?: Cache;
   allowCloudChain?: boolean;
   /**
+   * Opt-in (dynamic group `classifier_escalate_low_confidence`): a local reply
+   * below MIN_CONFIDENCE is not final. The cloud chain is asked once, and its
+   * answer replaces the local one; if the cloud produces nothing, the gated
+   * local reply is kept. Off by default: prompt text then leaves the machine
+   * only when no local model answers at all.
+   */
+  escalateLowConfidence?: boolean;
+  /**
    * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
    * cloud chain — probe parity (PROBE_TIMEOUT_MS). A candidate
    * that neither answers nor errors within this window is abandoned and
@@ -796,6 +804,7 @@ async function classifyPromptUncounted(
     context = {},
     allowStaticFallback = false,
     allowCloudChain = false,
+    escalateLowConfidence = false,
     cloudTimeoutMs = CLASSIFIER_CLOUD_TIMEOUT_MS,
     cfg,
     cache,
@@ -1346,7 +1355,17 @@ async function classifyPromptUncounted(
     // (daemon down, no model, every hop failed). Cloud before local would send
     // every prompt to a cloud model even when a local model could answer.
     await tryOllama();
-    if (!classificationResult && allowCloudChain) {
+    // A local reply below the confidence gate is escalated only when the user
+    // opted in (classifier_escalate_low_confidence) and the cloud chain is on.
+    const localLowConfidence =
+      classificationResult !== null &&
+      'confidence' in classificationResult &&
+      classificationResult.confidence !== undefined &&
+      classificationResult.confidence < MIN_CONFIDENCE;
+    if (
+      (!classificationResult || (escalateLowConfidence && localLowConfidence)) &&
+      allowCloudChain
+    ) {
       const cloudResult = await tryCloud();
       if (cloudResult) {
         if (!contextBlock) classifyCacheSet(prompt, cloudResult);
