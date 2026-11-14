@@ -50,6 +50,7 @@ import { parseSummaryDays, readClassifierSummary } from './classifier-summary.ts
 import { splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
+import { closestKey } from './config-schema.ts';
 import {
   openUserConfigStore,
   readConfigLayers,
@@ -588,93 +589,197 @@ function handleConfigCommand(
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
 }
 
+interface RouterSubcommand {
+  /** First word of the argument. */
+  name: string;
+  /** Usage after "/router ", as shown in the description and the overview. */
+  usage: string;
+  /** One line for the overview's command list. */
+  summary: string;
+  /** Autocomplete entries for this subcommand. */
+  completions: AutocompleteItem[];
+}
+
+/**
+ * The /router subcommands. Single source for the command description (Pi's
+ * palette), the autocomplete list, the command list under the bare overview
+ * and the unknown-subcommand reply, so the four cannot drift apart. Handling
+ * stays in the handler; test/router-command-help.test.ts pins both sides.
+ */
+const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
+  {
+    name: 'scan',
+    usage: 'scan',
+    summary: 'Re-discover models, re-scrape GDPval, regenerate config',
+    completions: [
+      {
+        value: 'scan',
+        label: 'scan',
+        description: 'Re-discover models, re-scrape GDPval, regenerate config',
+      },
+    ],
+  },
+  {
+    name: 'classifier',
+    usage: 'classifier [days]',
+    summary: 'Classifier decision summary from the decision log (default 7 days)',
+    completions: [
+      {
+        value: 'classifier',
+        label: 'classifier',
+        description:
+          'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
+      },
+    ],
+  },
+  {
+    name: 'cost',
+    usage: 'cost',
+    summary: 'Cost report for all session models and the 1/7/30-day token windows',
+    completions: [
+      {
+        value: 'cost',
+        label: 'cost',
+        description:
+          'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate',
+      },
+    ],
+  },
+  {
+    name: 'errors',
+    usage: 'errors [n]',
+    summary: 'Main-session stream failures (default 15, max 50)',
+    completions: [
+      {
+        value: 'errors',
+        label: 'errors',
+        description:
+          'Main-session stream failures — headline count matches the status-line ⚠N err exactly',
+      },
+      {
+        value: 'errors 30',
+        label: 'errors <n>',
+        description: 'Show up to <n> entries (default 15, max 50)',
+      },
+    ],
+  },
+  {
+    name: 'blocklist',
+    usage: 'blocklist [clear [ref]]',
+    summary: 'Models blocked after permanent provider failures; clear all or one',
+    completions: [
+      {
+        value: 'blocklist',
+        label: 'blocklist',
+        description: 'Show models blocked after permanent provider failures',
+      },
+      {
+        value: 'blocklist clear',
+        label: 'blocklist clear',
+        description: 'Unblock all models, or one: blocklist clear <provider/model>',
+      },
+    ],
+  },
+  {
+    name: 'cooldowns',
+    usage: 'cooldowns [clear]',
+    summary: 'Active rate-limit cooldowns; clear them without a restart',
+    completions: [
+      {
+        value: 'cooldowns',
+        label: 'cooldowns',
+        description: 'Show active rate-limit cooldowns (ref, remaining, hits)',
+      },
+      {
+        value: 'cooldowns clear',
+        label: 'cooldowns clear',
+        description:
+          'Clear all cooldowns + model-health streaks (incident relief, no restart needed)',
+      },
+    ],
+  },
+  {
+    name: 'config',
+    usage:
+      'config [exclude|unexclude <ref|glob|provider>|compaction on|off|integration <name> on|off|<mode>]',
+    summary: 'Config sources and exclude rules; edit the user config',
+    completions: [
+      {
+        value: 'config',
+        label: 'config',
+        description:
+          'Show config sources, exclude rules (with origin) and how many models each matches',
+      },
+      {
+        value: 'config exclude',
+        label: 'config exclude <ref|glob|provider>',
+        description:
+          'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
+      },
+      {
+        value: 'config unexclude',
+        label: 'config unexclude <ref|glob|provider>',
+        description: 'Remove an exclusion from the user config',
+      },
+      {
+        value: 'config integration',
+        label: 'config integration <name> on|off|<mode>',
+        description:
+          'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
+      },
+      {
+        value: 'config compaction',
+        label: 'config compaction on|off',
+        description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
+      },
+    ],
+  },
+];
+
+function routerCommandDescription(): string {
+  return `Model router status. Usage: /router [group|${ROUTER_SUBCOMMANDS.map((s) => s.usage).join('|')}]`;
+}
+
+/** The command list shown under the bare overview and with an unknown subcommand. */
+function routerCommandListLines(): string[] {
+  const rows: Array<[string, string]> = [
+    ['/router', 'This overview'],
+    ['/router <group>', "One group's ranked candidates"],
+    ...ROUTER_SUBCOMMANDS.map((s): [string, string] => [`/router ${s.usage}`, s.summary]),
+  ];
+  return ['Commands:', ...rows.map(([usage, summary]) => `  ${usage}\n      ${summary}`)];
+}
+
+/**
+ * The subcommand a typo most likely meant: a close edit distance, else a name
+ * the word contains or starts ("rescan" → "scan", "block" → "blocklist").
+ */
+function nearestSubcommand(word: string, names: readonly string[]): string | undefined {
+  return closestKey(word, names) ?? names.find((n) => word.includes(n) || n.startsWith(word));
+}
+
+/** Reply for an argument that is neither a handled subcommand nor a group. */
+function formatUnknownRouterSubcommand(arg: string): string {
+  const first = arg.split(/\s+/)[0];
+  const names = ROUTER_SUBCOMMANDS.map((s) => s.name);
+  const known = ROUTER_SUBCOMMANDS.find((s) => s.name === first);
+  const near = known ? undefined : nearestSubcommand(first, names);
+  const hint = known
+    ? ` — usage: /router ${known.usage}`
+    : near
+      ? ` (did you mean "${near}"?)`
+      : '';
+  return [`Unknown /router subcommand "${arg}"${hint}`, '', ...routerCommandListLines()].join('\n');
+}
+
 export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {
-    description:
-      'Model router status. Usage: /router [group|scan|cost|classifier [days]|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|compaction on|off|integration <name> on|off|<mode>]]',
+    description: routerCommandDescription(),
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
-      const subcommands: AutocompleteItem[] = [
-        {
-          value: 'scan',
-          label: 'scan',
-          description: 'Re-discover models, re-scrape GDPval, regenerate config',
-        },
-        {
-          value: 'classifier',
-          label: 'classifier',
-          description:
-            'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
-        },
-        {
-          value: 'cost',
-          label: 'cost',
-          description:
-            'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate',
-        },
-        {
-          value: 'errors',
-          label: 'errors',
-          description:
-            'Main-session stream failures — headline count matches the status-line ⚠N err exactly',
-        },
-        {
-          value: 'errors 30',
-          label: 'errors <n>',
-          description: 'Show up to <n> entries (default 15, max 50)',
-        },
-        {
-          value: 'blocklist',
-          label: 'blocklist',
-          description: 'Show models blocked after permanent provider failures',
-        },
-        {
-          value: 'blocklist clear',
-          label: 'blocklist clear',
-          description: 'Unblock all models, or one: blocklist clear <provider/model>',
-        },
-        {
-          value: 'cooldowns',
-          label: 'cooldowns',
-          description: 'Show active rate-limit cooldowns (ref, remaining, hits)',
-        },
-        {
-          value: 'cooldowns clear',
-          label: 'cooldowns clear',
-          description:
-            'Clear all cooldowns + model-health streaks (incident relief, no restart needed)',
-        },
-        {
-          value: 'config',
-          label: 'config',
-          description:
-            'Show config sources, exclude rules (with origin) and how many models each matches',
-        },
-        {
-          value: 'config exclude',
-          label: 'config exclude <ref|glob|provider>',
-          description:
-            'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
-        },
-        {
-          value: 'config unexclude',
-          label: 'config unexclude <ref|glob|provider>',
-          description: 'Remove an exclusion from the user config',
-        },
-        {
-          value: 'config integration',
-          label: 'config integration <name> on|off|<mode>',
-          description:
-            'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
-        },
-        {
-          value: 'config compaction',
-          label: 'config compaction on|off',
-          description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
-        },
-      ];
+      const subcommands = ROUTER_SUBCOMMANDS.flatMap((s) => s.completions);
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
         const desc = rt.cfg.model_groups?.[g]?.description;
         return desc ? { value: g, label: g, description: desc } : { value: g, label: g };
@@ -870,6 +975,14 @@ export function createCommands(rt: CommandDeps): void {
               `Cooldowns cleared (${cleared} cooldown(s), ${healthCleared} health streak(s), ${breakersCleared} breaker(s)). All models are immediately available for routing again.`,
               'info'
             );
+            return;
+          }
+
+          // Every handled subcommand returned above. Anything else that is not a
+          // group name is a typo: say so instead of silently showing the
+          // overview (owner report 2026-11-14: `/router rescan`).
+          if (arg && !rt.cfg.model_groups[arg]) {
+            ctx.ui.notify(formatUnknownRouterSubcommand(arg), 'warning');
             return;
           }
 
@@ -1082,7 +1195,7 @@ export function createCommands(rt: CommandDeps): void {
           }
 
           lines.push('└' + '─'.repeat(71));
-          lines.push('', '/router <group> | scan | cost | blocklist');
+          lines.push('', ...routerCommandListLines());
           ctx.ui.notify(lines.join('\n'), 'info');
         } finally {
           // Always restore previous session context

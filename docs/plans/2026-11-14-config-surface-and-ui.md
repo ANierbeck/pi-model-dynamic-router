@@ -35,7 +35,7 @@
 ### Phase 3 — Command surface
 
 9. **Subcommands.** `/router config` (overview: sources, blocks, one summary line per integration, effective chain summary). `/router config <block>` shows one block. `/router config set <path> <value>` and `/router config unset <path>` write one table key. The existing `exclude`, `unexclude`, `compaction` and `integration` stay as aliases. Nothing is removed.
-10. **Discoverable.** The usage text, the `/router` help line (`src/commands.ts:650-668`) and the completion list are generated from the same subcommand list. Red first: a test that every subcommand in the usage text is handled by `handleConfigCommand`.
+10. **Discoverable.** The usage text, the `/router` help line and the completion list are generated from the same subcommand list. The top-level `/router` table exists since 2026-11-14 (`ROUTER_SUBCOMMANDS` in `src/commands.ts`); the `config` subcommands are added to it here, replacing the hand-written `CONFIG_USAGE_LINES`. Red first: a test that every subcommand in the usage text is handled by `handleConfigCommand`.
 11. **Non-interactive form.** `set`/`unset`/`show` work in every mode. They never open a dialog.
 
 ### Phase 4 — Guided UI

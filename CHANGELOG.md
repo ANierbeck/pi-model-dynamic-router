@@ -21,6 +21,10 @@ without the owner's explicit release approval).
 - **Read delegation:** the code default is off; the shipped `router-config.json` enables it.
 - **Commands and stages:** `/router classifier [days]` and `/router config integration <name> on|off|<mode>` are in the command table. The decision-log stage list names `laya` and the non-routing records (`pool`, `comparator`, `observation`, `observation-comparator`).
 
+### Fixed — `/router` reports unknown subcommands and lists every command
+
+An unknown subcommand such as `/router rescan` silently showed the overview, so a typo looked like a working command, and the overview footer named only 4 of the subcommands (`scan`, `cost`, `blocklist` and groups). The description, the autocomplete list, the overview's command list and the unknown-subcommand reply now come from one table (`ROUTER_SUBCOMMANDS` in `src/commands.ts`). An unknown subcommand gets a warning with a suggestion (`did you mean "scan"?`) or the usage of the known subcommand. Pinned by `test/router-command-help.test.ts` (red first; mutations on the unknown branch and the suggestion fallback both turn it red).
+
 ### Fixed — `/router` help text lists `compaction on|off`
 
 The command description omitted the `compaction on|off` subcommand that the handler accepts. Pinned by `test/router-command-help.test.ts` (red first: the test failed on the old description).

@@ -818,6 +818,8 @@ discovers automatically.
 | `/router config integration <name> on|off|<mode>` | Enable or disable an optional integration (currently `laya`, see [Local Laya classifier stage](#local-laya-classifier-stage-experimental)) or set its mode |
 | `/router config compaction on|off` | Cache-aware auto-compaction flag (opt-in, default off) |
 
+The bare `/router` overview ends with this command list. An unknown subcommand (for example `/router rescan`) is reported with a suggestion instead of showing the overview.
+
 ### Logging
 
 The router logs to `~/.pi/logs/router.log` (mirrored to `<project>/.pi/logs/router.log`).
