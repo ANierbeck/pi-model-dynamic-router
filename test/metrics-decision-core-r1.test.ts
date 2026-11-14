@@ -111,6 +111,19 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.billingTier('fp/priced')).toBe(3);
   });
 
+  // Sourcery PR #174: a THROWING registry lookup is "unknown", not "unpriced".
+  // registryCost swallows the throw and returned null, which read as free.
+  it('a failing registry lookup does not make a placeholder free (unknown is not free)', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'lookup-fails', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/lookup-fails', providers([]), discovered)).toBe(false);
+  });
+
   it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
     const registry = { find: () => priced(0, 0) };
     const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;

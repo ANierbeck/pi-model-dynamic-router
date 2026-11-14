@@ -675,7 +675,9 @@ export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
  * 1) registryCost (modelRegistry.find(provider,modelId).cost)
  * 2) subscription provider with no registry price → 0 placeholder
  * 3) isFreeModelRef: local provider, :free tag, free_models list, or
- *    cache-discovered cost_per_m: 0 → free
+ *    cache-discovered cost_per_m: 0 → free, unless the registry prices the
+ *    model (the 0 is a placeholder, ADR-0011 §1; a registry that cannot
+ *    answer leaves it not free)
  * 4) otherwise 'unknown'
  *
  * This helper is used by both the config-default path and the early-return
@@ -893,9 +895,17 @@ export function isFreeModelRef(
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   if (discovered?.cost_per_m === 0) {
     const slash = ref.indexOf('/');
-    const registryPrice =
-      slash > 0 && modelRegistry ? registryCost(ref.slice(0, slash), ref.slice(slash + 1)) : null;
-    return !registryPrice || (registryPrice.input === 0 && registryPrice.output === 0);
+    if (slash <= 0 || !modelRegistry) return true;
+    let registryPrice: { input: number; output: number } | null;
+    try {
+      registryPrice = registryPriceStrict(ref.slice(0, slash), ref.slice(slash + 1));
+    } catch {
+      // The registry could not answer: the price is unknown, so the ref is
+      // not called free on the placeholder's word (ADR-0011 §1).
+      return false;
+    }
+    // null = the registry has no price, or {0,0}: the placeholder stands.
+    return registryPrice === null;
   }
   return false;
 }
@@ -910,7 +920,7 @@ export function isFreeModelRef(
  * free/subscription/local/payg.
  *
  * "Free" (tier 0) uses isFreeModelRef for the :free tag + free_models list +
- * discovered cost_per_m===0 checks (but NOT the local-provider case, since
+ * discovered cost_per_m===0 checks (a registry price overrides the 0 placeholder) (but NOT the local-provider case, since
  * local is its own tier 2 — local models are $0 but classified as local, not
  * free, so they rank differently under sortByBillingPreference).
  */
@@ -1006,27 +1016,40 @@ function findRegistryModel(provider: string, modelId: string): Model<Api> | unde
 function registryCost(provider: string, modelId: string): { input: number; output: number } | null {
   if (!modelRegistry) return null;
   try {
-    let model = findRegistryModel(provider, modelId);
-    // Retry under the provider's `pricingAlias` (same upstream account/API,
-    // different router-internal provider key — e.g. mistral-zai → mistral).
-    // Pi's own catalog only ever registers the primary key, so a
-    // router-internal alias provider always misses on its own name.
-    if (!model) {
-      const aliasProvider = PROVIDER_MAP[provider]?.pricingAlias;
-      if (aliasProvider) model = findRegistryModel(aliasProvider, modelId);
-    }
-    if (!model?.cost) return null;
-    const { input, output } = model.cost;
-    if (typeof input !== 'number' || typeof output !== 'number') return null;
-    // A model with both prices 0 is registered as free — return null so the
-    // caller's free/local/subscription detection applies (e.g. ollama, or a
-    // subscription provider with sunk cost). Returning {0,0} here would be
-    // ambiguous with "unknown" in downstream `effCost` logic.
-    if (input === 0 && output === 0) return null;
-    return { input, output };
+    return registryPriceStrict(provider, modelId);
   } catch {
     return null;
   }
+}
+
+/**
+ * The registry price for a ref, with the alias retry. Unlike registryCost this
+ * THROWS when the registry lookup itself fails, so a caller can tell "the
+ * registry says unpriced" (null) from "the registry could not answer" (throw).
+ */
+function registryPriceStrict(
+  provider: string,
+  modelId: string
+): { input: number; output: number } | null {
+  if (!modelRegistry) return null;
+  let model = findRegistryModel(provider, modelId);
+  // Retry under the provider's `pricingAlias` (same upstream account/API,
+  // different router-internal provider key — e.g. mistral-zai → mistral).
+  // Pi's own catalog only ever registers the primary key, so a
+  // router-internal alias provider always misses on its own name.
+  if (!model) {
+    const aliasProvider = PROVIDER_MAP[provider]?.pricingAlias;
+    if (aliasProvider) model = findRegistryModel(aliasProvider, modelId);
+  }
+  if (!model?.cost) return null;
+  const { input, output } = model.cost;
+  if (typeof input !== 'number' || typeof output !== 'number') return null;
+  // A model with both prices 0 is registered as free — return null so the
+  // caller's free/local/subscription detection applies (e.g. ollama, or a
+  // subscription provider with sunk cost). Returning {0,0} here would be
+  // ambiguous with "unknown" in downstream `effCost` logic.
+  if (input === 0 && output === 0) return null;
+  return { input, output };
 }
 
 /**
