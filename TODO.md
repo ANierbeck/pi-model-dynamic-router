@@ -314,7 +314,7 @@ MIT), so the notice must not be dropped before that is settled.
   router only enriches what Pi already resolves.
 
 ### Intelligent Routing
-- [ ] **Implement learning from user feedback** - Improve classification based on corrections. ADR 0002 (Option B, accepted, not implemented) and ADR 0030 (proposed 2026-11-14: build the exact-match HINT store first; similarity and multi-label stay separate) — awaiting the owner's decision on ADR 0030
+- [ ] **Implement learning from user feedback** - Improve classification based on corrections. ADR 0002 (Option B, accepted, not implemented) and ADR 0030 (proposed 2026-11-14: build the exact-match store in `cache.hint_corrections` first; similarity is a later, separate step; multi-label is withdrawn, ADR 0031) — awaiting the owner's decision on ADR 0030
 ### Integration & Extensibility
 - **Optional integrations: one contract, one config block** — ✅ DONE 2026-11-12
   (`docs/plans/2026-11-08-optional-integrations-config.md`, status done; closed
