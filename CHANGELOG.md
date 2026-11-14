@@ -18,7 +18,9 @@ without the owner's explicit release approval).
   in the scan cache (all 59 entries on 2026-11-14, including `zai-glm-5-3` at
   $1.40/$4.40) ranked as tier-0 free in tiered groups, although Pi's registry
   prices it (ADR-0011 §1: a placeholder is not a price). A registry price now
-  wins; a registry `{0,0}` or no registry price keeps the placeholder free.
+  wins; a registry `{0,0}` or no registry price keeps the placeholder free, as
+  before. A throwing registry lookup does not make a placeholder free, and
+  `lookupPrice` no longer returns a cached 0 as a price in that case.
   Regression pins in `test/metrics-decision-core-r1.test.ts`, observed red
   before the fix.
 

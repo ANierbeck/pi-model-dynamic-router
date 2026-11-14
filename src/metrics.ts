@@ -676,8 +676,8 @@ export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
  * 2) subscription provider with no registry price → 0 placeholder
  * 3) isFreeModelRef: local provider, :free tag, free_models list, or
  *    cache-discovered cost_per_m: 0 → free, unless the registry prices the
- *    model (the 0 is a placeholder, ADR-0011 §1; a registry that cannot
- *    answer leaves it not free)
+ *    model (the 0 is a placeholder, ADR-0011 §1; a registry lookup that
+ *    throws leaves it not free)
  * 4) otherwise 'unknown'
  *
  * This helper is used by both the config-default path and the early-return
@@ -895,6 +895,9 @@ export function isFreeModelRef(
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   if (discovered?.cost_per_m === 0) {
     const slash = ref.indexOf('/');
+    // No registry (pre-session, or a pure-helper call): the placeholder stands,
+    // as the single free-definition contract pins it. Only a registry that
+    // ANSWERS with a price, or fails to answer at all, changes that.
     if (slash <= 0 || !modelRegistry) return true;
     let registryPrice: { input: number; output: number } | null;
     try {
@@ -1068,7 +1071,13 @@ export function lookupPrice(
   //    causing `min_cost_if_all_priced` groups to fall back to `best gdpval`
   //    and pick the strongest (most expensive) model in a "trivial" group.
   const { provider: p0, modelId: m0 } = splitRef(ref);
-  const regCost = registryCost(p0, m0);
+  let regCost: { input: number; output: number } | null = null;
+  let registryFailed = false;
+  try {
+    regCost = registryPriceStrict(p0, m0);
+  } catch {
+    registryFailed = true;
+  }
   if (regCost) return regCost;
 
   // 1. Check config metrics first
@@ -1081,7 +1090,26 @@ export function lookupPrice(
     return { input: cost, output: cost };
   }
 
-  return orFallbackPrice(ref);
+  const fallback = orFallbackPrice(ref);
+  // A registry that could not answer is no evidence that a cached 0 is free:
+  // the 0 is a placeholder unless the ref is free by its own definition.
+  if (
+    registryFailed &&
+    fallback?.input === 0 &&
+    fallback.output === 0 &&
+    !isFreeByDefinition(ref)
+  ) {
+    return { input: 'unknown', output: 'unknown' };
+  }
+  return fallback;
+}
+
+/** Free by the ref's own definition: the :free tag, a local provider, or the free_models list. */
+function isFreeByDefinition(ref: string): boolean {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local || ref.endsWith(':free')) return true;
+  const freeList = cfg.providers?.[prov]?.free_models ?? [];
+  return freeList.includes(ref) || freeList.includes(ref.slice(ref.indexOf('/') + 1));
 }
 
 /**

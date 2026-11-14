@@ -124,6 +124,26 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.isFreeModelRef('fp/lookup-fails', providers([]), discovered)).toBe(false);
   });
 
+  // Sourcery PR #174 round 2 (Medium): a throwing registry must not fall through
+  // to the OpenRouter caches and come back as {0,0} (free) for the same model.
+  it('a failing registry lookup gives an unknown price, not the cached zero', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'lp-fails', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: providers([]) },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/lp-fails': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupPrice('fp/lp-fails')).toEqual({ input: 'unknown', output: 'unknown' });
+  });
+
   it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
     const registry = { find: () => priced(0, 0) };
     const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;
