@@ -168,7 +168,7 @@ gates → ranking → failure handling) as a Mermaid diagram, see
 
 ### Dynamic Routing
 
-The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (cloud-first with `classifier_cloud_chain: true`, a local Ollama chain derived from the models you have pulled as the last resort) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`. Since 2.0 every category selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`.
+The **dynamic routing** feature automatically classifies user prompts and selects the optimal model group based on the task type. It uses a classifier chain (a local Ollama chain derived from the models you have pulled, tried first; with `classifier_cloud_chain: true`, as shipped, a cloud chain follows as the fallback) and routes by the `CATEGORY_TO_GROUP` table in `src/content-classifier.ts`. Since 2.0 every category selects the group named like it: `simple` and `code_simple` → `simple`, `standard` and `continue` → `standard`, `code_complex` → `code_complex`, `design` → `design`, `planning` → `planning`.
 
 #### Categories for Classification
 
@@ -198,7 +198,7 @@ Each category maps to a model group (`CATEGORY_TO_GROUP`, `src/content-classifie
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `simple`, `standard`, `code_complex`, `design`, or `planning`. Design and planning prompts never route to the `code_complex` group. This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (local Ollama chain first, cloud chain as the fallback: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `simple`, `standard`, `code_complex`, `design`, or `planning`. Design and planning prompts never route to the `code_complex` group. This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
@@ -207,15 +207,7 @@ To use the **`dynamic`** group, you need:
 - No classifier model is shipped or required by name: after each scan the router **derives** the local chain from the models Ollama reports (completion-capable, no embedding-only models, no model that answers a classification with HTTP 501 "structured output is unavailable"), orders them by parameter size (small = fast), and **probes** them with the same classification cases the cloud chain uses. The verified list is the chain (`/router` shows the heads; "none yet" until a scan ran). Pin your own with `classifier_model` / `classifier_fallback` in the `dynamic` group of `router-config.user.json` (e.g. `"ollama/<model>:<tag>"`).
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
-Cloud-first (2026-09-27): with `classifier_cloud_chain: true` (set on the
-shipped `dynamic` group) the classifier tries a chain of cloud models
-FIRST — pinned `classifier_cloud_model` → the scan-time probe-verified list →
-lazy discovery over Pi's model registry (output price at most $5 per million tokens, or a $0 catalog
-placeholder; at most 20 candidates) → the static `free_models` list — and treats Ollama as the last
-resort (see [Data handling & privacy](#data-handling--privacy)). If every
-cloud candidate fails and Ollama is unavailable, the classifier falls back
-to static keyword-based classification (only if `allowStaticFallback` is
-enabled) — otherwise the classification fails and the router streams from the `simple` group.
+Local first (ADR 0032, 2026-11-14): with `classifier_cloud_chain: true` (set on the shipped `dynamic` group) the classifier runs the local Ollama chain first, and a usable local answer is final. Only when the local leg produces no answer does the cloud chain run, trying in order: pinned `classifier_cloud_model` → the scan-time probe-verified list → lazy discovery over Pi's model registry (output price at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates) → the static `free_models` list (see [Data handling & privacy](#data-handling--privacy)). If every candidate fails, the static keyword classifier runs when `allowStaticFallback` is enabled; otherwise the classification falls back to the `continue` category (routed to `standard`).
 
 #### Local Laya classifier stage (experimental)
 
@@ -364,8 +356,8 @@ All scanning is async and non-blocking.
 ### Data handling & privacy
 
 - **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
-- **Prompt content can leave the machine by default.** The shipped `dynamic` group sets `classifier_cloud_chain: true`, so each prompt is first sent to a cloud model chosen from Pi's model registry: the pinned `classifier_cloud_model` if set, else the scan-time probe-verified list, else lazy discovery (models with an output price of at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates), else the static `free_models` list. Models of excluded providers, `paid_models_from` providers, and models that are currently unhealthy or blocklisted are skipped. Cloud candidates are not limited to free models: the price ceiling decides eligibility. Only when every cloud candidate fails does the router try the local Ollama chain, and only then static keyword classification (if `allowStaticFallback` is enabled).
-- **Keeping prompts local.** Set `"classifier_cloud_chain": false` on the `dynamic` group in `router-config.user.json` to turn the cloud chain off (the user layer overrides the shipped value). The chain then runs the local Ollama classifier first, and static keyword classification only if `allowStaticFallback` is enabled. The opt-in local Laya stage (`integrations.laya`) runs before either chain and talks only to a loopback sidecar.
+- **Prompt text leaves the machine only when no local model answers.** The shipped `dynamic` group sets `classifier_cloud_chain: true`, so a prompt goes to a cloud model from Pi's model registry only after the local Ollama chain produced no answer. The cloud candidates are the pinned `classifier_cloud_model` if set, else the scan-time probe-verified list, else lazy discovery (output price at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates), else the static `free_models` list. Models of excluded providers, `paid_models_from` providers, and models that are currently unhealthy or blocklisted are skipped. Cloud candidates are not limited to free models: the price ceiling decides eligibility.
+- **Keeping prompts on the machine.** Set `"classifier_cloud_chain": false` on the `dynamic` group in `router-config.user.json` (the user layer overrides the shipped value). The classifier then uses only the local Ollama chain and, if `allowStaticFallback` is enabled, static keyword classification. The opt-in local Laya stage (`integrations.laya`) runs before either chain and talks only to a loopback sidecar.
 - **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
 
 ---
@@ -623,7 +615,7 @@ default is either derived or a **user-layer** choice in `router-config.user.json
 | You want | Put in your user layer |
 |---|---|
 | A specific local classifier (instead of the derived/probed chain) | `"model_groups": { "dynamic": { "classifier_model": "ollama/<model>:<tag>", "classifier_fallback": "ollama/<model>:<tag>" } }` |
-| A specific cloud classifier tried first | `"model_groups": { "dynamic": { "classifier_cloud_model": "<provider>/<model>" } }` |
+| A specific cloud classifier (first in the cloud chain, which runs after the local chain) | `"model_groups": { "dynamic": { "classifier_cloud_model": "<provider>/<model>" } }` |
 | Provider billing / free-tier pins / exclusions | the `providers` / `exclude` block above |
 | Families kept out of routing groups (poor agents) | `"non_agent_model_prefixes": ["<family>-"]` (see below) |
 

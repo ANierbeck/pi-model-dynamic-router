@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_chain`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — a local Ollama chain first, derived from the models you have pulled and verified by a probe, and the cloud chain (`classifier_cloud_chain`) as the fallback.
 2. **Group Mapping**: The category is mapped to the model group of the same name via the shipped `CATEGORY_TO_GROUP` table (`simple`, `standard`, `code_complex`, `design`, `planning`); `code_simple` shares `simple`, and `continue` inherits the previous category (or `standard` when there is none).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
@@ -30,10 +30,9 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and run in
 
 ### Requirements
 
-With the shipped cloud-first classifier chain, **no local setup is required** —
-classification runs on price-capped cloud models, which receive the prompt text (see the README section "Data handling & privacy" to turn this off), and Ollama is only the last resort:
+The shipped chain is local first, then cloud. **A local setup is recommended:** without a local model, classification falls back to price-capped cloud models, which then receive the prompt text (see the README section "Data handling & privacy" to turn this off):
 
-- **Optional, for local-only classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
+- **Recommended, for local classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
 - If every classifier hop fails, the classifier falls back to the `continue` category (routed to `standard`); with `allowStaticFallback` enabled, static keyword classification runs instead
 - **Experimental, Apple Silicon**: an optional local Laya classifier stage can answer the category from a local MLX sidecar instead of the chain — disabled by default, bring-your-own weights, see the README section "Local Laya classifier stage (experimental)"
 
