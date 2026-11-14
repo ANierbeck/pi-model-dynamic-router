@@ -1340,15 +1340,18 @@ async function classifyPromptUncounted(
   // the same chain. Cache writes inside are suppressed per-holder for the
   // comparator (see classifyCacheSet).
   const classifyViaLlmChain = async (): Promise<FullClassificationResult> => {
-    if (allowCloudChain) {
+    // Local first (owner decision 2026-11-14): the pinned or derived Ollama
+    // chain answers when it can, so a usable local reply never leaves the
+    // machine. The cloud chain runs only when the local leg produced no answer
+    // (daemon down, no model, every hop failed). Cloud before local would send
+    // every prompt to a cloud model even when a local model could answer.
+    await tryOllama();
+    if (!classificationResult && allowCloudChain) {
       const cloudResult = await tryCloud();
       if (cloudResult) {
         if (!contextBlock) classifyCacheSet(prompt, cloudResult);
         return cloudResult;
       }
-      await tryOllama();
-    } else {
-      await tryOllama();
     }
 
     if (classificationResult) {

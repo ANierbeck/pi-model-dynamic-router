@@ -107,7 +107,7 @@ describe('getLastClassificationSource — who actually classified', () => {
 describe('formatClassifierStatus — honest /router status lines', () => {
   const last = (source: string): ClassificationSourceInfo => ({ source, at: Date.now() });
 
-  it('shows the actual classifier and the real chain (cloud-first, Ollama down)', () => {
+  it('shows the actual classifier and the real chain (local first, Ollama down, then cloud)', () => {
     const lines = formatClassifierStatus({
       group: baseDynamicGroup(),
       last: last('cloud:mistral/ministral-3b-latest'),
@@ -119,11 +119,11 @@ describe('formatClassifierStatus — honest /router status lines', () => {
     expect(lines.some((l) => l.includes('cloud:mistral/ministral-3b-latest (last used)'))).toBe(
       true
     );
-    // The chain must reflect execution order: cloud BEFORE Ollama (cloud-first
-    // 2026-09-27), and Ollama must be reported as down, not silently claimed.
+    // The chain must reflect execution order: Ollama BEFORE cloud (local first,
+    // owner decision 2026-11-14), and Ollama must be reported as down, not silently claimed.
     const chain = lines.find((l) => l.includes('Chain:')) ?? '';
     expect(chain).toContain('cloud');
-    expect(chain.indexOf('cloud')).toBeLessThan(chain.indexOf('Ollama'));
+    expect(chain.indexOf('Ollama')).toBeLessThan(chain.indexOf('cloud'));
     expect(chain).toContain('Ollama (down');
     expect(chain).toContain('foo:3b → bar:9b');
     expect(chain).toContain('7 probed');

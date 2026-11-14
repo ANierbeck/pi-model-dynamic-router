@@ -169,10 +169,9 @@ describe('classifyPrompt fallback chain', () => {
         findModel,
       });
 
-      // Cloud-first (2026-09-27): cloud succeeds, so Ollama must NEVER be
-      // touched. callOllama is still mocked to reject so a regression that
-      // restores the old Ollama-first order would surface as a failing
-      // assertion, not as a silently-passing test.
+      // No local model is pinned or derived here (empty cache), so the local
+      // leg is skipped and the cloud chain answers. The local-first order with
+      // a usable local model is pinned in test/classifier-local-first.test.ts.
       expect(callOllama).not.toHaveBeenCalled();
       expect(completeSimple).toHaveBeenCalledTimes(1);
       expect(findModel).toHaveBeenCalledWith('prov/cloud-a');
@@ -208,12 +207,12 @@ describe('classifyPrompt fallback chain', () => {
       expect(completeSimple).toHaveBeenCalledTimes(1);
     });
 
-    it('falls back to Ollama as a LAST RESORT when the entire cloud chain fails', async () => {
+    it('answers with the local fallback model before the cloud chain (local first)', async () => {
       vi.mocked(callOllama)
         .mockRejectedValueOnce(new Error('ECONNREFUSED')) // primary
         .mockResolvedValueOnce(
           // fallback
-          ollamaReply({ category: 'simple', reason: 'local last resort', confidence: 0.8 })
+          ollamaReply({ category: 'simple', reason: 'local fallback', confidence: 0.8 })
         );
       const completeSimple = vi
         .fn()
@@ -233,12 +232,12 @@ describe('classifyPrompt fallback chain', () => {
         findModel,
       });
 
-      // Cloud was tried first (and failed) before Ollama was touched at all.
-      expect(completeSimple).toHaveBeenCalledTimes(1);
+      // The local backup answered, so the cloud chain was never reached.
       expect(callOllama).toHaveBeenCalledTimes(2);
       expect(vi.mocked(callOllama).mock.calls[0]?.[0]).toBe('gemma-primary');
       expect(vi.mocked(callOllama).mock.calls[1]?.[0]).toBe('gemma-backup');
-      expect(result).toEqual({ category: 'simple', reason: 'local last resort', confidence: 0.8 });
+      expect(completeSimple).not.toHaveBeenCalled();
+      expect(result).toEqual({ category: 'simple', reason: 'local fallback', confidence: 0.8 });
     });
 
     it('tries the next cached model when a cloud model fails', async () => {
@@ -578,5 +577,103 @@ describe('classifyPrompt fallback chain', () => {
 
       expect(result.category).toBe('simple');
     });
+  });
+});
+
+describe('classifier chain order: local first, cloud second', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isOllamaAvailable).mockResolvedValue(true);
+  });
+
+  it('a usable local answer is final: the cloud chain is never called', async () => {
+    vi.mocked(callOllama).mockResolvedValueOnce(
+      ollamaReply({ category: 'simple', reason: 'local answer', confidence: 0.9 })
+    );
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(cloudReply({ category: 'design', reason: 'cloud', confidence: 0.9 }));
+
+    const result = await classifyPrompt('Rename the local helper variable in this small file', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      cfg: {} as any,
+      cache: {
+        classifier_cloud_models: ['prov/cloud-a'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
+      } as any,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(callOllama).toHaveBeenCalledTimes(1);
+    expect(completeSimple).not.toHaveBeenCalled();
+    expect(result).toEqual({ category: 'simple', reason: 'local answer', confidence: 0.9 });
+  });
+
+  it('when the local leg fails, the cloud chain answers', async () => {
+    vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(
+        cloudReply({ category: 'code_simple', reason: 'cloud', confidence: 0.85 })
+      );
+
+    const result = await classifyPrompt('Add a missing semicolon at the end of that statement', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      cfg: {} as any,
+      cache: {
+        classifier_cloud_models: ['prov/cloud-a'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
+      } as any,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(callOllama).toHaveBeenCalled();
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ category: 'code_simple', reason: 'cloud', confidence: 0.85 });
+  });
+
+  it('with the daemon unreachable, the cloud chain answers without any local call', async () => {
+    vi.mocked(isOllamaAvailable).mockResolvedValue(false);
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(
+        cloudReply({ category: 'standard', reason: 'cloud only', confidence: 0.8 })
+      );
+
+    const result = await classifyPrompt('Summarise the trade-offs of the two caching strategies', {
+      model: 'gemma-primary',
+      allowCloudChain: true,
+      cfg: {} as any,
+      cache: {
+        classifier_cloud_models: ['prov/cloud-a'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
+      } as any,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(callOllama).not.toHaveBeenCalled();
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ category: 'standard', reason: 'cloud only', confidence: 0.8 });
+  });
+
+  it('without the cloud chain enabled, the local answer is used and no cloud is tried', async () => {
+    vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
+    const completeSimple = vi.fn();
+
+    await classifyPrompt('Explain the difference between a mutex and a semaphore briefly', {
+      model: 'gemma-primary',
+      allowCloudChain: false,
+      cfg: {} as any,
+      cache: {} as any,
+      completeSimple,
+      findModel: vi.fn().mockReturnValue(mockModel),
+    });
+
+    expect(completeSimple).not.toHaveBeenCalled();
   });
 });

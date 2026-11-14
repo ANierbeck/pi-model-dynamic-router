@@ -170,9 +170,10 @@ export interface ClassifierStatusInput {
 /**
  * Honest classifier status lines for the dynamic group's /router block:
  * which backend produced the last classification, and the chain as it is
- * actually executed (cloud-first per the 2026-09-27 design, local Ollama as
- * a last resort, static as the final fallback). Pure — all inputs are
- * gathered by the caller so this stays trivially testable.
+ * actually executed: Laya (when active), then the local Ollama chain, then
+ * the cloud chain (local first, owner decision 2026-11-14), then static as the
+ * final fallback. Pure — all inputs are gathered by the caller so this stays
+ * trivially testable.
  */
 export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   const { group: g, last, probedCount, ollamaUp } = input;
@@ -180,13 +181,6 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
   if (input.laya?.mode === 'active') legs.push('Laya');
-  if (g.classifier_cloud_chain) {
-    legs.push(
-      g.classifier_cloud_model
-        ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
-        : `cloud (${probedCount} probed)`
-    );
-  }
   const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string =>
     Boolean(m)
   );
@@ -200,6 +194,13 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         ? 'none qualified — pin or /router scan'
         : 'none yet';
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
+  if (g.classifier_cloud_chain) {
+    legs.push(
+      g.classifier_cloud_model
+        ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
+        : `cloud (${probedCount} probed)`
+    );
+  }
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
   const laya = input.laya;

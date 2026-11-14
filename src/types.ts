@@ -185,8 +185,8 @@ export interface Group {
    */
   classifier_cloud_model?: string;
   /**
-   * Cloud classifier chain: when on, the classifier tries cloud models BEFORE the
-   * local Ollama chain. Candidates, in order: the pinned classifier_cloud_model,
+   * Cloud classifier chain: when on, the classifier runs cloud models only after the
+   * local Ollama chain produced no answer. Candidates, in order: the pinned classifier_cloud_model,
    * the scan-time probe-verified list, lazy discovery over Pi's registry (output
    * price <= $5/M or a $0 catalog placeholder, at most 20), then free_models. The
    * raw prompt text is sent to the chosen model. Off in code (data minimization);
