@@ -49,7 +49,7 @@ export interface ClassifierSummary {
 }
 
 /** The fields the summary reads, checked before a record is trusted. */
-function hasRecordShape(v: Record<string, unknown>): boolean {
+function hasRecordShape(v: DecisionRecord): boolean {
   const isObjectOrNull = (x: unknown): boolean =>
     x === undefined || x === null || typeof x === 'object';
   return (
@@ -75,7 +75,7 @@ export function parseSummaryRecords(
   bounds: { sinceMs: number; untilMs: number }
 ): DecisionRecord[] {
   return parseDecisionLogText(text, { since: bounds.sinceMs, until: bounds.untilMs }).filter(
-    (rec) => hasRecordShape(rec as unknown as Record<string, unknown>)
+    (rec) => hasRecordShape(rec)
   );
 }
 
