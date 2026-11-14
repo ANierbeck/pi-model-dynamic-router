@@ -695,7 +695,7 @@ the "Release prep for 2.0.0" entry below. The 9-task plan
 the code: Phase 2 (turn id, outcome join, correction signals) and Phase 4 (the
 generic shadow hook) are not implemented, and the plan's own Status says so. The
 Laya shadow comparator is a separate mechanism and does not replace the Phase 4
-hook. Phase 5 (a `/router classifier` summary) is absent from `src/commands.ts`.
+hook. Phase 5 (`/router classifier`) shipped 2026-11-14; its `docs/routing-flow.md` entry is still open.
 None of them blocks the Laya release gate.
 
 ---
