@@ -675,7 +675,9 @@ export function getGdpvalProvenance(): NonNullable<Cache['gdpval_provenance']> {
  * 1) registryCost (modelRegistry.find(provider,modelId).cost)
  * 2) subscription provider with no registry price → 0 placeholder
  * 3) isFreeModelRef: local provider, :free tag, free_models list, or
- *    cache-discovered cost_per_m: 0 → free
+ *    cache-discovered cost_per_m: 0 → free, unless the registry prices the
+ *    model (the 0 is a placeholder, ADR-0011 §1; a registry lookup that
+ *    throws leaves it not free)
  * 4) otherwise 'unknown'
  *
  * This helper is used by both the config-default path and the early-return
@@ -883,9 +885,31 @@ export function isFreeModelRef(
     // the check above already covered it).
     if (freeList.includes(ref.slice(ref.indexOf('/') + 1))) return true;
   }
-  // Discovered with cost_per_m === 0
+  // Discovered with cost_per_m === 0 — but that 0 is a PLACEHOLDER, not a
+  // price (ADR-0011 §1: "The system must not read 'not priced' as 'free'").
+  // A registry price wins over it, exactly as resolveCostPerM already does;
+  // only a registry that also says {0, 0} (or knows no price at all) leaves
+  // the discovery free. Without this guard, the stale scan cache made every
+  // paid Mistral model tier-0 "free" in tiered groups (2026-11-14: all 59
+  // cache entries carried cost_per_m 0, incl. zai-glm-5-3 at $1.40/$4.40).
   const discovered = (availableModels ?? []).find((m) => `${m.provider}/${m.id}` === ref);
-  if (discovered?.cost_per_m === 0) return true;
+  if (discovered?.cost_per_m === 0) {
+    const slash = ref.indexOf('/');
+    // No registry (pre-session, or a pure-helper call): the placeholder stands,
+    // as the single free-definition contract pins it. Only a registry that
+    // ANSWERS with a price, or fails to answer at all, changes that.
+    if (slash <= 0 || !modelRegistry) return true;
+    let registryPrice: { input: number; output: number } | null;
+    try {
+      registryPrice = registryPriceStrict(ref.slice(0, slash), ref.slice(slash + 1));
+    } catch {
+      // The registry could not answer: the price is unknown, so the ref is
+      // not called free on the placeholder's word (ADR-0011 §1).
+      return false;
+    }
+    // null = the registry has no price, or {0,0}: the placeholder stands.
+    return registryPrice === null;
+  }
   return false;
 }
 
@@ -899,7 +923,7 @@ export function isFreeModelRef(
  * free/subscription/local/payg.
  *
  * "Free" (tier 0) uses isFreeModelRef for the :free tag + free_models list +
- * discovered cost_per_m===0 checks (but NOT the local-provider case, since
+ * discovered cost_per_m===0 checks (a registry price overrides the 0 placeholder) (but NOT the local-provider case, since
  * local is its own tier 2 — local models are $0 but classified as local, not
  * free, so they rank differently under sortByBillingPreference).
  */
@@ -995,27 +1019,40 @@ function findRegistryModel(provider: string, modelId: string): Model<Api> | unde
 function registryCost(provider: string, modelId: string): { input: number; output: number } | null {
   if (!modelRegistry) return null;
   try {
-    let model = findRegistryModel(provider, modelId);
-    // Retry under the provider's `pricingAlias` (same upstream account/API,
-    // different router-internal provider key — e.g. mistral-zai → mistral).
-    // Pi's own catalog only ever registers the primary key, so a
-    // router-internal alias provider always misses on its own name.
-    if (!model) {
-      const aliasProvider = PROVIDER_MAP[provider]?.pricingAlias;
-      if (aliasProvider) model = findRegistryModel(aliasProvider, modelId);
-    }
-    if (!model?.cost) return null;
-    const { input, output } = model.cost;
-    if (typeof input !== 'number' || typeof output !== 'number') return null;
-    // A model with both prices 0 is registered as free — return null so the
-    // caller's free/local/subscription detection applies (e.g. ollama, or a
-    // subscription provider with sunk cost). Returning {0,0} here would be
-    // ambiguous with "unknown" in downstream `effCost` logic.
-    if (input === 0 && output === 0) return null;
-    return { input, output };
+    return registryPriceStrict(provider, modelId);
   } catch {
     return null;
   }
+}
+
+/**
+ * The registry price for a ref, with the alias retry. Unlike registryCost this
+ * THROWS when the registry lookup itself fails, so a caller can tell "the
+ * registry says unpriced" (null) from "the registry could not answer" (throw).
+ */
+function registryPriceStrict(
+  provider: string,
+  modelId: string
+): { input: number; output: number } | null {
+  if (!modelRegistry) return null;
+  let model = findRegistryModel(provider, modelId);
+  // Retry under the provider's `pricingAlias` (same upstream account/API,
+  // different router-internal provider key — e.g. mistral-zai → mistral).
+  // Pi's own catalog only ever registers the primary key, so a
+  // router-internal alias provider always misses on its own name.
+  if (!model) {
+    const aliasProvider = PROVIDER_MAP[provider]?.pricingAlias;
+    if (aliasProvider) model = findRegistryModel(aliasProvider, modelId);
+  }
+  if (!model?.cost) return null;
+  const { input, output } = model.cost;
+  if (typeof input !== 'number' || typeof output !== 'number') return null;
+  // A model with both prices 0 is registered as free — return null so the
+  // caller's free/local/subscription detection applies (e.g. ollama, or a
+  // subscription provider with sunk cost). Returning {0,0} here would be
+  // ambiguous with "unknown" in downstream `effCost` logic.
+  if (input === 0 && output === 0) return null;
+  return { input, output };
 }
 
 /**
@@ -1034,7 +1071,13 @@ export function lookupPrice(
   //    causing `min_cost_if_all_priced` groups to fall back to `best gdpval`
   //    and pick the strongest (most expensive) model in a "trivial" group.
   const { provider: p0, modelId: m0 } = splitRef(ref);
-  const regCost = registryCost(p0, m0);
+  let regCost: { input: number; output: number } | null = null;
+  let registryFailed = false;
+  try {
+    regCost = registryPriceStrict(p0, m0);
+  } catch {
+    registryFailed = true;
+  }
   if (regCost) return regCost;
 
   // 1. Check config metrics first
@@ -1047,7 +1090,35 @@ export function lookupPrice(
     return { input: cost, output: cost };
   }
 
-  return orFallbackPrice(ref);
+  return fallbackWithoutRegistry(ref, registryFailed);
+}
+
+/**
+ * The OpenRouter/config fallback for a price read whose registry lookup did not
+ * answer. A scanned zero that the registry could not confirm is a placeholder,
+ * not a price, so it comes back unknown (ADR-0011 §1). Config zeros and the
+ * provider-level sunk-cost estimate are explicit evidence and pass through.
+ */
+function fallbackWithoutRegistry(
+  ref: string,
+  registryFailed: boolean
+): { input: number | 'unknown'; output: number | 'unknown' } | null {
+  const fallback = orFallbackPrice(ref);
+  if (!registryFailed || fallback?.input !== 0 || fallback.output !== 0) return fallback;
+  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+  if (discovered?.cost_per_m !== 0 || isFreeByDefinition(ref)) return fallback;
+  // An owner-configured provider price is explicit evidence, even when the
+  // same ref also has a scanned placeholder 0.
+  if (cfg.providers?.[ref.split('/')[0]]?.cost_per_m !== undefined) return fallback;
+  return { input: 'unknown', output: 'unknown' };
+}
+
+/** Free by the ref's own definition: the :free tag, a local provider, or the free_models list. */
+function isFreeByDefinition(ref: string): boolean {
+  const prov = ref.split('/')[0];
+  if (PROVIDER_MAP[prov]?.local || ref.endsWith(':free')) return true;
+  const freeList = cfg.providers?.[prov]?.free_models ?? [];
+  return freeList.includes(ref) || freeList.includes(ref.slice(ref.indexOf('/') + 1));
 }
 
 /**
@@ -1143,9 +1214,15 @@ export function lookupListPrice(
   ref: string
 ): { input: number | 'unknown'; output: number | 'unknown' } | null {
   const { provider, modelId } = splitRef(ref);
-  const regCost = registryCost(provider, modelId);
+  let regCost: { input: number; output: number } | null = null;
+  let registryFailed = false;
+  try {
+    regCost = registryPriceStrict(provider, modelId);
+  } catch {
+    registryFailed = true;
+  }
   if (regCost) return regCost;
-  return orFallbackPrice(ref);
+  return fallbackWithoutRegistry(ref, registryFailed);
 }
 
 /**

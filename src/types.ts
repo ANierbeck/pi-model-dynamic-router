@@ -804,7 +804,8 @@ export interface ModelCapabilities {
 }
 
 /**
- * One discovered model. `cost_per_m` is always present (0 for local/free);
+ * One discovered model. `cost_per_m` is always present (0 for local/free, and
+ * a PLACEHOLDER 0 for scanned models: a registry price overrides it, ADR-0011);
  * `capabilities` is optional and populated only when the scan could extract
  * real values from the provider's models endpoint.
  */

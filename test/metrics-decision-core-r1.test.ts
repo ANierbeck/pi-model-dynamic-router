@@ -92,6 +92,119 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.isFreeModelRef('fp/zero', providers([]), undefined)).toBe(false);
     expect(m.billingTier('fp/zero')).toBe(0);
   });
+
+  // ADR-0011 §1: the scan's cost_per_m 0 is a PLACEHOLDER, and a registry
+  // price beats it. Live evidence 2026-11-14: every one of the 59 entries in
+  // dist/.cache/scan-cache.json carried cost_per_m 0 — including
+  // mistral/zai-glm-5-3, which Pi's catalog prices at $1.40/$4.40. The
+  // placeholder therefore made a real, paid model look tier-0 "free" in
+  // every tiered group, despite providers.mistral.billing being
+  // pay_per_token.
+  it('a scan-cache 0 placeholder is NOT free when the registry prices the model', () => {
+    const registry = {
+      find: (p: string, id: string) =>
+        p === 'fp' && id === 'priced' ? priced(1.4, 4.4) : undefined,
+    };
+    const discovered = [{ provider: 'fp', id: 'priced', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/priced', providers([]), discovered)).toBe(false);
+    expect(m.billingTier('fp/priced')).toBe(3);
+  });
+
+  // Sourcery PR #174: a THROWING registry lookup is "unknown", not "unpriced".
+  // registryCost swallows the throw and returned null, which read as free.
+  it('a failing registry lookup does not make a placeholder free (unknown is not free)', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'lookup-fails', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/lookup-fails', providers([]), discovered)).toBe(false);
+  });
+
+  // Sourcery PR #174 round 2 (Medium): a throwing registry must not fall through
+  // to the OpenRouter caches and come back as {0,0} (free) for the same model.
+  it('a failing registry lookup gives an unknown price, not the cached zero', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'lp-fails', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: providers([]) },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/lp-fails': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupPrice('fp/lp-fails')).toEqual({ input: 'unknown', output: 'unknown' });
+  });
+
+  // Sourcery PR #174 round 3 (Medium): the display price takes the same path.
+  it('a failing registry lookup gives the list (display) price unknown, not the cached zero', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'ld-fails', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: providers([]) },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/ld-fails': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupListPrice('fp/ld-fails')).toEqual({ input: 'unknown', output: 'unknown' });
+  });
+
+  // Regression guard for the round-3 over-reach: a provider-level sunk-cost 0
+  // (subscription) is explicit evidence and must survive a registry failure.
+  it('a provider-level sunk-cost 0 still prices at 0 when the registry fails', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    world({
+      cfg: { providers: { fp: { billing: 'subscription', cost_per_m: 0 } } as any },
+      registry,
+    });
+    expect(m.lookupPrice('fp/sub-model')).toEqual({ input: 0, output: 0 });
+  });
+
+  // Sourcery PR #174 round 4: an owner-configured provider zero is explicit
+  // evidence, even when the same ref also has a scanned placeholder 0.
+  it('a configured provider zero still prices at 0 when the registry fails, even with a scanned 0', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'cfg-and-scan', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: { fp: { billing: 'subscription', cost_per_m: 0 } } as any },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/cfg-and-scan': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupPrice('fp/cfg-and-scan')).toEqual({ input: 0, output: 0 });
+  });
+
+  it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
+    const registry = { find: () => priced(0, 0) };
+    const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;
+    world({ cfg: { providers: providers([]) }, cache: { available_models: discovered }, registry });
+    expect(m.isFreeModelRef('fp/zero-priced', providers([]), discovered)).toBe(true);
+    expect(m.billingTier('fp/zero-priced')).toBe(0);
+  });
 });
 
 // ── cost placeholder healing (getM / resolveCostPerM) ─────────────────────
