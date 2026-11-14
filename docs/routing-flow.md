@@ -88,8 +88,13 @@ flowchart TD
 
     FBLOOP["Feedback loops: usage_log (tokens + cacheRead/cacheWrite),<br/>learned state, health decay (15 min),<br/>escalation resets on success"]
 
+    DLOG["Decision log (ADR-0027): one JSONL record per classification,<br/>written at the classifyPrompt choke point<br/>(src/classifier-decision-log.ts)"]
+    SUMMARY["/router classifier [days] reads the log and its<br/>rotated files (Phase 5, src/classifier-summary.ts)"]
+
     TURN["Prompt / turn arrives"] --> PIN
     CATOUT --> FB
+    CATOUT -. "record" .-> DLOG
+    DLOG -. "read by" .-> SUMMARY
     OVERRIDE --> ESC
     GOUT --> POOL
     POOL --> G1

@@ -360,3 +360,49 @@ export function writePoolRecord(
     // Same contract as writeDecisionRecord: logging never breaks routing.
   }
 }
+
+// ── reading the log ───────────────────────────────────────────────────────────
+
+/** Time window for the readers, epoch ms, both bounds inclusive. */
+export interface LogBounds {
+  since?: number;
+  until?: number;
+}
+
+/**
+ * Every parseable record of a decision-log text, in file order. The one parser
+ * for the JSONL lines: the script reader (scripts/lib/decision-log.ts) and the
+ * /router classifier summary (src/classifier-summary.ts) both call it.
+ *
+ * Contract:
+ * - a blank line is skipped;
+ * - a line that is not valid JSON is skipped (the log is appended to while it
+ *   is read, so a torn last line is normal, not an error);
+ * - a line that parses to a non-object is skipped;
+ * - with bounds, a record whose `ts` is unparseable is skipped (it cannot be
+ *   placed in time); without bounds it is kept.
+ *
+ * Pool records have no `input` block and are returned as they are.
+ */
+export function parseDecisionLogText(text: string, bounds: LogBounds = {}): DecisionRecord[] {
+  const out: DecisionRecord[] = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    const rec = parsed as DecisionRecord;
+    if (bounds.since !== undefined || bounds.until !== undefined) {
+      const ts = Date.parse(String(rec.ts));
+      if (Number.isNaN(ts)) continue;
+      if (bounds.since !== undefined && ts < bounds.since) continue;
+      if (bounds.until !== undefined && ts > bounds.until) continue;
+    }
+    out.push(rec);
+  }
+  return out;
+}

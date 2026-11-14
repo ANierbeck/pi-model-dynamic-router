@@ -19,6 +19,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { parseDecisionLogText } from '../src/classifier-decision-log.ts';
 import { classifyPrompt, getLastClassificationSource } from '../src/content-classifier.ts';
 import { validateClassifierLaya } from '../src/config-loader.ts';
 import { getLastProbeError, layaAvailabilityState } from '../src/laya-classifier.ts';
@@ -104,12 +105,13 @@ console.log(
 const log = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 if (existsSync(log)) {
   console.log('decision log (what Laya said vs what was decided):');
-  for (const line of readFileSync(log, 'utf8').trim().split('\n')) {
-    const rec = JSON.parse(line) as {
-      stage?: unknown;
-      laya?: { category?: unknown; confidence?: unknown; acted?: unknown; ms?: unknown } | null;
-      final?: { category?: unknown; hint?: { target?: unknown } | null };
-    };
+  type LayaE2eRecord = {
+    stage?: unknown;
+    laya?: { category?: unknown; confidence?: unknown; acted?: unknown; ms?: unknown } | null;
+    final?: { category?: unknown; hint?: { target?: unknown } | null };
+  };
+  // The shared parser: torn or non-object lines are skipped, as in every reader.
+  for (const rec of parseDecisionLogText(readFileSync(log, 'utf8')) as unknown as LayaE2eRecord[]) {
     const l = rec.laya
       ? `${textOf(rec.laya.category)} ${textOf(rec.laya.confidence)} acted=${textOf(
           rec.laya.acted

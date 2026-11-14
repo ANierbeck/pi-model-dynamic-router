@@ -3,7 +3,7 @@
 // Reads the classifier decision log (`~/.pi/logs/classifier-decisions.jsonl`
 // and its rotated files `.1`, `.2`, …) and summarises the routing decisions of
 // a time window. The summary survives restarts because it reads the files, not
-// the in-memory counters. Pure functions (`parseDecisionLogText`,
+// the in-memory counters. Pure functions (`parseSummaryRecords`,
 // `summarizeClassifierLog`, `formatClassifierSummary`) carry the logic; the
 // file system is touched only by `readLogSnapshot` and `readClassifierSummary`.
 
@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import {
   decisionLogPath,
   isRoutingRecord,
+  parseDecisionLogText,
   type DecisionRecord,
 } from './classifier-decision-log.ts';
 
@@ -48,7 +49,7 @@ export interface ClassifierSummary {
 }
 
 /** The fields the summary reads, checked before a record is trusted. */
-function hasRecordShape(v: Record<string, unknown>): boolean {
+function hasRecordShape(v: DecisionRecord): boolean {
   const isObjectOrNull = (x: unknown): boolean =>
     x === undefined || x === null || typeof x === 'object';
   return (
@@ -63,33 +64,19 @@ function hasRecordShape(v: Record<string, unknown>): boolean {
 }
 
 /**
- * Records of the log text that fall inside the window. Blank lines, torn lines,
- * non-object JSON, records with an unparseable `ts` or a wrong field shape, and
- * records dated after `untilMs` are skipped: the log is appended to while it is
- * read, so a torn last line is normal, and a skewed clock must not inflate a
+ * The summary's records: the shared parser's output (window, torn lines and
+ * unparseable timestamps already handled there), minus records whose fields
+ * have the wrong shape, so the summary cannot throw on them. Records dated
+ * after `untilMs` are skipped: clock skew or a hand edit must not inflate the
  * window.
  */
-export function parseDecisionLogText(
+export function parseSummaryRecords(
   text: string,
   bounds: { sinceMs: number; untilMs: number }
 ): DecisionRecord[] {
-  const out: DecisionRecord[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-    const obj = parsed as Record<string, unknown>;
-    if (!hasRecordShape(obj)) continue;
-    const ts = Date.parse(obj.ts as string);
-    if (Number.isNaN(ts) || ts < bounds.sinceMs || ts > bounds.untilMs) continue;
-    out.push(obj as unknown as DecisionRecord);
-  }
-  return out;
+  return parseDecisionLogText(text, { since: bounds.sinceMs, until: bounds.untilMs }).filter(
+    (rec) => hasRecordShape(rec)
+  );
 }
 
 /** Nearest-rank percentile of an ascending-sorted, non-empty list. */
@@ -285,7 +272,7 @@ export function readClassifierSummary(days: number, nowMs = Date.now()): string[
   if (!snap.stable) {
     lines.push('Note: the log kept rotating while it was read; counts may be off by one rotation.');
   }
-  const records = parseDecisionLogText(snap.text, {
+  const records = parseSummaryRecords(snap.text, {
     sinceMs: nowMs - days * DAY_MS,
     untilMs: nowMs,
   });

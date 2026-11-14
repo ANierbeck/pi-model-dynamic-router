@@ -9,17 +9,14 @@
 // module only reads it, so there is exactly one definition.
 
 import { readFileSync } from 'node:fs';
-import type { DecisionRecord } from '../../src/classifier-decision-log.ts';
+import {
+  parseDecisionLogText,
+  type DecisionRecord,
+  type LogBounds,
+} from '../../src/classifier-decision-log.ts';
 
 export { NON_ROUTING_STAGES, isRoutingRecord } from '../../src/classifier-decision-log.ts';
-export type { DecisionRecord } from '../../src/classifier-decision-log.ts';
-
-export interface LogBounds {
-  /** Epoch ms, inclusive. */
-  since?: number;
-  /** Epoch ms, inclusive. */
-  until?: number;
-}
+export type { DecisionRecord, LogBounds } from '../../src/classifier-decision-log.ts';
 
 /**
  * Every parseable record in the file, in file order.
@@ -35,26 +32,7 @@ export interface LogBounds {
  * Pool records have no `input` block — they are returned as they are.
  */
 export function readDecisionLogRecords(path: string, bounds: LogBounds = {}): DecisionRecord[] {
-  const out: DecisionRecord[] = [];
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-    const rec = parsed as DecisionRecord;
-    if (bounds.since !== undefined || bounds.until !== undefined) {
-      const ts = Date.parse(String(rec.ts));
-      if (Number.isNaN(ts)) continue;
-      if (bounds.since !== undefined && ts < bounds.since) continue;
-      if (bounds.until !== undefined && ts > bounds.until) continue;
-    }
-    out.push(rec);
-  }
-  return out;
+  return parseDecisionLogText(readFileSync(path, 'utf8'), bounds);
 }
 
 /** The flat shape the join / walk / replay scripts work with. */
