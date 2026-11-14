@@ -90,7 +90,7 @@ Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json).
 
 ### Classifier Decision Log
 
-Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file (stage mix, raw and post-inheritance fallback rate, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
+Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file and its rotated copies (stage mix, `continue` before and after inheritance, chain exhaustions, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
 
 ```jsonc
 {

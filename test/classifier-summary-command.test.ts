@@ -121,6 +121,33 @@ describe('/router classifier', () => {
     }
   });
 
+  it('counts the rotated files too, so a rotation inside the window loses nothing', async () => {
+    writeLog([routing(new Date().toISOString(), 'llm-cloud')]);
+    writeFileSync(
+      path.join(home, '.pi', 'logs', 'classifier-decisions.jsonl.1'),
+      JSON.stringify(routing(new Date().toISOString(), 'cache')) + '\n'
+    );
+    const { handler } = registerRouter();
+    const notes = await run(handler, 'classifier 7');
+    expect(notes[0]).toMatch(/last 7 days: 2/);
+  });
+
+  it('says the log is missing, not that nothing was routed', async () => {
+    const { handler } = registerRouter();
+    const notes = await run(handler, 'classifier 7');
+    expect(notes[0]).toMatch(/no decision log at .*classifier-decisions\.jsonl/);
+    expect(notes[0]).not.toMatch(/no routing decisions/);
+  });
+
+  it('reports an unreadable log instead of zero activity', async () => {
+    // A directory at the log path makes readFileSync fail with EISDIR.
+    mkdirSync(path.join(home, '.pi', 'logs', 'classifier-decisions.jsonl'));
+    const { handler } = registerRouter();
+    const notes = await run(handler, 'classifier 7');
+    expect(notes[0]).toMatch(/decision log unreadable/);
+    expect(notes[0]).not.toMatch(/no routing decisions/);
+  });
+
   it('is offered in TAB completion', () => {
     const { complete } = registerRouter();
     const values = (complete('') ?? []).map((i) => i.value);

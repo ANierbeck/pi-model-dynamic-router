@@ -1,13 +1,13 @@
 // src/classifier-summary.ts — ADR-0027 Phase 5: `/router classifier [days]`.
 //
-// Reads the classifier decision log (`~/.pi/logs/classifier-decisions.jsonl`)
-// and summarises the routing decisions of a time window. The summary survives
-// restarts because it reads the file, not the in-memory counters. Pure
-// functions (`parseDecisionLogText`, `summarizeClassifierLog`,
-// `formatClassifierSummary`) carry the logic; `readClassifierSummary` is the
-// only function that touches the file system.
+// Reads the classifier decision log (`~/.pi/logs/classifier-decisions.jsonl`
+// and its rotated files `.1`, `.2`, …) and summarises the routing decisions of
+// a time window. The summary survives restarts because it reads the files, not
+// the in-memory counters. Pure functions (`parseDecisionLogText`,
+// `summarizeClassifierLog`, `formatClassifierSummary`) carry the logic; the
+// file system is touched only by `readLogSnapshot` and `readClassifierSummary`.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import {
   decisionLogPath,
@@ -18,6 +18,10 @@ import {
 export const DEFAULT_SUMMARY_DAYS = 7;
 export const MAX_SUMMARY_DAYS = 90;
 const DAY_MS = 86_400_000;
+/** Upper bound for the rotated-file scan (`keep` defaults to 5 in the logger). */
+const MAX_ROTATED_FILES = 20;
+/** Attempts before a read that keeps racing a rotation is reported as approximate. */
+const READ_ATTEMPTS = 3;
 
 export interface ClassifierSummary {
   days: number;
@@ -25,10 +29,16 @@ export interface ClassifierSummary {
   total: number;
   /** Stage counts, most frequent first. */
   stages: Array<[string, number]>;
-  /** Records whose raw model answer was `fallback`, before post-processing. */
-  rawUnresolved: { count: number; of: number };
-  /** Records still `fallback` after post-processing (inheritance applied). */
-  finalUnresolved: { count: number; of: number };
+  /** Records whose raw classifier answer was `continue`, before inheritance. */
+  continueRaw: { count: number; of: number };
+  /** Records still `continue` after inheritance (no earlier category to keep). */
+  continueFinal: { count: number; of: number };
+  /**
+   * Records of stage `fallback`: the chain had no answer and the static
+   * `continue` result was used. The retired category `fallback` never appears
+   * in the log, so this counts the stage, not a category.
+   */
+  noAnswer: { count: number; of: number };
   /** Failed chain attempts out of all attempts (skips included). */
   chainAttempts: { failed: number; total: number };
   /** Nearest-rank percentiles of the classification time; null without records. */
@@ -37,12 +47,32 @@ export interface ClassifierSummary {
   disagreements: Array<{ pair: string; count: number }>;
 }
 
+/** The fields the summary reads, checked before a record is trusted. */
+function hasRecordShape(v: Record<string, unknown>): boolean {
+  const isObjectOrNull = (x: unknown): boolean =>
+    x === undefined || x === null || typeof x === 'object';
+  return (
+    typeof v.ts === 'string' &&
+    typeof v.stage === 'string' &&
+    (v.chain === undefined ||
+      (Array.isArray(v.chain) && v.chain.every((a) => a !== null && typeof a === 'object'))) &&
+    isObjectOrNull(v.raw) &&
+    isObjectOrNull(v.final) &&
+    isObjectOrNull(v.laya)
+  );
+}
+
 /**
  * Records of the log text that fall inside the window. Blank lines, torn lines,
- * non-object JSON and records with an unparseable `ts` are skipped: the log is
- * appended to while it is read, so a torn last line is normal.
+ * non-object JSON, records with an unparseable `ts` or a wrong field shape, and
+ * records dated after `untilMs` are skipped: the log is appended to while it is
+ * read, so a torn last line is normal, and a skewed clock must not inflate a
+ * window.
  */
-export function parseDecisionLogText(text: string, bounds: { sinceMs: number }): DecisionRecord[] {
+export function parseDecisionLogText(
+  text: string,
+  bounds: { sinceMs: number; untilMs: number }
+): DecisionRecord[] {
   const out: DecisionRecord[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -53,10 +83,11 @@ export function parseDecisionLogText(text: string, bounds: { sinceMs: number }):
       continue;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-    const rec = parsed as DecisionRecord;
-    const ts = Date.parse(String(rec.ts));
-    if (Number.isNaN(ts) || ts < bounds.sinceMs) continue;
-    out.push(rec);
+    const obj = parsed as Record<string, unknown>;
+    if (!hasRecordShape(obj)) continue;
+    const ts = Date.parse(obj.ts as string);
+    if (Number.isNaN(ts) || ts < bounds.sinceMs || ts > bounds.untilMs) continue;
+    out.push(obj as unknown as DecisionRecord);
   }
   return out;
 }
@@ -73,8 +104,9 @@ export function summarizeClassifierLog(
 ): ClassifierSummary {
   const routing = records.filter((r) => isRoutingRecord(r));
   const stageCounts = new Map<string, number>();
-  let rawUnresolved = 0;
-  let finalUnresolved = 0;
+  let continueRaw = 0;
+  let continueFinal = 0;
+  let noAnswer = 0;
   let attemptsFailed = 0;
   let attemptsTotal = 0;
   const latencies: number[] = [];
@@ -82,8 +114,9 @@ export function summarizeClassifierLog(
 
   for (const r of routing) {
     stageCounts.set(r.stage, (stageCounts.get(r.stage) ?? 0) + 1);
-    if (r.raw?.category === 'fallback') rawUnresolved++;
-    if (r.final?.category === 'fallback') finalUnresolved++;
+    if (r.raw?.category === 'continue') continueRaw++;
+    if (r.final?.category === 'continue') continueFinal++;
+    if (r.stage === 'fallback') noAnswer++;
     for (const a of r.chain ?? []) {
       attemptsTotal++;
       if (a.outcome === 'failed') attemptsFailed++;
@@ -103,8 +136,9 @@ export function summarizeClassifierLog(
     days: opts.days,
     total: routing.length,
     stages: [...stageCounts.entries()].sort((a, b) => b[1] - a[1]),
-    rawUnresolved: { count: rawUnresolved, of: routing.length },
-    finalUnresolved: { count: finalUnresolved, of: routing.length },
+    continueRaw: { count: continueRaw, of: routing.length },
+    continueFinal: { count: continueFinal, of: routing.length },
+    noAnswer: { count: noAnswer, of: routing.length },
     chainAttempts: { failed: attemptsFailed, total: attemptsTotal },
     latencyMs:
       latencies.length === 0
@@ -128,8 +162,9 @@ export function formatClassifierSummary(s: ClassifierSummary, days: number): str
   const lines = [
     `Classifier decisions, last ${days} days: ${s.total}`,
     `Stages: ${s.stages.map(([stage, n]) => `${stage} ${n}`).join(', ')}`,
-    `raw fallback: ${percentText(s.rawUnresolved.count, s.rawUnresolved.of)} (${s.rawUnresolved.count} of ${s.rawUnresolved.of})`,
-    `after inheritance: ${percentText(s.finalUnresolved.count, s.finalUnresolved.of)} (${s.finalUnresolved.count} of ${s.finalUnresolved.of})`,
+    `continue, raw: ${percentText(s.continueRaw.count, s.continueRaw.of)} (${s.continueRaw.count} of ${s.continueRaw.of})`,
+    `continue after inheritance: ${percentText(s.continueFinal.count, s.continueFinal.of)} (${s.continueFinal.count} of ${s.continueFinal.of})`,
+    `no classifier answer (chain exhausted): ${s.noAnswer.count} of ${s.noAnswer.of}`,
     `Chain attempts failed: ${s.chainAttempts.failed} of ${s.chainAttempts.total}` +
       (s.chainAttempts.total
         ? ` (${percentText(s.chainAttempts.failed, s.chainAttempts.total)})`
@@ -158,14 +193,104 @@ export function parseSummaryDays(arg: string): number | null {
   return n >= 1 && n <= MAX_SUMMARY_DAYS ? n : null;
 }
 
+// ── file system ────────────────────────────────────────────────────────────
+
+export interface LogSnapshot {
+  /** Concatenated text of every readable file, oldest rotated file first. */
+  text: string;
+  /** Files that were read successfully. */
+  files: number;
+  /** Error code of the first failure that was not ENOENT, else null. */
+  error: string | null;
+  /** False when the file set kept changing (rotation) on every attempt. */
+  stable: boolean;
+}
+
+function errorCode(e: unknown): string {
+  return (e as NodeJS.ErrnoException | undefined)?.code ?? 'unknown';
+}
+
+/** The base file plus its contiguous rotated files `.1`, `.2`, …, oldest first. */
+function logFileSet(base: string): string[] {
+  const rotated: string[] = [];
+  for (let i = 1; i <= MAX_ROTATED_FILES && existsSync(`${base}.${i}`); i++) {
+    rotated.push(`${base}.${i}`);
+  }
+  // `.N` is the oldest; the base file is the newest.
+  const ordered = rotated.reverse();
+  if (existsSync(base)) ordered.push(base);
+  return ordered;
+}
+
+/** Name and inode of each file: a rotation renames files, an append changes neither. */
+function fileIdentity(files: string[]): string {
+  return files
+    .map((f) => {
+      try {
+        return `${f}:${statSync(f).ino}`;
+      } catch {
+        return `${f}:gone`;
+      }
+    })
+    .join('|');
+}
+
+/**
+ * Reads the base log and its rotated files. A rotation between the listing and
+ * the reads would drop or repeat a file's records, so the file set is compared
+ * before and after the reads, and the read is repeated when it changed.
+ */
+export function readLogSnapshot(base: string): LogSnapshot {
+  let last: LogSnapshot = { text: '', files: 0, error: null, stable: false };
+  for (let attempt = 0; attempt < READ_ATTEMPTS; attempt++) {
+    const files = logFileSet(base);
+    const before = fileIdentity(files);
+    let text = '';
+    let read = 0;
+    let error: string | null = null;
+    for (const f of files) {
+      try {
+        text += readFileSync(f, 'utf8') + '\n';
+        read++;
+      } catch (e) {
+        // A file that vanished between listing and reading is a rotation, not an error.
+        const code = errorCode(e);
+        if (code !== 'ENOENT' && error === null) error = code;
+      }
+    }
+    last = { text, files: read, error, stable: fileIdentity(logFileSet(base)) === before };
+    if (last.stable) return last;
+  }
+  return last;
+}
+
 /** Reads the decision log of the owner's home and returns the summary lines. */
 export function readClassifierSummary(days: number, nowMs = Date.now()): string[] {
-  let text = '';
-  try {
-    text = readFileSync(decisionLogPath(homedir()), 'utf8');
-  } catch {
-    // No log yet (classifier logging off or nothing routed): an empty window.
+  const base = decisionLogPath(homedir());
+  const snap = readLogSnapshot(base);
+  if (snap.files === 0) {
+    if (snap.error !== null) {
+      return [`Classifier: decision log unreadable (${snap.error}) at ${base}.`];
+    }
+    return [
+      `Classifier: no decision log at ${base} (classifier_log disabled, or nothing routed yet).`,
+    ];
   }
-  const records = parseDecisionLogText(text, { sinceMs: nowMs - days * DAY_MS });
-  return formatClassifierSummary(summarizeClassifierLog(records, { nowMs, days }), days);
+  const lines: string[] = [];
+  if (snap.error !== null) {
+    lines.push(
+      `Warning: part of the decision log is unreadable (${snap.error}); counts are partial.`
+    );
+  }
+  if (!snap.stable) {
+    lines.push('Note: the log kept rotating while it was read; counts may be off by one rotation.');
+  }
+  const records = parseDecisionLogText(snap.text, {
+    sinceMs: nowMs - days * DAY_MS,
+    untilMs: nowMs,
+  });
+  return [
+    ...lines,
+    ...formatClassifierSummary(summarizeClassifierLog(records, { nowMs, days }), days),
+  ];
 }

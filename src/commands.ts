@@ -605,7 +605,7 @@ export function createCommands(rt: CommandDeps): void {
           value: 'classifier',
           label: 'classifier',
           description:
-            'Classifier decision summary from the decision log: stages, fallback rates, chain failures, latency, Laya disagreements ([days], default 7)',
+            'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
         },
         {
           value: 'cost',
