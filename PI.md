@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — a local Ollama chain first, derived from the models you have pulled and verified by a probe, and the cloud chain (`classifier_cloud_chain`) as the fallback.
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — a local Ollama chain first, derived from the models you have pulled and verified by a probe, and the cloud chain (`classifier.cloud.enabled`) as the fallback. Keys: [docs/config-reference.md](docs/config-reference.md).
 2. **Group Mapping**: The category is mapped to the model group of the same name via the shipped `CATEGORY_TO_GROUP` table (`simple`, `standard`, `code_complex`, `design`, `planning`); `code_simple` shares `simple`, and `continue` inherits the previous category (or `standard` when there is none).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
@@ -163,8 +163,7 @@ The actual configuration file contains provider definitions and model groups. Be
     },
     "dynamic": {
       "description": "Classifies each prompt and routes to the appropriate group",
-      "method": "dynamic",
-      "classifier_cloud_chain": true
+      "method": "dynamic"
     }
   }
 }

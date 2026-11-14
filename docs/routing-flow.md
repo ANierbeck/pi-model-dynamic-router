@@ -5,7 +5,8 @@ prompt: which model classifies the turn, which group it lands in, how the
 candidate pool is built and filtered, and what happens when a stream fails.
 It is written at the architecture level — the stable stages and the exact
 config keys that steer them — so it stays useful while code moves. Each stage
-names its owning module for a code entry point.
+names its owning module for a code entry point. The config keys that steer
+each stage are listed in `docs/config-reference.md`.
 
 The stages are ordered exactly as the runtime executes them.
 
@@ -15,7 +16,10 @@ The stages are ordered exactly as the runtime executes them.
 flowchart TD
     subgraph CLS["1 · Classification — which model reads the turn? (src/content-classifier.ts)"]
         direction TB
-        PIN{"classifier_model /<br/>classifier_fallback pin?"}
+        LAYA{"Laya integration on?<br/>(integrations.laya.enabled)"}
+        LAYA -- "active and confident" --> CATOUT
+        LAYA -- "no, shadow, or not confident" --> PIN
+        PIN{"classifier.local.model /<br/>classifier.local.fallback pin?"}
         PIN -- "yes" --> PINM["Use the pinned local classifier"]
         PIN -- "no" --> PROBED{"Probed local chain?<br/>(classifier_local_models, persisted;<br/>re-probe on scan / candidate change / 24 h)"}
         PROBED -- "non-empty" --> PROBEDM["First healthy entry of the<br/>probe-verified local list<br/>(completion-capable, size-sorted)"]
@@ -25,9 +29,9 @@ flowchart TD
         PROBEDM --> OLLAMA
         PROV --> OLLAMA
         OLLAMA -- "yes" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
-        OLLAMA -- "no" --> CLOUD{"Cloud chain?<br/>(classifier_cloud_chain on the dynamic group;<br/>shipped: on)"}
+        OLLAMA -- "no" --> CLOUD{"Cloud chain?<br/>(classifier.cloud.enabled;<br/>shipped: on)"}
         CLOUD -- "no" --> STATIC
-        CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier_cloud_model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
+        CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier.cloud.model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
         CLOUDM -- "structured reply" --> CATOUT
         CLOUDM -- "every candidate fails" --> STATIC["Static classifier<br/>(heuristic last resort, only if allowStaticFallback;<br/>otherwise category continue)"]
         STATIC --> CATOUT
@@ -113,7 +117,7 @@ flowchart TD
 ## Stage notes
 
 1. **Classification (src/classifier-local-probe.ts, src/content-classifier.ts).**
-   The resolution order is: user pin (`classifier_model` / `classifier_fallback`)
+   The resolution order is: user pin (`classifier.local.model` / `classifier.local.fallback`)
    › probe-verified local list (`classifier_local_models`, persisted) ›
    provisional candidate order (only before the first probe; models the scan has
    explicitly seen answer completions) › none. An **empty probed list is final**

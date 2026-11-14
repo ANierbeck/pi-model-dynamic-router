@@ -66,7 +66,7 @@ this module asks a local LLM to match it to a known GDPval slug.
   against known leaderboard slugs) -- the prompt sent here is built from
   model IDs/labels, never user conversation content. Unconditional (not
   gated by an opt-in flag) because no user data is involved; contrast with
-  the content-classifier's `classifier_cloud_chain`, which does carry raw
+  the content-classifier's `classifier.cloud.enabled` leg, which does carry raw
   user prompt text; the shipped `dynamic` group turns it on (see the README
   section "Data handling & privacy").
 
@@ -144,7 +144,7 @@ Previously `index.ts` had `isRateLimitText` (15 patterns) AND
 ### Cloud classifier candidates — `selectClassifierCandidates()` (`src/classifier-cloud-probe.ts`)
 
 `selectClassifierCandidates()` discovers the cloud models for the classifier's cloud chain
-(when `classifier_cloud_chain: true` is set on the `dynamic` group). It is the lazy path, used
+(when `classifier.cloud.enabled: true` is set). It is the lazy path, used
 only while the scan-time probe-verified list is empty. It filters by `lookupPrice(ref)` and requires
 `price.output <= $5/M`; models with a catalog price of $0 and no real price are admitted as a
 placeholder tier. Excluded, paid-guarded, unhealthy and blocklisted models are skipped. **Known limitation (finding F3, 2026-09-02):**

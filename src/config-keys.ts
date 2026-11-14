@@ -218,6 +218,21 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     meaning: 'Minimum Laya confidence for a result to enter the chain.',
     via: 'file-only',
   },
+  {
+    path: 'integrations.laya.compare_in_background',
+    kind: 'boolean',
+    shipped: 'false',
+    meaning:
+      'In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027).',
+    via: 'file-only',
+  },
+  {
+    path: 'integrations.laya.observe_momentum',
+    kind: 'boolean',
+    shipped: 'false',
+    meaning: 'Log detached answers for short momentum prompts (can incur classifier spend).',
+    via: 'file-only',
+  },
 ];
 
 const BY_PATH = new Map(CONFIG_KEYS.map((k) => [k.path, k]));

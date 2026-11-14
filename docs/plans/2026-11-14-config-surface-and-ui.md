@@ -1,6 +1,6 @@
 # Config surface and UI: one consistent model, documented once, editable through `/router config`
 
-**Status:** in progress since 2026-11-15 — Phases 1–4 done (commits `e8491a1`, `4020910`, `6aadb02`, and the Phase 4 commit); Phase 5 open. Phase 4 does not yet point to the Laya model artifact plan when no weights are installed (item 15, "may"); the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
+**Status:** done 2026-11-15 — all five phases (commits `e8491a1`, `4020910`, `6aadb02`, `3b69e29`, and the Phase 5 commit). Decision record: ADR 0034. Open: plan item 15 ("may", the menu does not point to the Laya artifact plan) was not done; see ADR 0034 Open. Phase 4 does not yet point to the Laya model artifact plan when no weights are installed (item 15, "may"); the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
 
 **Related plans (reused, not changed):** `2026-11-08-optional-integrations-config.md` (done 2026-11-12) owns the `integrations.*` contract, the schema and the unknown-key warnings. This plan builds on it. `2026-10-25-laya-sole-classifier.md` owns the Laya release gate. Context budget and compaction belong to Phase 5b of `2026-10-05-task-type-balancing.md`; this plan only exposes the switch that already exists.
 
@@ -89,4 +89,6 @@ Commit `bd37cd4` on `docs/sync-with-behavior` (2026-11-14), read as follows:
 - Schema: `src/config-schema.ts` plus `test/config-schema.test.ts` (compares with `interface Config`).
 - The old UI plan's decisions (wizard scope, print mode, overview location, project layer) were carried over from `2026-11-08-router-config-ui.md`, read on 2026-11-14.
 
-**Not checked:** whether `ctx.ui` is reachable inside the existing `/router` command handler (the wizard depends on it; Phase 4 starts with that check); the owner's own user layer beyond the shipped file; the length limit of the `/router` completion list.
+Checked in Phase 4 (2026-11-15): the `/router` handler receives an `ExtensionCommandContext` that carries `mode` and `ui` (`types.d.ts`, `ExtensionCommandContext extends ExtensionContext`); the menu runs only when `ctx.mode === 'tui'`. Phase 5 (2026-11-15): the generated reference and the routing-flow pins are checked by `test/config-reference-docs.test.ts`.
+
+**Not checked:** the owner's own user layer beyond the shipped file; the length limit of the `/router` completion list.
