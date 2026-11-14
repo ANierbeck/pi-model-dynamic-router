@@ -202,6 +202,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/classifier-cloud-probe.ts` | Probe for cloud-chain classifier candidates, including max output price |
 | `src/classifier-decision-log.ts` | One candidate attempt inside an LLM classifier chain, as recorded in the decision log (ADR-0027) |
 | `src/classifier-local-probe.ts` | Probe for local classifier models; cold-start bound, also the runtime primary timeout |
+| `src/classifier-summary.ts` | `/router classifier [days]`: a summary of the classifier decision log for a time window (ADR-0027 Phase 5) |
 | `src/commands.ts` | The `/router` slash command, extracted from `index.ts` |
 | `src/config-schema.ts` | Keys each config layer may contain; unknown keys are reported, `_`/`$` keys are annotations |
 | `src/context-budget.ts` | Minimum output budget; below it a candidate is skipped |

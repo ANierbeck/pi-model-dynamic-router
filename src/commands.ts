@@ -46,6 +46,7 @@ import { clearBlocklist, activeBlocks } from './model-blocklist.ts';
 import { wedgeFixHint } from './provider-watchdog.ts';
 import { openBreakers, clearBreakers, isLocalProviderName } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
+import { parseSummaryDays, readClassifierSummary } from './classifier-summary.ts';
 import { splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
@@ -591,7 +592,7 @@ export function createCommands(rt: CommandDeps): void {
 
   rt.pi.registerCommand('router', {
     description:
-      'Model router status. Usage: /router [group|scan|cost|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
+      'Model router status. Usage: /router [group|scan|cost|classifier [days]|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
@@ -599,6 +600,12 @@ export function createCommands(rt: CommandDeps): void {
           value: 'scan',
           label: 'scan',
           description: 'Re-discover models, re-scrape GDPval, regenerate config',
+        },
+        {
+          value: 'classifier',
+          label: 'classifier',
+          description:
+            'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
         },
         {
           value: 'cost',
@@ -693,6 +700,19 @@ export function createCommands(rt: CommandDeps): void {
 
           if (arg === 'config' || arg?.startsWith('config ')) {
             ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
+            return;
+          }
+
+          if (arg === 'classifier' || arg?.startsWith('classifier ')) {
+            // ADR-0027 Phase 5: a summary of the decision log, so the classifier's
+            // behaviour is visible after a restart (the in-memory counters are not).
+            const days = parseSummaryDays(arg.slice('classifier'.length));
+            ctx.ui.notify(
+              days === null
+                ? 'Usage: /router classifier [days] (1..90, default 7)'
+                : readClassifierSummary(days).join('\n'),
+              'info'
+            );
             return;
           }
 
