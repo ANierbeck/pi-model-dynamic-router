@@ -598,11 +598,10 @@ export class StreamOrchestrator {
         // computed lazily below and the per-turn cost of every ordinary
         // classification stays unchanged.
         const isCompaction = this.ctx.isCompactionTurn(context);
-        const dynamicGroupCfg = cfg.model_groups['dynamic'];
         const classifyOpts: ClassificationOptions = {
           allowStaticFallback: useStatic,
-          allowCloudChain: dynamicGroupCfg?.classifier_cloud_chain === true,
-          escalateLowConfidence: dynamicGroupCfg?.classifier_escalate_low_confidence === true,
+          allowCloudChain: cfg.classifier?.cloud?.enabled === true,
+          escalateLowConfidence: cfg.classifier?.cloud?.escalate_low_confidence === true,
           cfg,
           cache,
           // The cloud chain uses pi's own model registry (completeSimple) so pi
@@ -676,14 +675,14 @@ export class StreamOrchestrator {
         };
         // The local model(s) are derived inside classifyPrompt from cache
         // (ADR-0025); only the user's optional pins are passed.
-        Object.assign(classifyOpts, localClassifierPins(dynamicGroupCfg));
+        Object.assign(classifyOpts, localClassifierPins(cfg.classifier?.local));
         // Cloud ref is NOT ollama-stripped — findModel needs the full
         // "provider/id" form to resolve it against pi's model registry.
-        if (dynamicGroupCfg?.classifier_cloud_model)
-          classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
+        if (cfg.classifier?.cloud?.model)
+          classifyOpts.pinnedCloudModel = cfg.classifier.cloud.model;
         // User-configured cloud candidates: replace the automatic chain.
-        if (dynamicGroupCfg?.classifier_cloud_candidates)
-          classifyOpts.cloudCandidates = dynamicGroupCfg.classifier_cloud_candidates;
+        if (cfg.classifier?.cloud?.candidates)
+          classifyOpts.cloudCandidates = cfg.classifier.cloud.candidates;
 
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
         // A user pin decides the model, not the category: the turn's content

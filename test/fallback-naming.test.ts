@@ -70,7 +70,8 @@ describe('fallback naming — the renamed cloud chain stays renamed', () => {
     const ALLOWED = new Set([
       'test/fallback-naming.test.ts',
       'test/removed-group-warning.test.ts',
-      'src/config-loader.ts: classifier_cloud_fallback',
+      'src/config-keys.ts: classifier_cloud_fallback',
+      'test/classifier-config-block.test.ts',
     ]);
     const hits: string[] = [];
     for (const f of files) {
@@ -90,10 +91,11 @@ describe('fallback naming — the renamed cloud chain stays renamed', () => {
     expect(readdirSync(join(ROOT, 'test'))).toContain('classifier-cloud-probe.test.ts');
   });
 
-  it('the shipped config uses the new key', () => {
+  it('the shipped config uses the classifier block', () => {
     const cfg = readFileSync(join(ROOT, 'router-config.json'), 'utf8');
-    expect(cfg).toContain('classifier_cloud_chain');
+    expect(JSON.parse(cfg).classifier.cloud.enabled).toBe(true);
     expect(cfg).not.toContain('classifier_cloud_fallback');
+    expect(cfg).not.toContain('classifier_cloud_chain');
   });
 });
 
@@ -104,6 +106,8 @@ describe('fallback naming — a new "fallback" identifier needs a stated meaning
    * expresses, or rename it.
    */
   const HONEST = new Set([
+    // F — pre-2.0 config name, read once for the migration (src/config-keys.ts legacy list)
+    'classifier_cloud_fallback',
     // B — failure cascade between groups
     'fallback_groups',
     'FALLBACK_GROUP_ORDER',

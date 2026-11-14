@@ -58,7 +58,7 @@ import {
   type ConfigLayerView,
 } from './user-config-store.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
+import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
@@ -143,7 +143,8 @@ export function formatCategoryRoutes(): string[] {
 
 /** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
 export interface ClassifierStatusInput {
-  group: Group;
+  /** The `classifier` config block (cloud switch and pinned cloud model shown in the chain). */
+  classifier: ClassifierConfig | undefined;
   last: ClassificationSourceInfo | null;
   probedCount: number;
   ollamaUp: boolean;
@@ -177,7 +178,7 @@ export interface ClassifierStatusInput {
  * trivially testable.
  */
 export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
-  const { group: g, last, probedCount, ollamaUp } = input;
+  const { classifier, last, probedCount, ollamaUp } = input;
   const lines: string[] = [];
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
@@ -195,10 +196,10 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         ? 'none qualified — pin or /router scan'
         : 'none yet';
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
-  if (g.classifier_cloud_chain) {
+  if (classifier?.cloud?.enabled) {
     legs.push(
-      g.classifier_cloud_model
-        ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
+      classifier.cloud.model
+        ? `cloud (pinned ${classifier.cloud.model} + ${probedCount} probed)`
         : `cloud (${probedCount} probed)`
     );
   }
@@ -1048,11 +1049,15 @@ export function createCommands(rt: CommandDeps): void {
               // that last classified plus the live chain state instead.
               lines.push(
                 ...formatClassifierStatus({
-                  group: g,
+                  classifier: rt.cfg.classifier,
                   last: getLastClassificationSource(),
                   probedCount: getCachedCloudModels(rt.cache).length,
                   ollamaUp: await isOllamaAvailable(),
-                  localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
+                  localChain: resolveLocalClassifierChain(
+                    rt.cache,
+                    rt.cfg,
+                    localClassifierPins(rt.cfg.classifier?.local)
+                  ),
                   localProbed: Array.isArray(rt.cache.classifier_local_models),
                   counts: getClassificationCounts(),
                   ...(rt.cfg.integrations?.laya?.enabled

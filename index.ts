@@ -361,7 +361,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       // decisions, not non-decisions. Fail-open, and off unless the classifier
       // log is enabled — same gate as the decision records.
       logPool: (pool) => {
-        const log = resolveClassifierLogConfig(cfg?.classifier_log);
+        const log = resolveClassifierLogConfig(cfg?.classifier?.log);
         if (!log) return;
         writePoolRecord(buildPoolRecord(pool), homedir(), log);
       },
@@ -961,13 +961,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
     // re-apply here; callers must never need to remember to redo this themselves.
     if (sessionCtx) router.setSessionCtx(sessionCtx);
     metricsModule.setCache(cache);
-    // Loop detection's local model: a user pin (classifier_fallback) wins,
+    // Loop detection's local model: a user pin (classifier.local.fallback) wins,
     // else the head of the derived local classifier chain (ADR-0025); none
     // disables the LLM leg. Resolved at call time so a scan's fresh probe
     // result is picked up without a reload.
     escalation.setClassifierModel(() => {
-      const group = cfg.model_groups?.['dynamic'];
-      const pins = localClassifierPins(group);
+      const pins = localClassifierPins(cfg.classifier?.local);
       return pins.fallbackModel ?? resolveLocalClassifierChain(cache, cfg, pins).primary;
     });
   }

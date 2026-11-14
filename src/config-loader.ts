@@ -26,7 +26,8 @@ import { warnLog } from './logger.ts';
 import { LAYA_SPEC } from './laya-classifier.ts';
 import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
-import { textOf } from './utils.ts';
+import { isPlainObject, textOf } from './utils.ts';
+import { CONFIG_KEYS, suggestClassifierKey, unknownClassifierKeys } from './config-keys.ts';
 import { piAgentDir } from './agent-dir.ts';
 
 // Re-exported: callers import it from here since before the move to agent-dir.ts.
@@ -94,7 +95,7 @@ export function loadLayeredConfig(
   const globalOverride = tryReadPartial(globalOverridePath, log);
   if (globalOverride) {
     validateRemovedGroups(globalOverride, globalOverridePath);
-    validateRenamedClassifierKeys(globalOverride, globalOverridePath);
+    migrateClassifierLayer(globalOverride, globalOverridePath);
     validateRenamedTopLevelKeys(globalOverride, globalOverridePath);
     warnUnknownKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
@@ -106,7 +107,7 @@ export function loadLayeredConfig(
   const projectOverride = tryReadPartial(projectOverridePath, log);
   if (projectOverride) {
     validateRemovedGroups(projectOverride, projectOverridePath);
-    validateRenamedClassifierKeys(projectOverride, projectOverridePath);
+    migrateClassifierLayer(projectOverride, projectOverridePath);
     validateRenamedTopLevelKeys(projectOverride, projectOverridePath);
     warnUnknownKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
@@ -246,29 +247,110 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
 }
 
 /**
- * Classifier config keys renamed in 2.0 (docs/plans/2026-10-25-fallback-naming.md,
- * meaning C: the cloud chain is the classifier's normal cloud path, not a
- * fallback, so the key stopped saying "fallback"). Decision V2: no read
- * aliases — the old key is dropped, not translated — but never silently: a
- * config that still names it would otherwise lose the setting and fall back to
- * the shipped default (off) without a word. Same shape as REMOVED_GROUPS.
+ * Pre-2.0-pre classifier keys, read for one release (plan
+ * docs/plans/2026-11-14-config-surface-and-ui.md, decision 2). They sat on the
+ * `dynamic` model group (`classifier.cloud.enabled`, `classifier.local.model`, …) and
+ * as the top-level `classifier_log`; the table in src/config-keys.ts gives each
+ * its new path in the `classifier` block. The value moves to the new path in
+ * the same layer, with a warning that names both spellings. A value the layer
+ * already sets at the new path wins; the old one is then only reported.
+ *
+ * This replaces the "no read alias" rule of 2026-10-25 (Decision V2) for these
+ * keys: a silently dropped cloud switch would turn the cloud chain off without
+ * a word, and a translated one keeps the owner's setting.
+ *
+ * Keys on a group other than `dynamic` are dropped with a warning, as before
+ * (only the dynamic group ever read them). Mutates the layer in place.
  */
-const RENAMED_CLASSIFIER_KEYS: Readonly<Record<string, string>> = {
-  classifier_cloud_fallback: 'classifier_cloud_chain',
-};
+function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
+  const bag = layer as Record<string, unknown>;
+  const legacyToPath = new Map<string, string>();
+  for (const spec of CONFIG_KEYS) {
+    for (const old of spec.legacy ?? []) legacyToPath.set(old, spec.path);
+  }
 
-function validateRenamedClassifierKeys(layer: Partial<Config>, source: string): void {
-  const groups = layer.model_groups as Record<string, Record<string, unknown>> | undefined;
-  if (!groups || typeof groups !== 'object') return;
-  for (const [name, g] of Object.entries(groups)) {
-    if (!g || typeof g !== 'object') continue;
-    for (const [oldKey, newKey] of Object.entries(RENAMED_CLASSIFIER_KEYS)) {
-      if (!Object.hasOwn(g, oldKey)) continue;
-      warnLog(
-        `[router] ${source} model_groups.${name}.${oldKey}: renamed to "${newKey}" in 2.0 — ignored; rename the key to keep the setting`
-      );
-      delete g[oldKey];
+  const assign = (dottedPath: string, value: unknown, oldName: string): void => {
+    const parts = dottedPath.split('.');
+    if (!isPlainObject(bag.classifier)) bag.classifier = {};
+    let node = bag.classifier as Record<string, unknown>;
+    for (const part of parts.slice(1, -1)) {
+      if (!isPlainObject(node[part])) node[part] = {};
+      node = node[part] as Record<string, unknown>;
     }
+    const leaf = parts[parts.length - 1];
+    if (node[leaf] !== undefined) {
+      warnLog(
+        `[router] ${source} ${oldName}: renamed to "${dottedPath}" — the classifier block already sets it, so the old value is ignored`
+      );
+      return;
+    }
+    node[leaf] = value;
+    warnLog(
+      `[router] ${source} ${oldName}: renamed to "${dottedPath}" — read for one release; move it to keep the setting`
+    );
+  };
+
+  // 1. Bare names on model groups: only `dynamic` ever read them.
+  const groups = layer.model_groups as Record<string, Record<string, unknown>> | undefined;
+  if (isPlainObject(groups)) {
+    for (const [name, g] of Object.entries(groups)) {
+      if (!isPlainObject(g)) continue;
+      for (const old of Object.keys(g)) {
+        const newPath = legacyToPath.get(old);
+        if (!newPath) continue;
+        const value = g[old];
+        delete g[old];
+        if (name === 'dynamic') {
+          assign(newPath, value, `model_groups.dynamic.${old}`);
+        } else {
+          warnLog(
+            `[router] ${source} model_groups.${name}.${old}: ignored — the classifier settings are read from the "classifier" block (${newPath})`
+          );
+        }
+      }
+    }
+  }
+
+  // 2. The top-level classifier_log block moves to classifier.log, key by key.
+  // An unknown key inside it keeps its name under classifier.log and is then
+  // reported by the typo check below.
+  if (isPlainObject(bag.classifier_log)) {
+    const oldLog = bag.classifier_log;
+    delete bag.classifier_log;
+    for (const [k, v] of Object.entries(oldLog)) {
+      assign(
+        legacyToPath.get(`classifier_log.${k}`) ?? `classifier.log.${k}`,
+        v,
+        `classifier_log.${k}`
+      );
+    }
+  }
+
+  // 3. Typos inside the block are reported and removed, so they cannot take effect.
+  if (isPlainObject(bag.classifier)) {
+    for (const rel of unknownClassifierKeys(bag.classifier)) {
+      const near = suggestClassifierKey(rel);
+      warnLog(
+        `[router] ${source} classifier.${rel}: unknown key — ignored${near ? `; did you mean "classifier.${near}"?` : ''}`
+      );
+      deleteLeaf(bag.classifier, rel);
+    }
+  }
+}
+
+/** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
+function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
+  const parts = dotted.split('.');
+  const chain: Array<Record<string, unknown>> = [root];
+  for (const part of parts.slice(0, -1)) {
+    const next = chain[chain.length - 1][part];
+    if (!isPlainObject(next)) return;
+    chain.push(next);
+  }
+  delete chain[chain.length - 1][parts[parts.length - 1]];
+  for (let i = chain.length - 1; i > 0; i--) {
+    if (Object.keys(chain[i]).length > 0) break;
+    delete chain[i - 1][parts[i - 1]];
   }
 }
 

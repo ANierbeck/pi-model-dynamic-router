@@ -207,6 +207,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/classifier-summary.ts` | `/router classifier [days]`: a summary of the classifier decision log for a time window (ADR-0027 Phase 5) |
 | `src/commands.ts` | The `/router` slash command, extracted from `index.ts` |
 | `src/config-schema.ts` | Keys each config layer may contain; unknown keys are reported, `_`/`$` keys are annotations |
+| `src/config-keys.ts` | Description table for the user-facing config (path, type, shipped default, pre-2.0 names, how the router may change it); the loader's classifier migration and typo check read it |
 | `src/context-budget.ts` | Minimum output budget; below it a candidate is skipped |
 | `src/context-compaction.ts` | Cache-aware compaction (Phase 5b): cold-MISS threshold and the between-turns decision |
 | `src/context-utils.ts` | Context and prompt inspection helpers, per-model timeout lookups (extracted from `index.ts`) |

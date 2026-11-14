@@ -403,7 +403,7 @@ describe('classifyPrompt fallback chain', () => {
     });
   });
 
-  describe('pinnedCloudModel (dynamic group classifier_cloud_model)', () => {
+  describe('pinnedCloudModel (classifier.cloud.model)', () => {
     it('tries the pinned cloud model FIRST — before the probe-verified list', async () => {
       vi.mocked(callOllama).mockRejectedValue(new Error('ECONNREFUSED'));
       const completeSimple = vi
@@ -788,7 +788,7 @@ describe('low-confidence escalation to the cloud chain (opt-in)', () => {
   });
 });
 
-describe('user-configured cloud candidates (classifier_cloud_candidates)', () => {
+describe('user-configured cloud candidates (classifier.cloud.candidates)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(isOllamaAvailable).mockResolvedValue(false);

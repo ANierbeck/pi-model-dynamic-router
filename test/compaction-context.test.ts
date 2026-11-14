@@ -7,13 +7,12 @@ import { describe, it, expect } from 'vitest';
 import { classifyPrompt } from '../src/content-classifier.js';
 import type { Config, Cache } from '../src/types.js';
 
-// Minimal config with a dynamic group and classifier fallback
+// Minimal config with a dynamic group and classifier pins
 const cfg: Config = {
+  classifier: { local: { model: 'test-classifier', fallback: 'test-fallback' } },
   model_groups: {
     dynamic: {
       method: 'dynamic',
-      classifier_model: 'test-classifier',
-      classifier_fallback: 'test-fallback',
       routes: {
         code_simple: 'simple',
         code_complex: 'complex',

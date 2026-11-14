@@ -466,7 +466,7 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // Classifier decision log (2026-10-08 plan, Phase 1): whether/how the
   // classification decision log runs is user intent (privacy + retention) —
   // a stale dynamic file must not silently switch it off.
-  'classifier_log',
+  'classifier',
   // Optional integrations (Laya, 2026-10-09 plan; renamed from classifier_laya
   // in 2.0): enable/configure is user intent; a stale dynamic file must not
   // leave one stuck on or off.

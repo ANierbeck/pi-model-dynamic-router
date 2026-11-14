@@ -260,7 +260,7 @@ export function readClassifierSummary(days: number, nowMs = Date.now()): string[
       return [`Classifier: decision log unreadable (${snap.error}) at ${base}.`];
     }
     return [
-      `Classifier: no decision log at ${base} (classifier_log disabled, or nothing routed yet).`,
+      `Classifier: no decision log at ${base} (classifier.log.enabled is off, or nothing routed yet).`,
     ];
   }
   const lines: string[] = [];

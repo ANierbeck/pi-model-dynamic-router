@@ -28,7 +28,6 @@ import {
   type ClassificationSourceInfo,
 } from '../src/content-classifier.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
-import type { Group } from '../src/types.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
 
 const VALID_JSON = JSON.stringify({
@@ -36,17 +35,6 @@ const VALID_JSON = JSON.stringify({
   reason: 'test',
   confidence: 0.9,
 });
-
-function baseDynamicGroup(overrides: Partial<Group> = {}): Group {
-  return {
-    name: 'dynamic',
-    method: 'dynamic',
-    description: 'content-based routing',
-    models: [],
-    classifier_cloud_chain: true,
-    ...overrides,
-  } as unknown as Group;
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -109,7 +97,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
 
   it('shows the actual classifier and the real chain (local first, Ollama down, then cloud)', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup(),
+      classifier: { cloud: { enabled: true } },
       last: last('cloud:mistral/ministral-3b-latest'),
       probedCount: 7,
       ollamaUp: false,
@@ -133,7 +121,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
 
   it('reports Ollama as up when it actually is', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup(),
+      classifier: { cloud: { enabled: true } },
       last: last('ollama:foo:3b'),
       probedCount: 3,
       ollamaUp: true,
@@ -144,7 +132,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
 
   it('says when no classification ran yet this session', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup(),
+      classifier: { cloud: { enabled: true } },
       last: null,
       probedCount: 7,
       ollamaUp: false,
@@ -152,9 +140,9 @@ describe('formatClassifierStatus — honest /router status lines', () => {
     expect(lines.some((l) => l.includes('none yet this session'))).toBe(true);
   });
 
-  it('omits the cloud leg when classifier_cloud_chain is disabled', () => {
+  it('omits the cloud leg when classifier.cloud.enabled is disabled', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup({ classifier_cloud_chain: false }),
+      classifier: { cloud: { enabled: false } },
       last: last('ollama:foo:3b'),
       probedCount: 0,
       ollamaUp: true,
@@ -166,7 +154,7 @@ describe('formatClassifierStatus — honest /router status lines', () => {
 
   it('shows a pinned cloud classifier ahead of the probed list', () => {
     const lines = formatClassifierStatus({
-      group: baseDynamicGroup({ classifier_cloud_model: 'mistral/zai-glm-5-3' }),
+      classifier: { cloud: { enabled: true, model: 'mistral/zai-glm-5-3' } },
       last: last('cloud:mistral/zai-glm-5-3'),
       probedCount: 5,
       ollamaUp: false,

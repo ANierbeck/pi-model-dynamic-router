@@ -711,30 +711,23 @@ describe('classifier call wiring', () => {
     expect(plain.args[1].allowCloudChain).toBe(false);
 
     const cloud = await opts({
-      groups: {
-        ...DEFAULT_GROUPS,
-        dynamic: { method: 'dynamic', classifier_cloud_chain: true },
-      },
+      groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic' } },
+      cfgExtra: { classifier: { cloud: { enabled: true } } },
     });
     expect(cloud.args[1].allowCloudChain).toBe(true);
 
     const truthyButNotTrue = await opts({
-      groups: {
-        ...DEFAULT_GROUPS,
-        dynamic: { method: 'dynamic', classifier_cloud_chain: 'yes' as any },
-      },
+      groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic' } },
+      cfgExtra: { classifier: { cloud: { enabled: 'yes' as any } } },
     });
     expect(truthyButNotTrue.args[1].allowCloudChain).toBe(false);
   });
 
   it('passes the user-configured cloud candidate list through verbatim, in order', async () => {
     const { args } = await opts({
-      groups: {
-        ...DEFAULT_GROUPS,
-        dynamic: {
-          method: 'dynamic',
-          classifier_cloud_candidates: ['mistral/mistral-large-4', 'acme/judge'],
-        },
+      groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic' } },
+      cfgExtra: {
+        classifier: { cloud: { candidates: ['mistral/mistral-large-4', 'acme/judge'] } },
       },
     });
     expect(args[1].cloudCandidates).toEqual(['mistral/mistral-large-4', 'acme/judge']);
@@ -744,10 +737,8 @@ describe('classifier call wiring', () => {
 
   it('passes the pinned cloud model through verbatim (provider/id form, not stripped)', async () => {
     const { args } = await opts({
-      groups: {
-        ...DEFAULT_GROUPS,
-        dynamic: { method: 'dynamic', classifier_cloud_model: 'mistral/mistral-large-4' },
-      },
+      groups: { ...DEFAULT_GROUPS, dynamic: { method: 'dynamic' } },
+      cfgExtra: { classifier: { cloud: { model: 'mistral/mistral-large-4' } } },
     });
     expect(args[1].pinnedCloudModel).toBe('mistral/mistral-large-4');
     const none = await opts({});
@@ -994,14 +985,8 @@ describe('classifier wiring — config shapes', () => {
   it("passes the user's local classifier pins (ollama/ prefix stripped)", async () => {
     const { args } = await run(
       {
-        groups: named(
-          {
-            method: 'dynamic',
-            classifier_model: 'ollama/gemma:2b',
-            classifier_fallback: 'qwen:1b',
-          },
-          'auto'
-        ),
+        groups: named({ method: 'dynamic' }, 'auto'),
+        cfgExtra: { classifier: { local: { model: 'ollama/gemma:2b', fallback: 'qwen:1b' } } },
       },
       'auto'
     );

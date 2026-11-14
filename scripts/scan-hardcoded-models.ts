@@ -212,11 +212,22 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
       for (const m of stringsOf(def.models)) add(`model_groups.${group}.models[]=${m}`);
       for (const m of stringsOf(def.exclude_models))
         add(`model_groups.${group}.exclude_models[]=${m}`);
-      for (const key of ['classifier_model', 'classifier_fallback', 'classifier_cloud_model']) {
-        const v = def[key];
-        if (typeof v === 'string') add(`model_groups.${group}.${key}=${v}`);
-      }
     }
+  }
+
+  // The classifier block holds the only model pins that name a concrete model
+  // outside model_groups (plan 2026-11-14-config-surface-and-ui.md, Phase 1).
+  if (isRecord(cfgJson.classifier)) {
+    const local = isRecord(cfgJson.classifier.local) ? cfgJson.classifier.local : {};
+    const cloud = isRecord(cfgJson.classifier.cloud) ? cfgJson.classifier.cloud : {};
+    for (const [key, v] of [
+      ['local.model', local.model],
+      ['local.fallback', local.fallback],
+      ['cloud.model', cloud.model],
+    ] as const) {
+      if (typeof v === 'string') add(`classifier.${key}=${v}`);
+    }
+    for (const m of stringsOf(cloud.candidates)) add(`classifier.cloud.candidates[]=${m}`);
   }
 
   if (isRecord(cfgJson.model_metrics)) {

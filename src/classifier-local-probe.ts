@@ -20,12 +20,13 @@
 //      unavailable" is a permanent backend property: the model is skipped AND
 //      marked in cache.classifier_no_schema. The ordered working list is
 //      persisted as cache.classifier_local_models.
-//   3. RESOLUTION at classification time — user pin (classifier_model /
-//      classifier_fallback in the dynamic group, optional) › probed list ›
+//   3. RESOLUTION at classification time — user pin (classifier.local.model /
+//      classifier.local.fallback in the dynamic group, optional) › probed list ›
 //      provisional (the candidate order itself, before the first probe) ›
 //      nothing (the local leg is skipped; the chain continues with cloud and
 //      the static classifier).
 
+import type { ClassifierConfig } from './types.ts';
 import type { Cache, Config } from './types.ts';
 import { isExcluded } from './exclude.ts';
 import { isBlocked } from './model-blocklist.ts';
@@ -223,16 +224,17 @@ export async function probeLocalClassifierCandidates(
 // ── Resolution at classification time ───────────────────────────────────────
 
 /**
- * The user's optional local pins from a dynamic group (`classifier_model` /
- * `classifier_fallback`, no shipped value), as bare Ollama model names.
+ * The user's optional local pins from a dynamic group (`classifier.local.model` /
+ * `classifier.local.fallback`, no shipped value), as bare Ollama model names.
  */
-export function localClassifierPins(
-  group: { classifier_model?: string; classifier_fallback?: string } | undefined
-): { model?: string; fallbackModel?: string } {
+export function localClassifierPins(local: ClassifierConfig['local'] | undefined): {
+  model?: string;
+  fallbackModel?: string;
+} {
   const bare = (ref: string): string => ref.replace(/^ollama\//, '');
   return {
-    ...(group?.classifier_model ? { model: bare(group.classifier_model) } : {}),
-    ...(group?.classifier_fallback ? { fallbackModel: bare(group.classifier_fallback) } : {}),
+    ...(local?.model ? { model: bare(local.model) } : {}),
+    ...(local?.fallback ? { fallbackModel: bare(local.fallback) } : {}),
   };
 }
 

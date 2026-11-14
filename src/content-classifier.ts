@@ -144,7 +144,7 @@ export interface ClassificationOptions {
   cache?: Cache;
   allowCloudChain?: boolean;
   /**
-   * Opt-in (dynamic group `classifier_escalate_low_confidence`): a local reply
+   * Opt-in (dynamic group `classifier.cloud.escalate_low_confidence`): a local reply
    * below MIN_CONFIDENCE is not final. The cloud chain is asked once, and its
    * answer replaces the local one; if the cloud produces nothing, the gated
    * local reply is kept. Off by default: prompt text then leaves the machine
@@ -161,7 +161,7 @@ export interface ClassificationOptions {
   cloudTimeoutMs?: number;
   /**
    * Pinned cloud classifier model ref ("provider/id") from the dynamic
-   * group's classifier_cloud_model config. When set and resolvable, it is
+   * group's classifier.cloud.model config. When set and resolvable, it is
    * tried FIRST in the cloud chain — before the probe-verified
    * cached list. Deterministic override for users who want a specific
    * (e.g. subscription-covered) model to classify, regardless of what
@@ -170,12 +170,12 @@ export interface ClassificationOptions {
   pinnedCloudModel?: string;
   /**
    * User-configured cloud candidate list (dynamic group
-   * `classifier_cloud_candidates`). When set, it REPLACES the automatic
+   * `classifier.cloud.candidates`). When set, it REPLACES the automatic
    * candidate chain (probe-verified list, lazy discovery, static free list);
-   * the models are tried in the given order. The pinned classifier_cloud_model
+   * the models are tried in the given order. The pinned classifier.cloud.model
    * stays first. The same guards as the automatic chain apply: findModel must
    * resolve the ref, exclude/paid-guards filter, the chain needs
-   * classifier_cloud_chain on.
+   * classifier.cloud.enabled on.
    */
   cloudCandidates?: string[];
   /**
@@ -672,7 +672,7 @@ function writeDecisionLog(
   started: number,
   prevCategory: ClassificationContext['lastCategory']
 ): void {
-  const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+  const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
   if (!log) return;
   const rawCategory = 'category' in raw ? raw.category : undefined;
   const inherited = result !== raw && rawCategory === 'continue';
@@ -705,7 +705,7 @@ function writeDecisionLog(
     },
     context: options.context,
     ms: Date.now() - started,
-    cfgBlock: options.cfg?.classifier_log,
+    cfgBlock: options.cfg?.classifier?.log,
     home: homedir(),
   });
   writeDecisionRecord(record, homedir(), log);
@@ -763,7 +763,7 @@ function spawnMomentumObservation(prompt: string, options: ClassificationOptions
         const started = Date.now();
         const result = await classifyPromptUncounted(prompt, options, { skipMomentum: true });
         try {
-          const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+          const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
           if (!log) return;
           if (holder.trace.laya) holder.trace.laya = { ...holder.trace.laya, acted: false };
           writeDecisionRecord(
@@ -785,7 +785,7 @@ function spawnMomentumObservation(prompt: string, options: ClassificationOptions
               },
               context: options.context,
               ms: Date.now() - started,
-              cfgBlock: options.cfg?.classifier_log,
+              cfgBlock: options.cfg?.classifier?.log,
               home: homedir(),
             }),
             homedir(),
@@ -1117,7 +1117,7 @@ async function classifyPromptUncounted(
       let modelsToTry = getCachedCloudModels(cache);
       let source = 'probed';
       if (cloudCandidates && cloudCandidates.length > 0) {
-        // User-configured candidates (classifier_cloud_candidates): the list
+        // User-configured candidates (classifier.cloud.candidates): the list
         // replaces the automatic chain — probe list, discovery and static
         // free list — so the user decides exactly which cloud models may see
         // prompt text. The guards below (findModel, exclude, paid) still apply.
@@ -1136,7 +1136,7 @@ async function classifyPromptUncounted(
         modelsToTry = discovery.getFreeModels();
         source = 'static-free';
       }
-      // Pinned cloud classifier (dynamic group's classifier_cloud_model):
+      // Pinned cloud classifier (dynamic group's classifier.cloud.model):
       // tried FIRST — before the probe-verified list — so a user-pinned
       // (e.g. subscription-covered) model classifies deterministically. The
       // findModel guard in the loop below skips it if pi doesn't know it.
@@ -1374,7 +1374,7 @@ async function classifyPromptUncounted(
     // every prompt to a cloud model even when a local model could answer.
     await tryOllama();
     // A local reply below the confidence gate is escalated only when the user
-    // opted in (classifier_escalate_low_confidence) and the cloud chain is on.
+    // opted in (classifier.cloud.escalate_low_confidence) and the cloud chain is on.
     const localLowConfidence =
       classificationResult !== null &&
       'confidence' in classificationResult &&
@@ -1443,7 +1443,7 @@ async function classifyPromptUncounted(
           // Fail-open like the main log step: the comparator must never
           // break the process, and a logging failure is not a routing event.
           try {
-            const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+            const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
             if (!log) return;
             writeDecisionRecord(
               buildDecisionRecord({
@@ -1467,7 +1467,7 @@ async function classifyPromptUncounted(
                 },
                 context,
                 ms: Date.now() - started,
-                cfgBlock: options.cfg?.classifier_log,
+                cfgBlock: options.cfg?.classifier?.log,
                 home: homedir(),
               }),
               homedir(),

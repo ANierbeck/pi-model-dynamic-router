@@ -190,7 +190,7 @@ describe('dynamic-config-resync-keys', () => {
     'context_budget',
     // Classifier decision log (2026-10-08): privacy + retention are user
     // intent — the dynamic copy must not silently disable the log.
-    'classifier_log',
+    'classifier',
     // Opt-in local Laya classifier stage (2026-10-09): enable/configure is
     // user intent — a stale dynamic file must not leave it stuck on or off.
     'integrations',
@@ -218,7 +218,7 @@ describe('dynamic-config-resync-keys', () => {
     log_level: 'debug',
     category_groups: { code_complex: 'tactical' },
     context_budget: { enabled: true, soft_tokens: 999_999 },
-    classifier_log: { enabled: false, store_text: 'stale' },
+    classifier: { log: { enabled: false, store_text: 'stale' } },
     integrations: { laya: { enabled: true, endpoint: 'http://127.0.0.1:9999' } },
   };
 
@@ -238,7 +238,10 @@ describe('dynamic-config-resync-keys', () => {
     log_level: 'warn',
     category_groups: { code_complex: 'planning' },
     context_budget: { enabled: false, soft_tokens: 123 },
-    classifier_log: { enabled: true, store_text: 'full', max_bytes: 999_888, keep: 9 },
+    classifier: {
+      cloud: { enabled: false },
+      log: { enabled: true, store_text: 'full', max_bytes: 999_888, keep: 9 },
+    },
     integrations: { laya: { enabled: false } },
   };
 
