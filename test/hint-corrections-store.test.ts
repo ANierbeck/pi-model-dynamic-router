@@ -13,7 +13,12 @@ import {
   MAX_HINT_CORRECTIONS,
   unknownCategoryMessage,
   staleCorrectionMessage,
+  capCorrections,
 } from '../src/hint-corrections.ts';
+import { CacheManager } from '../src/cache.ts';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
 
 const PROMPT = 'Design a rollout plan for the new cache layer';
@@ -135,5 +140,68 @@ describe('user-facing messages', () => {
 
   it('a stale correction is reported with the stored name', () => {
     expect(staleCorrectionMessage('roadmap')).toContain('"roadmap"');
+  });
+});
+
+describe('stale and malformed entries', () => {
+  it('a stale hit is dropped once it has been reported', () => {
+    const store = { [PROMPT]: { hintType: 'category', target: 'roadmap', savedAt: 'x' } };
+    expect(lookupCorrection(store, PROMPT)).toEqual({ stale: 'roadmap' });
+    expect(store).toEqual({});
+  });
+
+  it('an entry without a string target is treated as absent and does not break the listing', () => {
+    const store: any = {
+      'a prompt with five words here': null,
+      [PROMPT]: { hintType: 'category', target: 'planning', savedAt: 'x' },
+    };
+    expect(lookupCorrection(store, 'a prompt with five words here')).toBeNull();
+    expect(listCorrections(store).map((e) => e.key)).toEqual([PROMPT]);
+  });
+});
+
+describe('capCorrections (after a merge from another process)', () => {
+  const key = (i: number): string => `merged prompt number ${i} with five words`;
+  const at = (i: number): string => new Date(Date.UTC(2026, 10, 14, 0, 0, i)).toISOString();
+
+  it('keeps the newest MAX_HINT_CORRECTIONS entries by savedAt and reports how many it dropped', () => {
+    // Written directly: recordCorrection already keeps the store within the cap.
+    const store: any = {};
+    for (let i = 0; i < MAX_HINT_CORRECTIONS + 3; i++) {
+      store[key(i)] = { hintType: 'category', target: 'simple', savedAt: at(i) };
+    }
+    expect(capCorrections(store)).toBe(3);
+    expect(Object.keys(store)).toHaveLength(MAX_HINT_CORRECTIONS);
+    expect(store[key(0)]).toBeUndefined();
+    expect(store[key(MAX_HINT_CORRECTIONS + 2)]).toBeDefined();
+  });
+
+  it('saveCache keeps the cap when the file on disk has entries this process does not know', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'hint-cap-'));
+    try {
+      const other: any = {};
+      for (let i = 0; i < MAX_HINT_CORRECTIONS; i++) {
+        recordCorrection((other.hint_corrections ??= {}), key(i), 'simple', at(i));
+      }
+      new CacheManager(dir, other).saveCache();
+
+      const mine: any = {};
+      for (let i = 0; i < MAX_HINT_CORRECTIONS; i++) {
+        recordCorrection(
+          (mine.hint_corrections ??= {}),
+          key(MAX_HINT_CORRECTIONS + i),
+          'design',
+          at(MAX_HINT_CORRECTIONS + i)
+        );
+      }
+      new CacheManager(dir, mine).saveCache();
+
+      const onDisk = JSON.parse(readFileSync(path.join(dir, '.cache', 'scan-cache.json'), 'utf8'));
+      const kept = Object.keys(onDisk.hint_corrections);
+      expect(kept.length).toBeLessThanOrEqual(MAX_HINT_CORRECTIONS);
+      expect(kept).toContain(key(MAX_HINT_CORRECTIONS + MAX_HINT_CORRECTIONS - 1));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

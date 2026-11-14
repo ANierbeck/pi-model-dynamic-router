@@ -455,7 +455,7 @@ const CATEGORY_HINT_RE = /^\s*HINT\s*:\s*category\b\s*(\S*)\s*([\s\S]*)$/i;
 
 export type CategoryHint =
   | { kind: 'category'; category: CorrectionCategory; content: string }
-  | { kind: 'unknown'; name: string };
+  | { kind: 'unknown'; name: string; content: string };
 
 /**
  * Parses the category form of HINT. An unknown name is reported as such so the
@@ -468,7 +468,7 @@ export function detectCategoryHint(prompt: string): CategoryHint | null {
   if (isCorrectionCategory(name)) {
     return { kind: 'category', category: name, content: match[2].trim() };
   }
-  return { kind: 'unknown', name: match[1] };
+  return { kind: 'unknown', name: match[1], content: match[2].trim() };
 }
 
 /**
@@ -852,7 +852,8 @@ async function classifyPromptUncounted(
   const categoryHint = detectCategoryHint(prompt);
   if (categoryHint?.kind === 'category') {
     noteSource('hint');
-    if (cache && correctionKey(categoryHint.content) !== null) {
+    const storable = correctionKey(categoryHint.content) !== null;
+    if (cache && storable) {
       cache.hint_corrections ??= {};
       recordCorrection(
         cache.hint_corrections,
@@ -864,12 +865,19 @@ async function classifyPromptUncounted(
     }
     return {
       category: categoryHint.category,
-      reason: 'User specified category via HINT',
+      reason: storable
+        ? 'User specified category via HINT'
+        : 'User specified category via HINT (not saved: under five words)',
       confidence: 1.0,
     };
   }
   if (categoryHint?.kind === 'unknown') {
     warnLog(unknownCategoryMessage(categoryHint.name));
+    // The content is classified without the HINT head: the marker must not
+    // reach the classifier, where a hint:* answer would become a pin.
+    if (categoryHint.content.length > 0) {
+      return classifyPromptUncounted(categoryHint.content, options, internal);
+    }
   }
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.
@@ -881,7 +889,8 @@ async function classifyPromptUncounted(
 
   // ADR-0030: a saved category correction for this exact prompt decides the
   // category before the classifier runs. A stale name is logged and ignored.
-  if (cache) {
+  // Compaction is never overridden: its continuity is decided by context.
+  if (cache && !context.isCompaction) {
     const hit = lookupCorrection(cache.hint_corrections ?? {}, prompt);
     if (hit && 'category' in hit) {
       noteSource('correction');

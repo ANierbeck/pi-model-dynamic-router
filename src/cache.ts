@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import type { Cache, SessionError, UsageLogEntry } from './types.ts';
 import { SESSION_ERROR_CAP } from './session-errors.ts';
 import { isRecord } from './utils.ts';
+import { capCorrections } from './hint-corrections.ts';
 
 /** The usage_log entry shape (types.ts). */
 type UsageEntry = UsageLogEntry;
@@ -116,6 +117,9 @@ function mergeExternal(memory: Cache, disk: Cache): void {
       for (const [sub, v] of Object.entries(diskValue)) if (!(sub in memValue)) memValue[sub] = v;
     }
   }
+  // ADR-0030: the merge appends another process's corrections after ours, so
+  // the cap is enforced again by savedAt (the insertion order no longer counts).
+  if (memory.hint_corrections) capCorrections(memory.hint_corrections);
 }
 
 /**

@@ -71,6 +71,8 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
 
 const CONTENT = 'Design a rollout plan for the new cache layer';
 const HINTED = `HINT: category planning ${CONTENT}`;
+const OTHER = 'Summarise the quarterly risk register for the board';
+const THIRD = 'Draft a migration note for the parser refactor today';
 const LONG_AGO = '2020-01-01T00:00:00.000Z';
 
 describe('classifyPrompt: HINT category form', () => {
@@ -116,6 +118,8 @@ describe('classifyPrompt: HINT category form', () => {
     expect(r.category).toBe('simple');
     expect((cache as any).hint_corrections ?? {}).toEqual({});
     expect(persistCache).not.toHaveBeenCalled();
+    expect((cache as any).hint_corrections ?? {}).toEqual({});
+    expect(r.reason).toMatch(/not saved/);
   });
 
   it('a stored name that is no longer a category is not applied: the classifier runs and the warning names it', async () => {
@@ -127,12 +131,13 @@ describe('classifyPrompt: HINT category form', () => {
     expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
     expect(r.category).toBe('code_complex');
     expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
+    expect((cache as any).hint_corrections).toEqual({});
   });
 
   it('an unknown category name is rejected with the valid names, and the turn is classified normally', async () => {
     const cache = localModelCache();
     const persistCache = vi.fn();
-    const r = await classifyPrompt(`HINT: category roadmap ${CONTENT}`, {
+    const r = await classifyPrompt(`HINT: category roadmap ${OTHER}`, {
       cache,
       persistCache,
       allowStaticFallback: true,
@@ -141,5 +146,31 @@ describe('classifyPrompt: HINT category form', () => {
     expect(r.category).toBe('code_complex');
     expect(persistCache).not.toHaveBeenCalled();
     expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
+  });
+});
+
+describe("saved corrections never override the router's own decisions", () => {
+  it('a compaction request is not answered from a saved correction for the same text', async () => {
+    const cache = localModelCache() as any;
+    cache.hint_corrections = {
+      [CONTENT]: { hintType: 'category', target: 'planning', savedAt: LONG_AGO },
+    };
+    const r = await classifyPrompt(CONTENT, {
+      cache,
+      allowStaticFallback: true,
+      context: { isCompaction: true },
+    } as any);
+    expect(r.reason).not.toMatch(/Saved HINT correction/);
+  });
+
+  it('an unknown category name sends the content to the classifier, never the HINT head', async () => {
+    vi.mocked(ollamaUtils.callOllama).mockClear();
+    await classifyPrompt(`HINT: category roadmap ${THIRD}`, {
+      cache: localModelCache(),
+      allowStaticFallback: true,
+    } as any);
+    const sent = JSON.stringify(vi.mocked(ollamaUtils.callOllama).mock.calls);
+    expect(sent).toContain(THIRD);
+    expect(sent).not.toContain('HINT: category');
   });
 });

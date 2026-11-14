@@ -134,3 +134,29 @@ on a feeling.
 5. **Relation to decision-log Phase 2:** built independently (recommendation). Phase 2 is not started.
 
 A different value for 2 to 5 is a new ADR that cites this one; this ADR is not edited after acceptance.
+
+### Behaviour settled during the build (review round, 2026-11-14)
+
+These follow from the decision above and do not change it; they are recorded
+because the review asked what the code does at the edges.
+
+- **Compaction wins.** A saved correction is consulted only when the turn is
+  not a compaction. Compaction continuity is decided by context, never by
+  prompt text, so a correction can not route a compaction elsewhere.
+- **An unknown name classifies the content, not the marker.** The HINT head is
+  stripped before the classifier runs, so the marker can never be read as an
+  instruction by the model (a `hint:*` answer would become a pin).
+- **A stale name is reported once and dropped.** The entry is removed on the
+  stale hit; the warning names the old category.
+- **A short prompt is not stored, and says so.** The reason reads
+  "not saved: under five words".
+- **The cap also holds after a merge.** `saveCache` merges entries written by
+  another process; the store is re-capped by `savedAt` afterwards, because the
+  insertion order no longer reflects recency. Lookup recency is still not
+  persisted, so eviction order after a restart is approximate.
+- **An entry without a string target is treated as absent.** A hand-edited
+  `cache.json` can not throw through the lookup or the listing.
+- **Scope (open):** corrections live in the shared `scan-cache.json`, so a
+  correction typed in one project applies to identical prompts in every
+  project. The owner has not decided whether they belong to the per-project
+  state; the ADR asked for `cache.json` and does not settle the scope.

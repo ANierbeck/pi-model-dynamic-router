@@ -50,6 +50,15 @@ export function isCorrectionCategory(name: string): name is CorrectionCategory {
   return (VALID_CATEGORIES as readonly string[]).includes(name);
 }
 
+/** A stored entry with a string target. Anything else is treated as absent. */
+function isStoredCorrection(entry: unknown): entry is HintCorrection {
+  return (
+    typeof entry === 'object' &&
+    entry !== null &&
+    typeof (entry as { target?: unknown }).target === 'string'
+  );
+}
+
 /**
  * The exact store key for a prompt: trimmed, otherwise untouched. Null when
  * the prompt is too short to be stored or matched.
@@ -88,10 +97,12 @@ export function recordCorrection(
 export function lookupCorrection(store: HintCorrections, content: string): CorrectionLookup {
   const key = correctionKey(content);
   if (key === null || !Object.prototype.hasOwnProperty.call(store, key)) return null;
-  const entry = store[key];
+  const entry: unknown = store[key];
   delete store[key];
-  store[key] = entry;
+  if (!isStoredCorrection(entry)) return null;
+  // A stale entry is reported once and dropped: its name is no longer applicable.
   if (!isCorrectionCategory(entry.target)) return { stale: entry.target };
+  store[key] = entry;
   return { category: entry.target };
 }
 
@@ -99,11 +110,30 @@ export function lookupCorrection(store: HintCorrections, content: string): Corre
 export function listCorrections(store: HintCorrections): CorrectionListing[] {
   return Object.keys(store)
     .reverse()
+    .filter((key) => isStoredCorrection(store[key]))
     .map((key) => ({
       key,
       category: store[key].target,
       savedAt: store[key].savedAt,
     }));
+}
+
+/**
+ * Drops the oldest entries (by savedAt) until the store is within the cap, and
+ * returns how many were dropped. Used after a merge with a file written by
+ * another process, where the store's insertion order no longer reflects recency.
+ */
+export function capCorrections(store: HintCorrections): number {
+  const keys = Object.keys(store);
+  if (keys.length <= MAX_HINT_CORRECTIONS) return 0;
+  const savedAt = (key: string): string => {
+    const entry: unknown = store[key];
+    return isStoredCorrection(entry) ? entry.savedAt : '';
+  };
+  const oldestFirst = [...keys].sort((a, b) => savedAt(a).localeCompare(savedAt(b)));
+  const drop = oldestFirst.slice(0, keys.length - MAX_HINT_CORRECTIONS);
+  for (const key of drop) delete store[key];
+  return drop.length;
 }
 
 /** Drops every correction and returns how many there were. */

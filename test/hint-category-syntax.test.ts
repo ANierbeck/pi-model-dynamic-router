@@ -28,6 +28,7 @@ describe('detectCategoryHint (syntax)', () => {
     expect(detectCategoryHint(`HINT: category roadmap ${CONTENT}`)).toEqual({
       kind: 'unknown',
       name: 'roadmap',
+      content: CONTENT,
     });
   });
 
