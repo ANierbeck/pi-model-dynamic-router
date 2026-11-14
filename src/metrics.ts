@@ -1107,6 +1107,9 @@ function fallbackWithoutRegistry(
   if (!registryFailed || fallback?.input !== 0 || fallback.output !== 0) return fallback;
   const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
   if (discovered?.cost_per_m !== 0 || isFreeByDefinition(ref)) return fallback;
+  // An owner-configured provider price is explicit evidence, even when the
+  // same ref also has a scanned placeholder 0.
+  if (cfg.providers?.[ref.split('/')[0]]?.cost_per_m !== undefined) return fallback;
   return { input: 'unknown', output: 'unknown' };
 }
 

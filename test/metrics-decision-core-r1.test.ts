@@ -178,6 +178,26 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.lookupPrice('fp/sub-model')).toEqual({ input: 0, output: 0 });
   });
 
+  // Sourcery PR #174 round 4: an owner-configured provider zero is explicit
+  // evidence, even when the same ref also has a scanned placeholder 0.
+  it('a configured provider zero still prices at 0 when the registry fails, even with a scanned 0', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'cfg-and-scan', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: { fp: { billing: 'subscription', cost_per_m: 0 } } as any },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/cfg-and-scan': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupPrice('fp/cfg-and-scan')).toEqual({ input: 0, output: 0 });
+  });
+
   it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
     const registry = { find: () => priced(0, 0) };
     const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;
