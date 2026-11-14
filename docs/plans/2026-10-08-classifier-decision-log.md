@@ -296,7 +296,7 @@ the default, not an afterthought.
   types + `classifier_log` re-sync key, the JSONL record at the
   `classifyPrompt` choke point, the replay harness
   (`scripts/classifier-replay.ts`) with session backfill.
-- **Phase 5 shipped 2026-11-14** (branch `feat/classifier-decision-summary`): `/router classifier [days]` (`src/classifier-summary.ts`), README bullet. Not yet done in Phase 5: the `docs/routing-flow.md` diagram entry for the record's position. The plan's `raw`-`fallback` pair is not usable: the category `fallback` was retired in v2-r3 and never appears in the log. The summary reads the `continue` pair instead, and counts chain exhaustion by stage `fallback`.
+- **Phase 5 shipped 2026-11-14** (branch `feat/classifier-decision-summary`): `/router classifier [days]` (`src/classifier-summary.ts`), README bullet. The `docs/routing-flow.md` diagram shows the record and the summary (done 2026-11-14). The summary and the script reader share one parser (`parseDecisionLogText`, `src/classifier-decision-log.ts`). The plan's `raw`-`fallback` pair is not usable: the category `fallback` was retired in v2-r3 and never appears in the log. The summary reads the `continue` pair instead, and counts chain exhaustion by stage `fallback`.
 - Phase 2 (turn id + outcome join) and Phase 4 (shadow hook) remain future
   work; the spike does not need them (known decisions come from the log,
   not from re-simulating the chain).

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  parseDecisionLogText,
+  parseSummaryRecords,
   summarizeClassifierLog,
   formatClassifierSummary,
 } from '../src/classifier-summary.ts';
@@ -162,14 +162,14 @@ describe('summarizeClassifierLog — Laya disagreements', () => {
   });
 });
 
-describe('parseDecisionLogText — window, shape and torn lines', () => {
+describe('parseSummaryRecords — window, shape and torn lines', () => {
   it('skips torn lines and records older than the window', () => {
     const fresh = JSON.stringify(rec({ stage: 'cache' }));
     const old = JSON.stringify(
       rec({ stage: 'cache', ts: new Date(NOW - 30 * 86_400_000).toISOString() })
     );
     const text = [fresh, '{"torn": ', '', old, '[1,2]'].join('\n');
-    const kept = parseDecisionLogText(text, { sinceMs: NOW - 7 * 86_400_000, untilMs: NOW });
+    const kept = parseSummaryRecords(text, { sinceMs: NOW - 7 * 86_400_000, untilMs: NOW });
     expect(kept).toHaveLength(1);
     expect(kept[0]!.stage).toBe('cache');
   });
@@ -178,14 +178,14 @@ describe('parseDecisionLogText — window, shape and torn lines', () => {
     const future = JSON.stringify(
       rec({ stage: 'cache', ts: new Date(NOW + 3_600_000).toISOString() })
     );
-    const kept = parseDecisionLogText(future, { sinceMs: NOW - 86_400_000, untilMs: NOW });
+    const kept = parseSummaryRecords(future, { sinceMs: NOW - 86_400_000, untilMs: NOW });
     expect(kept).toHaveLength(0);
   });
 
   it('skips records whose fields have the wrong shape, so the summary cannot throw', () => {
     const badChain = JSON.stringify({ ...rec({ stage: 'llm-cloud' }), chain: 5 });
     const noStage = JSON.stringify({ ...rec({ stage: 'cache' }), stage: 7 });
-    const kept = parseDecisionLogText([badChain, noStage].join('\n'), {
+    const kept = parseSummaryRecords([badChain, noStage].join('\n'), {
       sinceMs: NOW - 86_400_000,
       untilMs: NOW,
     });
