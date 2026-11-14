@@ -144,6 +144,40 @@ describe('isFreeModelRef / billingTier — free_models and discovery', () => {
     expect(m.lookupPrice('fp/lp-fails')).toEqual({ input: 'unknown', output: 'unknown' });
   });
 
+  // Sourcery PR #174 round 3 (Medium): the display price takes the same path.
+  it('a failing registry lookup gives the list (display) price unknown, not the cached zero', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    const discovered = [{ provider: 'fp', id: 'ld-fails', cost_per_m: 0 }] as any;
+    world({
+      cfg: { providers: providers([]) },
+      cache: {
+        available_models: discovered,
+        openrouter_pricing: { 'fp/ld-fails': { input: 0, output: 0 } },
+      } as any,
+      registry,
+    });
+    expect(m.lookupListPrice('fp/ld-fails')).toEqual({ input: 'unknown', output: 'unknown' });
+  });
+
+  // Regression guard for the round-3 over-reach: a provider-level sunk-cost 0
+  // (subscription) is explicit evidence and must survive a registry failure.
+  it('a provider-level sunk-cost 0 still prices at 0 when the registry fails', () => {
+    const registry = {
+      find: () => {
+        throw new Error('registry down');
+      },
+    };
+    world({
+      cfg: { providers: { fp: { billing: 'subscription', cost_per_m: 0 } } as any },
+      registry,
+    });
+    expect(m.lookupPrice('fp/sub-model')).toEqual({ input: 0, output: 0 });
+  });
+
   it('a registry price of {0,0} keeps the placeholder free (ADR-0011: caller decides)', () => {
     const registry = { find: () => priced(0, 0) };
     const discovered = [{ provider: 'fp', id: 'zero-priced', cost_per_m: 0 }] as any;

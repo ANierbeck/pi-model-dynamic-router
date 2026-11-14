@@ -1090,18 +1090,24 @@ export function lookupPrice(
     return { input: cost, output: cost };
   }
 
+  return fallbackWithoutRegistry(ref, registryFailed);
+}
+
+/**
+ * The OpenRouter/config fallback for a price read whose registry lookup did not
+ * answer. A scanned zero that the registry could not confirm is a placeholder,
+ * not a price, so it comes back unknown (ADR-0011 §1). Config zeros and the
+ * provider-level sunk-cost estimate are explicit evidence and pass through.
+ */
+function fallbackWithoutRegistry(
+  ref: string,
+  registryFailed: boolean
+): { input: number | 'unknown'; output: number | 'unknown' } | null {
   const fallback = orFallbackPrice(ref);
-  // A registry that could not answer is no evidence that a cached 0 is free:
-  // the 0 is a placeholder unless the ref is free by its own definition.
-  if (
-    registryFailed &&
-    fallback?.input === 0 &&
-    fallback.output === 0 &&
-    !isFreeByDefinition(ref)
-  ) {
-    return { input: 'unknown', output: 'unknown' };
-  }
-  return fallback;
+  if (!registryFailed || fallback?.input !== 0 || fallback.output !== 0) return fallback;
+  const discovered = (cache.available_models ?? []).find((m) => `${m.provider}/${m.id}` === ref);
+  if (discovered?.cost_per_m !== 0 || isFreeByDefinition(ref)) return fallback;
+  return { input: 'unknown', output: 'unknown' };
 }
 
 /** Free by the ref's own definition: the :free tag, a local provider, or the free_models list. */
@@ -1205,9 +1211,15 @@ export function lookupListPrice(
   ref: string
 ): { input: number | 'unknown'; output: number | 'unknown' } | null {
   const { provider, modelId } = splitRef(ref);
-  const regCost = registryCost(provider, modelId);
+  let regCost: { input: number; output: number } | null = null;
+  let registryFailed = false;
+  try {
+    regCost = registryPriceStrict(provider, modelId);
+  } catch {
+    registryFailed = true;
+  }
   if (regCost) return regCost;
-  return orFallbackPrice(ref);
+  return fallbackWithoutRegistry(ref, registryFailed);
 }
 
 /**
