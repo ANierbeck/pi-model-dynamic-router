@@ -242,3 +242,36 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+/**
+ * Sets a dotted leaf in a plain object tree, creating missing parents. Returns
+ * false, changing nothing below the first non-object section, when a section on
+ * the way is present but not an object: replacing it would drop the user's data.
+ */
+export function setLeaf(root: Record<string, unknown>, dotted: string, value: unknown): boolean {
+  const parts = dotted.split('.');
+  let node = root;
+  for (const part of parts.slice(0, -1)) {
+    if (node[part] === undefined) node[part] = {};
+    else if (!isPlainObject(node[part])) return false;
+    node = node[part] as Record<string, unknown>;
+  }
+  node[parts[parts.length - 1]] = value;
+  return true;
+}
+
+/** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
+export function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
+  const parts = dotted.split('.');
+  const chain: Array<Record<string, unknown>> = [root];
+  for (const part of parts.slice(0, -1)) {
+    const next = chain[chain.length - 1][part];
+    if (!isPlainObject(next)) return;
+    chain.push(next);
+  }
+  delete chain[chain.length - 1][parts[parts.length - 1]];
+  for (let i = chain.length - 1; i > 0; i--) {
+    if (Object.keys(chain[i]).length > 0) break;
+    delete chain[i - 1][parts[i - 1]];
+  }
+}

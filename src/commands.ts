@@ -56,7 +56,10 @@ import {
   readConfigLayers,
   validateExcludePattern,
   type ConfigLayerView,
+  type ConfigPatch,
 } from './user-config-store.ts';
+import { CONFIG_KEYS, configKey, parseConfigValue } from './config-keys.ts';
+import { describeClassifierChain, formatClassifierChain } from './classifier-chain.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
@@ -263,6 +266,8 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
 const CONFIG_USAGE_LINES = [
   'Usage:',
   '  /router config                          show config sources + exclude rules',
+  '  /router config set <path> <value>       write one classifier setting (see /router config)',
+  '  /router config unset <path>             remove one classifier setting from the user layer',
   '  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing',
   '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
   '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
@@ -570,15 +575,123 @@ function userExcludeList(
 }
 
 /** `/router config ...` — returns the text to show. */
-function handleConfigCommand(
+/** The command context as far as `/router config` needs it: the model registry. */
+interface ConfigCommandCtx {
+  modelRegistry?: {
+    getAvailable(): Array<{ provider: string; id: string }>;
+    find?(provider: string, id: string): unknown;
+  };
+}
+
+/** The value at a dotted path, or undefined. */
+function valueAt(root: unknown, dotted: string): unknown {
+  let node: unknown = root;
+  for (const part of dotted.split('.')) {
+    if (typeof node !== 'object' || node === null) return undefined;
+    node = (node as Record<string, unknown>)[part];
+  }
+  return node;
+}
+
+/** A value as a reply shows it. */
+function describeValue(value: unknown): string {
+  if (value === undefined) return 'unset';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (Array.isArray(value)) return value.join(', ');
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value)
+    : JSON.stringify(value);
+}
+
+/**
+ * The first model reference in a value that pi's registry does not know, or
+ * undefined. Candidates and cloud models enter only through pi (AGENTS §9).
+ */
+function unknownModelRef(
+  spec: { ref?: 'provider-model' | 'ollama-model' },
+  value: unknown,
+  ctx: ConfigCommandCtx
+): string | undefined {
+  if (spec.ref !== 'provider-model') return undefined;
+  const refs = Array.isArray(value) ? value : [value];
+  for (const ref of refs as string[]) {
+    const slash = ref.indexOf('/');
+    const known = ctx.modelRegistry?.find?.(ref.slice(0, slash), ref.slice(slash + 1));
+    if (!known) return ref;
+  }
+  return undefined;
+}
+
+/**
+ * `/router config set <path> <value>` and `unset <path>` (config plan Phase 2):
+ * one table key, validated against the table, then the authoritative reload.
+ * The reply states the value in effect and the chain the config produces.
+ */
+function setConfigValue(
   rt: CommandDeps,
-  ctx: Parameters<typeof rawDiscoveredRefs>[1],
-  rest: string
+  ctx: ConfigCommandCtx,
+  arg: string,
+  unset: boolean
 ): string {
+  const usage = unset
+    ? 'Usage: /router config unset <path>'
+    : 'Usage: /router config set <path> <value>';
+  const [, keyPath = '', rest = ''] = arg.match(/^(\S*)\s*(.*)$/)!;
+  if (!keyPath || (!unset && !rest.trim())) return usage;
+  const spec = configKey(keyPath);
+  if (!spec) {
+    const near = closestKey(
+      keyPath,
+      CONFIG_KEYS.map((k) => k.path)
+    );
+    return [
+      `Not written: "${keyPath}" is not a documented key${near ? `; did you mean "${near}"?` : ''}.`,
+      usage,
+    ].join('\n');
+  }
+  if (spec.via === 'alias') {
+    return `Not written: ${keyPath} is changed with /router ${spec.alias}.`;
+  }
+  if (spec.via === 'file-only') {
+    return `Not written: ${keyPath} is hand-edited only (in the user layer, router-config.user.json).`;
+  }
+
+  let patch: ConfigPatch;
+  if (unset) {
+    patch = { path: keyPath, unset: true };
+  } else {
+    const parsed = parseConfigValue(spec, rest);
+    if ('error' in parsed) return `Not written: ${parsed.error}.`;
+    const unknown = unknownModelRef(spec, parsed.value, ctx);
+    if (unknown) return `Not written: pi does not know the model "${unknown}".`;
+    patch = { path: keyPath, value: parsed.value };
+  }
+
+  const res = openUserConfigStore().applyDelta({ paths: [patch] });
+  if (!res.ok) return res.error;
+  rt.load();
+  const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
+    (layer) => layer.origin === 'project'
+  );
+  const effective = valueAt(rt.cfg, keyPath);
+  const projectValue = valueAt(project?.config, keyPath);
+  const saved = 'value' in patch ? patch.value : undefined;
+  const headline =
+    projectValue !== undefined && projectValue !== saved
+      ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
+      : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
+  return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
+    '\n'
+  );
+}
+
+function handleConfigCommand(rt: CommandDeps, ctx: ConfigCommandCtx, rest: string): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = (): ConfigLayerView[] =>
     readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
   if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
+  if (sub === 'set') return setConfigValue(rt, ctx, arg, false);
+  if (sub === 'unset') return setConfigValue(rt, ctx, arg, true);
   if (sub === 'compaction') {
     if (arg === 'on') return setCompaction(rt, true);
     if (arg === 'off') return setCompaction(rt, false);

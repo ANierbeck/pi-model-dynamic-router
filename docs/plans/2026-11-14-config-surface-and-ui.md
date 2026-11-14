@@ -1,6 +1,6 @@
 # Config surface and UI: one consistent model, documented once, editable through `/router config`
 
-**Status:** proposed 2026-11-14 — not started. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
+**Status:** in progress since 2026-11-15 — Phases 1 and 2 done (commits `e8491a1`, and the Phase 2 commit); Phases 3–5 open. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
 
 **Related plans (reused, not changed):** `2026-11-08-optional-integrations-config.md` (done 2026-11-12) owns the `integrations.*` contract, the schema and the unknown-key warnings. This plan builds on it. `2026-10-25-laya-sole-classifier.md` owns the Laya release gate. Context budget and compaction belong to Phase 5b of `2026-10-05-task-type-balancing.md`; this plan only exposes the switch that already exists.
 
@@ -8,7 +8,7 @@
 
 ## Problem
 
-1. **Inconsistent placement.** Classifier keys sit on `model_groups.dynamic` (`classifier_model`, `classifier_fallback`, `classifier_no_schema`, `classifier_cloud_model`, `classifier_cloud_candidates`, `classifier_cloud_chain`, `classifier_escalate_low_confidence`; `src/types.ts:175-213`). Logging is top-level (`classifier_log`, `src/types.ts:354`). Laya is under `integrations.laya` (`src/types.ts:360`). Exclude and compaction are top-level or under `context_budget`.
+1. **Inconsistent placement.** Classifier keys sit on `model_groups.dynamic` (`classifier_model`, `classifier_fallback`, `classifier_cloud_model`, `classifier_cloud_candidates`, `classifier_cloud_chain`, `classifier_escalate_low_confidence`; `src/types.ts:175-213`). Logging is top-level (`classifier_log`, `src/types.ts:354`). Laya is under `integrations.laya` (`src/types.ts:360`). Exclude and compaction are top-level or under `context_budget`.
 2. **Misleading names.** `classifier_cloud_chain` reads as an order, but it is an on/off switch. The order is fixed in code: local, then cloud, then static (`classifyViaLlmChain`, `src/content-classifier.ts`). The owner had to ask what `true` means.
 3. **Hand-written, drifting documentation.** Counted on 2026-11-14 with `grep -rl`: `classifier_cloud_chain` appears in 15 files, `classifier_cloud_model` in 12, `classifier_fallback` in 10. The 2026-11-14 docs sync found the README describing the opposite of the code.
 4. **`/router config` edits little.** Its subcommands are `exclude`, `unexclude`, `compaction` and `integration` (usage at `src/commands.ts:267-270`, dispatch in `handleConfigCommand`, `src/commands.ts:585-588`). The user-layer store accepts only `exclude`, `context_budget.enabled` and `integrations` (`UserConfigDelta`, `src/user-config-store.ts:24-31`). No `model_groups` path exists (grep count 0). Every classifier change is a hand edit.
@@ -20,7 +20,7 @@
 
 ### Phase 1 — One model: a description table
 
-1. **Block.** `classifier: { local: { model, fallback, no_schema }, cloud: { enabled, model, candidates, escalate_low_confidence }, log: {…} }`. `classifier_log` moves to `classifier.log`. Laya stays under `integrations.laya` unchanged. `exclude` and `context_budget` keep their place.
+1. **Block.** `classifier: { local: { model, fallback }, cloud: { enabled, model, candidates, escalate_low_confidence }, log: {…} }`. `no_schema` is not a config key: `classifier_no_schema` is a cache field (`cache.classifier_no_schema`, `src/classifier-local-probe.ts`), so the table does not list it. Corrected in the Phase 2 commit. `classifier_log` moves to `classifier.log`. Laya stays under `integrations.laya` unchanged. `exclude` and `context_budget` keep their place.
 2. **One table** `src/config-keys.ts`. For every user-visible key: dotted path, type, allowed values, shipped default, one-line meaning, legacy name, whether the command may set it (and which subcommand), whether the wizard offers it, and a `file-only` flag for keys that stay hand-edited. The schema, the loader, the status line, `/router config`, the wizard and the generated reference (Phase 5) all read this table. A key that is not in the table does not exist.
 3. **Migration.** Old keys map to new paths through the existing `RENAMED_CLASSIFIER_KEYS` mechanism (`src/config-loader.ts:256`) with a warning. Red first: `classifier_cloud_chain: false` on the dynamic group sets `classifier.cloud.enabled: false` and prints the warning.
 4. **Typos are reported.** Unknown keys inside `classifier` produce a warning, as the integrations block does. Red first: `cloud.enable` warns.

@@ -1,106 +1,34 @@
 // /router config integration <name> on|off|<mode> (plan
 // 2026-11-08-optional-integrations-config.md, open step). Driven through the
-// real /router handler, like test/router-config-command.test.ts.
-//
-// Isolation: the user layer lives in a temp PI_CODING_AGENT_DIR, the shipped
-// layer in a temp extDir, the project layer in a temp cwd.
+// real /router handler; the harness is shared with the other /router config
+// tests (test/helpers/config-command-harness.ts).
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { createCommands } from '../src/commands.ts';
-import { loadLayeredConfig } from '../src/config-loader.ts';
-import { Router } from '../src/routing.ts';
-import * as metricsModule from '../src/metrics.ts';
-import type { Cache, Config } from '../src/types.ts';
-import { emptyCache } from './helpers/stream-fixtures.ts';
+import { useConfigCommandHarness } from './helpers/config-command-harness.ts';
 
-let extDir: string;
-let agentDir: string;
+const harness = useConfigCommandHarness('integ-cmd');
+const { setup } = harness;
+const readUser = (): Record<string, any> => harness.readUser();
+
 let cwd: string;
 let userFile: string;
-let prevAgentDir: string | undefined;
 
-function writeShipped(): void {
-  fs.writeFileSync(
-    path.join(extDir, 'router-config.json'),
-    JSON.stringify({
-      model_groups: {
-        trivial: { description: 'Trivial', method: 'roundrobin', fallback_groups: [] },
-      },
-      providers: {},
-      model_metrics: {},
-      gdpval_builtin: {},
-      integrations: { laya: { enabled: false } },
-    })
-  );
-}
-
-function setup() {
-  const cache: Cache = { ...emptyCache(), models_cached: '' } as any;
-  let cfg!: Config;
-  let router!: Router;
-  const load = vi.fn(() => {
-    cfg = loadLayeredConfig(extDir, cwd).config;
-    router = new Router(cfg, cache, new Map());
-    router.setSessionCtx(rt.sessionCtx);
-    metricsModule.setConfig(cfg);
-    metricsModule.setCache(cache);
-    metricsModule.setModelMap({}, []);
-  });
-  let handler!: (args: string, ctx: any) => Promise<void>;
-  const rt: any = {
-    get cfg() {
-      return cfg;
-    },
-    get router() {
-      return router;
-    },
-    cache,
-    cfgPath: path.join(extDir, 'router-config.json'),
-    load,
-    sessionCtx: null as any,
-    rateLimitManager: { getLimits: () => new Map(), listLimits: () => [] },
-    allDiscoveredRefs: () => router.allDiscoveredRefs(),
-    getTopModels: () => ({ models: [], total: 0 }),
-    resolve: (name: string) => router.resolve(name),
-    pi: {
-      registerCommand: (_name: string, def: any) => {
-        handler = def.handler;
-      },
-    },
-  };
-  createCommands(rt);
-  const notify = vi.fn();
-  const ctx = { modelRegistry: { find: () => undefined, getAvailable: () => [] }, ui: { notify } };
-  rt.sessionCtx = ctx;
-  load();
-  const run = async (args: string): Promise<string> => {
-    notify.mockClear();
-    await handler(args, ctx);
-    return notify.mock.calls.map((c) => String(c[0])).join('\n');
-  };
-  return { rt, run };
-}
-
-const readUser = (): Record<string, any> => JSON.parse(fs.readFileSync(userFile, 'utf-8'));
+const INTEGRATION_SHIPPED = {
+  model_groups: {
+    trivial: { description: 'Trivial', method: 'roundrobin', fallback_groups: [] },
+  },
+  providers: {},
+  model_metrics: {},
+  gdpval_builtin: {},
+  integrations: { laya: { enabled: false } },
+};
 
 beforeEach(() => {
-  extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'integ-cmd-ext-'));
-  agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'integ-cmd-agent-'));
-  cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'integ-cmd-cwd-'));
-  userFile = path.join(agentDir, 'router-config.user.json');
-  prevAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
-  vi.spyOn(process, 'cwd').mockReturnValue(cwd);
-  writeShipped();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+  ({ cwd, userFile } = harness.paths);
+  harness.writeShipped(INTEGRATION_SHIPPED);
 });
 
 describe('/router config integration', () => {

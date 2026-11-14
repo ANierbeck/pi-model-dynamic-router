@@ -11,6 +11,13 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Added — `/router config set|unset` writes validated classifier settings (config plan Phases 1–2)
+
+- **One `classifier` block.** The classifier keys moved off the `dynamic` model group and out of the top-level `classifier_log` into `classifier.local`, `classifier.cloud` and `classifier.log`. The pre-2.0 names are still read for one release, with a warning that names both spellings; a value already set at the new path wins.
+- **A typo in the block is reported, not applied** (`classifier.cloud.enable` → "did you mean classifier.cloud.enabled?").
+- **`/router config set <path> <value>` and `unset <path>`** write the keys the description table (`src/config-keys.ts`) marks as settable. A candidate or cloud model that pi does not know is refused; the reply states the value in effect, flags a project-layer override and prints the classifier chain (`src/classifier-chain.ts`).
+- Keys with an alias (`exclude`, `compaction`, `integration laya`) and hand-edited keys (`classifier.log.store_text`, the log size and retention) are refused with the command or the file to use.
+
 ### Changed — documentation now matches the shipped behaviour (docs sync 2026-11-14)
 
 - **Classifier chain runs local first (ADR 0032, owner decision 2026-11-14).** The cloud chain used to run before the local Ollama chain, so prompt text went to a cloud model on every prompt. Now a usable local answer is final, and the cloud chain runs only when the local leg produced no answer. `classifier_cloud_chain` stays on in the shipped `dynamic` group; set it to `false` there in `router-config.user.json` to keep prompts on the machine. The `/router` status line shows the same order.

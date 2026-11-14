@@ -26,7 +26,7 @@ import { warnLog } from './logger.ts';
 import { LAYA_SPEC } from './laya-classifier.ts';
 import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
-import { isPlainObject, textOf } from './utils.ts';
+import { deleteLeaf, isPlainObject, textOf } from './utils.ts';
 import { CONFIG_KEYS, suggestClassifierKey, unknownClassifierKeys } from './config-keys.ts';
 import { piAgentDir } from './agent-dir.ts';
 
@@ -335,22 +335,6 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
       );
       deleteLeaf(bag.classifier, rel);
     }
-  }
-}
-
-/** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
-function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
-  const parts = dotted.split('.');
-  const chain: Array<Record<string, unknown>> = [root];
-  for (const part of parts.slice(0, -1)) {
-    const next = chain[chain.length - 1][part];
-    if (!isPlainObject(next)) return;
-    chain.push(next);
-  }
-  delete chain[chain.length - 1][parts[parts.length - 1]];
-  for (let i = chain.length - 1; i > 0; i--) {
-    if (Object.keys(chain[i]).length > 0) break;
-    delete chain[i - 1][parts[i - 1]];
   }
 }
 

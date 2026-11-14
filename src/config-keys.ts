@@ -46,6 +46,12 @@ export interface ConfigKeySpec {
   readonly alias?: string;
   /** Offered by the guided `/router config` menu (Phase 4). */
   readonly wizard?: boolean;
+  /**
+   * For model references: the shape a value must have. `provider-model` is
+   * `provider/id`; `ollama-model` is `ollama/<name>`. Whether pi knows the
+   * model is checked by the command, not here (the table has no registry).
+   */
+  readonly ref?: 'provider-model' | 'ollama-model';
 }
 
 export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
@@ -57,6 +63,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
       'Pinned local classifier model (`ollama/<name>:<tag>`). Unset: the scan probe derives it.',
     legacy: ['classifier_model'],
     via: 'set',
+    ref: 'ollama-model',
   },
   {
     path: 'classifier.local.fallback',
@@ -65,6 +72,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     meaning: 'Pinned second local classifier model, tried when the primary gives no answer.',
     legacy: ['classifier_fallback'],
     via: 'set',
+    ref: 'ollama-model',
   },
   {
     path: 'classifier.cloud.enabled',
@@ -84,6 +92,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
       'Pinned cloud classifier (`provider/id`), tried first, before the probe-verified list.',
     legacy: ['classifier_cloud_model'],
     via: 'set',
+    ref: 'provider-model',
   },
   {
     path: 'classifier.cloud.candidates',
@@ -94,6 +103,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     legacy: ['classifier_cloud_candidates'],
     via: 'set',
     wizard: true,
+    ref: 'provider-model',
   },
   {
     path: 'classifier.cloud.escalate_low_confidence',
@@ -247,4 +257,80 @@ export function suggestClassifierKey(relativePath: string): string | undefined {
     k.path.slice('classifier.'.length)
   );
   return closestKey(relativePath, known);
+}
+
+const REF_SHAPE: Record<NonNullable<ConfigKeySpec['ref']>, { re: RegExp; expected: string }> = {
+  'provider-model': { re: /^[A-Za-z0-9._-]+\/[^\s/]+$/, expected: 'provider/id' },
+  'ollama-model': { re: /^ollama\/[^\s/]+$/, expected: 'ollama/<name>' },
+};
+
+/**
+ * Why a value cannot be written to the key, or undefined when it can. Checks
+ * the kind, the allowed words and the reference shape; never whether pi knows
+ * a model (that needs the registry and is the command's job).
+ */
+export function configValueProblem(spec: ConfigKeySpec, value: unknown): string | undefined {
+  const refProblem = (ref: unknown): string | undefined => {
+    if (!spec.ref) return undefined;
+    const shape = REF_SHAPE[spec.ref];
+    if (typeof ref === 'string' && shape.re.test(ref)) return undefined;
+    return `"${String(ref)}" is not a model reference (expected ${shape.expected})`;
+  };
+  switch (spec.kind) {
+    case 'boolean':
+      return typeof value === 'boolean' ? undefined : 'the value must be on or off';
+    case 'enum':
+      return typeof value === 'string' && spec.values?.includes(value)
+        ? undefined
+        : `the value must be one of ${(spec.values ?? []).join(', ')}`;
+    case 'number':
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0
+        ? undefined
+        : 'the value must be a number of zero or more';
+    case 'string':
+      if (typeof value !== 'string' || value === '') return 'the value must not be empty';
+      return refProblem(value);
+    case 'string-list':
+      if (!Array.isArray(value) || value.length === 0)
+        return 'the value must be a non-empty list (use unset to clear it)';
+      for (const entry of value) {
+        const problem =
+          typeof entry === 'string' ? refProblem(entry) : 'the list must hold strings';
+        if (problem) return problem;
+      }
+      return undefined;
+  }
+}
+
+/**
+ * Turns the words typed after `/router config set <path>` into the value the
+ * key takes: `on`/`off` for switches, a comma-separated list for lists. Returns
+ * an error message (without a "Not written" prefix) when the words do not fit.
+ */
+export function parseConfigValue(
+  spec: ConfigKeySpec,
+  raw: string
+): { value: unknown } | { error: string } {
+  const text = raw.trim();
+  let value: unknown;
+  switch (spec.kind) {
+    case 'boolean':
+      if (text === 'on') value = true;
+      else if (text === 'off') value = false;
+      else return { error: `"${text}" is not on or off` };
+      break;
+    case 'number':
+      value = Number(text);
+      break;
+    case 'string-list':
+      value = text
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      break;
+    default:
+      value = text;
+  }
+  const problem = configValueProblem(spec, value);
+  return problem ? { error: problem } : { value };
 }
