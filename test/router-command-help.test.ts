@@ -28,8 +28,10 @@ describe('/router command description', () => {
 
   it.each([
     ['classifier [days]', 'classifier [days]'],
-    ['config compaction on|off', 'compaction on|off'],
-    ['config integration <name> on|off|<mode>', 'integration <name> on|off|<mode>'],
+    ['config set', 'set'],
+    ['config classifier', 'classifier'],
+    ['config integrations', 'integrations'],
+    ['config compaction', 'compaction'],
     ['config exclude', 'exclude'],
     ['blocklist clear', 'blocklist [clear [ref]]'],
   ])('names the %s subcommand', (_label, needle) => {
@@ -101,6 +103,25 @@ describe('/router subcommand list', () => {
     for (const sub of SUBCOMMANDS) {
       expect(values).toContain(sub);
       expect(description).toContain(sub);
+    }
+  });
+});
+
+describe('/router config subcommands (config plan Phase 3)', () => {
+  it('the bare overview lists each config subcommand with its usage, not one bracketed list', async () => {
+    const reply = await routerReply('');
+    expect(reply).toContain('/router config set <path> <value>');
+    expect(reply).toContain('/router config unset <path>');
+    expect(reply).toContain('/router config classifier');
+    expect(reply).toContain('/router config integrations');
+  });
+
+  it('the completion list offers the config subcommands the usage names', () => {
+    const values = routerCommand()
+      .complete('config ')!
+      .map((c) => c.value);
+    for (const sub of ['config set', 'config unset', 'config classifier', 'config integrations']) {
+      expect(values).toContain(sub);
     }
   });
 });

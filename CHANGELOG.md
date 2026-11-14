@@ -16,6 +16,7 @@ without the owner's explicit release approval).
 - **One `classifier` block.** The classifier keys moved off the `dynamic` model group and out of the top-level `classifier_log` into `classifier.local`, `classifier.cloud` and `classifier.log`. The pre-2.0 names are still read for one release, with a warning that names both spellings; a value already set at the new path wins.
 - **A typo in the block is reported, not applied** (`classifier.cloud.enable` → "did you mean classifier.cloud.enabled?").
 - **`/router config set <path> <value>` and `unset <path>`** write the keys the description table (`src/config-keys.ts`) marks as settable. A candidate or cloud model that pi does not know is refused; the reply states the value in effect, flags a project-layer override and prints the classifier chain (`src/classifier-chain.ts`).
+- **`/router config` overview and block views.** The overview shows the classifier chain and one line per integration. `/router config classifier` and `/router config integrations` list every table key of the block with the value in effect, the shipped default and how it is changed. The usage, the `/router` command list and the autocompletion come from one subcommand table.
 - Keys with an alias (`exclude`, `compaction`, `integration laya`) and hand-edited keys (`classifier.log.store_text`, the log size and retention) are refused with the command or the file to use.
 
 ### Changed — documentation now matches the shipped behaviour (docs sync 2026-11-14)

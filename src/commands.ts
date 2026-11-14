@@ -263,16 +263,18 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   return lines;
 }
 
-const CONFIG_USAGE_LINES = [
-  'Usage:',
-  '  /router config                          show config sources + exclude rules',
-  '  /router config set <path> <value>       write one classifier setting (see /router config)',
-  '  /router config unset <path>             remove one classifier setting from the user layer',
-  '  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing',
-  '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
-  '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
-  '  /router config integration <name> on|off|<mode>  switch an optional integration (e.g. laya)',
-];
+/** Blocks `/router config <block>` shows in detail (plan Phase 3). */
+const CONFIG_BLOCKS = ['classifier', 'integrations'] as const;
+
+/** Reference lines for `/router config` and its usage: one table, shared with the completions. */
+function configUsageLines(): string[] {
+  const width = Math.max(...CONFIG_SUBCOMMANDS.map((s) => s.usage.length)) + 2;
+  return [
+    'Usage:',
+    '  /router config                          show config sources, the chain, integrations, exclude rules',
+    ...CONFIG_SUBCOMMANDS.map((s) => `  /router ${s.usage.padEnd(width)}${s.summary}`),
+  ];
+}
 
 /**
  * Cache-aware compaction state line (Phase 5b, implemented): the master
@@ -437,7 +439,20 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
     }
   }
   if (!any) lines.push('  (none)');
-  lines.push('', compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES);
+  lines.push(
+    '',
+    'Classifier chain:',
+    ...formatClassifierChain(describeClassifierChain(rt.cfg)),
+    '',
+    'Integrations:',
+    ...formatIntegrationLines({ ...(rt.cfg.integrations ?? {}) }, INTEGRATION_SPECS).map(
+      (line) => `  ${line}`
+    ),
+    '',
+    compactionStateLine(rt.cfg),
+    '',
+    ...configUsageLines()
+  );
   lines.push(
     'Shipped and project entries cannot be removed with unexclude — only user-layer entries can.'
   );
@@ -461,7 +476,7 @@ function excludePattern(
   ctx: Parameters<typeof rawDiscoveredRefs>[1],
   pattern: string
 ): string {
-  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  if (!pattern) return ['Missing pattern.', '', ...configUsageLines()].join('\n');
   const invalid = validateExcludePattern(pattern);
   if (invalid) return invalid;
 
@@ -521,7 +536,7 @@ function coveringProviderRuleKind(
 
 /** `/router config unexclude <pattern>` — user-layer entries only (D4). */
 function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: string): string {
-  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  if (!pattern) return ['Missing pattern.', '', ...configUsageLines()].join('\n');
   const user = layers.find((l) => l.origin === 'user')!;
   if (user.error) return `Not written — ${user.error}; fix or remove it first.`;
   const others = layers.filter(
@@ -685,6 +700,37 @@ function setConfigValue(
   );
 }
 
+const CONFIG_BLOCK_TITLES: Record<(typeof CONFIG_BLOCKS)[number], string> = {
+  classifier: 'which models classify a prompt, and whether cloud models may see it',
+  integrations: 'optional integrations; each is switched with the command shown',
+};
+
+/**
+ * `/router config classifier|integrations`: every table key of the block, the
+ * value in effect, the shipped default and how the key is changed. The
+ * classifier view ends with the chain the settings produce.
+ */
+function configBlockView(rt: CommandDeps, block: (typeof CONFIG_BLOCKS)[number]): string {
+  const specs = CONFIG_KEYS.filter((k) => k.path.startsWith(`${block}.`));
+  const width = Math.max(...specs.map((s) => s.path.length)) + 2;
+  const lines = [`${block} — ${CONFIG_BLOCK_TITLES[block]}`, ''];
+  for (const spec of specs) {
+    const how =
+      spec.via === 'set'
+        ? '/router config set'
+        : spec.via === 'alias'
+          ? `/router ${spec.alias}`
+          : 'hand-edit (user layer)';
+    lines.push(
+      `  ${spec.path.padEnd(width)}${describeValue(valueAt(rt.cfg, spec.path)).padEnd(12)}[shipped: ${spec.shipped}]  ${how}`
+    );
+  }
+  if (block === 'classifier') {
+    lines.push('', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg)));
+  }
+  return lines.join('\n');
+}
+
 function handleConfigCommand(rt: CommandDeps, ctx: ConfigCommandCtx, rest: string): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = (): ConfigLayerView[] =>
@@ -692,15 +738,18 @@ function handleConfigCommand(rt: CommandDeps, ctx: ConfigCommandCtx, rest: strin
   if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
   if (sub === 'set') return setConfigValue(rt, ctx, arg, false);
   if (sub === 'unset') return setConfigValue(rt, ctx, arg, true);
+  if ((CONFIG_BLOCKS as readonly string[]).includes(sub)) {
+    return configBlockView(rt, sub as (typeof CONFIG_BLOCKS)[number]);
+  }
   if (sub === 'compaction') {
     if (arg === 'on') return setCompaction(rt, true);
     if (arg === 'off') return setCompaction(rt, false);
-    return [compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES].join('\n');
+    return [compactionStateLine(rt.cfg), '', ...configUsageLines()].join('\n');
   }
   if (sub === 'integration') return setIntegration(rt, arg);
   if (sub === 'exclude') return excludePattern(rt, ctx, arg);
   if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
-  return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
+  return ['Unknown config subcommand: ' + sub, '', ...configUsageLines()].join('\n');
 }
 
 interface RouterSubcommand {
@@ -712,6 +761,8 @@ interface RouterSubcommand {
   summary: string;
   /** Autocomplete entries for this subcommand. */
   completions: AutocompleteItem[];
+  /** Nested subcommands listed under this one (`config`). */
+  children?: readonly RouterSubcommand[];
 }
 
 /**
@@ -720,6 +771,109 @@ interface RouterSubcommand {
  * and the unknown-subcommand reply, so the four cannot drift apart. Handling
  * stays in the handler; test/router-command-help.test.ts pins both sides.
  */
+/** `/router config …` subcommands. The overview, the usage and the completions are generated from this list. */
+const CONFIG_SUBCOMMANDS: readonly RouterSubcommand[] = [
+  {
+    name: 'set',
+    usage: 'config set <path> <value>',
+    summary: 'Write one classifier setting to the user config (validated, applies now)',
+    completions: [
+      {
+        value: 'config set',
+        label: 'config set <path> <value>',
+        description:
+          'Write one classifier setting, checked against the key table, to the user config',
+      },
+    ],
+  },
+  {
+    name: 'unset',
+    usage: 'config unset <path>',
+    summary: 'Remove one classifier setting from the user config',
+    completions: [
+      {
+        value: 'config unset',
+        label: 'config unset <path>',
+        description: 'Remove one classifier setting from the user config',
+      },
+    ],
+  },
+  {
+    name: 'classifier',
+    usage: 'config classifier',
+    summary: 'Classifier settings in effect, how each is changed, and the chain they produce',
+    completions: [
+      {
+        value: 'config classifier',
+        label: 'config classifier',
+        description: 'Show the classifier settings in effect and the chain they produce',
+      },
+    ],
+  },
+  {
+    name: 'integrations',
+    usage: 'config integrations',
+    summary: 'Integration settings in effect and the command that switches each',
+    completions: [
+      {
+        value: 'config integrations',
+        label: 'config integrations',
+        description: 'Show the integration settings in effect and their switch commands',
+      },
+    ],
+  },
+  {
+    name: 'exclude',
+    usage: 'config exclude <ref|glob|provider>',
+    summary: 'Exclude a model, glob or provider from routing (user config, applies now)',
+    completions: [
+      {
+        value: 'config exclude',
+        label: 'config exclude <ref|glob|provider>',
+        description:
+          'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
+      },
+    ],
+  },
+  {
+    name: 'unexclude',
+    usage: 'config unexclude <ref|glob|provider>',
+    summary: 'Remove an exclusion from the user config',
+    completions: [
+      {
+        value: 'config unexclude',
+        label: 'config unexclude <ref|glob|provider>',
+        description: 'Remove an exclusion from the user config',
+      },
+    ],
+  },
+  {
+    name: 'integration',
+    usage: 'config integration <name> on|off|<mode>',
+    summary: 'Switch an optional integration (e.g. laya) on, off or to a mode',
+    completions: [
+      {
+        value: 'config integration',
+        label: 'config integration <name> on|off|<mode>',
+        description:
+          'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
+      },
+    ],
+  },
+  {
+    name: 'compaction',
+    usage: 'config compaction on|off',
+    summary: 'Cache-aware auto-compaction switch (Phase 5b, opt-in)',
+    completions: [
+      {
+        value: 'config compaction',
+        label: 'config compaction on|off',
+        description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
+      },
+    ],
+  },
+];
+
 const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
   {
     name: 'scan',
@@ -814,39 +968,18 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
   },
   {
     name: 'config',
-    usage:
-      'config [exclude|unexclude <ref|glob|provider>|compaction on|off|integration <name> on|off|<mode>]',
-    summary: 'Config sources and exclude rules; edit the user config',
+    usage: `config [${CONFIG_SUBCOMMANDS.map((c) => c.name).join('|')}]`,
+    summary:
+      'Config overview, classifier and integration settings, exclude rules; edit the user config',
     completions: [
       {
         value: 'config',
         label: 'config',
-        description:
-          'Show config sources, exclude rules (with origin) and how many models each matches',
+        description: 'Show config sources, the classifier chain, integrations and exclude rules',
       },
-      {
-        value: 'config exclude',
-        label: 'config exclude <ref|glob|provider>',
-        description:
-          'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
-      },
-      {
-        value: 'config unexclude',
-        label: 'config unexclude <ref|glob|provider>',
-        description: 'Remove an exclusion from the user config',
-      },
-      {
-        value: 'config integration',
-        label: 'config integration <name> on|off|<mode>',
-        description:
-          'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
-      },
-      {
-        value: 'config compaction',
-        label: 'config compaction on|off',
-        description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
-      },
+      ...CONFIG_SUBCOMMANDS.flatMap((c) => c.completions),
     ],
+    children: CONFIG_SUBCOMMANDS,
   },
 ];
 
@@ -859,7 +992,15 @@ function routerCommandListLines(): string[] {
   const rows: Array<[string, string]> = [
     ['/router', 'This overview'],
     ['/router <group>', "One group's ranked candidates"],
-    ...ROUTER_SUBCOMMANDS.map((s): [string, string] => [`/router ${s.usage}`, s.summary]),
+    ...ROUTER_SUBCOMMANDS.flatMap(
+      (s): Array<[string, string]> =>
+        s.children
+          ? [
+              [`/router ${s.name}`, s.summary],
+              ...s.children.map((c): [string, string] => [`/router ${c.usage}`, c.summary]),
+            ]
+          : [[`/router ${s.usage}`, s.summary]]
+    ),
   ];
   return ['Commands:', ...rows.map(([usage, summary]) => `  ${usage}\n      ${summary}`)];
 }

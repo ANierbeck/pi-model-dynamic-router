@@ -1,6 +1,6 @@
 # Config surface and UI: one consistent model, documented once, editable through `/router config`
 
-**Status:** in progress since 2026-11-15 — Phases 1 and 2 done (commits `e8491a1`, and the Phase 2 commit); Phases 3–5 open. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
+**Status:** in progress since 2026-11-15 — Phases 1–3 done (commits `e8491a1`, `4020910`, and the Phase 3 commit); Phases 4–5 open. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
 
 **Related plans (reused, not changed):** `2026-11-08-optional-integrations-config.md` (done 2026-11-12) owns the `integrations.*` contract, the schema and the unknown-key warnings. This plan builds on it. `2026-10-25-laya-sole-classifier.md` owns the Laya release gate. Context budget and compaction belong to Phase 5b of `2026-10-05-task-type-balancing.md`; this plan only exposes the switch that already exists.
 
