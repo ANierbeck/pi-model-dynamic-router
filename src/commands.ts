@@ -58,7 +58,7 @@ import {
   type ConfigLayerView,
   type ConfigPatch,
 } from './user-config-store.ts';
-import { CONFIG_KEYS, configKey, parseConfigValue } from './config-keys.ts';
+import { CONFIG_KEYS, configKey, parseConfigValue, type ConfigKeySpec } from './config-keys.ts';
 import { describeClassifierChain, formatClassifierChain } from './classifier-chain.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
@@ -637,10 +637,49 @@ function unknownModelRef(
   return undefined;
 }
 
+/** A table write ready for the store, or the refusal text that says why not. */
+type PreparedPatch = { patch: ConfigPatch } | { refusal: string };
+
+/** Parses and checks the words of one set; the same check for the command and the menu. */
+function setPatchFor(
+  spec: ConfigKeySpec,
+  keyPath: string,
+  raw: string,
+  ctx: ConfigCommandCtx
+): PreparedPatch {
+  const parsed = parseConfigValue(spec, raw);
+  if ('error' in parsed) return { refusal: `Not written: ${parsed.error}.` };
+  const unknown = unknownModelRef(spec, parsed.value, ctx);
+  if (unknown) return { refusal: `Not written: pi does not know the model "${unknown}".` };
+  return { patch: { path: keyPath, value: parsed.value } };
+}
+
+/**
+ * Writes one table patch to the user layer, reloads, and replies with the
+ * value in effect, a project-layer override when there is one, and the chain.
+ */
+function commitConfigPatch(rt: CommandDeps, keyPath: string, patch: ConfigPatch): string {
+  const res = openUserConfigStore().applyDelta({ paths: [patch] });
+  if (!res.ok) return res.error;
+  rt.load();
+  const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
+    (layer) => layer.origin === 'project'
+  );
+  const effective = valueAt(rt.cfg, keyPath);
+  const projectValue = valueAt(project?.config, keyPath);
+  const saved = 'value' in patch ? patch.value : undefined;
+  const headline =
+    projectValue !== undefined && projectValue !== saved
+      ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
+      : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
+  return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
+    '\n'
+  );
+}
+
 /**
  * `/router config set <path> <value>` and `unset <path>` (config plan Phase 2):
  * one table key, validated against the table, then the authoritative reload.
- * The reply states the value in effect and the chain the config produces.
  */
 function setConfigValue(
   rt: CommandDeps,
@@ -670,34 +709,10 @@ function setConfigValue(
   if (spec.via === 'file-only') {
     return `Not written: ${keyPath} is hand-edited only (in the user layer, router-config.user.json).`;
   }
-
-  let patch: ConfigPatch;
-  if (unset) {
-    patch = { path: keyPath, unset: true };
-  } else {
-    const parsed = parseConfigValue(spec, rest);
-    if ('error' in parsed) return `Not written: ${parsed.error}.`;
-    const unknown = unknownModelRef(spec, parsed.value, ctx);
-    if (unknown) return `Not written: pi does not know the model "${unknown}".`;
-    patch = { path: keyPath, value: parsed.value };
-  }
-
-  const res = openUserConfigStore().applyDelta({ paths: [patch] });
-  if (!res.ok) return res.error;
-  rt.load();
-  const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
-    (layer) => layer.origin === 'project'
-  );
-  const effective = valueAt(rt.cfg, keyPath);
-  const projectValue = valueAt(project?.config, keyPath);
-  const saved = 'value' in patch ? patch.value : undefined;
-  const headline =
-    projectValue !== undefined && projectValue !== saved
-      ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
-      : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
-  return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
-    '\n'
-  );
+  if (unset) return commitConfigPatch(rt, keyPath, { path: keyPath, unset: true });
+  const prepared = setPatchFor(spec, keyPath, rest, ctx);
+  if ('refusal' in prepared) return prepared.refusal;
+  return commitConfigPatch(rt, keyPath, prepared.patch);
 }
 
 const CONFIG_BLOCK_TITLES: Record<(typeof CONFIG_BLOCKS)[number], string> = {
@@ -731,11 +746,111 @@ function configBlockView(rt: CommandDeps, block: (typeof CONFIG_BLOCKS)[number])
   return lines.join('\n');
 }
 
+/** The dialogs the guided menu uses: the subset of pi's UI context it needs. */
+interface WizardUi {
+  select(title: string, options: string[]): Promise<string | undefined>;
+  confirm(title: string, message: string): Promise<boolean>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
+  notify(message: string, type?: 'info' | 'warning' | 'error'): void;
+}
+
+type WizardCtx = ConfigCommandCtx & { ui: WizardUi };
+
+const WIZARD_SHOW = 'Show the overview';
+const WIZARD_HAND = 'Hand-edited keys (file only)';
+const WIZARD_DONE = 'Done';
+/** The menu loops until Done or a cancel; the bound stops a script that never answers Done. */
+const WIZARD_MAX_ROUNDS = 25;
+const CONFIG_NO_MENU_NOTE =
+  'The guided menu needs the terminal (TUI mode). Without it, change a setting with /router config set <path> <value> or /router config unset <path>.';
+
+function handEditLines(): string[] {
+  return [
+    'Hand-edited keys (change them in the user layer, router-config.user.json):',
+    ...CONFIG_KEYS.filter((k) => k.via === 'file-only').map((k) => `  ${k.path} — ${k.meaning}`),
+  ];
+}
+
+/**
+ * One key of the menu. Switches ask yes/no, enumerations offer their values,
+ * lists and model refs take text. Integration keys go through the integration
+ * switch, the same write `/router config integration` makes.
+ */
+async function editWizardKey(
+  rt: CommandDeps,
+  ctx: WizardCtx,
+  spec: ConfigKeySpec
+): Promise<string | undefined> {
+  const integration = spec.path.match(/^integrations\.([a-z_]+)\.(enabled|mode)$/);
+  const viaIntegration = spec.via === 'alias' && integration !== null;
+  if (spec.kind === 'boolean') {
+    const current = valueAt(rt.cfg, spec.path) === true;
+    const target = !current;
+    const word = target ? 'on' : 'off';
+    const ok = await ctx.ui.confirm(
+      'Router config',
+      `Set ${spec.path} to ${word}? (now ${current ? 'on' : 'off'})`
+    );
+    if (!ok) return undefined;
+    return viaIntegration
+      ? setIntegration(rt, `${integration[1]} ${word}`)
+      : commitConfigPatch(rt, spec.path, { path: spec.path, value: target });
+  }
+  if (spec.kind === 'enum') {
+    const value = await ctx.ui.select(spec.path, [...(spec.values ?? [])]);
+    if (value === undefined) return undefined;
+    return viaIntegration
+      ? setIntegration(rt, `${integration[1]} ${value}`)
+      : commitConfigPatch(rt, spec.path, { path: spec.path, value });
+  }
+  if (spec.via !== 'set') return undefined;
+  const placeholder =
+    spec.kind === 'string-list'
+      ? 'comma-separated provider/id list'
+      : spec.ref === 'ollama-model'
+        ? 'ollama/<name>'
+        : 'provider/id';
+  const text = await ctx.ui.input(spec.path, placeholder);
+  if (text === undefined || text.trim() === '') return undefined;
+  const prepared = setPatchFor(spec, spec.path, text, ctx);
+  if ('refusal' in prepared) return prepared.refusal;
+  return commitConfigPatch(rt, spec.path, prepared.patch);
+}
+
+/**
+ * `/router config` in TUI mode: pick a wizard key, answer its question, and
+ * come back to the menu with the new value. Offers only the keys the table
+ * marks `wizard`; file-only keys are listed with their meaning, not edited.
+ */
+async function runConfigWizard(rt: CommandDeps, ctx: WizardCtx): Promise<void> {
+  for (let round = 0; round < WIZARD_MAX_ROUNDS; round++) {
+    const byLabel = new Map<string, ConfigKeySpec>();
+    for (const spec of CONFIG_KEYS.filter((k) => k.wizard === true)) {
+      byLabel.set(`${spec.path} — ${describeValue(valueAt(rt.cfg, spec.path))}`, spec);
+    }
+    const options = [WIZARD_SHOW, ...byLabel.keys(), WIZARD_HAND, WIZARD_DONE];
+    const choice = await ctx.ui.select('Router config — choose a setting to change', options);
+    if (choice === undefined || choice === WIZARD_DONE) return;
+    if (choice === WIZARD_SHOW) {
+      ctx.ui.notify(handleConfigCommand(rt, ctx, 'show'), 'info');
+      continue;
+    }
+    if (choice === WIZARD_HAND) {
+      ctx.ui.notify(handEditLines().join('\n'), 'info');
+      continue;
+    }
+    const spec = byLabel.get(choice);
+    if (!spec) return;
+    const reply = await editWizardKey(rt, ctx, spec);
+    if (reply) ctx.ui.notify(reply, reply.startsWith('Not written') ? 'warning' : 'info');
+  }
+}
+
 function handleConfigCommand(rt: CommandDeps, ctx: ConfigCommandCtx, rest: string): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = (): ConfigLayerView[] =>
     readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
-  if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
+  if (!sub || sub === 'show') return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
   if (sub === 'set') return setConfigValue(rt, ctx, arg, false);
   if (sub === 'unset') return setConfigValue(rt, ctx, arg, true);
   if ((CONFIG_BLOCKS as readonly string[]).includes(sub)) {
@@ -773,6 +888,18 @@ interface RouterSubcommand {
  */
 /** `/router config …` subcommands. The overview, the usage and the completions are generated from this list. */
 const CONFIG_SUBCOMMANDS: readonly RouterSubcommand[] = [
+  {
+    name: 'show',
+    usage: 'config show',
+    summary: 'Config overview: sources, chain, integrations, exclude rules (every mode)',
+    completions: [
+      {
+        value: 'config show',
+        label: 'config show',
+        description: 'Show the config overview; works in every run mode',
+      },
+    ],
+  },
   {
     name: 'set',
     usage: 'config set <path> <value>',
@@ -1060,7 +1187,13 @@ export function createCommands(rt: CommandDeps): void {
           }
 
           if (arg === 'config' || arg?.startsWith('config ')) {
-            ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
+            const sub = arg.slice('config'.length).trim();
+            if (!sub && ctx.mode === 'tui') {
+              await runConfigWizard(rt, ctx);
+              return;
+            }
+            const reply = handleConfigCommand(rt, ctx, sub);
+            ctx.ui.notify(!sub ? [reply, '', CONFIG_NO_MENU_NOTE].join('\n') : reply, 'info');
             return;
           }
 

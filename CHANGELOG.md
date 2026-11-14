@@ -17,6 +17,7 @@ without the owner's explicit release approval).
 - **A typo in the block is reported, not applied** (`classifier.cloud.enable` → "did you mean classifier.cloud.enabled?").
 - **`/router config set <path> <value>` and `unset <path>`** write the keys the description table (`src/config-keys.ts`) marks as settable. A candidate or cloud model that pi does not know is refused; the reply states the value in effect, flags a project-layer override and prints the classifier chain (`src/classifier-chain.ts`).
 - **`/router config` overview and block views.** The overview shows the classifier chain and one line per integration. `/router config classifier` and `/router config integrations` list every table key of the block with the value in effect, the shipped default and how it is changed. The usage, the `/router` command list and the autocompletion come from one subcommand table.
+- **Guided menu in TUI mode.** A bare `/router config` opens a menu of the settings the table marks `wizard`: switches ask yes or no, enumerations offer their values, model lists take text, and every answer is checked by the same code as `/router config set`. Print and RPC mode never open a dialog; they print the overview and say why. `/router config show` prints the overview in every mode.
 - Keys with an alias (`exclude`, `compaction`, `integration laya`) and hand-edited keys (`classifier.log.store_text`, the log size and retention) are refused with the command or the file to use.
 
 ### Changed — documentation now matches the shipped behaviour (docs sync 2026-11-14)

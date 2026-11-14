@@ -4,7 +4,7 @@
 // registered when the helper is called (inside a describe block), so the
 // directories exist before a test file's own beforeEach runs.
 
-import { beforeEach, afterEach, vi } from 'vitest';
+import { beforeEach, afterEach, vi, type Mock } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -22,6 +22,14 @@ export interface ConfigCommandPaths {
   userFile: string;
 }
 
+export interface SetupOptions {
+  knownModels?: string[];
+  mode?: 'tui' | 'rpc' | 'print';
+  select?: (title: string, options: string[]) => Promise<string | undefined>;
+  confirm?: (title: string, message: string) => Promise<boolean>;
+  input?: (title: string, placeholder?: string) => Promise<string | undefined>;
+}
+
 export interface ConfigCommandHarness {
   paths: ConfigCommandPaths;
   /** Writes the shipped layer; the default is a minimal, valid config. */
@@ -29,11 +37,14 @@ export interface ConfigCommandHarness {
   readUser: () => Record<string, any>;
   /**
    * Builds the /router handler and runs it with `args`. `knownModels` are the
-   * refs pi's registry knows (`find` returns a model for them).
+   * refs pi's registry knows (`find` returns a model for them). `mode` is the
+   * run mode pi reports (`tui`, `rpc`, `print`); the dialogs default to
+   * "cancelled", so a test that expects a dialog answers it explicitly.
    */
-  setup: (opts?: { knownModels?: string[] }) => {
+  setup: (opts?: SetupOptions) => {
     rt: any;
     run: (args: string) => Promise<string>;
+    ui: { select: Mock; confirm: Mock; input: Mock; notify: Mock };
   };
 }
 
@@ -72,7 +83,7 @@ export function useConfigCommandHarness(tag: string): ConfigCommandHarness {
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
   });
 
-  const setup = (opts: { knownModels?: string[] } = {}) => {
+  const setup = (opts: SetupOptions = {}) => {
     const known = new Set(opts.knownModels ?? []);
     const cache: Cache = { ...emptyCache(), models_cached: '' } as any;
     let cfg!: Config;
@@ -109,13 +120,20 @@ export function useConfigCommandHarness(tag: string): ConfigCommandHarness {
     };
     createCommands(rt);
     const notify = vi.fn();
+    const ui = {
+      notify,
+      select: vi.fn(opts.select ?? (async () => undefined)),
+      confirm: vi.fn(opts.confirm ?? (async () => false)),
+      input: vi.fn(opts.input ?? (async () => undefined)),
+    };
     const ctx = {
+      mode: opts.mode,
       modelRegistry: {
         find: (provider: string, id: string) =>
           known.has(`${provider}/${id}`) ? { provider, id } : undefined,
         getAvailable: () => [],
       },
-      ui: { notify },
+      ui,
     };
     rt.sessionCtx = ctx;
     load();
@@ -124,7 +142,7 @@ export function useConfigCommandHarness(tag: string): ConfigCommandHarness {
       await handler(args, ctx);
       return notify.mock.calls.map((c) => String(c[0])).join('\n');
     };
-    return { rt, run };
+    return { rt, run, ui };
   };
 
   return {
