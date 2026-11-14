@@ -727,6 +727,21 @@ describe('classifier call wiring', () => {
     expect(truthyButNotTrue.args[1].allowCloudChain).toBe(false);
   });
 
+  it('passes the user-configured cloud candidate list through verbatim, in order', async () => {
+    const { args } = await opts({
+      groups: {
+        ...DEFAULT_GROUPS,
+        dynamic: {
+          method: 'dynamic',
+          classifier_cloud_candidates: ['mistral/mistral-large-4', 'acme/judge'],
+        },
+      },
+    });
+    expect(args[1].cloudCandidates).toEqual(['mistral/mistral-large-4', 'acme/judge']);
+    const none = await opts({});
+    expect('cloudCandidates' in none.args[1]).toBe(false);
+  });
+
   it('passes the pinned cloud model through verbatim (provider/id form, not stripped)', async () => {
     const { args } = await opts({
       groups: {

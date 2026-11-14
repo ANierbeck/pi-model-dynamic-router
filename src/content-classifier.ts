@@ -169,6 +169,16 @@ export interface ClassificationOptions {
    */
   pinnedCloudModel?: string;
   /**
+   * User-configured cloud candidate list (dynamic group
+   * `classifier_cloud_candidates`). When set, it REPLACES the automatic
+   * candidate chain (probe-verified list, lazy discovery, static free list);
+   * the models are tried in the given order. The pinned classifier_cloud_model
+   * stays first. The same guards as the automatic chain apply: findModel must
+   * resolve the ref, exclude/paid-guards filter, the chain needs
+   * classifier_cloud_chain on.
+   */
+  cloudCandidates?: string[];
+  /**
    * Pi's one-shot completion API (modelRegistry.completeSimple). When the
    * cloud chain runs, the classifier uses this instead of its own HTTP
    * client so pi owns auth + provider quirks — the user's keys live in pi's
@@ -811,6 +821,7 @@ async function classifyPromptUncounted(
     completeSimple,
     findModel,
     pinnedCloudModel,
+    cloudCandidates,
     hasConfiguredAuth,
   } = options;
 
@@ -1105,7 +1116,14 @@ async function classifyPromptUncounted(
       // classification time, the probe ran at scan time).
       let modelsToTry = getCachedCloudModels(cache);
       let source = 'probed';
-      if (modelsToTry.length === 0) {
+      if (cloudCandidates && cloudCandidates.length > 0) {
+        // User-configured candidates (classifier_cloud_candidates): the list
+        // replaces the automatic chain — probe list, discovery and static
+        // free list — so the user decides exactly which cloud models may see
+        // prompt text. The guards below (findModel, exclude, paid) still apply.
+        source = 'user-configured';
+        modelsToTry = [...cloudCandidates];
+      } else if (modelsToTry.length === 0) {
         // Probe hasn't run or found nothing — lazy discovery as a last resort.
         // This also handles the first classification before the first scan
         // completes the probe.

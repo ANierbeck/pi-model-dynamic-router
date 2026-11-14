@@ -681,6 +681,9 @@ export class StreamOrchestrator {
         // "provider/id" form to resolve it against pi's model registry.
         if (dynamicGroupCfg?.classifier_cloud_model)
           classifyOpts.pinnedCloudModel = dynamicGroupCfg.classifier_cloud_model;
+        // User-configured cloud candidates: replace the automatic chain.
+        if (dynamicGroupCfg?.classifier_cloud_candidates)
+          classifyOpts.cloudCandidates = dynamicGroupCfg.classifier_cloud_candidates;
 
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
         // A user pin decides the model, not the category: the turn's content

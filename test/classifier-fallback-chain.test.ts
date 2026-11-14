@@ -787,3 +787,52 @@ describe('low-confidence escalation to the cloud chain (opt-in)', () => {
     expect(completeSimple).not.toHaveBeenCalled();
   });
 });
+
+describe('user-configured cloud candidates (classifier_cloud_candidates)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isOllamaAvailable).mockResolvedValue(false);
+  });
+
+  it('when set, the list replaces the probe-verified list and is tried in its order', async () => {
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(cloudReply({ category: 'standard', reason: 'mine', confidence: 0.9 }));
+    const findModel = vi.fn().mockReturnValue(mockModel);
+
+    const result = await classifyPrompt('Pick the cheapest acceptable model for this chore', {
+      allowCloudChain: true,
+      cloudCandidates: ['prov/mine-a', 'prov/mine-b'],
+      cfg: {} as any,
+      cache: {
+        classifier_cloud_models: ['prov/probed-only'],
+        classifier_cloud_probe_sig: PROBE_SIGNATURE,
+      } as any,
+      completeSimple,
+      findModel,
+    });
+
+    expect(findModel.mock.calls.map((c) => c[0])).toEqual(['prov/mine-a']);
+    expect(findModel).not.toHaveBeenCalledWith('prov/probed-only');
+    expect(result).toEqual({ category: 'standard', reason: 'mine', confidence: 0.9 });
+  });
+
+  it('the pinned cloud model stays first, then the configured list', async () => {
+    const completeSimple = vi
+      .fn()
+      .mockResolvedValue(cloudReply({ category: 'simple', reason: 'pinned', confidence: 0.9 }));
+    const findModel = vi.fn().mockReturnValue(mockModel);
+
+    await classifyPrompt('Rename the local variable in this tiny function body', {
+      allowCloudChain: true,
+      pinnedCloudModel: 'prov/pinned',
+      cloudCandidates: ['prov/mine-a'],
+      cfg: {} as any,
+      cache: {} as any,
+      completeSimple,
+      findModel,
+    });
+
+    expect(findModel.mock.calls.map((c) => c[0])).toEqual(['prov/pinned']);
+  });
+});

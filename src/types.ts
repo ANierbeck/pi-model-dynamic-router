@@ -185,6 +185,16 @@ export interface Group {
    */
   classifier_cloud_model?: string;
   /**
+   * User-configured cloud classifier candidates (dynamic group). When set,
+   * this ordered list replaces the automatic candidate chain (probe-verified
+   * list, lazy discovery, static free list); models are tried in the given
+   * order. classifier_cloud_model stays first if also set. The same guards
+   * apply (findModel resolution, exclude, paid guards). Requires
+   * classifier_cloud_chain. Set in router-config.user.json — the shipped
+   * config does not set it.
+   */
+  classifier_cloud_candidates?: string[];
+  /**
    * Cloud classifier chain: when on, the classifier runs cloud models only after the
    * local Ollama chain produced no answer. Candidates, in order: the pinned classifier_cloud_model,
    * the scan-time probe-verified list, lazy discovery over Pi's registry (output
