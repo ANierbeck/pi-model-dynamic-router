@@ -204,6 +204,7 @@ do not cover. Defaults are the code defaults unless the shipped
 | `classifier_fallback` | Pin for the local classifier fallback. Unset = derived. |
 | `classifier_cloud_model` | Cloud classifier `provider/id`, first in the cloud chain. The cloud chain runs only after the local chain produced no answer. |
 | `classifier_cloud_chain` | Sends the raw prompt to cloud models (pinned, probe-verified, or price-capped discovery, then `free_models`) only when the local Ollama chain produced no answer. Off in code (data minimization); the shipped `dynamic` group turns it on. Set `false` on the `dynamic` group in `router-config.user.json` to keep prompts local. See README "Data handling & privacy". |
+| `classifier_escalate_low_confidence` | Opt-in, default off. A local reply below confidence 0.5 is sent once to the cloud chain (requires `classifier_cloud_chain`); a cloud answer replaces it, otherwise the local reply is kept. Set in `router-config.user.json`. |
 
 ## Merge semantics
 

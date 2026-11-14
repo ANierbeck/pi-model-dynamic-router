@@ -60,3 +60,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0030 — Feedback-driven classification correction: first step (proposed)](0030-feedback-correction-sequencing.md)
 - [0031 — Withdraw multi-label classification (ADR 0001 is not pursued)](0031-withdraw-multi-label-classification.md)
 - [0032 — Local-first classifier chain: Ollama answers first, cloud is the fallback](0032-local-first-classifier-chain.md)
+- [0033 — Opt-in escalation of low-confidence local replies to the cloud chain](0033-opt-in-low-confidence-escalation.md)
