@@ -13,19 +13,24 @@ The stages are ordered exactly as the runtime executes them.
 
 ```mermaid
 flowchart TD
-    subgraph CLS["1 · Classification — which model reads the turn? (src/classifier-local-probe.ts)"]
+    subgraph CLS["1 · Classification — which model reads the turn? (src/content-classifier.ts)"]
         direction TB
+        CLOUD{"Cloud chain?<br/>(classifier_cloud_chain on the dynamic group;<br/>shipped: on)"}
+        CLOUD -- "no" --> PIN
+        CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier_cloud_model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
+        CLOUDM -- "structured reply" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
+        CLOUDM -- "every candidate fails" --> PIN
         PIN{"classifier_model /<br/>classifier_fallback pin?"}
-        PIN -- "yes" --> PINM["Use the pinned classifier"]
+        PIN -- "yes" --> PINM["Use the pinned local classifier"]
         PIN -- "no" --> PROBED{"Probed local chain?<br/>(classifier_local_models, persisted;<br/>re-probe on scan / candidate change / 24 h)"}
         PROBED -- "non-empty" --> PROBEDM["First healthy entry of the<br/>probe-verified local list<br/>(completion-capable, size-sorted)"]
-        PROBED -- "EMPTY = FINAL,<br/>no provisional fallback" --> CLOUD
+        PROBED -- "EMPTY" --> STATIC
         PROBED -- "no cache yet" --> PROV["Provisional: candidate order,<br/>completion:true models only"]
-        PINM --> CLOUD{"Cloud chain?<br/>(classifier_cloud_chain)"}
-        PROBEDM --> CLOUD
-        PROV --> CLOUD
-        CLOUD -- "fails / disabled" --> STATIC["Static classifier<br/>(heuristic last resort)"]
-        CLOUD -- "structured reply" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
+        PINM --> OLLAMA{"Ollama answers?"}
+        PROBEDM --> OLLAMA
+        PROV --> OLLAMA
+        OLLAMA -- "yes" --> CATOUT
+        OLLAMA -- "no" --> STATIC["Static classifier<br/>(heuristic last resort, only if allowStaticFallback;<br/>otherwise category continue)"]
         STATIC --> CATOUT
     end
 

@@ -185,13 +185,13 @@ export interface Group {
    */
   classifier_cloud_model?: string;
   /**
-   * Opt-in: if both classifier_model and classifier_fallback are unavailable,
-   * send the (raw) prompt to a free cloud model (via a provider's configured
-   * free_models) purely to classify it. Off by default (data minimization --
-   * a provider configured for free_models as a general answering fallback
-   * should not silently also receive prompt content for an unrelated,
-   * internal classification purpose). Requires a provider with free_models
-   * and a resolvable key configured in router-config.json.
+   * Cloud classifier chain: when on, the classifier tries cloud models BEFORE the
+   * local Ollama chain. Candidates, in order: the pinned classifier_cloud_model,
+   * the scan-time probe-verified list, lazy discovery over Pi's registry (output
+   * price <= $5/M or a $0 catalog placeholder, at most 20), then free_models. The
+   * raw prompt text is sent to the chosen model. Off in code (data minimization);
+   * the shipped `dynamic` group sets it true. Set it to false on the dynamic group
+   * in router-config.user.json to keep prompts on the machine.
    */
   classifier_cloud_chain?: boolean;
   /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */

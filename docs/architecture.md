@@ -67,7 +67,8 @@ this module asks a local LLM to match it to a known GDPval slug.
   model IDs/labels, never user conversation content. Unconditional (not
   gated by an opt-in flag) because no user data is involved; contrast with
   the content-classifier's `classifier_cloud_chain`, which does carry raw
-  user prompt text and is opt-in for that reason.
+  user prompt text; the shipped `dynamic` group turns it on (see the README
+  section "Data handling & privacy").
 
 ### `src/rate-limit.ts` — Single source of truth for cooldown checks
 
@@ -140,16 +141,17 @@ Previously `index.ts` had `isRateLimitText` (15 patterns) AND
 `isRateLimitError` (7 patterns, dead code) — divergent. Consolidated here;
 `index.ts` imports the unified functions.
 
-### `src/discovery.ts` — `getCheapestCloudModels()`
+### Cloud classifier candidates — `selectClassifierCandidates()` (`src/classifier-cloud-probe.ts`)
 
-`getCheapestCloudModels()` dynamically discovers the cheapest cloud models
-for the classifier's cloud chain (when `classifier_cloud_chain: true`
-is set on the `dynamic` group). It filters by `lookupPrice(ref)` and requires
-`price.output <= $5/M`. **Known limitation (finding F3, 2026-09-02):**
+`selectClassifierCandidates()` discovers the cloud models for the classifier's cloud chain
+(when `classifier_cloud_chain: true` is set on the `dynamic` group). It is the lazy path, used
+only while the scan-time probe-verified list is empty. It filters by `lookupPrice(ref)` and requires
+`price.output <= $5/M`; models with a catalog price of $0 and no real price are admitted as a
+placeholder tier. Excluded, paid-guarded, unhealthy and blocklisted models are skipped. **Known limitation (finding F3, 2026-09-02):**
 subscription models (`mistral-zai/*`, including the user's free-to-them
 GLM-5.2) have no pricing data in the OpenRouter pricing cache → `lookupPrice`
 returns `null` → they are filtered out. The classifier's cloud chain
-therefore never tries `mistral-zai/glm-5-2`, only free OpenRouter models. A
+therefore never tries `mistral-zai/glm-5-2`. A
 correct fix needs real per-token pricing data, not a bigger scope; documented
 inline in `src/discovery.ts`.
 

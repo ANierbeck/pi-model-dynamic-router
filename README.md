@@ -90,7 +90,7 @@ Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json).
 
 ### Classifier Decision Log
 
-Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file and its rotated copies (stage mix, `continue` before and after inheritance, chain exhaustions, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
+Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / laya / llm-local / llm-cloud / static / fallback; the non-routing records `pool`, `comparator`, `observation` and `observation-comparator` are skipped by every reader that counts decisions), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file and its rotated copies (stage mix, `continue` before and after inheritance, chain exhaustions, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
 
 ```jsonc
 {
@@ -198,7 +198,7 @@ Each category maps to a model group (`CATEGORY_TO_GROUP`, `src/content-classifie
 
 #### Dynamic Group
 
-The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `simple`, `standard`, `code_complex`, `design`, or `planning`. Design and planning prompts never route to the free-tank `code_complex` tier. This enables **context-aware model selection** without manual intervention.
+The **`dynamic`** group is a special group that classifies each prompt in real-time (cloud chain first, Ollama as last resort: primary/fallback derived from your pulled models) and automatically routes to the most appropriate model group via the `CATEGORY_TO_GROUP` table — `simple`, `standard`, `code_complex`, `design`, or `planning`. Design and planning prompts never route to the `code_complex` group. This enables **context-aware model selection** without manual intervention.
 
 **Requirements for Dynamic Routing:**
 
@@ -208,9 +208,10 @@ To use the **`dynamic`** group, you need:
 - Ollama accessible from your system (default: `http://localhost:11434`)
 
 Cloud-first (2026-09-27): with `classifier_cloud_chain: true` (set on the
-shipped `dynamic` group) the classifier tries a chain of free cloud models
-FIRST — pinned `classifier_cloud_model` → scan-time probe-verified list →
-tiered discovery → configured free models — and treats Ollama as the last
+shipped `dynamic` group) the classifier tries a chain of cloud models
+FIRST — pinned `classifier_cloud_model` → the scan-time probe-verified list →
+lazy discovery over Pi's model registry (output price at most $5 per million tokens, or a $0 catalog
+placeholder; at most 20 candidates) → the static `free_models` list — and treats Ollama as the last
 resort (see [Data handling & privacy](#data-handling--privacy)). If every
 cloud candidate fails and Ollama is unavailable, the classifier falls back
 to static keyword-based classification (only if `allowStaticFallback` is
@@ -363,8 +364,8 @@ All scanning is async and non-blocking.
 ### Data handling & privacy
 
 - **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
-- **Prompt content stays local by default.** The dynamic-group content classifier runs against a local Ollama model. If both local classifier models are unavailable, it falls back to static keyword matching (only if `allowStaticFallback` is enabled) rather than sending anything externally.
-- **Optional cloud classifier fallback (`classifier_cloud_chain`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
+- **Prompt content can leave the machine by default.** The shipped `dynamic` group sets `classifier_cloud_chain: true`, so each prompt is first sent to a cloud model chosen from Pi's model registry: the pinned `classifier_cloud_model` if set, else the scan-time probe-verified list, else lazy discovery (models with an output price of at most $5 per million tokens, or a $0 catalog placeholder; at most 20 candidates), else the static `free_models` list. Models of excluded providers, `paid_models_from` providers, and models that are currently unhealthy or blocklisted are skipped. Cloud candidates are not limited to free models: the price ceiling decides eligibility. Only when every cloud candidate fails does the router try the local Ollama chain, and only then static keyword classification (if `allowStaticFallback` is enabled).
+- **Keeping prompts local.** Set `"classifier_cloud_chain": false` on the `dynamic` group in `router-config.user.json` to turn the cloud chain off (the user layer overrides the shipped value). The chain then runs the local Ollama classifier first, and static keyword classification only if `allowStaticFallback` is enabled. The opt-in local Laya stage (`integrations.laya`) runs before either chain and talks only to a loopback sidecar.
 - **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
 
 ---
@@ -400,7 +401,7 @@ GDPval is a composite quality score from [Artificial Analysis](https://artificia
 
 #### Price Routing — how `tiered` works
 
-1. **Filter** — discard any model below the group's GDPval percentile threshold.
+1. **Filter** — discard any model whose GDPval score is below the group's threshold: `min_gdpval` (absolute) or `min_gdpval_pct` (percent of the best GDPval score in the candidate pool).
 2. **Sort** — rank survivors by billing tier first, then by effective cost within each tier:
    - Tier 0: free models
    - Tier 1: subscription (lowest rate-limit pressure first, then cost)
@@ -412,7 +413,7 @@ This means `standard` picks the cheapest model that clears its GDPval floor, whi
 
 #### costMux
 
-After 4 consecutive HTTP 429s from a provider, the router applies a permanent **cost multiplier penalty** (`costMux`) to all its models. This pushes the provider to the back of the sorted list without blocking it entirely — useful when a provider is temporarily overloaded but still reachable. The penalty persists for the session and is reset on `/router reload`.
+After 4 consecutive HTTP 429s from a provider (`cost_mux_at_hit`, default 4), the router raises that provider's **cost multiplier** (`costMux`) by one. The multiplier pushes the provider toward the back of the sorted list without blocking it entirely. It is raised at most once per calendar day per provider, and only while the failing model is still listed. The value is kept in the scan cache, so it survives restarts; nothing resets it automatically.
 
 ---
 
@@ -421,7 +422,7 @@ After 4 consecutive HTTP 429s from a provider, the router applies a permanent **
 On HTTP 429 the router works through two escalating responses:
 
 1. **Model backoff** — the model enters exponential backoff (1 min → 2 → 4 → ... → 90 min cap) and the group falls over to its next-ranked candidate for the current request. (ADR-0022 removed multi-key rotation — with keys owned and resolved by Pi there is exactly one key per provider.)
-2. **costMux penalty** — after 4 consecutive 429s, the provider receives a permanent cost multiplier for the session (see [costMux](#costmux) above), demoting all its models in future selections.
+2. **costMux penalty** — after 4 consecutive 429s, the provider's cost multiplier is raised by one, at most once per day (see [costMux](#costmux) above), demoting all its models in future selections.
 
 Both mechanisms are transparent to the user — the session continues with the next available model.
 
@@ -478,7 +479,7 @@ You're out of usage credits. Run /usage-credits to keep using Fable 5
 1. **Order models by preference** in your groups (most preferred first)
 2. **Include fallback models** from different providers
 3. **Use cascading fallback groups** for maximum reliability
-4. **Check `/usage-credits`** if you consistently hit limits
+4. **Check your provider's usage page** if you consistently hit limits
 
 **Example configuration for reliability:**
 
@@ -502,7 +503,7 @@ This ensures **automatic recovery** when subscription limits are hit.
 
 ### Stream Retry
 
-When a streaming response fails mid-stream (empty body, connection drop, timeout), the group automatically retries with the next ranked candidate without requiring the user to resend the prompt. Soft failures are distinguished from hard errors: a 4xx response is not retried, but an interrupted stream or empty response is.
+When a streaming response fails mid-stream (empty body, connection drop, timeout), the group automatically retries with the next ranked candidate without requiring the user to resend the prompt. Soft failures are distinguished from hard errors: 4xx client errors (other than 429/402) are not rate-limit-shaped, so they start no cooldown and count as no provider-breaker evidence; an interrupted stream or empty response is retried.
 
 ---
 
@@ -566,7 +567,7 @@ See [docs/adr/0007-task-decomposition-and-delegation.md](docs/adr/0007-task-deco
 
 ### Main Configuration File
 
-`router-config.json` ships group definitions and tuning only. Concrete model and provider
+`router-config.json` ships group definitions and tuning. The keys `providers`, `exclude` and `model_metrics` are present but empty. Concrete model and provider
 choices (`providers.*`, `free_models`, `exclude.models`, `model_metrics`) are **user-layer** keys:
 put them in `router-config.user.json` (see [docs/config-override.md](docs/config-override.md)) — the
 router derives candidates, free-tier models and subscription cost ordering from what Pi has registered.
@@ -610,8 +611,7 @@ a subscription bridge or a pay-per-token aggregator:
   `ε × OpenRouter list price` (constant fallback when unlisted), so subscription models sort ahead of
   pay-per-token peers and cheaper tiers sort ahead of pricier ones — no per-model `model_metrics` needed.
 - `free_models` and `exclude.models` are user-layer keys: arrays under `exclude` are unioned across layers,
-  `free_models` still requires a credentialed provider. Models that fail permanently (403 agentic-harness
-  gate, 404 guardrail) are blocked automatically after the first failure (`/router blocklist`), so no
+  `free_models` still requires a credentialed provider. Models whose error text matches a permanent signature (such as the agentic-harness gate or the workspace guardrail) are blocked automatically after the first failure (`/router blocklist`), so no
   shipped exclusion list is needed.
 
 #### Pinning the classifier, and what no longer ships
@@ -641,7 +641,7 @@ By default, `method: "tiered"` sorts by billing tier first: **free → subscript
 | `"local_before_payg"` | free → subscription → local → payg | Cheap group (simple): free and subscription first, local ahead of pay-as-you-go only. |
 | `"strict_local"` | local → free → subscription → payg | Groups where the local daemon should answer **first**, ahead of even the $0 remote models. Not used by the shipped config (a guard test forbids it there). |
 
-`payg` is always last. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `simple` → `local_before_payg`, `bulk_reader`/`code_writer` → `cloud_first`.
+`payg` is last in every mode except `cloud_first`, where local models come after it. This is opt-in per group — other groups keep the default ordering. The shipped config pins: `simple` → `local_before_payg`, `bulk_reader`/`code_writer` → `cloud_first`.
 
 ```json
 "bulk_reader": {
@@ -688,7 +688,7 @@ passes through this filter, so small models still classify.
 
 #### Read Delegation (bulk reads)
 
-Delegation has two halves. A large `read`/`bash` result is **replaced** by a summary produced by a cheap `bulk_reader` group, and a full-file `read` is **blocked before it runs** and redirected to a targeted `offset`/`limit` read. Both are off by default.
+Delegation has two halves. A large `read`/`bash` result is **replaced** by a summary produced by a cheap `bulk_reader` group, and a full-file `read` is **blocked before it runs** and redirected to a targeted `offset`/`limit` read. The code default is off (`enabled: false`), but the shipped `router-config.json` sets `delegation.enabled: true`, so both halves are active unless your user layer turns delegation off.
 
 ```json
 "delegation": {
@@ -724,11 +724,9 @@ The expensive-model pre-call block judges the caller by the **driving** model of
 
 **Provider registration is conservative (never overwrites):** the router only registers a provider with Pi when Pi does **not** know it yet — i.e. when `modelRegistry.find(provider, modelId)` returns nothing for every model of that provider. This protects `models.json` entries (with `compat` flags), extension-provided providers, and Pi-native providers from being clobbered. If Pi already knows the provider from any source, the router does not touch the registration.
 
-**Real per-model capabilities (not hardcoded):** when the router does register a provider, it uses the **real** capabilities the scan captured from the provider's `/v1/models` (Mistral `capabilities.vision/reasoning`/`max_context_length`, OpenRouter `architecture.input_modalities`/`context_length`) — never a hardcoded `reasoning: true / input: ['text','image']` blanket. Unknown fields fall back to conservative defaults (`vision: false` unless confirmed, `reasoning: false` unless confirmed), so a model is never falsely advertised as vision-capable (which caused 422 errors for GLM-5-2).
+**Capabilities:** the router registers a provider with Pi only when Pi does not know it. Local Ollama models are registered with the capabilities read from Ollama's `/api/show`; on-demand `free_models` are registered with id and name only. Capabilities from cloud catalogues (Mistral `capabilities.*`, OpenRouter `architecture.input_modalities`) are kept in the scan cache for ranking, not written into a registration.
 
 **Ollama is setup-independent:** the router scrapes Ollama's `/api/show` per model to get the real context length (`model_info.*.context_length`) and capabilities, and registers Ollama with `providerOptions.num_ctx` set to that real value — so prompts >32K don't get truncated. This works for **every** user, with or without any specific Ollama extension. The router only registers Ollama when Pi doesn't know it; if another extension or `models.json` already registered Ollama, the router doesn't overwrite.
-
-**Per-provider model filter (optional, generic):** a `PROVIDER_MAP` entry may set `modelFilter: "<regex>"` to constrain which scanned model ids are kept. Generic and user-configurable — not a hardcoded special case. Useful when a key sees a broad catalog (e.g. a provider key that returns all of a vendor's models when the provider is meant for a subset).
 
 #### New Configuration Options
 
@@ -739,7 +737,6 @@ The expensive-model pre-call block judges the caller by the **driving** model of
 | **`model_metrics`** | Per-model cost overrides | `{ "claude-bridge/claude-sonnet-5": { "cost_per_m": 0.0000015 } }` |
 | **`gdpval_builtin`** | GDPval overrides for new models (keyed by **slug**) | `{ "mistral-medium-3-5": 933 }` |
 | **`billing_preference`** | Per-group tier ordering override (`"local_first"` / `"strict_local"` rank local models ahead of subscription) | `"local_first"` |
-| **`modelFilter`** (PROVIDER_MAP) | Regex to constrain scanned model ids per provider | `"^(zai-)?glm"` |
 
 Groups need no `models` arrays — everything is auto-discovered **plus** any explicitly listed models.
 
@@ -814,6 +811,7 @@ discovers automatically.
 |---------|-------------|
 | `/router` | Overview: providers, groups, selections, rate limits |
 | `/router <group>` | Detailed view of a group with ranked candidates |
+| `/router classifier [days]` | Classifier summary from the decision log (stage mix, outcomes, failure reasons); `days` 1–90, default 7 |
 | `/router scan` | Re-scan models and GDPval scores |
 | `/router cost` | Audit-depth cost report: per-model, per-window usage from the router's own token accounting |
 | `/router errors [n]` | Last n session errors (default 15, max 50) with status-line correlation |
@@ -823,6 +821,7 @@ discovers automatically.
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
 | `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
+| `/router config integration <name> on|off|<mode>` | Enable or disable an optional integration (currently `laya`, see [Local Laya classifier stage](#local-laya-classifier-stage-experimental)) or set its mode |
 | `/router config compaction on|off` | Cache-aware auto-compaction flag (opt-in, default off) |
 
 ### Logging
@@ -836,7 +835,7 @@ Log levels, from quiet to verbose: `"error"` (hard failures only) → `"warn"`
 (adds `[diag]` lines). Set `"log_level"` in `~/.pi/agent/router-config.user.json`,
 or via `ROUTER_LOG_LEVEL` (overrides the config). The shipped default is `"warn"`
 (release builds must not be verbose); local dev typically sets `"info"` or
-`"debug"`. The recurring "tryStream skipped" line is written once per model
+`"debug"`. The recurring "tryStream skipped" line (debug level, `[diag]`) is written once per model
 until its reason changes.
 
 ### KPI audit

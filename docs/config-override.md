@@ -203,7 +203,7 @@ do not cover. Defaults are the code defaults unless the shipped
 | `classifier_model` | Pin for the local classifier, `ollama/<model>:<tag>` (dynamic group only). Unset = derived from the models Ollama reports and verified by a probe. |
 | `classifier_fallback` | Pin for the local classifier fallback. Unset = derived. |
 | `classifier_cloud_model` | Cloud classifier `provider/id`, tried first before the probe-verified list. |
-| `classifier_cloud_chain` | Allows sending the raw prompt to a free cloud model when the local classifiers are unavailable. Off in code (data minimization); the shipped `dynamic` group turns it on. |
+| `classifier_cloud_chain` | Sends the raw prompt to cloud models (pinned, probe-verified, or price-capped discovery, then `free_models`) before the local Ollama chain. Off in code (data minimization); the shipped `dynamic` group turns it on. Set `false` on the `dynamic` group in `router-config.user.json` to keep prompts local. See README "Data handling & privacy". |
 
 ## Merge semantics
 

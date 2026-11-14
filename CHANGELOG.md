@@ -11,6 +11,19 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Changed — documentation now matches the shipped behaviour (docs sync 2026-11-14)
+
+- **Cloud-first privacy statement corrected.** The README "Data handling & privacy" section said prompt content stays local by default and that the cloud chain is off. The shipped `dynamic` group enables `classifier_cloud_chain`, so prompt text goes to cloud models first (pinned model, probe-verified list, price-capped discovery at $5/M output or a $0 placeholder, then `free_models`), and Ollama is the next step. Set `classifier_cloud_chain: false` on the `dynamic` group in `router-config.user.json` to keep prompts local. `docs/routing-flow.md` and `PI.md` show the same order.
+- **costMux described as implemented.** One step per 429 threshold, at most once per calendar day per provider, kept in the scan cache. Earlier docs said "permanent for the session, reset on `/router reload`".
+- **Removed stale references:** the `modelFilter` PROVIDER_MAP key (removed with ADR-0022), `/usage-credits` as a router command, and the "403 / 404" blocklist wording (the blocklist matches error-text signatures).
+- **`payg` ordering** is documented per mode: last everywhere except `cloud_first`, where local comes after it.
+- **Read delegation:** the code default is off; the shipped `router-config.json` enables it.
+- **Commands and stages:** `/router classifier [days]` and `/router config integration <name> on|off|<mode>` are in the command table. The decision-log stage list names `laya` and the non-routing records (`pool`, `comparator`, `observation`, `observation-comparator`).
+
+### Fixed — `/router` help text lists `compaction on|off`
+
+The command description omitted the `compaction on|off` subcommand that the handler accepts. Pinned by `test/router-command-help.test.ts` (red first: the test failed on the old description).
+
 ### Fixed
 
 - **Scan-cache `cost_per_m: 0` placeholders no longer make paid models "free".**
