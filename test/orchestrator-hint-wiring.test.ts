@@ -93,6 +93,7 @@ function world(o: Opts) {
   const ctx: any = {
     cfg: { model_groups: groups, model_metrics: {}, providers: {}, ...(o.cfgExtra ?? {}) },
     cache: o.cache ?? {},
+    cacheManager: { saveCache: vi.fn() },
     router: {
       allDiscoveredRefs: () => o.discovered ?? [],
       getTopModels: (g: string) => ({ models: (o.topModels?.[g] ?? []).map((ref) => ({ ref })) }),
@@ -691,6 +692,13 @@ describe('classifier call wiring', () => {
       isCompaction: true,
       lastModelLimited: true,
     });
+  });
+
+  it('hands the classifier a persistCache that saves through the cache manager (ADR-0030)', async () => {
+    const { w, args } = await opts({});
+    expect(typeof args[1].persistCache).toBe('function');
+    args[1].persistCache();
+    expect(w.ctx.cacheManager.saveCache).toHaveBeenCalledTimes(1);
   });
 
   it('reports no last model (undefined, not "") and not limited when there is none', async () => {

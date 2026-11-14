@@ -13,10 +13,17 @@ vi.mock('../src/ollama-utils.ts', async () =>
   })
 );
 
+vi.mock('../src/logger.ts', async (orig) => {
+  const actual = await orig<typeof import('../src/logger.ts')>();
+  return { ...actual, warnLog: vi.fn() };
+});
+
 // Import AFTER the mock is registered.
 import { classifyPrompt } from '../src/content-classifier.ts';
 import * as ollamaUtils from '../src/ollama-utils.ts';
 import { localModelCache } from './helpers/local-model-cache.ts';
+import * as logger from '../src/logger.ts';
+import { staleCorrectionMessage, unknownCategoryMessage } from '../src/hint-corrections.ts';
 
 describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
   beforeEach(() => {
@@ -59,5 +66,80 @@ describe('classifyPrompt: LLM result caching (LRU + TTL)', () => {
     expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
     expect((r as any).hintType).toBe('model');
     expect((r as any).hintTarget).toBe('mistral-medium-3.5');
+  });
+});
+
+const CONTENT = 'Design a rollout plan for the new cache layer';
+const HINTED = `HINT: category planning ${CONTENT}`;
+const LONG_AGO = '2020-01-01T00:00:00.000Z';
+
+describe('classifyPrompt: HINT category form', () => {
+  beforeEach(() => {
+    vi.mocked(ollamaUtils.callOllama).mockClear();
+  });
+
+  it('applies the named category for this turn without calling the classifier', async () => {
+    const r = await classifyPrompt(HINTED, { cache: localModelCache() } as any);
+    expect(r.category).toBe('planning');
+    expect(r.reason).toMatch(/HINT/);
+    expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
+  });
+
+  it('saves the content as a correction in cache.hint_corrections and persists the cache', async () => {
+    const cache = localModelCache();
+    const persistCache = vi.fn();
+    await classifyPrompt(HINTED, { cache, persistCache } as any);
+    const entry = (cache as any).hint_corrections[CONTENT];
+    expect(entry).toMatchObject({ hintType: 'category', target: 'planning' });
+    expect(typeof entry.savedAt).toBe('string');
+    expect(persistCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later identical prompt without HINT gets the saved category, with no classifier call', async () => {
+    const cache = localModelCache();
+    await classifyPrompt(HINTED, { cache } as any);
+    vi.mocked(ollamaUtils.callOllama).mockClear();
+
+    const r = await classifyPrompt(CONTENT, { cache } as any);
+    expect(r.category).toBe('planning');
+    expect(r.reason).toMatch(/Saved HINT correction/);
+    expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
+  });
+
+  it('a short content (under five words) is applied but never stored', async () => {
+    const cache = localModelCache();
+    const persistCache = vi.fn();
+    const r = await classifyPrompt('HINT: category simple keep going', {
+      cache,
+      persistCache,
+    } as any);
+    expect(r.category).toBe('simple');
+    expect((cache as any).hint_corrections ?? {}).toEqual({});
+    expect(persistCache).not.toHaveBeenCalled();
+  });
+
+  it('a stored name that is no longer a category is not applied: the classifier runs and the warning names it', async () => {
+    const cache = localModelCache();
+    (cache as any).hint_corrections = {
+      [CONTENT]: { hintType: 'category', target: 'roadmap', savedAt: LONG_AGO },
+    };
+    const r = await classifyPrompt(CONTENT, { cache, allowStaticFallback: true } as any);
+    expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
+    expect(r.category).toBe('code_complex');
+    expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
+  });
+
+  it('an unknown category name is rejected with the valid names, and the turn is classified normally', async () => {
+    const cache = localModelCache();
+    const persistCache = vi.fn();
+    const r = await classifyPrompt(`HINT: category roadmap ${CONTENT}`, {
+      cache,
+      persistCache,
+      allowStaticFallback: true,
+    } as any);
+    expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
+    expect(r.category).toBe('code_complex');
+    expect(persistCache).not.toHaveBeenCalled();
+    expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
   });
 });

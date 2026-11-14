@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed (2026-11-14), revised after the review round on PR #175 (same day).
-Open owner decisions are listed at the end.
+Accepted for Option 1 (2026-11-14). Revised after the review round on PR #175 (same day).
+The owner said "Option 1 umsetzen". The open decisions were not answered one by one; they were
+built at the recommended values listed at the end.
 
 This ADR decides the order and the shape of the first step of ADR 0002
 (learning from user feedback, Option B, accepted 2026-08-29, not implemented).
@@ -124,15 +125,12 @@ on a feeling.
   when it is built.
 - Until the owner decides, routing does not change.
 
-## Open decisions for the owner
+## Decisions taken for the build (2026-11-14)
 
-1. **Syntax:** is `HINT: category <name>` acceptable?
-2. **Store the prompt text or only a hash?** The text lets the owner see what a
-   correction matches and lets `list` show it; the recommendation is the text,
-   with the same privacy note as the decision log. A hash of a short prompt is
-   guessable anyway, so it hides little.
-3. **Short-prompt threshold:** 5 words, or another value?
-4. **Expiry:** kept until cleared (recommended, with the cap as the only bound),
-   or expire after N days?
-5. **Relation to decision-log Phase 2:** build Phase 2 first, or independently?
-   The recommendation is independent: Option 1 needs no outcome data.
+1. **Syntax:** `HINT: category <name>`. Owner: "Option 1 umsetzen".
+2. **Key:** the prompt text, not a hash (recommendation; `/router corrections list` shows it).
+3. **Short-prompt threshold:** 5 words (recommendation).
+4. **Expiry:** none; the LRU cap of 64 is the only bound (recommendation).
+5. **Relation to decision-log Phase 2:** built independently (recommendation). Phase 2 is not started.
+
+A different value for 2 to 5 is a new ADR that cites this one; this ADR is not edited after acceptance.

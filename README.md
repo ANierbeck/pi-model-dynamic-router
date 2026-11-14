@@ -92,6 +92,8 @@ Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json).
 
 Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file and its rotated copies (stage mix, `continue` before and after inheritance, chain exhaustions, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
 
+**Correcting a category.** `HINT: category <name> <your prompt>` applies the named category to that turn and saves the correction for the exact prompt text that follows (at least five words; shorter prompts are never saved). The same prompt later, without the HINT, gets the saved category with no classifier call. `/router corrections` lists the saved corrections, `/router corrections clear` drops them all. An unknown name is ignored with a warning that lists the valid names. Design: `docs/adr/0030-feedback-correction-sequencing.md`.
+
 ```jsonc
 {
   "classifier_log": {

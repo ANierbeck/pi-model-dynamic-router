@@ -12,6 +12,15 @@ import { isFreeModelRef } from './metrics.ts';
 import { isMetaRouterRef } from './providers.ts';
 import { planOutputBudget } from './context-budget.ts';
 import { routerLog, warnLog, errorLog } from './logger.ts';
+import {
+  correctionKey,
+  isCorrectionCategory,
+  lookupCorrection,
+  recordCorrection,
+  staleCorrectionMessage,
+  unknownCategoryMessage,
+  type CorrectionCategory,
+} from './hint-corrections.ts';
 import type { Config, Cache } from './types.ts';
 import type {
   Api,
@@ -142,6 +151,12 @@ export interface ClassificationOptions {
   allowStaticFallback?: boolean;
   cfg?: Config;
   cache?: Cache;
+  /**
+   * Writes the cache to disk after a category correction was saved (ADR-0030).
+   * Absent in tests and embeddings that do not persist; the in-memory store is
+   * still updated.
+   */
+  persistCache?: () => void;
   allowCloudChain?: boolean;
   /**
    * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
@@ -433,6 +448,30 @@ const GROUP_VERB_PREFIX =
   /^(?:use\s+group|verwende\s+gruppe|nutze\s+gruppe|benutz(?:e)?\s+gruppe)/i;
 
 /**
+ * The category form of HINT (ADR-0030 Option 1): `HINT: category <name>`
+ * followed by the content the correction applies to. Colon form only.
+ */
+const CATEGORY_HINT_RE = /^\s*HINT\s*:\s*category\b\s*(\S*)\s*([\s\S]*)$/i;
+
+export type CategoryHint =
+  | { kind: 'category'; category: CorrectionCategory; content: string }
+  | { kind: 'unknown'; name: string };
+
+/**
+ * Parses the category form of HINT. An unknown name is reported as such so the
+ * caller can say what was typed; it is never applied.
+ */
+export function detectCategoryHint(prompt: string): CategoryHint | null {
+  const match = prompt.match(CATEGORY_HINT_RE);
+  if (!match) return null;
+  const name = match[1].toLowerCase();
+  if (isCorrectionCategory(name)) {
+    return { kind: 'category', category: name, content: match[2].trim() };
+  }
+  return { kind: 'unknown', name: match[1] };
+}
+
+/**
  * Deterministic HINT detection — bypasses the LLM entirely.
  * Matches "HINT: ..." at the start of a prompt (case-insensitive, any language).
  * Returns HintClassificationResult or null if no HINT prefix found.
@@ -441,6 +480,9 @@ const GROUP_VERB_PREFIX =
  * group-keyword as a model name.
  */
 export function detectHintDirectly(prompt: string): HintClassificationResult | null {
+  // The category form is not a model pin: `HINT: category <name>` goes to
+  // detectCategoryHint (ADR-0030), never to the model branch below.
+  if (CATEGORY_HINT_RE.test(prompt)) return null;
   // F6 (2026-09-02): the colon is OPTIONAL — a user typing "HINT use
   // mistral-zai/glm-5-2 Please proceed…" (no colon) should still be
   // recognized. To guard against false positives (the word "hint" in
@@ -805,11 +847,55 @@ async function classifyPromptUncounted(
     hasConfiguredAuth,
   } = options;
 
+  // ADR-0030 Option 1: an explicit category HINT names the category for this
+  // turn and is saved as a correction for the exact content behind it.
+  const categoryHint = detectCategoryHint(prompt);
+  if (categoryHint?.kind === 'category') {
+    noteSource('hint');
+    if (cache && correctionKey(categoryHint.content) !== null) {
+      cache.hint_corrections ??= {};
+      recordCorrection(
+        cache.hint_corrections,
+        categoryHint.content,
+        categoryHint.category,
+        new Date().toISOString()
+      );
+      options.persistCache?.();
+    }
+    return {
+      category: categoryHint.category,
+      reason: 'User specified category via HINT',
+      confidence: 1.0,
+    };
+  }
+  if (categoryHint?.kind === 'unknown') {
+    warnLog(unknownCategoryMessage(categoryHint.name));
+  }
+
   // Detect HINT prefix deterministically — no LLM needed, always correct.
   const directHint = detectHintDirectly(prompt);
   if (directHint) {
     noteSource('hint');
     return directHint;
+  }
+
+  // ADR-0030: a saved category correction for this exact prompt decides the
+  // category before the classifier runs. A stale name is logged and ignored.
+  if (cache) {
+    const hit = lookupCorrection(cache.hint_corrections ?? {}, prompt);
+    if (hit && 'category' in hit) {
+      noteSource('correction');
+      callSource.getStore()?.trace.steps.push('correction');
+      return {
+        category: hit.category,
+        reason: 'Saved HINT correction for this prompt',
+        confidence: 1.0,
+      };
+    }
+    if (hit && 'stale' in hit) {
+      callSource.getStore()?.trace.steps.push('correction-stale');
+      warnLog(staleCorrectionMessage(hit.stale));
+    }
   }
 
   // Model momentum: during compaction we need a model with enough context

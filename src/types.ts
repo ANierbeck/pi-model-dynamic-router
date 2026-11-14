@@ -606,6 +606,12 @@ export interface Cache {
    */
   classifier_no_schema?: Record<string, number>;
   /**
+   * ADR-0030 Option 1: user corrections of the classifier's category, keyed by
+   * the exact prompt text after the HINT head (src/hint-corrections.ts). User
+   * data: listed and cleared with /router corrections.
+   */
+  hint_corrections?: Record<string, { hintType: 'category'; target: string; savedAt: string }>;
+  /**
    * false marks a scan cache that never had a router-config.dynamic.json
    * (test fixtures). Absent means a valid cache implies the file should exist
    * and is regenerated when missing.
