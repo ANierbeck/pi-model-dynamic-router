@@ -565,13 +565,14 @@ Pick up in a later round, each as its own plan where noted (§11):
   owner runs outside the repository (health-first adoption, start lock,
   last-client shutdown). Depends on the model artifact plan below and the
   integration contract.
-- **Router config UI: guided path for integrations**
-  (`docs/plans/2026-11-08-router-config-ui.md`, proposed 2026-11-08; depends
-  on the integrations contract): `/router config` is read-mostly, enabling
-  Laya needs six hand-edited keys, and a wrong value silently disables the
-  stage — while `ctx.ui.select/confirm/input` sit unused. Proposes an
-  interactive `config integration <name>` wizard plus one "Integrations"
-  section.
+- ✅ **Router config UI: guided path for integrations — DONE 2026-11-15**
+  (`docs/plans/2026-11-14-config-surface-and-ui.md`, status done; the earlier
+  `2026-11-08-router-config-ui.md` is superseded by it and kept as history).
+  `/router config` now has one subcommand table, an overview, block views and
+  a TUI-only guided menu (`config integration <name>`), backed by
+  `docs/config-reference.md` generated from the same table (stale-check test
+  included). ADR 0034 is proposed; its acceptance is an owner decision at
+  merge time.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:
