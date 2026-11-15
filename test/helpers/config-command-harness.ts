@@ -14,6 +14,7 @@ import { Router } from '../../src/routing.ts';
 import * as metricsModule from '../../src/metrics.ts';
 import type { Cache, Config } from '../../src/types.ts';
 import { emptyCache } from './stream-fixtures.ts';
+import { rmTmpDir } from './router-env.ts';
 
 export interface ConfigCommandPaths {
   extDir: string;
@@ -81,6 +82,7 @@ export function useConfigCommandHarness(tag: string): ConfigCommandHarness {
     vi.restoreAllMocks();
     if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+    for (const dir of [paths.extDir, paths.agentDir, paths.cwd]) if (dir) rmTmpDir(dir);
   });
 
   const setup = (opts: SetupOptions = {}) => {

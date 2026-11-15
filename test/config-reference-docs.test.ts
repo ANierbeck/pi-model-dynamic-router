@@ -52,9 +52,12 @@ describe('docs/config-reference.md — generated from the key table', () => {
 
   it('shows the chain steps in the order the router runs them', () => {
     const doc = read('../docs/config-reference.md');
-    const positions = describeClassifierChain(shipped).map((step) => doc.indexOf(step.label));
+    // The bold step label of the chain list; a bare label also occurs in prose.
+    const positions = describeClassifierChain(shipped).map((step) =>
+      doc.indexOf(`**${step.label}**`)
+    );
     expect(positions.every((p) => p >= 0)).toBe(true);
-    expect(positions).toEqual([...positions].sort());
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 });
 

@@ -137,6 +137,26 @@ describe('UserConfigStore.applyDelta — table paths (config plan Phase 2)', () 
     expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
   });
 
+  it('refuses when a nested section on the way is not an object, and keeps the file', () => {
+    const before = JSON.stringify({ classifier: { cloud: 'oops' } });
+    fs.writeFileSync(userFile, before);
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', value: true }] });
+    expect(res.ok).toBe(false);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
+  });
+
+  it('an unset removes the pre-2.0 spelling even when only that spelling is present', () => {
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({
+        model_groups: { dynamic: { method: 'dynamic', classifier_cloud_chain: true } },
+      })
+    );
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', unset: true }] });
+    expect(res.ok).toBe(true);
+    expect(readUser()).toEqual({ model_groups: { dynamic: { method: 'dynamic' } } });
+  });
+
   it('a write removes the pre-2.0 spelling of the same key from the user file', () => {
     fs.writeFileSync(
       userFile,

@@ -17,7 +17,7 @@ import { callOllama, isOllamaAvailable } from '../src/ollama-utils';
 import { classifyPrompt, getLastClassificationSource } from '../src/content-classifier.ts';
 import { SessionEscalation, detectLoopWithLLM } from '../src/escalation.ts';
 import { formatClassifierStatus } from '../src/commands.ts';
-import type { Cache, Group } from '../src/types.ts';
+import type { Cache } from '../src/types.ts';
 
 const OLD_DEFAULTS = ['mistral-nemo:latest', 'gemma2:2b'];
 const VALID = JSON.stringify({ category: 'simple', reason: 'test', confidence: 0.9 });
@@ -149,11 +149,14 @@ describe('SessionEscalation / detectLoopWithLLM — no model, no LLM leg', () =>
 });
 
 describe('formatClassifierStatus — derived heads, no shipped defaults', () => {
-  const group = { name: 'dynamic', method: 'dynamic', models: [] } as unknown as Group;
   const chainLine = (input: Partial<Parameters<typeof formatClassifierStatus>[0]>) =>
-    formatClassifierStatus({ group, last: null, probedCount: 0, ollamaUp: true, ...input }).find(
-      (l) => l.includes('Chain:')
-    ) ?? '';
+    formatClassifierStatus({
+      classifier: undefined,
+      last: null,
+      probedCount: 0,
+      ollamaUp: true,
+      ...input,
+    }).find((l) => l.includes('Chain:')) ?? '';
 
   it('shows the derived heads', () => {
     const line = chainLine({

@@ -26,17 +26,23 @@ describe('/router command description', () => {
     expect(description).toMatch(/Usage: \/router/);
   });
 
-  it.each([
-    ['classifier [days]', 'classifier [days]'],
-    ['config set', 'set'],
-    ['config classifier', 'classifier'],
-    ['config integrations', 'integrations'],
-    ['config compaction', 'compaction'],
-    ['config exclude', 'exclude'],
-    ['blocklist clear', 'blocklist [clear [ref]]'],
-  ])('names the %s subcommand', (_label, needle) => {
-    expect(description).toContain(needle);
-  });
+  it.each(['classifier [days]', 'blocklist [clear [ref]]'])(
+    'names the top-level %s subcommand',
+    (entry) => {
+      expect(description).toContain(`|${entry}|`);
+    }
+  );
+
+  // The entries inside `config [a|b|…]`, so a name that only appears as a
+  // top-level subcommand (`classifier [days]`) cannot satisfy the check.
+  const configEntries = description.match(/\|config \[([^\]]+)\]/)?.[1].split('|') ?? [];
+
+  it.each(['show', 'set', 'unset', 'classifier', 'integrations', 'exclude', 'compaction'])(
+    'names the config %s subcommand',
+    (name) => {
+      expect(configEntries).toContain(name);
+    }
+  );
 });
 
 // One subcommand list drives the description, the completion list, the

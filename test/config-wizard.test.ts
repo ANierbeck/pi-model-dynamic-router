@@ -83,6 +83,28 @@ describe('/router config — the guided menu in TUI mode', () => {
     expect(out).toMatch(/classifier\.cloud\.enabled is off/);
   });
 
+  it('the Laya switch writes through the integration switch on yes', async () => {
+    const { run, ui } = setup({ mode: 'tui', confirm: async () => true });
+    ui.select
+      .mockImplementationOnce(async (_t: string, opts: string[]) =>
+        optionFor(opts, 'integrations.laya.enabled')
+      )
+      .mockResolvedValueOnce(undefined);
+    await run('config');
+    expect(ui.confirm.mock.calls[0][1]).toMatch(/integrations\.laya\.enabled to on/);
+    expect(readUser().integrations.laya.enabled).toBe(true);
+  });
+
+  it('"Show the overview" prints the overview, then returns to the menu', async () => {
+    const { run, ui } = setup({ mode: 'tui' });
+    ui.select.mockResolvedValueOnce('Show the overview').mockResolvedValueOnce(undefined);
+    const out = await run('config');
+    expect(ui.select).toHaveBeenCalledTimes(2);
+    expect(out).toContain('Classifier chain:');
+    expect(out).not.toMatch(/needs the terminal/);
+    expect(userFileExists()).toBe(false);
+  });
+
   it('a switch answered no writes nothing', async () => {
     const { run, ui } = setup({ mode: 'tui', confirm: async () => false });
     ui.select

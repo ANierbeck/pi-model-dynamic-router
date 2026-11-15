@@ -64,12 +64,11 @@ describe('fallback naming — the renamed cloud chain stays renamed', () => {
   it('no shipped source or test names the old cloud-chain vocabulary', () => {
     const files = [...shippedSources(), ...tsFiles(join(ROOT, 'test'))];
     // Three deliberate exceptions, all about the RENAME itself rather than a
-    // use of the old name: this file lists the retired vocabulary, the loader's
-    // rename map has to spell the old key to warn about it, and the loader test
-    // feeds the old key in to prove the warning fires.
+    // use of the old name: this file lists the retired vocabulary, the key
+    // table's `legacy` field has to spell the old key to warn about it, and the
+    // classifier-block test feeds the old key in to prove the warning fires.
     const ALLOWED = new Set([
       'test/fallback-naming.test.ts',
-      'test/removed-group-warning.test.ts',
       'src/config-keys.ts: classifier_cloud_fallback',
       'test/classifier-config-block.test.ts',
     ]);
