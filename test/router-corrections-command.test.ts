@@ -12,9 +12,11 @@ function setup(cache: Record<string, unknown>): {
   run: (args: string) => Promise<string[]>;
   complete: (prefix: string) => Array<{ value: string }> | null;
   saveCache: ReturnType<typeof vi.fn>;
+  description: () => string;
 } {
   let handler: Handler | undefined;
   let complete: ((prefix: string) => Array<{ value: string }> | null) | undefined;
+  let description = '';
   const saveCache = vi.fn();
   const rt: any = {
     pi: {
@@ -22,6 +24,7 @@ function setup(cache: Record<string, unknown>): {
         if (name === 'router') {
           handler = def.handler;
           complete = def.getArgumentCompletions;
+          description = def.description ?? '';
         }
       },
     },
@@ -41,6 +44,7 @@ function setup(cache: Record<string, unknown>): {
     },
     complete: complete!,
     saveCache,
+    description: () => description,
   };
 }
 
@@ -95,8 +99,31 @@ describe('/router corrections', () => {
     expect(saveCache).not.toHaveBeenCalled();
   });
 
+  it('corrections list shows the stored prompt text with a non-empty store', async () => {
+    const { run } = setup({
+      hint_corrections: {
+        [CONTENT]: {
+          hintType: 'category',
+          target: 'planning',
+          savedAt: '2026-11-14T10:00:00.000Z',
+        },
+      },
+    });
+    const out = (await run('corrections list')).join('\n');
+    expect(out).toContain('Saved HINT corrections');
+    expect(out).toContain(CONTENT);
+    expect(out).toContain('planning');
+    expect(out).toContain('2026-11-14T10:00:00.000Z');
+  });
+
   it('is offered by tab completion', () => {
     const { complete } = setup({});
     expect((complete('cor') ?? []).map((i) => i.value)).toContain('corrections');
+  });
+
+  it('the /router command description names the corrections subcommand (command palette help)', () => {
+    const { description } = setup({});
+    expect(description()).toContain('Usage: /router');
+    expect(description()).toContain('corrections [list|clear]');
   });
 });
