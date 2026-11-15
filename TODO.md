@@ -571,8 +571,7 @@ Pick up in a later round, each as its own plan where noted (§11):
   `/router config` now has one subcommand table, an overview, block views and
   a TUI-only guided menu (`config integration <name>`), backed by
   `docs/config-reference.md` generated from the same table (stale-check test
-  included). ADR 0034 is proposed; its acceptance is an owner decision at
-  merge time.
+  included). ADR 0034 was accepted by the owner on 2026-11-15.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:

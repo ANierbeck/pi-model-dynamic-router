@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed (2026-11-15). Written while executing
+Accepted (2026-11-15). Written while executing
 `docs/plans/2026-11-14-config-surface-and-ui.md`, which the owner asked to
-execute; the plan's recommended options were applied. Acceptance is the
-owner's decision at merge.
+execute; the plan's recommended options were applied and the owner accepted
+this ADR on 2026-11-15.
 
 Builds on ADR 0032 (local-first chain) and ADR 0033 (opt-in escalation), which are not changed. Settles the
 configuration shape those ADRs left as `classifier_*` keys on the `dynamic` group.
