@@ -1,11 +1,12 @@
 # Laya r3: retrain on the v2-r3 taxonomy with live owner labels, honest calibration, and a de-emphasized `continue`
 
-**Status:** proposed 2026-11-15 — owner asked for this plan ("arbeite den Plan
-für r3 aus"), including the `continue` downweight/inherit option. Nothing is
-trained or published yet; the r2 artifact (`router@1.0.0`, tag
-`laya-router-v1.0.0`, head `5f12495d…`) stays the served model until r3 passes
-the pre-registered gate below. Publishing any artifact is a separate owner
-decision (AGENTS §1; the manifest entry stays `published: false`).
+**Status:** proposed 2026-11-15, owner decision recorded the same day:
+`continue` variant **B** (inherit-relabel) is chosen — see Solution 2 and Open
+decisions. Nothing is trained or published yet; the r2 artifact
+(`router@1.0.0`, tag `laya-router-v1.0.0`, head `5f12495d…`) stays the served
+model until r3 passes the pre-registered gate below. Publishing any artifact
+is a separate owner decision (AGENTS §1; the manifest entry stays
+`published: false`).
 
 **Related plans (reused, not changed):** `2026-10-08-laya-finetuning-state.md`
 (training pipeline), `2026-10-15-laya-shadow-evaluation.md` (live labels +
@@ -73,24 +74,27 @@ so `head.json` and the head sha256 `5f12495d…` stay unchanged and the parity
 gate (`checkHeadParity`, `src/laya-model-manifest.ts`) keeps passing without a
 router change.
 
-### 2. `continue` handling — the owner asked for this option explicitly
+### 2. `continue` handling — owner decision 2026-11-15: variant B
 
 r2 over-predicts `continue` (60 answers in shadow, 10 correct; confusion is
-continue↔standard/code_complex). Two variants, run as A/B if time allows,
-A first:
+continue↔standard/code_complex). Two variants were on the table:
 
-- **A (recommended): downweight, keep the class.** `continue` rows get
-  repeat 1 (same as teacher rows) while other owner rows get 5×/3× — i.e.
-  `continue` is deliberately under-represented, not removed. The class stays
-  (the router's `inheritPreviousCategory` and the ≤4-word momentum rule still
-  use it), but the model learns it is the rare case.
-- **B (experiment): model `continue` as an inherit signal.** Relabel every
-  training `continue` whose `prev` exists to the *resolved* category (the
-  category `continue` would inherit), and drop `continue` rows without `prev`.
-  The model then learns "this continues act X" as "X". Risk: short go-aheads
-  without stored prev lose their label entirely; the router's deterministic
-  momentum rule still catches ≤4-word prompts, so this is measurable, not
-  guesswork. B is only run if A does not fix R3.
+- **A: downweight, keep the class.** `continue` rows get repeat 1 (same as
+  teacher rows) while other owner rows get 5×/3×. The class stays (the
+  router's `inheritPreviousCategory` and the ≤4-word momentum rule still use
+  it), but the model learns it is the rare case.
+- **B (CHOSEN by the owner, 2026-11-15): model `continue` as an inherit
+  signal.** Relabel every training `continue` whose `prev` exists to the
+  *resolved* category (the category `continue` would inherit), and drop
+  `continue` rows without `prev`. The model learns "this continues act X" as
+  "X" — which combines the owner's label with the context the router actually
+  acts on, instead of teaching a class the router immediately rewrites.
+
+Known risk of B, accepted by the owner: short go-aheads without a stored
+`prev` lose their training label entirely. The router's deterministic
+momentum rule still catches ≤4-word prompts at runtime, so those are routed
+correctly anyway; they are just absent from training. A remains the fallback
+if B fails gate G2.
 
 Both variants keep the 7-class head (parity gate unchanged).
 
@@ -139,15 +143,19 @@ shadow items as in R2 (alpha 0.05, one-sided).
 4. Publish (GitHub Release assets, manifest flip) is a separate owner
    decision (AGENTS §1).
 
+## Decisions
+
+1. **`continue` variant: B (inherit-relabel).** Owner decision 2026-11-15,
+   recorded in the session ("Ich find B … am besten geeignet"). A stays the
+   fallback if B fails gate G2.
+
 ## Open decisions (owner)
 
-1. `continue` variant: A (downweight, recommended) or B (inherit-relabel), or
-   A then B if A fails G2.
-2. Owner-row weight for shadow labels: 5× (proposed) or higher — laya-train
+1. Owner-row weight for shadow labels: 5× (proposed) or higher — laya-train
    repeats rows, so this is coarse; the corpus stats print the resulting
    distribution for review before training.
-3. Gate thresholds G1–G4: accept as proposed, or tighten G1 to ≥ 60 %.
-4. Whether r3 training uses only MPS locally (as r2, ~5 h) or also a cloud
+2. Gate thresholds G1–G4: accept as proposed, or tighten G1 to ≥ 60 %.
+3. Whether r3 training uses only MPS locally (as r2, ~5 h) or also a cloud
    GPU run — cost decision.
 
 ## Verified against
