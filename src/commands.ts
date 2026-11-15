@@ -63,6 +63,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
  * Dependencies createCommands reads from index.ts's extension closure. Exposed as
@@ -587,12 +588,36 @@ function handleConfigCommand(
   return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
 }
 
+/**
+ * `/router corrections [list|clear]`: the saved HINT category corrections
+ * (ADR-0030 Option 1). The listing shows the exact text each correction matches;
+ * clear drops all of them and writes the cache at once.
+ */
+function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
+  if (sub === '' || sub === 'list') {
+    const rows = listCorrections(rt.cache.hint_corrections ?? {});
+    if (rows.length === 0) return 'No saved HINT corrections.';
+    return [
+      'Saved HINT corrections (most recent first):',
+      ...rows.map((r) => `  ${r.category}  ${r.savedAt}  ${JSON.stringify(r.key)}`),
+    ].join('\n');
+  }
+  if (sub === 'clear') {
+    const store = rt.cache.hint_corrections ?? {};
+    const dropped = clearCorrections(store);
+    rt.cache.hint_corrections = store;
+    rt.cacheManager.saveCache();
+    return `Cleared ${dropped} saved HINT correction${dropped === 1 ? '' : 's'}.`;
+  }
+  return 'Usage: /router corrections [list|clear]';
+}
+
 export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {
     description:
-      'Model router status. Usage: /router [group|scan|cost|classifier [days]|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
+      'Model router status. Usage: /router [group|scan|cost|classifier [days]|corrections [list|clear]|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
       const subcommands: AutocompleteItem[] = [
@@ -606,6 +631,11 @@ export function createCommands(rt: CommandDeps): void {
           label: 'classifier',
           description:
             'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
+        },
+        {
+          value: 'corrections',
+          label: 'corrections',
+          description: 'Saved HINT category corrections: list, or clear all',
         },
         {
           value: 'cost',
@@ -711,6 +741,15 @@ export function createCommands(rt: CommandDeps): void {
               days === null
                 ? 'Usage: /router classifier [days] (1..90, default 7)'
                 : readClassifierSummary(days).join('\n'),
+              'info'
+            );
+            return;
+          }
+
+          if (arg === 'corrections' || arg?.startsWith('corrections ')) {
+            // ADR-0030 Option 1: list or clear the saved HINT category corrections.
+            ctx.ui.notify(
+              handleCorrectionsCommand(rt, arg.slice('corrections'.length).trim()),
               'info'
             );
             return;

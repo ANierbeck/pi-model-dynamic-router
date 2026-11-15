@@ -604,6 +604,8 @@ export class StreamOrchestrator {
           allowCloudChain: dynamicGroupCfg?.classifier_cloud_chain === true,
           cfg,
           cache,
+          persistCache: () => this.ctx.cacheManager.saveCache(),
+          notify: (message) => this.ctx.sessionCtx?.ui.notify(message, 'warning'),
           // The cloud chain uses pi's own model registry (completeSimple) so pi
           // owns auth + provider HTTP — the user's keys live in pi's auth store,
           // not router-config.json, so the router must NOT roll its own key

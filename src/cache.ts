@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import type { Cache, SessionError, UsageLogEntry } from './types.ts';
 import { SESSION_ERROR_CAP } from './session-errors.ts';
 import { isRecord } from './utils.ts';
+import { capCorrections } from './hint-corrections.ts';
 
 /** The usage_log entry shape (types.ts). */
 type UsageEntry = UsageLogEntry;
@@ -45,11 +46,18 @@ const INSTANCE_KEYS = ['session_errors', 'usage_log'] as const;
  */
 const VOLATILE_KEYS = ['provider_breaker'] as const;
 
-/** Atomic JSON write: temp file in the same directory, then rename. */
+/**
+ * Atomic JSON write: temp file in the same directory, then rename. The file is
+ * created owner-only (0600) and the mode is re-asserted before the rename, so
+ * it survives any umask: the cache holds user data — the raw prompt texts that
+ * are the correction keys in `hint_corrections` (ADR-0030) — and the per-project
+ * file holds session errors, both private like the 0600 decision log.
+ */
 function writeJsonAtomic(file: string, data: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600);
   fs.renameSync(tmp, file);
 }
 
@@ -116,6 +124,9 @@ function mergeExternal(memory: Cache, disk: Cache): void {
       for (const [sub, v] of Object.entries(diskValue)) if (!(sub in memValue)) memValue[sub] = v;
     }
   }
+  // ADR-0030: the merge appends another process's corrections after ours, so
+  // the cap is enforced again by savedAt (the insertion order no longer counts).
+  if (memory.hint_corrections) capCorrections(memory.hint_corrections);
 }
 
 /**
@@ -169,6 +180,11 @@ export class CacheManager {
         const disk: Cache = JSON.parse(fs.readFileSync(this.cachePath, 'utf8')) as Cache;
         const volatile = disk as unknown as Record<string, unknown>;
         for (const k of VOLATILE_KEYS) delete volatile[k];
+        // ADR-0030: a hand-edited correction store that is not an object would
+        // be adopted as-is and break the next write; drop it instead.
+        if (volatile.hint_corrections !== undefined && !isRecord(volatile.hint_corrections)) {
+          delete volatile.hint_corrections;
+        }
         return disk;
       }
     } catch {

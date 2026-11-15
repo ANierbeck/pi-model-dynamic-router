@@ -31,6 +31,19 @@ without the owner's explicit release approval).
 - One parser for the classifier decision log: `parseDecisionLogText` in `src/classifier-decision-log.ts` replaces the copy in `scripts/lib/decision-log.ts`, and the `/router classifier` summary uses the same function. Behaviour of the script readers is unchanged; a source-text pin (`test/single-decision-log-parser.test.ts`) fails if a second parser appears.
 
 ### Added
+- **`HINT: category <name>` corrects the classifier's category for a prompt and remembers it (ADR-0030 Option 1).**
+  The category form is a colon form and must name one of the seven categories; an unknown name is ignored with a warning. The
+  correction is stored in `cache.hint_corrections` under the exact prompt text after the HINT (no case folding; at least five
+  words; one entry per prompt, last write wins; capped at 64, least recently used dropped first). A saved category applies
+  to the same prompt later with no classifier call; a saved name no longer in the taxonomy is ignored and logged as the
+  `correction-stale` step, and the stale entry is dropped. Unknown and stale names are also shown as a notice in the session. Compaction is never overridden by a correction. An unknown name
+  classifies the content without the HINT head, so the marker never reaches the classifier; with no content behind the head the
+  turn falls back to `continue` with no classifier call at all. `/router corrections [list|clear]`
+  lists or clears them. Decision-log records show the `correction` stage. Pins: `test/hint-corrections-store.test.ts`, `test/hint-category-syntax.test.ts`, `test/classification-cache.test.ts`,
+  `test/classifier-decision-log.test.ts`, `test/orchestrator-hint-wiring.test.ts`, `test/router-corrections-command.test.ts`.
+  Privacy: the exact-match key is the **raw prompt text**, stored in the router's scan cache (`<state-dir>/.cache/scan-cache.json`);
+  the store is capped at 64 entries (LRU) and the cache file is now written owner-only (mode 0600, like the classifier decision
+  log), because it holds what the user typed.
 - `/router classifier [days]` (default 7, 1..90): a summary of the classifier decision log for the window: stage mix, `continue` before and after inheritance, the share of chain exhaustions (no classifier answer), chain failure rate, classification time p50/p95, and the top Laya-vs-chain disagreements where Laya did not act. It reads the JSONL and its rotated files, so it survives restarts, unlike the in-memory counters (ADR-0027 Phase 5, plan `docs/plans/2026-10-08-classifier-decision-log.md`).
 - ONNX sidecar package `laya-sidecar/` (`@anierbeck/laya-sidecar`, private until release 2.0.0, plan `docs/plans/2026-11-11-onnx-sidecar-package.md`): serves the Laya router model through ONNX Runtime on Linux, Windows and Apple Silicon. Platform table and install steps in `laya-sidecar/README.md`: darwin/arm64 is tested; the other platforms are not, and Intel Macs are not supported. The install needs `ONNXRUNTIME_NODE_INSTALL=skip`, which keeps the CUDA download off. The vendored inference code is `laya-ts` at `3a38cbe` (Apache-2.0, `LICENSE-laya`).
 - The sidecar's `/classify` answers match the MLX reference on the golden set (180/180) and on a 300-item corpus sample (298/300, gate 297), with production prompt truncation applied on both sides.

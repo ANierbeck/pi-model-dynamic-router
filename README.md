@@ -92,6 +92,12 @@ Removed "anthropic/*" from the user config (<pi-agent>/router-config.user.json).
 
 Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions.jsonl`: the stage (hint / compaction / momentum / cache / llm-local / llm-cloud / static / fallback), the full candidate chain with per-attempt outcome and machine-classified failure reason, the raw vs the final category (with the post-processing steps between them), the routed group, and timing — the input for "how good is the classifier" and for offline known-vs-candidate comparisons (`scripts/classifier-replay.ts`, ADR-0027). `/router classifier [days]` summarises the same file and its rotated copies (stage mix, `continue` before and after inheritance, chain exhaustions, chain failures, latency, top Laya disagreements). The log is fail-open (an unwritable location never changes routing) and the file is created with mode 0600.
 
+**Correcting a category.** `HINT: category <name> <your prompt>` applies the named category to that turn and saves the correction for the exact prompt text that follows (at least five words; shorter prompts are never saved). The same prompt later, without the HINT, gets the saved category with no classifier call. `/router corrections` lists the saved corrections, `/router corrections clear` drops them all. An unknown name is ignored with a warning that lists the valid names. Design: `docs/adr/0030-feedback-correction-sequencing.md`.
+
+A turn that is compacted is never answered from a saved correction. An unknown name is reported (in the log and as a notice) and the content is classified without the HINT head — with no content behind the head, the turn falls back to `continue` without any classifier call, so the marker never reaches the classifier. A saved name that is no longer a category is reported once and dropped.
+
+Privacy: a correction is stored under the **raw prompt text** as its exact-match key, so the router's scan cache file (`<state-dir>/.cache/scan-cache.json`, next to `router-config.dynamic.json` in the extension dir unless `PI_ROUTER_STATE_DIR` is set) contains what the user typed. The store is capped at 64 entries (least recently used dropped first), it is listed and cleared with `/router corrections`, and the cache file is written owner-only (mode 0600), like the classifier decision log.
+
 ```jsonc
 {
   "classifier_log": {
@@ -365,6 +371,7 @@ All scanning is async and non-blocking.
 - **The router never reads or writes Pi's credential store (ADR-0022).** No API key, key reference, or auth-file pointer is stored in `router-config.json` or resolved by the router — Pi owns credential resolution end-to-end. (Legacy `keys` arrays in older router-config files are ignored, never read.)
 - **Prompt content stays local by default.** The dynamic-group content classifier runs against a local Ollama model. If both local classifier models are unavailable, it falls back to static keyword matching (only if `allowStaticFallback` is enabled) rather than sending anything externally.
 - **Optional cloud classifier fallback (`classifier_cloud_chain`, off by default).** If explicitly enabled in `router-config.json`, and only as a last resort when local classification fails, the raw prompt is sent to a free cloud model from your own configured `free_models` for classification purposes. This is opt-in and separate from using that same provider as a normal answering fallback, because classification and answering have different data-exposure implications for the same free-model config. Enable only if you're comfortable with that provider seeing prompt content for classification, not just for answering your requests.
+- **Saved HINT corrections stay local, as raw prompt text.** `HINT: category <name> <prompt>` stores the prompt text (at least five words) as an exact-match key in the scan cache file, which is written owner-only (mode 0600). The store is capped at 64 entries and is never sent anywhere; `/router corrections clear` removes them (see "Correcting a category" above).
 - **GDPval scraping and pricing/model scans are outbound-only, read-only HTTP GETs** to public model/leaderboard endpoints; no prompt content, API keys, or other local data is included in those requests.
 
 ---
@@ -820,6 +827,7 @@ discovers automatically.
 | `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
+| `/router corrections [list|clear]` | Saved `HINT: category` corrections: list them with the exact prompt text each matches, or clear all (ADR-0030) |
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
 | `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
