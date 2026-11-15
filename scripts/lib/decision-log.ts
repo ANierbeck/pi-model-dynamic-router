@@ -10,6 +10,7 @@
 
 import { readFileSync } from 'node:fs';
 import {
+  NON_CLASSIFICATION_STAGES,
   parseDecisionLogText,
   type DecisionRecord,
   type LogBounds,
@@ -32,10 +33,12 @@ export type { DecisionRecord, LogBounds } from '../../src/classifier-decision-lo
  * Pool records have no `input` block — they are returned as they are.
  */
 export function readDecisionLogRecords(path: string, bounds: LogBounds = {}): DecisionRecord[] {
-  // Phase 2/4 records (outcome/correction/shadow) are a different shape with
-  // their own join; this reader serves classification + pool records only.
+  // Phase 2/4 records (outcome/route-correction) are a different shape with
+  // their own join; this reader serves classification + pool records only. The
+  // stage list lives in NON_CLASSIFICATION_STAGES, so a new record kind is
+  // skipped here by joining that set — never by editing this filter.
   return parseDecisionLogText(readFileSync(path, 'utf8'), bounds).filter(
-    (r) => r.stage !== 'outcome' && r.stage !== 'correction' && r.stage !== 'shadow'
+    (r) => !NON_CLASSIFICATION_STAGES.has(r.stage)
   ) as DecisionRecord[];
 }
 

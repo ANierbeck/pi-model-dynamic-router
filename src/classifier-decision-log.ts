@@ -76,6 +76,10 @@ export const NON_ROUTING_STAGES: ReadonlySet<string> = new Set([
   'comparator',
   'observation',
   'observation-comparator',
+  // Phase 2/4 records (ADR-0027): they describe a decision that was made
+  // (a turn outcome, a route correction) instead of making one.
+  'outcome',
+  'route-correction',
 ]);
 
 /**
@@ -88,6 +92,19 @@ export const NON_ROUTING_STAGES: ReadonlySet<string> = new Set([
 export function isRoutingRecord(rec: { stage: string }): boolean {
   return !NON_ROUTING_STAGES.has(rec.stage);
 }
+
+/**
+ * Stages whose records are not classification records: they carry their own
+ * shape and their own join (ADR-0027 Phase 2/4). The decision-log reader
+ * returns classification and pool records only, so it skips exactly these.
+ *
+ * Not the same question as NON_ROUTING_STAGES: a pool record never routed a
+ * prompt either, but it is still a record the reader hands out.
+ */
+export const NON_CLASSIFICATION_STAGES: ReadonlySet<string> = new Set([
+  'outcome',
+  'route-correction',
+]);
 
 export interface DecisionRecord {
   v: number;
@@ -360,7 +377,7 @@ export interface DecisionCorrectionRecord {
   v: number;
   ts: string;
   proc: string;
-  stage: 'correction';
+  stage: 'route-correction';
   /** The turn the HINT appears on. */
   turn: string | null;
   /** The turn being corrected. */
@@ -382,7 +399,7 @@ export function buildCorrectionRecord(p: CorrectionParams): DecisionCorrectionRe
     v: DECISION_LOG_VERSION,
     ts: new Date().toISOString(),
     proc: procTag(),
-    stage: 'correction',
+    stage: 'route-correction',
     turn: p.turn ?? null,
     prevTurn: p.prevTurn ?? null,
     from: p.from,

@@ -101,7 +101,7 @@ describe('Phase 2 — outcome and correction records', () => {
       from: { group: 'standard', ref: 'claude-bridge/claude-haiku-5-5' },
       to: { group: 'planning', ref: null },
     });
-    expect(rec.stage).toBe('correction');
+    expect(rec.stage).toBe('route-correction');
     expect(rec.prevTurn).toBe('sessA#4');
     expect(rec.to.group).toBe('planning');
   });

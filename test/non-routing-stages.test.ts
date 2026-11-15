@@ -8,12 +8,18 @@ import { describe, it, expect } from 'vitest';
 import { NON_ROUTING_STAGES } from '../src/classifier-decision-log.ts';
 
 describe('NON_ROUTING_STAGES', () => {
-  it.each(['pool', 'comparator', 'observation', 'observation-comparator'])(
-    'contains %s',
-    (stage) => {
-      expect(NON_ROUTING_STAGES.has(stage)).toBe(true);
-    }
-  );
+  it.each([
+    'pool',
+    'comparator',
+    'observation',
+    'observation-comparator',
+    // Phase 2/4 records (ADR-0027): a turn outcome and a route correction
+    // describe a decision, they never made one.
+    'outcome',
+    'route-correction',
+  ])('contains %s', (stage) => {
+    expect(NON_ROUTING_STAGES.has(stage)).toBe(true);
+  });
 
   it.each([
     'laya',
