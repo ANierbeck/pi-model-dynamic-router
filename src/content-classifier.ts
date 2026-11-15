@@ -43,6 +43,7 @@ import {
   resolveClassifierLogConfig,
   writeDecisionRecord,
   type ClassificationTrace,
+  type DecisionShadowEntry,
 } from './classifier-decision-log.ts';
 import {
   buildContextBlock,
@@ -133,7 +134,26 @@ export interface HintClassificationResult {
 // user HINT/MHINT in the prompt; every category (including upgrade
 // categories) routes via CATEGORY_TO_GROUP alone (five-group layout).
 
+/** ADR-0027 Phase 4 seam: a second classifier that observes the same prompt
+ * without ever routing. Implementations must be total (never throw to the
+ * caller — the seam swallows and records errors). */
+export interface ShadowClassifier {
+  name: string;
+  classify(prompt: string, context?: ClassificationContext): Promise<FullClassificationResult>;
+}
+
 export interface ClassificationOptions {
+  /** ADR-0027 Phase 2: the turn this classification belongs to, minted by the
+   * stream orchestrator (`<session>#<seq>`); lands on the decision record. */
+  turn?: string | null;
+  /** ADR-0027 Phase 4: an optional shadow classifier, run detached while the
+   * record flush waits for it. Never runs for HINT prompts; its result never
+   * changes the returned classification, it only lands in the record's
+   * `shadow[]`. */
+  shadow?: ShadowClassifier;
+  /** Timeout for the detached shadow run (default 10s); on timeout the record
+   * is flushed with an `error` entry. */
+  shadowTimeoutMs?: number;
   model?: string;
   timeoutMs?: number;
   fallbackModel?: string;
@@ -649,6 +669,9 @@ export async function classifyPrompt(
   countClassification(result, holder.source);
   // Fail-open for the WHOLE log step (record construction included, not just
   // the file write): logging must never change or break a classification.
+  // ADR-0027 Phase 4: when a shadow runs, the record is flushed when the
+  // shadow settles (or times out) so its entries land in the same record's
+  // `shadow[]`; the classification itself returns without waiting.
   try {
     writeDecisionLog(prompt, options, holder, raw, result, started, prevCategory);
   } catch {
@@ -674,6 +697,7 @@ function writeDecisionLog(
 ): void {
   const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
   if (!log) return;
+  const shadow = shadowRunFor(prompt, options, result);
   const rawCategory = 'category' in raw ? raw.category : undefined;
   const inherited = result !== raw && rawCategory === 'continue';
   if (inherited) holder.trace.steps.push('fallback-inherit');
@@ -686,6 +710,7 @@ function writeDecisionLog(
         : (holder.source ?? 'fallback');
   const record = buildDecisionRecord({
     prompt,
+    turn: options.turn ?? null,
     stage,
     trace: holder.trace,
     prev: prevCategory
@@ -708,7 +733,66 @@ function writeDecisionLog(
     cfgBlock: options.cfg?.classifier?.log,
     home: homedir(),
   });
+  if (shadow) {
+    // Flush when the shadow settles or times out; routing already returned.
+    void shadow.then(
+      (entries) => {
+        record.shadow = entries;
+        writeDecisionRecord(record, homedir(), log);
+      },
+      () => writeDecisionRecord(record, homedir(), log)
+    );
+    return;
+  }
   writeDecisionRecord(record, homedir(), log);
+}
+
+/**
+ * ADR-0027 Phase 4: start the shadow classifier, or null when there is none or
+ * the prompt is a HINT (the hint IS the routing decision — no shadow). The
+ * returned promise settles with the shadow entries (an `error` entry on
+ * throw/timeout); it never rejects. Fire-and-forget: classifyPrompt does not
+ * await it, so the classification's latency is unchanged.
+ */
+function shadowRunFor(
+  prompt: string,
+  options: ClassificationOptions,
+  result: FullClassificationResult
+): Promise<DecisionShadowEntry[]> | null {
+  const shadow = options.shadow;
+  if (!shadow) return null;
+  if (detectHintDirectly(prompt) || 'hintType' in result) return null;
+  const timeoutMs = options.shadowTimeoutMs ?? 10_000;
+  const t0 = Date.now();
+  const run = Promise.resolve()
+    .then(() => shadow.classify(prompt, options.context))
+    .then((shadowResult): DecisionShadowEntry[] => [
+      {
+        name: shadow.name,
+        ...('category' in shadowResult
+          ? {
+              category: shadowResult.category,
+              ...(shadowResult.confidence !== undefined
+                ? { confidence: shadowResult.confidence }
+                : {}),
+              reason: shadowResult.reason ?? null,
+            }
+          : { reason: shadowResult.reason ?? null }),
+        ms: Date.now() - t0,
+      },
+    ]);
+  const timeout = new Promise<DecisionShadowEntry[]>((resolve) =>
+    setTimeout(
+      () => resolve([{ name: shadow.name, error: `timeout after ${timeoutMs}ms` }]),
+      timeoutMs
+    )
+  );
+  return Promise.race([
+    run.catch((err: unknown) => [
+      { name: shadow.name, error: err instanceof Error ? err.message : String(err) },
+    ]),
+    timeout,
+  ]);
 }
 
 /**

@@ -93,6 +93,14 @@ export interface DecisionRecord {
   v: number;
   ts: string;
   proc: string;
+  /** ADR-0027 Phase 2: the turn this classification belongs to, minted by the
+   * stream orchestrator (`<session>#<seq>`), null when the caller did not
+   * mint one. Join key for outcome/correction records of the turn. */
+  turn?: string | null;
+  /** ADR-0027 Phase 4: what the shadow classifier(s) said about the same
+   * input. Present (possibly empty) when a shadow ran; the record is flushed
+   * when the shadow settles or times out. Never present for HINT prompts. */
+  shadow?: DecisionShadowEntry[];
   /** hint | compaction | momentum | cache | laya | llm-local | llm-cloud | static | fallback |
    * comparator — the DETACHED background chain of the live A/B snapshot (owner
    * decision 2026-10-25): written only when a confident Laya answer took the
@@ -230,6 +238,7 @@ function storeInput(
 export interface RecordParams {
   prompt: string;
   stage: string;
+  turn?: string | null;
   trace: ClassificationTrace;
   prev?: { category: string | null; group: string | null } | null;
   final: {
@@ -267,6 +276,7 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
     ts: new Date().toISOString(),
     proc: procTag(),
     stage: p.stage,
+    turn: p.turn ?? null,
     answered_by: p.trace.answeredBy,
     chain: p.trace.chain,
     cache_origin: p.trace.cacheOrigin,
@@ -300,6 +310,129 @@ export function buildDecisionRecord(p: RecordParams): DecisionRecord {
       },
     },
   };
+}
+
+// ── Phase 2 records: outcome + correction (ADR-0027) ────────────────────────
+
+/** What a turn's classification LED TO. Emitted from the stream-finish,
+ * model_select (/model) and MHINT paths — `via` says which. A turn that never
+ * streamed emits none. */
+export interface DecisionOutcomeRecord {
+  v: number;
+  ts: string;
+  proc: string;
+  stage: 'outcome';
+  turn: string | null;
+  /** Model that served (or was pinned for) the turn. */
+  ref: string;
+  via: 'stream' | 'model_select' | 'mhint';
+  outcome: 'ok' | 'failed';
+  ms: number;
+  error?: string;
+}
+
+export interface OutcomeParams {
+  turn: string | null;
+  ref: string;
+  via: DecisionOutcomeRecord['via'];
+  outcome: DecisionOutcomeRecord['outcome'];
+  ms: number;
+  error?: string;
+}
+
+export function buildOutcomeRecord(p: OutcomeParams): DecisionOutcomeRecord {
+  return {
+    v: DECISION_LOG_VERSION,
+    ts: new Date().toISOString(),
+    proc: procTag(),
+    stage: 'outcome',
+    turn: p.turn ?? null,
+    ref: p.ref,
+    via: p.via,
+    outcome: p.outcome,
+    ms: p.ms,
+    ...(p.error ? { error: p.error } : {}),
+  };
+}
+
+/** A group HINT on a later turn corrected the previous turn's route. */
+export interface DecisionCorrectionRecord {
+  v: number;
+  ts: string;
+  proc: string;
+  stage: 'correction';
+  /** The turn the HINT appears on. */
+  turn: string | null;
+  /** The turn being corrected. */
+  prevTurn: string | null;
+  from: { group: string | null; ref: string | null };
+  to: { group: string | null; ref: string | null };
+  via: 'hint';
+}
+
+export interface CorrectionParams {
+  turn: string | null;
+  prevTurn: string | null;
+  from: { group: string | null; ref: string | null };
+  to: { group: string | null; ref: string | null };
+}
+
+export function buildCorrectionRecord(p: CorrectionParams): DecisionCorrectionRecord {
+  return {
+    v: DECISION_LOG_VERSION,
+    ts: new Date().toISOString(),
+    proc: procTag(),
+    stage: 'correction',
+    turn: p.turn ?? null,
+    prevTurn: p.prevTurn ?? null,
+    from: p.from,
+    to: p.to,
+    via: 'hint',
+  };
+}
+
+// ── Phase 4: shadow entries on the classification record ────────────────────
+
+/** One settled shadow run: the answer, or the swallowed error. */
+export interface DecisionShadowEntry {
+  name: string;
+  category?: string;
+  confidence?: number;
+  reason?: string | null;
+  ms?: number;
+  error?: string;
+}
+
+export type DecisionLogRecord =
+  | DecisionRecord
+  | DecisionPoolRecord
+  | DecisionOutcomeRecord
+  | DecisionCorrectionRecord;
+
+export function writeOutcomeRecord(
+  params: OutcomeParams,
+  home: string,
+  log: { maxBytes: number; keep: number }
+): void {
+  try {
+    const rec = buildOutcomeRecord(params);
+    appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
+  } catch {
+    /* fail-open, same as writeDecisionRecord */
+  }
+}
+
+export function writeCorrectionRecord(
+  params: CorrectionParams,
+  home: string,
+  log: { maxBytes: number; keep: number }
+): void {
+  try {
+    const rec = buildCorrectionRecord(params);
+    appendRotating(decisionLogPath(home), JSON.stringify(rec), log, 0o600);
+  } catch {
+    /* fail-open */
+  }
 }
 
 /** Append one record, never throwing (fail-open: logging must not break routing). */
@@ -384,8 +517,8 @@ export interface LogBounds {
  *
  * Pool records have no `input` block and are returned as they are.
  */
-export function parseDecisionLogText(text: string, bounds: LogBounds = {}): DecisionRecord[] {
-  const out: DecisionRecord[] = [];
+export function parseDecisionLogText(text: string, bounds: LogBounds = {}): DecisionLogRecord[] {
+  const out: DecisionLogRecord[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let parsed: unknown;
@@ -395,7 +528,7 @@ export function parseDecisionLogText(text: string, bounds: LogBounds = {}): Deci
       continue;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-    const rec = parsed as DecisionRecord;
+    const rec = parsed as DecisionLogRecord;
     if (bounds.since !== undefined || bounds.until !== undefined) {
       const ts = Date.parse(String(rec.ts));
       if (Number.isNaN(ts)) continue;

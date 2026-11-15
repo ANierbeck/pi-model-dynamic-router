@@ -155,6 +155,12 @@ import {
 import { isOllamaProbablyDown } from './ollama-utils.ts';
 import { inSubCall } from './subcall-scope.ts';
 import { runInSession } from './turn-state.ts';
+import { homedir } from 'node:os';
+import {
+  resolveClassifierLogConfig,
+  writeCorrectionRecord,
+  writeOutcomeRecord,
+} from './classifier-decision-log.ts';
 
 /**
  * Narration label for an empty response on a PAID cloud model: stopReason
@@ -324,6 +330,9 @@ export interface StreamOrchestratorContext {
     prompt: string,
     opts: ClassificationOptions
   ) => Promise<FullClassificationResult>;
+  /** ADR-0027 Phase 2: decision-log turn id minted for the current turn.
+   * Optional: a ctx without it logs records with turn null. */
+  turnId?: () => string;
   detectHintDirectly: (prompt: string) => HintClassificationResult | null;
   getGroupForCategory: (category: string, cfg?: Config) => string;
   // Context helpers
@@ -684,6 +693,11 @@ export class StreamOrchestrator {
         if (cfg.classifier?.cloud?.candidates)
           classifyOpts.cloudCandidates = cfg.classifier.cloud.candidates;
 
+        // ADR-0027 Phase 2: mint the turn id for the decision log.
+        const turnId = this.ctx.turnId?.() ?? null;
+        classifyOpts.turn = turnId;
+        const prevGroupAtTurnStart = this.ctx.activeGroup ?? null;
+        const prevTurnSeq = Number(turnId?.split('#')[1] ?? 0);
         const classification = await this.ctx.classifyPrompt(prompt ?? '', classifyOpts);
         // A user pin decides the model, not the category: the turn's content
         // still has one, and that is what the next unpinned turn inherits.
@@ -697,6 +711,43 @@ export class StreamOrchestrator {
           if (!inSubCall()) this.ctx.lastClassifiedCategory = contentClassification.category;
         }
 
+        // ADR-0027 Phase 2: a group HINT corrects the previous turn's route;
+        // a model HINT (MHINT) is the turn's outcome pin.
+        if ('hintType' in classification) {
+          const log = resolveClassifierLogConfig(cfg.classifier?.log);
+          if (log) {
+            const turn = turnId ?? null;
+            if (classification.hintType === 'group') {
+              const toGroup = classification.hintTarget;
+              if (prevGroupAtTurnStart && prevGroupAtTurnStart !== toGroup && prevTurnSeq > 0) {
+                try {
+                  writeCorrectionRecord(
+                    {
+                      turn,
+                      prevTurn: turn ? `${turn.split('#')[0]}#${prevTurnSeq}` : null,
+                      from: { group: prevGroupAtTurnStart, ref: this.ctx.lastDynamicModel || null },
+                      to: { group: toGroup, ref: null },
+                    },
+                    homedir(),
+                    log
+                  );
+                } catch {
+                  /* fail-open */
+                }
+              }
+            } else if (classification.hintType === 'model') {
+              try {
+                writeOutcomeRecord(
+                  { turn, ref: classification.hintTarget, via: 'mhint', outcome: 'ok', ms: 0 },
+                  homedir(),
+                  log
+                );
+              } catch {
+                /* fail-open */
+              }
+            }
+          }
+        }
         // HINT override
         if ('hintType' in classification) {
           if (classification.hintType === 'group') {

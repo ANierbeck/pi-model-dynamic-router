@@ -32,7 +32,11 @@ export type { DecisionRecord, LogBounds } from '../../src/classifier-decision-lo
  * Pool records have no `input` block — they are returned as they are.
  */
 export function readDecisionLogRecords(path: string, bounds: LogBounds = {}): DecisionRecord[] {
-  return parseDecisionLogText(readFileSync(path, 'utf8'), bounds);
+  // Phase 2/4 records (outcome/correction/shadow) are a different shape with
+  // their own join; this reader serves classification + pool records only.
+  return parseDecisionLogText(readFileSync(path, 'utf8'), bounds).filter(
+    (r) => r.stage !== 'outcome' && r.stage !== 'correction' && r.stage !== 'shadow'
+  ) as DecisionRecord[];
 }
 
 /** The flat shape the join / walk / replay scripts work with. */

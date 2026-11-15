@@ -13,6 +13,7 @@ import {
   decisionLogPath,
   isRoutingRecord,
   parseDecisionLogText,
+  type DecisionLogRecord,
   type DecisionRecord,
 } from './classifier-decision-log.ts';
 
@@ -49,17 +50,18 @@ export interface ClassifierSummary {
 }
 
 /** The fields the summary reads, checked before a record is trusted. */
-function hasRecordShape(v: DecisionRecord): boolean {
+function hasRecordShape(v: DecisionLogRecord): v is DecisionRecord {
   const isObjectOrNull = (x: unknown): boolean =>
     x === undefined || x === null || typeof x === 'object';
+  const chain = (v as { chain?: unknown }).chain;
   return (
     typeof v.ts === 'string' &&
     typeof v.stage === 'string' &&
-    (v.chain === undefined ||
-      (Array.isArray(v.chain) && v.chain.every((a) => a !== null && typeof a === 'object'))) &&
-    isObjectOrNull(v.raw) &&
-    isObjectOrNull(v.final) &&
-    isObjectOrNull(v.laya)
+    (chain === undefined ||
+      (Array.isArray(chain) && chain.every((a) => a !== null && typeof a === 'object'))) &&
+    isObjectOrNull((v as { raw?: unknown }).raw) &&
+    isObjectOrNull((v as { final?: unknown }).final) &&
+    isObjectOrNull((v as { laya?: unknown }).laya)
   );
 }
 

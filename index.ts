@@ -641,6 +641,12 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set turnStart(v) {
       turn().turnStart = v;
     },
+    get turnSeq() {
+      return turn().turnSeq;
+    },
+    set turnSeq(v) {
+      turn().turnSeq = v;
+    },
     // M3 (plan 2026-11-07-turn-latency-tool-time.md): the turn's model-stream
     // time, written by the orchestrator per finished stream, read and reset by
     // the turn handlers — so the latency sample measures the stream, not the
@@ -1033,6 +1039,8 @@ const defaultExport = function (pi: ExtensionAPI): void {
     set lastClassifiedCategory(v) {
       turn().lastClassifiedCategory = v;
     },
+    /** ADR-0027 Phase 2: decision-log turn id `<session>#<seq>` of the current turn. */
+    turnId: () => `${currentSessionId() || 'default'}#${turn().turnSeq}`,
     get sessionCtx(): ExtensionContext | null {
       return sessionCtx;
     },
