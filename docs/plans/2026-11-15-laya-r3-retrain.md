@@ -1,12 +1,17 @@
 # Laya r3: retrain on the v2-r3 taxonomy with live owner labels, honest calibration, and a de-emphasized `continue`
 
-**Status:** approved 2026-11-15 — all four owner decisions are recorded
-(Decisions below); implementation has not started (next step:
-`to_laya_jsonl_v3.py`, then the corpus stats for review, then the train run).
-The r2 artifact (`router@1.0.0`, tag `laya-router-v1.0.0`, head `5f12495d…`)
-stays the served model until r3 passes the pre-registered gate below.
-Publishing any artifact is a separate owner decision (AGENTS §1; the
-manifest entry stays `published: false`).
+**Status:** done 2026-11-15 — **r3 was built, trained and gated, and it failed
+the gate.** The run is recorded in
+[`docs/research/2026-11-15-laya-r3-run.md`](../research/2026-11-15-laya-r3-run.md):
+G1 43.2 % (need ≥ 53.4 %), G2 56.0 % (need ≥ 60 %), G3 ECE 0.247 (need ≤ 0.10);
+G4 is not measurable because every current shadow label is in the training set.
+Per the pre-registered rule below, **r2 stays the served artifact**
+(`router@1.0.0`, tag `laya-router-v1.0.0`, head `5f12495d…`); r3 is kept at
+`~/.laya-ft/runs/r3` for analysis only and is not packaged. The "~5 h per run"
+estimate in Decision 4 was wrong by an order of magnitude — the real run took
+41 min, and the measurement is in the research note. Publishing any artifact
+remains a separate owner decision (AGENTS §1; the manifest entry stays
+`published: false`).
 
 **Related plans (reused, not changed):** `2026-10-08-laya-finetuning-state.md`
 (training pipeline), `2026-10-15-laya-shadow-evaluation.md` (live labels +
@@ -158,7 +163,9 @@ shadow items as in R2 (alpha 0.05, one-sided).
    test, because Laya is then local, free and prompt-local at equal quality),
    G2 ≥ 60 %, G3 ≤ 0.10, G4 ≥ 30.5 %. Tightening G1 to ≥ 60 % was considered
    and rejected: it would keep r2 even if r3 were locally as good as Opus.
-4. **Training locally on MPS** (as r2, ~5 h per run); no cloud GPU run.
+4. **Training locally on MPS** (as r2); no cloud GPU run. The "~5 h per run"
+   in the original text was unmeasured and wrong: the r3 run took 41 min
+   (`docs/research/2026-11-15-laya-r3-run.md` §1).
 
 ## Open decisions (owner)
 
