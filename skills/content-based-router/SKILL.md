@@ -158,9 +158,9 @@ consults the user. Kept for design history:
 ---
 
 ## Dependencies (shipped)
-- **Local model**: `ollama/mistral-nemo:latest` (shipped primary) with
-  `ollama/gemma2:2b` as the local fallback (or `ollama/phi3:mini` for
-  better accuracy on small hardware).
+- **Local model**: derived from what the Ollama daemon reports and verified
+  by a probe (ADR-0025) — the shipped config names no model. Pin your own with
+  `classifier.local.model` / `classifier.local.fallback`.
 - **No token-estimation or user-confirmation dependency**: the sketch's
   `tiktoken`/`gpt-tokenizer` cost gate was never implemented — the
   classifier returns `{ category, reason }` and routing is automatic.

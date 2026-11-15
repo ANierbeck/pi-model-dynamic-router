@@ -104,3 +104,5 @@ Commit `bd37cd4` on `docs/sync-with-behavior` (2026-11-14), read as follows:
 Checked in Phase 4 (2026-11-15): the `/router` handler receives an `ExtensionCommandContext` that carries `mode` and `ui` (`types.d.ts`, `ExtensionCommandContext extends ExtensionContext`); the menu runs only when `ctx.mode === 'tui'`. Phase 5 (2026-11-15): the generated reference and the routing-flow pins are checked by `test/config-reference-docs.test.ts`.
 
 **Not checked:** the owner's own user layer beyond the shipped file; the length limit of the `/router` completion list.
+
+**Not recorded in the repo:** the owner's instruction to execute this plan (2026-11-15) came from the working session, not from a file here. The ADR therefore stays Proposed until the owner accepts it at merge.
