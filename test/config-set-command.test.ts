@@ -46,6 +46,20 @@ describe('/router config set — writes through the table', () => {
     expect(readUser()).toEqual({ classifier: { local: { model: 'ollama/judge:1b' } } });
   });
 
+  it('accepts a pi ref whose id holds a slash, and a namespaced ollama name', async () => {
+    const cloud = await setup({ knownModels: ['openrouter/openrouter/free'] }).run(
+      'config set classifier.cloud.model openrouter/openrouter/free'
+    );
+    expect(cloud).toMatch(/classifier\.cloud\.model is openrouter\/openrouter\/free/);
+    expect(readUser()).toEqual({ classifier: { cloud: { model: 'openrouter/openrouter/free' } } });
+
+    const local = await setup().run(
+      'config set classifier.local.model ollama/hf.co/user/model:tag'
+    );
+    expect(local).toMatch(/classifier\.local\.model is ollama\/hf\.co\/user\/model:tag/);
+    expect(readUser().classifier.local).toEqual({ model: 'ollama/hf.co/user/model:tag' });
+  });
+
   it('writes a candidate list only when pi knows every model in it', async () => {
     const refused = await setup({ knownModels: ['acme/a'] }).run(
       'config set classifier.cloud.candidates acme/a,acme/gone'
@@ -111,6 +125,18 @@ describe('/router config unset', () => {
     expect(readUser()).toEqual({});
     expect(out).toMatch(/classifier\.cloud\.model is unset/);
   });
+
+  it('names the project layer when its pre-2.0 key still sets the removed value', async () => {
+    fs.writeFileSync(userFile(), JSON.stringify({ classifier: { cloud: { model: 'acme/c' } } }));
+    fs.writeFileSync(
+      projectFile(),
+      JSON.stringify({ model_groups: { dynamic: { classifier_cloud_model: 'acme/p' } } })
+    );
+    const out = await setup().run('config unset classifier.cloud.model');
+    expect(readUser()).toEqual({});
+    expect(out).toMatch(/classifier\.cloud\.model is still acme\/p/);
+    expect(out).toContain(projectFile());
+  });
 });
 
 describe('/router config set — the reply states what is in effect', () => {
@@ -120,6 +146,29 @@ describe('/router config set — the reply states what is in effect', () => {
     expect(readUser()).toEqual({ classifier: { cloud: { enabled: true } } });
     expect(out).toMatch(/still off/);
     expect(out).toMatch(/router-config\.json/);
+  });
+
+  it('does not claim an override when the project layer holds the same list', async () => {
+    fs.writeFileSync(
+      projectFile(),
+      JSON.stringify({ classifier: { cloud: { candidates: ['acme/a', 'acme/b'] } } })
+    );
+    const out = await setup({ knownModels: ['acme/a', 'acme/b'] }).run(
+      'config set classifier.cloud.candidates acme/a,acme/b'
+    );
+    expect(out).not.toMatch(/overrides/);
+    expect(out).toMatch(/classifier\.cloud\.candidates is acme\/a, acme\/b — saved to/);
+  });
+
+  it('names the project layer when it overrides through a pre-2.0 key', async () => {
+    fs.writeFileSync(
+      projectFile(),
+      JSON.stringify({ model_groups: { dynamic: { classifier_cloud_chain: false } } })
+    );
+    const out = await setup().run('config set classifier.cloud.enabled on');
+    expect(readUser()).toEqual({ classifier: { cloud: { enabled: true } } });
+    expect(out).toMatch(/classifier\.cloud\.enabled is still off/);
+    expect(out).toContain(projectFile());
   });
 
   it('ends with the classifier chain the new config produces', async () => {

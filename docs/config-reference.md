@@ -15,7 +15,7 @@ the static rules. The config only switches legs on and off and names their model
 
 - **Laya** — off: integration not enabled
 - **Local (Ollama)** — on: models derived from what Ollama reports
-- **Cloud** — on: on, when local gives no answer; probe-verified list
+- **Cloud** — on: when local gives no answer; probe-verified list
 - **Static rules** — off: only for the :use-static model variant; not set by the config
 
 ## Keys

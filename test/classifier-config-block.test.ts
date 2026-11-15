@@ -60,6 +60,35 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
     expect(warnings().some((m) => m.includes('classifier_cloud_fallback'))).toBe(true);
   });
 
+  it('resolves two old names for one key by the table order, not the file order', () => {
+    // classifier_cloud_chain decided before 2.0; classifier_cloud_fallback was
+    // dropped. The file lists the older name first on purpose.
+    const { config } = loadWithProjectLayer({
+      model_groups: { dynamic: { classifier_cloud_fallback: true, classifier_cloud_chain: false } },
+    });
+    expect(config.classifier?.cloud?.enabled).toBe(false);
+    const loser = warnings().filter((m) => m.includes('classifier_cloud_fallback'));
+    expect(loser).toHaveLength(1);
+    expect(loser[0]).toContain('ignored');
+  });
+
+  it('warns once when the same layer is loaded again, and again after it was fixed', () => {
+    const stale = {
+      model_groups: { dynamic: { classifier_cloud_chain: false } },
+      classifier: { cloud: { enable: true } },
+    };
+    loadWithProjectLayer(stale);
+    loadWithProjectLayer(stale);
+    const count = (needle: string): number => warnings().filter((m) => m.includes(needle)).length;
+    expect(count('classifier_cloud_chain')).toBe(1);
+    expect(count('classifier.cloud.enable:')).toBe(1);
+
+    loadWithProjectLayer({});
+    loadWithProjectLayer(stale);
+    expect(count('classifier_cloud_chain')).toBe(2);
+    expect(count('classifier.cloud.enable:')).toBe(2);
+  });
+
   it('moves the top-level classifier_log block to classifier.log', () => {
     const { config } = loadWithProjectLayer({
       classifier_log: { enabled: true, store_text: 'snippet' },
@@ -67,6 +96,14 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
     expect(config.classifier?.log?.store_text).toBe('snippet');
     expect(config).not.toHaveProperty('classifier_log');
     expect(warnings().some((m) => m.includes('classifier.log'))).toBe(true);
+  });
+
+  it('reports an unknown key of the old classifier_log block once, as a typo', () => {
+    const { config } = loadWithProjectLayer({ classifier_log: { foo: 1 } });
+    const w = warnings().filter((m) => m.includes('foo'));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('classifier_log.foo: unknown key');
+    expect(config.classifier?.log).not.toHaveProperty('foo');
   });
 
   it('moves the dynamic-group pins to classifier.local and classifier.cloud', () => {
@@ -99,7 +136,7 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
 
   it('does not translate the key on another group: only the dynamic group read it', () => {
     const { config } = loadWithProjectLayer({
-      model_groups: { simple: { classifier_cloud_chain: true } },
+      model_groups: { simple: { classifier_cloud_chain: false } },
     });
     expect(config.classifier?.cloud?.enabled).toBe(true); // shipped value, untouched
     const w = warnings().filter((m) => m.includes('classifier_cloud_chain'));

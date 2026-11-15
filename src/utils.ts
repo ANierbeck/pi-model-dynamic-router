@@ -260,6 +260,16 @@ export function setLeaf(root: Record<string, unknown>, dotted: string, value: un
   return true;
 }
 
+/** The value at a dotted path of a plain object tree, or undefined. */
+export function getLeaf(root: unknown, dotted: string): unknown {
+  let node: unknown = root;
+  for (const part of dotted.split('.')) {
+    if (!isPlainObject(node)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
 /** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
 export function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
   const parts = dotted.split('.');

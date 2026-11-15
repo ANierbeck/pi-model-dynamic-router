@@ -15,7 +15,7 @@ export interface ClassifierChainStep {
   label: string;
   /** Whether the config switches this leg on. */
   active: boolean;
-  /** One line: what the leg does with the current config. */
+  /** One line: what the leg does with the current config (on/off is `active`, not repeated here). */
   detail: string;
 }
 
@@ -39,15 +39,18 @@ export function describeClassifierChain(cfg: Config): ClassifierChainStep[] {
   const candidates = cloud?.candidates ?? [];
   const cloudParts: string[] = [];
   if (!cloudOn) {
-    cloudParts.push('off, prompt text stays on this machine');
+    cloudParts.push('prompt text stays on this machine');
   } else {
     cloudParts.push(
       cloud?.escalate_low_confidence === true
-        ? 'on, when local gives no answer or a low-confidence one'
-        : 'on, when local gives no answer'
+        ? 'when local gives no answer or a low-confidence one'
+        : 'when local gives no answer'
     );
+    // A pin goes first in front of any list, the configured one included
+    // (classifyViaLlmChain in content-classifier.ts).
+    const pinFirst = cloud?.model ? `pinned ${cloud.model} first, then ` : '';
     if (candidates.length > 0) {
-      cloudParts.push(`${candidates.length} configured, replaces the automatic chain`);
+      cloudParts.push(`${pinFirst}${candidates.length} configured, replaces the automatic chain`);
     } else if (cloud?.model) {
       cloudParts.push(`pinned ${cloud.model} first, then the probe-verified list`);
     } else {

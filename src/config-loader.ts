@@ -246,28 +246,48 @@ function validateRemovedGroups(layer: Partial<Config>, source: string): void {
   }
 }
 
+/** Per layer file: the migration warnings the last load gave (see migrateClassifierLayer). */
+const classifierMigrationWarned = new Map<string, Set<string>>();
+
 /**
- * Pre-2.0-pre classifier keys, read for one release (plan
+ * Pre-2.0 classifier keys, read for one release (plan
  * docs/plans/2026-11-14-config-surface-and-ui.md, decision 2). They sat on the
- * `dynamic` model group (`classifier.cloud.enabled`, `classifier.local.model`, …) and
- * as the top-level `classifier_log`; the table in src/config-keys.ts gives each
- * its new path in the `classifier` block. The value moves to the new path in
- * the same layer, with a warning that names both spellings. A value the layer
- * already sets at the new path wins; the old one is then only reported.
+ * `dynamic` model group (`classifier_cloud_chain` and its older spelling,
+ * `classifier_model`, …) and as the top-level `classifier_log` block; the table
+ * in src/config-keys.ts gives each its new path in the `classifier` block. The
+ * value moves to the new path in the same layer, with a warning that names both
+ * spellings. A value the layer already sets at the new path wins; the old one
+ * is then only reported. Two old names for one path are resolved in the
+ * table's `legacy` order, not the file's key order: before 2.0
+ * `classifier_cloud_chain` decided and the older spelling was dropped, so
+ * `classifier_cloud_chain` still wins.
  *
  * This replaces the "no read alias" rule of 2026-10-25 (Decision V2) for these
  * keys: a silently dropped cloud switch would turn the cloud chain off without
  * a word, and a translated one keeps the owner's setting.
  *
  * Keys on a group other than `dynamic` are dropped with a warning, as before
- * (only the dynamic group ever read them). Mutates the layer in place.
+ * (only the dynamic group ever read them). Unknown keys inside the block, or
+ * inside the old `classifier_log` block, are reported once as typos and
+ * removed. Each warning is given once per layer file until the problem is gone
+ * (the warnOnceFor pattern of the sibling validators): the config is reloaded
+ * on every command. Mutates the layer in place.
  */
 function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
   const bag = layer as Record<string, unknown>;
+  const warned = new Set<string>();
+  const warn = (problem: string, message: string): void => {
+    const key = `${source}:classifier:${problem}`;
+    warned.add(key);
+    warnOnceFor(key, message);
+  };
+  // Map order is table order: CONFIG_KEYS, then each entry's `legacy` order.
   const legacyToPath = new Map<string, string>();
   for (const spec of CONFIG_KEYS) {
     for (const old of spec.legacy ?? []) legacyToPath.set(old, spec.path);
   }
+  /** New path -> the old name that set it in this layer. */
+  const setBy = new Map<string, string>();
 
   const assign = (dottedPath: string, value: unknown, oldName: string): void => {
     const parts = dottedPath.split('.');
@@ -278,14 +298,25 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
       node = node[part] as Record<string, unknown>;
     }
     const leaf = parts[parts.length - 1];
+    const winner = setBy.get(dottedPath);
+    if (winner !== undefined) {
+      warn(
+        oldName,
+        `[router] ${source} ${oldName}: renamed to "${dottedPath}" — ${winner} sets it too and wins, so this value is ignored`
+      );
+      return;
+    }
     if (node[leaf] !== undefined) {
-      warnLog(
+      warn(
+        oldName,
         `[router] ${source} ${oldName}: renamed to "${dottedPath}" — the classifier block already sets it, so the old value is ignored`
       );
       return;
     }
     node[leaf] = value;
-    warnLog(
+    setBy.set(dottedPath, oldName);
+    warn(
+      oldName,
       `[router] ${source} ${oldName}: renamed to "${dottedPath}" — read for one release; move it to keep the setting`
     );
   };
@@ -295,15 +326,15 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
   if (isPlainObject(groups)) {
     for (const [name, g] of Object.entries(groups)) {
       if (!isPlainObject(g)) continue;
-      for (const old of Object.keys(g)) {
-        const newPath = legacyToPath.get(old);
-        if (!newPath) continue;
+      for (const [old, newPath] of legacyToPath) {
+        if (old.includes('.') || !Object.hasOwn(g, old)) continue;
         const value = g[old];
         delete g[old];
         if (name === 'dynamic') {
           assign(newPath, value, `model_groups.dynamic.${old}`);
         } else {
-          warnLog(
+          warn(
+            `model_groups.${name}.${old}`,
             `[router] ${source} model_groups.${name}.${old}: ignored — the classifier settings are read from the "classifier" block (${newPath})`
           );
         }
@@ -312,16 +343,21 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
   }
 
   // 2. The top-level classifier_log block moves to classifier.log, key by key.
-  // An unknown key inside it keeps its name under classifier.log and is then
-  // reported by the typo check below.
+  // A key the table does not know is a typo: reported once and dropped.
   if (isPlainObject(bag.classifier_log)) {
     const oldLog = bag.classifier_log;
     delete bag.classifier_log;
     for (const [k, v] of Object.entries(oldLog)) {
-      assign(
-        legacyToPath.get(`classifier_log.${k}`) ?? `classifier.log.${k}`,
-        v,
-        `classifier_log.${k}`
+      const oldName = `classifier_log.${k}`;
+      const newPath = legacyToPath.get(oldName);
+      if (newPath) {
+        assign(newPath, v, oldName);
+        continue;
+      }
+      const near = suggestClassifierKey(`log.${k}`);
+      warn(
+        oldName,
+        `[router] ${source} ${oldName}: unknown key — ignored${near ? `; did you mean "classifier.${near}"?` : ''}`
       );
     }
   }
@@ -330,12 +366,19 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
   if (isPlainObject(bag.classifier)) {
     for (const rel of unknownClassifierKeys(bag.classifier)) {
       const near = suggestClassifierKey(rel);
-      warnLog(
+      warn(
+        `classifier.${rel}`,
         `[router] ${source} classifier.${rel}: unknown key — ignored${near ? `; did you mean "classifier.${near}"?` : ''}`
       );
       deleteLeaf(bag.classifier, rel);
     }
   }
+
+  // A problem that is gone is forgotten, so it is reported again if it returns.
+  for (const key of classifierMigrationWarned.get(source) ?? []) {
+    if (!warned.has(key)) forgetWarnOnce(key);
+  }
+  classifierMigrationWarned.set(source, warned);
 }
 
 /**

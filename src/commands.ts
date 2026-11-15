@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { costTracker } from './cost-tracker.ts';
 import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
 import { describeBestMethod } from './rank-explain.ts';
@@ -47,7 +48,7 @@ import { wedgeFixHint } from './provider-watchdog.ts';
 import { openBreakers, clearBreakers, isLocalProviderName } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { parseSummaryDays, readClassifierSummary } from './classifier-summary.ts';
-import { splitRef } from './utils.ts';
+import { getLeaf, splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
 import { closestKey } from './config-schema.ts';
@@ -58,7 +59,13 @@ import {
   type ConfigLayerView,
   type ConfigPatch,
 } from './user-config-store.ts';
-import { CONFIG_KEYS, configKey, parseConfigValue, type ConfigKeySpec } from './config-keys.ts';
+import {
+  CONFIG_KEYS,
+  configKey,
+  layerSetsKey,
+  parseConfigValue,
+  type ConfigKeySpec,
+} from './config-keys.ts';
 import { describeClassifierChain, formatClassifierChain } from './classifier-chain.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
@@ -598,16 +605,6 @@ interface ConfigCommandCtx {
   };
 }
 
-/** The value at a dotted path, or undefined. */
-function valueAt(root: unknown, dotted: string): unknown {
-  let node: unknown = root;
-  for (const part of dotted.split('.')) {
-    if (typeof node !== 'object' || node === null) return undefined;
-    node = (node as Record<string, unknown>)[part];
-  }
-  return node;
-}
-
 /** A value as a reply shows it. */
 function describeValue(value: unknown): string {
   if (value === undefined) return 'unset';
@@ -657,6 +654,10 @@ function setPatchFor(
 /**
  * Writes one table patch to the user layer, reloads, and replies with the
  * value in effect, a project-layer override when there is one, and the chain.
+ * A set is overridden when the value in effect is not the saved one (compared
+ * by value: lists are new arrays on every load); an unset is overridden when
+ * the project layer sets the key, under its path or a pre-2.0 name the loader
+ * still reads.
  */
 function commitConfigPatch(rt: CommandDeps, keyPath: string, patch: ConfigPatch): string {
   const res = openUserConfigStore().applyDelta({ paths: [patch] });
@@ -665,13 +666,13 @@ function commitConfigPatch(rt: CommandDeps, keyPath: string, patch: ConfigPatch)
   const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
     (layer) => layer.origin === 'project'
   );
-  const effective = valueAt(rt.cfg, keyPath);
-  const projectValue = valueAt(project?.config, keyPath);
-  const saved = 'value' in patch ? patch.value : undefined;
-  const headline =
-    projectValue !== undefined && projectValue !== saved
-      ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
-      : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
+  const effective = getLeaf(rt.cfg, keyPath);
+  const projectSets = layerSetsKey(project?.config, keyPath);
+  const overridden =
+    projectSets && ('value' in patch ? !isDeepStrictEqual(effective, patch.value) : true);
+  const headline = overridden
+    ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
+    : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
   return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
     '\n'
   );
@@ -737,7 +738,7 @@ function configBlockView(rt: CommandDeps, block: (typeof CONFIG_BLOCKS)[number])
           ? `/router ${spec.alias}`
           : 'hand-edit (user layer)';
     lines.push(
-      `  ${spec.path.padEnd(width)}${describeValue(valueAt(rt.cfg, spec.path)).padEnd(12)}[shipped: ${spec.shipped}]  ${how}`
+      `  ${spec.path.padEnd(width)}${describeValue(getLeaf(rt.cfg, spec.path)).padEnd(12)}[shipped: ${spec.shipped}]  ${how}`
     );
   }
   if (block === 'classifier') {
@@ -784,7 +785,7 @@ async function editWizardKey(
   const integration = spec.path.match(/^integrations\.([a-z_]+)\.(enabled|mode)$/);
   const viaIntegration = spec.via === 'alias' && integration !== null;
   if (spec.kind === 'boolean') {
-    const current = valueAt(rt.cfg, spec.path) === true;
+    const current = getLeaf(rt.cfg, spec.path) === true;
     const target = !current;
     const word = target ? 'on' : 'off';
     const ok = await ctx.ui.confirm(
@@ -826,7 +827,7 @@ async function runConfigWizard(rt: CommandDeps, ctx: WizardCtx): Promise<void> {
   for (let round = 0; round < WIZARD_MAX_ROUNDS; round++) {
     const byLabel = new Map<string, ConfigKeySpec>();
     for (const spec of CONFIG_KEYS.filter((k) => k.wizard === true)) {
-      byLabel.set(`${spec.path} — ${describeValue(valueAt(rt.cfg, spec.path))}`, spec);
+      byLabel.set(`${spec.path} — ${describeValue(getLeaf(rt.cfg, spec.path))}`, spec);
     }
     const options = [WIZARD_SHOW, ...byLabel.keys(), WIZARD_HAND, WIZARD_DONE];
     const choice = await ctx.ui.select('Router config — choose a setting to change', options);

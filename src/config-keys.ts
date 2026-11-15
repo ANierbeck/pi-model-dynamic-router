@@ -16,6 +16,7 @@
 // config-schema.ts until their own plan.
 
 import { closestKey } from './config-schema.ts';
+import { getLeaf } from './utils.ts';
 
 /**
  * How the router may change a key:
@@ -243,6 +244,21 @@ export function configKey(dottedPath: string): ConfigKeySpec | undefined {
 }
 
 /**
+ * Where a raw (not yet migrated) layer holds a key's pre-2.0 names, in table
+ * order. A bare legacy name is a key of the `dynamic` model group; a dotted one
+ * is a top-level path.
+ */
+export function legacyLayerPaths(dottedPath: string): string[] {
+  const legacy = configKey(dottedPath)?.legacy ?? [];
+  return legacy.map((old) => (old.includes('.') ? old : `model_groups.dynamic.${old}`));
+}
+
+/** Whether a raw config layer sets the key, under its path or a pre-2.0 name. */
+export function layerSetsKey(layer: unknown, dottedPath: string): boolean {
+  return [dottedPath, ...legacyLayerPaths(dottedPath)].some((p) => getLeaf(layer, p) !== undefined);
+}
+
+/**
  * Leaf paths of a plain object, relative to the object. Arrays are leaves;
  * an empty object has none.
  */
@@ -274,9 +290,14 @@ export function suggestClassifierKey(relativePath: string): string | undefined {
   return closestKey(relativePath, known);
 }
 
+/**
+ * The id after the first slash may hold more slashes: a pi ref splits at the
+ * first slash (`<provider>/<vendor>/<model>` has the id `<vendor>/<model>`),
+ * and Ollama names can be namespaced (`ollama/hf.co/<user>/<model>:<tag>`).
+ */
 const REF_SHAPE: Record<NonNullable<ConfigKeySpec['ref']>, { re: RegExp; expected: string }> = {
-  'provider-model': { re: /^[A-Za-z0-9._-]+\/[^\s/]+$/, expected: 'provider/id' },
-  'ollama-model': { re: /^ollama\/[^\s/]+$/, expected: 'ollama/<name>' },
+  'provider-model': { re: /^[A-Za-z0-9._-]+\/\S+$/, expected: 'provider/id' },
+  'ollama-model': { re: /^ollama\/\S+$/, expected: 'ollama/<name>' },
 };
 
 /**

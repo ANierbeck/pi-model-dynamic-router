@@ -59,6 +59,30 @@ describe('describeClassifierChain', () => {
     expect(stepOf(steps, 'cloud').detail).toMatch(/replaces the automatic/);
   });
 
+  it('says a pinned cloud model still goes first when candidates are configured', () => {
+    // content-classifier puts the pin at position 0 of whatever list it tries,
+    // the configured candidates included.
+    const steps = describeClassifierChain(
+      base({
+        classifier: { cloud: { enabled: true, model: 'acme/p', candidates: ['acme/a'] } },
+      } as Partial<Config>)
+    );
+    expect(stepOf(steps, 'cloud').detail).toMatch(/pinned acme\/p first, then 1 configured/);
+  });
+
+  it('leaves on/off to the step state: no detail repeats it', () => {
+    const configs = [
+      base(),
+      base({ classifier: { cloud: { enabled: true } } } as Partial<Config>),
+      base({ classifier: { cloud: { enabled: false } } } as Partial<Config>),
+    ];
+    for (const cfg of configs) {
+      for (const step of describeClassifierChain(cfg)) {
+        expect(step.detail, step.id).not.toMatch(/^(on|off)\b/);
+      }
+    }
+  });
+
   it('says a cloud leg escalates only low-confidence local replies when that is configured', () => {
     const steps = describeClassifierChain(
       base({

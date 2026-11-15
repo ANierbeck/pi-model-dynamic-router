@@ -15,7 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { piAgentDir } from './config-loader.ts';
-import { configKey, configValueProblem } from './config-keys.ts';
+import { configKey, configValueProblem, legacyLayerPaths } from './config-keys.ts';
 import type { ExcludeRules } from './types.ts';
 import { deleteLeaf, isPlainObject, setLeaf, textOf } from './utils.ts';
 
@@ -82,10 +82,7 @@ function patchProblem(patch: ConfigPatch): string | undefined {
  * not warn about a setting the user has just changed.
  */
 function applyPatch(next: Record<string, unknown>, patch: ConfigPatch): string | undefined {
-  const spec = configKey(patch.path);
-  for (const old of spec?.legacy ?? []) {
-    deleteLeaf(next, old.includes('.') ? old : `model_groups.dynamic.${old}`);
-  }
+  for (const old of legacyLayerPaths(patch.path)) deleteLeaf(next, old);
   if ('unset' in patch) {
     deleteLeaf(next, patch.path);
     return undefined;
