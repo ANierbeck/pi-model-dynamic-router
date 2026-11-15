@@ -1,5 +1,7 @@
 # Router config UI: a guided path for optional integrations
 
+> **Superseded by [`2026-11-14-config-surface-and-ui.md`](2026-11-14-config-surface-and-ui.md)** (2026-11-14): its wizard is Phase 4 of the unified config plan. This text is kept as history.
+
 **Status:** proposed 2026-11-08 — not started. Depends on the contract in
 [`2026-11-08-optional-integrations-config.md`](2026-11-08-optional-integrations-config.md)
 (`integrations.*` namespace, health registry, `config integration` subcommand);

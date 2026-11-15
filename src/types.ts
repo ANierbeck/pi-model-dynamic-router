@@ -166,34 +166,6 @@ export interface Group {
     | 'strict_local'
     | 'cloud_first'
     | 'local_before_payg';
-  /**
-   * Optional user PIN for the local classifier primary (dynamic group only),
-   * an Ollama model ref such as "ollama/<model>:<tag>". No shipped value
-   * (ADR-0025): unset, the primary is derived from the models Ollama reports
-   * and verified by the scan-time probe (src/classifier-local-probe.ts).
-   */
-  classifier_model?: string;
-  /** Optional user PIN for the local classifier fallback; unset = derived (see classifier_model). */
-  classifier_fallback?: string;
-  /**
-   * Pinned cloud classifier model ref ("provider/id") for the dynamic
-   * group's cloud chain. When set, the classifier tries this model
-   * FIRST — before the probe-verified cached list — so a specific (e.g.
-   * subscription-covered) model classifies deterministically, regardless
-   * of what the scan-time probe ranked first. If pi's model registry
-   * cannot resolve the ref, the fallback chain continues unchanged.
-   */
-  classifier_cloud_model?: string;
-  /**
-   * Opt-in: if both classifier_model and classifier_fallback are unavailable,
-   * send the (raw) prompt to a free cloud model (via a provider's configured
-   * free_models) purely to classify it. Off by default (data minimization --
-   * a provider configured for free_models as a general answering fallback
-   * should not silently also receive prompt content for an unrelated,
-   * internal classification purpose). Requires a provider with free_models
-   * and a resolvable key configured in router-config.json.
-   */
-  classifier_cloud_chain?: boolean;
   /** Groups to try (in order) when all candidates in this group fail. e.g. ["planning", "standard"] */
   fallback_groups?: string[];
 }
@@ -237,6 +209,30 @@ export interface BreakerConfig {
   cooldown_s?: number[];
 }
 
+/** The `classifier` config block (plan 2026-11-14-config-surface-and-ui.md). */
+export interface ClassifierConfig {
+  /** Local chain: the Ollama classifier models. Unset pins are derived by the scan probe. */
+  local?: {
+    /** Pinned primary, an Ollama ref such as "ollama/<model>:<tag>". No shipped value (ADR-0025). */
+    model?: string;
+    /** Pinned second local model. */
+    fallback?: string;
+  };
+  /** Cloud chain: runs after the local chain gave no answer (ADR-0032). */
+  cloud?: {
+    /** Use cloud models for classification. Off in code (data minimization); shipped on. */
+    enabled?: boolean;
+    /** Pinned cloud classifier ("provider/id"), tried first. */
+    model?: string;
+    /** Ordered candidates ("provider/id"); replaces the automatic chain. Each must resolve in pi's registry. */
+    candidates?: string[];
+    /** Opt-in (ADR-0033): a local reply below MIN_CONFIDENCE is escalated to the cloud chain once. */
+    escalate_low_confidence?: boolean;
+  };
+  /** Decision log (privacy and retention). */
+  log?: ClassifierLogConfig;
+}
+
 export interface ClassifierLogConfig {
   enabled?: boolean;
   store_text?: 'none' | 'snippet' | 'full';
@@ -246,13 +242,6 @@ export interface ClassifierLogConfig {
   keep?: number;
 }
 
-/**
- * Opt-in local classifier stage: Laya, a typed decision model (Apache 2.0).
- * Local on Apple Silicon, no prompt content leaves the machine, but quality
- * (zero-shot ~0.36 on typed decisions) is insufficient for active routing —
- * the stage ships disabled (see docs/research/2026-10-09-laya-spike.md and
- * docs/plans/2026-10-09-laya-tasks1-5.md).
- */
 /** The `integrations` block: one optional key per component. */
 export interface IntegrationsConfig {
   /**
@@ -324,23 +313,18 @@ export interface Config {
    * it). Release builds ship at "warn" or "error" (AGENTS.md §1). */
   log_level?: 'error' | 'warn' | 'info' | 'debug';
   /**
-   * Classifier decision log (docs/plans/2026-10-08-classifier-decision-log.md):
-   * one JSONL record per classification in ~/.pi/logs/classifier-decisions.jsonl
-   * — stage, the candidate chain with outcomes, raw vs final category, the
-   * routed group, latency. Absent block = off (the shipped router-config.json
-   * enables it with `store_text: "none"`). `store_text` decides how much
-   * prompt-derived text a record may contain: "none" (default; hash and
-   * lengths only), "snippet" (first 120 chars of the prompt + the model's
-   * reasons) or "full" (prompt and both context texts — what an offline
-   * replay needs; stays local, file mode 0600).
-   */
-  classifier_log?: ClassifierLogConfig;
-  /**
    * Optional external components, one block each, all following the contract
    * in src/integration.ts (plan 2026-11-08-optional-integrations-config.md).
    * Renamed from the top-level `classifier_laya` in 2.0 (no read alias).
    */
   integrations?: IntegrationsConfig;
+  /**
+   * Classifier configuration: the local chain, the cloud chain and the decision
+   * log. Replaces the pre-2.0 `dynamic`-group keys and the top-level
+   * `classifier_log` (read for one release with a warning, see config-loader.ts).
+   * The key table with every path is src/config-keys.ts.
+   */
+  classifier?: ClassifierConfig;
   /**
    * Milliseconds after start before a scan counts as "settled" (model registry
    * loaded). Only a settled scan may confirm a smaller result refused by the

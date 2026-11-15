@@ -244,7 +244,12 @@ describe('shipped config: planning reasons, design stays on Briefcase', () => {
     expect(cfg.model_groups.design.min_score).toBeUndefined();
   });
 
-  it('the GDPval floor on planning is untouched (columns order, floors admit)', () => {
-    expect(cfg.model_groups.planning.min_gdpval).toBe(1700);
+  it('planning has no GDPval floor since 2026-11-15 (the reasoning column decides)', () => {
+    // Owner decision 2026-11-15: the best reasoning model (70.5) sat at GDPval
+    // 1546 and was excluded by the 1700 floor, not by the ranking. The column
+    // order (design → briefcase, planning → reasoning) is unchanged.
+    expect(cfg.model_groups.planning.min_gdpval).toBeUndefined();
+    expect(cfg.model_groups.planning.score_by).toBe('reasoning');
+    expect(cfg.model_groups.planning.require_score_column).toBe(true);
   });
 });

@@ -84,13 +84,14 @@ describe('config-classifier-model', () => {
   // ADR-0025 C2 (supersedes the ADR-0009 "bundled classifier model" pins): the
   // shipped dynamic group carries NO local classifier model. The local chain
   // is derived from the models Ollama reports (classifier-local-probe.ts);
-  // classifier_model / classifier_fallback remain optional USER pins only.
+  // classifier.local.model / classifier.local.fallback remain optional USER pins only.
 
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
   const repoCfg = JSON.parse(readFileSync(join(repoRoot, 'router-config.json'), 'utf-8'));
 
   describe('bundled classifier model config', () => {
-    it('ships no classifier_model / classifier_fallback in the dynamic group', () => {
+    it('ships no classifier.local pins (the block names no model)', () => {
+      expect(repoCfg.classifier?.local).toBeUndefined();
       expect(repoCfg.model_groups.dynamic).not.toHaveProperty('classifier_model');
       expect(repoCfg.model_groups.dynamic).not.toHaveProperty('classifier_fallback');
     });

@@ -30,6 +30,12 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import { homedir } from 'node:os';
+import {
+  resolveClassifierLogConfig,
+  writeOutcomeRecord,
+  type OutcomeParams,
+} from './classifier-decision-log.ts';
 
 /**
  * Dependencies createEventHandlers reads from index.ts's extension closure. Exposed as
@@ -62,6 +68,8 @@ interface EventHandlerDeps {
   sessionStart: number;
   statusUpdater: ((key: string, text: string) => void) | null;
   turnStart: number;
+  /** ADR-0027 Phase 2: sequence of the current turn (decision-log turn id). */
+  turnSeq: number;
   /** M3: model-stream ms booked for this turn (0 when nothing was measured). */
   readonly turnStreamMs: number;
   /** M3: number of streams that contributed to `turnStreamMs`. */
@@ -271,10 +279,27 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
     })
   );
 
+  /** ADR-0027 Phase 2: append an outcome record when the decision log is on. */
+  const emitOutcome = (p: OutcomeParams): void => {
+    const log = resolveClassifierLogConfig(rt.cfg?.classifier?.log);
+    if (!log) return;
+    writeOutcomeRecord(p, homedir(), log);
+  };
+
   rt.pi.on(
     'model_select',
-    inSessionOf((ev) => {
-      if (ev.source !== 'restore') rt.activeGroup = null;
+    inSessionOf((ev, ctx) => {
+      if (ev.source !== 'restore') {
+        rt.activeGroup = null;
+        // /model path: the user picked a model for this turn — that IS the turn's outcome.
+        emitOutcome({
+          turn: `${sessionIdOf(ctx) ?? 'default'}#${rt.turnSeq}`,
+          ref: `${ev.model.provider}/${ev.model.id}`,
+          via: 'model_select',
+          outcome: 'ok',
+          ms: 0,
+        });
+      }
       rt.curModel = `${ev.model.provider}/${ev.model.id}`;
     })
   );
@@ -287,6 +312,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
     'turn_start',
     inSessionOf((_ev, ctx) => {
       rt.turnStart = Date.now();
+      rt.turnSeq = rt.turnSeq + 1; // ADR-0027 Phase 2: mint the turn's log id
       // M3: the latency sample of this turn is the sum of its model streams,
       // not the turn wall time (tool runs and delegation sub-calls inflated
       // it). Reset the accumulator at the boundary so a turn whose turn_end
@@ -312,7 +338,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
 
   rt.pi.on(
     'turn_end',
-    inSessionOf((ev) => {
+    inSessionOf((ev, ctx) => {
       if (!rt.curModel || !rt.turnStart) return;
       const turnMs = Date.now() - rt.turnStart,
         msg = ev.message;
@@ -325,6 +351,18 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       // dropping the sample entirely.
       const streamMs = rt.turnStreamMs ?? 0;
       const ms = streamMs > 0 ? streamMs : turnMs;
+      // ADR-0027 Phase 2: a turn that streamed gets an outcome record; a turn
+      // that never streamed (no model the router drove) gets none.
+      const streamed = (rt.turnStreamCount ?? 0) > 0;
+      if (streamed) {
+        emitOutcome({
+          turn: `${sessionIdOf(ctx) ?? 'default'}#${rt.turnSeq}`,
+          ref: rt.curModel,
+          via: 'stream',
+          outcome: 'ok',
+          ms,
+        });
+      }
 
       // ── Session Escalation Logic ────────────────────────────────────────
       if (msg?.role === 'user' || msg?.role === 'assistant') {

@@ -62,7 +62,7 @@ function cfg(layaOverrides: Record<string, unknown> | null = {}): Config {
     providers: {},
     model_groups: {},
     model_metrics: {},
-    classifier_log: { enabled: true, store_text: 'none' },
+    classifier: { log: { enabled: true, store_text: 'none' } },
     ...(layaOverrides === null
       ? {}
       : {

@@ -179,6 +179,15 @@ function stringsOf(v: unknown): string[] {
 }
 
 /**
+ * A glob (`*` anywhere) matches by pattern, not by naming a concrete model,
+ * so it is NOT a hardcoded-model literal under ADR-0025 — `*:free` excludes a
+ * tier, it does not name a ref, id, slug or family.
+ */
+function concreteOnly(v: unknown): string[] {
+  return stringsOf(v).filter((s) => !s.includes('*'));
+}
+
+/**
  * Reports the named-model positions of the shipped config structurally —
  * every one of them can admit, select, rank or exclude a model. Literals
  * are `config:<path>` plus the value, so removing one entry never renames
@@ -192,31 +201,42 @@ export function scanConfig(cfgJson: unknown): HardcodedFinding[] {
   const literals: string[] = [];
   const add = (literal: string): number => literals.push(`config:${literal}`);
 
-  for (const p of stringsOf(cfgJson.non_agent_model_prefixes))
+  for (const p of concreteOnly(cfgJson.non_agent_model_prefixes))
     add(`non_agent_model_prefixes[]=${p}`);
 
   if (isRecord(cfgJson.exclude)) {
-    for (const m of stringsOf(cfgJson.exclude.models)) add(`exclude.models[]=${m}`);
+    for (const m of concreteOnly(cfgJson.exclude.models)) add(`exclude.models[]=${m}`);
   }
 
   if (isRecord(cfgJson.providers)) {
     for (const [prov, def] of Object.entries(cfgJson.providers)) {
       if (!isRecord(def)) continue;
-      for (const m of stringsOf(def.free_models)) add(`providers.${prov}.free_models[]=${m}`);
+      for (const m of concreteOnly(def.free_models)) add(`providers.${prov}.free_models[]=${m}`);
     }
   }
 
   if (isRecord(cfgJson.model_groups)) {
     for (const [group, def] of Object.entries(cfgJson.model_groups)) {
       if (!isRecord(def)) continue;
-      for (const m of stringsOf(def.models)) add(`model_groups.${group}.models[]=${m}`);
-      for (const m of stringsOf(def.exclude_models))
+      for (const m of concreteOnly(def.models)) add(`model_groups.${group}.models[]=${m}`);
+      for (const m of concreteOnly(def.exclude_models))
         add(`model_groups.${group}.exclude_models[]=${m}`);
-      for (const key of ['classifier_model', 'classifier_fallback', 'classifier_cloud_model']) {
-        const v = def[key];
-        if (typeof v === 'string') add(`model_groups.${group}.${key}=${v}`);
-      }
     }
+  }
+
+  // The classifier block holds the only model pins that name a concrete model
+  // outside model_groups (plan 2026-11-14-config-surface-and-ui.md, Phase 1).
+  if (isRecord(cfgJson.classifier)) {
+    const local = isRecord(cfgJson.classifier.local) ? cfgJson.classifier.local : {};
+    const cloud = isRecord(cfgJson.classifier.cloud) ? cfgJson.classifier.cloud : {};
+    for (const [key, v] of [
+      ['local.model', local.model],
+      ['local.fallback', local.fallback],
+      ['cloud.model', cloud.model],
+    ] as const) {
+      if (typeof v === 'string') add(`classifier.${key}=${v}`);
+    }
+    for (const m of concreteOnly(cloud.candidates)) add(`classifier.cloud.candidates[]=${m}`);
   }
 
   if (isRecord(cfgJson.model_metrics)) {

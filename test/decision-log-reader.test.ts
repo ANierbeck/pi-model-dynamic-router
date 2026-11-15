@@ -130,4 +130,27 @@ describe('readDecisionLog', () => {
       expect(raw[0]!.final.group).toBe('standard');
     });
   });
+
+  it('readDecisionLogRecords keeps pool records but drops the Phase 2/4 record kinds', () => {
+    // Pool records carry no `input` block yet are part of this reader's
+    // contract (pool-replay projects them). The Phase 2/4 kinds have their own
+    // shape and their own join, so they must not be handed out as decisions.
+    withLog(
+      [
+        rec({ stage: 'llm-cloud' }),
+        JSON.stringify({ v: 1, ts: '2026-11-01T10:00:01.000Z', proc: 'p/1', stage: 'pool' }),
+        JSON.stringify({ v: 1, ts: '2026-11-01T10:00:02.000Z', proc: 'p/1', stage: 'outcome' }),
+        JSON.stringify({
+          v: 1,
+          ts: '2026-11-01T10:00:03.000Z',
+          proc: 'p/1',
+          stage: 'route-correction',
+        }),
+      ],
+      (path) => {
+        const stages = readDecisionLogRecords(path).map((r) => r.stage);
+        expect(stages).toEqual(['llm-cloud', 'pool']);
+      }
+    );
+  });
 });

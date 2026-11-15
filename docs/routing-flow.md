@@ -5,7 +5,8 @@ prompt: which model classifies the turn, which group it lands in, how the
 candidate pool is built and filtered, and what happens when a stream fails.
 It is written at the architecture level — the stable stages and the exact
 config keys that steer them — so it stays useful while code moves. Each stage
-names its owning module for a code entry point.
+names its owning module for a code entry point. The config keys that steer
+each stage are listed in [docs/config-reference.md](config-reference.md).
 
 The stages are ordered exactly as the runtime executes them.
 
@@ -13,19 +14,26 @@ The stages are ordered exactly as the runtime executes them.
 
 ```mermaid
 flowchart TD
-    subgraph CLS["1 · Classification — which model reads the turn? (src/classifier-local-probe.ts)"]
+    subgraph CLS["1 · Classification — which model reads the turn? (src/content-classifier.ts)"]
         direction TB
-        PIN{"classifier_model /<br/>classifier_fallback pin?"}
-        PIN -- "yes" --> PINM["Use the pinned classifier"]
+        LAYA{"Laya integration on?<br/>(integrations.laya.enabled)"}
+        LAYA -- "active and confident" --> CATOUT
+        LAYA -- "no, shadow, or not confident" --> PIN
+        PIN{"classifier.local.model /<br/>classifier.local.fallback pin?"}
+        PIN -- "yes" --> PINM["Use the pinned local classifier"]
         PIN -- "no" --> PROBED{"Probed local chain?<br/>(classifier_local_models, persisted;<br/>re-probe on scan / candidate change / 24 h)"}
         PROBED -- "non-empty" --> PROBEDM["First healthy entry of the<br/>probe-verified local list<br/>(completion-capable, size-sorted)"]
-        PROBED -- "EMPTY = FINAL,<br/>no provisional fallback" --> CLOUD
+        PROBED -- "EMPTY" --> CLOUD
         PROBED -- "no cache yet" --> PROV["Provisional: candidate order,<br/>completion:true models only"]
-        PINM --> CLOUD{"Cloud chain?<br/>(classifier_cloud_chain)"}
-        PROBEDM --> CLOUD
-        PROV --> CLOUD
-        CLOUD -- "fails / disabled" --> STATIC["Static classifier<br/>(heuristic last resort)"]
-        CLOUD -- "structured reply" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
+        PINM --> OLLAMA{"Ollama answers?"}
+        PROBEDM --> OLLAMA
+        PROV --> OLLAMA
+        OLLAMA -- "yes" --> CATOUT["Category: simple · code_simple · standard ·<br/>code_complex · design · planning · continue"]
+        OLLAMA -- "no" --> CLOUD{"Cloud chain?<br/>(classifier.cloud.enabled;<br/>shipped: on)"}
+        CLOUD -- "no" --> STATIC
+        CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier.cloud.model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
+        CLOUDM -- "structured reply" --> CATOUT
+        CLOUDM -- "every candidate fails" --> STATIC["Static classifier<br/>(heuristic last resort, only for a<br/>:use-static model variant;<br/>otherwise category continue)"]
         STATIC --> CATOUT
     end
 
@@ -91,7 +99,7 @@ flowchart TD
     DLOG["Decision log (ADR-0027): one JSONL record per classification,<br/>written at the classifyPrompt choke point<br/>(src/classifier-decision-log.ts)"]
     SUMMARY["/router classifier [days] reads the log and its<br/>rotated files (Phase 5, src/classifier-summary.ts)"]
 
-    TURN["Prompt / turn arrives"] --> PIN
+    TURN["Prompt / turn arrives"] --> LAYA
     CATOUT --> FB
     CATOUT -. "record" .-> DLOG
     DLOG -. "read by" .-> SUMMARY
@@ -109,15 +117,23 @@ flowchart TD
 ## Stage notes
 
 1. **Classification (src/classifier-local-probe.ts, src/content-classifier.ts).**
-   The resolution order is: user pin (`classifier_model` / `classifier_fallback`)
-   › probe-verified local list (`classifier_local_models`, persisted) ›
+   The turn enters at the Laya stage (`integrations.laya.enabled`). In `active`
+   mode a confident Laya answer is the category and the chain below never runs;
+   in `shadow` mode, or when Laya is off, unavailable or not confident, the
+   local chain runs as if Laya were absent. The local resolution order is:
+   user pin (`classifier.local.model` / `classifier.local.fallback`) › probe-verified local list (`classifier_local_models`, persisted) ›
    provisional candidate order (only before the first probe; models the scan has
    explicitly seen answer completions) › none. An **empty probed list is final**
    per the types contract — it must not fall back to provisional candidates
    (probe-failed models would burn ~45 s per prompt). The pool excludes
    embedding-only/non-completion models and sorts by parameter size; the probe
    marks models whose backend lacks structured output (501) permanently
-   (`classifier_no_schema`).
+   (`classifier_no_schema`). With the opt-in
+   `classifier.cloud.escalate_low_confidence` (off by default, ADR 0033) a
+   local reply below confidence 0.5 is also sent once to the cloud chain (if
+   `classifier.cloud.enabled` is on); a
+   cloud answer replaces it, otherwise the local reply is kept. The diagram
+   omits that edge.
 2. **Category adjustments (Phase 2/3 of task-type balancing).** `continue`
    ("a short continuation/confirmation", not a self-contained task) inherits
    the previous turn's category; low-confidence replies do too. With no

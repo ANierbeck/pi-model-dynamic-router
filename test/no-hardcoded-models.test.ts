@@ -181,11 +181,11 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
       },
       dynamic: {
         method: 'dynamic',
-        classifier_model: 'ollama/judge:1b',
-        classifier_fallback: 'ollama/judge:0.5b',
-        classifier_cloud_model: 'acme/cloud-judge',
-        classifier_cloud_chain: true,
       },
+    },
+    classifier: {
+      local: { model: 'ollama/judge:1b', fallback: 'ollama/judge:0.5b' },
+      cloud: { enabled: true, model: 'acme/cloud-judge', candidates: ['acme/cand-1'] },
     },
     model_metrics: { 'claude-bridge/acme-5': { cost_per_m: 0.000001 } },
     gdpval_builtin: { 'acme-5': 1500 },
@@ -203,15 +203,28 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
         'config:providers.openrouter.free_models[]=openrouter/acme/tiny-1:free',
         'config:model_groups.simple.models[]=acme/pinned-1',
         'config:model_groups.simple.exclude_models[]=acme/never-1',
-        'config:model_groups.dynamic.classifier_model=ollama/judge:1b',
-        'config:model_groups.dynamic.classifier_fallback=ollama/judge:0.5b',
-        'config:model_groups.dynamic.classifier_cloud_model=acme/cloud-judge',
+        'config:classifier.local.model=ollama/judge:1b',
+        'config:classifier.local.fallback=ollama/judge:0.5b',
+        'config:classifier.cloud.model=acme/cloud-judge',
+        'config:classifier.cloud.candidates[]=acme/cand-1',
         'config:model_metrics["claude-bridge/acme-5"]',
       ].sort()
     );
     expect(scanConfig(cfg).every((f) => f.file === 'router-config.json' && f.line === 0)).toBe(
       true
     );
+  });
+
+  it('does not report globs: a `*` pattern names no concrete model (ADR-0025)', () => {
+    const withGlobs = {
+      exclude: { models: ['*:free', 'openrouter/acme/bad:free'] },
+      model_groups: {
+        design: { method: 'best', exclude_models: ['*:free'] },
+        planning: { method: 'best', exclude_models: ['*:free', 'openrouter/*'] },
+      },
+    };
+    const literals = scanConfig(withGlobs).map((f) => f.literal);
+    expect(literals).toEqual(['config:exclude.models[]=openrouter/acme/bad:free']);
   });
 
   it('does not report gdpval_builtin (class B annotation data) or provider-level entries', () => {

@@ -100,7 +100,7 @@ If pricing still shows `$0.0` for a paid model, set `cost_per_m`
 The new models automatically participate in group selection based on their
 quality scores (GDPval + AA capability columns):
 
-- **planning**: top tier only (GDPval ≥ 1700, ranked by the reasoning column)
+- **planning**: the reasoning tier (ranked by the reasoning column, reasoning ≥ 35; no GDPval floor)
 - **design**: GDPval ≥ 1600, ranked by AA-Briefcase
 - **code_complex**: the 1630..1700 band, ranked by coding
 - **standard**: GDPval ≥ 300, mid price band

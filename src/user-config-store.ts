@@ -15,13 +15,23 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { piAgentDir } from './config-loader.ts';
+import { configKey, configValueProblem, legacyLayerPaths } from './config-keys.ts';
 import type { ExcludeRules } from './types.ts';
-import { isPlainObject, textOf } from './utils.ts';
+import { deleteLeaf, isRecord, setLeaf, textOf } from './utils.ts';
 
 const USER_CONFIG_FILE = 'router-config.user.json';
 
+/**
+ * One write to a table key (config plan Phase 2): `{ path, value }` sets it,
+ * `{ path, unset: true }` removes it. Only keys the table marks `via: 'set'`
+ * are accepted, and the value must fit the key's kind.
+ */
+export type ConfigPatch = { path: string; value: unknown } | { path: string; unset: true };
+
 /** What a caller may change. Arrays are SET-replaced in the user file itself. */
 export interface UserConfigDelta {
+  /** Table-driven writes (`/router config set|unset`), applied in order. */
+  paths?: ConfigPatch[];
   exclude?: { models?: string[]; providers?: string[] };
   /** Cache-aware compaction (Phase 5b): only the master switch is
    * command-settable; the thresholds stay hand-edited config. */
@@ -53,6 +63,34 @@ const PROVIDER_RE = /^[A-Za-z0-9._*:-]+$/;
 export function validateExcludeProvider(name: string): string | undefined {
   if (PROVIDER_RE.test(name)) return undefined;
   return `"${name}" is not a provider name (expected a single name without "/" or spaces).`;
+}
+
+/** The table's verdict on one patch, or undefined when the store may write it. */
+function patchProblem(patch: ConfigPatch): string | undefined {
+  const spec = configKey(patch.path);
+  if (spec?.via !== 'set') {
+    return `"${patch.path}" is not a key /router config can set (see /router config for the keys it can set).`;
+  }
+  if ('unset' in patch) return undefined;
+  const problem = configValueProblem(spec, patch.value);
+  return problem ? `${patch.path}: ${problem}` : undefined;
+}
+
+/**
+ * Applies one table patch to the user file's content. A write also removes
+ * the pre-2.0 spellings of the same key from this file, so the loader does
+ * not warn about a setting the user has just changed.
+ */
+function applyPatch(next: Record<string, unknown>, patch: ConfigPatch): string | undefined {
+  for (const old of legacyLayerPaths(patch.path)) deleteLeaf(next, old);
+  if ('unset' in patch) {
+    deleteLeaf(next, patch.path);
+    return undefined;
+  }
+  if (!setLeaf(next, patch.path, patch.value)) {
+    return `Not written — a section on the way to "${patch.path}" is not an object; fix or remove it first.`;
+  }
+  return undefined;
 }
 
 function userConfigPath(agentDir: string): string {
@@ -203,13 +241,22 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
         }
 
         const next: Record<string, unknown> = { ...(existing.config ?? {}) };
+        for (const patch of delta.paths ?? []) {
+          const problem = patchProblem(patch);
+          if (problem) return { ok: false, error: `Not written — ${problem}` };
+        }
         const touched = [
           delta.exclude && 'exclude',
           delta.context_budget && 'context_budget',
           delta.integrations && 'integrations',
+          delta.paths?.some((patch) => !('unset' in patch)) && 'classifier',
         ].filter((key): key is string => Boolean(key));
         const problem = badSection(next, touched, file) ?? badIntegrationBlock(next, delta, file);
         if (problem) return { ok: false, error: problem };
+        for (const patch of delta.paths ?? []) {
+          const problem = applyPatch(next, patch);
+          if (problem) return { ok: false, error: problem };
+        }
         if (delta.exclude?.models || delta.exclude?.providers) {
           const exclude =
             next.exclude && typeof next.exclude === 'object' && !Array.isArray(next.exclude)
@@ -281,6 +328,8 @@ export interface ConfigLayerView {
   exclude: ExcludeRules;
   /** The layer's `integrations` object, when it has one (override check of `/router config integration`). */
   integrations?: Record<string, unknown>;
+  /** The whole parsed layer, when it is readable (override check of `/router config set`). */
+  config?: Record<string, unknown>;
 }
 
 /**
@@ -308,7 +357,8 @@ export function readConfigLayers(opts: {
       present,
       ...(error ? { error } : {}),
       exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : {},
-      ...(isPlainObject(config?.integrations) ? { integrations: config.integrations } : {}),
+      ...(isRecord(config?.integrations) ? { integrations: config.integrations } : {}),
+      ...(config ? { config } : {}),
     };
   });
 }

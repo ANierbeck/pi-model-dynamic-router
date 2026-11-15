@@ -223,6 +223,11 @@ describe('/router config — autocomplete', () => {
     const rows = setup().completions('config');
     expect(rows!.map((r) => r.label ?? r.value)).toEqual([
       'config',
+      'config show',
+      'config set <path> <value>',
+      'config unset <path>',
+      'config classifier',
+      'config integrations',
       'config exclude <ref|glob|provider>',
       'config unexclude <ref|glob|provider>',
       'config integration <name> on|off|<mode>',

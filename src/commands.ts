@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { costTracker } from './cost-tracker.ts';
 import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
 import { describeBestMethod } from './rank-explain.ts';
@@ -47,22 +48,33 @@ import { wedgeFixHint } from './provider-watchdog.ts';
 import { openBreakers, clearBreakers, isLocalProviderName } from './provider-breaker.ts';
 import { formatErrorsReport } from './session-errors.ts';
 import { parseSummaryDays, readClassifierSummary } from './classifier-summary.ts';
-import { splitRef } from './utils.ts';
+import { getLeaf, splitRef } from './utils.ts';
 import { isExcluded, globMatcher } from './exclude.ts';
 import { isVirtualGroupRef } from './routing.ts';
+import { closestKey } from './config-schema.ts';
 import {
   openUserConfigStore,
   readConfigLayers,
   validateExcludePattern,
   type ConfigLayerView,
+  type ConfigPatch,
 } from './user-config-store.ts';
+import {
+  CONFIG_KEYS,
+  configKey,
+  layerSetsKey,
+  parseConfigValue,
+  type ConfigKeySpec,
+} from './config-keys.ts';
+import { describeClassifierChain, formatClassifierChain } from './classifier-chain.ts';
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import type { Cache, Config, ExcludeRules, Group, Metrics } from './types.ts';
+import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import { hasAnyInstall } from './laya-model-install.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -143,7 +155,8 @@ export function formatCategoryRoutes(): string[] {
 
 /** Input for {@link formatClassifierStatus} — gathered live by the /router status handler. */
 export interface ClassifierStatusInput {
-  group: Group;
+  /** The `classifier` config block (cloud switch and pinned cloud model shown in the chain). */
+  classifier: ClassifierConfig | undefined;
   last: ClassificationSourceInfo | null;
   probedCount: number;
   ollamaUp: boolean;
@@ -171,23 +184,17 @@ export interface ClassifierStatusInput {
 /**
  * Honest classifier status lines for the dynamic group's /router block:
  * which backend produced the last classification, and the chain as it is
- * actually executed (cloud-first per the 2026-09-27 design, local Ollama as
- * a last resort, static as the final fallback). Pure — all inputs are
- * gathered by the caller so this stays trivially testable.
+ * actually executed: Laya (when active), then the local Ollama chain, then
+ * the cloud chain (local first, owner decision 2026-11-14), then static as the
+ * final fallback. Pure — all inputs are gathered by the caller so this stays
+ * trivially testable.
  */
 export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
-  const { group: g, last, probedCount, ollamaUp } = input;
+  const { classifier, last, probedCount, ollamaUp } = input;
   const lines: string[] = [];
   lines.push(`│ Classifier: ${last ? `${last.source} (last used)` : 'none yet this session'}`);
   const legs: string[] = [];
   if (input.laya?.mode === 'active') legs.push('Laya');
-  if (g.classifier_cloud_chain) {
-    legs.push(
-      g.classifier_cloud_model
-        ? `cloud (pinned ${g.classifier_cloud_model} + ${probedCount} probed)`
-        : `cloud (${probedCount} probed)`
-    );
-  }
   const heads = [input.localChain?.primary, input.localChain?.fallback].filter((m): m is string =>
     Boolean(m)
   );
@@ -201,6 +208,13 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
         ? 'none qualified — pin or /router scan'
         : 'none yet';
   legs.push(`Ollama (${ollamaUp ? 'up' : 'down'}: ${localDetail})`);
+  if (classifier?.cloud?.enabled) {
+    legs.push(
+      classifier.cloud.model
+        ? `cloud (pinned ${classifier.cloud.model} + ${probedCount} probed)`
+        : `cloud (${probedCount} probed)`
+    );
+  }
   legs.push('static');
   lines.push(`│ Chain: ${legs.join(' → ')}`);
   const laya = input.laya;
@@ -258,14 +272,18 @@ export function formatClassifierStatus(input: ClassifierStatusInput): string[] {
   return lines;
 }
 
-const CONFIG_USAGE_LINES = [
-  'Usage:',
-  '  /router config                          show config sources + exclude rules',
-  '  /router config exclude <ref|glob|provider>  exclude a model/pattern/provider from routing',
-  '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
-  '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
-  '  /router config integration <name> on|off|<mode>  switch an optional integration (e.g. laya)',
-];
+/** Blocks `/router config <block>` shows in detail (plan Phase 3). */
+const CONFIG_BLOCKS = ['classifier', 'integrations'] as const;
+
+/** Reference lines for `/router config` and its usage: one table, shared with the completions. */
+function configUsageLines(): string[] {
+  const width = Math.max(...CONFIG_SUBCOMMANDS.map((s) => s.usage.length)) + 2;
+  return [
+    'Usage:',
+    '  /router config                          show config sources, the chain, integrations, exclude rules',
+    ...CONFIG_SUBCOMMANDS.map((s) => `  /router ${s.usage.padEnd(width)}${s.summary}`),
+  ];
+}
 
 /**
  * Cache-aware compaction state line (Phase 5b, implemented): the master
@@ -293,7 +311,6 @@ function compactionStateLine(cfg: {
   return `Compaction (context_budget): ${enabled}${detail}`;
 }
 
-/** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
 /**
  * `/router config integration <name> on|off|<mode>`: one write to the user
  * layer, then the authoritative re-read. A mode implies on. The reply states
@@ -343,7 +360,19 @@ function setIntegration(rt: CommandDeps, arg: string): string {
     (patch.mode === undefined || block?.mode === patch.mode);
   if (matches) {
     const state = enabledNow ? `on (${block?.mode ?? spec.defaultMode})` : 'off';
-    return `${name} is ${state} — saved to ${res.written}; applies now.`;
+    const reply = `${name} is ${state} — saved to ${res.written}; applies now.`;
+    // Config plan 2026-11-14 item 15 (owner decision 2026-11-15): switching
+    // Laya on without any installed weights points at the installer. The
+    // command itself never downloads anything.
+    if (name === 'laya' && enabledNow && !hasAnyInstall()) {
+      return [
+        reply,
+        'No Laya weights are installed under the models root — install them with',
+        '`pi-laya-model install <model>@<version>` (list what the manifest offers with',
+        '`pi-laya-model models`); see the skill `router-laya-install`.',
+      ].join('\n');
+    }
+    return reply;
   }
   const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
     (layer) => layer.origin === 'project'
@@ -363,6 +392,7 @@ function setIntegration(rt: CommandDeps, arg: string): string {
   return `${name} did not take effect — saved to ${res.written}; see the router log for integrations.${name}.`;
 }
 
+/** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
 function setCompaction(rt: CommandDeps, on: boolean): string {
   const res = openUserConfigStore().applyDelta({ context_budget: { enabled: on } });
   if (!res.ok) return res.error;
@@ -430,7 +460,20 @@ function formatConfigDisplay(rt: CommandDeps, layers: ConfigLayerView[], refs: s
     }
   }
   if (!any) lines.push('  (none)');
-  lines.push('', compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES);
+  lines.push(
+    '',
+    'Classifier chain:',
+    ...formatClassifierChain(describeClassifierChain(rt.cfg)),
+    '',
+    'Integrations:',
+    ...formatIntegrationLines({ ...(rt.cfg.integrations ?? {}) }, INTEGRATION_SPECS).map(
+      (line) => `  ${line}`
+    ),
+    '',
+    compactionStateLine(rt.cfg),
+    '',
+    ...configUsageLines()
+  );
   lines.push(
     'Shipped and project entries cannot be removed with unexclude — only user-layer entries can.'
   );
@@ -454,7 +497,7 @@ function excludePattern(
   ctx: Parameters<typeof rawDiscoveredRefs>[1],
   pattern: string
 ): string {
-  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  if (!pattern) return ['Missing pattern.', '', ...configUsageLines()].join('\n');
   const invalid = validateExcludePattern(pattern);
   if (invalid) return invalid;
 
@@ -514,7 +557,7 @@ function coveringProviderRuleKind(
 
 /** `/router config unexclude <pattern>` — user-layer entries only (D4). */
 function unexcludePattern(rt: CommandDeps, layers: ConfigLayerView[], pattern: string): string {
-  if (!pattern) return ['Missing pattern.', '', ...CONFIG_USAGE_LINES].join('\n');
+  if (!pattern) return ['Missing pattern.', '', ...configUsageLines()].join('\n');
   const user = layers.find((l) => l.origin === 'user')!;
   if (user.error) return `Not written — ${user.error}; fix or remove it first.`;
   const others = layers.filter(
@@ -568,24 +611,587 @@ function userExcludeList(
 }
 
 /** `/router config ...` — returns the text to show. */
-function handleConfigCommand(
+/** The command context as far as `/router config` needs it: the model registry. */
+interface ConfigCommandCtx {
+  modelRegistry?: {
+    getAvailable(): Array<{ provider: string; id: string }>;
+    find?(provider: string, id: string): unknown;
+  };
+}
+
+/** A value as a reply shows it. */
+function describeValue(value: unknown): string {
+  if (value === undefined) return 'unset';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (Array.isArray(value)) return value.join(', ');
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value)
+    : JSON.stringify(value);
+}
+
+/**
+ * The first model reference in a value that pi's registry does not know, or
+ * undefined. Candidates and cloud models enter only through pi (AGENTS §9).
+ */
+function unknownModelRef(
+  spec: { ref?: 'provider-model' | 'ollama-model' },
+  value: unknown,
+  ctx: ConfigCommandCtx
+): string | undefined {
+  if (spec.ref !== 'provider-model') return undefined;
+  const refs = Array.isArray(value) ? value : [value];
+  for (const ref of refs as string[]) {
+    const slash = ref.indexOf('/');
+    const known = ctx.modelRegistry?.find?.(ref.slice(0, slash), ref.slice(slash + 1));
+    if (!known) return ref;
+  }
+  return undefined;
+}
+
+/** A table write ready for the store, or the refusal text that says why not. */
+type PreparedPatch = { patch: ConfigPatch } | { refusal: string };
+
+/** Parses and checks the words of one set; the same check for the command and the menu. */
+function setPatchFor(
+  spec: ConfigKeySpec,
+  keyPath: string,
+  raw: string,
+  ctx: ConfigCommandCtx
+): PreparedPatch {
+  const parsed = parseConfigValue(spec, raw);
+  if ('error' in parsed) return { refusal: `Not written: ${parsed.error}.` };
+  const unknown = unknownModelRef(spec, parsed.value, ctx);
+  if (unknown) return { refusal: `Not written: pi does not know the model "${unknown}".` };
+  return { patch: { path: keyPath, value: parsed.value } };
+}
+
+/**
+ * Writes one table patch to the user layer, reloads, and replies with the
+ * value in effect, a project-layer override when there is one, and the chain.
+ * A set is overridden when the value in effect is not the saved one (compared
+ * by value: lists are new arrays on every load); an unset is overridden when
+ * the project layer sets the key, under its path or a pre-2.0 name the loader
+ * still reads.
+ */
+function commitConfigPatch(rt: CommandDeps, keyPath: string, patch: ConfigPatch): string {
+  const res = openUserConfigStore().applyDelta({ paths: [patch] });
+  if (!res.ok) return res.error;
+  rt.load();
+  const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
+    (layer) => layer.origin === 'project'
+  );
+  const effective = getLeaf(rt.cfg, keyPath);
+  const projectSets = layerSetsKey(project?.config, keyPath);
+  const overridden =
+    projectSets && ('value' in patch ? !isDeepStrictEqual(effective, patch.value) : true);
+  const projectWins = 'value' in patch ? 'overrides the saved value' : 'sets it';
+  const headline = overridden
+    ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) ${projectWins}.`
+    : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
+  return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
+    '\n'
+  );
+}
+
+/**
+ * `/router config set <path> <value>` and `unset <path>` (config plan Phase 2):
+ * one table key, validated against the table, then the authoritative reload.
+ */
+function setConfigValue(
   rt: CommandDeps,
-  ctx: Parameters<typeof rawDiscoveredRefs>[1],
-  rest: string
+  ctx: ConfigCommandCtx,
+  arg: string,
+  unset: boolean
 ): string {
+  const usage = unset
+    ? 'Usage: /router config unset <path>'
+    : 'Usage: /router config set <path> <value>';
+  const [, keyPath = '', rest = ''] = arg.match(/^(\S*)\s*(.*)$/)!;
+  if (!keyPath || (!unset && !rest.trim())) return usage;
+  const spec = configKey(keyPath);
+  if (!spec) {
+    const near = closestKey(
+      keyPath,
+      CONFIG_KEYS.map((k) => k.path)
+    );
+    return [
+      `Not written: "${keyPath}" is not a documented key${near ? `; did you mean "${near}"?` : ''}.`,
+      usage,
+    ].join('\n');
+  }
+  if (spec.via === 'alias') {
+    return `Not written: ${keyPath} is changed with /router ${spec.alias}.`;
+  }
+  if (spec.via === 'file-only') {
+    return `Not written: ${keyPath} is hand-edited only (in the user layer, router-config.user.json).`;
+  }
+  if (unset) return commitConfigPatch(rt, keyPath, { path: keyPath, unset: true });
+  const prepared = setPatchFor(spec, keyPath, rest, ctx);
+  if ('refusal' in prepared) return prepared.refusal;
+  return commitConfigPatch(rt, keyPath, prepared.patch);
+}
+
+const CONFIG_BLOCK_TITLES: Record<(typeof CONFIG_BLOCKS)[number], string> = {
+  classifier: 'which models classify a prompt, and whether cloud models may see it',
+  integrations: 'optional integrations; each is switched with the command shown',
+};
+
+/**
+ * `/router config classifier|integrations`: every table key of the block, the
+ * value in effect, the shipped default and how the key is changed. The
+ * classifier view ends with the chain the settings produce.
+ */
+function configBlockView(rt: CommandDeps, block: (typeof CONFIG_BLOCKS)[number]): string {
+  const specs = CONFIG_KEYS.filter((k) => k.path.startsWith(`${block}.`));
+  const width = Math.max(...specs.map((s) => s.path.length)) + 2;
+  const lines = [`${block} — ${CONFIG_BLOCK_TITLES[block]}`, ''];
+  for (const spec of specs) {
+    const how =
+      spec.via === 'set'
+        ? '/router config set'
+        : spec.via === 'alias'
+          ? `/router ${spec.alias}`
+          : 'hand-edit (user layer)';
+    lines.push(
+      `  ${spec.path.padEnd(width)}${describeValue(getLeaf(rt.cfg, spec.path)).padEnd(12)}[shipped: ${spec.shipped}]  ${how}`
+    );
+  }
+  if (block === 'classifier') {
+    lines.push('', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg)));
+  }
+  return lines.join('\n');
+}
+
+/** The dialogs the guided menu uses: the subset of pi's UI context it needs. */
+interface WizardUi {
+  select(title: string, options: string[]): Promise<string | undefined>;
+  confirm(title: string, message: string): Promise<boolean>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
+  notify(message: string, type?: 'info' | 'warning' | 'error'): void;
+}
+
+type WizardCtx = ConfigCommandCtx & { ui: WizardUi };
+
+const WIZARD_SHOW = 'Show the overview';
+const WIZARD_HAND = 'Hand-edited keys (file only)';
+const WIZARD_DONE = 'Done';
+/** The menu loops until Done or a cancel; the bound stops a script that never answers Done. */
+const WIZARD_MAX_ROUNDS = 25;
+const CONFIG_NO_MENU_NOTE =
+  'The guided menu needs the terminal (TUI mode). Without it, change a setting with /router config set <path> <value> or /router config unset <path>.';
+
+function handEditLines(): string[] {
+  return [
+    'Hand-edited keys (change them in the user layer, router-config.user.json):',
+    ...CONFIG_KEYS.filter((k) => k.via === 'file-only').map((k) => `  ${k.path} — ${k.meaning}`),
+  ];
+}
+
+/**
+ * One key of the menu. Switches ask yes/no, enumerations offer their values,
+ * lists and model refs take text. Integration keys go through the integration
+ * switch, the same write `/router config integration` makes.
+ */
+async function editWizardKey(
+  rt: CommandDeps,
+  ctx: WizardCtx,
+  spec: ConfigKeySpec
+): Promise<string | undefined> {
+  const integration = spec.path.match(/^integrations\.([a-z_]+)\.(enabled|mode)$/);
+  const viaIntegration = spec.via === 'alias' && integration !== null;
+  if (spec.kind === 'boolean') {
+    const current = getLeaf(rt.cfg, spec.path) === true;
+    const target = !current;
+    const word = target ? 'on' : 'off';
+    const ok = await ctx.ui.confirm(
+      'Router config',
+      `Set ${spec.path} to ${word}? (now ${current ? 'on' : 'off'})`
+    );
+    if (!ok) return undefined;
+    return viaIntegration
+      ? setIntegration(rt, `${integration[1]} ${word}`)
+      : commitConfigPatch(rt, spec.path, { path: spec.path, value: target });
+  }
+  if (spec.kind === 'enum') {
+    const value = await ctx.ui.select(spec.path, [...(spec.values ?? [])]);
+    if (value === undefined) return undefined;
+    return viaIntegration
+      ? setIntegration(rt, `${integration[1]} ${value}`)
+      : commitConfigPatch(rt, spec.path, { path: spec.path, value });
+  }
+  if (spec.via !== 'set') return undefined;
+  const placeholder =
+    spec.kind === 'string-list'
+      ? 'comma-separated provider/id list'
+      : spec.ref === 'ollama-model'
+        ? 'ollama/<name>'
+        : 'provider/id';
+  const text = await ctx.ui.input(spec.path, placeholder);
+  if (text === undefined || text.trim() === '') return undefined;
+  const prepared = setPatchFor(spec, spec.path, text, ctx);
+  if ('refusal' in prepared) return prepared.refusal;
+  return commitConfigPatch(rt, spec.path, prepared.patch);
+}
+
+/**
+ * `/router config` in TUI mode: pick a wizard key, answer its question, and
+ * come back to the menu with the new value. Offers only the keys the table
+ * marks `wizard`; file-only keys are listed with their meaning, not edited.
+ */
+async function runConfigWizard(rt: CommandDeps, ctx: WizardCtx): Promise<void> {
+  for (let round = 0; round < WIZARD_MAX_ROUNDS; round++) {
+    const byLabel = new Map<string, ConfigKeySpec>();
+    for (const spec of CONFIG_KEYS.filter((k) => k.wizard === true)) {
+      byLabel.set(`${spec.path} — ${describeValue(getLeaf(rt.cfg, spec.path))}`, spec);
+    }
+    const options = [WIZARD_SHOW, ...byLabel.keys(), WIZARD_HAND, WIZARD_DONE];
+    const choice = await ctx.ui.select('Router config — choose a setting to change', options);
+    if (choice === undefined || choice === WIZARD_DONE) return;
+    if (choice === WIZARD_SHOW) {
+      ctx.ui.notify(handleConfigCommand(rt, ctx, 'show'), 'info');
+      continue;
+    }
+    if (choice === WIZARD_HAND) {
+      ctx.ui.notify(handEditLines().join('\n'), 'info');
+      continue;
+    }
+    const spec = byLabel.get(choice);
+    if (!spec) return;
+    const reply = await editWizardKey(rt, ctx, spec);
+    if (reply) ctx.ui.notify(reply, reply.startsWith('Not written') ? 'warning' : 'info');
+  }
+}
+
+function handleConfigCommand(rt: CommandDeps, ctx: ConfigCommandCtx, rest: string): string {
   const [, sub, arg] = rest.match(/^(\S*)\s*(.*)$/)!;
   const layers = (): ConfigLayerView[] =>
     readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() });
-  if (!sub) return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
+  if (!sub || sub === 'show') return formatConfigDisplay(rt, layers(), rawDiscoveredRefs(rt, ctx));
+  if (sub === 'set') return setConfigValue(rt, ctx, arg, false);
+  if (sub === 'unset') return setConfigValue(rt, ctx, arg, true);
+  if ((CONFIG_BLOCKS as readonly string[]).includes(sub)) {
+    return configBlockView(rt, sub as (typeof CONFIG_BLOCKS)[number]);
+  }
   if (sub === 'compaction') {
     if (arg === 'on') return setCompaction(rt, true);
     if (arg === 'off') return setCompaction(rt, false);
-    return [compactionStateLine(rt.cfg), '', ...CONFIG_USAGE_LINES].join('\n');
+    return [compactionStateLine(rt.cfg), '', ...configUsageLines()].join('\n');
   }
   if (sub === 'integration') return setIntegration(rt, arg);
   if (sub === 'exclude') return excludePattern(rt, ctx, arg);
   if (sub === 'unexclude') return unexcludePattern(rt, layers(), arg);
-  return ['Unknown config subcommand: ' + sub, '', ...CONFIG_USAGE_LINES].join('\n');
+  return ['Unknown config subcommand: ' + sub, '', ...configUsageLines()].join('\n');
+}
+
+interface RouterSubcommand {
+  /** First word of the argument. */
+  name: string;
+  /** Usage after "/router ", as shown in the description and the overview. */
+  usage: string;
+  /** One line for the overview's command list. */
+  summary: string;
+  /** Autocomplete entries for this subcommand. */
+  completions: AutocompleteItem[];
+  /** Nested subcommands listed under this one (`config`). */
+  children?: readonly RouterSubcommand[];
+}
+
+/**
+ * The `/router config …` subcommands, nested under the `config` entry of
+ * ROUTER_SUBCOMMANDS. Single source for the `config [a|b|…]` part of the
+ * command description, the `config …` completions and the config usage
+ * lines (configUsageLines). Handling stays in the handler.
+ */
+const CONFIG_SUBCOMMANDS: readonly RouterSubcommand[] = [
+  {
+    name: 'show',
+    usage: 'config show',
+    summary: 'Config overview: sources, chain, integrations, exclude rules (every mode)',
+    completions: [
+      {
+        value: 'config show',
+        label: 'config show',
+        description: 'Show the config overview; works in every run mode',
+      },
+    ],
+  },
+  {
+    name: 'set',
+    usage: 'config set <path> <value>',
+    summary: 'Write one classifier setting to the user config (validated, applies now)',
+    completions: [
+      {
+        value: 'config set',
+        label: 'config set <path> <value>',
+        description:
+          'Write one classifier setting, checked against the key table, to the user config',
+      },
+    ],
+  },
+  {
+    name: 'unset',
+    usage: 'config unset <path>',
+    summary: 'Remove one classifier setting from the user config',
+    completions: [
+      {
+        value: 'config unset',
+        label: 'config unset <path>',
+        description: 'Remove one classifier setting from the user config',
+      },
+    ],
+  },
+  {
+    name: 'classifier',
+    usage: 'config classifier',
+    summary: 'Classifier settings in effect, how each is changed, and the chain they produce',
+    completions: [
+      {
+        value: 'config classifier',
+        label: 'config classifier',
+        description: 'Show the classifier settings in effect and the chain they produce',
+      },
+    ],
+  },
+  {
+    name: 'integrations',
+    usage: 'config integrations',
+    summary: 'Integration settings in effect and the command that switches each',
+    completions: [
+      {
+        value: 'config integrations',
+        label: 'config integrations',
+        description: 'Show the integration settings in effect and their switch commands',
+      },
+    ],
+  },
+  {
+    name: 'exclude',
+    usage: 'config exclude <ref|glob|provider>',
+    summary: 'Exclude a model, glob or provider from routing (user config, applies now)',
+    completions: [
+      {
+        value: 'config exclude',
+        label: 'config exclude <ref|glob|provider>',
+        description:
+          'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
+      },
+    ],
+  },
+  {
+    name: 'unexclude',
+    usage: 'config unexclude <ref|glob|provider>',
+    summary: 'Remove an exclusion from the user config',
+    completions: [
+      {
+        value: 'config unexclude',
+        label: 'config unexclude <ref|glob|provider>',
+        description: 'Remove an exclusion from the user config',
+      },
+    ],
+  },
+  {
+    name: 'integration',
+    usage: 'config integration <name> on|off|<mode>',
+    summary: 'Switch an optional integration (e.g. laya) on, off or to a mode',
+    completions: [
+      {
+        value: 'config integration',
+        label: 'config integration <name> on|off|<mode>',
+        description:
+          'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
+      },
+    ],
+  },
+  {
+    name: 'compaction',
+    usage: 'config compaction on|off',
+    summary: 'Cache-aware auto-compaction switch (Phase 5b, opt-in)',
+    completions: [
+      {
+        value: 'config compaction',
+        label: 'config compaction on|off',
+        description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
+      },
+    ],
+  },
+];
+
+/**
+ * The /router subcommands. Single source for the command description (Pi's
+ * palette), the autocomplete list, the command list under the bare overview
+ * and the unknown-subcommand reply, so the four cannot drift apart. Handling
+ * stays in the handler; test/router-command-help.test.ts pins both sides.
+ */
+const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
+  {
+    name: 'scan',
+    usage: 'scan',
+    summary: 'Re-discover models, re-scrape GDPval, regenerate config',
+    completions: [
+      {
+        value: 'scan',
+        label: 'scan',
+        description: 'Re-discover models, re-scrape GDPval, regenerate config',
+      },
+    ],
+  },
+  {
+    name: 'classifier',
+    usage: 'classifier [days]',
+    summary: 'Classifier decision summary from the decision log (default 7 days)',
+    completions: [
+      {
+        value: 'classifier',
+        label: 'classifier',
+        description:
+          'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
+      },
+    ],
+  },
+  {
+    name: 'corrections',
+    usage: 'corrections [list|clear]',
+    summary: 'Saved HINT category corrections: list them, or clear all (ADR-0030)',
+    completions: [
+      {
+        value: 'corrections',
+        label: 'corrections',
+        description: 'Saved HINT category corrections: list, or clear all',
+      },
+    ],
+  },
+  {
+    name: 'cost',
+    usage: 'cost',
+    summary: 'Cost report for all session models and the 1/7/30-day token windows',
+    completions: [
+      {
+        value: 'cost',
+        label: 'cost',
+        description:
+          'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate',
+      },
+    ],
+  },
+  {
+    name: 'errors',
+    usage: 'errors [n]',
+    summary: 'Main-session stream failures (default 15, max 50)',
+    completions: [
+      {
+        value: 'errors',
+        label: 'errors',
+        description:
+          'Main-session stream failures — headline count matches the status-line ⚠N err exactly',
+      },
+      {
+        value: 'errors 30',
+        label: 'errors <n>',
+        description: 'Show up to <n> entries (default 15, max 50)',
+      },
+    ],
+  },
+  {
+    name: 'blocklist',
+    usage: 'blocklist [clear [ref]]',
+    summary: 'Models blocked after permanent provider failures; clear all or one',
+    completions: [
+      {
+        value: 'blocklist',
+        label: 'blocklist',
+        description: 'Show models blocked after permanent provider failures',
+      },
+      {
+        value: 'blocklist clear',
+        label: 'blocklist clear',
+        description: 'Unblock all models, or one: blocklist clear <provider/model>',
+      },
+    ],
+  },
+  {
+    name: 'cooldowns',
+    usage: 'cooldowns [clear]',
+    summary: 'Active rate-limit cooldowns; clear them without a restart',
+    completions: [
+      {
+        value: 'cooldowns',
+        label: 'cooldowns',
+        description: 'Show active rate-limit cooldowns (ref, remaining, hits)',
+      },
+      {
+        value: 'cooldowns clear',
+        label: 'cooldowns clear',
+        description:
+          'Clear all cooldowns + model-health streaks (incident relief, no restart needed)',
+      },
+    ],
+  },
+  {
+    name: 'config',
+    usage: `config [${CONFIG_SUBCOMMANDS.map((c) => c.name).join('|')}]`,
+    summary:
+      'Config overview, classifier and integration settings, exclude rules; edit the user config',
+    completions: [
+      {
+        value: 'config',
+        label: 'config',
+        description: 'Show config sources, the classifier chain, integrations and exclude rules',
+      },
+      ...CONFIG_SUBCOMMANDS.flatMap((c) => c.completions),
+    ],
+    children: CONFIG_SUBCOMMANDS,
+  },
+];
+
+function routerCommandDescription(): string {
+  return `Model router status. Usage: /router [group|${ROUTER_SUBCOMMANDS.map((s) => s.usage).join('|')}]`;
+}
+
+/** The command list shown under the bare overview and with an unknown subcommand. */
+function routerCommandListLines(): string[] {
+  const rows: Array<[string, string]> = [
+    ['/router', 'This overview'],
+    ['/router <group>', "One group's ranked candidates"],
+    // A subcommand with children shows its bare name: the children are named on
+    // the line below, so a bracketed list here would say it twice.
+    ...ROUTER_SUBCOMMANDS.map((s): [string, string] => [
+      `/router ${s.children ? s.name : s.usage}`,
+      s.summary,
+    ]),
+  ];
+  const lines = ['Commands:', ...rows.map(([usage, summary]) => `  ${usage}\n      ${summary}`)];
+  // A subcommand with children names them in ONE line instead of one entry per
+  // child (owner report 2026-11-15: nine `config` entries at two lines each
+  // made the footer the longest part of the overview). The usage forms live in
+  // the subcommand's own reply, which lists them from the same table.
+  for (const s of ROUTER_SUBCOMMANDS) {
+    if (!s.children) continue;
+    const names = s.children.map((c) => c.name).join(' \u00b7 ');
+    lines.push(`      Subcommands: ${names}`);
+  }
+  return lines;
+}
+
+/**
+ * The subcommand a typo most likely meant: a close edit distance, else a name
+ * the word contains or starts ("rescan" → "scan", "block" → "blocklist").
+ */
+function nearestSubcommand(word: string, names: readonly string[]): string | undefined {
+  return closestKey(word, names) ?? names.find((n) => word.includes(n) || n.startsWith(word));
+}
+
+/** Reply for an argument that is neither a handled subcommand nor a group. */
+function formatUnknownRouterSubcommand(arg: string): string {
+  const first = arg.split(/\s+/)[0];
+  const names = ROUTER_SUBCOMMANDS.map((s) => s.name);
+  const known = ROUTER_SUBCOMMANDS.find((s) => s.name === first);
+  const near = known ? undefined : nearestSubcommand(first, names);
+  const hint = known
+    ? ` — usage: /router ${known.usage}`
+    : near
+      ? ` (did you mean "${near}"?)`
+      : '';
+  return [`Unknown /router subcommand "${arg}"${hint}`, '', ...routerCommandListLines()].join('\n');
 }
 
 /**
@@ -616,94 +1222,10 @@ export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {
-    description:
-      'Model router status. Usage: /router [group|scan|cost|classifier [days]|corrections [list|clear]|errors [n]|blocklist [clear [ref]]|cooldowns [clear]|config [exclude|unexclude <ref|glob|provider>|integration <name> on|off|<mode>]]',
+    description: routerCommandDescription(),
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
       // Sub-command + group name completion (TAB-friendly).
-      const subcommands: AutocompleteItem[] = [
-        {
-          value: 'scan',
-          label: 'scan',
-          description: 'Re-discover models, re-scrape GDPval, regenerate config',
-        },
-        {
-          value: 'classifier',
-          label: 'classifier',
-          description:
-            'Classifier decision summary from the decision log: stages, continue rates, chain exhaustions, chain failures, latency, Laya disagreements ([days], default 7)',
-        },
-        {
-          value: 'corrections',
-          label: 'corrections',
-          description: 'Saved HINT category corrections: list, or clear all',
-        },
-        {
-          value: 'cost',
-          label: 'cost',
-          description:
-            'Cost report: ALL session models (Req/In/Out/Marginal/Tier) + 1d/7d/30d token windows with ≈ blended-price estimate',
-        },
-        {
-          value: 'errors',
-          label: 'errors',
-          description:
-            'Main-session stream failures — headline count matches the status-line ⚠N err exactly',
-        },
-        {
-          value: 'errors 30',
-          label: 'errors <n>',
-          description: 'Show up to <n> entries (default 15, max 50)',
-        },
-        {
-          value: 'blocklist',
-          label: 'blocklist',
-          description: 'Show models blocked after permanent provider failures',
-        },
-        {
-          value: 'blocklist clear',
-          label: 'blocklist clear',
-          description: 'Unblock all models, or one: blocklist clear <provider/model>',
-        },
-        {
-          value: 'cooldowns',
-          label: 'cooldowns',
-          description: 'Show active rate-limit cooldowns (ref, remaining, hits)',
-        },
-        {
-          value: 'cooldowns clear',
-          label: 'cooldowns clear',
-          description:
-            'Clear all cooldowns + model-health streaks (incident relief, no restart needed)',
-        },
-        {
-          value: 'config',
-          label: 'config',
-          description:
-            'Show config sources, exclude rules (with origin) and how many models each matches',
-        },
-        {
-          value: 'config exclude',
-          label: 'config exclude <ref|glob|provider>',
-          description:
-            'Exclude a model/glob/provider from routing (saved to the user config, live without restart)',
-        },
-        {
-          value: 'config unexclude',
-          label: 'config unexclude <ref|glob|provider>',
-          description: 'Remove an exclusion from the user config',
-        },
-        {
-          value: 'config integration',
-          label: 'config integration <name> on|off|<mode>',
-          description:
-            'Switch an optional integration (e.g. laya) on, off or to a mode; saved to the user config',
-        },
-        {
-          value: 'config compaction',
-          label: 'config compaction on|off',
-          description: 'Cache-aware auto-compaction flag (Phase 5b, opt-in)',
-        },
-      ];
+      const subcommands = ROUTER_SUBCOMMANDS.flatMap((s) => s.completions);
       const groupNames: AutocompleteItem[] = Object.keys(rt.cfg.model_groups ?? {}).map((g) => {
         const desc = rt.cfg.model_groups?.[g]?.description;
         return desc ? { value: g, label: g, description: desc } : { value: g, label: g };
@@ -729,7 +1251,13 @@ export function createCommands(rt: CommandDeps): void {
           }
 
           if (arg === 'config' || arg?.startsWith('config ')) {
-            ctx.ui.notify(handleConfigCommand(rt, ctx, arg.slice('config'.length).trim()), 'info');
+            const sub = arg.slice('config'.length).trim();
+            if (!sub && ctx.mode === 'tui') {
+              await runConfigWizard(rt, ctx);
+              return;
+            }
+            const reply = handleConfigCommand(rt, ctx, sub);
+            ctx.ui.notify(!sub ? [reply, '', CONFIG_NO_MENU_NOTE].join('\n') : reply, 'info');
             return;
           }
 
@@ -911,6 +1439,14 @@ export function createCommands(rt: CommandDeps): void {
             return;
           }
 
+          // Every handled subcommand returned above. Anything else that is not a
+          // group name is a typo: say so instead of silently showing the
+          // overview (owner report 2026-11-14: `/router rescan`).
+          if (arg && !rt.cfg.model_groups[arg]) {
+            ctx.ui.notify(formatUnknownRouterSubcommand(arg), 'warning');
+            return;
+          }
+
           if (arg && rt.cfg.model_groups[arg]) {
             const g = rt.cfg.model_groups[arg],
               res = rt.resolve(arg);
@@ -973,11 +1509,15 @@ export function createCommands(rt: CommandDeps): void {
               // that last classified plus the live chain state instead.
               lines.push(
                 ...formatClassifierStatus({
-                  group: g,
+                  classifier: rt.cfg.classifier,
                   last: getLastClassificationSource(),
                   probedCount: getCachedCloudModels(rt.cache).length,
                   ollamaUp: await isOllamaAvailable(),
-                  localChain: resolveLocalClassifierChain(rt.cache, rt.cfg, localClassifierPins(g)),
+                  localChain: resolveLocalClassifierChain(
+                    rt.cache,
+                    rt.cfg,
+                    localClassifierPins(rt.cfg.classifier?.local)
+                  ),
                   localProbed: Array.isArray(rt.cache.classifier_local_models),
                   counts: getClassificationCounts(),
                   ...(rt.cfg.integrations?.laya?.enabled
@@ -1120,7 +1660,7 @@ export function createCommands(rt: CommandDeps): void {
           }
 
           lines.push('└' + '─'.repeat(71));
-          lines.push('', '/router <group> | scan | cost | blocklist');
+          lines.push('', ...routerCommandListLines());
           ctx.ui.notify(lines.join('\n'), 'info');
         } finally {
           // Always restore previous session context

@@ -74,7 +74,7 @@ describe('shipped groups', () => {
     expect(groups.standard).toMatchObject({ method: 'tiered', min_gdpval: 300, max_cost: 2.0 });
   });
 
-  it('code_complex is the old tactical band; planning keeps 1700 and reasons; design is planning at 1600 on Briefcase (D5)', () => {
+  it('code_complex is the old tactical band; planning is the reasoning tier; design is planning at 1600 on Briefcase (D5)', () => {
     expect(groups.code_complex).toMatchObject({
       method: 'best',
       min_gdpval: 1630,
@@ -82,17 +82,22 @@ describe('shipped groups', () => {
       score_by: 'coding',
     });
     // planning ranks by the reasoning blend since 2026-10-31 (owner decision);
-    // the floor stays 1700 and models without a value are refused.
+    // the GDPval floor was dropped on 2026-11-15 (owner decision: the best
+    // reasoning model sat at GDPval 1546 and was excluded by the floor, not by
+    // the ranking). Models without a reasoning value are still refused.
     expect(groups.planning).toMatchObject({
       method: 'best',
-      min_gdpval: 1700,
       score_by: 'reasoning',
       require_score_column: true,
+      min_score: 35,
     });
+    expect(groups.planning.min_gdpval).toBeUndefined();
     expect(groups.design).toMatchObject({
       method: 'best',
       min_gdpval: 1600,
       score_by: 'briefcase',
+      // owner decision 2026-11-15: top tiers ship without :free refs
+      exclude_models: ['*:free'],
     });
   });
 

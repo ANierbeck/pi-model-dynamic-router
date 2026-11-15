@@ -185,7 +185,7 @@ describe('the glue resolve writes the pool record (stream-driving calls only)', 
   // pool record for EVERY caller — group registration (once per static group
   // on every session_start and scan), /router group, the resolve_model_group
   // tool and the streams alike. The log is written for every user with
-  // classifier_log on (default), burns the 20 MiB x 3 rotation budget on
+  // classifier.log on (default), burns the 20 MiB x 3 rotation budget on
   // non-decisions and breaks the pool replay's "right after the same turn's
   // decision" ordering. Only the stream-driving callers pass { logPool: true }.
   it('a resolve WITHOUT opts logs nothing — group registration, /router and tools must not fill the log', () => {

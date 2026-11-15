@@ -7,7 +7,7 @@
 //   - the most frequent disagreement pairs
 //   - DISAGREEMENTS: prompts where Laya disagreed with the chain with high
 //     confidence - exactly the raw material for the golden set (Task 7).
-//     input.text is only present if classifier_log.store_text is "full".
+//     input.text is only present if classifier.log.store_text is "full".
 //
 //   npx tsx scripts/laya-shadow-stats.ts [--file=<log>] [--threshold=0.8]
 

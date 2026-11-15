@@ -103,6 +103,10 @@ ADR, `docs/adr/0001` included.
 - ~~**V2:**~~ Owner 2026-11-07: no read-aliases, same as D3 for the groups. Was: aliases for the renamed config keys. The group plan decided "no
   read-aliases in 2.0" for groups (its D3); confirm that this applies to the
   cloud-chain keys too, or ask for a warning alias.
+  *For the classifier keys V1 and V2 are replaced by
+  `docs/plans/2026-11-14-config-surface-and-ui.md` (ADR 0034, proposed): the
+  cloud switch is `classifier.cloud.enabled`, and the pre-2.0 names are read
+  for one release with a warning.*
 - ~~**V3:**~~ Owner 2026-11-07: ships with 2.0.0 (incompatible config rename, belongs with the five-group breaking change). Was: when the rename ships (a release decision, AGENTS.md §1).
 
 ## Risks

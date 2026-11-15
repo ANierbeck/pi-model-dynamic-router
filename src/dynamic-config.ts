@@ -12,7 +12,7 @@
 
 import { createHash } from 'node:crypto';
 import { PROVIDER_MAP } from './providers.ts';
-import { baseTokens, isPlainObject } from './utils.ts';
+import { baseTokens, isRecord } from './utils.ts';
 import {
   effCost,
   lookupGdp,
@@ -466,7 +466,7 @@ export const DYNAMIC_CONFIG_RESYNC_KEYS = [
   // Classifier decision log (2026-10-08 plan, Phase 1): whether/how the
   // classification decision log runs is user intent (privacy + retention) —
   // a stale dynamic file must not silently switch it off.
-  'classifier_log',
+  'classifier',
   // Optional integrations (Laya, 2026-10-09 plan; renamed from classifier_laya
   // in 2.0): enable/configure is user intent; a stale dynamic file must not
   // leave one stuck on or off.
@@ -549,9 +549,9 @@ export function collectStaticContributions(staticCfg: Config): StaticContributio
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
     const section: Record<string, string[] | null> = {};
     const s = stat[key];
-    if (isPlainObject(s)) {
+    if (isRecord(s)) {
       for (const [entry, value] of Object.entries(s)) {
-        section[entry] = isPlainObject(value) ? Object.keys(value) : null;
+        section[entry] = isRecord(value) ? Object.keys(value) : null;
       }
     }
     out[key] = section;
@@ -567,10 +567,10 @@ function readRememberedContributions(dynamicCfg: Config): Partial<StaticContribu
   const raw = (dynamicCfg as unknown as { _dynamic?: { static_contributions?: unknown } })._dynamic
     ?.static_contributions;
   const out: Partial<StaticContributions> = {};
-  if (!isPlainObject(raw)) return out;
+  if (!isRecord(raw)) return out;
   for (const key of DYNAMIC_CONFIG_MERGE_KEYS) {
     const section = raw[key];
-    if (!isPlainObject(section)) continue;
+    if (!isRecord(section)) continue;
     const parsed: Record<string, string[] | null> = {};
     for (const [entry, fields] of Object.entries(section)) {
       if (fields === null) parsed[entry] = null;
@@ -597,11 +597,11 @@ function pruneRemovedStaticEntries(
   dropped?: Set<string>
 ): void {
   const entries = dyn[key];
-  if (!isPlainObject(entries)) return;
+  if (!isRecord(entries)) return;
   const pruned: Record<string, unknown> = { ...entries };
   const dropFields = (entry: string, fields: readonly string[]): void => {
     const value = pruned[entry];
-    if (!isPlainObject(value)) return;
+    if (!isRecord(value)) return;
     const rest = { ...value };
     for (const f of fields) delete rest[f];
     if (Object.keys(rest).length === 0) {
@@ -675,14 +675,14 @@ export function resyncDynamicFromStatic(
       key === 'providers' ? droppedProviders : undefined
     );
     const s = stat[key];
-    if (!isPlainObject(s)) continue;
-    const merged: Record<string, unknown> = { ...(isPlainObject(dyn[key]) ? dyn[key] : {}) };
+    if (!isRecord(s)) continue;
+    const merged: Record<string, unknown> = { ...(isRecord(dyn[key]) ? dyn[key] : {}) };
     for (const [entry, value] of Object.entries(s)) {
       const prev = merged[entry];
-      merged[entry] = isPlainObject(prev) && isPlainObject(value) ? { ...prev, ...value } : value;
+      merged[entry] = isRecord(prev) && isRecord(value) ? { ...prev, ...value } : value;
     }
     dyn[key] = merged;
   }
-  if (isPlainObject(dyn._dynamic)) dyn._dynamic.static_contributions = contributions;
+  if (isRecord(dyn._dynamic)) dyn._dynamic.static_contributions = contributions;
   return { droppedProviders: [...droppedProviders] };
 }

@@ -361,6 +361,14 @@ describe('account-wide failures never block a model', () => {
     ['401 status code (no body)'],
     ['Invalid API key provided'],
     ['403: {"message":"Unauthorized: authentication failed","code":403}'],
+    // Production incident 2026-11-13: the claude-bridge OAuth session expired
+    // and the error carried no HTTP code. The wording is the verb
+    // ("authenticate"), not the noun, so the old regex missed it and both
+    // Claude models were blocked for 7 days as an "unknown signature".
+    ['failed to authenticate: oauth session expired and could not be refreshed'],
+    ['OAuth session expired and could not be refreshed'],
+    ['authentication_error: token has expired'],
+    ['Failed to authenticate. Please run `claude login`.'],
   ])('%s is not a Tier-2 candidate', (text) => {
     expect(classifyFailure(T2, text).verdict).toBe('transient');
     const cache: Cache = {};

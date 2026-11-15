@@ -36,6 +36,9 @@ export interface TurnState {
   lastClassifiedCategory: ClassificationResult['category'] | undefined;
   /** Start of the current turn (ms since epoch); 0 = no turn started. */
   turnStart: number;
+  /** ADR-0027 Phase 2: sequence number of the current turn, incremented at
+   * every turn_start. The decision-log turn id is `<session>#<turnSeq>`. */
+  turnSeq: number;
   /**
    * Wall-clock ms this turn spent inside MODEL STREAMS (M3, plan
    * 2026-11-07-turn-latency-tool-time.md). Excludes tool execution and
@@ -161,6 +164,7 @@ export function emptyTurnState(): TurnState {
     runDriver: '',
     lastClassifiedCategory: undefined,
     turnStart: 0,
+    turnSeq: 0,
     streamMs: 0,
     streamCount: 0,
   };

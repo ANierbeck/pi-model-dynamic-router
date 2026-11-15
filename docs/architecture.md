@@ -58,16 +58,19 @@ this module asks a local LLM to match it to a known GDPval slug.
 ### `src/local-llm.ts` — Provider-agnostic local LLM caller
 
 - `resolveLocalProvider(deps)` — discovers the local provider (Ollama OR
-  LM Studio) generically, ranks by speed/suitability (not hardcoded to
-  Ollama). `gemma2:2b` is ranked last (too weak for matching).
+  LM Studio) generically and ranks its completion-capable models by the
+  parameter size the scan reported: the largest model within the size
+  budget first, larger ones after, size-unknown ones last (ADR-0025 — no
+  model names).
 - `callLocalLlm(prompt, deps)` — calls the local provider via OpenAI
   `/chat/completions`, falls back to free OpenRouter cloud models on failure.
   Used only for GDPval model-slug matching (matching a discovered model ID
   against known leaderboard slugs) -- the prompt sent here is built from
   model IDs/labels, never user conversation content. Unconditional (not
   gated by an opt-in flag) because no user data is involved; contrast with
-  the content-classifier's `classifier_cloud_chain`, which does carry raw
-  user prompt text and is opt-in for that reason.
+  the content-classifier's `classifier.cloud.enabled` leg, which does carry raw
+  user prompt text; the shipped `router-config.json` turns it on (see the
+  README section "Data handling & privacy").
 
 ### `src/rate-limit.ts` — Single source of truth for cooldown checks
 
@@ -140,16 +143,17 @@ Previously `index.ts` had `isRateLimitText` (15 patterns) AND
 `isRateLimitError` (7 patterns, dead code) — divergent. Consolidated here;
 `index.ts` imports the unified functions.
 
-### `src/discovery.ts` — `getCheapestCloudModels()`
+### Cloud classifier candidates — `selectClassifierCandidates()` (`src/classifier-cloud-probe.ts`)
 
-`getCheapestCloudModels()` dynamically discovers the cheapest cloud models
-for the classifier's cloud chain (when `classifier_cloud_chain: true`
-is set on the `dynamic` group). It filters by `lookupPrice(ref)` and requires
-`price.output <= $5/M`. **Known limitation (finding F3, 2026-09-02):**
+`selectClassifierCandidates()` discovers the cloud models for the classifier's cloud chain
+(when `classifier.cloud.enabled: true` is set). It is the lazy path, used
+only while the scan-time probe-verified list is empty. It filters by `lookupPrice(ref)` and requires
+`price.output <= $5/M`; models with a catalog price of $0 and no real price are admitted as a
+placeholder tier. Excluded, paid-guarded, unhealthy and blocklisted models are skipped. **Known limitation (finding F3, 2026-09-02):**
 subscription models (`mistral-zai/*`, including the user's free-to-them
 GLM-5.2) have no pricing data in the OpenRouter pricing cache → `lookupPrice`
 returns `null` → they are filtered out. The classifier's cloud chain
-therefore never tries `mistral-zai/glm-5-2`, only free OpenRouter models. A
+therefore never tries `mistral-zai/glm-5-2`. A
 correct fix needs real per-token pricing data, not a bigger scope; documented
 inline in `src/discovery.ts`.
 
@@ -206,6 +210,8 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/hint-corrections.ts` | Saved category corrections from `HINT: category <name>` (ADR-0030 Option 1): exact-match store in `cache.hint_corrections`, capped, stale names never applied |
 | `src/commands.ts` | The `/router` slash command, extracted from `index.ts` |
 | `src/config-schema.ts` | Keys each config layer may contain; unknown keys are reported, `_`/`$` keys are annotations |
+| `src/config-keys.ts` | Description table for the user-facing config (path, type, shipped default, pre-2.0 names, how the router may change it); the loader's classifier migration and typo check read it |
+| `src/classifier-chain.ts` | The classifier chain the current config produces (Laya, local, cloud, static), as ordered steps with the ids the routing-flow diagram pins |
 | `src/context-budget.ts` | Minimum output budget; below it a candidate is skipped |
 | `src/context-compaction.ts` | Cache-aware compaction (Phase 5b): cold-MISS threshold and the between-turns decision |
 | `src/context-utils.ts` | Context and prompt inspection helpers, per-model timeout lookups (extracted from `index.ts`) |

@@ -83,3 +83,99 @@ describe('UserConfigStore.applyDelta — non-object sections', () => {
     expect(readUser()).toEqual({ integrations: { laya: 'oops' } });
   });
 });
+
+describe('UserConfigStore.applyDelta — table paths (config plan Phase 2)', () => {
+  it('sets one classifier key and keeps exclude, the sibling keys and unrelated settings', () => {
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({
+        log_level: 'debug',
+        exclude: { models: ['a/b'] },
+        classifier: { local: { model: 'ollama/x:1b' }, cloud: { model: 'acme/c' } },
+      })
+    );
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', value: false }] });
+    expect(res.ok).toBe(true);
+    expect(readUser()).toEqual({
+      log_level: 'debug',
+      exclude: { models: ['a/b'] },
+      classifier: { local: { model: 'ollama/x:1b' }, cloud: { model: 'acme/c', enabled: false } },
+    });
+  });
+
+  it('unset removes only that leaf and drops parents it leaves empty', () => {
+    fs.writeFileSync(userFile, JSON.stringify({ classifier: { cloud: { model: 'acme/c' } } }));
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.model', unset: true }] });
+    expect(res.ok).toBe(true);
+    expect(readUser()).toEqual({});
+  });
+
+  it.each([
+    'providers.x.enabled',
+    'classifier.log.store_text',
+    'integrations.laya.enabled',
+    'classifier.cloud.enable',
+  ])('refuses "%s" — not a settable table key — and writes nothing', (path) => {
+    const res = store().applyDelta({ paths: [{ path, value: true }] });
+    expect(res.ok).toBe(false);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('refuses a value of the wrong kind for the key', () => {
+    const res = store().applyDelta({
+      paths: [{ path: 'classifier.cloud.enabled', value: 'yes' }],
+    });
+    expect(res.ok).toBe(false);
+    expect(fs.existsSync(userFile)).toBe(false);
+  });
+
+  it('refuses when a section on the way is not an object, and keeps the file', () => {
+    const before = JSON.stringify({ classifier: 'oops' });
+    fs.writeFileSync(userFile, before);
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', value: true }] });
+    expect(res.ok).toBe(false);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
+  });
+
+  it('refuses when a nested section on the way is not an object, and keeps the file', () => {
+    const before = JSON.stringify({ classifier: { cloud: 'oops' } });
+    fs.writeFileSync(userFile, before);
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', value: true }] });
+    expect(res.ok).toBe(false);
+    expect(fs.readFileSync(userFile, 'utf-8')).toBe(before);
+  });
+
+  it('an unset removes the pre-2.0 spelling even when only that spelling is present', () => {
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({
+        model_groups: { dynamic: { method: 'dynamic', classifier_cloud_chain: true } },
+      })
+    );
+    const res = store().applyDelta({ paths: [{ path: 'classifier.cloud.enabled', unset: true }] });
+    expect(res.ok).toBe(true);
+    expect(readUser()).toEqual({ model_groups: { dynamic: { method: 'dynamic' } } });
+  });
+
+  it('a write removes the pre-2.0 spelling of the same key from the user file', () => {
+    fs.writeFileSync(
+      userFile,
+      JSON.stringify({
+        model_groups: { dynamic: { method: 'dynamic', classifier_cloud_chain: true } },
+        classifier_log: { keep: 2, enabled: true },
+      })
+    );
+    const res = store().applyDelta({
+      paths: [
+        { path: 'classifier.cloud.enabled', value: false },
+        { path: 'classifier.log.enabled', value: false },
+      ],
+    });
+    expect(res.ok).toBe(true);
+    expect(readUser()).toEqual({
+      model_groups: { dynamic: { method: 'dynamic' } },
+      classifier_log: { keep: 2 },
+      classifier: { cloud: { enabled: false }, log: { enabled: false } },
+    });
+  });
+});

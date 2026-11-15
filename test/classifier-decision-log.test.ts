@@ -36,7 +36,7 @@ const cfgWith = (
     providers: {},
     model_groups: {},
     model_metrics: {},
-    ...(log ? { classifier_log: log } : {}),
+    ...(log ? { classifier: { log } } : {}),
   }) as Config;
 
 const reply = (obj: Record<string, unknown>) => ({
@@ -320,7 +320,7 @@ describe('privacy: store_text', () => {
 });
 
 describe('switches and robustness', () => {
-  it('no cfg, no classifier_log block, or enabled:false → nothing is written', async () => {
+  it('no cfg, no classifier.log block, or enabled:false → nothing is written', async () => {
     await classifyPrompt('dl switch no cfg at all unique prompt eight', {
       ...cloud(['p/m1'], [ok('simple')]),
       cfg: undefined,
@@ -376,7 +376,7 @@ describe('switches and robustness', () => {
     expect(byAnswer).toEqual({ 'cloud:slow/a': ['slow/a'], 'cloud:fast/b': ['fast/b'] });
   });
 
-  it('size rotation: max_bytes/keep from classifier_log', async () => {
+  it('size rotation: max_bytes/keep from classifier.log', async () => {
     const cfg = cfgWith({ enabled: true, store_text: 'none', max_bytes: 600, keep: 2 });
     for (let i = 0; i < 4; i++) {
       await classifyPrompt(`dl rotation unique prompt number ${i} padding words`, {

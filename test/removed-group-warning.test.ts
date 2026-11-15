@@ -6,10 +6,9 @@
 // code_complex ceiling never applies. The loader must say so, name the
 // successor, and drop the stray group — never throw.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { loadLayeredConfig, REMOVED_GROUPS } from '../src/config-loader.ts';
 import { delegationSettings } from '../src/delegation.ts';
 
@@ -17,41 +16,11 @@ vi.mock('../src/logger.ts', async (orig) => {
   const actual = await orig<typeof import('../src/logger.ts')>();
   return { ...actual, warnLog: vi.fn() };
 });
-import * as loggerModule from '../src/logger.ts';
-import { rmTmpDir } from './helpers/router-env.ts';
-const mockWarnLog = vi.mocked(loggerModule.warnLog);
+import { SHIPPED_CONFIG, useConfigLayers } from './helpers/config-layer.ts';
 
-const SHIPPED = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  '..',
-  'router-config.json'
-);
-
-let tmpDir: string;
-let extDir: string;
-let cwdDir: string;
-
-function loadWithProjectLayer(layer: unknown) {
-  fs.mkdirSync(path.join(cwdDir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(cwdDir, '.pi', 'router-config.json'), JSON.stringify(layer));
-  return loadLayeredConfig(extDir, cwdDir);
-}
-
-const warnings = () => mockWarnLog.mock.calls.map((c) => String(c[0]));
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'router-removed-groups-'));
-  extDir = path.join(tmpDir, 'ext');
-  cwdDir = path.join(tmpDir, 'project');
-  fs.mkdirSync(extDir, { recursive: true });
-  fs.mkdirSync(cwdDir, { recursive: true });
-  fs.copyFileSync(SHIPPED, path.join(extDir, 'router-config.json'));
-});
-
-afterEach(() => {
-  if (tmpDir) rmTmpDir(tmpDir);
-});
+const SHIPPED = SHIPPED_CONFIG;
+const layers = useConfigLayers('removed-groups');
+const { loadWithProjectLayer, warnings } = layers;
 
 describe('a layer that still defines a removed group', () => {
   it('warns, names the successor, and drops the stray group (tactical → code_complex)', () => {
@@ -140,12 +109,12 @@ describe('only override layers are checked', () => {
     // not a user layer, so it is neither warned about nor dropped.
     const shipped = JSON.parse(fs.readFileSync(SHIPPED, 'utf-8'));
     shipped.model_groups.tactical = { method: 'best' };
-    fs.writeFileSync(path.join(extDir, 'router-config.json'), JSON.stringify(shipped));
+    fs.writeFileSync(path.join(layers.paths.ext, 'router-config.json'), JSON.stringify(shipped));
     const { config } = loadWithProjectLayer({ model_groups: { operational: { min_gdpval: 1 } } });
     expect(config.model_groups.tactical).toBeDefined();
     const w = warnings().filter((m) => m.includes('removed group'));
     expect(w).toHaveLength(1);
-    expect(w[0]).toContain(path.join(cwdDir, '.pi', 'router-config.json'));
+    expect(w[0]).toContain(path.join(layers.paths.cwd, '.pi', 'router-config.json'));
   });
 });
 
@@ -161,7 +130,7 @@ describe('a list that held only removed names', () => {
 
 describe('a clean layer', () => {
   it('the shipped config alone produces no removed-group warning', () => {
-    loadLayeredConfig(extDir, cwdDir);
+    loadLayeredConfig(layers.paths.ext, layers.paths.cwd);
     expect(warnings().filter((m) => m.includes('removed group'))).toEqual([]);
   });
 
@@ -177,37 +146,6 @@ describe('a clean layer', () => {
   });
 });
 
-// ── Renamed classifier key (docs/plans/2026-10-25-fallback-naming.md, V2) ──
-// The cloud chain stopped being called a "fallback" in 2.0: the key is
-// `classifier_cloud_chain`. Decision V2 = no read aliases, so a config that
-// still says `classifier_cloud_fallback` is dropped — but silently dropping it
-// would turn the cloud classifier off without a word, which is why the loader
-// warns. Same shape as the removed-group guard above.
-describe('a layer that still uses the pre-2.0 classifier key', () => {
-  it('warns, names the new key, and drops the old one', () => {
-    const { config } = loadWithProjectLayer({
-      model_groups: { simple: { classifier_cloud_fallback: true } },
-    });
-    const w = warnings().filter((m) => m.includes('classifier_cloud_fallback'));
-    expect(w).toHaveLength(1);
-    expect(w[0]).toContain('classifier_cloud_chain');
-    expect(
-      (config.model_groups.simple as Record<string, unknown>).classifier_cloud_fallback
-    ).toBeUndefined();
-  });
-
-  it('does not translate the value — the new key keeps the shipped default', () => {
-    const { config } = loadWithProjectLayer({
-      model_groups: { simple: { classifier_cloud_fallback: true } },
-    });
-    // The owner must rename the key; the old value is not carried over.
-    expect(
-      (config.model_groups.simple as Record<string, unknown>).classifier_cloud_chain
-    ).toBeUndefined();
-  });
-
-  it('says nothing about the new key', () => {
-    loadWithProjectLayer({ model_groups: { simple: { classifier_cloud_chain: true } } });
-    expect(warnings().filter((m) => m.includes('classifier_cloud'))).toEqual([]);
-  });
-});
+// The pre-2.0 classifier keys are no longer dropped: they move to the
+// `classifier` block with a warning (plan 2026-11-14-config-surface-and-ui.md,
+// decision 2). Pinned in test/classifier-config-block.test.ts.

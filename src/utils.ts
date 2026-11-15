@@ -233,12 +233,61 @@ export function serialized<A extends unknown[]>(
   };
 }
 
-/** A plain JSON object (not null, not an array). */
+/**
+ * An object that is neither null nor an array, e.g. a parsed JSON object. The
+ * prototype is not checked: a Date or a Map passes too.
+ */
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** A JSON object (not null, not an array). */
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/**
+ * Sets a dotted leaf in a plain object tree, creating missing parents. Returns
+ * false, changing nothing below the first non-object section, when a section on
+ * the way is present but not an object: replacing it would drop the user's data.
+ */
+export function setLeaf(root: Record<string, unknown>, dotted: string, value: unknown): boolean {
+  const parts = dotted.split('.');
+  let node = root;
+  for (const part of parts.slice(0, -1)) {
+    if (node[part] === undefined) node[part] = {};
+    else if (!isRecord(node[part])) return false;
+    node = node[part] as Record<string, unknown>;
+  }
+  node[parts[parts.length - 1]] = value;
+  return true;
+}
+
+/** The value at a dotted path of a plain object tree, or undefined. */
+export function getLeaf(root: unknown, dotted: string): unknown {
+  let node: unknown = root;
+  for (const part of dotted.split('.')) {
+    if (!isRecord(node)) return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+/** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
+export function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
+  deleteKeyPath(root, dotted.split('.'));
+}
+
+/**
+ * Removes the key at `parts` from a plain object tree, dropping parents left
+ * empty. The segments are literal keys, so a key that itself contains a dot
+ * (`{"log.enabled": false}`) can be removed.
+ */
+export function deleteKeyPath(root: Record<string, unknown>, parts: readonly string[]): void {
+  const chain: Array<Record<string, unknown>> = [root];
+  for (const part of parts.slice(0, -1)) {
+    const next = chain[chain.length - 1][part];
+    if (!isRecord(next)) return;
+    chain.push(next);
+  }
+  delete chain[chain.length - 1][parts[parts.length - 1]];
+  for (let i = chain.length - 1; i > 0; i--) {
+    if (Object.keys(chain[i]).length > 0) break;
+    delete chain[i - 1][parts[i - 1]];
+  }
 }

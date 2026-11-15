@@ -101,6 +101,7 @@ by an ESLint move — there is no ESLint 11.
 
 ### 🔴 **Post-merge review 2026-11-04 — open items (owner decisions)**
 
+- [x] **Cloud-first vs local-first classifier chain (found in docs sync 2026-11-14) — DECIDED 2026-11-14: local first, cloud as the fallback (ADR 0032).** Low-confidence escalation: DECIDED as an opt-in key, default off (`classifier_escalate_low_confidence`, ADR 0033). Remaining open point: should cloud candidates be limited to free models again (`:free` / $0), or stay price-capped at ≤ $5/M output?
 Independent review of `38d2a27..fde54f8` (the structural question behind most of these — should the router keep its own turn-state machine at all? — is `docs/plans/2026-11-04-virtual-models-routing.md`; mapping of every item in `docs/research/2026-11-04-virtual-models-fit.md`). Critical C1/C2 and Important I1, I2 (suppression), I6 are fixed on `fix/subcall-scope-async-local`). What remains needs a decision, each as its own plan (§11), none of it blocks the fix:
 
 - [x] **I3 — a tool follow-up falls back to `simple` whatever the turn's group is** — FIXED 2026-11-07 (PR #120). Plan `docs/plans/2026-11-07-tool-follow-up-group.md` (first registered 2026-10-25; `stream-orchestrator.ts` `isToolFollowUp`: `[lastDynamicModel, ...simple candidates]`). A planning/design/code_complex run whose driver hits one 429 or stall degrades to cheap/free models for the rest of the agent run and stays there after the driver's cooldown. Implemented and merged 2026-11-07 (PR #120): the run's driver and group are remembered at classification and at a HINT pin; follow-up order = driver (once cooled down), current ref, the run group's candidates, that group's `fallback_groups`; with tools in the context free-tier models are skipped (fail-open) unless the run group is `simple`.
@@ -564,13 +565,13 @@ Pick up in a later round, each as its own plan where noted (§11):
   owner runs outside the repository (health-first adoption, start lock,
   last-client shutdown). Depends on the model artifact plan below and the
   integration contract.
-- **Router config UI: guided path for integrations**
-  (`docs/plans/2026-11-08-router-config-ui.md`, proposed 2026-11-08; depends
-  on the integrations contract): `/router config` is read-mostly, enabling
-  Laya needs six hand-edited keys, and a wrong value silently disables the
-  stage — while `ctx.ui.select/confirm/input` sit unused. Proposes an
-  interactive `config integration <name>` wizard plus one "Integrations"
-  section.
+- ✅ **Router config UI: guided path for integrations — DONE 2026-11-15**
+  (`docs/plans/2026-11-14-config-surface-and-ui.md`, status done; the earlier
+  `2026-11-08-router-config-ui.md` is superseded by it and kept as history).
+  `/router config` now has one subcommand table, an overview, block views and
+  a TUI-only guided menu (`config integration <name>`), backed by
+  `docs/config-reference.md` generated from the same table (stale-check test
+  included). ADR 0034 was accepted by the owner on 2026-11-15.
 - **Laya as sole classifier — open steps** (`docs/plans/2026-10-25-laya-sole-classifier.md`):
   live check and the timeout failure test are DONE (2026-11-08; the test
   exposed a one-timeout-disables-for-5-minutes defect, fixed). Open:

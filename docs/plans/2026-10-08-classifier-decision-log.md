@@ -297,6 +297,16 @@ the default, not an afterthought.
   `classifyPrompt` choke point, the replay harness
   (`scripts/classifier-replay.ts`) with session backfill.
 - **Phase 5 shipped 2026-11-14** (branch `feat/classifier-decision-summary`): `/router classifier [days]` (`src/classifier-summary.ts`), README bullet. The `docs/routing-flow.md` diagram shows the record and the summary (done 2026-11-14). The plan's `raw`-`fallback` pair is not usable: the category `fallback` was retired in v2-r3 and never appears in the log. The summary reads the `continue` pair instead, and counts chain exhaustion by stage `fallback`.
-- Phase 2 (turn id + outcome join) and Phase 4 (shadow hook) remain future
-  work; the spike does not need them (known decisions come from the log,
-  not from re-simulating the chain).
+- **Phases 2 and 4 shipped 2026-11-15** (owner go: "zu 7, fertig machen"):
+  `turn` minted per turn in the orchestrator (`<session>#<seq>`, turn-state
+  `turnSeq`, bumped at `turn_start`) and carried on every classification
+  record; `outcome` records emitted at stream-finish (turn_end, only when a
+  stream actually ran), at `model_select` (/model) and at MHINT pins;
+  `correction` records when a group HINT overrides the previous turn's group.
+  Phase 4: the `ShadowClassifier` seam in `classifyPrompt`
+  (`options.shadow` + `shadowTimeoutMs`) — never for HINT, fire-and-forget,
+  the record is flushed when the shadow settles or times out and the entries
+  land in the same record's `shadow[]`; errors swallowed and recorded. Tests:
+  `test/decision-log-phase2-4.test.ts` (red-first: 7 red before the module
+  change; the turn wiring pinned by an orchestrator test, mutation `turn =
+  null` turns it red).

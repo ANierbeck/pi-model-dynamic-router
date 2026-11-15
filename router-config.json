@@ -1,8 +1,13 @@
 {
   "log_level": "warn",
-  "classifier_log": {
-    "enabled": true,
-    "store_text": "none"
+  "classifier": {
+    "cloud": {
+      "enabled": true
+    },
+    "log": {
+      "enabled": true,
+      "store_text": "none"
+    }
   },
   "integrations": {
     "laya": {
@@ -56,12 +61,14 @@
         "standard",
         "simple"
       ],
-      "score_by": "briefcase"
+      "score_by": "briefcase",
+      "exclude_models": [
+        "*:free"
+      ]
     },
     "planning": {
-      "description": "Planning and architecture - top tier only (GDPval >= 1700, reasoning-sorted and reasoning >= 35: Intelligence Index, Omniscience, HLE Diamond)",
+      "description": "Planning and architecture - the reasoning tier: best-first by reasoning >= 35 (Intelligence Index, Omniscience, HLE Diamond), no GDPval floor",
       "method": "best",
-      "min_gdpval": 1700,
       "fallback_groups": [
         "code_complex",
         "standard",
@@ -69,12 +76,14 @@
       ],
       "score_by": "reasoning",
       "require_score_column": true,
-      "min_score": 35
+      "min_score": 35,
+      "exclude_models": [
+        "*:free"
+      ]
     },
     "dynamic": {
-      "description": "Classifies each prompt (cloud fallback chain, local Ollama as last resort) and routes to the appropriate group",
-      "method": "dynamic",
-      "classifier_cloud_chain": true
+      "description": "Classifies each prompt (local Ollama chain first, cloud chain as the fallback) and routes to the appropriate group",
+      "method": "dynamic"
     },
     "bulk_reader": {
       "description": "Cheap-but-context-rich models for I/O-heavy subtasks (read+summarize several files). Addressable as bulk_reader/bulk_reader from subagent workflows.",

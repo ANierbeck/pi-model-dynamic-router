@@ -8,7 +8,7 @@ The **dynamic routing** feature introduces a new model group (`dynamic`) that au
 
 ### How It Works
 
-1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — cloud-first (`classifier_cloud_chain`), with a local Ollama chain, derived from the models you have pulled and verified by a probe, as the last resort.
+1. **Prompt Classification**: Each user prompt is classified into one of the predefined categories by a classifier chain — a local Ollama chain first, derived from the models you have pulled and verified by a probe, and the cloud chain (`classifier.cloud.enabled`) as the fallback. Keys: [docs/config-reference.md](docs/config-reference.md).
 2. **Group Mapping**: The category is mapped to the model group of the same name via the shipped `CATEGORY_TO_GROUP` table (`simple`, `standard`, `code_complex`, `design`, `planning`); `code_simple` shares `simple`, and `continue` inherits the previous category (or `standard` when there is none).
 3. **Model Resolution**: The system resolves the best model for the selected group using the existing `resolve_model_group` logic.
 
@@ -30,11 +30,10 @@ The dynamic routing is implemented in **`src/content-classifier.ts`** and run in
 
 ### Requirements
 
-With the shipped cloud-first classifier chain, **no local setup is required** —
-classification runs on free cloud models, and Ollama is only the last resort:
+The shipped chain is local first, then cloud. **A local setup is recommended:** without a local model, classification falls back to price-capped cloud models, which then receive the prompt text (see the README section "Data handling & privacy" to turn this off):
 
-- **Optional, for local-only classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
-- If every classifier hop fails, the router streams from the `simple` group (or static keyword classification, if `allowStaticFallback` is enabled)
+- **Recommended, for local classification**: **Ollama** installed and running (`ollama serve`), with at least one chat model pulled (the classifier chain is derived and probed from what Ollama reports)
+- If every classifier hop fails, the classifier falls back to the `continue` category (routed to `standard`); when the request uses a `<group>:use-static` model, static keyword classification runs instead
 - **Experimental, Apple Silicon**: an optional local Laya classifier stage can answer the category from a local MLX sidecar instead of the chain — disabled by default, bring-your-own weights, see the README section "Local Laya classifier stage (experimental)"
 
 ## Architecture
@@ -164,8 +163,7 @@ The actual configuration file contains provider definitions and model groups. Be
     },
     "dynamic": {
       "description": "Classifies each prompt and routes to the appropriate group",
-      "method": "dynamic",
-      "classifier_cloud_chain": true
+      "method": "dynamic"
     }
   }
 }
@@ -302,7 +300,13 @@ Each `exclude_models` entry is an exact ref, or a glob where `*` matches any run
 | `/router cost` | Audit-depth cost report from the router's own token accounting |
 | `/router errors [n]` | Last n session errors (default 15, max 50) |
 | `/router cooldowns [clear]` | Active rate-limit cooldowns; `clear` also resets model-health streaks |
-| `/router config` | Config sources, exclude rules and compaction state; `config exclude\|unexclude\|compaction` edit the user layer |
+| `/router config` | Guided settings menu in TUI mode; print/RPC mode has no dialogs, so it prints the overview and says why |
+| `/router config show` | Config overview in every mode: sources, classifier chain, integrations, exclude rules, compaction state |
+| `/router config set <path> <value>` | Write one classifier setting to the user layer (validated, applies now) |
+| `/router config unset <path>` | Remove one classifier setting from the user layer |
+| `/router config classifier` | Classifier settings in effect and the chain they produce |
+| `/router config integrations` | Integration settings in effect and the command that switches each |
+| `/router config exclude\|unexclude\|integration\|compaction` | Edit exclusions, integrations and the compaction flag in the user layer |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 

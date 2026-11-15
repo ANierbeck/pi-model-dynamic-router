@@ -112,8 +112,10 @@ Add or override benchmark scores for models not in the scraped table:
 > There is no read alias: a user or project layer that still has
 > `classifier_laya` is warned about once per file and the old block is
 > ignored (Laya then stays off). Move the values under `integrations.laya`.
-> Top-level keys the router does not know (typos such as `classifer_log`) are
-> warned about too, with the closest known key; the layer is still merged.
+> Top-level keys the router does not know (a typo such as `classifer` for
+> `classifier`) are warned about too, naming the closest known key when one is
+> close enough; the layer is still merged. `classifer_log` is not close to any
+> known key, so it is reported without a suggestion.
 >
 > Switch it from Pi without editing the file: `/router config integration laya on`,
 > `… laya off`, or `… laya shadow` (a mode implies on). `/router` lists
@@ -155,14 +157,15 @@ experimental — start in `"shadow"` mode, which only logs.
 
 Every top-level key of the config and every group key that the sections above
 do not cover. Defaults are the code defaults unless the shipped
-`router-config.json` says otherwise.
+`router-config.json` says otherwise. The classifier keys (the `classifier` block:
+local and cloud legs, the decision log) and the integration keys are listed in
+[docs/config-reference.md](config-reference.md), generated from the key table.
 
 ### Top-level keys
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `log_level` | `warn` (shipped) | `error`, `warn`, `info` or `debug`. `ROUTER_LOG_LEVEL` overrides it. |
-| `classifier_log` | `store_text: "none"` (shipped) | Classifier decision log, one JSONL record per classification in `~/.pi/logs/classifier-decisions.jsonl`. `store_text`: `none` (hashes and lengths only), `snippet` (first 120 characters of the prompt) or `full` (prompt and context text, for offline replay; the file is mode 0600). Absent = off. |
 | `best_quality_window` | `0.05` (shipped) | Fraction of the best score within which candidates count as equally good for the `best` method; the cheapest of them is picked first. `0` = pure score order. |
 | `category_groups` | none | `{ "<category>": "<group>" }` overrides of the built-in category-to-group mapping. Unknown categories or groups are rejected with a warning. |
 | `backoff_minutes` | `[1, 2, 4, 8, 16, 32, 64, 90]` | Rate-limit backoff in minutes, escalating per hit. |
@@ -200,10 +203,6 @@ do not cover. Defaults are the code defaults unless the shipped
 | `exclude_models` | Model refs or globs dropped from this group, e.g. `"*:free"`. |
 | `billing_preference` | Re-ranks by billing tier after the method: `default`, `local_first`, `strict_local`, `cloud_first` or `local_before_payg`. |
 | `context_budget` | Per-group override of the global `context_budget`, field by field. |
-| `classifier_model` | Pin for the local classifier, `ollama/<model>:<tag>` (dynamic group only). Unset = derived from the models Ollama reports and verified by a probe. |
-| `classifier_fallback` | Pin for the local classifier fallback. Unset = derived. |
-| `classifier_cloud_model` | Cloud classifier `provider/id`, tried first before the probe-verified list. |
-| `classifier_cloud_chain` | Allows sending the raw prompt to a free cloud model when the local classifiers are unavailable. Off in code (data minimization); the shipped `dynamic` group turns it on. |
 
 ## Merge semantics
 

@@ -487,6 +487,45 @@ export async function verifyInstall(opts: {
   return { ok: problems.length === 0, problems };
 }
 
+/**
+ * Synchronous "is anything installed here": true when at least one
+ * <root>/<model>/<version>/ carries an install record. Used by `/router config`
+ * for the hint that points at this installer (config plan item 15) — the
+ * command handler is synchronous, so the async listInstalls() cannot be used.
+ */
+export function hasAnyInstall(root: string = defaultModelsRoot()): boolean {
+  let models: string[];
+  try {
+    models = fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && isSafeName(d.name))
+      .map((d) => d.name);
+  } catch {
+    return false;
+  }
+  for (const model of models) {
+    let versions: string[];
+    try {
+      versions = fs
+        .readdirSync(path.join(root, model), { withFileTypes: true })
+        .filter(
+          (d) =>
+            d.isDirectory() &&
+            isSafeName(d.name) &&
+            !d.name.endsWith(TMP_SUFFIX) &&
+            !d.name.endsWith(OLD_SUFFIX)
+        )
+        .map((d) => d.name);
+    } catch {
+      continue;
+    }
+    for (const version of versions) {
+      if (fs.existsSync(path.join(root, model, version, INSTALL_RECORD))) return true;
+    }
+  }
+  return false;
+}
+
 export async function listInstalls(
   root: string
 ): Promise<{ model: string; version: string; backend: string }[]> {

@@ -65,10 +65,10 @@ describe('unknownTopLevelKeys', () => {
 });
 
 describe('closestKey', () => {
-  const known = ['classifier_log', 'model_groups', 'exclude', 'providers'];
+  const known = ['classifier', 'model_groups', 'exclude', 'providers'];
 
   it('suggests the key within a small edit distance', () => {
-    expect(closestKey('classifer_log', known)).toBe('classifier_log');
+    expect(closestKey('classifer', known)).toBe('classifier');
     expect(closestKey('model_group', known)).toBe('model_groups');
     expect(closestKey('excluded', known)).toBe('exclude');
   });
@@ -121,13 +121,13 @@ describe('loadLayeredConfig: unknown-key warnings', () => {
   const projectFile = (): string => path.join(cwdDir, '.pi', 'router-config.json');
 
   it('warns once per file about an unknown user-layer key, naming the file and the closest key', () => {
-    fs.writeFileSync(userFile(), JSON.stringify({ classifer_log: { enabled: true }, zzz: 1 }));
+    fs.writeFileSync(userFile(), JSON.stringify({ classifer: { enabled: true }, zzz: 1 }));
     loadLayeredConfig(extDir, cwdDir);
     const hits = warnings.filter((w) => w.includes('unknown'));
     expect(hits).toHaveLength(1);
     expect(hits[0]).toContain(userFile());
-    expect(hits[0]).toContain('"classifer_log"');
-    expect(hits[0]).toContain('did you mean "classifier_log"');
+    expect(hits[0]).toContain('"classifer"');
+    expect(hits[0]).toContain('did you mean "classifier"');
     expect(hits[0]).toContain('"zzz"');
   });
 

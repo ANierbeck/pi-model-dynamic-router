@@ -124,8 +124,13 @@ const SIGNATURES_BY_PROVIDER: Record<string, readonly Signature[]> = {
 // provider and heal when the user fixes the key, so they must never block
 // individual models — a per-model block would outlive the fix (review
 // 2026-09-27).
+// `authenticat` covers the verb and the noun: the claude-bridge OAuth expiry
+// says "failed to authenticate", which the noun-only `authentication` missed
+// (incident 2026-11-13: both Claude models were blocked for 7 days as an
+// unknown signature). Session/token expiry wording counts too, since it is the
+// same account-wide condition without an HTTP code.
 const ACCOUNT_TEXT =
-  /invalid api key|incorrect api key|unauthori[sz]ed|authentication|user not found|no auth credentials|api key (?:is )?(?:missing|expired|revoked)/i;
+  /invalid api key|incorrect api key|unauthori[sz]ed|authenticat|user not found|no auth credentials|api key (?:is )?(?:missing|expired|revoked)|oauth[^.]{0,40}expired|session expired|token (?:has )?expired/i;
 
 // Request-dependent wording from any provider: the model works without tools.
 const REQUEST_TEXT = /does not support tools|support tool use/i;

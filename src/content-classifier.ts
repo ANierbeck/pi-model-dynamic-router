@@ -52,6 +52,7 @@ import {
   resolveClassifierLogConfig,
   writeDecisionRecord,
   type ClassificationTrace,
+  type DecisionShadowEntry,
 } from './classifier-decision-log.ts';
 import {
   buildContextBlock,
@@ -142,7 +143,26 @@ export interface HintClassificationResult {
 // user HINT/MHINT in the prompt; every category (including upgrade
 // categories) routes via CATEGORY_TO_GROUP alone (five-group layout).
 
+/** ADR-0027 Phase 4 seam: a second classifier that observes the same prompt
+ * without ever routing. Implementations must be total (never throw to the
+ * caller — the seam swallows and records errors). */
+export interface ShadowClassifier {
+  name: string;
+  classify(prompt: string, context?: ClassificationContext): Promise<FullClassificationResult>;
+}
+
 export interface ClassificationOptions {
+  /** ADR-0027 Phase 2: the turn this classification belongs to, minted by the
+   * stream orchestrator (`<session>#<seq>`); lands on the decision record. */
+  turn?: string | null;
+  /** ADR-0027 Phase 4: an optional shadow classifier, run detached while the
+   * record flush waits for it. Never runs for HINT prompts; its result never
+   * changes the returned classification, it only lands in the record's
+   * `shadow[]`. */
+  shadow?: ShadowClassifier;
+  /** Timeout for the detached shadow run (default 10s); on timeout the record
+   * is flushed with an `error` entry. */
+  shadowTimeoutMs?: number;
   model?: string;
   timeoutMs?: number;
   fallbackModel?: string;
@@ -161,6 +181,14 @@ export interface ClassificationOptions {
   notify?: (message: string) => void;
   allowCloudChain?: boolean;
   /**
+   * Opt-in (`classifier.cloud.escalate_low_confidence`): a local reply
+   * below MIN_CONFIDENCE is not final. The cloud chain is asked once, and its
+   * answer replaces the local one; if the cloud produces nothing, the gated
+   * local reply is kept. Off by default: prompt text then leaves the machine
+   * only when no local model answers at all.
+   */
+  escalateLowConfidence?: boolean;
+  /**
    * S3 (final v1.6.0 review): per-candidate timeout in ms for the runtime
    * cloud chain — probe parity (PROBE_TIMEOUT_MS). A candidate
    * that neither answers nor errors within this window is abandoned and
@@ -169,14 +197,24 @@ export interface ClassificationOptions {
    */
   cloudTimeoutMs?: number;
   /**
-   * Pinned cloud classifier model ref ("provider/id") from the dynamic
-   * group's classifier_cloud_model config. When set and resolvable, it is
+   * Pinned cloud classifier model ref ("provider/id") from
+   * `classifier.cloud.model`. When set and resolvable, it is
    * tried FIRST in the cloud chain — before the probe-verified
    * cached list. Deterministic override for users who want a specific
    * (e.g. subscription-covered) model to classify, regardless of what
    * the scan-time probe ranked first.
    */
   pinnedCloudModel?: string;
+  /**
+   * User-configured cloud candidate list
+   * (`classifier.cloud.candidates`). When set, it REPLACES the automatic
+   * candidate chain (probe-verified list, lazy discovery, static free list);
+   * the models are tried in the given order. The pinned classifier.cloud.model
+   * stays first. The same guards as the automatic chain apply: findModel must
+   * resolve the ref, exclude/paid-guards filter, the chain needs
+   * classifier.cloud.enabled on.
+   */
+  cloudCandidates?: string[];
   /**
    * Pi's one-shot completion API (modelRegistry.completeSimple). When the
    * cloud chain runs, the classifier uses this instead of its own HTTP
@@ -675,6 +713,9 @@ export async function classifyPrompt(
   countClassification(result, holder.source);
   // Fail-open for the WHOLE log step (record construction included, not just
   // the file write): logging must never change or break a classification.
+  // ADR-0027 Phase 4: when a shadow runs, the record is flushed when the
+  // shadow settles (or times out) so its entries land in the same record's
+  // `shadow[]`; the classification itself returns without waiting.
   try {
     writeDecisionLog(prompt, options, holder, raw, result, started, prevCategory);
   } catch {
@@ -698,8 +739,9 @@ function writeDecisionLog(
   started: number,
   prevCategory: ClassificationContext['lastCategory']
 ): void {
-  const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+  const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
   if (!log) return;
+  const shadow = shadowRunFor(prompt, options, result);
   const rawCategory = 'category' in raw ? raw.category : undefined;
   const inherited = result !== raw && rawCategory === 'continue';
   if (inherited) holder.trace.steps.push('fallback-inherit');
@@ -712,6 +754,7 @@ function writeDecisionLog(
         : (holder.source ?? 'fallback');
   const record = buildDecisionRecord({
     prompt,
+    turn: options.turn ?? null,
     stage,
     trace: holder.trace,
     prev: prevCategory
@@ -731,10 +774,69 @@ function writeDecisionLog(
     },
     context: options.context,
     ms: Date.now() - started,
-    cfgBlock: options.cfg?.classifier_log,
+    cfgBlock: options.cfg?.classifier?.log,
     home: homedir(),
   });
+  if (shadow) {
+    // Flush when the shadow settles or times out; routing already returned.
+    void shadow.then(
+      (entries) => {
+        record.shadow = entries;
+        writeDecisionRecord(record, homedir(), log);
+      },
+      () => writeDecisionRecord(record, homedir(), log)
+    );
+    return;
+  }
   writeDecisionRecord(record, homedir(), log);
+}
+
+/**
+ * ADR-0027 Phase 4: start the shadow classifier, or null when there is none or
+ * the prompt is a HINT (the hint IS the routing decision — no shadow). The
+ * returned promise settles with the shadow entries (an `error` entry on
+ * throw/timeout); it never rejects. Fire-and-forget: classifyPrompt does not
+ * await it, so the classification's latency is unchanged.
+ */
+function shadowRunFor(
+  prompt: string,
+  options: ClassificationOptions,
+  result: FullClassificationResult
+): Promise<DecisionShadowEntry[]> | null {
+  const shadow = options.shadow;
+  if (!shadow) return null;
+  if (detectHintDirectly(prompt) || 'hintType' in result) return null;
+  const timeoutMs = options.shadowTimeoutMs ?? 10_000;
+  const t0 = Date.now();
+  const run = Promise.resolve()
+    .then(() => shadow.classify(prompt, options.context))
+    .then((shadowResult): DecisionShadowEntry[] => [
+      {
+        name: shadow.name,
+        ...('category' in shadowResult
+          ? {
+              category: shadowResult.category,
+              ...(shadowResult.confidence !== undefined
+                ? { confidence: shadowResult.confidence }
+                : {}),
+              reason: shadowResult.reason ?? null,
+            }
+          : { reason: shadowResult.reason ?? null }),
+        ms: Date.now() - t0,
+      },
+    ]);
+  const timeout = new Promise<DecisionShadowEntry[]>((resolve) =>
+    setTimeout(
+      () => resolve([{ name: shadow.name, error: `timeout after ${timeoutMs}ms` }]),
+      timeoutMs
+    )
+  );
+  return Promise.race([
+    run.catch((err: unknown) => [
+      { name: shadow.name, error: err instanceof Error ? err.message : String(err) },
+    ]),
+    timeout,
+  ]);
 }
 
 /**
@@ -789,7 +891,7 @@ function spawnMomentumObservation(prompt: string, options: ClassificationOptions
         const started = Date.now();
         const result = await classifyPromptUncounted(prompt, options, { skipMomentum: true });
         try {
-          const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+          const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
           if (!log) return;
           if (holder.trace.laya) holder.trace.laya = { ...holder.trace.laya, acted: false };
           writeDecisionRecord(
@@ -811,7 +913,7 @@ function spawnMomentumObservation(prompt: string, options: ClassificationOptions
               },
               context: options.context,
               ms: Date.now() - started,
-              cfgBlock: options.cfg?.classifier_log,
+              cfgBlock: options.cfg?.classifier?.log,
               home: homedir(),
             }),
             homedir(),
@@ -840,12 +942,14 @@ async function classifyPromptUncounted(
     context = {},
     allowStaticFallback = false,
     allowCloudChain = false,
+    escalateLowConfidence = false,
     cloudTimeoutMs = CLASSIFIER_CLOUD_TIMEOUT_MS,
     cfg,
     cache,
     completeSimple,
     findModel,
     pinnedCloudModel,
+    cloudCandidates,
     hasConfiguredAuth,
   } = options;
 
@@ -1207,7 +1311,14 @@ async function classifyPromptUncounted(
       // classification time, the probe ran at scan time).
       let modelsToTry = getCachedCloudModels(cache);
       let source = 'probed';
-      if (modelsToTry.length === 0) {
+      if (cloudCandidates && cloudCandidates.length > 0) {
+        // User-configured candidates (classifier.cloud.candidates): the list
+        // replaces the automatic chain — probe list, discovery and static
+        // free list — so the user decides exactly which cloud models may see
+        // prompt text. The guards below (findModel, exclude, paid) still apply.
+        source = 'user-configured';
+        modelsToTry = [...cloudCandidates];
+      } else if (modelsToTry.length === 0) {
         // Probe hasn't run or found nothing — lazy discovery as a last resort.
         // This also handles the first classification before the first scan
         // completes the probe.
@@ -1220,7 +1331,7 @@ async function classifyPromptUncounted(
         modelsToTry = discovery.getFreeModels();
         source = 'static-free';
       }
-      // Pinned cloud classifier (dynamic group's classifier_cloud_model):
+      // Pinned cloud classifier (classifier.cloud.model):
       // tried FIRST — before the probe-verified list — so a user-pinned
       // (e.g. subscription-covered) model classifies deterministically. The
       // findModel guard in the loop below skips it if pi doesn't know it.
@@ -1451,15 +1562,28 @@ async function classifyPromptUncounted(
   // the same chain. Cache writes inside are suppressed per-holder for the
   // comparator (see classifyCacheSet).
   const classifyViaLlmChain = async (): Promise<FullClassificationResult> => {
-    if (allowCloudChain) {
+    // Local first (owner decision 2026-11-14): the pinned or derived Ollama
+    // chain answers when it can, so a usable local reply never leaves the
+    // machine. The cloud chain runs only when the local leg produced no answer
+    // (daemon down, no model, every hop failed). Cloud before local would send
+    // every prompt to a cloud model even when a local model could answer.
+    await tryOllama();
+    // A local reply below the confidence gate is escalated only when the user
+    // opted in (classifier.cloud.escalate_low_confidence) and the cloud chain is on.
+    const localLowConfidence =
+      classificationResult !== null &&
+      'confidence' in classificationResult &&
+      classificationResult.confidence !== undefined &&
+      classificationResult.confidence < MIN_CONFIDENCE;
+    if (
+      (!classificationResult || (escalateLowConfidence && localLowConfidence)) &&
+      allowCloudChain
+    ) {
       const cloudResult = await tryCloud();
       if (cloudResult) {
         if (!contextBlock) classifyCacheSet(prompt, cloudResult);
         return cloudResult;
       }
-      await tryOllama();
-    } else {
-      await tryOllama();
     }
 
     if (classificationResult) {
@@ -1514,7 +1638,7 @@ async function classifyPromptUncounted(
           // Fail-open like the main log step: the comparator must never
           // break the process, and a logging failure is not a routing event.
           try {
-            const log = resolveClassifierLogConfig(options.cfg?.classifier_log);
+            const log = resolveClassifierLogConfig(options.cfg?.classifier?.log);
             if (!log) return;
             writeDecisionRecord(
               buildDecisionRecord({
@@ -1538,7 +1662,7 @@ async function classifyPromptUncounted(
                 },
                 context,
                 ms: Date.now() - started,
-                cfgBlock: options.cfg?.classifier_log,
+                cfgBlock: options.cfg?.classifier?.log,
                 home: homedir(),
               }),
               homedir(),
@@ -1598,10 +1722,10 @@ async function classifyPromptUncounted(
     }
   }
 
-  // Cloud-first chain (2026-09-27 rationale: Ollama is a last resort — repeated
-  // MLX wedge incidents pinned the GPU at 100%), then the static fallback. The
-  // whole tail lives in classifyViaLlmChain so the detached background
-  // comparator (live A/B snapshot) runs EXACTLY the chain the main path runs.
+  // The local-first chain (ADR-0032): Ollama, then the cloud leg, then the
+  // static fallback. The whole tail lives in classifyViaLlmChain so the
+  // detached background comparator (live A/B snapshot) runs EXACTLY the
+  // chain the main path runs.
   return classifyViaLlmChain();
 }
 

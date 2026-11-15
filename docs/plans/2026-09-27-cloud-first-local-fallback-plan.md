@@ -1,5 +1,7 @@
 # Cloud-First Routing (Local Ollama as Last Resort) Implementation Plan
 
+> **Superseded in part by [ADR 0032](../adr/0032-local-first-classifier-chain.md) (2026-11-14):** the cloud chain now runs after the local Ollama chain, not before it.
+
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
 
 **Goal:** Stop the local Ollama daemon from being hit on nearly every
