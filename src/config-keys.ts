@@ -82,9 +82,9 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.cloud.enabled',
     kind: 'boolean',
-    shipped: 'true (code default false)',
+    shipped: 'true',
     meaning:
-      'Use cloud models for classification when the local chain gives no answer. Off keeps prompt text on the machine.',
+      'Use cloud models for classification when the local chain gives no answer. Off keeps prompt text on the machine. The code default is false: only the shipped file turns it on.',
     legacy: ['classifier_cloud_chain', 'classifier_cloud_fallback'],
     via: 'set',
     wizard: true,

@@ -73,9 +73,11 @@ describe('docs/config-reference.md — generated from the key table', () => {
       if (value === undefined) {
         expect(key.shipped, key.path).toMatch(/ \(code default\)$/);
       } else {
+        // Exact, not a prefix: `true (code default false)` passed a
+        // startsWith check plus a $-anchored marker test, so a shipped value
+        // could carry a contradicting annotation unnoticed.
         const rendered = typeof value === 'string' ? value : JSON.stringify(value);
-        expect(key.shipped.startsWith(rendered), key.path).toBe(true);
-        expect(key.shipped, key.path).not.toMatch(/ \(code default\)$/);
+        expect([rendered, `${rendered} (code default)`], key.path).toContain(key.shipped);
       }
     }
   });

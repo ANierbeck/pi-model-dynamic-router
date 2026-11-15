@@ -36,9 +36,9 @@ the static rules. The config only switches legs on and off and names their model
 
 ### `classifier.cloud.enabled`
 
-- Shipped: `true (code default false)`
+- Shipped: `true`
 - Set by: `/router config set classifier.cloud.enabled <value>` (also in the guided menu)
-- Meaning: Use cloud models for classification when the local chain gives no answer. Off keeps prompt text on the machine.
+- Meaning: Use cloud models for classification when the local chain gives no answer. Off keeps prompt text on the machine. The code default is false: only the shipped file turns it on.
 - Pre-2.0 name, read for one release with a warning: `classifier_cloud_chain`, `classifier_cloud_fallback`
 
 ### `classifier.cloud.model`
