@@ -233,14 +233,12 @@ export function serialized<A extends unknown[]>(
   };
 }
 
-/** A plain JSON object (not null, not an array). */
+/**
+ * An object that is neither null nor an array, e.g. a parsed JSON object. The
+ * prototype is not checked: a Date or a Map passes too.
+ */
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-/** A JSON object (not null, not an array). */
-export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -253,7 +251,7 @@ export function setLeaf(root: Record<string, unknown>, dotted: string, value: un
   let node = root;
   for (const part of parts.slice(0, -1)) {
     if (node[part] === undefined) node[part] = {};
-    else if (!isPlainObject(node[part])) return false;
+    else if (!isRecord(node[part])) return false;
     node = node[part] as Record<string, unknown>;
   }
   node[parts[parts.length - 1]] = value;
@@ -264,7 +262,7 @@ export function setLeaf(root: Record<string, unknown>, dotted: string, value: un
 export function getLeaf(root: unknown, dotted: string): unknown {
   let node: unknown = root;
   for (const part of dotted.split('.')) {
-    if (!isPlainObject(node)) return undefined;
+    if (!isRecord(node)) return undefined;
     node = node[part];
   }
   return node;
@@ -276,7 +274,7 @@ export function deleteLeaf(root: Record<string, unknown>, dotted: string): void 
   const chain: Array<Record<string, unknown>> = [root];
   for (const part of parts.slice(0, -1)) {
     const next = chain[chain.length - 1][part];
-    if (!isPlainObject(next)) return;
+    if (!isRecord(next)) return;
     chain.push(next);
   }
   delete chain[chain.length - 1][parts[parts.length - 1]];

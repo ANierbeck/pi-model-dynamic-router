@@ -26,7 +26,7 @@ import { warnLog } from './logger.ts';
 import { LAYA_SPEC } from './laya-classifier.ts';
 import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
-import { deleteLeaf, isPlainObject, textOf } from './utils.ts';
+import { deleteLeaf, isRecord, textOf } from './utils.ts';
 import { CONFIG_KEYS, suggestClassifierKey, unknownClassifierKeys } from './config-keys.ts';
 import { piAgentDir } from './agent-dir.ts';
 
@@ -291,10 +291,10 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
 
   const assign = (dottedPath: string, value: unknown, oldName: string): void => {
     const parts = dottedPath.split('.');
-    if (!isPlainObject(bag.classifier)) bag.classifier = {};
+    if (!isRecord(bag.classifier)) bag.classifier = {};
     let node = bag.classifier as Record<string, unknown>;
     for (const part of parts.slice(1, -1)) {
-      if (!isPlainObject(node[part])) node[part] = {};
+      if (!isRecord(node[part])) node[part] = {};
       node = node[part] as Record<string, unknown>;
     }
     const leaf = parts[parts.length - 1];
@@ -323,9 +323,9 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
 
   // 1. Bare names on model groups: only `dynamic` ever read them.
   const groups = layer.model_groups as Record<string, Record<string, unknown>> | undefined;
-  if (isPlainObject(groups)) {
+  if (isRecord(groups)) {
     for (const [name, g] of Object.entries(groups)) {
-      if (!isPlainObject(g)) continue;
+      if (!isRecord(g)) continue;
       for (const [old, newPath] of legacyToPath) {
         if (old.includes('.') || !Object.hasOwn(g, old)) continue;
         const value = g[old];
@@ -344,7 +344,7 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
 
   // 2. The top-level classifier_log block moves to classifier.log, key by key.
   // A key the table does not know is a typo: reported once and dropped.
-  if (isPlainObject(bag.classifier_log)) {
+  if (isRecord(bag.classifier_log)) {
     const oldLog = bag.classifier_log;
     delete bag.classifier_log;
     for (const [k, v] of Object.entries(oldLog)) {
@@ -363,7 +363,7 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
   }
 
   // 3. Typos inside the block are reported and removed, so they cannot take effect.
-  if (isPlainObject(bag.classifier)) {
+  if (isRecord(bag.classifier)) {
     for (const rel of unknownClassifierKeys(bag.classifier)) {
       const near = suggestClassifierKey(rel);
       warn(

@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { piAgentDir } from './config-loader.ts';
 import { configKey, configValueProblem, legacyLayerPaths } from './config-keys.ts';
 import type { ExcludeRules } from './types.ts';
-import { deleteLeaf, isPlainObject, setLeaf, textOf } from './utils.ts';
+import { deleteLeaf, isRecord, setLeaf, textOf } from './utils.ts';
 
 const USER_CONFIG_FILE = 'router-config.user.json';
 
@@ -357,7 +357,7 @@ export function readConfigLayers(opts: {
       present,
       ...(error ? { error } : {}),
       exclude: rules && typeof rules === 'object' && !Array.isArray(rules) ? rules : {},
-      ...(isPlainObject(config?.integrations) ? { integrations: config.integrations } : {}),
+      ...(isRecord(config?.integrations) ? { integrations: config.integrations } : {}),
       ...(config ? { config } : {}),
     };
   });
