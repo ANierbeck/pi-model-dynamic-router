@@ -196,7 +196,7 @@ Each category maps to a model group (`CATEGORY_TO_GROUP`, `src/content-classifie
 | `continue` | standard | Continuation without a predecessor — a decent model, not a free one |
 | `code_complex` | code_complex | Complex coding tasks (1630 ≤ GDPval ≤ 1700 — the free-tank tier) |
 | `design` | design | Design decisions — upper band (GDPval ≥ 1600), best first |
-| `planning` | planning | Project planning and architecture — top tier only (GDPval ≥ 1700) |
+| `planning` | planning | Project planning and architecture — the reasoning tier (reasoning ≥ 35, no GDPval floor) |
 
 #### Dynamic Group
 
@@ -280,7 +280,7 @@ The router encodes cost-quality tradeoffs directly in **model groups** rather th
 separate tier overlay. Each group's `min_gdpval` and `max_cost` settings act as the
 cost tier: `simple` uses `max_cost: 0` (free models only, `min_gdpval: 0`),
 `standard` clears a floor of 300 within `max_cost: 2.0`, `code_complex`,
-`design` and `planning` raise the GDPval floor to 1630/1600/1700. A classified prompt maps to a group via `CATEGORY_TO_GROUP`
+`design` raises the GDPval floor to 1600, and `planning` has no GDPval floor at all: it is gated by the reasoning column (≥ 35). A classified prompt maps to a group via `CATEGORY_TO_GROUP`
 (content-classifier.ts), and the group's own filters do the rest.
 
 A group may also set `min_context_length` to require a minimum model context
@@ -373,7 +373,7 @@ by billing preference. The shipped groups (see `router-config.json`):
 
 | Group | Method | Quality gate | Ranks within the pool by | Use for |
 |-------|--------|--------------|--------------------------|---------|
-| **planning** | `best` | GDPval ≥ 1700 | Intelligence Index, Omniscience and HLE Diamond, equal thirds (`score_by: reasoning`) | Planning & architecture — top tier only |
+| **planning** | `best` | reasoning ≥ 35 (`min_score`, `require_score_column`); no GDPval floor | Intelligence Index, Omniscience and HLE Diamond, equal thirds (`score_by: reasoning`) | Planning & architecture — the reasoning tier |
 | **design** | `best` | GDPval ≥ 1600 | AA-Briefcase Elo (`score_by`) | Design decisions — the upper band |
 | **code_complex** | `best` | 1630 ≤ GDPval ≤ 1700 | SciCode/Terminal-Bench blend (`score_by`) | Daily coding — the free-tank tier |
 | **standard** | `tiered` | GDPval ≥ 300 | billing preference | Everyday tasks |

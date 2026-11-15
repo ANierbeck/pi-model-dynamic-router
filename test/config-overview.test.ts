@@ -81,6 +81,27 @@ describe('/router config <block> — block views', () => {
   });
 });
 
+describe('/router config — the usage list the footer no longer repeats', () => {
+  // The `/router` footer names the subcommands in one line (owner report
+  // 2026-11-15); the usage forms live here, in `/router config` itself.
+  it('lists every config subcommand with its usage', async () => {
+    const out = await setup().run('config');
+    for (const usage of [
+      'config show',
+      'config set <path> <value>',
+      'config unset <path>',
+      'config classifier',
+      'config integrations',
+      'config exclude <ref|glob|provider>',
+      'config unexclude <ref|glob|provider>',
+      'config integration <name> on|off|<mode>',
+      'config compaction on|off',
+    ]) {
+      expect(out, usage).toContain(usage);
+    }
+  });
+});
+
 describe('/router config — unknown words and autocompletion', () => {
   it('answers an unknown word with the usage, which names the block views', async () => {
     const out = await setup().run('config nosuch');

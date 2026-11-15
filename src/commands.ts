@@ -1126,17 +1126,24 @@ function routerCommandListLines(): string[] {
   const rows: Array<[string, string]> = [
     ['/router', 'This overview'],
     ['/router <group>', "One group's ranked candidates"],
-    ...ROUTER_SUBCOMMANDS.flatMap(
-      (s): Array<[string, string]> =>
-        s.children
-          ? [
-              [`/router ${s.name}`, s.summary],
-              ...s.children.map((c): [string, string] => [`/router ${c.usage}`, c.summary]),
-            ]
-          : [[`/router ${s.usage}`, s.summary]]
-    ),
+    // A subcommand with children shows its bare name: the children are named on
+    // the line below, so a bracketed list here would say it twice.
+    ...ROUTER_SUBCOMMANDS.map((s): [string, string] => [
+      `/router ${s.children ? s.name : s.usage}`,
+      s.summary,
+    ]),
   ];
-  return ['Commands:', ...rows.map(([usage, summary]) => `  ${usage}\n      ${summary}`)];
+  const lines = ['Commands:', ...rows.map(([usage, summary]) => `  ${usage}\n      ${summary}`)];
+  // A subcommand with children names them in ONE line instead of one entry per
+  // child (owner report 2026-11-15: nine `config` entries at two lines each
+  // made the footer the longest part of the overview). The usage forms live in
+  // the subcommand's own reply, which lists them from the same table.
+  for (const s of ROUTER_SUBCOMMANDS) {
+    if (!s.children) continue;
+    const names = s.children.map((c) => c.name).join(' \u00b7 ');
+    lines.push(`      Subcommands: ${names}`);
+  }
+  return lines;
 }
 
 /**

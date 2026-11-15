@@ -64,9 +64,8 @@
       "score_by": "briefcase"
     },
     "planning": {
-      "description": "Planning and architecture - top tier only (GDPval >= 1700, reasoning-sorted and reasoning >= 35: Intelligence Index, Omniscience, HLE Diamond)",
+      "description": "Planning and architecture - the reasoning tier: best-first by reasoning >= 35 (Intelligence Index, Omniscience, HLE Diamond), no GDPval floor",
       "method": "best",
-      "min_gdpval": 1700,
       "fallback_groups": [
         "code_complex",
         "standard",

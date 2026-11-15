@@ -8,13 +8,17 @@
 // one. The owner's requirement: planning tasks must reach ONLY top-tier
 // models (Claude's best today; any provider's future top-tier models).
 //
-// Mechanism: a dedicated `planning` group with min_gdpval 1700 — above
-// glm-5-3 (1644) and mistral-medium-3.5 (933), below claude-sonnet-5-5
-// (1844) and claude-opus-5-5 (1900). The floor — not a provider exclusion —
-// is the guarantee: a future GPT/Gemini flagship scoring above 1700
-// auto-qualifies without config changes. Escalation (Claude window empty,
-// all planning models failed) goes strategic → tactical → glm as the
-// emergency fallback, per the group's fallback_groups.
+// Mechanism, as of the owner decision of 2026-11-15: a dedicated `planning`
+// group gated by the REASONING column (`score_by: reasoning`,
+// `require_score_column`, `min_score: 35`), not by a GDPval floor. The old
+// floor (min_gdpval 1700) kept glm-5-3 (1644) and mistral-medium-3.5 (933)
+// out, but it also excluded the best reasoning model in the cache
+// (claude-fable-5-2: reasoning 70.5, GDPval 1546) — the floor, not the
+// ranking, decided membership. The column gate is now the guarantee: a
+// model without a reasoning value, or below 35, stays out whatever its
+// GDPval. Escalation (Claude window empty, all planning models failed) goes
+// strategic → tactical → glm as the emergency fallback, per the group's
+// fallback_groups.
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -75,12 +79,15 @@ beforeAll(() => {
   metricsModule.setModelRegistry({ find: () => undefined } as any);
 });
 
-describe('shipped config: the planning group exists and is top-tier-only by floor', () => {
-  it('router-config.json defines planning with min_gdpval >= 1700 and method best', () => {
+describe('shipped config: the planning group exists and is top-tier-only by reasoning', () => {
+  it('router-config.json defines planning with the reasoning gates and no GDPval floor', () => {
     const g = repoCfg.model_groups!.planning;
     expect(g).toBeDefined();
     expect(g.method).toBe('best');
-    expect(g.min_gdpval!).toBeGreaterThanOrEqual(1700);
+    expect(g.min_gdpval).toBeUndefined();
+    expect(g.score_by).toBe('reasoning');
+    expect(g.require_score_column).toBe(true);
+    expect(g.min_score).toBe(35);
   });
 
   it('escalation chain never dead-ends: fallback_groups are declared', () => {
@@ -114,12 +121,25 @@ describe('design group filtering (D5): the 1600 floor admits the wider upper ban
 });
 
 describe('planning group filtering: glm and mistral-medium are FLAT OUT', () => {
-  it('the floor admits only sonnet/opus; glm (1644) and medium (933) fail', () => {
+  it('the reasoning gate admits only sonnet/opus; glm and medium stay out', () => {
+    // The gate needs reasoning values to act on: with none anywhere it stands
+    // down (require-score-column.test.ts pins that safety valve), so this test
+    // supplies the production-shaped column. glm and medium are below 35.
+    metricsModule.setCache({
+      available_models: [],
+      capability_profiles: {
+        'claude-opus-5-5': { reasoning: 58.4 },
+        'claude-sonnet-5-5': { reasoning: 46.1 },
+        'zai-glm-5-3': { reasoning: 18.5 },
+        'mistral-medium-3.5': { reasoning: 22 },
+      },
+    } as any);
     const filtered = applyGroupFilters(ALL, testConfig.model_groups!.planning, testConfig);
     expect(filtered).toContain('claude-bridge/claude-sonnet-5-5');
     expect(filtered).toContain('claude-bridge/claude-opus-5-5');
     expect(filtered).not.toContain('mistral/zai-glm-5-3');
     expect(filtered).not.toContain('mistral/mistral-medium-3.5');
+    metricsModule.setCache(cache);
   });
 });
 

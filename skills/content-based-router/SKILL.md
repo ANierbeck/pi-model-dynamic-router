@@ -75,7 +75,7 @@ GDPval/cost/availability at runtime:
 | `standard`         | `standard`          | GDPval ≥ 300, mid price band                                                 |
 | `code_complex`     | `code_complex`      | best-first in the 1630..1700 GDPval band, sorted by coding                   |
 | `design`           | `design`            | GDPval ≥ 1600, sorted by briefcase                                           |
-| `planning`         | `planning`          | GDPval ≥ 1700, sorted by reasoning, reasoning score ≥ 35                     |
+| `planning`         | `planning`          | sorted by reasoning, reasoning score ≥ 35 (no GDPval floor)                     |
 | `continue`         | `standard`          | no self-contained task → a decent model, not a free one                      |
 
 Every category maps to the group of the same name (`continue` → `standard`);

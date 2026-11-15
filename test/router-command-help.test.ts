@@ -114,12 +114,37 @@ describe('/router subcommand list', () => {
 });
 
 describe('/router config subcommands (config plan Phase 3)', () => {
-  it('the bare overview lists each config subcommand with its usage, not one bracketed list', async () => {
+  // Owner report 2026-11-15: nine config entries at two lines each made the
+  // footer the longest part of the overview. The footer now names the
+  // subcommands in ONE line under the single `/router config` entry; the
+  // usage forms live in `/router config` itself (next test).
+  it('the bare overview names the config subcommands in one line, not one entry each', async () => {
     const reply = await routerReply('');
-    expect(reply).toContain('/router config set <path> <value>');
-    expect(reply).toContain('/router config unset <path>');
-    expect(reply).toContain('/router config classifier');
-    expect(reply).toContain('/router config integrations');
+    // Only the footer: the Integrations section names `/router config
+    // integration laya on` as the switch, which is not a footer entry.
+    const footer = reply.split('\n').slice(reply.split('\n').findIndex((l) => l === 'Commands:'));
+    const configLines = footer.filter((line) => line.includes('/router config'));
+    expect(configLines).toHaveLength(1);
+    expect(configLines[0]).toMatch(/^\s*\/router config\s*$/);
+    const names = footer.find((line) => line.includes('Subcommands:'));
+    expect(names, 'no Subcommands: line').toBeDefined();
+    // The parent is the entry above; repeating it here would read
+    // "config · show · set · …".
+    expect(names).toMatch(/Subcommands: show/);
+    for (const name of [
+      'show',
+      'set',
+      'unset',
+      'classifier',
+      'integrations',
+      'exclude',
+      'unexclude',
+      'integration',
+      'compaction',
+    ]) {
+      expect(names).toContain(name);
+    }
+    expect(reply).not.toContain('/router config set <path> <value>');
   });
 
   it('the completion list offers the config subcommands the usage names', () => {
