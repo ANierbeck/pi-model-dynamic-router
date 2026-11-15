@@ -16,7 +16,7 @@ import {
   capCorrections,
 } from '../src/hint-corrections.ts';
 import { CacheManager } from '../src/cache.ts';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
@@ -228,6 +228,29 @@ describe('corrections survive a restart (CacheManager round-trip on the same dir
       });
     } finally {
       rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('a hand-corrupted hint_corrections value on disk is dropped on load instead of breaking the store', () => {
+    // A non-object value (string, null, array) used to be adopted as-is; the
+    // next recordCorrection then wrote a property onto a primitive and threw.
+    for (const corrupt of ['garbage', null, ['a', 'b']]) {
+      const d = dir();
+      try {
+        mkdirSync(path.join(d, '.cache'), { recursive: true });
+        writeFileSync(
+          path.join(d, '.cache', 'scan-cache.json'),
+          JSON.stringify({ lastScanTimestamp: 1, hint_corrections: corrupt })
+        );
+        const mine: any = {};
+        new CacheManager(d, mine).loadCache();
+        expect(mine.hint_corrections).toBeUndefined();
+        expect(() =>
+          recordCorrection(mine.hint_corrections ?? {}, PROMPT, 'planning', at(0))
+        ).not.toThrow();
+      } finally {
+        rmSync(d, { recursive: true, force: true });
+      }
     }
   });
 

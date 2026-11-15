@@ -180,6 +180,11 @@ export class CacheManager {
         const disk: Cache = JSON.parse(fs.readFileSync(this.cachePath, 'utf8')) as Cache;
         const volatile = disk as unknown as Record<string, unknown>;
         for (const k of VOLATILE_KEYS) delete volatile[k];
+        // ADR-0030: a hand-edited correction store that is not an object would
+        // be adopted as-is and break the next write; drop it instead.
+        if (volatile.hint_corrections !== undefined && !isRecord(volatile.hint_corrections)) {
+          delete volatile.hint_corrections;
+        }
         return disk;
       }
     } catch {
