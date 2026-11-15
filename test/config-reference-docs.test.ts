@@ -81,6 +81,15 @@ describe('docs/config-reference.md — generated from the key table', () => {
   });
 
   it('shows the chain steps in the order the router runs them', () => {
+    // The runtime order of classifyPrompt (src/content-classifier.ts), pinned as
+    // a literal: describeClassifierChain also renders the doc, so its own order
+    // cannot be the expectation.
+    expect(describeClassifierChain(shipped).map((step) => step.id)).toEqual([
+      'laya',
+      'ollama',
+      'cloud',
+      'static',
+    ]);
     const doc = read('../docs/config-reference.md');
     // The bold step label of the chain list; a bare label also occurs in prose.
     const positions = describeClassifierChain(shipped).map((step) =>
@@ -97,6 +106,13 @@ describe('prose docs — concepts stay, keys link to the reference', () => {
     for (const name of REMOVED_KEYS) {
       expect(doc.includes(name), `${p} still names ${name}`).toBe(false);
     }
+  });
+
+  it('docs/architecture.md does not say the shipped dynamic group turns the cloud leg on', () => {
+    // The switch moved to the classifier block of router-config.json; `dynamic`
+    // is still a group name, so the removed-key list cannot catch this phrase.
+    const doc = read('../docs/architecture.md').replace(/\s+/g, ' ');
+    expect(doc).not.toContain('the shipped `dynamic` group turns');
   });
 
   it.each(PROSE_DOCS)('%s links to the reference', (p) => {

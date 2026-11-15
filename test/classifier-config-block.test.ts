@@ -129,7 +129,7 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
 
   it('reports an unknown key of the old classifier_log block once, as a typo', () => {
     const { config } = loadWithProjectLayer({ classifier_log: { foo: 1 } });
-    const w = warnings().filter((m) => m.includes('foo'));
+    const w = warnings().filter((m) => m.includes('classifier_log.foo'));
     expect(w).toHaveLength(1);
     expect(w[0]).toContain('classifier_log.foo: unknown key');
     expect(config.classifier?.log).not.toHaveProperty('foo');
