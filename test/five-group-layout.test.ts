@@ -96,6 +96,8 @@ describe('shipped groups', () => {
       method: 'best',
       min_gdpval: 1600,
       score_by: 'briefcase',
+      // owner decision 2026-11-15: top tiers ship without :free refs
+      exclude_models: ['*:free'],
     });
   });
 

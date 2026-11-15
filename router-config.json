@@ -61,7 +61,10 @@
         "standard",
         "simple"
       ],
-      "score_by": "briefcase"
+      "score_by": "briefcase",
+      "exclude_models": [
+        "*:free"
+      ]
     },
     "planning": {
       "description": "Planning and architecture - the reasoning tier: best-first by reasoning >= 35 (Intelligence Index, Omniscience, HLE Diamond), no GDPval floor",
@@ -73,7 +76,10 @@
       ],
       "score_by": "reasoning",
       "require_score_column": true,
-      "min_score": 35
+      "min_score": 35,
+      "exclude_models": [
+        "*:free"
+      ]
     },
     "dynamic": {
       "description": "Classifies each prompt (local Ollama chain first, cloud chain as the fallback) and routes to the appropriate group",

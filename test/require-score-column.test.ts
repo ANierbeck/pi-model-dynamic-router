@@ -14,6 +14,7 @@
 // staged in a shared module).
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { freshCapabilityFilters } from './helpers/capability-filters.ts';
 
 const OPUS = 'claude-bridge/claude-opus-5-5';
 const SONNET = 'claude-bridge/claude-sonnet-5-5';
@@ -33,27 +34,16 @@ const BASE_CONFIG = {
   best_quality_window: 0.05,
 } as any;
 
-async function fresh(profiles: Record<string, any>, groups: Record<string, any>) {
-  vi.resetModules();
-  const metrics = await import('../src/metrics.js');
-  const routing = await import('../src/routing.js');
-  const dyn = await import('../src/dynamic-config.js');
-  const cfg = { ...BASE_CONFIG, model_groups: groups };
-  metrics.setConfig(cfg);
-  metrics.setCache({ available_models: [], capability_profiles: profiles } as any);
-  metrics.setModelRegistry({ find: () => undefined } as any);
-  return { metrics, routing, dyn, cfg };
-}
-
 const PLANNING = { method: 'best', min_gdpval: 1700, score_by: 'reasoning', fallback_groups: [] };
 
 describe('require_score_column in applyGroupFilters (live and display path)', () => {
   beforeEach(() => vi.resetModules());
 
   it('off by default: a model without the value stays in the pool', async () => {
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: PLANNING }
+      { planning: PLANNING },
+      BASE_CONFIG
     );
     const kept = routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], PLANNING as any, cfg);
     expect(kept).toContain(NEWCOMER);
@@ -61,9 +51,10 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
 
   it('on: a model without a value in the group column is dropped, and the gate is named', async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group }
+      { planning: group },
+      BASE_CONFIG
     );
     const dropped: Array<[string, string]> = [];
     const kept = routing.applyGroupFilters(
@@ -81,18 +72,20 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
 
   it("on: the column is the group's own — a briefcase-only value does not satisfy a reasoning group", async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-newcomer-9': { briefcase: 1700 } },
-      { planning: group }
+      { planning: group },
+      BASE_CONFIG
     );
     expect(routing.applyGroupFilters([OPUS, NEWCOMER], group as any, cfg)).toEqual([OPUS]);
   });
 
   it('on, but NO model anywhere has the column: the gate stands down', async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { briefcase: 1800 } },
-      { planning: group }
+      { planning: group },
+      BASE_CONFIG
     );
     expect(routing.applyGroupFilters([OPUS, SONNET], group as any, cfg)).toEqual([OPUS, SONNET]);
   });
@@ -104,9 +97,10 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
       require_score_column: true,
       fallback_groups: [],
     };
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 } },
-      { standard: group }
+      { standard: group },
+      BASE_CONFIG
     );
     expect(routing.applyGroupFilters([OPUS, NEWCOMER], group as any, cfg)).toEqual([
       OPUS,
@@ -116,9 +110,10 @@ describe('require_score_column in applyGroupFilters (live and display path)', ()
 
   it('the live router resolves planning to the profiled models only', async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group }
+      { planning: group },
+      BASE_CONFIG
     );
     const cache = {
       available_models: [
@@ -145,9 +140,10 @@ describe('require_score_column in the persist path (generated dynamic config)', 
 
   it('filterModelsForGroup applies the same gate as the live path', async () => {
     const group = { ...PLANNING, require_score_column: true };
-    const { dyn, cfg } = await fresh(
+    const { dyn, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: group }
+      { planning: group },
+      BASE_CONFIG
     );
     const kept = dyn.filterModelsForGroup(
       [model(OPUS, 1900), model(SONNET, 1950), model(NEWCOMER, 2000)],
@@ -158,9 +154,10 @@ describe('require_score_column in the persist path (generated dynamic config)', 
   });
 
   it('sortModelsForGroup ranks by reasoning with unprofiled models last', async () => {
-    const { dyn, cfg, metrics } = await fresh(
+    const { dyn, cfg, metrics } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { reasoning: 56 }, 'claude-sonnet-5-5': { reasoning: 46 } },
-      { planning: PLANNING }
+      { planning: PLANNING },
+      BASE_CONFIG
     );
     // GDPval order is the REVERSE of the expected one (newcomer > sonnet >
     // opus), so only the column can produce [opus, sonnet, newcomer].
@@ -192,7 +189,7 @@ describe('min_score (floor on the score_by column)', () => {
 
   it('drops a model whose column value is below the floor, and names the gate', async () => {
     const g = group({ min_score: 35 });
-    const { routing, cfg } = await fresh(PROFILES, { planning: g });
+    const { routing, cfg } = await freshCapabilityFilters(PROFILES, { planning: g }, BASE_CONFIG);
     const dropped: Array<[string, string]> = [];
     const kept = routing.applyGroupFilters(
       [OPUS, SONNET, NEWCOMER],
@@ -209,7 +206,7 @@ describe('min_score (floor on the score_by column)', () => {
 
   it('a value exactly at the floor passes (>=, like min_gdpval)', async () => {
     const g = group({ min_score: 46 });
-    const { routing, cfg } = await fresh(PROFILES, { planning: g });
+    const { routing, cfg } = await freshCapabilityFilters(PROFILES, { planning: g }, BASE_CONFIG);
     expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
       OPUS,
       SONNET,
@@ -218,7 +215,11 @@ describe('min_score (floor on the score_by column)', () => {
 
   it('a model WITHOUT a value fails a positive floor (null fails, like min_gdpval)', async () => {
     const g = group({ min_score: 35 });
-    const { routing, cfg } = await fresh({ 'claude-opus-5-5': { reasoning: 58 } }, { planning: g });
+    const { routing, cfg } = await freshCapabilityFilters(
+      { 'claude-opus-5-5': { reasoning: 58 } },
+      { planning: g },
+      BASE_CONFIG
+    );
     expect(routing.applyGroupFilters([OPUS, SONNET], g as any, cfg)).toEqual([OPUS]);
   });
 
@@ -226,7 +227,7 @@ describe('min_score (floor on the score_by column)', () => {
     // The two gates are independent: min_score fails a null value on its own,
     // require_score_column only drops unprofiled models from admission.
     const g = group({ min_score: 35, require_score_column: false });
-    const { routing, cfg } = await fresh(PROFILES, { planning: g });
+    const { routing, cfg } = await freshCapabilityFilters(PROFILES, { planning: g }, BASE_CONFIG);
     expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
       OPUS,
       SONNET,
@@ -240,7 +241,11 @@ describe('min_score (floor on the score_by column)', () => {
     // A below-floor model with the HIGHEST GDPval must not survive into the
     // generated pool even though it would rank first if sorted unfiltered.
     const g = group({ min_score: 35 });
-    const { dyn, cfg, metrics } = await fresh(PROFILES, { planning: g });
+    const { dyn, cfg, metrics } = await freshCapabilityFilters(
+      PROFILES,
+      { planning: g },
+      BASE_CONFIG
+    );
     const model = (ref: string, gdpval: number) => ({
       ref,
       gdpval,
@@ -261,7 +266,7 @@ describe('min_score (floor on the score_by column)', () => {
   it('absent or 0 means no floor', async () => {
     for (const extra of [{}, { min_score: 0 }]) {
       const g = group(extra);
-      const { routing, cfg } = await fresh(PROFILES, { planning: g });
+      const { routing, cfg } = await freshCapabilityFilters(PROFILES, { planning: g }, BASE_CONFIG);
       expect(routing.applyGroupFilters([OPUS, SONNET, NEWCOMER], g as any, cfg)).toEqual([
         OPUS,
         SONNET,
@@ -272,22 +277,27 @@ describe('min_score (floor on the score_by column)', () => {
 
   it('stands down while NO model has a value for the column (no scrape yet)', async () => {
     const g = group({ min_score: 35 });
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-opus-5-5': { briefcase: 1800 } },
-      { planning: g }
+      { planning: g },
+      BASE_CONFIG
     );
     expect(routing.applyGroupFilters([OPUS, SONNET], g as any, cfg)).toEqual([OPUS, SONNET]);
   });
 
   it('has no effect on a group that ranks by GDPval (no capability column to compare)', async () => {
     const g = { method: 'best', min_gdpval: 1700, min_score: 35, fallback_groups: [] };
-    const { routing, cfg } = await fresh(PROFILES, { standard: g });
+    const { routing, cfg } = await freshCapabilityFilters(PROFILES, { standard: g }, BASE_CONFIG);
     expect(routing.applyGroupFilters([OPUS, NEWCOMER], g as any, cfg)).toEqual([OPUS, NEWCOMER]);
   });
 
   it('the live router and the generated config both honour it', async () => {
     const g = group({ min_score: 35 });
-    const { routing, dyn, cfg } = await fresh(PROFILES, { planning: g });
+    const { routing, dyn, cfg } = await freshCapabilityFilters(
+      PROFILES,
+      { planning: g },
+      BASE_CONFIG
+    );
     const cache = {
       available_models: [
         { provider: 'claude-bridge', id: 'claude-opus-5-5' },
@@ -323,7 +333,7 @@ describe('detectGroup respects the score-column gates (PR #80 round)', () => {
       'claude-opus-5-5': { reasoning: 58 },
       'claude-newcomer-9': { reasoning: 19.5 },
     };
-    const { routing, cfg } = await fresh(profiles, groups);
+    const { routing, cfg } = await freshCapabilityFilters(profiles, groups, BASE_CONFIG);
     const router = new routing.Router(
       cfg,
       { available_models: [], capability_profiles: profiles } as any,

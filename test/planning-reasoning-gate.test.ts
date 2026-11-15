@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'node:fs';
+import { freshCapabilityFilters } from './helpers/capability-filters.ts';
 
 const SHIPPED = JSON.parse(
   fs.readFileSync(new URL('../router-config.json', import.meta.url), 'utf-8')
@@ -28,17 +29,6 @@ const BASE_CONFIG = {
   best_quality_window: 0.05,
 } as any;
 
-async function fresh(profiles: Record<string, any>, groups: Record<string, any>) {
-  vi.resetModules();
-  const metrics = await import('../src/metrics.js');
-  const routing = await import('../src/routing.js');
-  const cfg = { ...BASE_CONFIG, model_groups: groups };
-  metrics.setConfig(cfg);
-  metrics.setCache({ available_models: [], capability_profiles: profiles } as any);
-  metrics.setModelRegistry({ find: () => undefined } as any);
-  return { routing, cfg };
-}
-
 describe('the shipped planning group', () => {
   it('has no GDPval floor and keeps the reasoning gates', () => {
     const planning = SHIPPED.model_groups.planning;
@@ -48,6 +38,8 @@ describe('the shipped planning group', () => {
       score_by: 'reasoning',
       require_score_column: true,
       min_score: 35,
+      // owner decision 2026-11-15: top tiers ship without :free refs
+      exclude_models: ['*:free'],
     });
   });
 
@@ -61,18 +53,20 @@ describe('planning admits by reasoning, not by GDPval', () => {
 
   it('admits the best reasoning model even below the old 1700 floor', async () => {
     const planning = SHIPPED.model_groups.planning;
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-fable-5-2': { reasoning: 70.51 }, 'claude-opus-5-5': { reasoning: 58.38 } },
-      { planning }
+      { planning },
+      BASE_CONFIG
     );
     expect(routing.applyGroupFilters([FABLE, OPUS], planning, cfg)).toEqual([FABLE, OPUS]);
   });
 
   it('still refuses a high-GDPval model below the reasoning floor', async () => {
     const planning = SHIPPED.model_groups.planning;
-    const { routing, cfg } = await fresh(
+    const { routing, cfg } = await freshCapabilityFilters(
       { 'claude-fable-5-2': { reasoning: 70.51 }, 'claude-weak-9': { reasoning: 30 } },
-      { planning }
+      { planning },
+      BASE_CONFIG
     );
     const dropped: Array<[string, string]> = [];
     const kept = routing.applyGroupFilters(

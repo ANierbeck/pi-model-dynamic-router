@@ -215,6 +215,18 @@ describe('scanConfig() — named-model positions in the shipped config', () => {
     );
   });
 
+  it('does not report globs: a `*` pattern names no concrete model (ADR-0025)', () => {
+    const withGlobs = {
+      exclude: { models: ['*:free', 'openrouter/acme/bad:free'] },
+      model_groups: {
+        design: { method: 'best', exclude_models: ['*:free'] },
+        planning: { method: 'best', exclude_models: ['*:free', 'openrouter/*'] },
+      },
+    };
+    const literals = scanConfig(withGlobs).map((f) => f.literal);
+    expect(literals).toEqual(['config:exclude.models[]=openrouter/acme/bad:free']);
+  });
+
   it('does not report gdpval_builtin (class B annotation data) or provider-level entries', () => {
     const literals = scanConfig(cfg)
       .map((f) => f.literal)
