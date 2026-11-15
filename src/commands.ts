@@ -74,6 +74,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
+import { hasAnyInstall } from './laya-model-install.ts';
 
 /**
  * Dependencies createCommands reads from index.ts's extension closure. Exposed as
@@ -358,7 +359,19 @@ function setIntegration(rt: CommandDeps, arg: string): string {
     (patch.mode === undefined || block?.mode === patch.mode);
   if (matches) {
     const state = enabledNow ? `on (${block?.mode ?? spec.defaultMode})` : 'off';
-    return `${name} is ${state} — saved to ${res.written}; applies now.`;
+    const reply = `${name} is ${state} — saved to ${res.written}; applies now.`;
+    // Config plan 2026-11-14 item 15 (owner decision 2026-11-15): switching
+    // Laya on without any installed weights points at the installer. The
+    // command itself never downloads anything.
+    if (name === 'laya' && enabledNow && !hasAnyInstall()) {
+      return [
+        reply,
+        'No Laya weights are installed under the models root — install them with',
+        '`pi-laya-model install <model>@<version>` (list what the manifest offers with',
+        '`pi-laya-model models`); see the skill `router-laya-install`.',
+      ].join('\n');
+    }
+    return reply;
   }
   const project = readConfigLayers({ extDir: path.dirname(rt.cfgPath), cwd: process.cwd() }).find(
     (layer) => layer.origin === 'project'

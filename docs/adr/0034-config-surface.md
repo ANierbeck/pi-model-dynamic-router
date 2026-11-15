@@ -136,8 +136,9 @@ options were applied, not confirmed by the owner one by one.
 
 ## Open
 
-- The guided menu does not point to the Laya model artifact plan when no weights
-  are installed (plan item 15, "may"). The integration reply already states when
-  a switch is not in effect.
+None. Plan item 15 (the guided menu may point at the Laya installer when no
+weights are installed) is implemented: switching `laya` on without an install
+under the models root appends the `pi-laya-model` / `router-laya-install` hint
+to the reply; the command never downloads.
 - Keys outside the classifier, integration and exclude scope (`providers`, group
   keys, `delegation`) are not in the table; they are out of scope of this ADR.
