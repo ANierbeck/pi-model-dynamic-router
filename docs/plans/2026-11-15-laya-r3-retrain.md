@@ -1,12 +1,12 @@
 # Laya r3: retrain on the v2-r3 taxonomy with live owner labels, honest calibration, and a de-emphasized `continue`
 
-**Status:** proposed 2026-11-15, owner decision recorded the same day:
-`continue` variant **B** (inherit-relabel) is chosen — see Solution 2 and Open
-decisions. Nothing is trained or published yet; the r2 artifact
-(`router@1.0.0`, tag `laya-router-v1.0.0`, head `5f12495d…`) stays the served
-model until r3 passes the pre-registered gate below. Publishing any artifact
-is a separate owner decision (AGENTS §1; the manifest entry stays
-`published: false`).
+**Status:** approved 2026-11-15 — all four owner decisions are recorded
+(Decisions below); implementation has not started (next step:
+`to_laya_jsonl_v3.py`, then the corpus stats for review, then the train run).
+The r2 artifact (`router@1.0.0`, tag `laya-router-v1.0.0`, head `5f12495d…`)
+stays the served model until r3 passes the pre-registered gate below.
+Publishing any artifact is a separate owner decision (AGENTS §1; the
+manifest entry stays `published: false`).
 
 **Related plans (reused, not changed):** `2026-10-08-laya-finetuning-state.md`
 (training pipeline), `2026-10-15-laya-shadow-evaluation.md` (live labels +
@@ -61,7 +61,7 @@ laya-train has no sample weights — the v2 mechanism, `OWNER_REPEAT`):
 
 | Source | Rows | Label | Weight (repeat) |
 |---|---|---|---|
-| Shadow live labels (`shadow-eval/labels.jsonl` ⋈ `queue.jsonl` on `key`) | 281 | owner truth (v2-r3) | 5× |
+| Shadow live labels (`shadow-eval/labels.jsonl` ⋈ `queue.jsonl` on `key`) | 281 | owner truth (v2-r3) | 5× (owner-approved) |
 | Golden `dev` (`golden.jsonl`, split=dev, truth_v2 ∉ {None, ambiguous}) | ~88 | owner truth | 3× (as in r2) |
 | Session train split, teacher-labeled (`v2labels-train/labels-…glm-5-3.jsonl`, ok && category ∈ CATS && confidence ≥ min-conf) | ~2000 | GLM v2-r3 teacher | 1× |
 | Golden `test` | — | — | **never** |
@@ -117,7 +117,7 @@ Extending the R1–R4 scheme of `2026-10-15-laya-shadow-evaluation.md`
 
 | Rule | Threshold | r2 measured |
 |---|---|---|
-| G1 group accuracy on golden test ≥ teacher level | ≥ 53.4 % | 43.2 % |
+| G1 group accuracy on golden test ≥ teacher level (owner-approved threshold) | ≥ 53.4 % | 43.2 % |
 | G2 continue recall on golden test | ≥ 60 % (old R3) | 27.8 % (shadow) |
 | G3 ECE on golden test | ≤ 0.10 | not measured |
 | G4 live shadow re-run (≥150 labeled items) group accuracy | ≥ 30.5 % (majority baseline) and ≥ r2's 22.8 % | 22.8 % |
@@ -143,20 +143,26 @@ shadow items as in R2 (alpha 0.05, one-sided).
 4. Publish (GitHub Release assets, manifest flip) is a separate owner
    decision (AGENTS §1).
 
-## Decisions
+## Decisions (owner, 2026-11-15)
 
-1. **`continue` variant: B (inherit-relabel).** Owner decision 2026-11-15,
-   recorded in the session ("Ich find B … am besten geeignet"). A stays the
-   fallback if B fails gate G2.
+1. **`continue` variant: B (inherit-relabel).** The owner picked B in the
+   session ("Ich find B … am besten geeignet"): relabel training `continue`
+   rows with a stored `prev` to the category they would inherit, drop
+   `continue` rows without `prev`. A (downweight) stays the fallback if B
+   fails gate G2.
+2. **Shadow label weight: 5×** (281 × 5 = 1405 rows; owner share ≈ 45 % of the
+   corpus). 10× was considered and rejected — overfitting risk on the 281
+   live prompts; 3× would be ≈ r2's weak owner signal (43.2 % held-out).
+3. **Gate thresholds as proposed:** G1 ≥ 53.4 % (teacher level — r3 replaces
+   r2 once it matches the best paid teacher on the owner-labeled held-out
+   test, because Laya is then local, free and prompt-local at equal quality),
+   G2 ≥ 60 %, G3 ≤ 0.10, G4 ≥ 30.5 %. Tightening G1 to ≥ 60 % was considered
+   and rejected: it would keep r2 even if r3 were locally as good as Opus.
+4. **Training locally on MPS** (as r2, ~5 h per run); no cloud GPU run.
 
 ## Open decisions (owner)
 
-1. Owner-row weight for shadow labels: 5× (proposed) or higher — laya-train
-   repeats rows, so this is coarse; the corpus stats print the resulting
-   distribution for review before training.
-2. Gate thresholds G1–G4: accept as proposed, or tighten G1 to ≥ 60 %.
-3. Whether r3 training uses only MPS locally (as r2, ~5 h) or also a cloud
-   GPU run — cost decision.
+None.
 
 ## Verified against
 
