@@ -112,8 +112,10 @@ Add or override benchmark scores for models not in the scraped table:
 > There is no read alias: a user or project layer that still has
 > `classifier_laya` is warned about once per file and the old block is
 > ignored (Laya then stays off). Move the values under `integrations.laya`.
-> Top-level keys the router does not know (typos such as `classifer_log`) are
-> warned about too, with the closest known key; the layer is still merged.
+> Top-level keys the router does not know (a typo such as `classifer` for
+> `classifier`) are warned about too, naming the closest known key when one is
+> close enough; the layer is still merged. `classifer_log` is not close to any
+> known key, so it is reported without a suggestion.
 >
 > Switch it from Pi without editing the file: `/router config integration laya on`,
 > `… laya off`, or `… laya shadow` (a mode implies on). `/router` lists

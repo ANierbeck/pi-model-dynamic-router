@@ -1,6 +1,6 @@
 # Config surface and UI: one consistent model, documented once, editable through `/router config`
 
-**Status:** done 2026-11-15 — all five phases: `e8491a1` (Phase 1), `4020910` (Phase 2), `6aadb02` (Phase 3), `3b69e29` (Phase 4), `ea433d6` (Phase 5), then the review fixes `2daa7de`, `8c08dcf`, `3762a61` and the docs commit that records this status. Decision record: ADR 0034. Not done: item 15 ("may") — the menu does not point to the Laya model artifact plan when no weights are installed; the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`).
+**Status:** done 2026-11-15 — all five phases: `e8491a1` (Phase 1), `4020910` (Phase 2), `6aadb02` (Phase 3), `3b69e29` (Phase 4), `ea433d6` (Phase 5), then the review fixes `2daa7de`, `8c08dcf`, `3762a61` and the docs commit that records this status. Decision record: ADR 0034 proposed; owner acceptance pending. Not done: item 15 ("may") — the menu does not point to the Laya model artifact plan when no weights are installed; the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`).
 
 **Related plans (reused, not changed):** `2026-11-08-optional-integrations-config.md` (done 2026-11-12) owns the `integrations.*` contract, the schema and the unknown-key warnings. This plan builds on it. `2026-10-25-laya-sole-classifier.md` owns the Laya release gate. Context budget and compaction belong to Phase 5b of `2026-10-05-task-type-balancing.md`; this plan only exposes the switch that already exists.
 
@@ -9,7 +9,7 @@
 ## Problem
 
 1. **Inconsistent placement.** Classifier keys sit on `model_groups.dynamic` (`classifier_model`, `classifier_fallback`, `classifier_cloud_model`, `classifier_cloud_candidates`, `classifier_cloud_chain`, `classifier_escalate_low_confidence`; `src/types.ts:175-213`). Logging is top-level (`classifier_log`, `src/types.ts:354`). Laya is under `integrations.laya` (`src/types.ts:360`). Exclude and compaction are top-level or under `context_budget`.
-2. **Misleading names.** `classifier_cloud_chain` reads as an order, but it is an on/off switch. The order is fixed in code: local, then cloud, then static (`classifyViaLlmChain`, `src/content-classifier.ts`). The owner had to ask what `true` means.
+2. **Misleading names.** `classifier_cloud_chain` reads as an order, but it is an on/off switch. The order is fixed in code: Laya, then local, then cloud, then static (`classifyPrompt` and `classifyViaLlmChain`, `src/content-classifier.ts`). The owner had to ask what `true` means.
 3. **Hand-written, drifting documentation.** Counted on 2026-11-14 with `grep -rl`: `classifier_cloud_chain` appears in 15 files, `classifier_cloud_model` in 12, `classifier_fallback` in 10. The 2026-11-14 docs sync found the README describing the opposite of the code.
 4. **`/router config` edits little.** Its subcommands are `exclude`, `unexclude`, `compaction` and `integration` (usage at `src/commands.ts:267-270`, dispatch in `handleConfigCommand`, `src/commands.ts:585-588`). The user-layer store accepts only `exclude`, `context_budget.enabled` and `integrations` (`UserConfigDelta`, `src/user-config-store.ts:24-31`). No `model_groups` path exists (grep count 0). Every classifier change is a hand edit.
 5. **Uneven validation.** The integrations block has a schema and `checkIntegrationPatch`. Classifier keys have neither: a typo such as `cloud.enable` is ignored, and a cloud candidate that Pi does not know is only skipped at call time.
@@ -66,22 +66,22 @@ Red first for every behaviour change, with the red evidence named in the commit 
 
 ## Open decisions
 
-None open; see Decisions.
+- Acceptance of ADR 0034 (status: proposed): the owner's decision at merge. The choices themselves are under Decisions.
 
 ## Decisions
 
-Each decision was put to the owner with a recommended option. None was confirmed one by one; the owner's instruction of 2026-11-15 was to execute the plan.
+Each decision lists a recommended option. Applied: the recommended option. The owner asked to execute the plan on 2026-11-15; the options were not confirmed one by one.
 
-1. **Block shape.** Nested `classifier` (recommended) or flat keys with better names? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-2. **Migration.** Read old keys for one release with a warning (recommended, the existing pattern), or hard break at 2.0.0? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-3. **Switch name.** `classifier.cloud.enabled` (recommended) or keep `classifier_cloud_chain` and only document it? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-4. **Command shape.** Generic `set`/`unset` by path against the table (recommended) or one subcommand per key? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-5. **Unknown candidate.** Refuse the write when pi does not know the model (recommended, AGENTS §9), or store it with a warning? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-6. **Wizard scope.** Only keys marked `wizard` in the table (recommended: classifier on/off, cloud candidates, integrations enable and mode), or every key? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-7. **Non-TUI mode.** Print the usage and the reason, never block (recommended). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-8. **Location of the overview.** Full detail in `/router config`, one summary line per integration in `/router status` (recommended, as in the superseded plan). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-9. **Scope.** Blocks listed under Scope now; `providers` and the rest of `model_groups` as a separate plan (recommended). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
-10. **Timing.** Phases 1–2 before the 2.0.0 tag (recommended). Phases 3–5 before or after the tag? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan. Phases 3–5 also landed before any tag. Tagging, the release and the publish remain the owner's call (AGENTS §1).
+1. **Block shape.** Nested `classifier` (recommended) or flat keys with better names? Applied: the recommended option.
+2. **Migration.** Read old keys for one release with a warning (recommended, the existing pattern), or hard break at 2.0.0? Applied: the recommended option.
+3. **Switch name.** `classifier.cloud.enabled` (recommended) or keep `classifier_cloud_chain` and only document it? Applied: the recommended option.
+4. **Command shape.** Generic `set`/`unset` by path against the table (recommended) or one subcommand per key? Applied: the recommended option.
+5. **Unknown candidate.** Refuse the write when pi does not know the model (recommended, AGENTS §9), or store it with a warning? Applied: the recommended option.
+6. **Wizard scope.** Only keys marked `wizard` in the table (recommended: classifier on/off, cloud candidates, integrations enable and mode), or every key? Applied: the recommended option.
+7. **Non-TUI mode.** Print the usage and the reason, never block (recommended). Applied: the recommended option.
+8. **Location of the overview.** Full detail in `/router config`, one summary line per integration in `/router status` (recommended, as in the superseded plan). Applied: the recommended option.
+9. **Scope.** Blocks listed under Scope now; `providers` and the rest of `model_groups` as a separate plan (recommended). Applied: the recommended option.
+10. **Timing.** Phases 1–2 before the 2.0.0 tag (recommended). Phases 3–5 before or after the tag? Applied: the recommended option. Phases 3–5 also landed before any tag. Tagging, the release and the publish remain the owner's call (AGENTS §1).
 
 **Deviations from the Solution text:**
 

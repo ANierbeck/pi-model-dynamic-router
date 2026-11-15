@@ -10,6 +10,8 @@ appropriate model based on the request's **complexity/category**.
 > from what the local Ollama daemon reports and verified by a probe (no
 > shipped model names, ADR-0025); the local chain answers first and the
 > cloud leg (`classifier.cloud.enabled`) runs only when it gives no answer
+> (or, with the opt-in `classifier.cloud.escalate_low_confidence`, a
+> low-confidence one)
 > (see the README section "Dynamic Group" for the shipped behavior and
 > `/router config classifier` for the `classifier` keys in effect). No user
 > confirmation is involved at runtime, and there is **no cost-based rerouting**: categories
@@ -89,8 +91,10 @@ the mapping is configurable per user via `category_groups`. There is no
 - **Workflow (shipped)**:
   1. User sends a prompt while the active model is the `dynamic` group.
   2. **Classification**: the prompt is analyzed by the local models above
-     first; the cloud leg runs only when the local leg gives no answer and
-     `classifier.cloud.enabled` is on (the shipped config turns it on).
+     first; the cloud leg runs only when the local leg gives no answer (or,
+     with the opt-in `classifier.cloud.escalate_low_confidence`, a
+     low-confidence one) and `classifier.cloud.enabled` is on (the shipped
+     config turns it on).
   3. **Routing**: a group is selected via `CATEGORY_TO_GROUP` (e.g.
      `code_simple` → `simple`).
   4. **Model selection**: the existing router picks the best model from

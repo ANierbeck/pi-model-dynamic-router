@@ -33,7 +33,7 @@ flowchart TD
         CLOUD -- "no" --> STATIC
         CLOUD -- "yes" --> CLOUDM["Cloud candidates in order: pinned classifier.cloud.model →<br/>probe-verified list → lazy discovery (output ≤ $5/M or $0 placeholder,<br/>≤ 20 candidates) → static free_models"]
         CLOUDM -- "structured reply" --> CATOUT
-        CLOUDM -- "every candidate fails" --> STATIC["Static classifier<br/>(heuristic last resort, only if allowStaticFallback;<br/>otherwise category continue)"]
+        CLOUDM -- "every candidate fails" --> STATIC["Static classifier<br/>(heuristic last resort, only for a<br/>:use-static model variant;<br/>otherwise category continue)"]
         STATIC --> CATOUT
     end
 
@@ -128,7 +128,12 @@ flowchart TD
    (probe-failed models would burn ~45 s per prompt). The pool excludes
    embedding-only/non-completion models and sorts by parameter size; the probe
    marks models whose backend lacks structured output (501) permanently
-   (`classifier_no_schema`).
+   (`classifier_no_schema`). With the opt-in
+   `classifier.cloud.escalate_low_confidence` (off by default, ADR 0033) a
+   local reply below confidence 0.5 is also sent once to the cloud chain (if
+   `classifier.cloud.enabled` is on); a
+   cloud answer replaces it, otherwise the local reply is kept. The diagram
+   omits that edge.
 2. **Category adjustments (Phase 2/3 of task-type balancing).** `continue`
    ("a short continuation/confirmation", not a self-contained task) inherits
    the previous turn's category; low-confidence replies do too. With no

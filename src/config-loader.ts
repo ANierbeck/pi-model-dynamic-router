@@ -154,8 +154,8 @@ function validateRenamedTopLevelKeys(layer: Partial<Config>, source: string): vo
 
 /**
  * Warn once per file about top-level keys `Config` does not know (a typo such
- * as `classifer_log` would otherwise be merged and silently ignored), naming
- * the closest known key. Only override layers are checked; the shipped defaults
+ * as `classifer` for `classifier` would otherwise be merged and silently
+ * ignored), naming the closest known key when one is close enough. Only override layers are checked; the shipped defaults
  * own their keys. Warn, never throw — the layer is still merged.
  */
 function warnUnknownKeys(layer: Partial<Config>, source: string): void {
