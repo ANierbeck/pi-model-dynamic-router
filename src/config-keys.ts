@@ -262,36 +262,50 @@ export function layerSetsKey(layer: unknown, dottedPath: string): boolean {
   return [dottedPath, ...legacyLayerPaths(dottedPath)].some((p) => getLeaf(layer, p) !== undefined);
 }
 
-/**
- * Leaf paths of a plain object, relative to the object. Arrays are leaves;
- * an empty object has none.
- */
-export function leafPaths(value: unknown, prefix = ''): string[] {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return prefix ? [prefix] : [];
-  }
-  return Object.entries(value as Record<string, unknown>).flatMap(([k, v]) =>
-    leafPaths(v, prefix ? `${prefix}.${k}` : k)
+/** Names of the documented keys inside the `classifier` block, e.g. `cloud.enabled`. */
+function classifierKeyNames(): string[] {
+  return CONFIG_KEYS.filter((k) => k.path.startsWith('classifier.')).map((k) =>
+    k.path.slice('classifier.'.length)
   );
 }
 
 /**
- * Paths inside a `classifier` block (relative to `classifier`, e.g.
- * `cloud.enable`) that the table does not know. Empty when all are known.
+ * Key paths inside a `classifier` block (relative to `classifier`, e.g.
+ * `cloud.enable`) that the table does not know, as key segments. Empty when all
+ * are known.
+ *
+ * A key written with a dot (`{"log.enabled": false}`) is a literal key, not the
+ * nested path the reader resolves, so it is reported as well — the segments
+ * keep it deletable.
  */
-export function unknownClassifierKeys(block: unknown): string[] {
-  const known = CONFIG_KEYS.filter((k) => k.path.startsWith('classifier.')).map((k) =>
-    k.path.slice('classifier.'.length)
+export function unknownClassifierKeyPaths(block: unknown): string[][] {
+  const known = classifierKeyNames();
+  const found: string[][] = [];
+  const walk = (value: unknown, prefix: string[]): void => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      if (prefix.length > 0) found.push(prefix);
+      return;
+    }
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const path = [...prefix, k];
+      if (k.includes('.')) found.push(path);
+      else walk(v, path);
+    }
+  };
+  walk(block, []);
+  return found.filter(
+    (segs) => segs[segs.length - 1].includes('.') || !known.includes(segs.join('.'))
   );
-  return leafPaths(block).filter((p) => !known.includes(p));
+}
+
+/** The same paths as dotted strings, for messages and tests. */
+export function unknownClassifierKeys(block: unknown): string[] {
+  return unknownClassifierKeyPaths(block).map((segs) => segs.join('.'));
 }
 
 /** The known classifier path a typo most likely meant, or undefined. */
 export function suggestClassifierKey(relativePath: string): string | undefined {
-  const known = CONFIG_KEYS.filter((k) => k.path.startsWith('classifier.')).map((k) =>
-    k.path.slice('classifier.'.length)
-  );
-  return closestKey(relativePath, known);
+  return closestKey(relativePath, classifierKeyNames());
 }
 
 /**

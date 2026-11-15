@@ -270,7 +270,15 @@ export function getLeaf(root: unknown, dotted: string): unknown {
 
 /** Removes a dotted leaf from a plain object tree, dropping parents left empty. */
 export function deleteLeaf(root: Record<string, unknown>, dotted: string): void {
-  const parts = dotted.split('.');
+  deleteKeyPath(root, dotted.split('.'));
+}
+
+/**
+ * Removes the key at `parts` from a plain object tree, dropping parents left
+ * empty. The segments are literal keys, so a key that itself contains a dot
+ * (`{"log.enabled": false}`) can be removed.
+ */
+export function deleteKeyPath(root: Record<string, unknown>, parts: readonly string[]): void {
   const chain: Array<Record<string, unknown>> = [root];
   for (const part of parts.slice(0, -1)) {
     const next = chain[chain.length - 1][part];

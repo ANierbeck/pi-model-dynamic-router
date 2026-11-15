@@ -19,7 +19,7 @@ vi.mock('../src/logger.ts', async (orig) => {
 });
 
 const layers = useConfigLayers('classifier-block');
-const { loadWithProjectLayer, loadShipped, warnings } = layers;
+const { loadWithProjectLayer, loadWithGlobalLayer, loadShipped, warnings } = layers;
 
 describe('the shipped config uses the classifier block', () => {
   it('sets the cloud chain and the log in the block, not on the dynamic group', () => {
@@ -91,6 +91,33 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
     expect(count('classifier.cloud.enable:')).toBe(2);
   });
 
+  // Every warn-once family the loader keeps per layer file: a migration
+  // warning, a renamed top-level key, an unknown key. All three must be
+  // forgotten when the layer file is gone, or the problem stays silent after
+  // it returns.
+  it.each([
+    [
+      'a migration warning',
+      { model_groups: { dynamic: { classifier_cloud_chain: false } } },
+      'classifier_cloud_chain',
+    ],
+    [
+      'a renamed-key warning',
+      { classifier_laya: { enabled: true, checkpoint: 'acme/laya-r2' } },
+      'classifier_laya',
+    ],
+    ['an unknown-key warning', { classifer: { cloud: { enabled: true } } }, '"classifer"'],
+  ])('warns again when the layer was %s in between and the key returns', (_, stale, needle) => {
+    const count = (): number => warnings().filter((m) => m.includes(needle)).length;
+    loadWithProjectLayer(stale);
+    expect(count()).toBe(1);
+
+    fs.rmSync(path.join(layers.paths.cwd, '.pi', 'router-config.json'));
+    loadShipped();
+    loadWithProjectLayer(stale);
+    expect(count()).toBe(2);
+  });
+
   it.each([
     ['missing', (file: string): void => fs.rmSync(file)],
     ['unparseable', (file: string): void => fs.writeFileSync(file, '{ not json')],
@@ -107,11 +134,29 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
     expect(count()).toBe(2);
   });
 
+  it('warns again when the global layer was missing in between and the key returns', () => {
+    // The same forget rule binds the user layer: it is the file most users have.
+    const stale = { classifier_laya: { enabled: true, checkpoint: 'acme/laya-r2' } };
+    const count = (): number => warnings().filter((m) => m.includes('classifier_laya')).length;
+    loadWithGlobalLayer(stale);
+    expect(count()).toBe(1);
+
+    fs.rmSync(path.join(layers.paths.agent, 'router-config.user.json'));
+    loadShipped();
+    loadWithGlobalLayer(stale);
+    expect(count()).toBe(2);
+  });
+
   it('reports a dotted classifier_log name inside a model group: it is not applied there', () => {
     const { config } = loadWithProjectLayer({
       model_groups: { dynamic: { 'classifier_log.enabled': false } },
     });
     expect(config.classifier?.log?.enabled).toBe(true); // shipped value, untouched
+    // Removed from the group, not only reported: the layer is merged after this.
+    // Object.hasOwn, not toHaveProperty: a dotted string is a deep path there.
+    expect(Object.hasOwn(config.model_groups.dynamic as object, 'classifier_log.enabled')).toBe(
+      false
+    );
     const w = warnings().filter((m) => m.includes('model_groups.dynamic.classifier_log.enabled'));
     expect(w).toHaveLength(1);
     expect(w[0]).toContain('classifier.log.enabled');
@@ -186,6 +231,18 @@ describe('unknown keys inside the classifier block are reported', () => {
     const { config } = loadWithProjectLayer({ classifier: { cloud: { enable: false } } });
     expect(config.classifier?.cloud).not.toHaveProperty('enable');
     expect(config.classifier?.cloud?.enabled).toBe(true);
+  });
+
+  it('reports a dotted key name inside the block: the reader only sees nested keys', () => {
+    // `{"log.enabled": false}` is a literal key, not the nested path the reader
+    // reads, so it would be silently ineffective — the same defect as a dotted
+    // name on a model group, one level up.
+    const { config } = loadWithProjectLayer({ classifier: { 'log.enabled': false } });
+    expect(config.classifier?.log?.enabled).toBe(true); // shipped value, untouched
+    const w = warnings().filter((m) => m.includes('classifier.log.enabled:'));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('ignored');
+    expect(Object.hasOwn(config.classifier as object, 'log.enabled')).toBe(false);
   });
 });
 

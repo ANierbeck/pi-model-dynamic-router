@@ -26,8 +26,8 @@ import { warnLog } from './logger.ts';
 import { LAYA_SPEC } from './laya-classifier.ts';
 import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
-import { deleteLeaf, isRecord, textOf } from './utils.ts';
-import { CONFIG_KEYS, suggestClassifierKey, unknownClassifierKeys } from './config-keys.ts';
+import { deleteKeyPath, isRecord, textOf } from './utils.ts';
+import { CONFIG_KEYS, suggestClassifierKey, unknownClassifierKeyPaths } from './config-keys.ts';
 import { piAgentDir } from './agent-dir.ts';
 
 // Re-exported: callers import it from here since before the move to agent-dir.ts.
@@ -101,7 +101,7 @@ export function loadLayeredConfig(
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
   } else {
-    forgetGoneClassifierWarnings(globalOverridePath, new Set());
+    forgetGoneLayerWarnings(globalOverridePath);
   }
 
   // 3. Project-local override (<cwd>/.pi/router-config.json).
@@ -115,7 +115,7 @@ export function loadLayeredConfig(
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
   } else {
-    forgetGoneClassifierWarnings(projectOverridePath, new Set());
+    forgetGoneLayerWarnings(projectOverridePath);
   }
 
   validateCategoryGroups(config);
@@ -339,7 +339,7 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
           // A `classifier_log.*` name was a top-level block, never a group key.
           warn(
             `model_groups.${name}.${old}`,
-            `[router] ${source} model_groups.${name}.${old}: ignored — it belongs at the top level as "${newPath}"`
+            `[router] ${source} model_groups.${name}.${old}: ignored — the classifier settings are read from the "classifier" block (${newPath})`
           );
         } else if (name === 'dynamic') {
           assign(newPath, value, `model_groups.dynamic.${old}`);
@@ -375,13 +375,20 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
 
   // 3. Typos inside the block are reported and removed, so they cannot take effect.
   if (isRecord(bag.classifier)) {
-    for (const rel of unknownClassifierKeys(bag.classifier)) {
+    for (const segs of unknownClassifierKeyPaths(bag.classifier)) {
+      const rel = segs.join('.');
+      // A key written with a dot is a literal key; the reader resolves nested
+      // keys, so the value would be silently ineffective.
+      const dotted = segs[segs.length - 1].includes('.');
       const near = suggestClassifierKey(rel);
+      const hint = near && near !== rel ? `; did you mean "classifier.${near}"?` : '';
       warn(
         `classifier.${rel}`,
-        `[router] ${source} classifier.${rel}: unknown key — ignored${near ? `; did you mean "classifier.${near}"?` : ''}`
+        dotted
+          ? `[router] ${source} classifier.${rel}: ignored — a dotted key name is a literal key, not the nested path the router reads${hint}`
+          : `[router] ${source} classifier.${rel}: unknown key — ignored${hint}`
       );
-      deleteLeaf(bag.classifier, rel);
+      deleteKeyPath(bag.classifier, segs);
     }
   }
 
@@ -390,14 +397,28 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
 
 /**
  * A migration problem that is gone is forgotten, so it is reported again if it
- * returns. Also called with an empty set when the layer file is missing or
- * unparseable: its old warnings no longer describe anything.
+ * returns.
  */
 function forgetGoneClassifierWarnings(source: string, stillWarned: Set<string>): void {
   for (const key of classifierMigrationWarned.get(source) ?? []) {
     if (!stillWarned.has(key)) forgetWarnOnce(key);
   }
   classifierMigrationWarned.set(source, stillWarned);
+}
+
+/**
+ * The layer file is missing or unparseable: every warning it produced no
+ * longer describes anything, so all three warn-once families are forgotten and
+ * reported again if the same problem returns. A parsed layer forgets its own
+ * keys as they disappear (the sibling validators); this is the case they never
+ * see, which used to leave the last warning suppressed until a restart.
+ */
+function forgetGoneLayerWarnings(source: string): void {
+  forgetGoneClassifierWarnings(source, new Set());
+  for (const oldKey of Object.keys(RENAMED_TOP_LEVEL_KEYS)) {
+    forgetWarnOnce(`${source}:renamed:${oldKey}`);
+  }
+  forgetWarnOnce(`${source}:unknown`);
 }
 
 /**
