@@ -399,3 +399,28 @@ describe('switches and robustness', () => {
     expect(typeof records()[0].proc).toBe('string');
   });
 });
+
+describe('ADR-0030: saved HINT correction steps', () => {
+  it('a saved correction hit is recorded with stage correction and the correction step', async () => {
+    const content = 'Summarise the decision log rotation rules for the team';
+    const cache = localModelCache();
+    await classifyPrompt(`HINT: category planning ${content}`, { cfg: cfgWith(), cache } as any);
+    await classifyPrompt(content, { cfg: cfgWith(), cache } as any);
+    const [, hit] = records();
+    expect(hit).toMatchObject({ stage: 'correction' });
+    expect(hit.steps).toContain('correction');
+    expect(hit.final.category).toBe('planning');
+  });
+
+  it('a stale correction is logged with the correction-stale step and not applied', async () => {
+    const content = 'Summarise the decision log rotation rules for the team';
+    const cache = localModelCache() as any;
+    cache.hint_corrections = {
+      [content]: { hintType: 'category', target: 'roadmap', savedAt: '2020-01-01T00:00:00.000Z' },
+    };
+    await classifyPrompt(content, { cfg: cfgWith(), cache, allowStaticFallback: true } as any);
+    const [r] = records();
+    expect(r.stage).not.toBe('correction');
+    expect(r.steps).toContain('correction-stale');
+  });
+});

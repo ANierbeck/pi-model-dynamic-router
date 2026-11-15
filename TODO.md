@@ -315,7 +315,7 @@ MIT), so the notice must not be dropped before that is settled.
   router only enriches what Pi already resolves.
 
 ### Intelligent Routing
-- [ ] **Implement learning from user feedback** - Improve classification based on corrections. ADR 0002 (Option B, accepted, not implemented) and ADR 0030 (proposed 2026-11-14: build the exact-match store in `cache.hint_corrections` first; similarity is a later, separate step; multi-label is withdrawn, ADR 0031) — awaiting the owner's decision on ADR 0030
+- [ ] **Implement learning from user feedback** - Improve classification based on corrections. ADR 0002 (Option B, accepted, not implemented) and ADR 0030 (proposed 2026-11-14: build the exact-match store in `cache.hint_corrections` first; similarity is a later, separate step; multi-label is withdrawn, ADR 0031) — ADR 0030 Option 1 is built (`HINT: category <name>`, `cache.hint_corrections`, `/router corrections`); the decisions it needed were taken at the recommended values. Still open: Option 2 (similarity) only if reworded HINTs repeat often enough to count, and decision-log Phase 2 (outcome join). Open owner decisions from the build review: (a) scope — corrections live in the shared `scan-cache.json`, so a correction typed in one project applies to identical prompts in every project; decide whether they belong to the per-project state like `session_errors`; (b) recency — lookups move an entry to the front in memory only, so eviction order after a restart is approximate; accept, or persist the order
 ### Integration & Extensibility
 - **Optional integrations: one contract, one config block** — ✅ DONE 2026-11-12
   (`docs/plans/2026-11-08-optional-integrations-config.md`, status done; closed

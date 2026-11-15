@@ -207,6 +207,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/classifier-decision-log.ts` | One candidate attempt inside an LLM classifier chain, as recorded in the decision log (ADR-0027) |
 | `src/classifier-local-probe.ts` | Probe for local classifier models; cold-start bound, also the runtime primary timeout |
 | `src/classifier-summary.ts` | `/router classifier [days]`: a summary of the classifier decision log for a time window (ADR-0027 Phase 5) |
+| `src/hint-corrections.ts` | Saved category corrections from `HINT: category <name>` (ADR-0030 Option 1): exact-match store in `cache.hint_corrections`, capped, stale names never applied |
 | `src/commands.ts` | The `/router` slash command, extracted from `index.ts` |
 | `src/config-schema.ts` | Keys each config layer may contain; unknown keys are reported, `_`/`$` keys are annotations |
 | `src/config-keys.ts` | Description table for the user-facing config (path, type, shipped default, pre-2.0 names, how the router may change it); the loader's classifier migration and typo check read it |

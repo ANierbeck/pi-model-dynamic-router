@@ -75,6 +75,7 @@ import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
+import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
  * Dependencies createCommands reads from index.ts's extension closure. Exposed as
@@ -1048,6 +1049,18 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
     ],
   },
   {
+    name: 'corrections',
+    usage: 'corrections [list|clear]',
+    summary: 'Saved HINT category corrections: list them, or clear all (ADR-0030)',
+    completions: [
+      {
+        value: 'corrections',
+        label: 'corrections',
+        description: 'Saved HINT category corrections: list, or clear all',
+      },
+    ],
+  },
+  {
     name: 'cost',
     usage: 'cost',
     summary: 'Cost report for all session models and the 1/7/30-day token windows',
@@ -1181,6 +1194,30 @@ function formatUnknownRouterSubcommand(arg: string): string {
   return [`Unknown /router subcommand "${arg}"${hint}`, '', ...routerCommandListLines()].join('\n');
 }
 
+/**
+ * `/router corrections [list|clear]`: the saved HINT category corrections
+ * (ADR-0030 Option 1). The listing shows the exact text each correction matches;
+ * clear drops all of them and writes the cache at once.
+ */
+function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
+  if (sub === '' || sub === 'list') {
+    const rows = listCorrections(rt.cache.hint_corrections ?? {});
+    if (rows.length === 0) return 'No saved HINT corrections.';
+    return [
+      'Saved HINT corrections (most recent first):',
+      ...rows.map((r) => `  ${r.category}  ${r.savedAt}  ${JSON.stringify(r.key)}`),
+    ].join('\n');
+  }
+  if (sub === 'clear') {
+    const store = rt.cache.hint_corrections ?? {};
+    const dropped = clearCorrections(store);
+    rt.cache.hint_corrections = store;
+    rt.cacheManager.saveCache();
+    return `Cleared ${dropped} saved HINT correction${dropped === 1 ? '' : 's'}.`;
+  }
+  return 'Usage: /router corrections [list|clear]';
+}
+
 export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
@@ -1232,6 +1269,15 @@ export function createCommands(rt: CommandDeps): void {
               days === null
                 ? 'Usage: /router classifier [days] (1..90, default 7)'
                 : readClassifierSummary(days).join('\n'),
+              'info'
+            );
+            return;
+          }
+
+          if (arg === 'corrections' || arg?.startsWith('corrections ')) {
+            // ADR-0030 Option 1: list or clear the saved HINT category corrections.
+            ctx.ui.notify(
+              handleCorrectionsCommand(rt, arg.slice('corrections'.length).trim()),
               'info'
             );
             return;
