@@ -882,6 +882,16 @@ async function classifyPromptUncounted(
     if (categoryHint.content.length > 0) {
       return classifyPromptUncounted(categoryHint.content, options, internal);
     }
+    // No content behind the head: the raw prompt (marker included) must not go
+    // to the LLM either — a hint:* answer to it would become a pin. Deterministic
+    // continue-style fallback instead (inheritPreviousCategory still applies on
+    // top of it, like for every other continue producer).
+    noteSource('hint');
+    return {
+      category: 'continue',
+      reason: `Unknown HINT category "${categoryHint.name}" with no prompt behind it — falling back to continue`,
+      confidence: 0,
+    };
   }
 
   // Detect HINT prefix deterministically — no LLM needed, always correct.

@@ -16,7 +16,7 @@ import {
   capCorrections,
 } from '../src/hint-corrections.ts';
 import { CacheManager } from '../src/cache.ts';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { VALID_CATEGORIES } from '../src/classification-prompt.ts';
@@ -202,6 +202,72 @@ describe('capCorrections (after a merge from another process)', () => {
       expect(kept).toContain(key(MAX_HINT_CORRECTIONS + MAX_HINT_CORRECTIONS - 1));
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('corrections survive a restart (CacheManager round-trip on the same dir)', () => {
+  const dir = (): string => mkdtempSync(path.join(tmpdir(), 'hint-roundtrip-'));
+  const key = (i: number): string => `round trip prompt number ${i} with five words`;
+  const at = (i: number): string => new Date(Date.UTC(2026, 10, 14, 0, 0, i)).toISOString();
+
+  it('a fresh CacheManager with an empty cache object adopts a persisted correction on loadCache', () => {
+    const d = dir();
+    try {
+      const first = new CacheManager(d);
+      const c1 = first.getCache() as any;
+      c1.hint_corrections = {};
+      recordCorrection(c1.hint_corrections, PROMPT, 'planning', '2026-11-14T10:00:00.000Z');
+      first.saveCache();
+
+      // Fresh manager on the same dir, empty in-memory cache object.
+      const existing: any = {};
+      new CacheManager(d, existing).loadCache();
+      expect(lookupCorrection(existing.hint_corrections ?? {}, PROMPT)).toEqual({
+        category: 'planning',
+      });
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it("mergeExternal adopts another process's corrections and re-caps them at MAX_HINT_CORRECTIONS", () => {
+    const d = dir();
+    try {
+      // Another process wrote MORE than the cap straight to the file.
+      const other: any = { lastScanTimestamp: 1, hint_corrections: {} };
+      for (let i = 0; i < MAX_HINT_CORRECTIONS + 3; i++) {
+        other.hint_corrections[key(i)] = { hintType: 'category', target: 'simple', savedAt: at(i) };
+      }
+      new CacheManager(d, other).saveCache();
+
+      // A fresh manager whose memory is NOT empty takes the mergeExternal path.
+      const mine: any = { lastScanTimestamp: 2 };
+      new CacheManager(d, mine).loadCache();
+      const store = mine.hint_corrections ?? {};
+      expect(Object.keys(store)).toHaveLength(MAX_HINT_CORRECTIONS);
+      // The newest entries survive the re-cap, the oldest are dropped.
+      expect(lookupCorrection(store, key(MAX_HINT_CORRECTIONS + 2))).toEqual({
+        category: 'simple',
+      });
+      expect(lookupCorrection(store, key(0))).toBeNull();
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('the cache file is written owner-only (mode 0600): its correction keys are raw prompt texts', () => {
+    const d = dir();
+    try {
+      const m = new CacheManager(d);
+      const c = m.getCache() as any;
+      c.hint_corrections = {};
+      recordCorrection(c.hint_corrections, PROMPT, 'planning', '2026-11-14T10:00:00.000Z');
+      m.saveCache();
+      const mode = statSync(path.join(d, '.cache', 'scan-cache.json')).mode & 0o777;
+      expect(mode).toBe(0o600);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
     }
   });
 });

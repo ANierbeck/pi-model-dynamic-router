@@ -265,7 +265,6 @@ const CONFIG_USAGE_LINES = [
   '  /router config unexclude <ref|glob|provider>  remove a user-layer exclusion',
   '  /router config compaction on|off        cache-aware auto-compaction (Phase 5b)',
   '  /router config integration <name> on|off|<mode>  switch an optional integration (e.g. laya)',
-  '  /router corrections [list|clear]        saved HINT category corrections (ADR-0030)',
 ];
 
 /**

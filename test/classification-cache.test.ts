@@ -196,3 +196,72 @@ describe('a correction notice reaches the user, not only the log (ADR-0030)', ()
     expect(notify).toHaveBeenCalledWith(staleCorrectionMessage('roadmap'));
   });
 });
+
+describe('an unknown category name with NO content behind the head (ADR-0030 review)', () => {
+  beforeEach(() => {
+    vi.mocked(ollamaUtils.callOllama).mockClear();
+  });
+
+  it('never sends the HINT head to the classifier: no LLM call, no hint:* answer, deterministic continue fallback', async () => {
+    const notify = vi.fn();
+    const r = await classifyPrompt('HINT: category roadmap', {
+      cache: localModelCache(),
+      allowStaticFallback: true,
+      notify,
+    } as any);
+    // The marker never reached the LLM — nothing was sent at all.
+    expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
+    // A deterministic result, not a hint:* pin the LLM could have invented.
+    expect((r as any).hintType).toBeUndefined();
+    expect(r.category).toBe('continue');
+    expect(r.reason).toMatch(/roadmap/);
+    // The unknown name is still reported.
+    expect(notify).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
+    expect(vi.mocked(logger.warnLog)).toHaveBeenCalledWith(unknownCategoryMessage('roadmap'));
+  });
+});
+
+describe('a saved correction beats the classify cache (ADR-0030 review precedence pin)', () => {
+  beforeEach(() => {
+    vi.mocked(ollamaUtils.callOllama).mockClear();
+  });
+
+  it('classify via the LLM first (fills the cache), then HINT-save, then re-ask: the correction wins with no second LLM call', async () => {
+    const FOURTH = 'Write the end to end test for the new metrics export path';
+    const cache = localModelCache();
+    // 1. The LLM classifies the content — this fills the classify cache.
+    const r1 = await classifyPrompt(FOURTH, { cache, allowStaticFallback: true } as any);
+    expect(r1.category).toBe('code_complex');
+    expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
+    // 2. The HINT form saves the correction for the same content.
+    const r2 = await classifyPrompt(`HINT: category planning ${FOURTH}`, { cache } as any);
+    expect(r2.category).toBe('planning');
+    expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
+    // 3. Re-asking the same content without HINT: the correction decides —
+    //    before the classify cache — and the LLM is not called again.
+    const r3 = await classifyPrompt(FOURTH, { cache, allowStaticFallback: true } as any);
+    expect(r3.category).toBe('planning');
+    expect(r3.reason).toMatch(/Saved HINT correction/);
+    expect(vi.mocked(ollamaUtils.callOllama)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a correction to continue resolves through the continue-inheritance (ADR-0030)', () => {
+  it('inherits the previous turn category instead of routing the bare continue default', async () => {
+    const FIFTH = 'Carry on with the refactor of the metrics export module';
+    const cache = localModelCache() as any;
+    cache.hint_corrections = {
+      [FIFTH]: { hintType: 'category', target: 'continue', savedAt: LONG_AGO },
+    };
+    const r = await classifyPrompt(FIFTH, {
+      cache,
+      allowStaticFallback: true,
+      context: { lastCategory: 'code_complex' },
+    } as any);
+    // No classifier call: the saved correction decided.
+    expect(vi.mocked(ollamaUtils.callOllama)).not.toHaveBeenCalled();
+    // 'continue' means "same as before": the previous category is inherited.
+    expect(r.category).toBe('code_complex');
+    expect((r as any).inheritedFromContinue).toBe(true);
+  });
+});

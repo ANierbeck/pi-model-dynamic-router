@@ -46,11 +46,18 @@ const INSTANCE_KEYS = ['session_errors', 'usage_log'] as const;
  */
 const VOLATILE_KEYS = ['provider_breaker'] as const;
 
-/** Atomic JSON write: temp file in the same directory, then rename. */
+/**
+ * Atomic JSON write: temp file in the same directory, then rename. The file is
+ * created owner-only (0600) and the mode is re-asserted before the rename, so
+ * it survives any umask: the cache holds user data — the raw prompt texts that
+ * are the correction keys in `hint_corrections` (ADR-0030) — and the per-project
+ * file holds session errors, both private like the 0600 decision log.
+ */
 function writeJsonAtomic(file: string, data: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600);
   fs.renameSync(tmp, file);
 }
 
