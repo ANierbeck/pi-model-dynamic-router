@@ -21,7 +21,7 @@
 //      marked in cache.classifier_no_schema. The ordered working list is
 //      persisted as cache.classifier_local_models.
 //   3. RESOLUTION at classification time — user pin (classifier.local.model /
-//      classifier.local.fallback in the dynamic group, optional) › probed list ›
+//      classifier.local.fallback in the classifier block, optional) › probed list ›
 //      provisional (the candidate order itself, before the first probe) ›
 //      nothing (the local leg is skipped; the chain continues with cloud and
 //      the static classifier).
@@ -224,7 +224,7 @@ export async function probeLocalClassifierCandidates(
 // ── Resolution at classification time ───────────────────────────────────────
 
 /**
- * The user's optional local pins from a dynamic group (`classifier.local.model` /
+ * The user's optional local pins from the classifier block (`classifier.local.model` /
  * `classifier.local.fallback`, no shipped value), as bare Ollama model names.
  */
 export function localClassifierPins(local: ClassifierConfig['local'] | undefined): {

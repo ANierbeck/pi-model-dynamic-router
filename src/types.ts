@@ -327,8 +327,8 @@ export interface Config {
   integrations?: IntegrationsConfig;
   /**
    * Classifier configuration: the local chain, the cloud chain and the decision
-   * log. Replaces the `dynamic`-group keys and the top-level `classifier_log`
-   * of 2.0-pre (read for one release with a warning, see config-loader.ts).
+   * log. Replaces the pre-2.0 `dynamic`-group keys and the top-level
+   * `classifier_log` (read for one release with a warning, see config-loader.ts).
    * The key table with every path is src/config-keys.ts.
    */
   classifier?: ClassifierConfig;

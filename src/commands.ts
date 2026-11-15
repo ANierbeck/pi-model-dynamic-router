@@ -309,7 +309,6 @@ function compactionStateLine(cfg: {
   return `Compaction (context_budget): ${enabled}${detail}`;
 }
 
-/** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
 /**
  * `/router config integration <name> on|off|<mode>`: one write to the user
  * layer, then the authoritative re-read. A mode implies on. The reply states
@@ -379,6 +378,7 @@ function setIntegration(rt: CommandDeps, arg: string): string {
   return `${name} did not take effect — saved to ${res.written}; see the router log for integrations.${name}.`;
 }
 
+/** `/router config compaction on|off` — persist the master switch to the user layer, apply live. */
 function setCompaction(rt: CommandDeps, on: boolean): string {
   const res = openUserConfigStore().applyDelta({ context_budget: { enabled: on } });
   if (!res.ok) return res.error;
@@ -882,12 +882,11 @@ interface RouterSubcommand {
 }
 
 /**
- * The /router subcommands. Single source for the command description (Pi's
- * palette), the autocomplete list, the command list under the bare overview
- * and the unknown-subcommand reply, so the four cannot drift apart. Handling
- * stays in the handler; test/router-command-help.test.ts pins both sides.
+ * The `/router config …` subcommands, nested under the `config` entry of
+ * ROUTER_SUBCOMMANDS. Single source for the `config [a|b|…]` part of the
+ * command description, the `config …` completions and the config usage
+ * lines (configUsageLines). Handling stays in the handler.
  */
-/** `/router config …` subcommands. The overview, the usage and the completions are generated from this list. */
 const CONFIG_SUBCOMMANDS: readonly RouterSubcommand[] = [
   {
     name: 'show',
@@ -1002,6 +1001,12 @@ const CONFIG_SUBCOMMANDS: readonly RouterSubcommand[] = [
   },
 ];
 
+/**
+ * The /router subcommands. Single source for the command description (Pi's
+ * palette), the autocomplete list, the command list under the bare overview
+ * and the unknown-subcommand reply, so the four cannot drift apart. Handling
+ * stays in the handler; test/router-command-help.test.ts pins both sides.
+ */
 const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
   {
     name: 'scan',

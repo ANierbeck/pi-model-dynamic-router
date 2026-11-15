@@ -58,8 +58,10 @@ this module asks a local LLM to match it to a known GDPval slug.
 ### `src/local-llm.ts` — Provider-agnostic local LLM caller
 
 - `resolveLocalProvider(deps)` — discovers the local provider (Ollama OR
-  LM Studio) generically, ranks by speed/suitability (not hardcoded to
-  Ollama). `gemma2:2b` is ranked last (too weak for matching).
+  LM Studio) generically and ranks its completion-capable models by the
+  parameter size the scan reported: the largest model within the size
+  budget first, larger ones after, size-unknown ones last (ADR-0025 — no
+  model names).
 - `callLocalLlm(prompt, deps)` — calls the local provider via OpenAI
   `/chat/completions`, falls back to free OpenRouter cloud models on failure.
   Used only for GDPval model-slug matching (matching a discovered model ID
@@ -67,8 +69,8 @@ this module asks a local LLM to match it to a known GDPval slug.
   model IDs/labels, never user conversation content. Unconditional (not
   gated by an opt-in flag) because no user data is involved; contrast with
   the content-classifier's `classifier.cloud.enabled` leg, which does carry raw
-  user prompt text; the shipped `dynamic` group turns it on (see the README
-  section "Data handling & privacy").
+  user prompt text; the shipped `router-config.json` turns it on (see the
+  README section "Data handling & privacy").
 
 ### `src/rate-limit.ts` — Single source of truth for cooldown checks
 

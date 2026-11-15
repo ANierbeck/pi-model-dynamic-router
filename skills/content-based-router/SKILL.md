@@ -4,13 +4,15 @@
 routing logic**: it analyzes the user's prompt and dynamically selects the
 appropriate model based on the request's **complexity/category**.
 
-> **Current state (v1.6.0)**: this document originated as the design sketch
+> **Current state (2.0)**: this document originated as the design sketch
 > for the shipped `dynamic` group. The implementation differs in the
-> details documented below — the classification model is
-> **mistral-nemo:latest** (primary) with **gemma2:2b** as the local
-> fallback and a cloud-first candidate chain (see the README section
-> "Dynamic Group" for the shipped behavior). No user confirmation is
-> involved at runtime, and there is **no cost-based rerouting**: categories
+> details documented below — the classification models are **derived**
+> from what the local Ollama daemon reports and verified by a probe (no
+> shipped model names, ADR-0025); the local chain answers first and the
+> cloud leg (`classifier.cloud.enabled`) runs only when it gives no answer
+> (see the README section "Dynamic Group" for the shipped behavior and
+> `/router config classifier` for the `classifier` keys in effect). No user
+> confirmation is involved at runtime, and there is **no cost-based rerouting**: categories
 > map straight to model groups via the shipped `CATEGORY_TO_GROUP` table
 > (`src/content-classifier.ts`). Anything in this document that reads like
 > a runtime prompt to the user ("Should I use a cheaper model?" — section 3
@@ -36,9 +38,9 @@ Examples:
 
 ## How it works
 ### 1. Prompt classification
-A light local model (shipped: `ollama/mistral-nemo:latest`, local fallback
-`ollama/gemma2:2b`) analyzes the user's request and classifies it into one
-of the following categories:
+A light local model (derived from the scan and probe-verified, or the
+user's `classifier.local.model` / `classifier.local.fallback` pin) analyzes
+the user's request and classifies it into one of the following categories:
 
 The categories **shipped** in `src/content-classifier.ts` (the authoritative
 list — the original sketch had only six):
@@ -86,8 +88,9 @@ the mapping is configurable per user via `category_groups`. There is no
   `src/content-classifier.ts`).
 - **Workflow (shipped)**:
   1. User sends a prompt while the active model is the `dynamic` group.
-  2. **Classification**: the prompt is analyzed (cloud-first chain when
-     `classifier_cloud_chain` is enabled, then the local models above).
+  2. **Classification**: the prompt is analyzed by the local models above
+     first; the cloud leg runs only when the local leg gives no answer and
+     `classifier.cloud.enabled` is on (the shipped config turns it on).
   3. **Routing**: a group is selected via `CATEGORY_TO_GROUP` (e.g.
      `code_simple` → `simple`).
   4. **Model selection**: the existing router picks the best model from

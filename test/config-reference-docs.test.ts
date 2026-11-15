@@ -8,6 +8,8 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CONFIG_KEYS } from '../src/config-keys.ts';
 import { describeClassifierChain } from '../src/classifier-chain.ts';
 import type { Config } from '../src/types.ts';
@@ -25,6 +27,15 @@ const PROSE_DOCS = [
   '../docs/config-override.md',
   '../docs/routing-flow.md',
 ];
+
+/** Further docs that describe the classifier; they must not name removed keys either. */
+const SKILL_DOCS = fs
+  .readdirSync(new URL('../skills/', import.meta.url), { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .map((d) => `../skills/${d.name}/SKILL.md`);
+const KEY_CHECKED_DOCS = [...PROSE_DOCS, '../docs/architecture.md', ...SKILL_DOCS];
+
+const REFERENCE = fileURLToPath(new URL('../docs/config-reference.md', import.meta.url));
 
 /** Key names the 2.0 block layout removed; the reference owns them (legacy column). */
 const REMOVED_KEYS = [
@@ -62,7 +73,7 @@ describe('docs/config-reference.md — generated from the key table', () => {
 });
 
 describe('prose docs — concepts stay, keys link to the reference', () => {
-  it.each(PROSE_DOCS)('%s names no removed pre-2.0 classifier key', (p) => {
+  it.each(KEY_CHECKED_DOCS)('%s names no removed pre-2.0 classifier key', (p) => {
     const doc = read(p);
     for (const name of REMOVED_KEYS) {
       expect(doc.includes(name), `${p} still names ${name}`).toBe(false);
@@ -70,7 +81,13 @@ describe('prose docs — concepts stay, keys link to the reference', () => {
   });
 
   it.each(PROSE_DOCS)('%s links to the reference', (p) => {
-    expect(read(p)).toContain('docs/config-reference.md');
+    // A markdown link whose target, resolved from the doc's own directory,
+    // is the reference file — a backticked path or a wrong relative path fails.
+    const dir = path.dirname(fileURLToPath(new URL(p, import.meta.url)));
+    const targets = [...read(p).matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)].map((m) =>
+      path.resolve(dir, m[1])
+    );
+    expect(targets, p).toContain(REFERENCE);
   });
 });
 
@@ -82,6 +99,15 @@ describe('docs/routing-flow.md — the diagram pins the chain step names', () =>
       // arrow), not a bare mention of the id.
       const node = new RegExp(`(^|\\s)${step.id.toUpperCase()}[\\[{(]`, 'm');
       expect(doc, step.id).toMatch(node);
+    }
+  });
+
+  it('every chain step node has an incoming edge', () => {
+    const doc = read('../docs/routing-flow.md');
+    for (const step of describeClassifierChain(shipped)) {
+      // `A --> ID`, `A -- "label" --> ID`, `A -. "label" .-> ID`.
+      const incoming = new RegExp(`(-->|\\.->)\\s*${step.id.toUpperCase()}(?![A-Za-z0-9_])`);
+      expect(doc, step.id).toMatch(incoming);
     }
   });
 });

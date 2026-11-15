@@ -144,7 +144,7 @@ export interface ClassificationOptions {
   cache?: Cache;
   allowCloudChain?: boolean;
   /**
-   * Opt-in (dynamic group `classifier.cloud.escalate_low_confidence`): a local reply
+   * Opt-in (`classifier.cloud.escalate_low_confidence`): a local reply
    * below MIN_CONFIDENCE is not final. The cloud chain is asked once, and its
    * answer replaces the local one; if the cloud produces nothing, the gated
    * local reply is kept. Off by default: prompt text then leaves the machine
@@ -160,8 +160,8 @@ export interface ClassificationOptions {
    */
   cloudTimeoutMs?: number;
   /**
-   * Pinned cloud classifier model ref ("provider/id") from the dynamic
-   * group's classifier.cloud.model config. When set and resolvable, it is
+   * Pinned cloud classifier model ref ("provider/id") from
+   * `classifier.cloud.model`. When set and resolvable, it is
    * tried FIRST in the cloud chain — before the probe-verified
    * cached list. Deterministic override for users who want a specific
    * (e.g. subscription-covered) model to classify, regardless of what
@@ -169,8 +169,8 @@ export interface ClassificationOptions {
    */
   pinnedCloudModel?: string;
   /**
-   * User-configured cloud candidate list (dynamic group
-   * `classifier.cloud.candidates`). When set, it REPLACES the automatic
+   * User-configured cloud candidate list
+   * (`classifier.cloud.candidates`). When set, it REPLACES the automatic
    * candidate chain (probe-verified list, lazy discovery, static free list);
    * the models are tried in the given order. The pinned classifier.cloud.model
    * stays first. The same guards as the automatic chain apply: findModel must
@@ -1136,7 +1136,7 @@ async function classifyPromptUncounted(
         modelsToTry = discovery.getFreeModels();
         source = 'static-free';
       }
-      // Pinned cloud classifier (dynamic group's classifier.cloud.model):
+      // Pinned cloud classifier (classifier.cloud.model):
       // tried FIRST — before the probe-verified list — so a user-pinned
       // (e.g. subscription-covered) model classifies deterministically. The
       // findModel guard in the loop below skips it if pi doesn't know it.
@@ -1527,10 +1527,10 @@ async function classifyPromptUncounted(
     }
   }
 
-  // Cloud-first chain (2026-09-27 rationale: Ollama is a last resort — repeated
-  // MLX wedge incidents pinned the GPU at 100%), then the static fallback. The
-  // whole tail lives in classifyViaLlmChain so the detached background
-  // comparator (live A/B snapshot) runs EXACTLY the chain the main path runs.
+  // The local-first chain (ADR-0032): Ollama, then the cloud leg, then the
+  // static fallback. The whole tail lives in classifyViaLlmChain so the
+  // detached background comparator (live A/B snapshot) runs EXACTLY the
+  // chain the main path runs.
   return classifyViaLlmChain();
 }
 

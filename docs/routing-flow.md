@@ -6,7 +6,7 @@ candidate pool is built and filtered, and what happens when a stream fails.
 It is written at the architecture level — the stable stages and the exact
 config keys that steer them — so it stays useful while code moves. Each stage
 names its owning module for a code entry point. The config keys that steer
-each stage are listed in `docs/config-reference.md`.
+each stage are listed in [docs/config-reference.md](config-reference.md).
 
 The stages are ordered exactly as the runtime executes them.
 
@@ -99,7 +99,7 @@ flowchart TD
     DLOG["Decision log (ADR-0027): one JSONL record per classification,<br/>written at the classifyPrompt choke point<br/>(src/classifier-decision-log.ts)"]
     SUMMARY["/router classifier [days] reads the log and its<br/>rotated files (Phase 5, src/classifier-summary.ts)"]
 
-    TURN["Prompt / turn arrives"] --> PIN
+    TURN["Prompt / turn arrives"] --> LAYA
     CATOUT --> FB
     CATOUT -. "record" .-> DLOG
     DLOG -. "read by" .-> SUMMARY
@@ -117,8 +117,11 @@ flowchart TD
 ## Stage notes
 
 1. **Classification (src/classifier-local-probe.ts, src/content-classifier.ts).**
-   The resolution order is: user pin (`classifier.local.model` / `classifier.local.fallback`)
-   › probe-verified local list (`classifier_local_models`, persisted) ›
+   The turn enters at the Laya stage (`integrations.laya.enabled`). In `active`
+   mode a confident Laya answer is the category and the chain below never runs;
+   in `shadow` mode, or when Laya is off, unavailable or not confident, the
+   local chain runs as if Laya were absent. The local resolution order is:
+   user pin (`classifier.local.model` / `classifier.local.fallback`) › probe-verified local list (`classifier_local_models`, persisted) ›
    provisional candidate order (only before the first probe; models the scan has
    explicitly seen answer completions) › none. An **empty probed list is final**
    per the types contract — it must not fall back to provisional candidates
