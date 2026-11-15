@@ -100,6 +100,8 @@ export function loadLayeredConfig(
     warnUnknownKeys(globalOverride, globalOverridePath);
     config = deepMergeConfig(config, globalOverride);
     sources.push(globalOverridePath);
+  } else {
+    forgetGoneClassifierWarnings(globalOverridePath, new Set());
   }
 
   // 3. Project-local override (<cwd>/.pi/router-config.json).
@@ -112,6 +114,8 @@ export function loadLayeredConfig(
     warnUnknownKeys(projectOverride, projectOverridePath);
     config = deepMergeConfig(config, projectOverride);
     sources.push(projectOverridePath);
+  } else {
+    forgetGoneClassifierWarnings(projectOverridePath, new Set());
   }
 
   validateCategoryGroups(config);
@@ -267,7 +271,8 @@ const classifierMigrationWarned = new Map<string, Set<string>>();
  * a word, and a translated one keeps the owner's setting.
  *
  * Keys on a group other than `dynamic` are dropped with a warning, as before
- * (only the dynamic group ever read them). Unknown keys inside the block, or
+ * (only the dynamic group ever read them), and so is a dotted `classifier_log.*`
+ * name found as a group key (it belongs at the top level). Unknown keys inside the block, or
  * inside the old `classifier_log` block, are reported once as typos and
  * removed. Each warning is given once per layer file until the problem is gone
  * (the warnOnceFor pattern of the sibling validators): the config is reloaded
@@ -327,10 +332,16 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
     for (const [name, g] of Object.entries(groups)) {
       if (!isRecord(g)) continue;
       for (const [old, newPath] of legacyToPath) {
-        if (old.includes('.') || !Object.hasOwn(g, old)) continue;
+        if (!Object.hasOwn(g, old)) continue;
         const value = g[old];
         delete g[old];
-        if (name === 'dynamic') {
+        if (old.includes('.')) {
+          // A `classifier_log.*` name was a top-level block, never a group key.
+          warn(
+            `model_groups.${name}.${old}`,
+            `[router] ${source} model_groups.${name}.${old}: ignored — it belongs at the top level as "${newPath}"`
+          );
+        } else if (name === 'dynamic') {
           assign(newPath, value, `model_groups.dynamic.${old}`);
         } else {
           warn(
@@ -374,11 +385,19 @@ function migrateClassifierLayer(layer: Partial<Config>, source: string): void {
     }
   }
 
-  // A problem that is gone is forgotten, so it is reported again if it returns.
+  forgetGoneClassifierWarnings(source, warned);
+}
+
+/**
+ * A migration problem that is gone is forgotten, so it is reported again if it
+ * returns. Also called with an empty set when the layer file is missing or
+ * unparseable: its old warnings no longer describe anything.
+ */
+function forgetGoneClassifierWarnings(source: string, stillWarned: Set<string>): void {
   for (const key of classifierMigrationWarned.get(source) ?? []) {
-    if (!warned.has(key)) forgetWarnOnce(key);
+    if (!stillWarned.has(key)) forgetWarnOnce(key);
   }
-  classifierMigrationWarned.set(source, warned);
+  classifierMigrationWarned.set(source, stillWarned);
 }
 
 /**

@@ -670,8 +670,9 @@ function commitConfigPatch(rt: CommandDeps, keyPath: string, patch: ConfigPatch)
   const projectSets = layerSetsKey(project?.config, keyPath);
   const overridden =
     projectSets && ('value' in patch ? !isDeepStrictEqual(effective, patch.value) : true);
+  const projectWins = 'value' in patch ? 'overrides the saved value' : 'sets it';
   const headline = overridden
-    ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) overrides the saved value.`
+    ? `${keyPath} is still ${describeValue(effective)}: the project config (${project?.path}) ${projectWins}.`
     : `${keyPath} is ${describeValue(effective)} — saved to ${res.written}; applies now.`;
   return [headline, '', 'Chain:', ...formatClassifierChain(describeClassifierChain(rt.cfg))].join(
     '\n'

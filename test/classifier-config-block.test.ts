@@ -8,6 +8,8 @@
 // (decision 4: a typo must not be silently ignored).
 
 import { describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { CONFIG_KEYS, configKey, unknownClassifierKeys } from '../src/config-keys.ts';
 import { useConfigLayers } from './helpers/config-layer.ts';
 
@@ -87,6 +89,33 @@ describe('a layer that still uses the pre-2.0 classifier keys (read for one rele
     loadWithProjectLayer(stale);
     expect(count('classifier_cloud_chain')).toBe(2);
     expect(count('classifier.cloud.enable:')).toBe(2);
+  });
+
+  it.each([
+    ['missing', (file: string): void => fs.rmSync(file)],
+    ['unparseable', (file: string): void => fs.writeFileSync(file, '{ not json')],
+  ])('warns again when the layer was %s in between and the old key returns', (_, breakLayer) => {
+    const stale = { model_groups: { dynamic: { classifier_cloud_chain: false } } };
+    const count = (): number =>
+      warnings().filter((m) => m.includes('classifier_cloud_chain')).length;
+    loadWithProjectLayer(stale);
+    expect(count()).toBe(1);
+
+    breakLayer(path.join(layers.paths.cwd, '.pi', 'router-config.json'));
+    loadShipped();
+    loadWithProjectLayer(stale);
+    expect(count()).toBe(2);
+  });
+
+  it('reports a dotted classifier_log name inside a model group: it is not applied there', () => {
+    const { config } = loadWithProjectLayer({
+      model_groups: { dynamic: { 'classifier_log.enabled': false } },
+    });
+    expect(config.classifier?.log?.enabled).toBe(true); // shipped value, untouched
+    const w = warnings().filter((m) => m.includes('model_groups.dynamic.classifier_log.enabled'));
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('classifier.log.enabled');
+    expect(w[0]).toContain('ignored');
   });
 
   it('moves the top-level classifier_log block to classifier.log', () => {

@@ -137,6 +137,17 @@ describe('/router config unset', () => {
     expect(out).toMatch(/classifier\.cloud\.model is still acme\/p/);
     expect(out).toContain(projectFile());
   });
+
+  it('says the project config sets the key, not that it overrides a saved value', async () => {
+    fs.writeFileSync(userFile(), JSON.stringify({ classifier: { cloud: { model: 'acme/c' } } }));
+    fs.writeFileSync(projectFile(), JSON.stringify({ classifier: { cloud: { model: 'acme/p' } } }));
+    const out = await setup().run('config unset classifier.cloud.model');
+    expect(readUser()).toEqual({});
+    expect(out).toContain(
+      `classifier.cloud.model is still acme/p: the project config (${projectFile()}) sets it.`
+    );
+    expect(out).not.toMatch(/saved value/);
+  });
 });
 
 describe('/router config set — the reply states what is in effect', () => {
