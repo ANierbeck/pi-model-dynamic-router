@@ -119,11 +119,16 @@ on a feeling.
 
 ## Consequences
 
-- The correction store is user data inside `cache.json`. The owner can list and
-  clear it. The file keeps its existing mode.
-- The `HINT` category form is a new user-visible syntax; the README documents it
-  when it is built.
-- Until the owner decides, routing does not change.
+- The correction store is user data inside `cache.json` (`cache.hint_corrections`):
+  the raw prompt text is the key, so the file holds what the user typed. The
+  owner can list and clear it (`/router corrections list|clear`), the store is
+  capped at 64 entries (least recently used dropped first), and the cache file
+  is written owner-only (mode 0600), like the classifier decision log.
+- The `HINT` category form is user-visible syntax; the README documents it
+  (Commands table, "Correcting a category", privacy note).
+- Routing changes only where the user corrected it: a saved correction applies
+  to exactly the prompts it matches (never to compaction); everything else is
+  classified as before.
 
 ## Decisions taken for the build (2026-11-14)
 

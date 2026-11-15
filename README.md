@@ -94,7 +94,9 @@ Every classification writes one JSONL record to `~/.pi/logs/classifier-decisions
 
 **Correcting a category.** `HINT: category <name> <your prompt>` applies the named category to that turn and saves the correction for the exact prompt text that follows (at least five words; shorter prompts are never saved). The same prompt later, without the HINT, gets the saved category with no classifier call. `/router corrections` lists the saved corrections, `/router corrections clear` drops them all. An unknown name is ignored with a warning that lists the valid names. Design: `docs/adr/0030-feedback-correction-sequencing.md`.
 
-A turn that is compacted is never answered from a saved correction. An unknown name is reported (in the log and as a notice) and the content is classified without the HINT head. A saved name that is no longer a category is reported once and dropped.
+A turn that is compacted is never answered from a saved correction. An unknown name is reported (in the log and as a notice) and the content is classified without the HINT head — with no content behind the head, the turn falls back to `continue` without any classifier call, so the marker never reaches the classifier. A saved name that is no longer a category is reported once and dropped.
+
+Privacy: a correction is stored under the **raw prompt text** as its exact-match key, so the router's scan cache file (`<state-dir>/.cache/scan-cache.json`, next to `router-config.dynamic.json` in the extension dir unless `PI_ROUTER_STATE_DIR` is set) contains what the user typed. The store is capped at 64 entries (least recently used dropped first), it is listed and cleared with `/router corrections`, and the cache file is written owner-only (mode 0600), like the classifier decision log.
 
 ```jsonc
 {
@@ -824,6 +826,7 @@ discovers automatically.
 | `/router cooldowns [clear]` | Active rate-limit cooldowns (ref, remaining, hits); `clear` also resets model-health streaks |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
+| `/router corrections [list|clear]` | Saved `HINT: category` corrections: list them with the exact prompt text each matches, or clear all (ADR-0030) |
 | `/router config` | Show config sources, exclude rules with origin and match counts, compaction state |
 | `/router config exclude <ref|glob|provider>` | Exclude a model/pattern from routing (saved to user layer, live without restart). A bare provider name (`openrouter`) excludes the whole provider via `exclude.providers`; an unknown bare name is rejected because it could never match a model ref |
 | `/router config unexclude <ref|glob|provider>` | Remove a user-layer exclusion (shipped/project entries cannot be removed this way) |
