@@ -61,6 +61,25 @@ describe('docs/config-reference.md — generated from the key table', () => {
     }
   });
 
+  it('marks every key the shipped file does not set as a code default, and shows the shipped value otherwise', () => {
+    for (const key of CONFIG_KEYS) {
+      let value: unknown = shipped;
+      for (const part of key.path.split('.')) {
+        value =
+          value !== null && typeof value === 'object'
+            ? (value as Record<string, unknown>)[part]
+            : undefined;
+      }
+      if (value === undefined) {
+        expect(key.shipped, key.path).toMatch(/ \(code default\)$/);
+      } else {
+        const rendered = typeof value === 'string' ? value : JSON.stringify(value);
+        expect(key.shipped.startsWith(rendered), key.path).toBe(true);
+        expect(key.shipped, key.path).not.toMatch(/ \(code default\)$/);
+      }
+    }
+  });
+
   it('shows the chain steps in the order the router runs them', () => {
     const doc = read('../docs/config-reference.md');
     // The bold step label of the chain list; a bare label also occurs in prose.

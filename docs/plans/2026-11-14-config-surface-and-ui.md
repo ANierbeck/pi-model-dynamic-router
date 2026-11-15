@@ -1,6 +1,6 @@
 # Config surface and UI: one consistent model, documented once, editable through `/router config`
 
-**Status:** done 2026-11-15 — all five phases (commits `e8491a1`, `4020910`, `6aadb02`, `3b69e29`, and the Phase 5 commit). Decision record: ADR 0034. Open: plan item 15 ("may", the menu does not point to the Laya artifact plan) was not done; see ADR 0034 Open. Phase 4 does not yet point to the Laya model artifact plan when no weights are installed (item 15, "may"); the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`). The open decisions at the end are waiting for the owner.
+**Status:** done 2026-11-15 — all five phases: `e8491a1` (Phase 1), `4020910` (Phase 2), `6aadb02` (Phase 3), `3b69e29` (Phase 4), `ea433d6` (Phase 5), then the review fixes `2daa7de`, `8c08dcf`, `3762a61` and the docs commit that records this status. Decision record: ADR 0034. Not done: item 15 ("may") — the menu does not point to the Laya model artifact plan when no weights are installed; the integration reply already says when a switch is not in effect. Replaces `2026-11-08-router-config-ui.md` (its wizard is Phase 4 here) and the earlier draft of this file from the same day (commits `4da0e33`, `bd37cd4`).
 
 **Related plans (reused, not changed):** `2026-11-08-optional-integrations-config.md` (done 2026-11-12) owns the `integrations.*` contract, the schema and the unknown-key warnings. This plan builds on it. `2026-10-25-laya-sole-classifier.md` owns the Laya release gate. Context budget and compaction belong to Phase 5b of `2026-10-05-task-type-balancing.md`; this plan only exposes the switch that already exists.
 
@@ -64,18 +64,30 @@ Phases 1 and 2 change user layers (key renames), so they land before the 2.0.0 t
 
 Red first for every behaviour change, with the red evidence named in the commit message. Mutation check for the validator and the writer (remove the check, the test turns red). Table-driven tests share one fixture, so the redundancy ratchet (`test/redundancy-baseline.test.ts`) does not grow. Full suite, `tsc` and the lint gate stay green.
 
-## Open decisions (owner)
+## Open decisions
 
-1. **Block shape.** Nested `classifier` (recommended) or flat keys with better names?
-2. **Migration.** Read old keys for one release with a warning (recommended, the existing pattern), or hard break at 2.0.0?
-3. **Switch name.** `classifier.cloud.enabled` (recommended) or keep `classifier_cloud_chain` and only document it?
-4. **Command shape.** Generic `set`/`unset` by path against the table (recommended) or one subcommand per key?
-5. **Unknown candidate.** Refuse the write when pi does not know the model (recommended, AGENTS §9), or store it with a warning?
-6. **Wizard scope.** Only keys marked `wizard` in the table (recommended: classifier on/off, cloud candidates, integrations enable and mode), or every key?
-7. **Non-TUI mode.** Print the usage and the reason, never block (recommended).
-8. **Location of the overview.** Full detail in `/router config`, one summary line per integration in `/router status` (recommended, as in the superseded plan).
-9. **Scope.** Blocks listed under Scope now; `providers` and the rest of `model_groups` as a separate plan (recommended). Say so if you want them in this plan.
-10. **Timing.** Phases 1–2 before the 2.0.0 tag (recommended). Phases 3–5 before or after the tag?
+None open; see Decisions.
+
+## Decisions
+
+Each decision was put to the owner with a recommended option. None was confirmed one by one; the owner's instruction of 2026-11-15 was to execute the plan.
+
+1. **Block shape.** Nested `classifier` (recommended) or flat keys with better names? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+2. **Migration.** Read old keys for one release with a warning (recommended, the existing pattern), or hard break at 2.0.0? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+3. **Switch name.** `classifier.cloud.enabled` (recommended) or keep `classifier_cloud_chain` and only document it? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+4. **Command shape.** Generic `set`/`unset` by path against the table (recommended) or one subcommand per key? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+5. **Unknown candidate.** Refuse the write when pi does not know the model (recommended, AGENTS §9), or store it with a warning? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+6. **Wizard scope.** Only keys marked `wizard` in the table (recommended: classifier on/off, cloud candidates, integrations enable and mode), or every key? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+7. **Non-TUI mode.** Print the usage and the reason, never block (recommended). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+8. **Location of the overview.** Full detail in `/router config`, one summary line per integration in `/router status` (recommended, as in the superseded plan). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+9. **Scope.** Blocks listed under Scope now; `providers` and the rest of `model_groups` as a separate plan (recommended). Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan.
+10. **Timing.** Phases 1–2 before the 2.0.0 tag (recommended). Phases 3–5 before or after the tag? Applied: the recommended option — on the owner's instruction of 2026-11-15 to execute the plan. Phases 3–5 also landed before any tag. Tagging, the release and the publish remain the owner's call (AGENTS §1).
+
+**Deviations from the Solution text:**
+
+- **Item 12.** The menu is a flat list of the `wizard`-marked keys (plus the overview, the hand-edited keys and Done), not block → key → value. With four wizard keys, a block level adds a step without grouping anything.
+- **Item 14.** Without the terminal, a bare `/router config` prints the overview, whose command list holds the non-interactive usage, followed by a note that the menu needs TUI mode and names `config set`/`config unset`.
+- **Item 18.** `test/config-reference-docs.test.ts` bans the removed pre-2.0 key names in the four prose documents, `docs/architecture.md` and the skills, and requires each prose document to link to the reference with a link target that resolves to the file. It does not count the keys a document lists by hand.
 
 **Out of scope, tracked in TODO.md:** whether cloud candidates should be limited to free models. That is an eligibility rule, not a configuration surface.
 

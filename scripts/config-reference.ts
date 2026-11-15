@@ -49,7 +49,7 @@ function renderKey(spec: ConfigKeySpec): string[] {
   ];
   if (spec.legacy && spec.legacy.length > 0) {
     lines.push(
-      `- Pre-2.0 name, read once with a warning: ${spec.legacy.map((l) => `\`${l}\``).join(', ')}`
+      `- Pre-2.0 name, read for one release with a warning: ${spec.legacy.map((l) => `\`${l}\``).join(', ')}`
     );
   }
   lines.push('');

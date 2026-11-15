@@ -32,7 +32,10 @@ export interface ConfigKeySpec {
   readonly kind: 'boolean' | 'string' | 'string-list' | 'number' | 'enum';
   /** Allowed values for an `enum`. */
   readonly values?: readonly string[];
-  /** The shipped value, or the code default when the shipped file does not set it. */
+  /**
+   * The shipped value, or — when the shipped file does not set the key — the
+   * code default, marked with a trailing ` (code default)`.
+   */
   readonly shipped: string;
   /** One line for the reference and the wizard. */
   readonly meaning: string;
@@ -49,8 +52,9 @@ export interface ConfigKeySpec {
   readonly wizard?: boolean;
   /**
    * For model references: the shape a value must have. `provider-model` is
-   * `provider/id`; `ollama-model` is `ollama/<name>`. Whether pi knows the
-   * model is checked by the command, not here (the table has no registry).
+   * `provider/id`; `ollama-model` is `ollama/<name>`. Whether pi knows a
+   * `provider-model` ref is checked by the command, not here (the table has no
+   * registry); an `ollama-model` ref is checked for its shape only.
    */
   readonly ref?: 'provider-model' | 'ollama-model';
 }
@@ -59,7 +63,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.local.model',
     kind: 'string',
-    shipped: 'unset (derived from the models Ollama reports)',
+    shipped: 'unset, derived from the models Ollama reports (code default)',
     meaning:
       'Pinned local classifier model (`ollama/<name>:<tag>`). Unset: the scan probe derives it.',
     legacy: ['classifier_model'],
@@ -69,7 +73,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.local.fallback',
     kind: 'string',
-    shipped: 'unset (derived)',
+    shipped: 'unset, derived (code default)',
     meaning: 'Pinned second local classifier model, tried when the primary gives no answer.',
     legacy: ['classifier_fallback'],
     via: 'set',
@@ -88,7 +92,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.cloud.model',
     kind: 'string',
-    shipped: 'unset',
+    shipped: 'unset (code default)',
     meaning:
       'Pinned cloud classifier (`provider/id`), tried first, before the probe-verified list.',
     legacy: ['classifier_cloud_model'],
@@ -98,7 +102,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.cloud.candidates',
     kind: 'string-list',
-    shipped: 'unset (automatic chain)',
+    shipped: 'unset, automatic chain (code default)',
     meaning:
       'Ordered cloud candidates (`provider/id`). Replaces the automatic chain. Each entry must be a model pi knows.',
     legacy: ['classifier_cloud_candidates'],
@@ -109,7 +113,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'classifier.cloud.escalate_low_confidence',
     kind: 'boolean',
-    shipped: 'false',
+    shipped: 'false (code default)',
     meaning:
       'Send a local reply below the confidence gate (0.5) to the cloud chain once. Then prompt text leaves the machine.',
     legacy: ['classifier_escalate_low_confidence'],
@@ -159,7 +163,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'exclude.providers',
     kind: 'string-list',
-    shipped: '[]',
+    shipped: '[] (code default)',
     meaning: 'Providers removed from routing.',
     via: 'alias',
     alias: 'config exclude | config unexclude',
@@ -167,7 +171,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'context_budget.enabled',
     kind: 'boolean',
-    shipped: 'off unless set',
+    shipped: 'false (code default)',
     meaning: 'Cache-aware auto-compaction. Only the switch is command-settable.',
     via: 'alias',
     alias: 'config compaction on|off',
@@ -185,7 +189,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     path: 'integrations.laya.mode',
     kind: 'enum',
     values: ['active', 'shadow'],
-    shipped: 'shadow (anything but active)',
+    shipped: 'shadow (code default)',
     meaning: '`active` routes on Laya results; `shadow` only records them for comparison.',
     via: 'alias',
     alias: 'config integration laya active|shadow',
@@ -194,21 +198,21 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'integrations.laya.checkpoint',
     kind: 'string',
-    shipped: 'unset',
+    shipped: 'unset (code default)',
     meaning: 'The model the sidecar is expected to serve, e.g. `router@1.0.0`. Required when on.',
     via: 'file-only',
   },
   {
     path: 'integrations.laya.endpoint',
     kind: 'string',
-    shipped: 'http://127.0.0.1:8089',
+    shipped: 'http://127.0.0.1:8089 (code default)',
     meaning: 'Loopback endpoint of the Laya sidecar. Remote hosts are rejected.',
     via: 'file-only',
   },
   {
     path: 'integrations.laya.timeout_ms',
     kind: 'number',
-    shipped: '1500',
+    shipped: '1500 (code default)',
     meaning: 'Timeout for one Laya call in milliseconds.',
     via: 'file-only',
   },
@@ -222,7 +226,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'integrations.laya.compare_in_background',
     kind: 'boolean',
-    shipped: 'false',
+    shipped: 'false (code default)',
     meaning:
       'In active mode, still run the replaced chain detached and log it as a comparator record (ADR-0027).',
     via: 'file-only',
@@ -230,7 +234,7 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'integrations.laya.observe_momentum',
     kind: 'boolean',
-    shipped: 'false',
+    shipped: 'false (code default)',
     meaning: 'Log detached answers for short momentum prompts (can incur classifier spend).',
     via: 'file-only',
   },

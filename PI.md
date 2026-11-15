@@ -300,7 +300,13 @@ Each `exclude_models` entry is an exact ref, or a glob where `*` matches any run
 | `/router cost` | Audit-depth cost report from the router's own token accounting |
 | `/router errors [n]` | Last n session errors (default 15, max 50) |
 | `/router cooldowns [clear]` | Active rate-limit cooldowns; `clear` also resets model-health streaks |
-| `/router config` | Config sources, exclude rules and compaction state; `config exclude\|unexclude\|compaction` edit the user layer |
+| `/router config` | Guided settings menu in TUI mode; print/RPC mode has no dialogs, so it prints the overview and says why |
+| `/router config show` | Config overview in every mode: sources, classifier chain, integrations, exclude rules, compaction state |
+| `/router config set <path> <value>` | Write one classifier setting to the user layer (validated, applies now) |
+| `/router config unset <path>` | Remove one classifier setting from the user layer |
+| `/router config classifier` | Classifier settings in effect and the chain they produce |
+| `/router config integrations` | Integration settings in effect and the command that switches each |
+| `/router config exclude\|unexclude\|integration\|compaction` | Edit exclusions, integrations and the compaction flag in the user layer |
 | `/router blocklist` | Models blocked after a permanent provider failure (reason, since, re-probe time) |
 | `/router blocklist clear [ref]` | Unblock one model, or all (e.g. after fixing an API key) |
 

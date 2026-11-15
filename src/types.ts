@@ -242,13 +242,6 @@ export interface ClassifierLogConfig {
   keep?: number;
 }
 
-/**
- * Opt-in local classifier stage: Laya, a typed decision model (Apache 2.0).
- * Local on Apple Silicon, no prompt content leaves the machine, but quality
- * (zero-shot ~0.36 on typed decisions) is insufficient for active routing —
- * the stage ships disabled (see docs/research/2026-10-09-laya-spike.md and
- * docs/plans/2026-10-09-laya-tasks1-5.md).
- */
 /** The `integrations` block: one optional key per component. */
 export interface IntegrationsConfig {
   /**
