@@ -1,21 +1,13 @@
 {
   "name": "@anierbeck/laya-sidecar",
   "version": "0.1.0",
-  "description": "Local HTTP sidecar serving the Laya router model through ONNX Runtime (POST /classify, GET /health)",
+  "description": "Source of the Laya sidecar that ships inside @anierbeck/pi-model-router; package.json and package-lock.json double as the runtime spec for `pi-laya-model runtime install`",
   "type": "module",
   "private": true,
   "license": "MIT AND Apache-2.0",
   "engines": {
     "node": ">=22.19.0"
   },
-  "bin": {
-    "laya-sidecar": "dist/server.js"
-  },
-  "files": [
-    "dist",
-    "LICENSE-laya",
-    "README.md"
-  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",

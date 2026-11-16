@@ -33,6 +33,9 @@ const repoRoot = path.resolve(__dirname, '..');
 const BUILD_OUTPUTS = [
   'index.js',
   'laya-model-install.js',
+  // The Laya sidecar, bundled from laya-sidecar/src (plan
+  // 2026-11-16-laya-sidecar-in-router-tarball.md, D1).
+  'laya-sidecar.js',
   'router-config.json',
   'router-defaults.yaml',
   'model-map.yaml',
@@ -159,7 +162,7 @@ describe('npm package contents', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
     const build: string = pkg.scripts.build;
     const fromScript = new Set<string>();
-    // Every esbuild entry: the extension and the pi-laya-model installer.
+    // Every esbuild entry: the extension, the pi-laya-model installer and the sidecar.
     for (const outfile of build.matchAll(/--outfile=(\S+)/g)) {
       if (outfile[1]?.startsWith('dist/')) fromScript.add(outfile[1].slice('dist/'.length));
     }
@@ -200,6 +203,92 @@ describe('npm package contents', () => {
     expect(files.filter((f) => f.startsWith('laya-models/'))).toEqual([
       'laya-models/manifest.json',
     ]);
+  }, 30_000);
+
+  it('ships the runtime spec and the licence of the sidecar, and nothing else from laya-sidecar/', () => {
+    // plan 2026-11-16-laya-sidecar-in-router-tarball.md, Solution 1 + 2. The
+    // sidecar's CODE ships as dist/laya-sidecar.js. From laya-sidecar/ itself
+    // only three files travel: the package.json and lockfile that
+    // `pi-laya-model runtime install` hands to `npm ci`, and the Apache-2.0
+    // text of the vendored laya-ts code. Sources, tests and above all the
+    // 300 MB node_modules must not; the seeded strays keep that non-vacuous.
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-sidecar-'));
+    fs.copyFileSync(path.join(repoRoot, 'package.json'), path.join(tmpDir, 'package.json'));
+    for (const rel of BUILD_OUTPUTS) {
+      const file = path.join(tmpDir, 'dist', rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{}');
+    }
+    // README.md is here because npm always packs a README next to a package.json,
+    // whatever `files` says; it is the sidecar's own documentation, so it belongs.
+    const shipped = ['LICENSE-laya', 'README.md', 'package-lock.json', 'package.json'];
+    const strays = [
+      '.npmrc',
+      'src/server.ts',
+      'dist/server.js',
+      'test/parity.test.mjs',
+      'node_modules/onnxruntime-node/package.json',
+    ];
+    for (const rel of [...shipped, ...strays]) {
+      const file = path.join(tmpDir, 'laya-sidecar', rel);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{}');
+    }
+
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const files: string[] = JSON.parse(out)[0].files.map((f: { path: string }) => f.path);
+    expect(files.filter((f) => f.startsWith('laya-sidecar/')).sort()).toEqual(
+      shipped.map((f) => `laya-sidecar/${f}`)
+    );
+  }, 30_000);
+
+  it('the sidecar bundle carries no ONNX runtime and asks for one by name', async () => {
+    // Decision D2: the 308 MB native runtime is installed on demand, never
+    // shipped. Bundle the sidecar exactly like the build does, into a tree
+    // without any node_modules, and start it against an empty runtime dir.
+    const { build } = await import('esbuild');
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pkg-sidecar-bin-'));
+    const bundle = path.join(tmpDir, 'dist', 'laya-sidecar.js');
+    await build({
+      entryPoints: [path.join(repoRoot, 'laya-sidecar', 'src', 'server.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: bundle,
+      logLevel: 'silent',
+    });
+    const text = fs.readFileSync(bundle, 'utf8');
+    expect(text).not.toContain('node_modules/onnxruntime');
+    expect(text.length).toBeLessThan(1_000_000);
+
+    const model = path.join(tmpDir, 'model');
+    const runtime = path.join(tmpDir, 'runtime');
+    fs.mkdirSync(model);
+    fs.mkdirSync(runtime);
+    fs.writeFileSync(
+      path.join(model, 'head.json'),
+      JSON.stringify({ instructions: 'x', categories: ['simple'] })
+    );
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(
+      process.execPath,
+      [
+        bundle,
+        '--model-dir',
+        model,
+        '--head-json',
+        path.join(model, 'head.json'),
+        '--runtime-dir',
+        runtime,
+      ],
+      { encoding: 'utf8', timeout: 30_000 }
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/ONNX runtime not found in .*pi-laya-model runtime install/);
   }, 30_000);
 
   it('the installer bundle runs on its own: shebang, no router code, finds the shipped manifest', async () => {

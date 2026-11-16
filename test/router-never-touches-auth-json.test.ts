@@ -57,6 +57,14 @@ const FORBIDDEN_IN_SRC: { pattern: RegExp; why: string }[] = [
   },
 ];
 
+/**
+ * Files exempt from one forbidden pattern, by pattern source. Keep it to one
+ * entry, with a test above that pins what the file may do instead.
+ */
+const EXEMPT: Record<string, string[]> = {
+  child_process: ['src/laya-runtime-install.ts'],
+};
+
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -78,12 +86,29 @@ describe('the router never touches auth.json or resolves keys itself (ADR-0022)'
     it(`no src file matches /${pattern.source}/ (${why})`, () => {
       const offenders: string[] = [];
       for (const f of files) {
+        const rel = path.relative(repoRoot, f);
+        if (EXEMPT[pattern.source]?.includes(rel)) continue;
         const text = fs.readFileSync(f, 'utf-8');
-        if (pattern.test(text)) offenders.push(path.relative(repoRoot, f));
+        if (pattern.test(text)) offenders.push(rel);
       }
       expect(offenders, `pattern /${pattern.source}/ found in: ${offenders.join(', ')}`).toEqual(
         []
       );
     });
   }
+
+  // The child_process ban has exactly one exemption, and it is not a hole: the
+  // ONNX runtime is installed with npm (plan 2026-11-16, D2), and npm is a
+  // process. The file must never use that process for anything key-shaped.
+  it('the one child_process exemption spawns npm only, and reads no credentials', () => {
+    const text = fs.readFileSync(path.join(repoRoot, 'src', 'laya-runtime-install.ts'), 'utf-8');
+    const spawned = [...text.matchAll(/spawn\(\s*([^,]+),/g)].map((m) => m[1]!.trim());
+    expect(spawned).toEqual(["'npm'"], 'npm is the only process this file may start');
+    expect(text.match(/spawn\(/g)).toHaveLength(1);
+    expect(text).not.toMatch(/auth\.json|apiKey|api_key|process\.env\.[A-Z_]*KEY/);
+    // Exactly one file may carry the exemption.
+    expect(Object.entries(EXEMPT).map(([k, v]) => `${k}: ${v.join(',')}`)).toEqual([
+      'child_process: src/laya-runtime-install.ts',
+    ]);
+  });
 });

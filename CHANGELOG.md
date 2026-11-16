@@ -11,6 +11,22 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Changed — the Laya sidecar ships inside the router package
+
+The sidecar code is now a build output of this package (`dist/laya-sidecar.js`), and the separate `@anierbeck/laya-sidecar` package is gone before it was ever published (plan `docs/plans/2026-11-16-laya-sidecar-in-router-tarball.md`, owner decisions D1/D2). One install, one version, one release: a second npm package that has to match the router's version was a failure mode nobody would notice until users hit it.
+
+The native ONNX runtime (about 115 MB, 308 MB unpacked) is **not** shipped. It is installed on demand, next to the models:
+
+```bash
+pi-laya-model runtime install    # npm ci on the lockfile this package ships
+pi-laya-model runtime verify
+pi-laya-model serve router@1.0.0 # foreground, listens on 127.0.0.1:8089
+```
+
+`runtime install` runs `npm ci --omit=dev --ignore-scripts` on the shipped lockfile: npm checks every tarball against its integrity hash, and the `onnxruntime-node` postinstall never runs (on Linux x64 that script downloads CUDA libraries from NuGet without a digest check; the CPU binding the sidecar uses is in the npm tarball). Users who do not use Laya download nothing.
+
+Also fixed: the sidecar exited 0 and served nothing when it was started through a symlink — which is exactly what an npm `bin` link is. It now resolves the real entry path, the same way `scripts/lib/cli.ts` does.
+
 ### Changed — BREAKING (2.0): the classifier settings move into one `classifier` block
 
 The classifier keys left the `dynamic` model group and the top-level `classifier_log` block (plan `docs/plans/2026-11-14-config-surface-and-ui.md`, ADR 0034). The pre-2.0 names are read for one release, with a warning that names both spellings; a value already set at the new path wins, and a name on a group other than `dynamic` is ignored with a warning (only `dynamic` ever read it). Move the keys in `router-config.user.json` (or run `/router config set <path> <value>`) before the next release drops the old names.

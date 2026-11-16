@@ -29,11 +29,11 @@ before starting, so nothing surprises them later:
 1. **The weights release is not published yet.** The manifest marks
    `router@1.0.0` as unpublished, and the installer refuses it (step 1). Once the
    owner publishes the release, the same steps work unchanged.
-2. **The ONNX sidecar is not published yet.** `@anierbeck/laya-sidecar` ships
-   with release 2.0.0, together with the weights. Until that release is
-   published, the install command in step 8 does not resolve. The install,
-   the verification and the config work without it, and the skill can finish
-   them and then hand over.
+2. **The ONNX runtime is a separate download.** The sidecar code ships inside
+   the router package, but its native runtime (about 115 MB) is installed on
+   demand in step 8. Until the user runs that command, nothing serves the
+   model. The install, the verification and the config work without it, and
+   the skill can finish them and then hand over.
 
 ## Steps
 
@@ -147,17 +147,35 @@ decision log.
 
 ### 8. Sidecar (not started by this skill)
 
-The skill does not start a sidecar. Explain the options:
+The skill does not start a sidecar and the router never starts one either: the
+user starts it, in their own terminal. The sidecar code ships inside the router
+package; only its native runtime is a separate download.
 
-- **ONNX:** the sidecar ships as `@anierbeck/laya-sidecar` with release 2.0.0
-  and is not published yet. Once it is, the user installs it with
-  `ONNXRUNTIME_NODE_INSTALL=skip npm install -g @anierbeck/laya-sidecar` (the
-  skip flag keeps the CUDA download off) and starts it with
-  `laya-sidecar --model-dir "$HOME/.pi/agent/laya-models/router/1.0.0" --head-json "$HOME/.pi/agent/laya-models/router/1.0.0/head.json"`.
-  It listens on port 8089 by default, which is the router's default endpoint.
-  Windows PowerShell sets the variable with `$env:ONNXRUNTIME_NODE_INSTALL = "skip"`.
-  The platform table is in `laya-sidecar/README.md`. Until the release, say the
-  sidecar is not published yet and stop here; the install and config stay valid.
+1. **Install the runtime** (about 115 MB, once, and again after a router update
+   that changes the pin):
+
+   ```bash
+   pi-laya-model runtime install
+   ```
+
+   It is `npm ci` on the lockfile the router ships, so every tarball is checked
+   against its integrity hash, and no install script runs (the `onnxruntime-node`
+   postinstall would download CUDA libraries without a digest check on Linux
+   x64). `pi-laya-model runtime verify` re-checks the result.
+
+2. **Start the sidecar** in the foreground of the user's terminal:
+
+   ```bash
+   pi-laya-model serve router@1.0.0
+   ```
+
+   It resolves the install directory, the head and the runtime itself and
+   listens on port 8089, the router's default endpoint. `--port <n>` moves it
+   (then `integrations.laya.endpoint` has to follow).
+
+Platforms: macOS on Apple Silicon is the tested one; Linux and Windows x64/arm64
+should work but are untested; Intel Macs are not supported and `runtime install`
+says so before downloading anything. The table is in `laya-sidecar/README.md`.
 
 ### 9. Check the identity the sidecar reports
 

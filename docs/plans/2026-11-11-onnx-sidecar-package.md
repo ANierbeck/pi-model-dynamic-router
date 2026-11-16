@@ -1,5 +1,7 @@
 # ONNX sidecar package: an installable Laya sidecar for Linux, Windows and macOS
 
+**Partly superseded 2026-11-16:** decisions D1 (own npm package `@anierbeck/laya-sidecar`) and D8 (own release line) were reversed by the owner — the sidecar now ships inside the router tarball and the runtime is installed on demand. See [`2026-11-16-laya-sidecar-in-router-tarball.md`](2026-11-16-laya-sidecar-in-router-tarball.md). Everything else in this plan stands and is history as written (AGENTS.md §11/§12).
+
 **Status:** done 2026-11-13 — steps 2–10 built, tested and documented (PR #157, #159 merged; this plan's status re-checked against the code on 2026-11-13). Not published, by design: the sidecar is released together with the router's 2.0.0 release, on the owner's release-specific go (AGENTS.md §1). The publish and tag are release actions, not plan steps; they are tracked in the release-prep entry of `TODO.md`.
 
 **Parent:** `docs/plans/2026-10-31-laya-sidecar-distribution.md`, open step "Packaging, pinned revision, checksum, install docs per platform". This plan is that one step, and nothing else from the parent.
