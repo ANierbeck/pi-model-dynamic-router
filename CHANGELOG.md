@@ -34,7 +34,10 @@ expire: `decommissioned` and `free-variant-retired` (the ref is gone
 upstream). `/router blocklist` shows them as `never (permanent)` instead of a
 countdown, and `generateDynamicConfig()` leaves them out of the snapshot.
 Permanence is derived from the stored reason, so entries written before the
-rule existed are covered without a cache migration.
+rule existed are covered without a cache migration. A group's hand-curated
+`models` list is filtered too: it is collected after the candidate pool was
+filtered, so a pinned ref used to bypass the block and land in the snapshot
+anyway (Sourcery finding on PR #184).
 
 The other Tier-1 reasons deliberately keep their 7-day TTL:
 `workspace-guardrail` is an OpenRouter privacy setting the owner can change

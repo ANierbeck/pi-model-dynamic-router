@@ -262,7 +262,15 @@ export function collectGroupModels(
   groupConfig: Group,
   filteredModels: ModelWithMetadata[],
   sortedGroupModels: ModelWithMetadata[],
-  cfg: Config
+  cfg: Config,
+  /**
+   * Refs that must not be persisted at all (permanently blocked models, plan
+   * 2026-11-16-permanent-blocklist-no-ttl). Applied to the hand-curated
+   * `models` list too: it is collected AFTER the caller filtered its candidate
+   * pool, so without this a pinned ref would bypass that filter and land in
+   * the snapshot anyway (Sourcery finding on PR #184).
+   */
+  isBlockedRef: (ref: string) => boolean = () => false
 ): string[] {
   const modelsToInclude = new Set<string>();
   const modelSig = (ref: string): string => [...baseTokens(ref)].sort().join('|');
@@ -285,6 +293,7 @@ export function collectGroupModels(
   for (const origModel of originalModels) {
     // Hand-curated models must still resolve to a score, then pass the same
     // gates as every other candidate (ADR-0010).
+    if (isBlockedRef(origModel)) continue;
     if (lookupGdp(origModel) === null) continue;
     if (applyGroupFilters([origModel], groupConfig, cfg).length === 0) continue;
 
