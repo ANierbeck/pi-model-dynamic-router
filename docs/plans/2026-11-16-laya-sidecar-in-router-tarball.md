@@ -1,6 +1,6 @@
 # Laya sidecar ships in the router tarball; the ONNX runtime is installed on demand
 
-**Status:** in progress 2026-11-16 — owner decisions D1–D2 made the same day; implementation on branch `feat/sidecar-in-tarball`.
+**Status:** done 2026-11-16 — owner decisions D1–D2; built, tested and verified end to end. The release rehearsal (`docs/plans/2026-11-16-release-rehearsal.md`) passes on darwin/arm64 and in the linux/arm64 container with the real 1.3 GB release directory.
 
 **Supersedes:** decisions D1 and D8 of `docs/plans/2026-11-11-onnx-sidecar-package.md` (own npm package `@anierbeck/laya-sidecar`, own release line) and "owner decision 3" of 2026-11-08 quoted there (the sidecar stays out of the router's `files` allowlist). Everything else in that plan stands: the vendored `laya-ts` copy (D2), the pinned runtime version (D3), no CUDA download (D4), the platform matrix (D5/D6), the model name (D7).
 **Related:** `docs/plans/2026-11-16-release-rehearsal.md` verifies the delivery this plan builds.
@@ -46,9 +46,9 @@ None.
 
 ## Steps
 
-- [ ] Step 1: `serve()` in `laya-sidecar/src/server.ts` with `runtimeDir`; resolve hook; clear error without a runtime. Red first.
-- [ ] Step 2: `pi-laya-model runtime install | verify | remove` (`src/laya-runtime-install.ts`), with an injectable process runner so the unit tests never touch the network. Red first.
-- [ ] Step 3: `pi-laya-model serve <model>@<version>`. Red first.
-- [ ] Step 4: build output `dist/laya-sidecar.js`, `files` allowlist, `test/package-contents.test.ts`, sidecar `package-shape` test (no `bin`, never publishable).
-- [ ] Step 5: docs — skill step 8 and its test, both READMEs, CHANGELOG, `TODO.md`, the header on the 2026-11-11 plan, the plan index.
-- [ ] Step 6: the release rehearsal (related plan) passes on darwin/arm64 and in the linux/arm64 container.
+- [x] Step 1: `serve()` in `laya-sidecar/src/server.ts` with `runtimeDir`; resolve hook; clear error without a runtime. Red first.
+- [x] Step 2: `pi-laya-model runtime install | verify | remove` (`src/laya-runtime-install.ts`), with an injectable process runner so the unit tests never touch the network. Red first.
+- [x] Step 3: `pi-laya-model serve <model>@<version>`. Red first.
+- [x] Step 4: build output `dist/laya-sidecar.js`, `files` allowlist, `test/package-contents.test.ts`, sidecar `package-shape` test (no `bin`, never publishable).
+- [x] Step 5: docs — skill step 8 and its test, both READMEs, CHANGELOG, `TODO.md`, the header on the 2026-11-11 plan, the plan index.
+- [x] Step 6: the release rehearsal (related plan) passes on darwin/arm64 and in the linux/arm64 container.

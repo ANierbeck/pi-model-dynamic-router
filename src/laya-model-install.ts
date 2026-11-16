@@ -24,6 +24,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
+import { mb, messageOf } from './format.ts';
 import {
   artifactSha256,
   headFromFile,
@@ -897,12 +898,4 @@ export async function main(argv: string[], io: CliIo, deps: CliDeps = {}): Promi
     else io.err(`pi-laya-model: ${messageOf(err)}\n`);
     return 1;
   }
-}
-
-function mb(bytes: number): string {
-  return `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

@@ -24,6 +24,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
+import { tail } from './format.ts';
 
 export const RUNTIME_PACKAGE = 'onnxruntime-node';
 const SPEC_FILES = ['package.json', 'package-lock.json'] as const;
@@ -259,9 +260,4 @@ export function removeRuntime(dir: string): boolean {
     fs.rmSync(d, { recursive: true, force: true });
   }
   return existed;
-}
-
-/** The last lines of npm's stderr: the error, without the progress noise above it. */
-function tail(text: string, lines = 12): string {
-  return text.trim().split('\n').slice(-lines).join('\n');
 }

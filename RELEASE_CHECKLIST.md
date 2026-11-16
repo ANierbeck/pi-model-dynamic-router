@@ -31,6 +31,43 @@ and fill in the version-specific details. **Replace every `<VERSION>` and
 - [ ] Cross-references between docs resolve (no broken links to deleted files)
 - [ ] No stale version references (headers, "Last Updated", examples)
 
+## The release order (2026-11-16)
+
+Three artifacts have to arrive in this order, because each one is checked by the
+one after it. Getting it wrong is not recoverable: npm has no delete.
+
+1. **Weights first.** Upload the release assets, then set `published: true` in
+   the manifest and ship that through a PR. Until the assets exist, the
+   installer rightly refuses the version.
+2. **Rehearse the whole delivery** (below). This is the step that catches a
+   broken tarball, a wrong asset name or a manifest that does not match the
+   directory — before anything is published.
+3. **Tag, then publish.** The tag is what `prepublishOnly` requires; CI publishes
+   from the tag.
+4. **Smoke-test the published package** from a clean state. This is the last
+   line of defence, not the first.
+
+## The rehearsal (`scripts/release-rehearsal.ts`)
+
+Runs the delivery chain end to end against a local stand-in for the release:
+release directory → `npm pack` → install the tarball into an empty project →
+install the model from a loopback server → verify → install the ONNX runtime →
+`serve`, `/health` identity, one `/classify`. Nothing is published; the staged
+manifest differs from the shipped one in exactly `published` and `base_url`.
+
+```bash
+# on the host
+node scripts/release-rehearsal.ts --assets <release dir>
+
+# on Linux, in the container (plan docs/plans/2026-11-16-release-rehearsal.md)
+docker build -t router-rehearsal rehearsal/
+docker run --rm -v "$PWD":/repo:ro -v "<release dir>":/assets:ro router-rehearsal --assets /assets
+```
+
+- [ ] Rehearsal green on the host (the platform the maintainer has)
+- [ ] Rehearsal green in the container (linux/arm64 today; linux/x64 by changing the base image)
+- [ ] `--skip-runtime` is **not** used: the runtime install is part of what is verified
+
 ## Release Steps
 
 ### 1. Version Bump
@@ -65,6 +102,15 @@ pi install npm:@anierbeck/pi-model-dynamic-router@<VERSION>
 # Verify /router scan works
 ```
 
+For a Laya release, also verify the classifier path from the published package,
+not from the repository:
+
+```bash
+pi-laya-model runtime install
+pi-laya-model install router@<version>
+pi-laya-model serve router@<version>   # then: curl -s localhost:8089/health
+```
+
 ### 6. GitHub Release
 - Create release on GitHub from tag `v<VERSION>`
 - Copy the CHANGELOG.md entry as release notes
@@ -80,8 +126,10 @@ the owner's release-specific go (AGENTS.md §1); the steps before it do not.
 - [ ] The release directory holds exactly the manifest's assets: `node scripts/laya-release-check.ts --dir <release dir>` prints `ok`
 - [ ] Largest asset is below GitHub's 2 GiB per-asset limit
 - [ ] **Owner go for this concrete tag**, then create the GitHub Release `laya-<model>-v<version>` and attach every file of the directory
+- [ ] **Rehearsal green** against this directory, on the host and in the container (see above) — this is the gate, not a formality
 - [ ] From a clean machine state: `pi-laya-model install <model>@<version> --allow-unpublished` against the live release, then `verify` (the installer still refuses it while `published` is `false`)
 - [ ] Set `published: true` in the manifest and ship it through a PR (the manifest travels with the router package)
+- [ ] After the router release: `pi-laya-model runtime install` and `pi-laya-model serve` from the **published** package, and one `/classify`
 
 ## Post-Release
 
