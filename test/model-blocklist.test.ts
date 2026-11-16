@@ -145,11 +145,23 @@ describe('model blocklist state (cache.model_blocklist)', () => {
     expect(isBlocked(cache, OR, 1_001)).toBe(false);
   });
 
-  it('expires after the 7-day TTL so the model is re-probed', () => {
+  // Plan 2026-11-16-permanent-blocklist-no-ttl: a Tier-1 signature states a
+  // property of the MODEL (guardrailed, retired, gated), so the block must not
+  // expire. The 7-day TTL now applies to Tier-2 promotions only — covered by
+  // 'a Tier-2 promotion expires after the TTL' below.
+  it('a permanent block never expires', () => {
     const cache: Cache = {};
     recordBlocklistFailure(cache, OR, GUARDRAIL, 0);
     expect(isBlocked(cache, OR, BLOCKLIST_TTL_MS - 1)).toBe(true);
-    expect(isBlocked(cache, OR, BLOCKLIST_TTL_MS)).toBe(false);
+    expect(isBlocked(cache, OR, BLOCKLIST_TTL_MS)).toBe(true);
+    expect(isBlocked(cache, OR, 365 * 86_400_000)).toBe(true);
+  });
+
+  it('a Tier-2 promotion expires after the TTL so the model is re-probed', () => {
+    const cache: Cache = {};
+    failTimes(cache, T2, UNKNOWN_400, 5, 0, HOUR / 4);
+    expect(isBlocked(cache, T2, HOUR)).toBe(true);
+    expect(isBlocked(cache, T2, HOUR + BLOCKLIST_TTL_MS)).toBe(false);
   });
 
   it('a re-confirmation after re-probe re-blocks, counts the occurrence and resets the TTL', () => {
@@ -168,23 +180,28 @@ describe('model blocklist state (cache.model_blocklist)', () => {
     expect(recordBlocklistSuccess(cache, OR)).toBe(false);
   });
 
-  it('activeBlocks lists unexpired entries with time to the next re-probe', () => {
+  it('activeBlocks lists permanent entries without a countdown and temporary ones with it', () => {
     const cache: Cache = {};
     recordBlocklistFailure(cache, OR, AGENTIC, 0);
+    // A permanent entry older than the TTL stays listed (no re-probe).
     recordBlocklistFailure(
       cache,
       'openrouter/liquid/lfm-2.5-2.6b:free',
       GUARDRAIL,
       -BLOCKLIST_TTL_MS
     );
-    const active = activeBlocks(cache, 100);
-    expect(active.map((b) => b.ref)).toEqual([OR]);
-    expect(active[0].reprobeInMs).toBe(BLOCKLIST_TTL_MS - 100);
+    failTimes(cache, T2, UNKNOWN_400, 5, 0, HOUR / 4);
+    const active = activeBlocks(cache, HOUR);
+    expect(active.map((b) => b.ref).sort()).toEqual(
+      [OR, 'openrouter/liquid/lfm-2.5-2.6b:free', T2].sort()
+    );
+    expect(active.find((b) => b.ref === OR)?.reprobeInMs).toBeNull();
+    expect(active.find((b) => b.ref === T2)?.reprobeInMs).toBe(BLOCKLIST_TTL_MS);
   });
 });
 
 describe('runtime filter: Router.allDiscoveredRefs drops blocked models', () => {
-  it('excludes a blocked ref and re-admits it once the block has expired', () => {
+  it('never re-admits a permanently blocked ref, and re-admits a temporary one', () => {
     const cfg: Config = { model_groups: {}, model_metrics: {} };
     const cache: Cache = {
       available_models: [
@@ -200,8 +217,22 @@ describe('runtime filter: Router.allDiscoveredRefs drops blocked models', () => 
     expect(router.allDiscoveredRefs()).not.toContain(OR);
     expect(router.allDiscoveredRefs()).toContain('mistral/healthy');
 
+    // A permanent block survives any age: the model is gone upstream.
     cache.model_blocklist![OR].last_seen = Date.now() - BLOCKLIST_TTL_MS - 1;
-    expect(router.allDiscoveredRefs()).toContain(OR);
+    expect(router.allDiscoveredRefs()).not.toContain(OR);
+
+    // A temporary (Tier-2) block still expires and re-admits the model.
+    const t2cache = cache;
+    t2cache.available_models = [
+      ...(t2cache.available_models ?? []),
+      { id: 'vendor/flaky-model', provider: 'openrouter', cost_per_m: 0 },
+    ];
+    setCache(t2cache);
+    const t2router = new Router(cfg, t2cache, new Map());
+    failTimes(t2cache, T2, UNKNOWN_400, 5, Date.now() - HOUR, HOUR / 4);
+    expect(t2router.allDiscoveredRefs()).not.toContain(T2);
+    t2cache.model_blocklist![T2].last_seen = Date.now() - BLOCKLIST_TTL_MS - 1;
+    expect(t2router.allDiscoveredRefs()).toContain(T2);
   });
 });
 

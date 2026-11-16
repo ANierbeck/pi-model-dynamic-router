@@ -25,6 +25,7 @@ import {
   type StaticContributions,
 } from './dynamic-config.ts';
 import { type ExcludeContext, isExcluded } from './exclude.ts';
+import { isPermanentlyBlocked } from './model-blocklist.ts';
 import { routerLog, errorLog } from './logger.ts';
 import * as metricsModule from './metrics.ts';
 import { lookupGdp } from './metrics.ts';
@@ -311,6 +312,25 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
         if (excluded.length) {
           routerLog(
             `[router] Exclude rules removed ${excluded.length} model(s): ${excluded.slice(0, 15).join(', ')}${excluded.length > 15 ? ' ...' : ''}`
+          );
+        }
+      }
+
+      // 2c2. Permanent blocks (plan 2026-11-16-permanent-blocklist-no-ttl):
+      // a Tier-1 block states a property of the MODEL (retired, guardrailed,
+      // gated by the provider), so it must not be re-admitted with every
+      // regeneration. Only permanent blocks are filtered here — a Tier-2
+      // block is temporary by definition and deliberately stays out of the
+      // persisted file (it would outlive its TTL; see allDiscoveredRefs()).
+      {
+        const before = effectiveModelRefs.length;
+        const dropped = effectiveModelRefs.filter((ref) => isPermanentlyBlocked(rt.cache, ref));
+        if (dropped.length) {
+          effectiveModelRefs = effectiveModelRefs.filter(
+            (ref) => !isPermanentlyBlocked(rt.cache, ref)
+          );
+          routerLog(
+            `[router] ${dropped.length} permanently blocked model(s) left out of the snapshot: ${dropped.slice(0, 15).join(', ')}${dropped.length > 15 ? ' …' : ''} (${before} → ${effectiveModelRefs.length})`
           );
         }
       }

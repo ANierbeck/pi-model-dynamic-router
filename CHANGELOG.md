@@ -11,6 +11,34 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Fixed — a permanently blocked model is no longer re-admitted
+
+A model the upstream provider has retired stayed in the generated group lists
+forever. Live case 2026-11-16: `mistral/open-mistral-nemo` and
+`mistral/devstral-2512` (both retired 2026-07-31) were still listed in
+`standard`, `bulk_reader` and `code_writer` and still ranked as candidates.
+
+Pi publishes no deprecation flag — its bundled catalog, the refreshed
+`models-store.json` and the provider's own model list all carry no
+`deprecated`/`retirement` field, so there is nothing to read. The only
+evidence the router can have is a failure, and that evidence was being thrown
+away: `isBlocked()` applied the 7-day `BLOCKLIST_TTL_MS` to Tier-1
+(`permanent`) verdicts as well, so a model blocked for `decommissioned` or
+`free-variant-retired` was re-admitted after a week, failed again and was
+re-blocked. On top of that the snapshot persist path ignored the blocklist
+entirely (deliberately: a temporary block must not outlive its TTL in a
+persisted file).
+
+A Tier-1 verdict states a property of the **model**, not of the moment, so
+those blocks no longer expire, `/router blocklist` shows them as
+`never (permanent)` instead of a countdown, and `generateDynamicConfig()`
+leaves them out of the snapshot. Tier-2 (`unknown-signature`) promotions keep
+their 7-day TTL and still stay out of the persisted file. An observed success
+and `/router blocklist clear` still remove a permanent block.
+
+Plan: `docs/plans/2026-11-16-permanent-blocklist-no-ttl.md`. Nothing is
+hardcoded: the signal is the provider's own error text (ADR-0025).
+
 ### Fixed — an exclude rule change now regenerates the scan snapshot
 
 `router-config.dynamic.json` freezes the group model lists, and those were built with the exclude rules of the day. The rules themselves were always current (`exclude` is a resync key), but the file kept naming excluded models: after excluding `claude-bridge/*fable*` on 2026-11-16, the snapshot still listed `claude-fable-5-2` in `standard`, `planning`, `bulk_reader` and `code_writer`. Routing stayed correct only because `resolveGroup` intersects the frozen list with the exclude-filtered live list — safe by accident, one refactor away from unsafe.
