@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { staticExcludeFingerprint } from '../src/dynamic-config.ts';
 import { writeScanCacheFixture } from './helpers/noop-scan-cache.ts';
 import { rmTmpDir } from './helpers/router-env.ts';
 
@@ -121,6 +122,29 @@ describe('stale groups fingerprint in the persisted dynamic config', () => {
     }
   });
 
+  it('ignores a snapshot built before the exclude rules changed (2026-11-16)', async () => {
+    // Live 2026-11-16: the owner excluded `claude-bridge/*fable*` after a model
+    // version burned the whole Claude budget in five minutes. The snapshot on
+    // disk still listed that model in four groups, because nothing regenerated
+    // it: `exclude` is a resync key (so the rules themselves were current), but
+    // the frozen group lists kept the excluded ref. Routing happened to be safe
+    // (resolveGroup intersects g.models with the exclude-filtered
+    // allDiscoveredRefs), which is exactly the kind of "safe by accident" that
+    // breaks on the next refactor. A snapshot whose exclude fingerprint no
+    // longer matches is now ignored like a groups- or free_models-drifted one.
+    const legacy = {
+      model_groups: { tactical: { method: 'best' } },
+      _dynamic: { generated_at: 'OLD', exclude_fingerprint: 'stale-fingerprint' },
+    };
+    const { registeredProviders, cleanup } = await startRouter(legacy);
+    try {
+      expect(registeredProviders).not.toContain('tactical');
+      expect(registeredProviders).toContain('planning');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('still accepts a snapshot without a fingerprint (legacy file, self-healed by the scan)', async () => {
     const legacy = {
       model_groups: { tactical: { method: 'best' } },
@@ -132,5 +156,41 @@ describe('stale groups fingerprint in the persisted dynamic config', () => {
     } finally {
       cleanup();
     }
+  });
+});
+
+describe('the exclude fingerprint', () => {
+  // The "no regeneration storm" property depends on this being stable: a
+  // fingerprint that changed on every load would regenerate the snapshot on
+  // every start.
+  const rules = { models: ['a/*fable*', 'b/x'], providers: ['p'], paid_models_from: ['q'] };
+
+  it('does not depend on the order of the rules', () => {
+    const shuffled = {
+      paid_models_from: ['q'],
+      providers: ['p'],
+      models: ['b/x', 'a/*fable*'],
+    };
+    expect(staticExcludeFingerprint(shuffled as typeof rules)).toBe(
+      staticExcludeFingerprint(rules as typeof rules)
+    );
+  });
+
+  it('changes when a rule is added, removed or altered', () => {
+    const base = staticExcludeFingerprint(rules as typeof rules);
+    expect(
+      staticExcludeFingerprint({ ...rules, models: [...rules.models, 'c'] } as typeof rules)
+    ).not.toBe(base);
+    expect(staticExcludeFingerprint({ ...rules, models: ['a/*fable*'] } as typeof rules)).not.toBe(
+      base
+    );
+    expect(
+      staticExcludeFingerprint({ ...rules, models: ['a/*fable*', 'b/y'] } as typeof rules)
+    ).not.toBe(base);
+  });
+
+  it('is stable for an absent exclude block', () => {
+    expect(staticExcludeFingerprint(undefined)).toBe(staticExcludeFingerprint({} as typeof rules));
+    expect(staticExcludeFingerprint(undefined)).toMatch(/^[0-9a-f]{12}$/);
   });
 });

@@ -36,6 +36,7 @@ import {
   resyncDynamicFromStatic,
   collectStaticContributions,
   registerRegistryProviderStubs,
+  staticExcludeFingerprint,
   staticFreeModelsFingerprint,
   staticGroupsFingerprint,
   type StaticContributions,
@@ -814,7 +815,11 @@ const defaultExport = function (pi: ExtensionAPI): void {
     try {
       if (fs.existsSync(dynamicConfigPath)) {
         const dynamicCfg = JSON.parse(fs.readFileSync(dynamicConfigPath, 'utf-8')) as Config & {
-          _dynamic?: { groups_fingerprint?: unknown; free_models_fingerprint?: unknown };
+          _dynamic?: {
+            groups_fingerprint?: unknown;
+            free_models_fingerprint?: unknown;
+            exclude_fingerprint?: unknown;
+          };
         };
         // Check whether the dynamic configuration is valid (has _dynamic metadata)
         if (dynamicCfg._dynamic && dynamicCfg.model_groups) {
@@ -829,6 +834,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
           // them once (self-healing, PR #68).
           const storedGroupsFp = dynamicCfg._dynamic.groups_fingerprint;
           const storedFreeModelsFp = dynamicCfg._dynamic.free_models_fingerprint;
+          const storedExcludeFp = dynamicCfg._dynamic.exclude_fingerprint;
           const staleGroups =
             typeof storedGroupsFp === 'string' &&
             storedGroupsFp !== staticGroupsFingerprint(staticCfg.model_groups);
@@ -840,11 +846,19 @@ const defaultExport = function (pi: ExtensionAPI): void {
           const staleFreeModels =
             typeof storedFreeModelsFp === 'string' &&
             storedFreeModelsFp !== staticFreeModelsFingerprint(staticCfg.providers);
-          if (staleGroups || staleFreeModels) {
+          // 2026-11-16: the frozen group lists were built with the OLD exclude
+          // rules, so an exclusion change leaves the excluded refs in them. The
+          // rules themselves are current (resync key), but the file must not
+          // contradict them. Same accept-undefined rule as the two above.
+          const staleExclude =
+            typeof storedExcludeFp === 'string' &&
+            storedExcludeFp !== staticExcludeFingerprint(staticCfg.exclude);
+          if (staleGroups || staleFreeModels || staleExclude) {
             routerLog(
               '[router] Stored router-config.dynamic.json has a stale fingerprint ' +
-                '(static model_groups or configured free_models changed since it was built) — ' +
-                'ignoring it and using the static config; the next scan regenerates the snapshot'
+                '(static model_groups, configured free_models or exclude rules changed since ' +
+                'it was built) — ignoring it and using the static config; the next scan ' +
+                'regenerates the snapshot'
             );
           } else {
             // IMPORTANT: user-intent keys (exclude rules, timeout overrides,

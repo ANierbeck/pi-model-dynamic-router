@@ -255,6 +255,46 @@ describe('static group settings changed since the snapshot was built', () => {
     }
   });
 
+  it('regenerates a snapshot whose exclude fingerprint is stale (2026-11-16)', async () => {
+    // Red-first: before the fix, an exclude change left the snapshot alone, so
+    // the frozen group lists kept naming a model the owner had just excluded
+    // (live: claude-bridge/claude-fable-5-2 in standard/planning/bulk_reader/
+    // code_writer). The ref is dropped at selection time, but the file must not
+    // contradict the config in the first place.
+    //
+    // The snapshot is built by a real first run and then tampered in ONE field:
+    // a hand-written fixture without the groups fingerprint would regenerate
+    // for the groups reason and prove nothing about this check (the first
+    // version of this test was green for exactly that wrong reason).
+    const first = await startRouterWithCache({});
+    let fresh: any;
+    try {
+      expect(await waitFor(() => fs.existsSync(first.dynamicPath))).toBe(true);
+      fresh = JSON.parse(fs.readFileSync(first.dynamicPath, 'utf-8'));
+    } finally {
+      first.cleanup();
+    }
+    expect(fresh._dynamic.groups_fingerprint).toBeTruthy();
+    expect(fresh._dynamic.free_models_fingerprint).toBeTruthy();
+    expect(fresh._dynamic.exclude_fingerprint).toBeTruthy();
+    fresh._dynamic.generated_at = 'SENTINEL';
+    fresh._dynamic.exclude_fingerprint = 'stale-fingerprint';
+
+    const second = await startRouterWithCache({}, fresh);
+    try {
+      const regenerated = await waitFor(
+        () =>
+          JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'))._dynamic?.generated_at !==
+          'SENTINEL'
+      );
+      expect(regenerated).toBe(true);
+      const onDisk = JSON.parse(fs.readFileSync(second.dynamicPath, 'utf-8'));
+      expect(onDisk._dynamic.exclude_fingerprint).not.toBe('stale-fingerprint');
+    } finally {
+      second.cleanup();
+    }
+  });
+
   it('leaves a fixture cache marked dynamic_config_expected: false alone, even with a stale fingerprint', async () => {
     // Fixture caches never own a snapshot (see test/helpers/noop-scan-cache.ts):
     // the groups-drift check must not regenerate underneath them.
