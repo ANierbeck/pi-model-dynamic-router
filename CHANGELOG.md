@@ -29,12 +29,26 @@ re-blocked. On top of that the snapshot persist path ignored the blocklist
 entirely (deliberately: a temporary block must not outlive its TTL in a
 persisted file).
 
-A Tier-1 verdict states a property of the **model**, not of the moment, so
-those blocks no longer expire, `/router blocklist` shows them as
-`never (permanent)` instead of a countdown, and `generateDynamicConfig()`
-leaves them out of the snapshot. Tier-2 (`unknown-signature`) promotions keep
-their 7-day TTL and still stay out of the persisted file. An observed success
-and `/router blocklist clear` still remove a permanent block.
+A **retirement** states a property of the model, so those blocks no longer
+expire: `decommissioned` and `free-variant-retired` (the ref is gone
+upstream). `/router blocklist` shows them as `never (permanent)` instead of a
+countdown, and `generateDynamicConfig()` leaves them out of the snapshot.
+Permanence is derived from the stored reason, so entries written before the
+rule existed are covered without a cache migration. A group's hand-curated
+`models` list is filtered too: it is collected after the candidate pool was
+filtered, so a pinned ref used to bypass the block and land in the snapshot
+anyway (Sourcery finding on PR #184).
+
+The other Tier-1 reasons deliberately keep their 7-day TTL:
+`workspace-guardrail` is an OpenRouter privacy setting the owner can change
+and `agentic-harness-gate` depends on how the client is recognised — both are
+access conditions, not retirements. Making them permanent would break
+self-healing, because the classifier probe skips blocked candidates
+(`src/classifier-cloud-probe.ts`), so such a model could never be re-probed
+and would only return via a manual `/router blocklist clear`. Tier-2
+(`unknown-signature`) promotions keep their TTL and still stay out of the
+persisted file. An observed success and `/router blocklist clear` still remove
+a permanent block.
 
 Plan: `docs/plans/2026-11-16-permanent-blocklist-no-ttl.md`. Nothing is
 hardcoded: the signal is the provider's own error text (ADR-0025).

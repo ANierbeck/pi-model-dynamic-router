@@ -553,7 +553,8 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
           groupConfig,
           filteredModels,
           sortedGroupModels,
-          rt.cfg
+          rt.cfg,
+          (ref) => isPermanentlyBlocked(rt.cache, ref)
         );
         const originalModels = groupConfig.models ?? [];
 

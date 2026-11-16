@@ -149,9 +149,9 @@ describe('model blocklist state (cache.model_blocklist)', () => {
   // property of the MODEL (guardrailed, retired, gated), so the block must not
   // expire. The 7-day TTL now applies to Tier-2 promotions only — covered by
   // 'a Tier-2 promotion expires after the TTL' below.
-  it('a permanent block never expires', () => {
+  it('a retirement block never expires', () => {
     const cache: Cache = {};
-    recordBlocklistFailure(cache, OR, GUARDRAIL, 0);
+    recordBlocklistFailure(cache, OR, DECOMMISSIONED, 0);
     expect(isBlocked(cache, OR, BLOCKLIST_TTL_MS - 1)).toBe(true);
     expect(isBlocked(cache, OR, BLOCKLIST_TTL_MS)).toBe(true);
     expect(isBlocked(cache, OR, 365 * 86_400_000)).toBe(true);
@@ -180,14 +180,14 @@ describe('model blocklist state (cache.model_blocklist)', () => {
     expect(recordBlocklistSuccess(cache, OR)).toBe(false);
   });
 
-  it('activeBlocks lists permanent entries without a countdown and temporary ones with it', () => {
+  it('activeBlocks lists retirement entries without a countdown and temporary ones with it', () => {
     const cache: Cache = {};
-    recordBlocklistFailure(cache, OR, AGENTIC, 0);
-    // A permanent entry older than the TTL stays listed (no re-probe).
+    recordBlocklistFailure(cache, OR, DECOMMISSIONED, 0);
+    // A retirement entry older than the TTL stays listed (no re-probe).
     recordBlocklistFailure(
       cache,
       'openrouter/liquid/lfm-2.5-2.6b:free',
-      GUARDRAIL,
+      DECOMMISSIONED,
       -BLOCKLIST_TTL_MS
     );
     failTimes(cache, T2, UNKNOWN_400, 5, 0, HOUR / 4);
@@ -213,11 +213,11 @@ describe('runtime filter: Router.allDiscoveredRefs drops blocked models', () => 
     setCache(cache);
     const router = new Router(cfg, cache, new Map());
 
-    recordBlocklistFailure(cache, OR, AGENTIC);
+    recordBlocklistFailure(cache, OR, DECOMMISSIONED);
     expect(router.allDiscoveredRefs()).not.toContain(OR);
     expect(router.allDiscoveredRefs()).toContain('mistral/healthy');
 
-    // A permanent block survives any age: the model is gone upstream.
+    // A retirement block survives any age: the model is gone upstream.
     cache.model_blocklist![OR].last_seen = Date.now() - BLOCKLIST_TTL_MS - 1;
     expect(router.allDiscoveredRefs()).not.toContain(OR);
 

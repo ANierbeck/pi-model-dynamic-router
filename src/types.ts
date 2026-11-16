@@ -623,8 +623,6 @@ export interface Cache {
       first_seen: number;
       last_seen: number;
       occurrences: number;
-      /** Tier-1 verdict: a property of the model, so the block never expires. */
-      permanent?: boolean;
     }
   >;
   /**

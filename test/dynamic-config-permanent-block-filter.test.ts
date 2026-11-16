@@ -5,9 +5,10 @@
 // persists for the next start. It deliberately did NOT consult the learned
 // blocklist, because a temporary block baked into a persisted file would
 // outlive its 7-day TTL (see the comment in src/routing.ts). That rationale
-// covers Tier-2 blocks only: a Tier-1 (permanent) block states a property of
-// the model, so freezing it into the snapshot is exactly right — otherwise a
-// retired model is re-admitted with every regeneration.
+// covers temporary blocks only: a retirement block (decommissioned /
+// free-variant-retired) states a property of the model, so freezing it into
+// the snapshot is exactly right — otherwise a retired model is re-admitted
+// with every regeneration.
 
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -23,6 +24,53 @@ function allSnapshotRefs(dynamicPath: string): string[] {
   }
   return [...refs];
 }
+
+describe('a permanently blocked model that a group pins statically', () => {
+  // Sourcery finding on PR #184 (Medium): collectGroupModels() adds the
+  // group's hand-curated `models` list AFTER effectiveModelRefs was filtered,
+  // so a pinned ref bypassed the permanent-block filter and still landed in
+  // the snapshot. Reachable through a user config that pins a model.
+  it('is left out of the snapshot as well', async () => {
+    const { dynamicPath, cleanup } = await startRouterWithScanCache({
+      models: [
+        { provider: 'healthy-provider', id: 'model-a' },
+        { provider: 'healthy-provider', id: 'model-retired' },
+      ],
+      projectConfig: {
+        model_groups: {
+          standard: {
+            method: 'best',
+            models: ['healthy-provider/model-retired'],
+            min_gdpval: 0,
+            fallback_groups: [],
+          },
+        },
+      },
+      cache: {
+        lastScanTimestamp: 0,
+        gdpval_scores: { 'model-a': 1200, 'model-retired': 1100 },
+        model_blocklist: {
+          'healthy-provider/model-retired': {
+            reason: 'decommissioned',
+            code: 404,
+            signature: '404:decommissioned',
+            first_seen: NOW - 90 * 86_400_000,
+            last_seen: NOW - 90 * 86_400_000,
+            occurrences: 1,
+          },
+        },
+      },
+    });
+    try {
+      expect(await waitFor(() => fs.existsSync(dynamicPath))).toBe(true);
+      const refs = allSnapshotRefs(dynamicPath);
+      expect(refs).toContain('healthy-provider/model-a');
+      expect(refs).not.toContain('healthy-provider/model-retired');
+    } finally {
+      cleanup();
+    }
+  });
+});
 
 describe('permanently blocked models never reach the generated snapshot', () => {
   it('drops a permanently blocked ref and keeps a temporary one', async () => {
@@ -44,7 +92,6 @@ describe('permanently blocked models never reach the generated snapshot', () => 
             first_seen: NOW - 90 * 86_400_000,
             last_seen: NOW - 90 * 86_400_000, // far older than the 7-day TTL
             occurrences: 1,
-            permanent: true,
           },
           'healthy-provider/model-flaky': {
             reason: 'unknown-signature',
