@@ -52,19 +52,27 @@ at scan time — a separate problem, its own plan.
 Teach the blocklist the difference between a temporary and a permanent
 verdict, and let the persist path honour the permanent ones.
 
-1. `BlocklistEntry` gains `permanent?: true`, set by `block()` when
-   `classifyFailure()` returned `verdict: 'permanent'` (Tier-1 signatures
-   from `src/error-signatures.ts`). Tier-2 promotions
-   (`unknown-signature`) stay temporary.
+1. Permanence is derived from the stored `reason` via a new
+   `RETIREMENT_REASONS` set in `src/error-signatures.ts`, which names exactly
+   two: `decommissioned` and `free-variant-retired`. Those mean the ref itself
+   is gone upstream. `verdict: 'permanent'` in the signature table means
+   "block on first sight" (ADR-0008 Tier 1), **not** "never expires" — the
+   other Tier-1 reasons (`workspace-guardrail`, `agentic-harness-gate`)
+   describe access conditions the owner or a host update can lift, so they
+   keep the 7-day TTL and the model can heal. Tier-2 promotions
+   (`unknown-signature`) stay temporary as before.
+
+   Deriving from the reason (rather than storing a flag) also covers entries
+   written before the rule existed, without a cache migration.
 2. `isBlocked()` returns true for a permanent entry regardless of age;
    TTL behaviour for Tier-2 entries is unchanged.
-3. New `isPermanentlyBlocked(cache, ref)` for callers that must distinguish
-   the two.
+3. New `isPermanentEntry(entry)` / `isPermanentlyBlocked(cache, ref)` for
+   callers that must distinguish the two.
 4. `activeBlocks()` keeps listing permanent entries past the TTL and reports
    `reprobeInMs: null` for them; `/router blocklist` renders that as
    "permanent" instead of a countdown.
 5. `generateDynamicConfig()` drops permanently blocked refs before building
-   the snapshot, next to the exclude filter, with its own log line. TTL
+   the snapshot, next to the exclude filter, with its own log line. Temporary
    blocks still do not reach the snapshot (the existing rationale holds).
 6. `recordBlocklistSuccess()` and `/router blocklist clear` keep working on
    permanent entries: observed success beats a stale verdict, and the owner
@@ -72,6 +80,12 @@ verdict, and let the persist path honour the permanent ones.
 
 Derived-only, no model names: the signal is the provider's own error text
 (§9-compliant — nothing is admitted, selected, ranked or excluded by name).
+
+**Correction (2026-11-16, same day):** the first version made every Tier-1
+verdict permanent. That broke self-healing: the classifier probe skips blocked
+candidates (`src/classifier-cloud-probe.ts`), so a model blocked for a
+guardrail restriction could never be re-probed and only came back via a manual
+`/router blocklist clear`. Permanence now covers retirements only.
 
 ## Open decisions
 

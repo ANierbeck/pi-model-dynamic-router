@@ -5,9 +5,10 @@
 // persists for the next start. It deliberately did NOT consult the learned
 // blocklist, because a temporary block baked into a persisted file would
 // outlive its 7-day TTL (see the comment in src/routing.ts). That rationale
-// covers Tier-2 blocks only: a Tier-1 (permanent) block states a property of
-// the model, so freezing it into the snapshot is exactly right — otherwise a
-// retired model is re-admitted with every regeneration.
+// covers temporary blocks only: a retirement block (decommissioned /
+// free-variant-retired) states a property of the model, so freezing it into
+// the snapshot is exactly right — otherwise a retired model is re-admitted
+// with every regeneration.
 
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -44,7 +45,6 @@ describe('permanently blocked models never reach the generated snapshot', () => 
             first_seen: NOW - 90 * 86_400_000,
             last_seen: NOW - 90 * 86_400_000, // far older than the 7-day TTL
             occurrences: 1,
-            permanent: true,
           },
           'healthy-provider/model-flaky': {
             reason: 'unknown-signature',

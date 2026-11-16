@@ -440,11 +440,13 @@ describe('probeAndCache', () => {
       reason: 'workspace-guardrail',
       code: 404,
     });
-    // Plan 2026-11-16-permanent-blocklist-no-ttl: a Tier-1 signature blocks
-    // permanently, so the narration says so instead of naming a TTL.
+    // Plan 2026-11-16-permanent-blocklist-no-ttl: only a retirement
+    // (decommissioned / free-variant-retired) blocks forever. A guardrail
+    // restriction is an access condition the owner can lift, so it keeps the
+    // 7-day TTL — and can therefore be revived, as asserted below.
     expect(
       logs.some((l) =>
-        l.includes('openrouter/guardrail-dead blocked permanently: workspace-guardrail')
+        l.includes('openrouter/guardrail-dead blocked for 7 days: workspace-guardrail')
       )
     ).toBe(true);
 

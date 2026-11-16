@@ -29,6 +29,21 @@ interface FailureClassification {
   signature: string;
 }
 
+/**
+ * Tier-1 reasons that mean the model ref itself is gone upstream.
+ *
+ * `verdict: 'permanent'` means "block on first sight" (ADR-0008 Tier 1), not
+ * "never expires". Only a retirement is a property of the MODEL; the other
+ * Tier-1 reasons describe an access condition the owner or a host update can
+ * lift (`workspace-guardrail` is an OpenRouter privacy setting,
+ * `agentic-harness-gate` depends on how the client is recognised), so those
+ * keep the 7-day TTL and heal. Plan 2026-11-16-permanent-blocklist-no-ttl.
+ */
+export const RETIREMENT_REASONS: ReadonlySet<string> = new Set([
+  'decommissioned',
+  'free-variant-retired',
+]);
+
 interface Signature {
   code: number;
   reason: string;
