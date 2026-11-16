@@ -609,8 +609,10 @@ export interface Cache {
   scan_sanity_refusal?: { survivors: number; previous: number; at: number };
   /**
    * Learned blocklist (ADR-0008): models whose failures matched a
-   * known-permanent signature, keyed by "provider/id" ref. Entries expire
-   * after BLOCKLIST_TTL_MS (7 days) from last_seen; see src/model-blocklist.ts.
+   * known-permanent signature, keyed by "provider/id" ref. Tier-2 entries
+   * expire after BLOCKLIST_TTL_MS (7 days) from last_seen; entries flagged
+   * `permanent` never expire (plan 2026-11-16-permanent-blocklist-no-ttl).
+   * See src/model-blocklist.ts.
    */
   model_blocklist?: Record<
     string,
@@ -621,6 +623,8 @@ export interface Cache {
       first_seen: number;
       last_seen: number;
       occurrences: number;
+      /** Tier-1 verdict: a property of the model, so the block never expires. */
+      permanent?: boolean;
     }
   >;
   /**

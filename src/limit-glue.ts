@@ -111,9 +111,12 @@ export function createLimitGlue(d: LimitGlueDeps): LimitGlue {
     const blocked = activeBlocks(d.cache);
     if (!blocked.length)
       return 'Blocklist: empty — no model has shown a permanent provider failure.';
-    const days = (ms: number): string => `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
+    // A permanent (Tier-1) block has no re-probe countdown: it states a
+    // property of the model, not of the moment.
+    const days = (ms: number | null): string =>
+      ms === null ? 'never (permanent)' : `${Math.max(1, Math.ceil(ms / 86_400_000))}d`;
     const lines = [
-      `Blocklist (${blocked.length}) — re-probed automatically when the block expires`,
+      `Blocklist (${blocked.length}) — temporary blocks are re-probed automatically when they expire`,
       '',
     ];
     for (const { ref, entry, reprobeInMs } of blocked) {

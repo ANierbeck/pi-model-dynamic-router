@@ -9,9 +9,13 @@
 // transient failures neither count nor reset the streak. Local providers are
 // never promoted: their failures are daemon trouble, not model properties.
 //
-// Blocked models are dropped from candidate lists at runtime. A block expires
-// BLOCKLIST_TTL_MS after its last observation so the model is re-probed; a
-// repeated failure with the same signature re-blocks it, a success clears it.
+// Blocked models are dropped from candidate lists at runtime. A Tier-2 block
+// expires BLOCKLIST_TTL_MS after its last observation so the model is
+// re-probed; a repeated failure with the same signature re-blocks it, a
+// success clears it. A Tier-1 (permanent) block never expires: those
+// signatures state a property of the MODEL (retired, guardrailed, gated), not
+// of the moment, and re-admitting the model every 7 days only produced a
+// block/re-block churn (plan 2026-11-16-permanent-blocklist-no-ttl).
 //
 // State lives in the cache object, not in module variables: esbuild bundles
 // some modules twice, and module-level state would diverge (same rationale as
@@ -32,6 +36,8 @@ interface BlocklistEntry {
   first_seen: number;
   last_seen: number;
   occurrences: number;
+  /** Tier-1 signature: a property of the model, so the block never expires. */
+  permanent?: boolean;
 }
 
 function block(
@@ -40,7 +46,8 @@ function block(
   reason: string,
   code: number,
   signature: string,
-  now: number
+  now: number,
+  permanent: boolean
 ): BlocklistEntry {
   cache.model_blocklist ??= {};
   const prev = cache.model_blocklist[ref];
@@ -51,6 +58,7 @@ function block(
     first_seen: prev?.first_seen ?? now,
     last_seen: now,
     occurrences: (prev?.occurrences ?? 0) + 1,
+    ...(permanent ? { permanent: true } : {}),
   };
   cache.model_blocklist[ref] = entry;
   if (cache.model_failure_streaks) delete cache.model_failure_streaks[ref];
@@ -70,13 +78,13 @@ export function recordBlocklistFailure(
 ): BlocklistEntry | null {
   const c = classifyFailure(ref, failureText);
   if (c.verdict === 'permanent' && c.reason && c.code !== undefined) {
-    return block(cache, ref, c.reason, c.code, c.signature, now);
+    return block(cache, ref, c.reason, c.code, c.signature, now, true);
   }
   if (c.verdict !== 'unknown' || PROVIDER_MAP[ref.split('/')[0]]?.local) return null;
 
   const prev = cache.model_blocklist?.[ref];
   if (prev?.signature === c.signature) {
-    return block(cache, ref, prev.reason, prev.code, c.signature, now);
+    return block(cache, ref, prev.reason, prev.code, c.signature, now, prev.permanent === true);
   }
 
   cache.model_failure_streaks ??= {};
@@ -89,7 +97,7 @@ export function recordBlocklistFailure(
   cache.model_failure_streaks[ref] = streak;
 
   if (streak.count >= TIER2_MIN_FAILURES && now - streak.first_seen >= TIER2_MIN_SPAN_MS) {
-    return block(cache, ref, 'unknown-signature', c.code ?? 0, c.signature, now);
+    return block(cache, ref, 'unknown-signature', c.code ?? 0, c.signature, now, false);
   }
   return null;
 }
@@ -101,7 +109,10 @@ export function recordBlocklistFailure(
  * path observed the failure.
  */
 export function formatBlockLogLine(ref: string, entry: BlocklistEntry): string {
-  return `[router] ${ref} blocked for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, signature ${entry.signature}, seen ${entry.occurrences}×)`;
+  const duration = entry.permanent
+    ? 'permanently'
+    : `for ${Math.round(BLOCKLIST_TTL_MS / 86_400_000)} days`;
+  return `[router] ${ref} blocked ${duration}: ${entry.reason} (${entry.code ? `HTTP ${entry.code}` : 'no HTTP code'}, signature ${entry.signature}, seen ${entry.occurrences}×)`;
 }
 
 export function isBlocked(
@@ -110,7 +121,17 @@ export function isBlocked(
   now: number = Date.now()
 ): boolean {
   const entry = cache?.model_blocklist?.[ref];
-  return entry !== undefined && now - entry.last_seen < BLOCKLIST_TTL_MS;
+  if (entry === undefined) return false;
+  return entry.permanent === true || now - entry.last_seen < BLOCKLIST_TTL_MS;
+}
+
+/**
+ * True when `ref` carries a Tier-1 (permanent) block. Callers that persist a
+ * candidate list use this instead of isBlocked(): a temporary block must not
+ * be frozen into a snapshot that outlives it, a permanent one must.
+ */
+export function isPermanentlyBlocked(cache: Cache | undefined, ref: string): boolean {
+  return cache?.model_blocklist?.[ref]?.permanent === true;
 }
 
 /**
@@ -145,13 +166,14 @@ export function clearBlocklist(cache: Cache, ref?: string): number {
 export function activeBlocks(
   cache: Cache,
   now: number = Date.now()
-): Array<{ ref: string; entry: BlocklistEntry; reprobeInMs: number }> {
+): Array<{ ref: string; entry: BlocklistEntry; reprobeInMs: number | null }> {
   return Object.entries(cache.model_blocklist ?? {})
-    .filter(([, e]) => now - e.last_seen < BLOCKLIST_TTL_MS)
+    .filter(([, e]) => e.permanent === true || now - e.last_seen < BLOCKLIST_TTL_MS)
     .map(([ref, entry]) => ({
       ref,
       entry,
-      reprobeInMs: BLOCKLIST_TTL_MS - (now - entry.last_seen),
+      // null = permanent, there is no re-probe to count down to.
+      reprobeInMs: entry.permanent === true ? null : BLOCKLIST_TTL_MS - (now - entry.last_seen),
     }))
     .sort((a, b) => a.ref.localeCompare(b.ref));
 }

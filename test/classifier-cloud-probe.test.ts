@@ -440,9 +440,11 @@ describe('probeAndCache', () => {
       reason: 'workspace-guardrail',
       code: 404,
     });
+    // Plan 2026-11-16-permanent-blocklist-no-ttl: a Tier-1 signature blocks
+    // permanently, so the narration says so instead of naming a TTL.
     expect(
       logs.some((l) =>
-        l.includes('openrouter/guardrail-dead blocked for 7 days: workspace-guardrail')
+        l.includes('openrouter/guardrail-dead blocked permanently: workspace-guardrail')
       )
     ).toBe(true);
 
