@@ -1,7 +1,8 @@
 # Permanent blocklist entries must not expire
 
-**Status:** in progress 2026-11-16 — owner chose option 1 of the admission
-question; blocklist and snapshot halves implemented, gates running.
+**Status:** done 2026-11-16 — owner chose option 1 of the admission question;
+merged as PR #183 (`43bf05f`). Blocklist and snapshot halves built, all gates
+green (275 files, 3467 passed, 3 skipped).
 
 **Verified against:** `main` @ `f9a153c` (merge of PR #182),
   `~/.pi/agent/models-store.json` (written 2026-11-16 21:11 by
