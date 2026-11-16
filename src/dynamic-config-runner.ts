@@ -19,6 +19,7 @@ import {
   computeFallbackGroups,
   resyncDynamicFromStatic,
   registerRegistryProviderStubs,
+  staticExcludeFingerprint,
   staticFreeModelsFingerprint,
   staticGroupsFingerprint,
   type StaticContributions,
@@ -74,7 +75,7 @@ interface DynamicConfigRunnerDeps {
  */
 function readStoredFingerprint(
   stateDir: string,
-  field: 'groups_fingerprint' | 'free_models_fingerprint'
+  field: 'groups_fingerprint' | 'free_models_fingerprint' | 'exclude_fingerprint'
 ): string | null | undefined {
   const file = path.join(stateDir, 'router-config.dynamic.json');
   if (!fs.existsSync(file)) return null;
@@ -199,6 +200,12 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
         rt.stateDir,
         'free_models_fingerprint'
       );
+      // The frozen group lists were built with the exclude rules of that day, so
+      // a changed rule makes them stale even though the rules in effect are
+      // current (exclude is a resync key). 2026-11-16: `claude-bridge/*fable*`
+      // left claude-fable-5-2 in four groups until the next scan.
+      const excludeFingerprint = staticExcludeFingerprint(rt.staticCfg.exclude);
+      const storedExcludeFingerprint = readStoredFingerprint(rt.stateDir, 'exclude_fingerprint');
       // Fixture caches (dynamic_config_expected: false) own no snapshot and must
       // never be regenerated underneath, same as the missing-file rule above.
       const groupsDrifted =
@@ -209,12 +216,17 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
         rt.cache.dynamic_config_expected !== false &&
         storedFreeModelsFingerprint !== null &&
         storedFreeModelsFingerprint !== freeModelsFingerprint;
+      const excludeDrifted =
+        rt.cache.dynamic_config_expected !== false &&
+        storedExcludeFingerprint !== null &&
+        storedExcludeFingerprint !== excludeFingerprint;
       if (
         !force &&
         rt.cacheManager.isScanCacheValid(rt.cache) &&
         !dynamicConfigMissing &&
         !groupsDrifted &&
-        !freeModelsDrifted
+        !freeModelsDrifted &&
+        !excludeDrifted
       ) {
         routerLog('[router] Scan cache is still valid (max 30 days old), skipping regeneration');
         return;
@@ -230,6 +242,10 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
       } else if (!force && freeModelsDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
         routerLog(
           '[router] Configured free_models changed since router-config.dynamic.json was built — regenerating it'
+        );
+      } else if (!force && excludeDrifted && rt.cacheManager.isScanCacheValid(rt.cache)) {
+        routerLog(
+          '[router] Exclude rules changed since router-config.dynamic.json was built — regenerating it'
         );
       }
 
@@ -567,6 +583,7 @@ export function createDynamicConfigRunner(rt: DynamicConfigRunnerDeps): {
           config_fingerprint: configFingerprint,
           groups_fingerprint: groupsFingerprint,
           free_models_fingerprint: freeModelsFingerprint,
+          exclude_fingerprint: excludeFingerprint,
           // static_contributions is recorded by resyncDynamicFromStatic below
           // (load() already pruned rt.cfg against the previous one).
         },

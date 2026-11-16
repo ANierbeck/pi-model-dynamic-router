@@ -409,6 +409,27 @@ export function staticFreeModelsFingerprint(providers: Config['providers']): str
   return createHash('sha1').update(canonicalJson(lists)).digest('hex').slice(0, 12);
 }
 
+/**
+ * Fingerprint of the static exclude rules a dynamic snapshot was built from.
+ * `exclude` is a resync key, so the rules in effect are always current — but
+ * the snapshot freezes the group model lists, and those were built WITH the old
+ * rules. Without this check an exclusion never reaches the file: the frozen
+ * lists keep naming the excluded ref for up to 30 days (live 2026-11-16, the
+ * owner's `claude-bridge/*fable*` exclusion left `claude-fable-5-2` in four
+ * groups). Selection happened to stay safe because resolveGroup intersects
+ * `g.models` with the exclude-filtered allDiscoveredRefs() — safe by accident,
+ * which is one refactor away from being unsafe. Same bug class as the
+ * free_models fingerprint (closed PR #103). Entry order does not matter.
+ */
+export function staticExcludeFingerprint(exclude: Config['exclude']): string {
+  const rules = (exclude ?? {}) as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+  for (const [kind, value] of Object.entries(rules)) {
+    normalized[kind] = Array.isArray(value) ? value.map(String).sort() : value;
+  }
+  return createHash('sha1').update(canonicalJson(normalized)).digest('hex').slice(0, 12);
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   if (value !== null && typeof value === 'object') {

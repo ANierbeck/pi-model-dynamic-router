@@ -11,6 +11,12 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Fixed — an exclude rule change now regenerates the scan snapshot
+
+`router-config.dynamic.json` freezes the group model lists, and those were built with the exclude rules of the day. The rules themselves were always current (`exclude` is a resync key), but the file kept naming excluded models: after excluding `claude-bridge/*fable*` on 2026-11-16, the snapshot still listed `claude-fable-5-2` in `standard`, `planning`, `bulk_reader` and `code_writer`. Routing stayed correct only because `resolveGroup` intersects the frozen list with the exclude-filtered live list — safe by accident, one refactor away from unsafe.
+
+The snapshot now carries an `exclude_fingerprint` next to the existing `groups_fingerprint` and `free_models_fingerprint`, and a mismatch makes the router ignore the snapshot at load and regenerate it on the next scan. Same bug class as the `free_models` gap closed in PR #103. Snapshots without the new field are regenerated once (self-healing).
+
 ### Changed — the Laya sidecar ships inside the router package
 
 The sidecar code is now a build output of this package (`dist/laya-sidecar.js`), and the separate `@anierbeck/laya-sidecar` package is gone before it was ever published (plan `docs/plans/2026-11-16-laya-sidecar-in-router-tarball.md`, owner decisions D1/D2). One install, one version, one release: a second npm package that has to match the router's version was a failure mode nobody would notice until users hit it.
