@@ -36,9 +36,9 @@ describe('router-laya-install SKILL.md', () => {
 
   it('names only pi-laya-model commands the CLI has', async () => {
     const usage = await cliUsage();
-    const known = new Set(
-      [...usage.matchAll(/^\s{2}(install|verify|list|remove|models)\b/gm)].map((m) => m[1])
-    );
+    // The first word of every command line in the usage text. Parsed, not listed:
+    // a new command (`runtime`, `serve`) must not need an edit here to be recognised.
+    const known = new Set([...usage.matchAll(/^\s{2}([a-z]+)\b/gm)].map((m) => m[1]));
     const named = new Set([...skill.matchAll(/pi-laya-model\s+([a-z]+)/g)].map((m) => m[1]!));
     expect(named.size).toBeGreaterThan(0);
     for (const cmd of named) expect(known.has(cmd), `command ${cmd}`).toBe(true);
@@ -72,10 +72,16 @@ describe('router-laya-install SKILL.md', () => {
     for (const line of installLines) expect(line).not.toContain('--allow-unpublished');
   });
 
-  it('does not start a sidecar itself and names no router-side start command', () => {
-    // The skill hands the sidecar over to the user; the router never starts one.
+  it('does not start a sidecar itself: the user starts it, the router never does', () => {
+    // The skill hands the sidecar over to the user. Since 2026-11-16 it names the
+    // command the USER runs (`pi-laya-model serve`), which is the opposite of the
+    // skill starting one — so the pin is on the hand-over wording, not on the name.
     expect(skill).toMatch(/The skill does not start a sidecar/);
-    expect(skill).not.toMatch(/pi-laya-model\s+serve|pi-laya-model\s+start/);
+    expect(skill).toMatch(/router never starts one/i);
+    expect(skill).toMatch(/user starts it/i);
+    // No background start, no daemon, no "the skill runs it".
+    expect(skill).not.toMatch(/pi-laya-model\s+serve[^\n]*&\s*$/m);
+    expect(skill).not.toMatch(/the skill (starts|runs) (the|a) sidecar/i);
   });
 
   it('offers the ONNX backend only: MLX is not an installer target', () => {
@@ -86,15 +92,19 @@ describe('router-laya-install SKILL.md', () => {
     expect(skill).not.toMatch(/not packaged yet|not yet packaged/i);
   });
 
-  it('says the sidecar ships with release 2.0.0 and is not published before it', () => {
-    expect(skill).toMatch(/@anierbeck\/laya-sidecar/);
-    expect(skill).toMatch(/2\.0\.0/);
-    expect(skill).toMatch(/not published/i);
+  it('ships the sidecar inside the router package: no second npm package (2026-11-16 D1)', () => {
+    // Plan docs/plans/2026-11-16-laya-sidecar-in-router-tarball.md. The old text told the user to
+    // install @anierbeck/laya-sidecar globally; there is no such package any more.
+    expect(skill).not.toMatch(/npm install -g @anierbeck\/laya-sidecar/);
+    expect(skill).not.toMatch(/ONNXRUNTIME_NODE_INSTALL/);
+    expect(skill).toMatch(/ships? (inside|with) the router/i);
   });
 
-  it('gives the ONNX install with the CUDA skip flag and the start command with the head', () => {
-    expect(skill).toMatch(/ONNXRUNTIME_NODE_INSTALL=skip npm install -g @anierbeck\/laya-sidecar/);
-    expect(skill).toMatch(/laya-sidecar\s+--model-dir\s+\S+\s+--head-json\s+\S+head\.json/);
+  it('installs the runtime on demand and starts the sidecar through the installer', () => {
+    expect(skill).toMatch(/pi-laya-model runtime install/);
+    expect(skill).toMatch(/pi-laya-model serve router@1\.0\.0/);
+    // The router still never starts a process; the user does.
+    expect(skill).toMatch(/never start/i);
   });
 
   it('refuses Intel Macs and marks the non-Apple platforms as untested (D5, D6)', () => {

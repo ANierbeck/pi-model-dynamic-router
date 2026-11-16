@@ -230,6 +230,8 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/laya-model-bin.ts` | Entry point of the `pi-laya-model` command, bundled to `dist/laya-model-install.js` |
 | `src/laya-model-install.ts` | Logic of `pi-laya-model`: download, verify and install record of a Laya artifact |
 | `src/laya-model-manifest.ts` | Manifest schema and validation of Laya artifact sets (backends, per-file `asset`) |
+| `src/laya-runtime-install.ts` | The ONNX runtime the Laya sidecar needs: `npm ci` on the shipped lockfile into `<agent dir>/laya-runtime`, verified, atomic, never with install scripts (plan `2026-11-16-laya-sidecar-in-router-tarball.md`) |
+| `src/format.ts` | The three formatting helpers (`mb`, `messageOf`, `tail`) the installer, the runtime installer and the release rehearsal share; plain on purpose, scripts load it under Node's type stripping |
 | `src/limit-glue.ts` | Metrics, rate-limit, blocklist and cost glue, extracted from `index.ts` |
 | `src/logger.ts` | Log lines with their own size rotation, independent of `router.log` |
 | `src/model-blocklist.ts` | Learned blocklist: records permanent failures per model ref (ADR-0008) |

@@ -24,6 +24,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
+import { mb, messageOf } from './format.ts';
 import {
   artifactSha256,
   headFromFile,
@@ -38,6 +39,16 @@ import {
   type LayaManifest,
   type LayaModelVersion,
 } from './laya-model-manifest.ts';
+import {
+  defaultRuntimeDir,
+  installRuntime,
+  LayaRuntimeError,
+  removeRuntime,
+  RUNTIME_PACKAGE,
+  shippedRuntimeSpecDir,
+  verifyRuntime,
+  type RunFn,
+} from './laya-runtime-install.ts';
 
 export type InstallErrorCode =
   | 'usage'
@@ -582,6 +593,41 @@ export interface CliIo {
   isTTY?: boolean;
 }
 
+/** The port of the router's default Laya endpoint (LAYA_DEFAULT_ENDPOINT, pinned by a test). */
+export const SIDECAR_DEFAULT_PORT = 8089;
+
+/** What the sidecar is started with; mirrors ServeOptions in laya-sidecar/src/server.ts. */
+export interface SidecarOptions {
+  modelDir: string;
+  headJson: string;
+  port: number;
+  runtimeDir: string;
+}
+
+/** Seams of the command line; the defaults are the real process, platform and sidecar. */
+export interface CliDeps {
+  run?: RunFn;
+  platform?: string;
+  arch?: string;
+  /** Directory with the runtime's package.json and package-lock.json. */
+  specDir?: string;
+  /** Resolves once the sidecar listens; the process then stays up on its server. */
+  serve?: (opts: SidecarOptions) => Promise<unknown>;
+}
+
+/** The sidecar bundle next to this file in the built package (dist/laya-sidecar.js). */
+const bundledServe = async (opts: SidecarOptions): Promise<unknown> => {
+  const entry = new URL('./laya-sidecar.js', import.meta.url);
+  if (!fs.existsSync(fileURLToPath(entry))) {
+    throw new LayaInstallError(
+      'not-found',
+      `the sidecar bundle ${fileURLToPath(entry)} is missing; run this command from the built package`
+    );
+  }
+  const mod = (await import(entry.href)) as { serve: (o: SidecarOptions) => Promise<unknown> };
+  return mod.serve(opts);
+};
+
 const USAGE = `Usage: pi-laya-model <command> [options]
 
   install <model>[@<version>]  download, verify and install a model
@@ -592,14 +638,21 @@ const USAGE = `Usage: pi-laya-model <command> [options]
   list                         installed models
   remove  <model>@<version>    delete an install
   models                       what the manifest offers, with download sizes
+  runtime install              install the ONNX runtime the sidecar needs (pinned, verified)
+      --force                    install again over a healthy runtime
+  runtime verify               check the installed runtime against this router's pin
+  runtime remove               delete the runtime
+  serve   <model>@<version>    run the sidecar for an installed model, in the foreground
+      --port <n>                 default ${SIDECAR_DEFAULT_PORT}, the router's default endpoint
 
 Options for every command:
       --root <dir>               install root (default: <Pi agent dir>/laya-models)
+      --runtime-dir <dir>        runtime directory (default: <Pi agent dir>/laya-runtime)
       --manifest <path|url>      manifest (default: the one shipped with the router)
       --json                     machine-readable output
 `;
 
-const VALUE_FLAGS = new Set(['--root', '--manifest', '--backend']);
+const VALUE_FLAGS = new Set(['--root', '--manifest', '--backend', '--runtime-dir', '--port']);
 const BOOL_FLAGS = new Set(['--json', '--force', '--allow-unpublished']);
 
 interface ParsedArgs {
@@ -644,7 +697,7 @@ function splitTarget(target: string | undefined, needVersion: boolean): [string,
 }
 
 /** Runs the command line; returns the exit code (0 ok, 1 failed, 2 usage). */
-export async function main(argv: string[], io: CliIo): Promise<number> {
+export async function main(argv: string[], io: CliIo, deps: CliDeps = {}): Promise<number> {
   let args: ParsedArgs;
   try {
     args = parseArgs(argv);
@@ -658,6 +711,12 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
     return typeof v === 'string' ? v : undefined;
   };
   const root = flag('--root') ?? defaultModelsRoot();
+  const runtime = {
+    dir: flag('--runtime-dir') ?? defaultRuntimeDir(),
+    specDir: deps.specDir ?? shippedRuntimeSpecDir(),
+    ...(deps.platform !== undefined ? { platform: deps.platform } : {}),
+    ...(deps.arch !== undefined ? { arch: deps.arch } : {}),
+  };
   const emit = (value: unknown, human: string): void => {
     io.out(json ? JSON.stringify(value, null, 2) + '\n' : human + '\n');
   };
@@ -756,6 +815,75 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
         );
         return 0;
       }
+      case 'runtime': {
+        switch (args.target) {
+          case 'install': {
+            const res = await installRuntime({
+              ...runtime,
+              force: args.flags.has('--force'),
+              ...(deps.run ? { run: deps.run } : {}),
+            });
+            emit(
+              { ok: true, ...res },
+              res.installed
+                ? `Installed ${RUNTIME_PACKAGE} ${res.version} in ${res.dir}`
+                : `${RUNTIME_PACKAGE} ${res.version} is already installed in ${res.dir}`
+            );
+            return 0;
+          }
+          case 'verify': {
+            const res = verifyRuntime(runtime);
+            emit(
+              res,
+              res.ok
+                ? `${RUNTIME_PACKAGE} ${res.version} in ${res.dir}: ok`
+                : `runtime: BROKEN\n  ${res.problems.join('\n  ')}`
+            );
+            return res.ok ? 0 : 1;
+          }
+          case 'remove': {
+            const removed = removeRuntime(runtime.dir);
+            emit(
+              { ok: true, removed: removed ? runtime.dir : null },
+              removed ? `Removed ${runtime.dir}` : `No runtime in ${runtime.dir}`
+            );
+            return 0;
+          }
+          default:
+            throw new LayaInstallError('usage', 'runtime needs install, verify or remove');
+        }
+      }
+      case 'serve': {
+        const [model, version] = splitTarget(args.target, true);
+        assertSafe(model, version!);
+        const port = Number(flag('--port') ?? SIDECAR_DEFAULT_PORT);
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+          throw new LayaInstallError('usage', `--port ${flag('--port')}: not a port`);
+        }
+        const dir = path.join(root, model, version!);
+        let record: InstallRecord;
+        try {
+          record = JSON.parse(
+            fs.readFileSync(path.join(dir, INSTALL_RECORD), 'utf8')
+          ) as InstallRecord;
+        } catch {
+          throw new LayaInstallError(
+            'not-found',
+            `${model}@${version} is not installed in ${root}; run: pi-laya-model install ${model}@${version}`
+          );
+        }
+        // The files are not re-hashed here (1.3 GB on every start): `verify` does that, and the
+        // sidecar reports the installed identity on /health.
+        const rt = verifyRuntime(runtime);
+        if (!rt.ok) throw new LayaRuntimeError('runtime', rt.problems.join('\n'));
+        await (deps.serve ?? bundledServe)({
+          modelDir: dir,
+          headJson: inside(dir, record.head_file.path),
+          port,
+          runtimeDir: runtime.dir,
+        });
+        return 0;
+      }
       default:
         throw new LayaInstallError('usage', `unknown command ${args.command}`);
     }
@@ -764,17 +892,10 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
       io.err(`pi-laya-model: ${err.message}\n\n${USAGE}`);
       return 2;
     }
-    const code = err instanceof LayaInstallError ? err.code : 'internal';
+    const code =
+      err instanceof LayaInstallError || err instanceof LayaRuntimeError ? err.code : 'internal';
     if (json) io.out(JSON.stringify({ ok: false, code, error: messageOf(err) }, null, 2) + '\n');
     else io.err(`pi-laya-model: ${messageOf(err)}\n`);
     return 1;
   }
-}
-
-function mb(bytes: number): string {
-  return `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

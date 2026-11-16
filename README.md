@@ -225,14 +225,17 @@ a confident Laya answer takes the route, everything else falls through
 unchanged. It is **experimental** and **disabled by default** — see
 `docs/config-override.md#integrationslaya--experimental-local-classifier-stage` for every config key.
 
-- **Platforms:** the installable sidecar is the ONNX sidecar
-  `@anierbeck/laya-sidecar`, which ships with release 2.0.0. Apple Silicon is
-  the tested platform; Linux and Windows should work and are **not tested**;
-  Intel Macs are not supported. `laya-sidecar/README.md` has the platform table
-  and the install steps. The sidecar exposes `POST /classify` and reports
-  what it serves on `GET /health`, which the decision log and the `/router`
-  overview use. The router only talks HTTP to loopback (`127.0.0.0/8`,
-  `localhost`, `::1` — enforced at config load) and never downloads weights.
+- **Platforms:** the sidecar ships inside this package (`dist/laya-sidecar.js`);
+  only its native ONNX runtime is a separate download,
+  `pi-laya-model runtime install` (about 115 MB, pinned and integrity-checked,
+  no install scripts). Start it with `pi-laya-model serve router@1.0.0`.
+  Apple Silicon is the tested platform; Linux and Windows should work and are
+  **not tested**; Intel Macs are not supported and the runtime install says so
+  before downloading anything. `laya-sidecar/README.md` has the platform table.
+  The sidecar exposes `POST /classify` and reports what it serves on
+  `GET /health`, which the decision log and the `/router` overview use. The
+  router only talks HTTP to loopback (`127.0.0.0/8`, `localhost`, `::1` —
+  enforced at config load) and never downloads weights or starts a process.
 - **Bring-your-own weights**: a pinned `checkpoint` is required when enabled.
   Publishing a fine-tuned router checkpoint is planned separately
   (`docs/plans/2026-10-31-laya-sidecar-distribution.md`).

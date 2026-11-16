@@ -121,9 +121,11 @@ Add or override benchmark scores for models not in the scraped table:
 > `… laya off`, or `… laya shadow` (a mode implies on). `/router` lists
 > every integration with its state.
 
-An opt-in stage that classifies with a **local Laya sidecar** (ONNX
-Runtime, `@anierbeck/laya-sidecar`) instead of the cloud chain. Disabled by default and
-experimental — start in `"shadow"` mode, which only logs.
+An opt-in stage that classifies with a **local Laya sidecar** (ONNX Runtime,
+shipped inside this package; its native runtime is installed with
+`pi-laya-model runtime install` and the sidecar is started with
+`pi-laya-model serve router@1.0.0`) instead of the cloud chain. Disabled by
+default and experimental — start in `"shadow"` mode, which only logs.
 
 ```json
 {

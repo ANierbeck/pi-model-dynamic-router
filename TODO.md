@@ -539,6 +539,12 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/research/2026-11-13-laya-live-queue-parity.md`); the per-platform
   install docs are complete (Windows start example included). Linux/Windows
   latency WAIVED by the owner 2026-11-08 (modern PCs assumed similar).
+  **Distribution CHANGED 2026-11-16 (owner D1/D2):** the sidecar code now
+  ships inside the router tarball (`dist/laya-sidecar.js`), the separate npm
+  package and its release line are dropped, and the native ONNX runtime is
+  installed on demand with `pi-laya-model runtime install`
+  (`docs/plans/2026-11-16-laya-sidecar-in-router-tarball.md`). No second
+  publish, no second version to keep in step.
 - **Laya model artifact + install skill**
   (`docs/plans/2026-11-08-laya-model-artifact.md`, in progress 2026-11-08;
   **2.0.0 blocker**, part of "everything Laya"): no artifact a user can
@@ -609,13 +615,15 @@ Pick up in a later round, each as its own plan where noted (§11):
     "stays experimental, research continues post-2.0", see
     `docs/plans/2026-10-25-laya-sole-classifier.md`);
     (2) sidecar distribution — packaging, parity (golden 180/180, corpus 298/300,
-    live queue 259/260) and per-platform docs DONE; the r2 weights publish OPEN
-    (own §1 approval; `laya-release-check` reports `ok` for `laya-router-v1.0.0`);
+    live queue 259/260) and per-platform docs DONE; since 2026-11-16 the sidecar
+    ships inside the router tarball and needs no publish of its own; the r2
+    weights publish is OPEN (own §1 approval; `laya-release-check` reports `ok`
+    for `laya-router-v1.0.0`);
     (3) rename `classifier_laya` → `integrations.laya` — DONE 2026-11-12 (PR #166);
     (4) `~/.laya-ft` fallback label migration — DONE 2026-11-13.
-  - Open before a release proposal: the router version named explicitly, the
-    sidecar npm version (`@anierbeck/laya-sidecar` is `0.1.0` in its
-    `package.json`), and the sole-classifier closure.
+  - Open before a release proposal: the router version named explicitly and the
+    sole-classifier closure. The sidecar no longer has a version of its own
+    (2026-11-16).
   Tag, GitHub Release and npm publish are each a separate explicit owner approval
   that names the concrete version (AGENTS.md §1). Nothing in this list implies them.
 
