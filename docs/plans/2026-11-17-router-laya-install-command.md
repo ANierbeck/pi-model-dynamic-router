@@ -50,8 +50,9 @@ manifest, which proves the refusal without network access.
 
 ## Open decisions
 
-- **Sidecar start in `/router`?** Not built: the skill and the router's design say
-  the user starts it in their own terminal. Owner decides if that changes.
+- **Sidecar start in `/router`?** Decided by the owner 2026-11-17: yes, but only
+  on request. `2026-11-17-laya-sidecar-lifecycle.md` builds `/router laya serve`
+  and `/router laya stop`; the router still starts nothing silently.
 - **Legacy `classifier_laya` block** (renamed to `integrations.laya` in 2.0): the
   skill offers to migrate it; this command does not touch it yet.
 - **Publishing `router@1.0.0`** stays a separate owner decision (AGENTS §1). Until
