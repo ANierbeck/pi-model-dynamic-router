@@ -75,6 +75,7 @@ import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
+import { defaultLayaInstallDeps, layaStatus, runLayaInstall } from './laya-install-command.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1127,6 +1128,23 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
     ],
   },
   {
+    name: 'laya',
+    usage: 'laya [install]',
+    summary: 'Laya classifier: status, or install it with confirmed steps (TUI)',
+    completions: [
+      {
+        value: 'laya',
+        label: 'laya',
+        description: 'Laya classifier status: offer, install, ONNX runtime, config',
+      },
+      {
+        value: 'laya install',
+        label: 'laya install',
+        description: 'Install the Laya classifier — confirmed steps, TUI only',
+      },
+    ],
+  },
+  {
     name: 'config',
     usage: `config [${CONFIG_SUBCOMMANDS.map((c) => c.name).join('|')}]`,
     summary:
@@ -1218,6 +1236,42 @@ function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
   return 'Usage: /router corrections [list|clear]';
 }
 
+/**
+ * `/router laya` (status, any mode) and `/router laya install` (the wizard, TUI
+ * only). The wizard asks before each change; the status changes nothing.
+ * Plan: docs/plans/2026-11-17-router-laya-install-command.md.
+ */
+async function handleLayaCommand(
+  rt: CommandDeps,
+  ctx: WizardCtx & { mode?: string },
+  sub: string
+): Promise<string> {
+  const deps = defaultLayaInstallDeps({
+    readLayaBlock: () => {
+      const cfg = openUserConfigStore().read().config as
+        | { integrations?: { laya?: Record<string, unknown> } }
+        | undefined;
+      return cfg?.integrations?.laya;
+    },
+    writeLayaBlock: (block) =>
+      commitConfigPatch(rt, 'integrations.laya', { path: 'integrations.laya', value: block }),
+  });
+  if (sub === '') return (await layaStatus(deps)).join('\n');
+  if (sub === 'install') {
+    if (ctx.mode !== 'tui') {
+      return 'Laya install is interactive: run /router laya install in the TUI. /router laya shows the status and changes nothing.';
+    }
+    return runLayaInstall(
+      {
+        confirm: (title, message) => ctx.ui.confirm(title, message),
+        notify: (message, level) => ctx.ui.notify(message, level),
+      },
+      deps
+    );
+  }
+  return 'Usage: /router laya [install]';
+}
+
 export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
@@ -1258,6 +1312,12 @@ export function createCommands(rt: CommandDeps): void {
             }
             const reply = handleConfigCommand(rt, ctx, sub);
             ctx.ui.notify(!sub ? [reply, '', CONFIG_NO_MENU_NOTE].join('\n') : reply, 'info');
+            return;
+          }
+
+          if (arg === 'laya' || arg?.startsWith('laya ')) {
+            const sub = arg.slice('laya'.length).trim();
+            ctx.ui.notify(await handleLayaCommand(rt, ctx, sub), 'info');
             return;
           }
 

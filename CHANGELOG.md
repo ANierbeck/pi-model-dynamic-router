@@ -11,6 +11,18 @@ without the owner's explicit release approval).
 
 ## [Unreleased]
 
+### Added
+
+- **`/router laya` and `/router laya install`** (plan
+  `docs/plans/2026-11-17-router-laya-install-command.md`). The Laya install
+  procedure from `skills/router-laya-install/SKILL.md` now runs inside pi.
+  `/router laya` is a read-only status: the offered version and whether it is
+  published, what is installed, the ONNX runtime, and the `integrations.laya`
+  block. `/router laya install` is the wizard (TUI only). Each step asks first:
+  download, runtime (about 115 MB), config block. It has no path to an
+  unpublished release, and it never starts the sidecar; the last message gives
+  the `serve` command for the user's terminal.
+
 ### Fixed — a permanently blocked model is no longer re-admitted
 
 A model the upstream provider has retired stayed in the generated group lists

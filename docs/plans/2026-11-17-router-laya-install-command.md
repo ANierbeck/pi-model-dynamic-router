@@ -1,8 +1,8 @@
 # `/router laya` — install the Laya classifier from inside pi
 
-**Status:** in progress 2026-11-17 — plan written, tests not yet red. Owner asked
-for the command after the container work showed that the installer exists only as
-a separate CLI (`pi-laya-model`), which a user inside pi never sees.
+**Status:** implemented 2026-11-17 — tests red first, all gates green
+(276 files, 3502 passed, 3 skipped); PR open. Done after the owner merges it.
+The command is not published or released; `router@1.0.0` still is not.
 
 **Verified against:** `main` @ `110d13a` (merge of PR #185). `src/laya-model-install.ts`
 (`installModel`, `verifyInstall`, `listInstalls`, `loadManifest`), `src/laya-runtime-install.ts`
@@ -60,8 +60,8 @@ manifest, which proves the refusal without network access.
 
 ## Steps
 
-- [ ] Red tests: `test/laya-install-command.test.ts`
-- [ ] `src/laya-install-command.ts`: platform verdict, offer, config merge, status, wizard
-- [ ] `/router laya` wired into `src/commands.ts` and the subcommand table
-- [ ] CHANGELOG, `docs/plans/README.md` row, plan Status → done
-- [ ] Gates: tsc, lint, format, full vitest, PR
+- [x] Red tests: `test/laya-install-command.test.ts`
+- [x] `src/laya-install-command.ts`: platform verdict, offer, config merge, status, wizard
+- [x] `/router laya` wired into `src/commands.ts` and the subcommand table
+- [x] CHANGELOG, `docs/plans/README.md` row, plan Status → done
+- [ ] Gates (green locally; CI and the PR still to do): tsc, lint, format, full vitest, PR
