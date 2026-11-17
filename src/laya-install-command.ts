@@ -25,6 +25,7 @@ import {
 } from './laya-runtime-install.ts';
 import { artifactSha256, type LayaBackend, type LayaManifest } from './laya-model-manifest.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
+import { openUserConfigStore } from './user-config-store.ts';
 
 /** The model this command installs. The manifest may list others; they are ignored. */
 export const LAYA_MODEL = 'router';
@@ -148,13 +149,28 @@ export interface LayaInstallDeps {
     arch: string;
   }) => Promise<{ version: string; installed: boolean }>;
   readLayaBlock: () => Record<string, unknown> | undefined;
-  writeLayaBlock: (block: Record<string, unknown>) => string;
+  writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
 }
 
 /** Binary units, decimal above a gigabyte: "1.30 GB" for the 1.3 GB artifact set. */
 export function formatBytes(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
+}
+
+/** What a config write did. The wizard must not report success when this failed. */
+export type WriteResult = { ok: true; written: string } | { ok: false; error: string };
+
+/**
+ * Writes the `integrations.laya` block into the user layer.
+ *
+ * Through the `integrations` delta, not through `paths`: `checkpoint`, `endpoint`
+ * and `timeout_ms` are not `/router config set` keys, so the paths form refuses
+ * them ("is not a key /router config can set") and nothing is written. Found by
+ * the first real run in the sandbox container.
+ */
+export function writeLayaConfigBlock(block: Record<string, unknown>): WriteResult {
+  return openUserConfigStore().applyDelta({ integrations: { laya: block } });
 }
 
 /** A string config value, or the fallback when the key is absent or not a string. */
@@ -327,10 +343,19 @@ export async function runLayaInstall(ui: LayaUi, deps: LayaInstallDeps): Promise
     return stop(summary, 'Config not written. Run /router laya install again to write it.');
   }
   const saved = deps.writeLayaBlock(block);
+  if (!saved.ok) {
+    return [
+      ...summary,
+      '',
+      saved.error,
+      '',
+      'The model and the runtime are installed; only the config is missing. Fix the user config and run /router laya install again.',
+    ].join('\n');
+  }
   return [
     ...summary,
     '',
-    saved,
+    `Saved to ${saved.written}.`,
     '',
     `Laya is set up: ${ref} in ${configText(block.mode, '')} mode (the answer is logged; the route does not change).`,
     'Start the sidecar in your own terminal:',
@@ -395,7 +420,7 @@ function errorText(err: unknown): string {
 /** The real dependencies, for the /router handler. */
 export function defaultLayaInstallDeps(io: {
   readLayaBlock: () => Record<string, unknown> | undefined;
-  writeLayaBlock: (block: Record<string, unknown>) => string;
+  writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
 }): LayaInstallDeps {
   return {
     platform: process.platform,

@@ -75,7 +75,12 @@ import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
-import { defaultLayaInstallDeps, layaStatus, runLayaInstall } from './laya-install-command.ts';
+import {
+  defaultLayaInstallDeps,
+  layaStatus,
+  runLayaInstall,
+  writeLayaConfigBlock,
+} from './laya-install-command.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1253,13 +1258,21 @@ async function handleLayaCommand(
         | undefined;
       return cfg?.integrations?.laya;
     },
-    writeLayaBlock: (block) =>
-      commitConfigPatch(rt, 'integrations.laya', { path: 'integrations.laya', value: block }),
+    // Through the integrations delta: `checkpoint`, `endpoint` and `timeout_ms` are
+    // not `/router config set` keys, so the paths form refuses the whole block.
+    writeLayaBlock: (block) => {
+      const res = writeLayaConfigBlock(block);
+      if (res.ok) rt.load();
+      return res;
+    },
   });
   if (sub === '') return (await layaStatus(deps)).join('\n');
   if (sub === 'install') {
-    if (ctx.mode !== 'tui') {
-      return 'Laya install is interactive: run /router laya install in the TUI. /router laya shows the status and changes nothing.';
+    // Print mode has no dialogs to answer the step questions, so the wizard would
+    // stop at every one unanswered. RPC mode does have them (pi emits
+    // extension_ui_request and blocks for the client's answer), so it may run.
+    if (ctx.mode === 'print') {
+      return 'Laya install is interactive (it asks before each step): run /router laya install in the TUI or an RPC client. /router laya shows the status and changes nothing.';
     }
     return runLayaInstall(
       {

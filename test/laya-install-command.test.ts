@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   platformVerdict,
@@ -15,6 +16,7 @@ import {
   mergeLayaBlock,
   layaStatus,
   runLayaInstall,
+  writeLayaConfigBlock,
   type LayaInstallDeps,
   type LayaUi,
 } from '../src/laya-install-command.ts';
@@ -101,7 +103,10 @@ function fakes(
     version: '1.0.0',
     installed: true,
   }));
-  const writeLayaBlock = vi.fn(() => 'saved');
+  const writeLayaBlock = vi.fn(() => ({
+    ok: true as const,
+    written: '/x/router-config.user.json',
+  }));
   const deps: LayaInstallDeps = {
     platform: over.platform ?? 'darwin',
     arch: over.arch ?? 'arm64',
@@ -329,11 +334,81 @@ describe('runLayaInstall', () => {
     expect(out).toMatch(/serve router@1\.0\.0/);
   });
 
+  it('a config write that fails is reported, and the wizard does not claim success', async () => {
+    // The first real run in the container ended with "Not written — \
+    // "integrations.laya" is not a key /router config can set" followed by
+    // "Laya is set up": the wizard ignored the failure and told the user the
+    // opposite of what happened.
+    const f = fakes({ installed: true });
+    f.writeLayaBlock.mockReturnValue({
+      ok: false as const,
+      error: 'Not written — disk is read-only',
+    });
+    const out = await runLayaInstall(f.ui, f.deps);
+    expect(out).toMatch(/Not written — disk is read-only/);
+    expect(out).not.toMatch(/Laya is set up/);
+  });
+
   it('config declined: nothing is written and the user is told so', async () => {
     const f = fakes({ confirm: (_t, m) => !m.includes('Write') });
     const out = await runLayaInstall(f.ui, f.deps);
     expect(f.writeLayaBlock).not.toHaveBeenCalled();
     expect(out).toMatch(/Config not written/);
+  });
+});
+
+describe('writeLayaConfigBlock (real user-config store)', () => {
+  it('persists the block, including the keys /router config set cannot write', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'laya-cfg-'));
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      const block = {
+        enabled: true,
+        mode: 'shadow',
+        checkpoint: 'router@1.0.0',
+        endpoint: 'http://127.0.0.1:8089',
+        timeout_ms: 5000,
+      };
+      const res = writeLayaConfigBlock(block);
+      expect(res.ok).toBe(true);
+      const saved = JSON.parse(fs.readFileSync(path.join(dir, 'router-config.user.json'), 'utf8'));
+      expect(saved.integrations.laya).toEqual(block);
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the other keys and other integrations the user already has', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'laya-cfg2-'));
+    const prev = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = dir;
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'router-config.user.json'),
+        JSON.stringify({
+          log_level: 'debug',
+          integrations: { laya: { mode: 'active', timeout_ms: 5000 }, other: { enabled: false } },
+        })
+      );
+      expect(writeLayaConfigBlock({ enabled: true, mode: 'active', timeout_ms: 5000 }).ok).toBe(
+        true
+      );
+      const saved = JSON.parse(fs.readFileSync(path.join(dir, 'router-config.user.json'), 'utf8'));
+      expect(saved.log_level).toBe('debug');
+      expect(saved.integrations.other).toEqual({ enabled: false });
+      expect(saved.integrations.laya).toMatchObject({
+        enabled: true,
+        mode: 'active',
+        timeout_ms: 5000,
+      });
+    } finally {
+      if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -378,12 +453,24 @@ describe('/router laya through the real handler', () => {
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
   });
 
-  it('/router laya install outside the TUI refuses and never asks', async () => {
-    const h = setup({ mode: 'rpc' });
+  it('rpc mode may run the wizard: it has dialogs, so the step questions work', async () => {
+    // ctx.mode is "rpc" and ctx.hasUI is true there (pi docs, rpc-extension-ui):
+    // confirm/select/input arrive as extension_ui_request and are answered by the
+    // client. Refusing rpc would block every non-terminal client. The shipped
+    // manifest is unpublished, so the wizard stops at the offer — which proves the
+    // guard let it through (a refused run would say "interactive"/"TUI").
+    const h = setup({ mode: 'rpc', confirm: async () => true });
+    const out = await h.run('laya install');
+    expect(out).not.toMatch(/interactive|TUI/);
+    expect(out).toMatch(/not published yet|Download|nothing was downloaded/i);
+    expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
+  });
+
+  it('print mode refuses: it has no dialogs to answer the steps', async () => {
+    const h = setup({ mode: 'print' });
     const out = await h.run('laya install');
     expect(out).toMatch(/interactive/);
     expect(h.ui.confirm).not.toHaveBeenCalled();
-    expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
   });
 
   // Deliberately independent of whether the shipped manifest is published: once
