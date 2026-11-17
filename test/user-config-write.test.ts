@@ -2,7 +2,24 @@
 // (review of PR #152): a second router writing at the same time must not
 // lose an edit, and a section that is not an object must not be replaced silently.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// A real EBUSY cannot be arranged portably (it needs a mount point as the target),
+// so renameSync is made to fail on demand. Everything else delegates to the real
+// implementation, so the store's own code path stays the one under test.
+const renameFailure = vi.hoisted(() => ({ err: null as NodeJS.ErrnoException | null }));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    default: actual,
+    renameSync: (from: string, to: string): void => {
+      if (renameFailure.err) throw renameFailure.err;
+      actual.renameSync(from, to);
+    },
+  };
+});
+
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -48,6 +65,33 @@ describe('UserConfigStore.applyDelta — concurrent writers', () => {
   it('removes its own lock after a successful write', () => {
     expect(store().applyDelta({ exclude: { models: ['a/b'] } }).ok).toBe(true);
     expect(fs.existsSync(lockFile)).toBe(false);
+  });
+});
+
+describe('UserConfigStore.applyDelta — atomic replace fails', () => {
+  // Found in the sandbox container: the config was bind-mounted as a single file,
+  // so the atomic rename could not replace it and the raw message ("EBUSY:
+  // resource busy or locked, rename …") told the user nothing they could act on.
+  it('explains an EBUSY rename: the target cannot be replaced in place', () => {
+    fs.writeFileSync(userFile, JSON.stringify({ log_level: 'debug' }));
+    const err = new Error(
+      `EBUSY: resource busy or locked, rename '${userFile}.tmp-1' -> '${userFile}'`
+    ) as NodeJS.ErrnoException;
+    err.code = 'EBUSY';
+    renameFailure.err = err;
+    let res;
+    try {
+      res = store().applyDelta({ exclude: { models: ['a/b'] } });
+    } finally {
+      renameFailure.err = null;
+    }
+    expect(res.ok).toBe(false);
+    const error = res.ok === false ? res.error : '';
+    expect(error).toMatch(/EBUSY/);
+    expect(error).toMatch(/single-file mount|mount the directory/i);
+    // The tmp file is cleaned up, and the existing config is untouched.
+    expect(fs.readdirSync(agentDir).filter((f) => f.includes('.tmp-'))).toEqual([]);
+    expect(readUser()).toEqual({ log_level: 'debug' });
   });
 });
 

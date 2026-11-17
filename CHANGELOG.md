@@ -13,6 +13,10 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **A failed config write now says what to do** about `EBUSY`/`EXDEV`:
+  the atomic replace cannot replace a file that is itself a mount point (a
+  Docker single-file bind mount) or lives on another file system. The old
+  message was the bare `errno`. Found while testing Laya in a container.
 - **`/router laya serve` and `/router laya stop`** (plan
   `docs/plans/2026-11-17-laya-sidecar-lifecycle.md`). The sidecar can now be
   started from pi: `serve` starts it detached (pid file and log in the state
