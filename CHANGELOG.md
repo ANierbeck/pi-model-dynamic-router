@@ -13,6 +13,13 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **`/router laya serve` and `/router laya stop`** (plan
+  `docs/plans/2026-11-17-laya-sidecar-lifecycle.md`). The sidecar can now be
+  started from pi: `serve` starts it detached (pid file and log in the state
+  dir, it outlives `/reload` and a pi restart), `stop` ends it. `/router laya`
+  reports whether it runs and compares the identity it reports on `/health`
+  with the manifest. Nothing starts silently, and a running sidecar is never
+  replaced.
 - **`/router laya` and `/router laya install`** (plan
   `docs/plans/2026-11-17-router-laya-install-command.md`). The Laya install
   procedure from `skills/router-laya-install/SKILL.md` now runs inside pi.

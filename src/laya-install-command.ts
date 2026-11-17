@@ -26,6 +26,13 @@ import {
 import { artifactSha256, type LayaBackend, type LayaManifest } from './laya-model-manifest.ts';
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 import { openUserConfigStore } from './user-config-store.ts';
+import {
+  describeSidecar,
+  portFromEndpoint,
+  startSidecar,
+  stopSidecar,
+  type SupervisorDeps,
+} from './laya-sidecar-supervisor.ts';
 
 /** The model this command installs. The manifest may list others; they are ignored. */
 export const LAYA_MODEL = 'router';
@@ -150,6 +157,11 @@ export interface LayaInstallDeps {
   }) => Promise<{ version: string; installed: boolean }>;
   readLayaBlock: () => Record<string, unknown> | undefined;
   writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
+  /** Where the pid and log of the sidecar live (`PI_ROUTER_STATE_DIR`). */
+  stateDir: string;
+  supervisor: SupervisorDeps;
+  /** Short local probe of the sidecar's /health; null when it does not answer. */
+  health: () => Promise<{ artifact_sha256?: string } | null>;
 }
 
 /** Binary units, decimal above a gigabyte: "1.30 GB" for the 1.3 GB artifact set. */
@@ -231,12 +243,70 @@ export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
       : '  config: not configured (integrations.laya)'
   );
 
+  const sidecar = describeSidecar(deps.stateDir, deps.supervisor);
+  let healthLine = sidecar.running
+    ? `  sidecar: running (pid ${String(sidecar.pid)})`
+    : '  sidecar: not running';
+  if (sidecar.running) {
+    const probe = await deps.health();
+    if (!probe) healthLine += ' — /health does not answer';
+    else if (probe.artifact_sha256 && probe.artifact_sha256 !== offer.artifactSha256)
+      healthLine += ` — serving a DIFFERENT model (artifact ${probe.artifact_sha256.slice(0, 12)}… ≠ ${offer.artifactSha256.slice(0, 12)}…)`;
+    else healthLine += ' — /health ok, same artifact as the manifest';
+  }
+  lines.push(healthLine);
+
   let next: string;
   if (!offer.published)
     next = `${ref} cannot be installed until it is published (owner release decision)`;
   else if (!installed || !runtime.ok || !block) next = '/router laya install';
-  else next = `start the sidecar in your own terminal: ${serveCommand(ref)}`;
+  else if (!sidecar.running)
+    next = `/router laya serve (or in your own terminal: ${serveCommand(ref)})`;
+  else next = 'nothing — Laya is ready';
   return [...lines, `  next: ${next}`];
+}
+
+/**
+ * `/router laya serve`: start the sidecar detached (plan
+ * 2026-11-17-laya-sidecar-lifecycle.md). Refuses when the prerequisites are not
+ * in place or a sidecar is already recorded; never replaces a running one.
+ */
+export async function runLayaServe(deps: LayaInstallDeps): Promise<string> {
+  const block = deps.readLayaBlock();
+  const checkpoint = configText(block?.checkpoint, '');
+  if (!checkpoint) {
+    return 'No checkpoint is configured: run /router laya install first (or set integrations.laya.checkpoint).';
+  }
+  const installs = await deps.listInstalls(deps.root);
+  const runtime = deps.verifyRuntime({
+    dir: deps.runtimeDir,
+    specDir: deps.runtimeSpecDir,
+    platform: deps.platform,
+    arch: deps.arch,
+  });
+  const res = await startSidecar(
+    {
+      stateDir: deps.stateDir,
+      checkpoint,
+      port: portFromEndpoint(configText(block?.endpoint, '')),
+      installed: () => installs.some((i) => `${i.model}@${i.version}` === checkpoint),
+      runtimeOk: () => runtime.ok,
+      healthAnswers: async () => (await deps.health()) !== null,
+    },
+    deps.supervisor
+  );
+  if (!res.ok) return res.error;
+  return [
+    `Laya sidecar started (pid ${res.pid}) for ${checkpoint}, log: ${res.logFile}`,
+    `Endpoint: ${configText(block?.endpoint, LAYA_DEFAULT_ENDPOINT)} — /router laya shows whether /health answers.`,
+    'It keeps running after pi exits; /router laya stop ends it.',
+  ].join('\n');
+}
+
+/** `/router laya stop`: end the recorded sidecar. */
+export async function runLayaStop(deps: LayaInstallDeps): Promise<string> {
+  const res = await stopSidecar(deps.stateDir, deps.supervisor);
+  return res.ok ? `Laya sidecar stopped (pid ${res.pid}).` : res.error;
 }
 
 /** Stops the wizard with the reason, so the user knows what did and did not change. */
@@ -421,6 +491,11 @@ function errorText(err: unknown): string {
 export function defaultLayaInstallDeps(io: {
   readLayaBlock: () => Record<string, unknown> | undefined;
   writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
+  /** Where the pid and log of the sidecar live (`PI_ROUTER_STATE_DIR`). */
+  stateDir: string;
+  supervisor: SupervisorDeps;
+  /** Short local probe of the sidecar's /health; null when it does not answer. */
+  health: () => Promise<{ artifact_sha256?: string } | null>;
 }): LayaInstallDeps {
   return {
     platform: process.platform,
@@ -436,5 +511,8 @@ export function defaultLayaInstallDeps(io: {
     installRuntime: (target) => installRuntime(target),
     readLayaBlock: io.readLayaBlock,
     writeLayaBlock: io.writeLayaBlock,
+    stateDir: io.stateDir,
+    supervisor: io.supervisor,
+    health: io.health,
   };
 }

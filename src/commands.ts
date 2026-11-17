@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { costTracker } from './cost-tracker.ts';
 import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
@@ -79,8 +80,11 @@ import {
   defaultLayaInstallDeps,
   layaStatus,
   runLayaInstall,
+  runLayaServe,
+  runLayaStop,
   writeLayaConfigBlock,
 } from './laya-install-command.ts';
+import { defaultSupervisorDeps } from './laya-sidecar-supervisor.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1134,8 +1138,8 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
   },
   {
     name: 'laya',
-    usage: 'laya [install]',
-    summary: 'Laya classifier: status, or install it with confirmed steps (TUI)',
+    usage: 'laya [install|serve|stop]',
+    summary: 'Laya classifier: status, install it (confirmed steps), start or stop the sidecar',
     completions: [
       {
         value: 'laya',
@@ -1146,6 +1150,16 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
         value: 'laya install',
         label: 'laya install',
         description: 'Install the Laya classifier — confirmed steps, TUI only',
+      },
+      {
+        value: 'laya serve',
+        label: 'laya serve',
+        description: 'Start the Laya sidecar (detached; keeps running after pi exits)',
+      },
+      {
+        value: 'laya stop',
+        label: 'laya stop',
+        description: 'Stop the Laya sidecar this router started',
       },
     ],
   },
@@ -1242,6 +1256,46 @@ function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
 }
 
 /**
+ * Generated state (pid, log, snapshot, cache) lives next to the extension unless
+ * `PI_ROUTER_STATE_DIR` points elsewhere — the same rule index.ts uses.
+ */
+function layaStateDir(rt: CommandDeps): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
+  return process.env.PI_ROUTER_STATE_DIR || path.dirname(rt.cfgPath);
+}
+
+/** The built CLI that carries `serve` (`dist/laya-model-install.js`). */
+function layaCliPath(): string {
+  return fileURLToPath(new URL('./laya-model-install.js', import.meta.url));
+}
+
+/** The endpoint the router talks to: the user layer first, else the default. */
+function layaEndpoint(rt: CommandDeps): string {
+  const block = (
+    openUserConfigStore().read().config as
+      | { integrations?: { laya?: Record<string, unknown> } }
+      | undefined
+  )?.integrations?.laya;
+  const endpoint = block?.endpoint ?? rt.cfg.integrations?.laya?.endpoint;
+  return typeof endpoint === 'string' && endpoint ? endpoint : LAYA_DEFAULT_ENDPOINT;
+}
+
+/**
+ * A short local probe of the sidecar's /health. Never throws: a sidecar that is
+ * down is a normal state, and the status line says so.
+ */
+async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: string } | null> {
+  const url = `${layaEndpoint(rt).replace(/\/+$/, '')}/health`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return null;
+    return (await res.json()) as { artifact_sha256?: string };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `/router laya` (status, any mode) and `/router laya install` (the wizard, TUI
  * only). The wizard asks before each change; the status changes nothing.
  * Plan: docs/plans/2026-11-17-router-laya-install-command.md.
@@ -1265,8 +1319,13 @@ async function handleLayaCommand(
       if (res.ok) rt.load();
       return res;
     },
+    stateDir: layaStateDir(rt),
+    supervisor: defaultSupervisorDeps(layaCliPath()),
+    health: () => probeLayaHealth(rt),
   });
   if (sub === '') return (await layaStatus(deps)).join('\n');
+  if (sub === 'serve') return runLayaServe(deps);
+  if (sub === 'stop') return runLayaStop(deps);
   if (sub === 'install') {
     // Print mode has no dialogs to answer the step questions, so the wizard would
     // stop at every one unanswered. RPC mode does have them (pi emits
@@ -1282,7 +1341,7 @@ async function handleLayaCommand(
       deps
     );
   }
-  return 'Usage: /router laya [install]';
+  return 'Usage: /router laya [install|serve|stop]';
 }
 
 export function createCommands(rt: CommandDeps): void {

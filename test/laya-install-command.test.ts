@@ -487,6 +487,30 @@ describe('/router laya through the real handler', () => {
 
   it('an unknown laya subcommand shows the usage', async () => {
     const out = await setup({ mode: 'print' }).run('laya bogus');
-    expect(out).toMatch(/Usage: \/router laya \[install\]/);
+    expect(out).toMatch(/Usage: \/router laya \[install\|serve\|stop\]/);
+  });
+
+  it('starts no sidecar on its own: /router laya only reports', async () => {
+    // The rule the owner kept: nothing starts silently. Status must stay passive,
+    // so no pid file may appear in the state dir.
+    const stateDir = path.join(harness.paths.agentDir, 'state');
+    process.env.PI_ROUTER_STATE_DIR = stateDir;
+    try {
+      const out = await setup({ mode: 'print' }).run('laya');
+      expect(out).toMatch(/sidecar/i);
+      expect(fs.existsSync(path.join(stateDir, 'laya-sidecar.pid'))).toBe(false);
+    } finally {
+      delete process.env.PI_ROUTER_STATE_DIR;
+    }
+  });
+
+  it('serve without an installed model refuses and points at install', async () => {
+    const out = await setup({ mode: 'rpc' }).run('laya serve');
+    expect(out).toMatch(/\/router laya install/);
+  });
+
+  it('stop without a recorded sidecar says so', async () => {
+    const out = await setup({ mode: 'rpc' }).run('laya stop');
+    expect(out).toMatch(/no sidecar/i);
   });
 });

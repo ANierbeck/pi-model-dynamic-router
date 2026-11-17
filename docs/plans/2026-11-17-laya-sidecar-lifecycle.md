@@ -1,9 +1,9 @@
 # `/router laya serve|stop` — start and stop the Laya sidecar from pi
 
-**Status:** in progress 2026-11-17 — plan written, tests not yet red. Follows
-`2026-11-17-router-laya-install-command.md`, whose install wizard stops one step
-short: it installs the model, the runtime and the config, then tells the user to
-start the sidecar in their own terminal.
+**Status:** implemented 2026-11-17 — tests red first, all gates green (277
+files, 3531 passed, 3 skipped), verified in the sandbox container: serve →
+status (running, /health ok, same artifact) → double start refused → stop →
+status not running → stop again says nothing to stop.
 
 **Verified against:** `main` @ `110d13a` plus the branch of PR #186
 (`feat/router-laya-install`), `src/laya-model-install.ts` (`serve` subcommand,
@@ -71,8 +71,8 @@ processes.
 
 ## Steps
 
-- [ ] Red tests: `test/laya-sidecar-supervisor.test.ts` + the `/router laya` cases
-- [ ] `src/laya-sidecar-supervisor.ts` (pid file, liveness, start, stop)
-- [ ] `/router laya serve|stop` wired into `src/commands.ts`, status line in `layaStatus`
-- [ ] Exemption entry + its pin, CHANGELOG, plan index, install plan cross-link
-- [ ] Gates: tsc, lint, format, full vitest, then the container probe
+- [x] Red tests: `test/laya-sidecar-supervisor.test.ts` + the `/router laya` cases
+- [x] `src/laya-sidecar-supervisor.ts` (pid file, liveness, start, stop)
+- [x] `/router laya serve|stop` wired into `src/commands.ts`, status line in `layaStatus`
+- [x] Exemption entry + its pin, CHANGELOG, plan index, install plan cross-link
+- [x] Gates: tsc, lint, format, full vitest, then the container probe
