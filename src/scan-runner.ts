@@ -486,6 +486,51 @@ export interface ScanRunner {
   scan: (force?: boolean) => Promise<void>;
 }
 
+/**
+ * The probe's `completeSimple` seam into pi's private ModelRuntime.
+ *
+ * Pi 1.5.2's `completeSimple` is a METHOD: `completeSimple(model, ctx, opts) {
+ * return this.streamSimple(model, ctx, opts).result() }`. Detaching it (`const
+ * fn = runtime.completeSimple`) loses the receiver, so `this` is undefined and
+ * the call throws "Cannot read properties of undefined (reading
+ * 'streamSimple')".
+ *
+ * That is exactly what happened (2026-11-17): every provider-configured
+ * candidate failed the scan-time probe with that TypeError, which the probe
+ * then recorded as a model failure — 22 blocklist entries and 15 unhealthy
+ * OpenRouter models upstream. The returned closure re-attaches the receiver.
+ *
+ * Returns undefined when the host exposes neither the runtime nor the method,
+ * so a host interop mismatch stays inert instead of throwing (the contract
+ * test/orchestrator-hint-wiring.test.ts pins for the stream path).
+ */
+export function probeCompleteSimple(
+  registry: unknown
+):
+  | ((
+      model: Model<Api>,
+      ctx: Context,
+      options?: ModelsSimpleStreamOptions
+    ) => Promise<AssistantMessage> | undefined)
+  | undefined {
+  // Reach-through to the facade's private ModelRuntime (verified against pi
+  // 1.5.2): completeSimple is not on the public facade, only on the runtime —
+  // the same documented seam src/stream-orchestrator.ts uses.
+  const runtime = (
+    registry as {
+      runtime?: {
+        completeSimple?: (
+          model: Model<Api>,
+          ctx: Context,
+          options?: ModelsSimpleStreamOptions
+        ) => Promise<AssistantMessage>;
+      };
+    } | null
+  )?.runtime;
+  if (typeof runtime?.completeSimple !== 'function') return undefined;
+  return (model, ctx, options) => runtime.completeSimple?.(model, ctx, options);
+}
+
 export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
   // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -928,23 +973,10 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
       // src/classifier-cloud-probe.ts.
       try {
         const registry = rt.sessionCtx?.modelRegistry;
-        // Reach-through to the facade's private ModelRuntime (verified
-        // against pi 1.5.0): completeSimple is not on the public facade,
-        // only on the runtime — same documented seam as the classifier
-        // wiring in src/stream-orchestrator.ts.
-        const registryRuntime = (
-          registry as unknown as {
-            runtime?: {
-              completeSimple?: (
-                model: Model<Api>,
-                ctx: Context,
-                options?: ModelsSimpleStreamOptions
-              ) => Promise<AssistantMessage>;
-            };
-          }
-        )?.runtime;
-        const completeSimpleFn = registryRuntime?.completeSimple;
-        if (registry && completeSimpleFn) {
+        // The probe's completeSimple seam (see probeCompleteSimple below): the
+        // method must keep the runtime as receiver, or `this` is undefined.
+        const completeSimple = probeCompleteSimple(registry);
+        if (registry && completeSimple) {
           await probeAndCache(
             rt.cfg,
             rt.cache,
@@ -954,11 +986,7 @@ export function createScanRunner(rt: ScanRunnerDeps): ScanRunner {
                 if (i === -1) return undefined;
                 return registry.find(ref.slice(0, i), ref.slice(i + 1));
               },
-              completeSimple: (
-                model: Model<Api>,
-                ctx: Context,
-                options?: ModelsSimpleStreamOptions
-              ) => completeSimpleFn(model, ctx, options),
+              completeSimple,
               hasConfiguredAuth: (model: Model<Api>) =>
                 typeof registry.hasConfiguredAuth === 'function'
                   ? Boolean(registry.hasConfiguredAuth(model))
