@@ -36,8 +36,14 @@ export interface UserConfigDelta {
   /** Cache-aware compaction (Phase 5b): only the master switch is
    * command-settable; the thresholds stay hand-edited config. */
   context_budget?: { enabled?: boolean };
-  /** Per-integration switch (`/router config integration`): merged into the named block, other keys kept. */
-  integrations?: Record<string, { enabled?: boolean; mode?: string }>;
+  /**
+   * Per-integration block: merged into the named block, other keys kept.
+   * `applyDelta` merges with `{...kept, ...patch}`, so the value is not limited to
+   * `enabled`/`mode` — `/router laya install` writes `checkpoint`, `endpoint` and
+   * `timeout_ms` through the same path (the `paths` form rejects them: they are
+   * not `/router config set` keys).
+   */
+  integrations?: Record<string, Record<string, unknown>>;
 }
 
 export interface UserConfigStore {

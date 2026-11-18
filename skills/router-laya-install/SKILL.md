@@ -11,6 +11,11 @@ Laya is an optional local classifier. The router never downloads weights
 itself. This skill walks the user through the one command that does: `pi-laya-model`,
 which ships with the router and runs without Pi.
 
+Inside pi the same procedure is available as `/router laya` (status) and
+`/router laya install` (the confirmed-step wizard, TUI only). Both follow the
+steps below; use the skill when the user wants to drive the installer from
+the terminal or when pi is not running.
+
 **Every step is a confirmed step.** The skill does not download, write
 config or start anything before the user says yes.
 

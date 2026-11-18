@@ -292,9 +292,21 @@ describe('/router overview (real handler)', () => {
     expect(lines.find((l) => l.startsWith('│ Chain:'))).not.toContain('Laya');
   });
 
-  it('shows no Laya line when the stage is disabled or absent', async () => {
-    expect(await overview({ enabled: false })).not.toContain('Laya');
-    expect(await overview(undefined)).not.toContain('Laya');
+  it('shows no Laya stage line when the stage is disabled or absent', async () => {
+    // The command list names `/router laya` too, so the bare word proves nothing;
+    // the stage line is the thing this test is about. The positive control keeps the
+    // pattern honest: an enabled stage must match it.
+    const stageLine = /│ Laya \(/;
+    expect(
+      await overview({
+        enabled: true,
+        mode: 'shadow',
+        checkpoint: 'r2@1.0.0',
+        endpoint: 'http://127.0.0.1:8089',
+      })
+    ).toMatch(stageLine);
+    expect(await overview({ enabled: false })).not.toMatch(stageLine);
+    expect(await overview(undefined)).not.toMatch(stageLine);
   });
 
   it('lists the Integrations section with Laya off when nothing is configured', async () => {
