@@ -103,6 +103,18 @@ export function servedHead(
   return head ? { head, source: 'record' } : null;
 }
 
+/**
+ * The GET /health body: the identity fields plus the pid of the answering
+ * process. The router's `/router laya stop` signals a recorded pid only when the
+ * sidecar that answers is that pid — an answer alone proves only that SOME
+ * sidecar listens, and after a crash the recorded number may belong to an
+ * unrelated process. The pid is a process fact, not part of the install
+ * identity, so it stays out of healthPayload and its identity.py parity.
+ */
+export function healthResponse(payload: Record<string, string>, pid: number): string {
+  return JSON.stringify({ ...payload, pid });
+}
+
 /** Same field set and order rules as health_payload in identity.py. */
 export function healthPayload(
   modelDir: string,

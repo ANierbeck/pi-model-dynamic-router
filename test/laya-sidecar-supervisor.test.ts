@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  answerFromHealth,
   sidecarPaths,
   readRecordedPid,
   isPidAlive,
@@ -199,7 +200,12 @@ describe('startSidecar', () => {
     fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
     const f = fakes({ alive: () => true });
     const res = await startSidecar(
-      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => true },
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        whoAnswers: async () => ({ pid: 4242 }),
+      },
       f.deps
     );
     expect(res).toMatchObject({ ok: false });
@@ -224,7 +230,7 @@ describe('startSidecar', () => {
     fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
     const f = fakes({ alive: () => true });
     const res = await startSidecar(
-      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => false },
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, whoAnswers: async () => null },
       f.deps
     );
     expect(res.ok).toBe(false);
@@ -289,7 +295,12 @@ describe('startSidecar — the safety net around a real process', () => {
     const dir = tmpState();
     const f = fakes();
     const res = await startSidecar(
-      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => true },
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        whoAnswers: async () => ({ pid: 4242 }),
+      },
       f.deps
     );
     expect(res.ok).toBe(false);
@@ -307,7 +318,7 @@ describe('startSidecar — the safety net around a real process', () => {
         checkpoint: 'router@1.0.0',
         port: 8089,
         // Nothing listening yet, then it comes up: the normal startup.
-        healthAnswers: async () => ++probe > 2,
+        whoAnswers: async () => (++probe > 2 ? { pid: 4242 } : null),
       },
       f.deps
     );
@@ -320,7 +331,7 @@ describe('startSidecar — the safety net around a real process', () => {
     const killed: NodeJS.Signals[] = [];
     const f = fakes({ alive: () => true, kill: (_p, sig) => killed.push(sig) });
     const res = await startSidecar(
-      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => false },
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, whoAnswers: async () => null },
       f.deps
     );
     expect(res.ok).toBe(false);
@@ -338,9 +349,9 @@ describe('startSidecar — the safety net around a real process', () => {
         stateDir: dir,
         checkpoint: 'router@1.0.0',
         port: 8089,
-        healthAnswers: async () => {
+        whoAnswers: async () => {
           emit.error?.(new Error('spawn ENOENT'));
-          return false;
+          return null;
         },
       },
       f.deps
@@ -378,7 +389,7 @@ describe('stopSidecar', () => {
         alive = false;
       },
     });
-    const res = await stopSidecar(dir, f.deps, async () => true);
+    const res = await stopSidecar(dir, f.deps, async () => ({ pid: 4242 }));
     expect(res).toMatchObject({ ok: true, pid: 4242 });
     expect(killed[0]).toEqual([4242, 'SIGTERM']);
     expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(false);
@@ -391,7 +402,7 @@ describe('stopSidecar', () => {
     // Alive for the first probe (SIGTERM grace), gone afterwards would end it early;
     // keep it alive so the escalation path is the one exercised.
     const f = fakes({ alive: () => true, kill: (pid, sig) => killed.push([pid, sig]) });
-    await stopSidecar(dir, f.deps, async () => true);
+    await stopSidecar(dir, f.deps, async () => ({ pid: 4242 }));
     // The target matters: signalling another pid would kill somebody else's work.
     expect(killed).toEqual([
       [4242, 'SIGTERM'],
@@ -404,7 +415,7 @@ describe('stopSidecar', () => {
     const dir = tmpState();
     fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
     const f = fakes({ alive: () => true });
-    const res = await stopSidecar(dir, f.deps, async () => true);
+    const res = await stopSidecar(dir, f.deps, async () => ({ pid: 4242 }));
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.error).toMatch(/still alive/i);
     expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(true);
@@ -415,7 +426,7 @@ describe('stopSidecar', () => {
     fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
     const killed: NodeJS.Signals[] = [];
     const f = fakes({ alive: () => true, kill: (_p, sig) => killed.push(sig) });
-    const res = await stopSidecar(dir, f.deps, async () => false);
+    const res = await stopSidecar(dir, f.deps, async () => null);
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.error).toMatch(/different process|does not answer/i);
     expect(killed).toEqual([]);
@@ -435,7 +446,7 @@ describe('stopSidecar', () => {
         throw err;
       },
     });
-    const res = await stopSidecar(dir, f.deps, async () => true);
+    const res = await stopSidecar(dir, f.deps, async () => ({ pid: 4242 }));
     expect(res).toMatchObject({ ok: true, pid: 4242 });
     expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(false);
   });
@@ -481,5 +492,87 @@ describe('describeSidecar', () => {
     expect(describeSidecar(dir, fakes({ alive: () => false }).deps)).toMatchObject({
       running: false,
     });
+  });
+});
+
+// Sourcery PR #190: a /health answer proves that SOME sidecar listens on the
+// endpoint, not that the recorded pid is it. After a crash the OS may hand the
+// recorded number to an unrelated process while a sidecar started in a
+// terminal answers on the port — signalling the recorded pid then kills
+// somebody else's work. The sidecar reports its own pid on /health; only an
+// answer carrying exactly the recorded (or just spawned) pid counts.
+describe('the answering pid is the identity, not the answer itself', () => {
+  it('stop: does not signal the recorded pid when a different sidecar answers', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    const killed: number[] = [];
+    const f = fakes({ alive: () => true, kill: (pid) => killed.push(pid) });
+    const res = await stopSidecar(dir, f.deps, async () => ({ pid: 9999 }));
+    expect(killed).toEqual([]);
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/9999/);
+    expect(res.ok === false && res.error).toMatch(/4242/);
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(true);
+  });
+
+  it('stop: does not signal when the answer carries no pid (identity unknown)', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    const killed: number[] = [];
+    const f = fakes({ alive: () => true, kill: (pid) => killed.push(pid) });
+    const res = await stopSidecar(dir, f.deps, async () => ({}));
+    expect(killed).toEqual([]);
+    expect(res.ok === false && res.error).toMatch(/does not report its pid/i);
+  });
+
+  it('start: a different sidecar answering does not confirm the spawned child', async () => {
+    const dir = tmpState();
+    const killed: number[] = [];
+    let probes = 0;
+    const f = fakes({ alive: () => true, kill: (pid) => killed.push(pid) });
+    const res = await startSidecar(
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        // Nobody answers before the spawn; afterwards a foreign sidecar does.
+        whoAnswers: async () => (++probes > 1 ? { pid: 9999 } : null),
+      },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/9999/);
+    expect(killed).toContain(4242); // our own child, stopped again
+    expect(killed).not.toContain(9999);
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(false);
+  });
+
+  it('start: a recorded live pid is not "already running" when another pid answers', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    const f = fakes({ alive: () => true });
+    const res = await startSidecar(
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        whoAnswers: async () => ({ pid: 9999 }),
+      },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).not.toMatch(/already running \(pid 4242\)/);
+    expect(res.ok === false && res.error).toMatch(/9999/);
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
+  it('answerFromHealth reads only a positive integer pid', () => {
+    const read = answerFromHealth;
+    expect(read(null)).toBeNull();
+    expect(read({ status: 'ok', pid: 4242 })).toEqual({ pid: 4242 });
+    for (const pid of ['4242', 0, -1, 4.5, Number.NaN, 2 ** 53]) {
+      expect(read({ status: 'ok', pid })).toEqual({});
+    }
+    expect(read({ status: 'ok' })).toEqual({});
   });
 });

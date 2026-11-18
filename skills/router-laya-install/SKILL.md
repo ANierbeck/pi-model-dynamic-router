@@ -152,9 +152,9 @@ decision log.
 
 ### 8. Sidecar (not started by this skill)
 
-The skill does not start a sidecar and the router never starts one either: the
-user starts it, in their own terminal. The sidecar code ships inside the router
-package; only its native runtime is a separate download.
+The skill does not start a sidecar: the user starts it, either from pi with
+`/router laya serve` or in their own terminal. The sidecar code ships inside the
+router package; only its native runtime is a separate download.
 
 1. **Install the runtime** (about 115 MB, once, and again after a router update
    that changes the pin):
@@ -168,15 +168,23 @@ package; only its native runtime is a separate download.
    postinstall would download CUDA libraries without a digest check on Linux
    x64). `pi-laya-model runtime verify` re-checks the result.
 
-2. **Start the sidecar** in the foreground of the user's terminal:
+2. **Start the sidecar.** Tell the user the two ways; do not run either one
+   for them.
 
-   ```bash
-   pi-laya-model serve router@1.0.0
-   ```
+   - **From pi:** `/router laya serve` starts it in the background, on the port
+     of `integrations.laya.endpoint`, and reports success only once `/health`
+     answers. It keeps running across `/reload` and a pi restart;
+     `/router laya stop` stops it, and `/router laya` shows whether it runs.
+   - **In a terminal**, in the foreground:
 
-   It resolves the install directory, the head and the runtime itself and
-   listens on port 8089, the router's default endpoint. `--port <n>` moves it
-   (then `integrations.laya.endpoint` has to follow).
+     ```bash
+     pi-laya-model serve router@1.0.0
+     ```
+
+     It resolves the install directory, the head and the runtime itself and
+     listens on port 8089, the router's default endpoint. `--port <n>` moves it
+     (then `integrations.laya.endpoint` has to follow). Stop it with Ctrl-C;
+     `/router laya stop` only stops a sidecar that `/router laya serve` started.
 
 Platforms: macOS on Apple Silicon is the tested one; Linux and Windows x64/arm64
 should work but are untested; Intel Macs are not supported and `runtime install`

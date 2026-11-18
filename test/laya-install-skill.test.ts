@@ -72,13 +72,18 @@ describe('router-laya-install SKILL.md', () => {
     for (const line of installLines) expect(line).not.toContain('--allow-unpublished');
   });
 
-  it('does not start a sidecar itself: the user starts it, the router never does', () => {
+  it('does not start a sidecar itself: the user starts it, through pi or a terminal', () => {
     // The skill hands the sidecar over to the user. Since 2026-11-16 it names the
     // command the USER runs (`pi-laya-model serve`), which is the opposite of the
     // skill starting one — so the pin is on the hand-over wording, not on the name.
     expect(skill).toMatch(/The skill does not start a sidecar/);
-    expect(skill).toMatch(/router never starts one/i);
     expect(skill).toMatch(/user starts it/i);
+    // Since PR #188 the router starts one on request (`/router laya serve`); a skill
+    // that still says "the router never starts one" sends users to manual process
+    // management they no longer need (Sourcery PR #190).
+    expect(skill).not.toMatch(/router never starts/i);
+    expect(skill).toMatch(/\/router laya serve/);
+    expect(skill).toMatch(/\/router laya stop/);
     // No background start, no daemon, no "the skill runs it".
     expect(skill).not.toMatch(/pi-laya-model\s+serve[^\n]*&\s*$/m);
     expect(skill).not.toMatch(/the skill (starts|runs) (the|a) sidecar/i);
@@ -102,9 +107,8 @@ describe('router-laya-install SKILL.md', () => {
 
   it('installs the runtime on demand and starts the sidecar through the installer', () => {
     expect(skill).toMatch(/pi-laya-model runtime install/);
+    // The terminal form stays documented as the alternative to `/router laya serve`.
     expect(skill).toMatch(/pi-laya-model serve router@1\.0\.0/);
-    // The router still never starts a process; the user does.
-    expect(skill).toMatch(/never start/i);
   });
 
   it('refuses Intel Macs and marks the non-Apple platforms as untested (D5, D6)', () => {

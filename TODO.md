@@ -3,7 +3,7 @@
 > **Status**: 2.0.0 prepared (`2.0.0-SNAPSHOT`), release awaits the owner's go
 > (AGENTS.md §1). Items closed in v1.6.1 or earlier are removed from this file;
 > their history lives in `CHANGELOG.md` and git.
-> **Last Updated**: 2026-11-13 (Dependabot: 0 open alerts, checked live 2026-11-13)
+> **Last Updated**: 2026-11-18 (Dependabot: 0 open alerts, checked live 2026-11-18)
 
 ## 📌 **IMPORTANT RULES**
 
@@ -283,16 +283,20 @@ MIT), so the notice must not be dropped before that is settled.
   behind the pin (`classifyBehindPin`, `src/stream-orchestrator.ts`); the pin still decides the
   model. Checked 2026-11-14 against the code; not re-measured live. Background:
   `docs/research/2026-10-22-hint-category-signal.md`.
-- [ ] **Use explicit HINT pins as owner category labels** (research, 2026-10-22).
-  Hand-labelled, 96 unique pinned prompts in the local session logs: code_complex 67,
-  planning 11, continue 9, design 5, simple 2, standard 2. A Sonnet pin mostly
-  means code_complex, but not always (4 of 33 are continuations). An Opus pin
-  is planning in 5 of 12 cases, code_complex in 7 (plan checks count as
-  code_complex under the taxonomy). The 4 Haiku pins are not enough to
-  support "Haiku = simple". Pins are NOT a routing rule; they are a
-  label source for calibration. Open: keep labels separate from model
-  predictions (`owner_label` field) and decide the category handling of
-  "plan check" (taxonomy says code_complex).
+- [x] **Use explicit HINT pins as owner category labels** (research, 2026-10-22)
+  — CLOSED 2026-11-18 by the owner, option B not pursued. The measurement shows
+  pins are too weak a label source: about two thirds of all pinned prompts are
+  code_complex whatever the pinned model (96 prompts in
+  `docs/research/2026-10-22-hint-category-signal.md`, 126 in
+  `docs/research/2026-11-14-hint-pin-group-join.md`); an Opus pin is planning in
+  only 5 of 12 cases; Mistral pins were a workaround for a failing Claude path;
+  continuation pins mean "keep this model", not a category; `design` and
+  `simple` get almost no labels, because the owner pins mainly while debugging;
+  only 13 pins were usable for the group check. A pin describes how the owner
+  works more than the task. Option A of the same note (a pinned turn still
+  classifies its content, so the next `continue` inherits the right category)
+  is built (`classifyBehindPin`, see the entry above). Nothing is decided about
+  "plan check = code_complex or planning"; it only mattered for option B.
 ### Code Quality
 - [x] ~~Improve error handling - Better error messages and recovery~~
   DROPPED 2026-11-06: no concrete defect named. Concrete error-handling work
@@ -564,13 +568,14 @@ Pick up in a later round, each as its own plan where noted (§11):
   **2026-11-12:** the release staging directory is cleaned (four hard-linked
   MLX files removed, originals intact) and `laya-release-check` passes for
   `router@1.0.0`; the installer offers the ONNX backend only (PR #159).
-- **Router-managed sidecar start** (owner 2026-11-08, "can happen later"; not
-  a 2.0.0 blocker; needs its own plan per AGENTS.md §11 when scheduled): the
-  router should be able to start an installed sidecar itself instead of
-  leaving that to a user-level extension. Prototype: the sidecar manager the
-  owner runs outside the repository (health-first adoption, start lock,
-  last-client shutdown). Depends on the model artifact plan below and the
-  integration contract.
+- ✅ **Router-managed sidecar start — DONE 2026-11-17** (PR #188, plan
+  `docs/plans/2026-11-17-laya-sidecar-lifecycle.md`, evidence
+  `docs/research/2026-11-18-laya-command-verification.md`): `/router laya serve`
+  starts the installed sidecar and confirms it through `/health`, `/router laya
+  stop` signals the recorded pid only when the sidecar answering on `/health`
+  reports that pid (the pid check came with PR #190, after a Sourcery finding).
+  The user-level sidecar manager outside the repository is no longer needed for
+  this.
 - ✅ **Router config UI: guided path for integrations — DONE 2026-11-15**
   (`docs/plans/2026-11-14-config-surface-and-ui.md`, status done; the earlier
   `2026-11-08-router-config-ui.md` is superseded by it and kept as history).
@@ -700,4 +705,4 @@ None of them blocks the Laya release gate.
 
 ---
 
-*Last updated: 2026-11-13*
+*Last updated: 2026-11-18*

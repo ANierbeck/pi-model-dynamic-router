@@ -486,7 +486,7 @@ describe('layaStatus', () => {
       artifactSha256: string;
     };
     const sha = matchingOffer.artifactSha256;
-    matching.deps.health = async () => ({ artifact_sha256: sha });
+    matching.deps.health = async () => ({ artifact_sha256: sha, pid: 4242 });
     expect((await layaStatus(matching.deps)).join('\n')).toMatch(
       /sidecar: running \(pid 4242\) — \/health ok, same artifact as router@1\.0\.0/
     );
@@ -496,7 +496,7 @@ describe('layaStatus', () => {
       installed: true,
       layaBlock: block,
       pid: 4242,
-      probe: { artifact_sha256: 'b'.repeat(64) },
+      probe: { artifact_sha256: 'b'.repeat(64), pid: 4242 },
     });
     expect((await layaStatus(other.deps)).join('\n')).toMatch(/serving a DIFFERENT model/);
 
@@ -508,6 +508,21 @@ describe('layaStatus', () => {
     const silentText = (await layaStatus(silent.deps)).join('\n');
     expect(silentText).toMatch(/\/health does not answer/);
     expect(silentText).toMatch(/next: \/router laya stop, then \/router laya serve/);
+  });
+
+  it('says when /health is answered by another pid than the recorded one (PR #190)', async () => {
+    // The answer alone proves only that SOME sidecar listens. When it names a
+    // different pid, the record is stale and /router laya stop will refuse:
+    // the status must say so instead of "/health ok … nothing — Laya is ready".
+    const block = { enabled: true, mode: 'active', checkpoint: 'router@1.0.0' };
+    const f = fakes({ installed: true, layaBlock: block, pid: 4242 });
+    const sha = (latestOffer(await f.deps.loadManifest()) as { artifactSha256: string })
+      .artifactSha256;
+    f.deps.health = async () => ({ artifact_sha256: sha, pid: 9999 });
+    const text = (await layaStatus(f.deps)).join('\n');
+    expect(text).toMatch(/sidecar: running \(pid 4242\) — \/health is answered by pid 9999/);
+    expect(text).not.toMatch(/Laya is ready/);
+    expect(text).toMatch(/next: .*laya-sidecar\.pid/);
   });
 
   it('reports a sidecar on an endpoint it will not probe, and why', async () => {
