@@ -17,6 +17,22 @@ without the owner's explicit release approval).
   the atomic replace cannot replace a file that is itself a mount point (a
   Docker single-file bind mount) or lives on another file system. The old
   message was the bare `errno`. Found while testing Laya in a container.
+- **The Laya sidecar is hardened against the ways a detached process goes
+  wrong** (review round on `/router laya serve|stop`): the endpoint must be
+  plain `http` on loopback with an explicit port and no path (a config file
+  cannot point a local server at another host); the child gets an allowlisted
+  environment (`PATH`, `HOME`, `TMPDIR`, `LANG`, `TZ`, …) instead of pi's whole
+  environment, so no provider credential reaches it; a start is only reported
+  once `/health` answers, and an unanswered start stops the child again; a
+  sidecar started in a terminal is detected and not duplicated; two concurrent
+  `serve` calls cannot both spawn (the pid file is reserved with `O_EXCL`
+  before the spawn); `stop` only signals a pid that answers as the sidecar
+  (a reused pid is no longer killed) and waits for the process to be gone
+  before it deletes the record. `src/install-lock.ts` serialises the model and
+  runtime installers, which stage into the same `<dir>.tmp`.
+- **`/router laya` reads the effective `integrations.laya`**, not just the user
+  layer: a project config that enables or repoints Laya is what the status and
+  `serve` act on, matching the classifier.
 - **`/router laya serve` and `/router laya stop`** (plan
   `docs/plans/2026-11-17-laya-sidecar-lifecycle.md`). The sidecar can now be
   started from pi: `serve` starts it detached (pid file and log in the state

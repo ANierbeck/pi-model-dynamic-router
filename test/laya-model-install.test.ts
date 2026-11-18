@@ -219,6 +219,41 @@ describe('install from a file:// release', () => {
   });
 });
 
+describe('two installs of the same version', () => {
+  // Both runs stage into <version>.tmp and move <version> aside, so without a lock
+  // the second one deletes the first one's files and the survivor is incomplete.
+  const lockFile = () => `${versionDir()}.install-lock`;
+
+  it('refuses while another install holds the lock, and names the holder', async () => {
+    fs.mkdirSync(path.dirname(lockFile()), { recursive: true });
+    fs.writeFileSync(lockFile(), `${String(process.pid)} ${new Date().toISOString()}\n`);
+    const err = await installModel({ manifest: manifestFor(fileBase()), model: 'r9', root }).catch(
+      (e) => e
+    );
+    expect(err.code).toBe('busy');
+    expect(err.message).toContain(lockFile());
+    expect(fs.existsSync(versionDir())).toBe(false);
+    // The foreign lock stays: the run that holds it still owns it.
+    expect(fs.existsSync(lockFile())).toBe(true);
+  });
+
+  it('takes over a lock that has been untouched for longer than the stale window', async () => {
+    fs.mkdirSync(path.dirname(lockFile()), { recursive: true });
+    fs.writeFileSync(lockFile(), 'crashed-run\n');
+    const old = new Date(Date.now() - 11 * 60_000);
+    fs.utimesSync(lockFile(), old, old);
+    const res = await installModel({ manifest: manifestFor(fileBase()), model: 'r9', root });
+    expect(res.dir).toBe(versionDir());
+    expect(fs.existsSync(lockFile())).toBe(false); // released, not left behind
+  });
+
+  it('releases the lock when the install fails', async () => {
+    const m = manifestFor(fileBase(), { published: false });
+    await installModel({ manifest: m, model: 'r9', root }).catch(() => {});
+    expect(fs.existsSync(lockFile())).toBe(false);
+  });
+});
+
 describe('install over HTTP: resume and Range', () => {
   let server: http.Server;
   let base = '';

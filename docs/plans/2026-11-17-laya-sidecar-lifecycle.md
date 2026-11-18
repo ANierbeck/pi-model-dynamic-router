@@ -1,9 +1,7 @@
 # `/router laya serve|stop` — start and stop the Laya sidecar from pi
 
-**Status:** implemented 2026-11-17 — tests red first, all gates green (277
-files, 3531 passed, 3 skipped), verified in the sandbox container: serve →
-status (running, /health ok, same artifact) → double start refused → stop →
-status not running → stop again says nothing to stop.
+**Status:** done 2026-11-17. Implemented red first; measured in the sandbox
+container end to end. Evidence: `docs/research/2026-11-18-laya-command-verification.md`.
 
 **Verified against:** `main` @ `110d13a` plus the branch of PR #186
 (`feat/router-laya-install`), `src/laya-model-install.ts` (`serve` subcommand,

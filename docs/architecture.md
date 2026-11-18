@@ -232,6 +232,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/laya-model-manifest.ts` | Manifest schema and validation of Laya artifact sets (backends, per-file `asset`) |
 | `src/laya-runtime-install.ts` | The ONNX runtime the Laya sidecar needs: `npm ci` on the shipped lockfile into `<agent dir>/laya-runtime`, verified, atomic, never with install scripts (plan `2026-11-16-laya-sidecar-in-router-tarball.md`) |
 | `src/laya-install-command.ts` | `/router laya` (status) and `/router laya install` (confirmed-step wizard, TUI only): the skill's procedure inside pi, with no path to an unpublished release (plan `2026-11-17-router-laya-install-command.md`) |
+| `src/install-lock.ts` | One install at a time per target directory: an `O_EXCL` lock file next to `<dir>` (`.install-lock`, stale after 10 minutes), shared by the model and the runtime installer so two runs cannot stage into the same `<dir>.tmp` |
 | `src/laya-sidecar-supervisor.ts` | The Laya sidecar process: `/router laya serve` starts it detached with a pid file, `/router laya stop` ends it; second `child_process` exemption, argument array only, never a shell (plan `2026-11-17-laya-sidecar-lifecycle.md`) |
 | `src/format.ts` | The three formatting helpers (`mb`, `messageOf`, `tail`) the installer, the runtime installer and the release rehearsal share; plain on purpose, scripts load it under Node's type stripping |
 | `src/limit-glue.ts` | Metrics, rate-limit, blocklist and cost glue, extracted from `index.ts` |

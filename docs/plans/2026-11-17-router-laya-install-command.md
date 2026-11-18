@@ -1,8 +1,8 @@
 # `/router laya` — install the Laya classifier from inside pi
 
-**Status:** implemented 2026-11-17 — tests red first, all gates green
-(276 files, 3502 passed, 3 skipped); PR open. Done after the owner merges it.
-The command is not published or released; `router@1.0.0` still is not.
+**Status:** done 2026-11-17 (red first, gates green). Evidence and the
+container run: `docs/research/2026-11-18-laya-command-verification.md`.
+Nothing here was published or released; `router@1.0.0` still is not.
 
 **Verified against:** `main` @ `110d13a` (merge of PR #185). `src/laya-model-install.ts`
 (`installModel`, `verifyInstall`, `listInstalls`, `loadManifest`), `src/laya-runtime-install.ts`

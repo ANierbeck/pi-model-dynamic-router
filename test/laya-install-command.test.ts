@@ -21,6 +21,7 @@ import {
   type LayaUi,
 } from '../src/laya-install-command.ts';
 import { LayaInstallError } from '../src/laya-model-install.ts';
+import { sidecarPaths } from '../src/laya-sidecar-supervisor.ts';
 import type { LayaManifest, LayaModelVersion } from '../src/laya-model-manifest.ts';
 import { useConfigCommandHarness } from './helpers/config-command-harness.ts';
 
@@ -74,6 +75,12 @@ function fakes(
     installError?: unknown;
     postVerify?: { ok: boolean; problems: string[] };
     layaBlock?: Record<string, unknown>;
+    /** A recorded sidecar pid; absent means "nothing is recorded". */
+    pid?: number;
+    /** What /health answers when a sidecar is recorded. */
+    probe?: Record<string, unknown> | null;
+    endpoint?: string;
+    probeProblem?: () => string | null;
   } = {}
 ): Fakes {
   const installed = over.installed ?? false;
@@ -107,6 +114,8 @@ function fakes(
     ok: true as const,
     written: '/x/router-config.user.json',
   }));
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'laya-cmd-state-'));
+  const health = vi.fn(async () => over.probe ?? null);
   const deps: LayaInstallDeps = {
     platform: over.platform ?? 'darwin',
     arch: over.arch ?? 'arm64',
@@ -125,9 +134,27 @@ function fakes(
     installRuntime: installRuntime as unknown as LayaInstallDeps['installRuntime'],
     readLayaBlock: () => over.layaBlock,
     writeLayaBlock: writeLayaBlock as unknown as LayaInstallDeps['writeLayaBlock'],
+    // A real state dir: the sidecar record lives in it, and a fake path would hide
+    // the difference between "nothing recorded" and "record unreadable".
+    stateDir,
+    supervisor: {
+      execPath: '/usr/local/bin/node',
+      cliPath: '/x/dist/laya-model-install.js',
+      spawn: (() => ({ pid: 4242, unref: () => {}, on: () => {} })) as never,
+      isPidAlive: () => over.pid !== undefined,
+      kill: () => {},
+      sleep: async () => {},
+      now: () => 0,
+    },
+    health,
+    endpoint: over.endpoint ?? 'http://127.0.0.1:8089',
+    ...(over.probeProblem ? { probeProblem: over.probeProblem } : {}),
   };
+  if (over.pid !== undefined) fs.writeFileSync(sidecarPaths(stateDir).pidFile, String(over.pid));
   return {
     deps,
+    stateDir,
+    health,
     ui: { confirm, notify },
     installModel,
     installRuntime,
@@ -420,10 +447,14 @@ describe('layaStatus', () => {
     });
     const lines = await layaStatus(f.deps);
     const text = lines.join('\n');
-    expect(text).toMatch(/router@1\.0\.0.*published/);
-    expect(text).toMatch(/installed/);
-    expect(text).toMatch(/runtime.*installed/);
-    expect(text).toMatch(/enabled.*shadow/);
+    // Each assertion names its line: a bare /installed/ also matched
+    // "not installed", so the test could not fail for the wrong report.
+    expect(text).toMatch(/offer: router@1\.0\.0 — published/);
+    expect(text).toMatch(/install: router@1\.0\.0 installed/);
+    expect(text).toMatch(/ONNX runtime: installed/);
+    expect(text).toMatch(/config: integrations\.laya — enabled on, mode shadow/);
+    expect(text).toMatch(/sidecar: not running/);
+    expect(text).toMatch(/next: \/router laya serve/);
     expect(f.ui.confirm).not.toHaveBeenCalled();
     expect(f.installModel).not.toHaveBeenCalled();
     expect(f.writeLayaBlock).not.toHaveBeenCalled();
@@ -433,12 +464,71 @@ describe('layaStatus', () => {
     const f = fakes({
       manifest: manifest(version('1.0.0', false)),
       installed: false,
+      runtimeOk: false,
       layaBlock: undefined,
     });
     const text = (await layaStatus(f.deps)).join('\n');
-    expect(text).toMatch(/NOT published/);
-    expect(text).toMatch(/not installed/);
-    expect(text).toMatch(/not configured/);
+    expect(text).toMatch(/offer: router@1\.0\.0 — NOT published yet/);
+    expect(text).toMatch(/install: router@1\.0\.0 not installed/);
+    expect(text).toMatch(/ONNX runtime: not installed/);
+    expect(text).toMatch(/config: not configured/);
+    // An unpublished offer is the reason, not "run install": naming the wrong
+    // next step sends the user into a wizard that can only refuse.
+    expect(text).toMatch(/next: router@1\.0\.0 cannot be installed until it is published/);
+  });
+
+  it('reports a running sidecar together with the identity /health proves', async () => {
+    const block = { enabled: true, mode: 'active', checkpoint: 'router@1.0.0' };
+    const matching = fakes({ installed: true, layaBlock: block, pid: 4242 });
+    // The fingerprint the configured checkpoint should answer with, taken from the
+    // same manifest the status reads: a literal would silently stop matching.
+    const matchingOffer = latestOffer(await matching.deps.loadManifest()) as {
+      artifactSha256: string;
+    };
+    const sha = matchingOffer.artifactSha256;
+    matching.deps.health = async () => ({ artifact_sha256: sha });
+    expect((await layaStatus(matching.deps)).join('\n')).toMatch(
+      /sidecar: running \(pid 4242\) — \/health ok, same artifact as router@1\.0\.0/
+    );
+
+    expect(sha).not.toBe('b'.repeat(64));
+    const other = fakes({
+      installed: true,
+      layaBlock: block,
+      pid: 4242,
+      probe: { artifact_sha256: 'b'.repeat(64) },
+    });
+    expect((await layaStatus(other.deps)).join('\n')).toMatch(/serving a DIFFERENT model/);
+
+    // /health answering without a fingerprint proves nothing about identity.
+    const mute = fakes({ installed: true, layaBlock: block, pid: 4242, probe: {} });
+    expect((await layaStatus(mute.deps)).join('\n')).toMatch(/identity unknown/);
+
+    const silent = fakes({ installed: true, layaBlock: block, pid: 4242, probe: null });
+    const silentText = (await layaStatus(silent.deps)).join('\n');
+    expect(silentText).toMatch(/\/health does not answer/);
+    expect(silentText).toMatch(/next: \/router laya stop, then \/router laya serve/);
+  });
+
+  it('reports a sidecar on an endpoint it will not probe, and why', async () => {
+    const f = fakes({
+      installed: true,
+      layaBlock: { enabled: true, checkpoint: 'router@1.0.0' },
+      pid: 4242,
+      endpoint: 'http://10.0.0.5:8089',
+      probeProblem: () => 'the endpoint is not on this machine',
+    });
+    const text = (await layaStatus(f.deps)).join('\n');
+    expect(text).toMatch(/not probed: the endpoint is not on this machine/);
+    // A probe that could not be interpreted is not worth a request.
+    expect(f.health).not.toHaveBeenCalled();
+  });
+
+  it('says the router will not use Laya when integrations.laya.enabled is off', async () => {
+    const f = fakes({ installed: true, layaBlock: { enabled: false, checkpoint: 'router@1.0.0' } });
+    expect((await layaStatus(f.deps)).join('\n')).toMatch(
+      /next: nothing to start — integrations\.laya\.enabled is off/
+    );
   });
 });
 
@@ -473,14 +563,15 @@ describe('/router laya through the real handler', () => {
     expect(h.ui.confirm).not.toHaveBeenCalled();
   });
 
-  // Deliberately independent of whether the shipped manifest is published: once
-  // the owner publishes router@1.0.0, the wizard asks before it downloads, and
-  // this harness answers no. The refusal of unpublished versions is pinned with
-  // fakes above; this test pins only that nothing lands without a yes.
-  it('/router laya install in the TUI downloads nothing without a yes', async () => {
+  // The declining paths (download, runtime, config) are pinned against fakes above.
+  // This test uses the REAL deps and the shipped manifest, so it can only prove one
+  // thing: whatever the wizard decides, nothing lands in the agent dir. Naming it
+  // after the "no" path would promise coverage it does not have while the shipped
+  // manifest stays unpublished.
+  it('/router laya install in the TUI leaves the agent dir untouched', async () => {
     const h = setup({ mode: 'tui', confirm: async () => false });
     const out = await h.run('laya install');
-    expect(out).toMatch(/not published yet|nothing was downloaded/);
+    expect(out).toMatch(/not published yet|nothing was downloaded|does not verify/);
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-runtime'))).toBe(false);
   });
@@ -504,9 +595,44 @@ describe('/router laya through the real handler', () => {
     }
   });
 
-  it('serve without an installed model refuses and points at install', async () => {
+  it('serve without a configured checkpoint refuses and names the two ways out', async () => {
     const out = await setup({ mode: 'rpc' }).run('laya serve');
-    expect(out).toMatch(/\/router laya install/);
+    // The branch matters: /router laya install appears in several messages, so the
+    // assertion names the one that means "nothing is configured yet".
+    expect(out).toMatch(/No checkpoint is configured/);
+    expect(out).toMatch(/integrations\.laya\.checkpoint/);
+    expect(out).not.toMatch(/does not verify/);
+  });
+
+  it('serve with a configured checkpoint that does not verify refuses before spawning', async () => {
+    // Written before setup(): the harness loads the layered config once.
+    fs.writeFileSync(
+      harness.paths.userFile,
+      JSON.stringify({ integrations: { laya: { enabled: true, checkpoint: 'router@1.0.0' } } })
+    );
+    const h = setup({ mode: 'rpc' });
+    const out = await h.run('laya serve');
+    expect(out).toMatch(/The configured router@1\.0\.0 does not verify/);
+    expect(out).toMatch(/Run \/router laya install to reinstall it/);
+    // Nothing was spawned, so no record may exist in any of the candidate dirs.
+    for (const dir of [harness.paths.extDir, harness.paths.agentDir]) {
+      expect(fs.existsSync(path.join(dir, 'laya-sidecar.pid'))).toBe(false);
+    }
+  });
+
+  it('reads integrations.laya from the project layer, not only from the user file', async () => {
+    // The classifier uses the layered config, so a project layer that configures
+    // Laya must be what status and serve act on. Reading the user file here made
+    // /router laya describe a different setup than the one running.
+    // Layer 3 is <cwd>/.pi/router-config.json (config-loader), not <cwd>/router-config.json.
+    fs.mkdirSync(path.join(harness.paths.cwd, '.pi'), { recursive: true });
+    fs.writeFileSync(
+      path.join(harness.paths.cwd, '.pi', 'router-config.json'),
+      JSON.stringify({ integrations: { laya: { enabled: true, checkpoint: 'router@9.9.9' } } })
+    );
+    const out = await setup({ mode: 'print' }).run('laya');
+    expect(out).toMatch(/config: integrations\.laya — enabled on/);
+    expect(out).toMatch(/checkpoint router@9\.9\.9/);
   });
 
   it('stop without a recorded sidecar says so', async () => {

@@ -25,6 +25,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
 import { tail } from './format.ts';
+import { acquireInstallLock } from './install-lock.ts';
 
 export const RUNTIME_PACKAGE = 'onnxruntime-node';
 const SPEC_FILES = ['package.json', 'package-lock.json'] as const;
@@ -49,7 +50,7 @@ const SUPPORTED_PLATFORMS: readonly (readonly [string, string])[] = [
 const isSupported = (platform: string, arch: string): boolean =>
   SUPPORTED_PLATFORMS.some(([p, a]) => p === platform && a === arch);
 
-export type RuntimeErrorCode = 'platform' | 'runtime';
+export type RuntimeErrorCode = 'platform' | 'runtime' | 'busy' | 'io';
 
 export class LayaRuntimeError extends Error {
   constructor(
@@ -220,37 +221,45 @@ export async function installRuntime(opts: RuntimeInstallOptions): Promise<Runti
     return { dir: opts.dir, version, installed: false };
   }
 
-  const tmpDir = opts.dir + TMP_SUFFIX;
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const discard = (message: string): never => {
+  // The lock is taken here, not at the top: a refused install (wrong platform,
+  // already installed) must not leave a lock file behind.
+  const lock = acquireInstallLock(opts.dir);
+  if (!lock.ok) throw new LayaRuntimeError(lock.reason, lock.message);
+  try {
+    const tmpDir = opts.dir + TMP_SUFFIX;
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    throw new LayaRuntimeError('runtime', message);
-  };
-  for (const f of SPEC_FILES) fs.copyFileSync(path.join(opts.specDir, f), path.join(tmpDir, f));
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const discard = (message: string): never => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      throw new LayaRuntimeError('runtime', message);
+    };
+    for (const f of SPEC_FILES) fs.copyFileSync(path.join(opts.specDir, f), path.join(tmpDir, f));
 
-  const res = await (opts.run ?? defaultRun)(
-    ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
-    { cwd: tmpDir, env: { ...process.env, ONNXRUNTIME_NODE_INSTALL: 'skip' } }
-  );
-  if (res.code !== 0) {
-    discard(`npm ci failed (exit ${res.code}); nothing was installed\n${tail(res.stderr)}`);
-  }
-  const check = verifyRuntime({ ...target, dir: tmpDir });
-  if (!check.ok) {
-    // The problems name the temporary directory; say where the install was headed.
-    discard(
-      `the installed runtime does not verify; nothing was installed in ${opts.dir}\n  ` +
-        check.problems.join('\n  ')
+    const res = await (opts.run ?? defaultRun)(
+      ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+      { cwd: tmpDir, env: { ...process.env, ONNXRUNTIME_NODE_INSTALL: 'skip' } }
     );
-  }
+    if (res.code !== 0) {
+      discard(`npm ci failed (exit ${res.code}); nothing was installed\n${tail(res.stderr)}`);
+    }
+    const check = verifyRuntime({ ...target, dir: tmpDir });
+    if (!check.ok) {
+      // The problems name the temporary directory; say where the install was headed.
+      discard(
+        `the installed runtime does not verify; nothing was installed in ${opts.dir}\n  ` +
+          check.problems.join('\n  ')
+      );
+    }
 
-  const oldDir = opts.dir + OLD_SUFFIX;
-  fs.rmSync(oldDir, { recursive: true, force: true });
-  if (fs.existsSync(opts.dir)) fs.renameSync(opts.dir, oldDir);
-  fs.renameSync(tmpDir, opts.dir);
-  fs.rmSync(oldDir, { recursive: true, force: true });
-  return { dir: opts.dir, version, installed: true };
+    const oldDir = opts.dir + OLD_SUFFIX;
+    fs.rmSync(oldDir, { recursive: true, force: true });
+    if (fs.existsSync(opts.dir)) fs.renameSync(opts.dir, oldDir);
+    fs.renameSync(tmpDir, opts.dir);
+    fs.rmSync(oldDir, { recursive: true, force: true });
+    return { dir: opts.dir, version, installed: true };
+  } finally {
+    lock.release();
+  }
 }
 
 /** Deletes the runtime directory; false when there was none. */

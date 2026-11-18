@@ -155,13 +155,29 @@ export interface LayaInstallDeps {
     platform: string;
     arch: string;
   }) => Promise<{ version: string; installed: boolean }>;
+  /**
+   * The USER layer of `integrations.laya` — the merge base the wizard writes
+   * onto. Copying effective values here would persist a project-layer setting
+   * into the user's file.
+   */
   readLayaBlock: () => Record<string, unknown> | undefined;
+  /**
+   * What the router actually uses (defaults, user, project — in that order).
+   * Optional and falling back to `readLayaBlock`: a project layer that turns
+   * Laya on must be what status and serve act on, otherwise they describe a
+   * configuration the classifier never sees.
+   */
+  readEffectiveLayaBlock?: () => Record<string, unknown> | undefined;
   writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
   /** Where the pid and log of the sidecar live (`PI_ROUTER_STATE_DIR`). */
   stateDir: string;
   supervisor: SupervisorDeps;
   /** Short local probe of the sidecar's /health; null when it does not answer. */
   health: () => Promise<{ artifact_sha256?: string } | null>;
+  /** The effective `integrations.laya.endpoint` (or the shipped default). */
+  endpoint: string;
+  /** Why that endpoint cannot be probed locally, or null when it can. */
+  probeProblem?: () => string | null;
 }
 
 /** Binary units, decimal above a gigabyte: "1.30 GB" for the 1.3 GB artifact set. */
@@ -190,13 +206,44 @@ function configText(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
 }
 
-/** The sidecar start command, pointing at the installer this package ships. */
-export function serveCommand(checkpoint: string): string {
+/**
+ * The sidecar start command for a terminal, pointing at the installer this
+ * package ships. The path is quoted (a package can live under a directory with
+ * spaces) and `--port` always travels with it: without it the CLI listens on its
+ * own default while the router keeps calling the configured port.
+ */
+export function serveCommand(
+  checkpoint: string,
+  port: number = portFromEndpoint(undefined)
+): string {
   const cli = fileURLToPath(new URL('./laya-model-install.js', import.meta.url));
-  return `node ${cli} serve ${checkpoint}`;
+  return `node "${cli}" serve ${checkpoint} --port ${port}`;
+}
+
+/** The manifest entry a `model@version` names, for comparing what runs to what is configured. */
+function offerFor(manifest: LayaManifest, checkpoint: string): LayaOffer | null {
+  for (const m of manifest.models) {
+    const set = m.backends[LAYA_BACKEND];
+    if (`${m.model}@${m.version}` !== checkpoint || !set) continue;
+    return {
+      model: m.model,
+      version: m.version,
+      published: m.published,
+      bytes: set.files.reduce((sum, f) => sum + f.bytes, 0),
+      files: set.files.length,
+      artifactSha256: artifactSha256(set.files),
+      files_list: set.files.map((f) => ({ path: f.path, sha256: f.sha256 })),
+    };
+  }
+  return null;
 }
 
 /** `/router laya`: what is offered, installed, configured — and the next step. Changes nothing. */
+/** The block the router acts on: the effective layer when the caller provides it. */
+function effectiveLayaBlock(deps: LayaInstallDeps): Record<string, unknown> | undefined {
+  return deps.readEffectiveLayaBlock ? deps.readEffectiveLayaBlock() : deps.readLayaBlock();
+}
+
 export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
   const verdict = platformVerdict(deps.platform, deps.arch);
   const lines = [
@@ -236,32 +283,52 @@ export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
       : '  ONNX runtime: not installed'
   );
 
-  const block = deps.readLayaBlock();
+  const block = effectiveLayaBlock(deps);
   lines.push(
     block
       ? `  config: integrations.laya — enabled ${block.enabled === true ? 'on' : 'off'}, mode ${configText(block.mode, 'shadow')}, checkpoint ${configText(block.checkpoint, '—')}`
       : '  config: not configured (integrations.laya)'
   );
 
+  // Compare against the CONFIGURED checkpoint, not against the newest offer: after
+  // a release a correct sidecar would otherwise be reported as serving "a
+  // DIFFERENT model" until the user reinstalls.
+  const configured = configText(block?.checkpoint, '');
+  const configuredOffer = configured ? offerFor(await deps.loadManifest(), configured) : null;
   const sidecar = describeSidecar(deps.stateDir, deps.supervisor);
+  const notProbed = sidecar.running ? (deps.probeProblem?.() ?? null) : null;
+  // No request when the answer could not be interpreted anyway: an endpoint that
+  // is not on this machine would only cost the timeout.
+  const probe = sidecar.running && !notProbed ? await deps.health() : null;
   let healthLine = sidecar.running
     ? `  sidecar: running (pid ${String(sidecar.pid)})`
     : '  sidecar: not running';
   if (sidecar.running) {
-    const probe = await deps.health();
-    if (!probe) healthLine += ' — /health does not answer';
-    else if (probe.artifact_sha256 && probe.artifact_sha256 !== offer.artifactSha256)
-      healthLine += ` — serving a DIFFERENT model (artifact ${probe.artifact_sha256.slice(0, 12)}… ≠ ${offer.artifactSha256.slice(0, 12)}…)`;
-    else healthLine += ' — /health ok, same artifact as the manifest';
+    if (notProbed) healthLine += ` — not probed: ${notProbed}`;
+    else if (!probe) healthLine += ' — /health does not answer';
+    else if (!probe.artifact_sha256)
+      healthLine += ' — /health answered without an artifact fingerprint; identity unknown';
+    else if (configuredOffer && probe.artifact_sha256 !== configuredOffer.artifactSha256)
+      healthLine +=
+        ` — serving a DIFFERENT model (artifact ${probe.artifact_sha256.slice(0, 12)}… ≠ ` +
+        `${configuredOffer.artifactSha256.slice(0, 12)}… for ${configured})`;
+    else if (!configuredOffer)
+      healthLine += ' — the configured checkpoint is not in the manifest; identity unknown';
+    else healthLine += ` — /health ok, same artifact as ${configured}`;
   }
   lines.push(healthLine);
 
+  const healthy = Boolean(probe) && !notProbed;
   let next: string;
   if (!offer.published)
     next = `${ref} cannot be installed until it is published (owner release decision)`;
   else if (!installed || !runtime.ok || !block) next = '/router laya install';
+  else if (block?.enabled === false)
+    next = 'nothing to start — integrations.laya.enabled is off, so the router will not use Laya';
   else if (!sidecar.running)
-    next = `/router laya serve (or in your own terminal: ${serveCommand(ref)})`;
+    next = `/router laya serve (or in your own terminal: ${serveCommand(configured || ref, portFromEndpoint(deps.endpoint))})`;
+  else if (!healthy)
+    next = '/router laya stop, then /router laya serve (it runs but does not answer)';
   else next = 'nothing — Laya is ready';
   return [...lines, `  next: ${next}`];
 }
@@ -272,24 +339,43 @@ export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
  * in place or a sidecar is already recorded; never replaces a running one.
  */
 export async function runLayaServe(deps: LayaInstallDeps): Promise<string> {
-  const block = deps.readLayaBlock();
+  const block = effectiveLayaBlock(deps);
   const checkpoint = configText(block?.checkpoint, '');
   if (!checkpoint) {
     return 'No checkpoint is configured: run /router laya install first (or set integrations.laya.checkpoint).';
   }
-  const installs = await deps.listInstalls(deps.root);
+  // An install record is not a working install: files can be truncated and the
+  // backend can be wrong. Verify before spawning, so a damaged install becomes a
+  // sentence instead of a sidecar that dies on load (which reads as "started").
+  const separator = checkpoint.indexOf('@');
+  const verified =
+    separator === -1
+      ? { ok: false, problems: [`${checkpoint} is not a model@version checkpoint`] }
+      : await deps.verifyInstall({
+          root: deps.root,
+          model: checkpoint.slice(0, separator),
+          version: checkpoint.slice(separator + 1),
+        });
+  if (!verified.ok) {
+    return (
+      `The configured ${checkpoint} does not verify: ${verified.problems.join('; ')}. ` +
+      'Run /router laya install to reinstall it.'
+    );
+  }
   const runtime = deps.verifyRuntime({
     dir: deps.runtimeDir,
     specDir: deps.runtimeSpecDir,
     platform: deps.platform,
     arch: deps.arch,
   });
+  const endpoint = configText(block?.endpoint, deps.endpoint);
   const res = await startSidecar(
     {
       stateDir: deps.stateDir,
       checkpoint,
-      port: portFromEndpoint(configText(block?.endpoint, '')),
-      installed: () => installs.some((i) => `${i.model}@${i.version}` === checkpoint),
+      port: portFromEndpoint(endpoint),
+      endpoint,
+      installed: () => verified.ok,
       runtimeOk: () => runtime.ok,
       healthAnswers: async () => (await deps.health()) !== null,
     },
@@ -298,14 +384,18 @@ export async function runLayaServe(deps: LayaInstallDeps): Promise<string> {
   if (!res.ok) return res.error;
   return [
     `Laya sidecar started (pid ${res.pid}) for ${checkpoint}, log: ${res.logFile}`,
-    `Endpoint: ${configText(block?.endpoint, LAYA_DEFAULT_ENDPOINT)} — /router laya shows whether /health answers.`,
+    `Endpoint: ${endpoint} — /router laya shows whether /health answers.`,
     'It keeps running after pi exits; /router laya stop ends it.',
   ].join('\n');
 }
 
 /** `/router laya stop`: end the recorded sidecar. */
 export async function runLayaStop(deps: LayaInstallDeps): Promise<string> {
-  const res = await stopSidecar(deps.stateDir, deps.supervisor);
+  const res = await stopSidecar(
+    deps.stateDir,
+    deps.supervisor,
+    async () => (await deps.health()) !== null
+  );
   return res.ok ? `Laya sidecar stopped (pid ${res.pid}).` : res.error;
 }
 
@@ -404,13 +494,23 @@ export async function runLayaInstall(ui: LayaUi, deps: LayaInstallDeps): Promise
     summary.push('✓ ONNX runtime is installed.');
   }
 
-  const block = mergeLayaBlock(deps.readLayaBlock(), ref);
+  // The wizard asked several questions, and the download takes minutes: re-read
+  // before writing. A block that changed meanwhile (another pi, a hand edit) is
+  // newer than ours, so it is not overwritten from a stale snapshot.
+  const beforeWrite = deps.readLayaBlock();
+  const block = mergeLayaBlock(beforeWrite, ref);
   const write = await ui.confirm(
     'Laya',
     `Write this integrations.laya block to your user config?\n${JSON.stringify(block, null, 2)}`
   );
   if (!write) {
     return stop(summary, 'Config not written. Run /router laya install again to write it.');
+  }
+  if (JSON.stringify(deps.readLayaBlock()) !== JSON.stringify(beforeWrite)) {
+    return stop(
+      summary,
+      'The integrations.laya block changed while the wizard ran (another pi, or a hand edit), so nothing was written. Run /router laya install again to work from the current block.'
+    );
   }
   const saved = deps.writeLayaBlock(block);
   if (!saved.ok) {
@@ -490,12 +590,18 @@ function errorText(err: unknown): string {
 /** The real dependencies, for the /router handler. */
 export function defaultLayaInstallDeps(io: {
   readLayaBlock: () => Record<string, unknown> | undefined;
+  /** The effective block, when the caller has one (see `LayaInstallDeps`). */
+  readEffectiveLayaBlock?: () => Record<string, unknown> | undefined;
   writeLayaBlock: (block: Record<string, unknown>) => WriteResult;
   /** Where the pid and log of the sidecar live (`PI_ROUTER_STATE_DIR`). */
   stateDir: string;
   supervisor: SupervisorDeps;
   /** Short local probe of the sidecar's /health; null when it does not answer. */
   health: () => Promise<{ artifact_sha256?: string } | null>;
+  /** The effective `integrations.laya.endpoint` (or the shipped default). */
+  endpoint: string;
+  /** Why that endpoint cannot be probed locally, or null when it can. */
+  probeProblem?: () => string | null;
 }): LayaInstallDeps {
   return {
     platform: process.platform,
@@ -510,9 +616,12 @@ export function defaultLayaInstallDeps(io: {
     verifyRuntime: (target) => verifyRuntime(target),
     installRuntime: (target) => installRuntime(target),
     readLayaBlock: io.readLayaBlock,
+    ...(io.readEffectiveLayaBlock ? { readEffectiveLayaBlock: io.readEffectiveLayaBlock } : {}),
     writeLayaBlock: io.writeLayaBlock,
     stateDir: io.stateDir,
     supervisor: io.supervisor,
     health: io.health,
+    endpoint: io.endpoint,
+    ...(io.probeProblem ? { probeProblem: io.probeProblem } : {}),
   };
 }

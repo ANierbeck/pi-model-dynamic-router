@@ -25,6 +25,7 @@ import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { piAgentDir } from './agent-dir.ts';
 import { mb, messageOf } from './format.ts';
+import { acquireInstallLock } from './install-lock.ts';
 import {
   artifactSha256,
   headFromFile,
@@ -59,7 +60,11 @@ export type InstallErrorCode =
   | 'disk'
   | 'download'
   | 'checksum'
-  | 'head';
+  | 'head'
+  /** Another install holds the lock for this version. */
+  | 'busy'
+  /** A lock or record could not be written. */
+  | 'io';
 
 export class LayaInstallError extends Error {
   constructor(
@@ -283,81 +288,92 @@ export async function installModel(opts: InstallOptions): Promise<InstallResult>
     );
   }
 
-  fs.mkdirSync(tmpDir, { recursive: true });
-  const resumed: string[] = [];
-  let bytesDownloaded = 0;
-  const discard = (code: InstallErrorCode, message: string): never => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    throw new LayaInstallError(code, message);
-  };
+  // The lock is taken here, not at the top of the function: an install that is
+  // refused (unpublished, unknown version, no space) must not touch the disk.
+  const lock = acquireInstallLock(finalDir);
+  if (!lock.ok) throw new LayaInstallError(lock.reason, lock.message);
+  try {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const resumed: string[] = [];
+    let bytesDownloaded = 0;
+    const discard = (code: InstallErrorCode, message: string): never => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      throw new LayaInstallError(code, message);
+    };
 
-  for (const f of set.files) {
-    const dest = inside(tmpDir, f.path);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    let have = sizeOf(dest);
-    if (have > f.bytes) {
-      fs.rmSync(dest);
-      have = -1;
+    for (const f of set.files) {
+      const dest = inside(tmpDir, f.path);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      let have = sizeOf(dest);
+      if (have > f.bytes) {
+        fs.rmSync(dest);
+        have = -1;
+      }
+      // A resume point of the full size is only skipped when its digest matches;
+      // otherwise it is re-fetched from scratch instead of failing the install.
+      if (have === f.bytes && (await sha256Of(dest)) !== f.sha256) {
+        fs.rmSync(dest);
+        have = -1;
+      }
+      if (have < f.bytes) {
+        const url = new URL(encodeURIComponent(f.asset), entry.base_url);
+        const got = await download(url, dest, Math.max(have, 0), f, opts);
+        bytesDownloaded += got.bytes;
+        if (got.resumed) resumed.push(f.path);
+      }
+      const size = sizeOf(dest);
+      if (size !== f.bytes) {
+        discard(
+          'checksum',
+          `${f.path}: ${size} bytes, the manifest says ${f.bytes}; install discarded`
+        );
+      }
+      const digest = await sha256Of(dest);
+      if (digest !== f.sha256) {
+        discard(
+          'checksum',
+          `${f.path}: sha256 ${digest} ≠ manifest ${f.sha256}; install discarded`
+        );
+      }
     }
-    // A resume point of the full size is only skipped when its digest matches;
-    // otherwise it is re-fetched from scratch instead of failing the install.
-    if (have === f.bytes && (await sha256Of(dest)) !== f.sha256) {
-      fs.rmSync(dest);
-      have = -1;
+
+    const headProblem = checkHead(tmpDir, set.head_file, entry.head.sha256);
+    if (headProblem) discard('head', `${headProblem}; install discarded`);
+
+    const record: InstallRecord = {
+      schema_version: 1,
+      model: entry.model,
+      version: entry.version,
+      tag: entry.tag,
+      backend,
+      head: entry.head,
+      head_file: set.head_file,
+      files: set.files,
+      installed_at: new Date().toISOString(),
+    };
+    fs.writeFileSync(path.join(tmpDir, INSTALL_RECORD), JSON.stringify(record, null, 2) + '\n');
+
+    if (fs.existsSync(finalDir)) {
+      const old = finalDir + OLD_SUFFIX;
+      fs.rmSync(old, { recursive: true, force: true });
+      fs.renameSync(finalDir, old);
+      fs.renameSync(tmpDir, finalDir);
+      fs.rmSync(old, { recursive: true, force: true });
+    } else {
+      fs.renameSync(tmpDir, finalDir);
     }
-    if (have < f.bytes) {
-      const url = new URL(encodeURIComponent(f.asset), entry.base_url);
-      const got = await download(url, dest, Math.max(have, 0), f, opts);
-      bytesDownloaded += got.bytes;
-      if (got.resumed) resumed.push(f.path);
-    }
-    const size = sizeOf(dest);
-    if (size !== f.bytes) {
-      discard(
-        'checksum',
-        `${f.path}: ${size} bytes, the manifest says ${f.bytes}; install discarded`
-      );
-    }
-    const digest = await sha256Of(dest);
-    if (digest !== f.sha256) {
-      discard('checksum', `${f.path}: sha256 ${digest} ≠ manifest ${f.sha256}; install discarded`);
-    }
+    return {
+      dir: finalDir,
+      model: entry.model,
+      version: entry.version,
+      backend,
+      artifact_sha256: artifactSha256(set.files),
+      bytesDownloaded,
+      resumed,
+    };
+  } finally {
+    lock.release();
   }
-
-  const headProblem = checkHead(tmpDir, set.head_file, entry.head.sha256);
-  if (headProblem) discard('head', `${headProblem}; install discarded`);
-
-  const record: InstallRecord = {
-    schema_version: 1,
-    model: entry.model,
-    version: entry.version,
-    tag: entry.tag,
-    backend,
-    head: entry.head,
-    head_file: set.head_file,
-    files: set.files,
-    installed_at: new Date().toISOString(),
-  };
-  fs.writeFileSync(path.join(tmpDir, INSTALL_RECORD), JSON.stringify(record, null, 2) + '\n');
-
-  if (fs.existsSync(finalDir)) {
-    const old = finalDir + OLD_SUFFIX;
-    fs.rmSync(old, { recursive: true, force: true });
-    fs.renameSync(finalDir, old);
-    fs.renameSync(tmpDir, finalDir);
-    fs.rmSync(old, { recursive: true, force: true });
-  } else {
-    fs.renameSync(tmpDir, finalDir);
-  }
-  return {
-    dir: finalDir,
-    model: entry.model,
-    version: entry.version,
-    backend,
-    artifact_sha256: artifactSha256(set.files),
-    bytesDownloaded,
-    resumed,
-  };
 }
 
 /** Null when the head file in `dir` hashes to `want`, else the problem. */

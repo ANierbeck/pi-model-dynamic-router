@@ -16,6 +16,8 @@ import {
   stopSidecar,
   describeSidecar,
   portFromEndpoint,
+  endpointProblem,
+  sidecarEnv,
   type SupervisorDeps,
 } from '../src/laya-sidecar-supervisor.ts';
 
@@ -33,11 +35,19 @@ function fakes(
     alive?: (pid: number) => boolean;
     kill?: (pid: number, signal: NodeJS.Signals) => void;
     onSpawn?: (cmd: string, args: string[]) => void;
+    /** Fired by the test to simulate the OS refusing the spawn asynchronously. */
+    emit?: { error?: (err: Error) => void };
   } = {}
 ): Fakes {
   const spawn = vi.fn((cmd: string, args: string[]) => {
     over.onSpawn?.(cmd, args);
-    return { pid: 4242, unref: () => {}, on: () => {} };
+    return {
+      pid: 4242,
+      unref: () => {},
+      on: (event: string, handler: (err: Error) => void) => {
+        if (over.emit && event === 'error') over.emit.error = handler;
+      },
+    };
   });
   // The clock advances only while the supervisor waits, like a real one: a
   // constant clock would make the SIGTERM grace loop spin forever.
@@ -68,6 +78,36 @@ describe('portFromEndpoint', () => {
     expect(portFromEndpoint(undefined)).toBe(8089);
     expect(portFromEndpoint('http://127.0.0.1')).toBe(8089);
     expect(portFromEndpoint('not a url')).toBe(8089);
+  });
+});
+
+describe('endpointProblem', () => {
+  it('accepts what this sidecar can actually serve', () => {
+    expect(endpointProblem(undefined)).toBeNull();
+    expect(endpointProblem('http://127.0.0.1:8089')).toBeNull();
+    expect(endpointProblem('http://localhost:9000/')).toBeNull();
+    expect(endpointProblem('http://[::1]:8089')).toBeNull();
+  });
+
+  it('rejects endpoints that would leave the router calling a port nobody listens on', () => {
+    expect(endpointProblem('https://127.0.0.1:8089')).toMatch(/plain http/);
+    expect(endpointProblem('http://127.0.0.1')).toMatch(/no port|explicit/i);
+    expect(endpointProblem('http://10.0.0.5:8089')).toMatch(/this machine|127\.0\.0\.1 only/);
+    expect(endpointProblem('http://127.0.0.1:8089/laya')).toMatch(/path/);
+    expect(endpointProblem('nonsense')).toMatch(/not a URL/);
+  });
+});
+
+describe('sidecarEnv', () => {
+  it('passes what the sidecar needs and none of pi credentials', () => {
+    const env = sidecarEnv({
+      PATH: '/usr/bin',
+      HOME: '/home/pi',
+      OPENROUTER_API_KEY: 'sk-or-secret',
+      MISTRAL_API_KEY: 'secret',
+      ANTHROPIC_API_KEY: 'secret',
+    } as NodeJS.ProcessEnv);
+    expect(env).toEqual({ PATH: '/usr/bin', HOME: '/home/pi' });
   });
 });
 
@@ -146,8 +186,12 @@ describe('startSidecar', () => {
     const opts = f.spawn.mock.calls[0]?.[2] as { stdio?: unknown[] };
     expect(sidecarPaths(dir).logFile).toContain(dir);
     expect(opts.stdio?.[0]).toBe('ignore');
-    // The child's output goes to the log file, not to pi's terminal.
-    expect(fs.existsSync(sidecarPaths(dir).logFile)).toBe(true);
+    // Both output descriptors are an OPEN FILE, not 'ignore'/'inherit': opening
+    // the log alone would create the file while the output went elsewhere.
+    expect(typeof opts.stdio?.[1]).toBe('number');
+    expect(opts.stdio?.[1]).toBe(opts.stdio?.[2]);
+    expect(opts.stdio?.[1]).not.toBe(1);
+    expect(opts.stdio?.[1]).not.toBe(2);
   });
 
   it('refuses a second start while a recorded process answers', async () => {
@@ -213,6 +257,113 @@ describe('startSidecar', () => {
   });
 });
 
+describe('startSidecar — the safety net around a real process', () => {
+  it('hands the sidecar no provider credentials', async () => {
+    const dir = tmpState();
+    const f = fakes();
+    process.env.OPENROUTER_API_KEY = 'sk-or-must-not-leak';
+    try {
+      await startSidecar({ stateDir: dir, checkpoint: 'router@1.0.0', port: 8089 }, f.deps);
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+    const opts = f.spawn.mock.calls[0]?.[2] as { env?: Record<string, string> };
+    expect(opts.env).toBeDefined();
+    expect(JSON.stringify(opts.env)).not.toContain('must-not-leak');
+    expect(Object.keys(opts.env ?? {})).not.toContain('OPENROUTER_API_KEY');
+  });
+
+  it('refuses an endpoint it cannot serve, before spawning anything', async () => {
+    const dir = tmpState();
+    const f = fakes();
+    const res = await startSidecar(
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, endpoint: 'http://10.0.0.5:8089' },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/this machine|127\.0\.0\.1 only/);
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
+  it('refuses when a sidecar already answers but no pid is recorded (started in a terminal)', async () => {
+    const dir = tmpState();
+    const f = fakes();
+    const res = await startSidecar(
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => true },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/started outside pi/i);
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+
+  it('reports success only once /health answers', async () => {
+    const dir = tmpState();
+    const f = fakes();
+    let probe = 0;
+    const res = await startSidecar(
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        // Nothing listening yet, then it comes up: the normal startup.
+        healthAnswers: async () => ++probe > 2,
+      },
+      f.deps
+    );
+    expect(res).toMatchObject({ ok: true, pid: 4242 });
+    expect(probe).toBeGreaterThan(2);
+  });
+
+  it('stops the child again when /health never answers, and keeps no record', async () => {
+    const dir = tmpState();
+    const killed: NodeJS.Signals[] = [];
+    const f = fakes({ alive: () => true, kill: (_p, sig) => killed.push(sig) });
+    const res = await startSidecar(
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089, healthAnswers: async () => false },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/did not answer/i);
+    expect(killed).toContain('SIGTERM');
+    expect(readRecordedPid(dir)).toBeNull();
+  });
+
+  it('survives an asynchronous spawn error and reports it', async () => {
+    const dir = tmpState();
+    const emit: { error?: (err: Error) => void } = {};
+    const f = fakes({ emit });
+    const res = await startSidecar(
+      {
+        stateDir: dir,
+        checkpoint: 'router@1.0.0',
+        port: 8089,
+        healthAnswers: async () => {
+          emit.error?.(new Error('spawn ENOENT'));
+          return false;
+        },
+      },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/failed to start.*ENOENT/i);
+    expect(readRecordedPid(dir)).toBeNull();
+  });
+
+  it('refuses a concurrent start while the pid file is reserved', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, ''); // reserved, not yet written
+    const f = fakes();
+    const res = await startSidecar(
+      { stateDir: dir, checkpoint: 'router@1.0.0', port: 8089 },
+      f.deps
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/starting|in a moment/i);
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});
+
 describe('stopSidecar', () => {
   it('signals the recorded pid and removes the file', async () => {
     const dir = tmpState();
@@ -227,7 +378,7 @@ describe('stopSidecar', () => {
         alive = false;
       },
     });
-    const res = await stopSidecar(dir, f.deps);
+    const res = await stopSidecar(dir, f.deps, async () => true);
     expect(res).toMatchObject({ ok: true, pid: 4242 });
     expect(killed[0]).toEqual([4242, 'SIGTERM']);
     expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(false);
@@ -236,12 +387,57 @@ describe('stopSidecar', () => {
   it('escalates to SIGKILL when the process ignores SIGTERM', async () => {
     const dir = tmpState();
     fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
-    const killed: NodeJS.Signals[] = [];
+    const killed: [number, NodeJS.Signals][] = [];
     // Alive for the first probe (SIGTERM grace), gone afterwards would end it early;
     // keep it alive so the escalation path is the one exercised.
-    const f = fakes({ alive: () => true, kill: (_pid, sig) => killed.push(sig) });
-    await stopSidecar(dir, f.deps);
-    expect(killed).toEqual(['SIGTERM', 'SIGKILL']);
+    const f = fakes({ alive: () => true, kill: (pid, sig) => killed.push([pid, sig]) });
+    await stopSidecar(dir, f.deps, async () => true);
+    // The target matters: signalling another pid would kill somebody else's work.
+    expect(killed).toEqual([
+      [4242, 'SIGTERM'],
+      [4242, 'SIGKILL'],
+    ]);
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(true); // never exited
+  });
+
+  it('keeps the record and says so when the process survives SIGKILL', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    const f = fakes({ alive: () => true });
+    const res = await stopSidecar(dir, f.deps, async () => true);
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/still alive/i);
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(true);
+  });
+
+  it('refuses to kill a live pid that does not answer as the sidecar (pid reuse)', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    const killed: NodeJS.Signals[] = [];
+    const f = fakes({ alive: () => true, kill: (_p, sig) => killed.push(sig) });
+    const res = await stopSidecar(dir, f.deps, async () => false);
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toMatch(/different process|does not answer/i);
+    expect(killed).toEqual([]);
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(true);
+  });
+
+  it('treats a process that exits between the check and the signal as stopped', async () => {
+    const dir = tmpState();
+    fs.writeFileSync(sidecarPaths(dir).pidFile, '4242');
+    let alive = true;
+    const f = fakes({
+      alive: () => alive,
+      kill: () => {
+        alive = false;
+        const err = new Error('no such process') as NodeJS.ErrnoException;
+        err.code = 'ESRCH';
+        throw err;
+      },
+    });
+    const res = await stopSidecar(dir, f.deps, async () => true);
+    expect(res).toMatchObject({ ok: true, pid: 4242 });
+    expect(fs.existsSync(sidecarPaths(dir).pidFile)).toBe(false);
   });
 
   it('says so when nothing is recorded', async () => {

@@ -20,6 +20,10 @@ const LOG_FILE = 'laya-sidecar.log';
 /** How long SIGTERM gets before SIGKILL, and how often to look. */
 const STOP_GRACE_MS = 3000;
 const STOP_POLL_MS = 100;
+/** How long SIGKILL gets to be visible, and how long a new start may take. */
+const KILL_CONFIRM_MS = 2000;
+const START_CONFIRM_MS = 15_000;
+const START_POLL_MS = 200;
 
 export interface SidecarPaths {
   pidFile: string;
@@ -28,6 +32,34 @@ export interface SidecarPaths {
 
 export function sidecarPaths(stateDir: string): SidecarPaths {
   return { pidFile: path.join(stateDir, PID_FILE), logFile: path.join(stateDir, LOG_FILE) };
+}
+
+/** The hosts that mean "this machine". Anything else needs a network round trip. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+/**
+ * Why the configured endpoint cannot be served by this sidecar, or null when it
+ * can. The sidecar binds `127.0.0.1` and speaks plain HTTP at the root, so an
+ * endpoint that asks for anything else would leave the router looking where
+ * nothing listens — better to refuse than to start a server nobody reaches.
+ */
+export function endpointProblem(endpoint: string | undefined): string | null {
+  if (!endpoint) return null; // the documented default is exactly what we serve
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return `${endpoint} is not a URL`;
+  }
+  if (url.protocol !== 'http:')
+    return `${endpoint} is not plain http; the sidecar serves plain http only`;
+  if (!LOOPBACK_HOSTS.has(url.hostname))
+    return `${endpoint} does not point at this machine; the sidecar binds 127.0.0.1 only`;
+  if (!url.port)
+    return `${endpoint} carries no port; the sidecar needs an explicit http://127.0.0.1:<port>`;
+  if (url.pathname !== '/' && url.pathname !== '')
+    return `${endpoint} carries a path; the sidecar serves /health and /classify at the root`;
+  return null;
 }
 
 /**
@@ -52,6 +84,22 @@ function portOf(endpoint: string): number {
   } catch {
     return 8089;
   }
+}
+
+/**
+ * The environment the sidecar inherits. Deliberately an allowlist: `spawn`
+ * without `env` hands the child every variable pi has, which includes provider
+ * credentials when pi was started with them in its environment. The sidecar
+ * needs none of that — it reads its checkpoint from argv and loads local files.
+ */
+export function sidecarEnv(source: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const keep = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'TZ'] as const;
+  const out: Record<string, string> = {};
+  for (const key of keep) {
+    const value = source[key];
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  return out;
 }
 
 /** The pid recorded for the sidecar, or null when none (or garbage) was written. */
@@ -106,44 +154,75 @@ export interface StartOptions {
   /** `model@version`, as the manifest names it. */
   checkpoint: string;
   port: number;
+  /** The configured endpoint, validated before anything is spawned. */
+  endpoint?: string;
   /** Checks that the model is installed and verifies; false blocks the start. */
   installed?: () => boolean;
   /** Checks the ONNX runtime; false blocks the start with a pointer at install. */
   runtimeOk?: () => boolean;
-  /** Asks the sidecar whether it answers; used only for the double-start guard. */
+  /**
+   * Asks the sidecar whether it answers. Used three times, and it is not
+   * optional in spirit: to recognise an already-running sidecar, to notice one
+   * that runs outside pi (no pid file), and to confirm a start actually serves.
+   */
   healthAnswers?: () => Promise<boolean>;
 }
 
-export type StartResult = { ok: true; pid: number; logFile: string } | { ok: false; error: string };
+export type StartResult =
+  | {
+      ok: true;
+      pid: number;
+      logFile: string;
+    }
+  | { ok: false; error: string };
 
 /**
  * Starts the sidecar detached: it outlives `/reload` and a pi restart, which is
  * the point of a long-lived classifier server. Refuses rather than replacing a
  * running one, and refuses when the prerequisites are not in place.
+ *
+ * Success means "it answers on /health", not "a process exists": a missing
+ * native runtime, a taken port or a corrupt install all exit within a second,
+ * and reporting those as started would send the user looking in the wrong place.
  */
 export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Promise<StartResult> {
+  const problem = endpointProblem(opts.endpoint);
+  if (problem) return { ok: false, error: `Cannot start the sidecar: ${problem}.` };
+  const answers = opts.healthAnswers
+    ? async (): Promise<boolean> => Boolean(await opts.healthAnswers?.())
+    : null;
+  const { pidFile, logFile } = sidecarPaths(opts.stateDir);
+
   const recorded = readRecordedPid(opts.stateDir);
   if (recorded !== null) {
     if (!deps.isPidAlive(recorded)) {
       removePidFile(opts.stateDir);
+    } else if (answers && (await answers())) {
+      return {
+        ok: false,
+        error: `The Laya sidecar is already running (pid ${recorded}). Use /router laya stop first.`,
+      };
     } else {
-      // Alive: it may be ours (already serving) or an unrelated process that got
-      // the pid after a crash. Ask the sidecar itself before deciding.
-      const answers = opts.healthAnswers ? await opts.healthAnswers() : true;
-      if (answers) {
-        return {
-          ok: false,
-          error: `The Laya sidecar is already running (pid ${recorded}). Use /router laya stop first.`,
-        };
-      }
       return {
         ok: false,
         error:
           `A process with the recorded pid ${recorded} is alive but the sidecar does not answer on ` +
-          `port ${opts.port}. Stop it with /router laya stop, or remove ${sidecarPaths(opts.stateDir).pidFile} ` +
+          `port ${opts.port}. Stop it with /router laya stop, or remove ${pidFile} ` +
           `if that pid belongs to something else.`,
       };
     }
+  }
+
+  // A sidecar started in a terminal has no pid file. Without this check the
+  // start would spawn a second server that cannot bind the port, and the first
+  // one would answer while the new pid is recorded.
+  if (answers && (await answers())) {
+    return {
+      ok: false,
+      error:
+        `A Laya sidecar already answers on port ${opts.port} (started outside pi, so no pid is ` +
+        `recorded). Stop it there, or point integrations.laya.endpoint at another port.`,
+    };
   }
   if (opts.installed && !opts.installed()) {
     return { ok: false, error: 'The Laya model is not installed: run /router laya install first.' };
@@ -155,36 +234,98 @@ export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Pr
     };
   }
 
-  const { pidFile, logFile } = sidecarPaths(opts.stateDir);
   fs.mkdirSync(opts.stateDir, { recursive: true });
+  // Reserve the pid file BEFORE spawning. Two `/router laya serve` calls in the
+  // same state dir would otherwise both pass the checks above and spawn, and the
+  // second write would leave one process untracked and unstoppable.
+  let fd: number;
+  try {
+    fd = fs.openSync(pidFile, 'wx');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return {
+      ok: false,
+      error:
+        code === 'EEXIST'
+          ? `Another /router laya serve is starting (${pidFile} exists and holds no pid yet); try again in a moment.`
+          : `Cannot write ${pidFile}: ${textOf(err)}`,
+    };
+  }
+
+  let spawnError = '';
   const log = fs.openSync(logFile, 'a');
   let child: ReturnType<SupervisorDeps['spawn']>;
   try {
     child = deps.spawn(
       deps.execPath,
       [deps.cliPath, 'serve', opts.checkpoint, '--port', String(opts.port)],
-      { detached: true, stdio: ['ignore', log, log] }
+      { detached: true, stdio: ['ignore', log, log], env: sidecarEnv() }
     );
   } catch (err) {
+    fs.closeSync(fd);
+    removePidFile(opts.stateDir);
     return { ok: false, error: `The sidecar did not start: ${textOf(err)}` };
   } finally {
+    // Closed here only: closing it in both places threw EBADF from the finally
+    // and hid the real reason the spawn failed.
     fs.closeSync(log);
   }
+  // Without a listener an async `error` event (ENOENT, EACCES) is unhandled and
+  // takes pi down with it.
+  child.on('error', (err: Error) => {
+    spawnError = textOf(err);
+  });
+
   const pid = child.pid;
-  if (!pid)
+  if (!pid) {
+    fs.closeSync(fd);
+    removePidFile(opts.stateDir);
     return { ok: false, error: 'The sidecar process started without a pid; nothing recorded.' };
+  }
+  try {
+    fs.writeSync(fd, `${pid}\n`);
+  } catch (err) {
+    fs.closeSync(fd);
+    deps.kill(pid, 'SIGKILL');
+    removePidFile(opts.stateDir);
+    return {
+      ok: false,
+      error: `The sidecar started (pid ${pid}) but its pid file could not be written: ${textOf(err)}. It was stopped again.`,
+    };
+  }
+  fs.closeSync(fd);
   child.unref();
-  fs.writeFileSync(pidFile, `${pid}\n`);
-  return { ok: true, pid, logFile };
+
+  const deadline = deps.now() + START_CONFIRM_MS;
+  while (deps.now() < deadline) {
+    if (spawnError) break;
+    if (answers && (await answers())) return { ok: true, pid, logFile };
+    if (!answers) return { ok: true, pid, logFile };
+    await deps.sleep(START_POLL_MS);
+  }
+  await terminate(pid, deps);
+  removePidFile(opts.stateDir);
+  return {
+    ok: false,
+    error: spawnError
+      ? `The sidecar failed to start: ${spawnError} (log: ${logFile})`
+      : `The sidecar started (pid ${pid}) but /health did not answer within ` +
+        `${String(START_CONFIRM_MS / 1000)}s; it was stopped again. Log: ${logFile}`,
+  };
 }
 
 export type StopResult = { ok: true; pid: number } | { ok: false; error: string };
 
 /**
- * SIGTERM, wait for the grace period, then SIGKILL. A stale pid file is removed
- * either way, so a crashed sidecar never blocks the next start.
+ * SIGTERM, wait for the grace period, then SIGKILL, then wait until the OS says
+ * the process is gone. Nothing is reported as stopped while it still runs: a
+ * concurrent `serve` would then find the port taken and the pid file gone.
  */
-export async function stopSidecar(stateDir: string, deps: SupervisorDeps): Promise<StopResult> {
+export async function stopSidecar(
+  stateDir: string,
+  deps: SupervisorDeps,
+  healthAnswers: () => Promise<boolean>
+): Promise<StopResult> {
   const pid = readRecordedPid(stateDir);
   if (pid === null) {
     return { ok: false, error: 'No sidecar is recorded for this router; nothing to stop.' };
@@ -196,18 +337,54 @@ export async function stopSidecar(stateDir: string, deps: SupervisorDeps): Promi
       error: `The recorded sidecar (pid ${pid}) was not running; its pid file is gone.`,
     };
   }
-  deps.kill(pid, 'SIGTERM');
-  const deadline = deps.now() + STOP_GRACE_MS;
-  while (deps.now() < deadline) {
-    await deps.sleep(STOP_POLL_MS);
-    if (!deps.isPidAlive(pid)) {
-      removePidFile(stateDir);
-      return { ok: true, pid };
-    }
+  // A pid is not an identity. After a crash the OS may hand the number to an
+  // unrelated process, and signalling it would kill somebody else's work.
+  if (!(await healthAnswers())) {
+    return {
+      ok: false,
+      error:
+        `A process with the recorded pid ${pid} is alive, but the Laya sidecar does not answer on ` +
+        `its endpoint — it is most likely a different process that got the pid. Nothing was killed. ` +
+        `Remove ${sidecarPaths(stateDir).pidFile} if the record is stale, or stop the sidecar in its own terminal.`,
+    };
   }
-  deps.kill(pid, 'SIGKILL');
+  await terminate(pid, deps);
+  if (deps.isPidAlive(pid)) {
+    return {
+      ok: false,
+      error: `The sidecar (pid ${pid}) is still alive after SIGKILL; its record is kept.`,
+    };
+  }
   removePidFile(stateDir);
   return { ok: true, pid };
+}
+
+/** SIGTERM, grace period, SIGKILL, then a bounded wait for the process to go. */
+async function terminate(pid: number, deps: SupervisorDeps): Promise<void> {
+  signal(pid, 'SIGTERM', deps);
+  const graceEnd = deps.now() + STOP_GRACE_MS;
+  while (deps.now() < graceEnd) {
+    await deps.sleep(STOP_POLL_MS);
+    if (!deps.isPidAlive(pid)) return;
+  }
+  signal(pid, 'SIGKILL', deps);
+  const killEnd = deps.now() + KILL_CONFIRM_MS;
+  while (deps.now() < killEnd) {
+    await deps.sleep(STOP_POLL_MS);
+    if (!deps.isPidAlive(pid)) return;
+  }
+}
+
+/**
+ * A kill that races the process's own exit throws ESRCH ("no such process").
+ * That is the outcome we wanted, so it is not an error.
+ */
+function signal(pid: number, sig: NodeJS.Signals, deps: SupervisorDeps): void {
+  try {
+    deps.kill(pid, sig);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ESRCH') throw err;
+  }
 }
 
 export interface SidecarState {

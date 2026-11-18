@@ -1269,25 +1269,48 @@ function layaCliPath(): string {
   return fileURLToPath(new URL('./laya-model-install.js', import.meta.url));
 }
 
-/** The endpoint the router talks to: the user layer first, else the default. */
+/**
+ * The endpoint the router talks to, from the EFFECTIVE config — the shipped
+ * defaults, the user layer and any project layer, in that order. Reading the
+ * user file here would let a project layer's `integrations.laya` be ignored, so
+ * `/router laya` would probe one endpoint while the classifier calls another.
+ */
 function layaEndpoint(rt: CommandDeps): string {
-  const block = (
-    openUserConfigStore().read().config as
-      | { integrations?: { laya?: Record<string, unknown> } }
-      | undefined
-  )?.integrations?.laya;
-  const endpoint = block?.endpoint ?? rt.cfg.integrations?.laya?.endpoint;
+  const endpoint = rt.cfg.integrations?.laya?.endpoint;
   return typeof endpoint === 'string' && endpoint ? endpoint : LAYA_DEFAULT_ENDPOINT;
+}
+
+/** Loopback hosts. The sidecar is a local server; a probe may not leave the machine. */
+function probeProblem(endpoint: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return `${endpoint} is not a URL`;
+  }
+  if (url.protocol !== 'http:') return `${endpoint} is not plain http`;
+  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname))
+    return `${endpoint} is not local`;
+  return null;
 }
 
 /**
  * A short local probe of the sidecar's /health. Never throws: a sidecar that is
  * down is a normal state, and the status line says so.
+ *
+ * Two limits, both deliberate: a non-loopback endpoint is not probed at all (a
+ * config file must not turn `/router laya` into a scanner of other hosts,
+ * including internal services), and redirects are refused for the same reason.
  */
 async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: string } | null> {
-  const url = `${layaEndpoint(rt).replace(/\/+$/, '')}/health`;
+  const endpoint = layaEndpoint(rt);
+  if (probeProblem(endpoint)) return null;
+  const url = `${endpoint.replace(/\/+$/, '')}/health`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(1500),
+      redirect: 'error',
+    });
     if (!res.ok) return null;
     return (await res.json()) as { artifact_sha256?: string };
   } catch {
@@ -1306,12 +1329,16 @@ async function handleLayaCommand(
   sub: string
 ): Promise<string> {
   const deps = defaultLayaInstallDeps({
+    // The user layer: the wizard merges onto this and writes it back.
     readLayaBlock: () => {
       const cfg = openUserConfigStore().read().config as
         | { integrations?: { laya?: Record<string, unknown> } }
         | undefined;
       return cfg?.integrations?.laya;
     },
+    // What the router runs on. A project layer that enables or repoints Laya must
+    // be visible to status and serve — otherwise they describe a different setup.
+    readEffectiveLayaBlock: () => rt.cfg.integrations?.laya as Record<string, unknown> | undefined,
     // Through the integrations delta: `checkpoint`, `endpoint` and `timeout_ms` are
     // not `/router config set` keys, so the paths form refuses the whole block.
     writeLayaBlock: (block) => {
@@ -1322,6 +1349,8 @@ async function handleLayaCommand(
     stateDir: layaStateDir(rt),
     supervisor: defaultSupervisorDeps(layaCliPath()),
     health: () => probeLayaHealth(rt),
+    endpoint: layaEndpoint(rt),
+    probeProblem: () => probeProblem(layaEndpoint(rt)),
   });
   if (sub === '') return (await layaStatus(deps)).join('\n');
   if (sub === 'serve') return runLayaServe(deps);
