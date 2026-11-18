@@ -159,6 +159,24 @@ const VALID_CATEGORY_SET: readonly string[] = VALID_CATEGORIES;
  * (PR #70 review: cached models from an obsolete taxonomy must never be
  * reused). Not cryptographic — it only has to change when the surface does.
  */
+/**
+ * True for an exception that says something about OUR call, not about the
+ * model. Pi surfaces a provider failure as an AssistantMessage carrying
+ * `errorMessage`/`stopReason: 'error'`; a JavaScript programming error
+ * (TypeError, RangeError, ReferenceError) reaching the probe means the router
+ * wired something wrong — punishing the model for it hides the defect behind a
+ * 7-day block. Transport errors (plain `Error`) keep counting.
+ *
+ * The precedent (2026-11-17): `completeSimple` was detached from pi's
+ * ModelRuntime, so `this` was undefined and every configured candidate threw
+ * "Cannot read properties of undefined (reading 'streamSimple')". Twenty-two
+ * blocklist entries and fifteen unhealthy models came out of that.
+ */
+export function isRouterSideError(e: unknown): boolean {
+  const name = (e as { name?: unknown } | null | undefined)?.name;
+  return name === 'TypeError' || name === 'RangeError' || name === 'ReferenceError';
+}
+
 export const PROBE_SIGNATURE: string = ((): string => {
   const surface = [
     ...PROBE_CASES.map((c) => `${c.name}|${c.prompt}|${c.accept.join(',')}`),
@@ -457,6 +475,19 @@ export async function probeAndCache(
         log(`[router] ${ref} answered after its blocklist entry expired — block cleared`);
       }
     } catch (e) {
+      // A thrown exception is not evidence about the model either way UNLESS it
+      // is a transport failure. Pi reports a provider refusal as an
+      // AssistantMessage with stopReason 'error' (handled above), so a
+      // programming error from our own side lands here — and recording it cost
+      // 22 blocklist entries plus 15 unhealthy OpenRouter models (detached
+      // completeSimple, 2026-11-17). Log it, blame nobody.
+      if (isRouterSideError(e)) {
+        log(
+          `[classifier-probe] ${ref} failed: ${(e as Error).message} ` +
+            '(router-side error — not counted against the model)'
+        );
+        continue;
+      }
       log(`[classifier-probe] ${ref} failed: ${(e as Error).message}`);
       recordModelFailure(cache, ref);
       const entry = recordBlocklistFailure(cache, ref, (e as Error).message);

@@ -23,6 +23,20 @@ without the owner's explicit release approval).
   unpublished release, and it never starts the sidecar; the last message gives
   the `serve` command for the user's terminal.
 
+### Fixed — the classifier probe no longer blames models for router bugs
+
+Pi's `ModelRuntime.completeSimple` is a method that calls `this.streamSimple`;
+the scan runner detached it, so `this` was undefined and every
+provider-configured candidate failed the scan-time probe with "Cannot read
+properties of undefined (reading 'streamSimple')". The probe then recorded that
+TypeError as a model failure: 22 blocklist entries upstream carry that
+signature, and 7-day blocks removed working models from routing (among them
+`mistral/zai-glm-5-3`). Two fixes: the seam (`probeCompleteSimple`) re-attaches
+the receiver, and a programming error (`TypeError`/`RangeError`/
+`ReferenceError`) is logged and counted against nobody — a provider refusal
+still blocks, a transport error still counts. Diagnosed from the sandbox
+container's logs and the host's scan cache.
+
 ### Fixed — a permanently blocked model is no longer re-admitted
 
 A model the upstream provider has retired stayed in the generated group lists
