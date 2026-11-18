@@ -138,7 +138,7 @@ and the router now ignores it with a warning), offer to move its values into
   "integrations": {
     "laya": {
       "enabled": true,
-      "mode": "shadow",
+      "mode": "active",
       "checkpoint": "router@1.0.0",
       "endpoint": "http://127.0.0.1:8089"
     }
@@ -146,9 +146,11 @@ and the router now ignores it with a warning), offer to move its values into
 }
 ```
 
-Shadow mode only logs Laya's answer and does not change the route. The user
-can switch to `"active"` later, after reviewing `/router` and the
-decision log.
+With `"active"` an installed Laya leads the classifier chain: its answer decides
+the route, and the local and cloud chains run only when Laya is unavailable or
+its answer is vetoed. Tell the user that this is the default now, and that
+`"shadow"` (log only, the route does not change) is the setting to choose if
+they want to watch Laya first. `/router laya` shows the mode.
 
 ### 8. Sidecar (not started by this skill)
 

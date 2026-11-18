@@ -120,7 +120,8 @@ flowchart TD
    The turn enters at the Laya stage (`integrations.laya.enabled`). In `active`
    mode a confident Laya answer is the category and the chain below never runs;
    in `shadow` mode, or when Laya is off, unavailable or not confident, the
-   local chain runs as if Laya were absent. The local resolution order is:
+   local chain runs as if Laya were absent. An installed Laya is written in
+   `active` mode (ADR-0035). The local resolution order is:
    user pin (`classifier.local.model` / `classifier.local.fallback`) › probe-verified local list (`classifier_local_models`, persisted) ›
    provisional candidate order (only before the first probe; models the scan has
    explicitly seen answer completions) › none. An **empty probed list is final**

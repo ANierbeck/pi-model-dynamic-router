@@ -616,9 +616,11 @@ Pick up in a later round, each as its own plan where noted (§11):
   - Audit and pins: `npm audit` 0 findings; pi devDependency 1.5.2 = installed
     host; shipped `log_level: "warn"`; 0 open Dependabot alerts (2026-11-13).
   - "Everything Laya" gate (owner 2026-11-08):
-    (1) sole-classifier steps 3/5/6 — OPEN, owner decision (proposal: close as
-    "stays experimental, research continues post-2.0", see
-    `docs/plans/2026-10-25-laya-sole-classifier.md`);
+    (1) sole-classifier steps 3/5/6 — CLOSED as a gate 2026-11-18 (owner): an
+    installed Laya leads the classifier chain, the standard chain runs without
+    it (ADR 0035; the installer now writes `mode: "active"`). The plan
+    `docs/plans/2026-10-25-laya-sole-classifier.md` records it; the confidence
+    default (0.8) is still an open owner question (ADR 0035, "Open");
     (2) sidecar distribution — packaging, parity (golden 180/180, corpus 298/300,
     live queue 259/260) and per-platform docs DONE; since 2026-11-16 the sidecar
     ships inside the router tarball and needs no publish of its own; the r2

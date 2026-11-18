@@ -206,13 +206,20 @@ describe('latestOffer', () => {
 });
 
 describe('mergeLayaBlock', () => {
-  it('a fresh block is shadow mode on the default endpoint', () => {
+  // Owner decision 2026-11-18 (ADR-0035): an installed Laya leads the classifier
+  // chain. A fresh block therefore routes on Laya's answer, not only logs it.
+  it('a fresh block leads (active) on the default endpoint', () => {
     expect(mergeLayaBlock(undefined, 'router@1.0.0')).toEqual({
       enabled: true,
-      mode: 'shadow',
+      mode: 'active',
       checkpoint: 'router@1.0.0',
       endpoint: 'http://127.0.0.1:8089',
     });
+  });
+
+  it('keeps a mode the user already chose, so a reinstall does not silently switch it', () => {
+    expect(mergeLayaBlock({ mode: 'shadow' }, 'router@1.0.0')).toMatchObject({ mode: 'shadow' });
+    expect(mergeLayaBlock({ mode: 'active' }, 'router@1.0.0')).toMatchObject({ mode: 'active' });
   });
 
   it('keeps the user keys (mode, endpoint, timeout) and moves enabled and checkpoint', () => {

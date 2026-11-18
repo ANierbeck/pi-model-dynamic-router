@@ -50,6 +50,16 @@ without the owner's explicit release approval).
   unpublished release, and it never starts the sidecar; the last message gives
   the `serve` command for the user's terminal.
 
+### Changed — an installed Laya leads the classifier chain (ADR 0035)
+
+`/router laya install` now writes `integrations.laya.mode: "active"` (it wrote
+`"shadow"` before, so an installed Laya only logged its answers and the chain
+decided every route). Users who installed Laya before this release keep the
+mode in their file; a reinstall keeps it too. Without an installed Laya the
+standard chain of ADR 0032 runs as before. Closes the sole-classifier steps 3,
+5 and 6 as release gates; the default confidence gate (0.8) is unchanged and
+still an open owner decision.
+
 ### Fixed — `/router laya stop` no longer signals a pid another sidecar vouches for
 
 `stop` took any `/health` answer as proof that the recorded pid is the

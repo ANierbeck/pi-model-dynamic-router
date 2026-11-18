@@ -2,7 +2,12 @@
 
 Status: owner decisions recorded 2026-10-25; implementation partly done (see
 "State"). 2026-11-08: steps 1, 2 and 4 are done; open are the data-driven
-steps 3, 5 and 6, which need real Laya decisions to accumulate first. The spike branch `laya-spike` no longer exists locally or on `origin` (checked 2026-11-12); its code is on `main` (e.g. `src/laya-classifier.ts`, PRs #147-#150).
+steps 3, 5 and 6, which need real Laya decisions to accumulate first.
+**2026-11-18: decided (owner), ADR 0035.** An installed Laya leads the
+classifier chain (the installer writes `mode: "active"`); without an installed
+Laya the standard chain of ADR 0032 runs. Steps 3, 5 and 6 are no longer
+release gates for 2.0.0; their data collection continues in the owner's setup.
+Open: the default confidence gate (see ADR 0035, "Open"). The spike branch `laya-spike` no longer exists locally or on `origin` (checked 2026-11-12); its code is on `main` (e.g. `src/laya-classifier.ts`, PRs #147-#150).
 
 ## Owner decisions (2026-10-25)
 
@@ -101,10 +106,12 @@ ask Laya + the chain about those prompts too and log them as observations
 **Expanded the same day by the owner: "everything Laya" is through before
 2.0.0** — not just this plan's steps. The full gate:
 
-1. **This plan** (steps 3, 5, 6): the labeling keeps running
-   (`~/.laya-ft/shadow_eval/live_label.py`), but it has to reach a verdict
-   first. "Through" needs a measurable end, which the owner has not set yet.
-   **Proposed (agent, not an owner decision):**
+1. **This plan** (steps 3, 5, 6): **closed as a release gate 2026-11-18**
+   (owner): an installed Laya leads the chain, the standard chain runs without
+   it (ADR 0035). The labeling keeps running (`~/.laya-ft/shadow_eval/live_label.py`)
+   and the measures below stay useful for the next fine-tune, but they do not
+   block 2.0.0. The former proposal is kept for the record:
+   **Former proposal (agent, not an owner decision; superseded):**
    - step 3: every `laya` vs `comparator` disagreement of the window since
      the 2026-11-08 restart is labeled, and at least 100 pairs exist;
    - step 5: the momentum observations of that window are read once and the

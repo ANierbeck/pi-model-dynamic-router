@@ -104,15 +104,16 @@ export function latestOffer(manifest: LayaManifest, model = LAYA_MODEL): LayaOff
 /**
  * The `integrations.laya` block the wizard writes. Keys the user already has
  * (mode, endpoint, timeout_ms, …) are kept; `enabled` and `checkpoint` are set
- * to the installed version. A fresh block starts in shadow mode, which logs the
- * answer without changing the route.
+ * to the installed version. A fresh block starts in active mode: an installed
+ * Laya leads the classifier chain (ADR-0035). A mode the user already chose is
+ * kept, so a reinstall never switches it behind their back.
  */
 export function mergeLayaBlock(
   existing: Record<string, unknown> | undefined,
   checkpoint: string
 ): Record<string, unknown> {
   return {
-    mode: 'shadow',
+    mode: 'active',
     endpoint: LAYA_DEFAULT_ENDPOINT,
     ...(existing ?? {}),
     enabled: true,

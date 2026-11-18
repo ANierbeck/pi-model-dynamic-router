@@ -125,7 +125,8 @@ An opt-in stage that classifies with a **local Laya sidecar** (ONNX Runtime,
 shipped inside this package; its native runtime is installed with
 `pi-laya-model runtime install` and the sidecar is started with
 `pi-laya-model serve router@1.0.0`) instead of the cloud chain. Disabled by
-default and experimental — start in `"shadow"` mode, which only logs.
+default. The installer writes `"active"`: an installed Laya leads the classifier
+chain (ADR-0035). Choose `"shadow"` to log Laya's answers without routing on them.
 
 ```json
 {
@@ -133,7 +134,7 @@ default and experimental — start in `"shadow"` mode, which only logs.
     "laya": {
       "enabled": true,
       "checkpoint": "<model>@<version>",
-      "mode": "shadow",
+      "mode": "active",
       "endpoint": "http://127.0.0.1:8089",
       "confidence_threshold": 0.8,
       "timeout_ms": 1500,
@@ -148,7 +149,7 @@ default and experimental — start in `"shadow"` mode, which only logs.
 |---|---|---|
 | `enabled` | `false` | Turn the stage on (requires `checkpoint`) |
 | `checkpoint` | — | What you expect the sidecar to serve, e.g. `router@1.0.0` or `<hf-repo>@<revision>`. Required when enabled. A sidecar that reports its identity on `GET /health` is logged by what it reports (`laya:<model>@<version>`, decision-log `identity: "reported"`); `checkpoint` is the label only when it does not (`identity: "configured"`). `/router status` warns when a `<model>@<version>` here disagrees with the reported one, or when the sidecar serves a different head than the router builds. The router never downloads weights |
-| `mode` | `"shadow"` | `"shadow"` logs without routing; `"active"` lets a confident answer take the route |
+| `mode` | `"shadow"` (code default; the installer writes `"active"`) | `"shadow"` logs without routing; `"active"` lets a confident answer take the route, and an installed Laya leads the chain |
 | `confidence_threshold` | `0.8` | Minimum confidence to use the answer, `0`–`1`. The scale is uncalibrated, so the default keeps a gate; `0` switches the gate off (Laya's answer is used whatever its confidence — the cloud chain then only runs on failure or as the background comparator) |
 | `endpoint` | `http://127.0.0.1:8089` | Sidecar base URL: `POST /classify`, optional `GET /health` (identity) |
 | `timeout_ms` | `1500` | Hand the prompt to the chain after this long. One timeout only affects that prompt; 3 in a row switch the stage off for 5 minutes. The sidecar's latency varies with GPU load, so leave headroom above the p90 of `laya.ms` in the decision log |
