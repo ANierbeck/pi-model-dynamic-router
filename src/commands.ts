@@ -75,6 +75,12 @@ import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
 import { hasAnyInstall } from './laya-model-install.ts';
+import {
+  defaultLayaInstallDeps,
+  layaStatus,
+  runLayaInstall,
+  writeLayaConfigBlock,
+} from './laya-install-command.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1127,6 +1133,23 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
     ],
   },
   {
+    name: 'laya',
+    usage: 'laya [install]',
+    summary: 'Laya classifier: status, or install it with confirmed steps (TUI)',
+    completions: [
+      {
+        value: 'laya',
+        label: 'laya',
+        description: 'Laya classifier status: offer, install, ONNX runtime, config',
+      },
+      {
+        value: 'laya install',
+        label: 'laya install',
+        description: 'Install the Laya classifier — confirmed steps, TUI only',
+      },
+    ],
+  },
+  {
     name: 'config',
     usage: `config [${CONFIG_SUBCOMMANDS.map((c) => c.name).join('|')}]`,
     summary:
@@ -1218,6 +1241,50 @@ function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
   return 'Usage: /router corrections [list|clear]';
 }
 
+/**
+ * `/router laya` (status, any mode) and `/router laya install` (the wizard, TUI
+ * only). The wizard asks before each change; the status changes nothing.
+ * Plan: docs/plans/2026-11-17-router-laya-install-command.md.
+ */
+async function handleLayaCommand(
+  rt: CommandDeps,
+  ctx: WizardCtx & { mode?: string },
+  sub: string
+): Promise<string> {
+  const deps = defaultLayaInstallDeps({
+    readLayaBlock: () => {
+      const cfg = openUserConfigStore().read().config as
+        | { integrations?: { laya?: Record<string, unknown> } }
+        | undefined;
+      return cfg?.integrations?.laya;
+    },
+    // Through the integrations delta: `checkpoint`, `endpoint` and `timeout_ms` are
+    // not `/router config set` keys, so the paths form refuses the whole block.
+    writeLayaBlock: (block) => {
+      const res = writeLayaConfigBlock(block);
+      if (res.ok) rt.load();
+      return res;
+    },
+  });
+  if (sub === '') return (await layaStatus(deps)).join('\n');
+  if (sub === 'install') {
+    // Print mode has no dialogs to answer the step questions, so the wizard would
+    // stop at every one unanswered. RPC mode does have them (pi emits
+    // extension_ui_request and blocks for the client's answer), so it may run.
+    if (ctx.mode === 'print') {
+      return 'Laya install is interactive (it asks before each step): run /router laya install in the TUI or an RPC client. /router laya shows the status and changes nothing.';
+    }
+    return runLayaInstall(
+      {
+        confirm: (title, message) => ctx.ui.confirm(title, message),
+        notify: (message, level) => ctx.ui.notify(message, level),
+      },
+      deps
+    );
+  }
+  return 'Usage: /router laya [install]';
+}
+
 export function createCommands(rt: CommandDeps): void {
   // ── Command: /router ───────────────────────────────────────────────────
 
@@ -1258,6 +1325,12 @@ export function createCommands(rt: CommandDeps): void {
             }
             const reply = handleConfigCommand(rt, ctx, sub);
             ctx.ui.notify(!sub ? [reply, '', CONFIG_NO_MENU_NOTE].join('\n') : reply, 'info');
+            return;
+          }
+
+          if (arg === 'laya' || arg?.startsWith('laya ')) {
+            const sub = arg.slice('laya'.length).trim();
+            ctx.ui.notify(await handleLayaCommand(rt, ctx, sub), 'info');
             return;
           }
 
