@@ -35,7 +35,9 @@ owner's intent for an installed Laya.
 4. **A chosen mode is kept.** A reinstall keeps the `mode` already in the user's
    block. A user who wants to watch Laya first sets `"shadow"` and keeps it.
 5. **The code default is unchanged.** A hand-written block with `enabled: true`
-   and no `mode` still reads as `shadow`. Only the installer's default changes.
+   and no `mode` still reads as `shadow`. A reinstall keeps that: a block that
+   is already enabled without a `mode` key stays `shadow`. Only a fresh block
+   (none, or the shipped `{ "enabled": false }`) gets the installer's `active`.
 6. **Background runs are opt-in and off by default.** `compare_in_background`
    (the comparator) and `observe_momentum` (the momentum observation) both
    default to `false`, in the code and in the shipped config. They run the
@@ -54,8 +56,9 @@ owner's intent for an installed Laya.
 - New installs route on Laya's answers. That is a behaviour change for anyone
   who installs after this ADR; the CHANGELOG names it.
 - With Laya installed and both background runs off, the prompt text leaves
-  the machine only when Laya and the local chain both give no answer (the
-  cloud chain of ADR 0032).
+  the machine when Laya and the local chain give no answer (the cloud chain of
+  ADR 0032). With the opt-in `classifier.cloud.escalate_low_confidence`, a
+  local answer below the confidence gate also goes to the cloud chain.
 - The confidence gate (`confidence_threshold`, default 0.8) still applies.
   The sole-classifier plan's decision 1 ("no confidence gate") was never
   implemented that way, and this ADR does not change it.

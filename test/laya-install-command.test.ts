@@ -217,6 +217,24 @@ describe('mergeLayaBlock', () => {
     });
   });
 
+  it('a block that is already enabled without a mode keeps the mode it runs with (shadow)', () => {
+    // Red first: an enabled block with no mode key runs as shadow (the code
+    // default, laya-classifier.ts LAYA_SPEC.defaultMode). A reinstall used to
+    // write active over it, switching the user's routing without asking.
+    expect(
+      mergeLayaBlock({ enabled: true, endpoint: 'http://127.0.0.1:9000' }, 'router@1.0.0')
+    ).toMatchObject({
+      mode: 'shadow',
+      endpoint: 'http://127.0.0.1:9000',
+    });
+  });
+
+  it('the shipped block {enabled: false} is not an earlier setup: a fresh install leads', () => {
+    // router-config.json ships integrations.laya as { enabled: false }. That is
+    // the default for a machine that never installed Laya, so it gets active.
+    expect(mergeLayaBlock({ enabled: false }, 'router@1.0.0')).toMatchObject({ mode: 'active' });
+  });
+
   it('keeps a mode the user already chose, so a reinstall does not silently switch it', () => {
     expect(mergeLayaBlock({ mode: 'shadow' }, 'router@1.0.0')).toMatchObject({ mode: 'shadow' });
     expect(mergeLayaBlock({ mode: 'active' }, 'router@1.0.0')).toMatchObject({ mode: 'active' });

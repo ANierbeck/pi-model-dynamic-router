@@ -106,14 +106,18 @@ export function latestOffer(manifest: LayaManifest, model = LAYA_MODEL): LayaOff
  * (mode, endpoint, timeout_ms, …) are kept; `enabled` and `checkpoint` are set
  * to the installed version. A fresh block starts in active mode: an installed
  * Laya leads the classifier chain (ADR-0035). A mode the user already chose is
- * kept, so a reinstall never switches it behind their back.
+ * kept, so a reinstall never switches it behind their back. A block that is
+ * already enabled but has no mode key runs as shadow (the code default), so it
+ * keeps shadow too; `{ enabled: false }` (the shipped block) is not an earlier
+ * setup and gets active.
  */
 export function mergeLayaBlock(
   existing: Record<string, unknown> | undefined,
   checkpoint: string
 ): Record<string, unknown> {
+  const runsAsShadow = existing?.enabled === true && existing.mode === undefined;
   return {
-    mode: 'active',
+    mode: runsAsShadow ? 'shadow' : 'active',
     endpoint: LAYA_DEFAULT_ENDPOINT,
     ...(existing ?? {}),
     enabled: true,
