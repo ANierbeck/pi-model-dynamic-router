@@ -572,6 +572,11 @@ describe('/router laya through the real handler', () => {
     const h = setup({ mode: 'tui', confirm: async () => false });
     const out = await h.run('laya install');
     expect(out).toMatch(/not published yet|nothing was downloaded|does not verify/);
+    if (/not published yet/.test(out)) {
+      // The release guard fires before the first dialog: a wizard that asks and
+      // then refuses teaches the user to click through without reading.
+      expect(h.ui.confirm).not.toHaveBeenCalled();
+    }
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-models'))).toBe(false);
     expect(fs.existsSync(path.join(harness.paths.agentDir, 'laya-runtime'))).toBe(false);
   });
