@@ -1,0 +1,16 @@
+# Provider variables pi reads from the environment (pi docs, providers.md).
+# Names only, one per line — never a value. `run.sh` forwards exactly these and
+# `entrypoint.sh` reports exactly these, so the two cannot drift apart: a key
+# that arrives but is not reported reads like "no key configured".
+ANTHROPIC_API_KEY
+MISTRAL_API_KEY
+OPENROUTER_API_KEY
+OPENAI_API_KEY
+GEMINI_API_KEY
+ZAI_API_KEY
+GROQ_API_KEY
+DEEPSEEK_API_KEY
+CEREBRAS_API_KEY
+XAI_API_KEY
+TOGETHER_API_KEY
+FIREWORKS_API_KEY
