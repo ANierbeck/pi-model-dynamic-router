@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { costTracker } from './cost-tracker.ts';
 import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
@@ -79,8 +80,11 @@ import {
   defaultLayaInstallDeps,
   layaStatus,
   runLayaInstall,
+  runLayaServe,
+  runLayaStop,
   writeLayaConfigBlock,
 } from './laya-install-command.ts';
+import { defaultSupervisorDeps, endpointProblem } from './laya-sidecar-supervisor.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1134,8 +1138,8 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
   },
   {
     name: 'laya',
-    usage: 'laya [install]',
-    summary: 'Laya classifier: status, or install it with confirmed steps (TUI)',
+    usage: 'laya [install|serve|stop]',
+    summary: 'Laya classifier: status, install it (confirmed steps), start or stop the sidecar',
     completions: [
       {
         value: 'laya',
@@ -1146,6 +1150,16 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
         value: 'laya install',
         label: 'laya install',
         description: 'Install the Laya classifier — confirmed steps, TUI only',
+      },
+      {
+        value: 'laya serve',
+        label: 'laya serve',
+        description: 'Start the Laya sidecar (detached; keeps running after pi exits)',
+      },
+      {
+        value: 'laya stop',
+        label: 'laya stop',
+        description: 'Stop the Laya sidecar this router started',
       },
     ],
   },
@@ -1242,6 +1256,56 @@ function handleCorrectionsCommand(rt: CommandDeps, sub: string): string {
 }
 
 /**
+ * Generated state (pid, log, snapshot, cache) lives next to the extension unless
+ * `PI_ROUTER_STATE_DIR` points elsewhere — the same rule index.ts uses.
+ */
+function layaStateDir(rt: CommandDeps): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- empty string must fall through
+  return process.env.PI_ROUTER_STATE_DIR || path.dirname(rt.cfgPath);
+}
+
+/** The built CLI that carries `serve` (`dist/laya-model-install.js`). */
+function layaCliPath(): string {
+  return fileURLToPath(new URL('./laya-model-install.js', import.meta.url));
+}
+
+/**
+ * The endpoint the router talks to, from the EFFECTIVE config — the shipped
+ * defaults, the user layer and any project layer, in that order. Reading the
+ * user file here would let a project layer's `integrations.laya` be ignored, so
+ * `/router laya` would probe one endpoint while the classifier calls another.
+ */
+function layaEndpoint(rt: CommandDeps): string {
+  const endpoint = rt.cfg.integrations?.laya?.endpoint;
+  return typeof endpoint === 'string' && endpoint ? endpoint : LAYA_DEFAULT_ENDPOINT;
+}
+
+/**
+ * A short local probe of the sidecar's /health. Never throws: a sidecar that is
+ * down is a normal state, and the status line says so.
+ *
+ * Two limits, both deliberate: a non-loopback endpoint is not probed at all (a
+ * config file must not turn `/router laya` into a scanner of other hosts,
+ * including internal services; the rule is `endpointProblem`), and redirects are
+ * refused for the same reason.
+ */
+async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: string } | null> {
+  const endpoint = layaEndpoint(rt);
+  if (endpointProblem(endpoint)) return null;
+  const url = `${endpoint.replace(/\/+$/, '')}/health`;
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(1500),
+      redirect: 'error',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { artifact_sha256?: string };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `/router laya` (status, any mode) and `/router laya install` (the wizard, TUI
  * only). The wizard asks before each change; the status changes nothing.
  * Plan: docs/plans/2026-11-17-router-laya-install-command.md.
@@ -1252,12 +1316,16 @@ async function handleLayaCommand(
   sub: string
 ): Promise<string> {
   const deps = defaultLayaInstallDeps({
+    // The user layer: the wizard merges onto this and writes it back.
     readLayaBlock: () => {
       const cfg = openUserConfigStore().read().config as
         | { integrations?: { laya?: Record<string, unknown> } }
         | undefined;
       return cfg?.integrations?.laya;
     },
+    // What the router runs on. A project layer that enables or repoints Laya must
+    // be visible to status and serve — otherwise they describe a different setup.
+    readEffectiveLayaBlock: () => rt.cfg.integrations?.laya as Record<string, unknown> | undefined,
     // Through the integrations delta: `checkpoint`, `endpoint` and `timeout_ms` are
     // not `/router config set` keys, so the paths form refuses the whole block.
     writeLayaBlock: (block) => {
@@ -1265,8 +1333,15 @@ async function handleLayaCommand(
       if (res.ok) rt.load();
       return res;
     },
+    stateDir: layaStateDir(rt),
+    supervisor: defaultSupervisorDeps(layaCliPath()),
+    health: () => probeLayaHealth(rt),
+    endpoint: layaEndpoint(rt),
+    probeProblem: () => endpointProblem(layaEndpoint(rt)),
   });
   if (sub === '') return (await layaStatus(deps)).join('\n');
+  if (sub === 'serve') return runLayaServe(deps);
+  if (sub === 'stop') return runLayaStop(deps);
   if (sub === 'install') {
     // Print mode has no dialogs to answer the step questions, so the wizard would
     // stop at every one unanswered. RPC mode does have them (pi emits
@@ -1282,7 +1357,7 @@ async function handleLayaCommand(
       deps
     );
   }
-  return 'Usage: /router laya [install]';
+  return 'Usage: /router laya [install|serve|stop]';
 }
 
 export function createCommands(rt: CommandDeps): void {

@@ -207,6 +207,21 @@ function badIntegrationBlock(
   return undefined;
 }
 
+/**
+ * The atomic write is write-tmp-then-rename, and a rename cannot replace a file
+ * that is itself a mount point: EBUSY (Docker single-file bind mount) or EXDEV
+ * (another file system). The raw message leaves the user stuck, so say what to
+ * do instead. Found in the sandbox container, 2026-11-17.
+ */
+function replaceHint(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  if (code !== 'EBUSY' && code !== 'EXDEV') return '';
+  return (
+    ' — the file cannot be replaced in place: it is probably a single-file mount or on another ' +
+    'file system. Mount the directory (or copy the file into it) instead of bind-mounting this file.'
+  );
+}
+
 export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfigStore {
   const file = userConfigPath(opts.agentDir ?? piAgentDir());
   return {
@@ -312,7 +327,7 @@ export function openUserConfigStore(opts: { agentDir?: string } = {}): UserConfi
           fs.rmSync(tmp, { force: true });
           return {
             ok: false,
-            error: `Not written — ${err instanceof Error ? err.message : textOf(err)}`,
+            error: `Not written — ${err instanceof Error ? err.message : textOf(err)}${replaceHint(err)}`,
           };
         }
         return { ok: true, written: file };

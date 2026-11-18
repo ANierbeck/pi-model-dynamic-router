@@ -42,7 +42,14 @@ const BUILD_OUTPUTS = [
 ];
 // Keep in sync with every stateDir write — see SYNC RULE in the header.
 // Currently: src/cache.ts CacheManager and the dynamic-config save in index.ts.
-const STATE_FILES = ['.cache/scan-cache.json', 'router-config.dynamic.json'];
+const STATE_FILES = [
+  '.cache/scan-cache.json',
+  'router-config.dynamic.json',
+  // /router laya serve writes these next to the generated state
+  // (plan 2026-11-17-laya-sidecar-lifecycle.md).
+  'laya-sidecar.pid',
+  'laya-sidecar.log',
+];
 // Stray non-build, non-state files that must never ship — seeded counterexamples.
 const STRAY_FILES = ['router-config.dynamic.json.bak-20261022-ghosts', 'scratch.txt'];
 // Release gate (owner 2026-10-29, hygiene Phase 2 Step 3a): the only skill

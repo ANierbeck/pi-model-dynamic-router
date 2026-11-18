@@ -148,6 +148,29 @@ describe('installRuntime', () => {
   });
 });
 
+describe('two runtime installs at once', () => {
+  // The runtime stages into <dir>.tmp and moves <dir> aside exactly like the model
+  // install; without a lock the second run deletes the first run's staging dir.
+  const lockFile = () => `${dir}.install-lock`;
+
+  it('refuses while another install holds the lock', async () => {
+    fs.mkdirSync(path.dirname(lockFile()), { recursive: true });
+    fs.writeFileSync(lockFile(), 'someone-else\n');
+    const err = await installRuntime({ dir, specDir, run: fakeNpm(), ...linux }).catch((e) => e);
+    expect(err.code).toBe('busy');
+    expect(err.message).toContain(lockFile());
+    expect(fs.existsSync(dir)).toBe(false);
+  });
+
+  it('releases the lock after a failed install', async () => {
+    const failing = Object.assign(() => Promise.resolve({ code: 1, stderr: 'npm ERR! network' }), {
+      calls: [],
+    }) as unknown as Parameters<typeof installRuntime>[0]['run'];
+    await installRuntime({ dir, specDir, run: failing, ...linux }).catch(() => {});
+    expect(fs.existsSync(lockFile())).toBe(false);
+  });
+});
+
 describe('verifyRuntime', () => {
   it('names the install command when nothing is installed', () => {
     const res = verifyRuntime({ dir, specDir, ...linux });

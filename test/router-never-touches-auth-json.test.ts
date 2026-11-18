@@ -62,7 +62,7 @@ const FORBIDDEN_IN_SRC: { pattern: RegExp; why: string }[] = [
  * entry, with a test above that pins what the file may do instead.
  */
 const EXEMPT: Record<string, string[]> = {
-  child_process: ['src/laya-runtime-install.ts'],
+  child_process: ['src/laya-runtime-install.ts', 'src/laya-sidecar-supervisor.ts'],
 };
 
 function listSourceFiles(dir: string): string[] {
@@ -106,9 +106,24 @@ describe('the router never touches auth.json or resolves keys itself (ADR-0022)'
     expect(spawned).toEqual(["'npm'"], 'npm is the only process this file may start');
     expect(text.match(/spawn\(/g)).toHaveLength(1);
     expect(text).not.toMatch(/auth\.json|apiKey|api_key|process\.env\.[A-Z_]*KEY/);
-    // Exactly one file may carry the exemption.
+    // Exactly two files may carry the exemption, each pinned below.
     expect(Object.entries(EXEMPT).map(([k, v]) => `${k}: ${v.join(',')}`)).toEqual([
-      'child_process: src/laya-runtime-install.ts',
+      'child_process: src/laya-runtime-install.ts,src/laya-sidecar-supervisor.ts',
     ]);
+  });
+
+  // The second exemption: /router laya serve starts the sidecar (plan
+  // 2026-11-17-laya-sidecar-lifecycle.md, owner decision). It may start exactly
+  // one process — the bundled sidecar CLI through node — with an argument array,
+  // never a shell, and it reads no credentials either.
+  it('the second child_process exemption starts the sidecar bundle only', () => {
+    const text = fs.readFileSync(path.join(repoRoot, 'src', 'laya-sidecar-supervisor.ts'), 'utf-8');
+    // Exactly one real call site (not the injected `deps.spawn` and not the type).
+    expect([...text.matchAll(/(?<![\w.])spawn\(/g)]).toHaveLength(1);
+    // node as the binary, and the CLI path passed as an argument
+    expect(text).toMatch(/deps\.execPath,\s*\[deps\.cliPath, 'serve'/);
+    expect(text).not.toMatch(/shell:\s*true/);
+    expect(text).not.toMatch(/exec\(|execSync|spawnSync/);
+    expect(text).not.toMatch(/auth\.json|apiKey|api_key|process\.env\.[A-Z_]*KEY/);
   });
 });

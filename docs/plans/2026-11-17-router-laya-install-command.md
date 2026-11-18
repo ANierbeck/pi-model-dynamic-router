@@ -1,8 +1,8 @@
 # `/router laya` — install the Laya classifier from inside pi
 
-**Status:** implemented 2026-11-17 — tests red first, all gates green
-(276 files, 3502 passed, 3 skipped); PR open. Done after the owner merges it.
-The command is not published or released; `router@1.0.0` still is not.
+**Status:** done 2026-11-17 (red first, gates green). Evidence and the
+container run: `docs/research/2026-11-18-laya-command-verification.md`.
+Nothing here was published or released; `router@1.0.0` still is not.
 
 **Verified against:** `main` @ `110d13a` (merge of PR #185). `src/laya-model-install.ts`
 (`installModel`, `verifyInstall`, `listInstalls`, `loadManifest`), `src/laya-runtime-install.ts`
@@ -50,8 +50,9 @@ manifest, which proves the refusal without network access.
 
 ## Open decisions
 
-- **Sidecar start in `/router`?** Not built: the skill and the router's design say
-  the user starts it in their own terminal. Owner decides if that changes.
+- **Sidecar start in `/router`?** Decided by the owner 2026-11-17: yes, but only
+  on request. `2026-11-17-laya-sidecar-lifecycle.md` builds `/router laya serve`
+  and `/router laya stop`; the router still starts nothing silently.
 - **Legacy `classifier_laya` block** (renamed to `integrations.laya` in 2.0): the
   skill offers to migrate it; this command does not touch it yet.
 - **Publishing `router@1.0.0`** stays a separate owner decision (AGENTS §1). Until
