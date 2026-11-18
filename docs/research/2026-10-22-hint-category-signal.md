@@ -3,6 +3,13 @@
 Status: research note, not a decision. No code changed. Prompt texts are
 deliberately not reproduced here (they come from private session logs).
 
+> **Outcome (2026-11-18):** option A was built (a pinned turn still classifies
+> its content, `classifyBehindPin` in `src/stream-orchestrator.ts`). Option B
+> (pins as owner labels) was closed by the owner and will not be built: pins
+> are too weak a label source (see `TODO.md`). The "Options" and "Open
+> questions" sections below are kept as written; none of them is open any more.
+> The plan-check question only mattered for option B.
+
 ## Question
 
 Owner's observation: a `HINT:` model pin carries a task category. Opus pin =

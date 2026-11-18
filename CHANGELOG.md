@@ -26,8 +26,8 @@ without the owner's explicit release approval).
   once `/health` answers, and an unanswered start stops the child again; a
   sidecar started in a terminal is detected and not duplicated; two concurrent
   `serve` calls cannot both spawn (the pid file is reserved with `O_EXCL`
-  before the spawn); `stop` only signals a pid that answers as the sidecar
-  (a reused pid is no longer killed) and waits for the process to be gone
+  before the spawn); `stop` only signals a recorded pid while the sidecar
+  answers (see the Fixed entry below for the pid check) and waits for the process to be gone
   before it deletes the record. `src/install-lock.ts` serialises the model and
   runtime installers, which stage into the same `<dir>.tmp`.
 - **`/router laya` reads the effective `integrations.laya`**, not just the user
@@ -49,6 +49,21 @@ without the owner's explicit release approval).
   download, runtime (about 115 MB), config block. It has no path to an
   unpublished release, and it never starts the sidecar; the last message gives
   the `serve` command for the user's terminal.
+
+### Fixed — `/router laya stop` no longer signals a pid another sidecar vouches for
+
+`stop` took any `/health` answer as proof that the recorded pid is the
+sidecar. After a crash the OS can hand that number to an unrelated process,
+and a sidecar started in a terminal still answers on the port — `stop` then
+sent SIGTERM and SIGKILL to the unrelated process. The sidecar now reports its
+own `pid` on `/health`, and `stop` signals the recorded pid only when the
+answering sidecar reports exactly that pid; an answer without a pid (an older
+sidecar) or with another pid kills nothing and says why. A `serve` is confirmed
+only by its own child's pid, and `/router laya` says when `/health` is answered
+by another pid than the recorded one instead of reporting "ready". The Laya
+install skill now points at `/router laya serve|stop` and keeps the terminal
+command as the alternative; it still said the router never starts a sidecar.
+Found by the Sourcery review of PR #190.
 
 ### Fixed — the classifier probe no longer blames models for router bugs
 

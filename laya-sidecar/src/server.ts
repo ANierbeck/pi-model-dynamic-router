@@ -2,13 +2,13 @@
 // Laya sidecar: serves one installed model directory over the router's replay contract
 //   POST /classify  {"prompt": "...", "context"?: {previousUserMessage?, lastAssistantSnippet?}}
 //                   -> {"category", "confidence", "probabilities", "ms"}
-//   GET  /health    -> identity fields (see identity.ts)
+//   GET  /health    -> identity fields plus the answering pid (see identity.ts)
 // Listens on 127.0.0.1 only. Nothing is downloaded (plan step 7).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { healthPayload, servedHead } from './identity.js';
+import { healthPayload, healthResponse, servedHead } from './identity.js';
 import { openClassifier, type ClassifyContext } from './classify.js';
 import { useRuntime } from './runtime.js';
 
@@ -54,7 +54,7 @@ export async function serve(args: ServeOptions): Promise<Server> {
       'no head: pass --head-json or use a directory whose install record names a head file'
     );
   }
-  const health = JSON.stringify(healthPayload(args.modelDir, served));
+  const health = healthResponse(healthPayload(args.modelDir, served), process.pid);
   const classifier = await openClassifier(args.modelDir, served.head);
 
   // Reads the whole request body; resolves with the UTF-8 text at end of input.

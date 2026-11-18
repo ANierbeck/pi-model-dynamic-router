@@ -1289,7 +1289,9 @@ function layaEndpoint(rt: CommandDeps): string {
  * including internal services; the rule is `endpointProblem`), and redirects are
  * refused for the same reason.
  */
-async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: string } | null> {
+async function probeLayaHealth(
+  rt: CommandDeps
+): Promise<{ artifact_sha256?: string; pid?: unknown } | null> {
   const endpoint = layaEndpoint(rt);
   if (endpointProblem(endpoint)) return null;
   const url = `${endpoint.replace(/\/+$/, '')}/health`;
@@ -1299,7 +1301,7 @@ async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: str
       redirect: 'error',
     });
     if (!res.ok) return null;
-    return (await res.json()) as { artifact_sha256?: string };
+    return (await res.json()) as { artifact_sha256?: string; pid?: unknown };
   } catch {
     return null;
   }

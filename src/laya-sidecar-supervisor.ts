@@ -161,11 +161,35 @@ export interface StartOptions {
   /** Checks the ONNX runtime; false blocks the start with a pointer at install. */
   runtimeOk?: () => boolean;
   /**
-   * Asks the sidecar whether it answers. Used three times, and it is not
+   * Asks which sidecar answers on the endpoint. Used three times, and it is not
    * optional in spirit: to recognise an already-running sidecar, to notice one
    * that runs outside pi (no pid file), and to confirm a start actually serves.
    */
-  healthAnswers?: () => Promise<boolean>;
+  whoAnswers?: () => Promise<SidecarAnswer>;
+}
+
+/**
+ * What GET /health said about the answering process: null when nothing
+ * answered, `{}` when a sidecar answered without naming its pid (an older or
+ * foreign build), `{ pid }` otherwise. An answer proves only that SOME sidecar
+ * listens; the pid says whether it is the process the router recorded.
+ */
+export type SidecarAnswer = { pid?: number } | null;
+
+/** Reads the pid out of a /health body; anything but a positive safe integer is no pid. */
+export function answerFromHealth(raw: unknown): SidecarAnswer {
+  if (raw === null || typeof raw !== 'object') return null;
+  const pid = (raw as { pid?: unknown }).pid;
+  return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0 ? { pid } : {};
+}
+
+/** How an answer relates to a recorded pid, phrased for the user. */
+function foreignAnswer(answer: { pid?: number }, recorded: number): string {
+  return answer.pid === undefined
+    ? `A Laya sidecar answers on the endpoint but does not report its pid, so it cannot be told ` +
+        `apart from whatever now holds the recorded pid ${recorded}`
+    : `The Laya sidecar answering on the endpoint is pid ${answer.pid}, not the recorded pid ` +
+        `${recorded}; the recorded pid most likely belongs to a different process now`;
 }
 
 export type StartResult =
@@ -188,19 +212,25 @@ export type StartResult =
 export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Promise<StartResult> {
   const problem = endpointProblem(opts.endpoint);
   if (problem) return { ok: false, error: `Cannot start the sidecar: ${problem}.` };
-  const answers = opts.healthAnswers
-    ? async (): Promise<boolean> => Boolean(await opts.healthAnswers?.())
-    : null;
+  const ask = opts.whoAnswers ?? null;
   const { pidFile, logFile } = sidecarPaths(opts.stateDir);
 
   const recorded = readRecordedPid(opts.stateDir);
   if (recorded !== null) {
+    const answer = deps.isPidAlive(recorded) && ask ? await ask() : null;
     if (!deps.isPidAlive(recorded)) {
       removePidFile(opts.stateDir);
-    } else if (answers && (await answers())) {
+    } else if (answer?.pid === recorded) {
       return {
         ok: false,
         error: `The Laya sidecar is already running (pid ${recorded}). Use /router laya stop first.`,
+      };
+    } else if (answer) {
+      return {
+        ok: false,
+        error:
+          `${foreignAnswer(answer, recorded)}. Nothing was started. Remove ${pidFile} if the ` +
+          `record is stale, and stop the answering sidecar where it was started.`,
       };
     } else {
       return {
@@ -216,7 +246,7 @@ export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Pr
   // A sidecar started in a terminal has no pid file. Without this check the
   // start would spawn a second server that cannot bind the port, and the first
   // one would answer while the new pid is recorded.
-  if (answers && (await answers())) {
+  if (ask && (await ask())) {
     return {
       ok: false,
       error:
@@ -296,11 +326,20 @@ export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Pr
   fs.closeSync(fd);
   child.unref();
 
+  if (!ask) return { ok: true, pid, logFile };
+  // Only our own child confirms the start. A sidecar that took the port in the
+  // meantime answers too, and recording our pid for it would leave the record
+  // pointing at a process that is about to exit with "address in use".
+  let foreign: { pid?: number } | null = null;
   const deadline = deps.now() + START_CONFIRM_MS;
   while (deps.now() < deadline) {
     if (spawnError) break;
-    if (answers && (await answers())) return { ok: true, pid, logFile };
-    if (!answers) return { ok: true, pid, logFile };
+    const answer = await ask();
+    if (answer?.pid === pid) return { ok: true, pid, logFile };
+    if (answer) {
+      foreign = answer;
+      break;
+    }
     await deps.sleep(START_POLL_MS);
   }
   await terminate(pid, deps);
@@ -309,8 +348,12 @@ export async function startSidecar(opts: StartOptions, deps: SupervisorDeps): Pr
     ok: false,
     error: spawnError
       ? `The sidecar failed to start: ${spawnError} (log: ${logFile})`
-      : `The sidecar started (pid ${pid}) but /health did not answer within ` +
-        `${String(START_CONFIRM_MS / 1000)}s; it was stopped again. Log: ${logFile}`,
+      : foreign
+        ? `Another Laya sidecar ${foreign.pid === undefined ? '(pid not reported)' : `(pid ${foreign.pid})`} ` +
+          `answers on port ${opts.port}, so the one started here (pid ${pid}) could not serve; ` +
+          `it was stopped again. Log: ${logFile}`
+        : `The sidecar started (pid ${pid}) but /health did not answer within ` +
+          `${String(START_CONFIRM_MS / 1000)}s; it was stopped again. Log: ${logFile}`,
   };
 }
 
@@ -324,7 +367,7 @@ export type StopResult = { ok: true; pid: number } | { ok: false; error: string 
 export async function stopSidecar(
   stateDir: string,
   deps: SupervisorDeps,
-  healthAnswers: () => Promise<boolean>
+  whoAnswers: () => Promise<SidecarAnswer>
 ): Promise<StopResult> {
   const pid = readRecordedPid(stateDir);
   if (pid === null) {
@@ -338,14 +381,25 @@ export async function stopSidecar(
     };
   }
   // A pid is not an identity. After a crash the OS may hand the number to an
-  // unrelated process, and signalling it would kill somebody else's work.
-  if (!(await healthAnswers())) {
+  // unrelated process, and signalling it would kill somebody else's work. An
+  // answer on the endpoint is not one either: a sidecar started in a terminal
+  // answers too. Only the sidecar reporting exactly the recorded pid is ours.
+  const answer = await whoAnswers();
+  if (!answer) {
     return {
       ok: false,
       error:
         `A process with the recorded pid ${pid} is alive, but the Laya sidecar does not answer on ` +
         `its endpoint — it is most likely a different process that got the pid. Nothing was killed. ` +
         `Remove ${sidecarPaths(stateDir).pidFile} if the record is stale, or stop the sidecar in its own terminal.`,
+    };
+  }
+  if (answer.pid !== pid) {
+    return {
+      ok: false,
+      error:
+        `${foreignAnswer(answer, pid)}. Nothing was killed. Remove ` +
+        `${sidecarPaths(stateDir).pidFile} if the record is stale, and stop the answering sidecar where it was started.`,
     };
   }
   await terminate(pid, deps);

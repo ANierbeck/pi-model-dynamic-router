@@ -572,8 +572,10 @@ Pick up in a later round, each as its own plan where noted (§11):
   `docs/plans/2026-11-17-laya-sidecar-lifecycle.md`, evidence
   `docs/research/2026-11-18-laya-command-verification.md`): `/router laya serve`
   starts the installed sidecar and confirms it through `/health`, `/router laya
-  stop` stops only a pid that identifies itself as the sidecar. The user-level
-  sidecar manager outside the repository is no longer needed for this.
+  stop` signals the recorded pid only when the sidecar answering on `/health`
+  reports that pid (the pid check came with PR #190, after a Sourcery finding).
+  The user-level sidecar manager outside the repository is no longer needed for
+  this.
 - ✅ **Router config UI: guided path for integrations — DONE 2026-11-15**
   (`docs/plans/2026-11-14-config-surface-and-ui.md`, status done; the earlier
   `2026-11-08-router-config-ui.md` is superseded by it and kept as history).

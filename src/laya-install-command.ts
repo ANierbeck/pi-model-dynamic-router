@@ -27,8 +27,10 @@ import { artifactSha256, type LayaBackend, type LayaManifest } from './laya-mode
 import { LAYA_DEFAULT_ENDPOINT } from './laya-classifier.ts';
 import { openUserConfigStore } from './user-config-store.ts';
 import {
+  answerFromHealth,
   describeSidecar,
   portFromEndpoint,
+  sidecarPaths,
   startSidecar,
   stopSidecar,
   type SupervisorDeps,
@@ -173,7 +175,7 @@ export interface LayaInstallDeps {
   stateDir: string;
   supervisor: SupervisorDeps;
   /** Short local probe of the sidecar's /health; null when it does not answer. */
-  health: () => Promise<{ artifact_sha256?: string } | null>;
+  health: () => Promise<{ artifact_sha256?: string; pid?: unknown } | null>;
   /** The effective `integrations.laya.endpoint` (or the shipped default). */
   endpoint: string;
   /** Why that endpoint cannot be probed locally, or null when it can. */
@@ -303,9 +305,19 @@ export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
   let healthLine = sidecar.running
     ? `  sidecar: running (pid ${String(sidecar.pid)})`
     : '  sidecar: not running';
+  // An answer proves only that SOME sidecar listens; the pid it reports says
+  // whether it is the recorded one, which is the only one /router laya stop
+  // will signal.
+  const answer = probe ? answerFromHealth(probe) : null;
+  const foreign = sidecar.running && answer !== null && answer.pid !== sidecar.pid;
   if (sidecar.running) {
     if (notProbed) healthLine += ` — not probed: ${notProbed}`;
     else if (!probe) healthLine += ' — /health does not answer';
+    else if (foreign)
+      healthLine +=
+        answer.pid === undefined
+          ? ' — /health is answered by a sidecar that does not report its pid; identity unknown'
+          : ` — /health is answered by pid ${answer.pid}, not by the recorded pid`;
     else if (!probe.artifact_sha256)
       healthLine += ' — /health answered without an artifact fingerprint; identity unknown';
     else if (configuredOffer && probe.artifact_sha256 !== configuredOffer.artifactSha256)
@@ -329,6 +341,10 @@ export async function layaStatus(deps: LayaInstallDeps): Promise<string[]> {
     next = `/router laya serve (or in your own terminal: ${serveCommand(configured || ref, portFromEndpoint(deps.endpoint))})`;
   else if (!healthy)
     next = '/router laya stop, then /router laya serve (it runs but does not answer)';
+  else if (foreign)
+    next =
+      `the record is stale: remove ${sidecarPaths(deps.stateDir).pidFile}; ` +
+      '/router laya stop will not signal a pid the answering sidecar does not report';
   else next = 'nothing — Laya is ready';
   return [...lines, `  next: ${next}`];
 }
@@ -377,7 +393,7 @@ export async function runLayaServe(deps: LayaInstallDeps): Promise<string> {
       endpoint,
       installed: () => verified.ok,
       runtimeOk: () => runtime.ok,
-      healthAnswers: async () => (await deps.health()) !== null,
+      whoAnswers: async () => answerFromHealth(await deps.health()),
     },
     deps.supervisor
   );
@@ -391,10 +407,8 @@ export async function runLayaServe(deps: LayaInstallDeps): Promise<string> {
 
 /** `/router laya stop`: end the recorded sidecar. */
 export async function runLayaStop(deps: LayaInstallDeps): Promise<string> {
-  const res = await stopSidecar(
-    deps.stateDir,
-    deps.supervisor,
-    async () => (await deps.health()) !== null
+  const res = await stopSidecar(deps.stateDir, deps.supervisor, async () =>
+    answerFromHealth(await deps.health())
   );
   return res.ok ? `Laya sidecar stopped (pid ${res.pid}).` : res.error;
 }
@@ -597,7 +611,7 @@ export function defaultLayaInstallDeps(io: {
   stateDir: string;
   supervisor: SupervisorDeps;
   /** Short local probe of the sidecar's /health; null when it does not answer. */
-  health: () => Promise<{ artifact_sha256?: string } | null>;
+  health: () => Promise<{ artifact_sha256?: string; pid?: unknown } | null>;
   /** The effective `integrations.laya.endpoint` (or the shipped default). */
   endpoint: string;
   /** Why that endpoint cannot be probed locally, or null when it can. */

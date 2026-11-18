@@ -4,6 +4,10 @@ Status: research note, not a decision. No code changed. Counts only; prompt
 texts stay in the owner's private session logs and in `~/.laya-ft/taxonomy-replay/`
 (mode 600).
 
+> **Outcome (2026-11-18):** the owner closed the HINT-pin label idea (option B
+> of the October note); the "Open for the owner" list below is historical and
+> needs no decision.
+
 ## Question
 
 Does the model a user pinned with `HINT:` belong to the group the classifier
