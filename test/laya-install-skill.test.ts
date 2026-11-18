@@ -4,7 +4,7 @@
 // is instructions, not code, so these pins check that its instructions agree
 // with the code they drive: every pi-laya-model command, flag and error code it
 // names exists, the config snippet it tells the user to write loads as an
-// enabled shadow-mode Laya stage, and it never copies --allow-unpublished into
+// enabled Laya stage, and it never copies --allow-unpublished into
 // an install command.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

@@ -368,6 +368,21 @@ describe('runLayaInstall', () => {
     expect(out).toMatch(/serve router@1\.0\.0/);
   });
 
+  it('active mode: the success text says the route changes, not that it is logged only (ADR-0035)', async () => {
+    // Red first: the success line said "the answer is logged; the route does not
+    // change" for every mode. Under the new installer default (active) that is
+    // false, and a user reading it would expect Laya to be only observed.
+    const active = fakes({ installed: true, layaBlock: { mode: 'active' } });
+    const activeOut = await runLayaInstall(active.ui, active.deps);
+    expect(activeOut).toMatch(/in active mode/);
+    expect(activeOut).toMatch(/Laya leads the classifier chain/);
+    expect(activeOut).not.toMatch(/the route does not change/);
+
+    const shadow = fakes({ installed: true, layaBlock: { mode: 'shadow' } });
+    const shadowOut = await runLayaInstall(shadow.ui, shadow.deps);
+    expect(shadowOut).toMatch(/in shadow mode \(the answer is logged; the route does not change\)/);
+  });
+
   it('a config write that fails is reported, and the wizard does not claim success', async () => {
     // The first real run in the container ended with "Not written — \
     // "integrations.laya" is not a key /router config can set" followed by

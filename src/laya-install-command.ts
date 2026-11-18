@@ -210,6 +210,17 @@ function configText(value: unknown, fallback: string): string {
 }
 
 /**
+ * What the configured mode does to routing, for the wizard's success line. An
+ * active Laya decides when it gives an answer (ADR-0035); any other mode only
+ * logs its answer (ADR-0027 Phase 4).
+ */
+function modeEffectText(mode: unknown): string {
+  return mode === 'active'
+    ? 'Laya leads the classifier chain: its answer decides when it gives one, otherwise the local and cloud chain answers'
+    : 'the answer is logged; the route does not change';
+}
+
+/**
  * The sidecar start command for a terminal, pointing at the installer this
  * package ships. The path is quoted (a package can live under a directory with
  * spaces) and `--port` always travels with it: without it the CLI listens on its
@@ -542,7 +553,7 @@ export async function runLayaInstall(ui: LayaUi, deps: LayaInstallDeps): Promise
     '',
     `Saved to ${saved.written}.`,
     '',
-    `Laya is set up: ${ref} in ${configText(block.mode, '')} mode (the answer is logged; the route does not change).`,
+    `Laya is set up: ${ref} in ${configText(block.mode, '')} mode (${modeEffectText(block.mode)}).`,
     'Start the sidecar in your own terminal:',
     `  ${serveCommand(ref)}`,
     `Then check its identity: curl -s ${configText(block.endpoint, '')}/health — artifact_sha256 must be ${offer.artifactSha256}.`,
