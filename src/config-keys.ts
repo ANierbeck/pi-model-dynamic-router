@@ -190,7 +190,8 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     kind: 'enum',
     values: ['active', 'shadow'],
     shipped: 'shadow (code default)',
-    meaning: '`active` routes on Laya results; `shadow` only records them for comparison.',
+    meaning:
+      '`active` routes on Laya results; `shadow` only records them for comparison. The installer writes `active` (ADR-0035), so an installed Laya leads; `shadow` is the code default for a hand-written block without `mode`.',
     via: 'alias',
     alias: 'config integration laya active|shadow',
     wizard: true,

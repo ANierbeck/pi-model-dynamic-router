@@ -4,7 +4,7 @@
 // is instructions, not code, so these pins check that its instructions agree
 // with the code they drive: every pi-laya-model command, flag and error code it
 // names exists, the config snippet it tells the user to write loads as an
-// enabled shadow-mode Laya stage, and it never copies --allow-unpublished into
+// enabled Laya stage, and it never copies --allow-unpublished into
 // an install command.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -134,7 +134,7 @@ describe('the config snippet the skill writes', () => {
     return JSON.parse(m![1]!) as Record<string, unknown>;
   }
 
-  it('loads as an enabled shadow-mode Laya stage on the installed model label', () => {
+  it('loads as an enabled Laya stage (active) on the installed model label', () => {
     const agentDir = path.join(tmp, 'agent');
     const cwd = path.join(tmp, 'project');
     fs.mkdirSync(agentDir, { recursive: true });
@@ -145,13 +145,15 @@ describe('the config snippet the skill writes', () => {
     const { config } = loadLayeredConfig(repoRoot, cwd);
     expect(config.integrations?.laya).toMatchObject({
       enabled: true,
-      mode: 'shadow',
+      mode: 'active',
       checkpoint: 'router@1.0.0',
       endpoint: 'http://127.0.0.1:8089',
     });
   });
 
-  it('writes shadow mode: the first run only observes, the owner switches to active later', () => {
-    expect(snippet()).toMatchObject({ integrations: { laya: { mode: 'shadow' } } });
+  it('writes active mode: an installed Laya leads the classifier chain (ADR-0035)', () => {
+    expect(snippet()).toMatchObject({ integrations: { laya: { mode: 'active' } } });
+    // The skill must not still describe the old observe-only first run.
+    expect(skill).not.toMatch(/Shadow mode only logs/);
   });
 });

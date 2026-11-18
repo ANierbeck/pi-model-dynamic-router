@@ -104,15 +104,20 @@ export function latestOffer(manifest: LayaManifest, model = LAYA_MODEL): LayaOff
 /**
  * The `integrations.laya` block the wizard writes. Keys the user already has
  * (mode, endpoint, timeout_ms, …) are kept; `enabled` and `checkpoint` are set
- * to the installed version. A fresh block starts in shadow mode, which logs the
- * answer without changing the route.
+ * to the installed version. A fresh block starts in active mode: an installed
+ * Laya leads the classifier chain (ADR-0035). A mode the user already chose is
+ * kept, so a reinstall never switches it behind their back. A block that is
+ * already enabled but has no mode key runs as shadow (the code default), so it
+ * keeps shadow too; `{ enabled: false }` (the shipped block) is not an earlier
+ * setup and gets active.
  */
 export function mergeLayaBlock(
   existing: Record<string, unknown> | undefined,
   checkpoint: string
 ): Record<string, unknown> {
+  const runsAsShadow = existing?.enabled === true && existing.mode === undefined;
   return {
-    mode: 'shadow',
+    mode: runsAsShadow ? 'shadow' : 'active',
     endpoint: LAYA_DEFAULT_ENDPOINT,
     ...(existing ?? {}),
     enabled: true,
@@ -206,6 +211,17 @@ export function writeLayaConfigBlock(block: Record<string, unknown>): WriteResul
 /** A string config value, or the fallback when the key is absent or not a string. */
 function configText(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+/**
+ * What the configured mode does to routing, for the wizard's success line. An
+ * active Laya decides when it gives an answer (ADR-0035); any other mode only
+ * logs its answer (ADR-0027 Phase 4).
+ */
+function modeEffectText(mode: unknown): string {
+  return mode === 'active'
+    ? 'Laya leads the classifier chain: its answer decides when it gives one, otherwise the local and cloud chain answers'
+    : 'the answer is logged; the route does not change';
 }
 
 /**
@@ -541,7 +557,7 @@ export async function runLayaInstall(ui: LayaUi, deps: LayaInstallDeps): Promise
     '',
     `Saved to ${saved.written}.`,
     '',
-    `Laya is set up: ${ref} in ${configText(block.mode, '')} mode (the answer is logged; the route does not change).`,
+    `Laya is set up: ${ref} in ${configText(block.mode, '')} mode (${modeEffectText(block.mode)}).`,
     'Start the sidecar in your own terminal:',
     `  ${serveCommand(ref)}`,
     `Then check its identity: curl -s ${configText(block.endpoint, '')}/health — artifact_sha256 must be ${offer.artifactSha256}.`,

@@ -239,10 +239,12 @@ unchanged. It is **experimental** and **disabled by default** — see
 - **Bring-your-own weights**: a pinned `checkpoint` is required when enabled.
   Publishing a fine-tuned router checkpoint is planned separately
   (`docs/plans/2026-10-31-laya-sidecar-distribution.md`).
-- `mode: "shadow"` (default) logs Laya's answer without affecting the route
-  (ADR-0027 decision log); `mode: "active"` lets a confident result route.
-  Keep the confidence gate (default 0.8) — the shipped confidence scale is
-  uncalibrated.
+- `mode: "active"` is what the installer writes (ADR-0035): an installed Laya
+  leads the classifier chain, and the chain runs when Laya is unavailable or
+  its answer is vetoed. `mode: "shadow"` logs Laya's answer without affecting
+  the route (ADR-0027 decision log); it is the code default when a hand-written
+  block has no `mode`. Keep the confidence gate (default 0.8) — the shipped
+  confidence scale is uncalibrated.
 
 ---
 

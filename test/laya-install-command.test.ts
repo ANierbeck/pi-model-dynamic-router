@@ -206,13 +206,38 @@ describe('latestOffer', () => {
 });
 
 describe('mergeLayaBlock', () => {
-  it('a fresh block is shadow mode on the default endpoint', () => {
+  // Owner decision 2026-11-18 (ADR-0035): an installed Laya leads the classifier
+  // chain. A fresh block therefore routes on Laya's answer, not only logs it.
+  it('a fresh block leads (active) on the default endpoint', () => {
     expect(mergeLayaBlock(undefined, 'router@1.0.0')).toEqual({
       enabled: true,
-      mode: 'shadow',
+      mode: 'active',
       checkpoint: 'router@1.0.0',
       endpoint: 'http://127.0.0.1:8089',
     });
+  });
+
+  it('a block that is already enabled without a mode keeps the mode it runs with (shadow)', () => {
+    // Red first: an enabled block with no mode key runs as shadow (the code
+    // default, laya-classifier.ts LAYA_SPEC.defaultMode). A reinstall used to
+    // write active over it, switching the user's routing without asking.
+    expect(
+      mergeLayaBlock({ enabled: true, endpoint: 'http://127.0.0.1:9000' }, 'router@1.0.0')
+    ).toMatchObject({
+      mode: 'shadow',
+      endpoint: 'http://127.0.0.1:9000',
+    });
+  });
+
+  it('the shipped block {enabled: false} is not an earlier setup: a fresh install leads', () => {
+    // router-config.json ships integrations.laya as { enabled: false }. That is
+    // the default for a machine that never installed Laya, so it gets active.
+    expect(mergeLayaBlock({ enabled: false }, 'router@1.0.0')).toMatchObject({ mode: 'active' });
+  });
+
+  it('keeps a mode the user already chose, so a reinstall does not silently switch it', () => {
+    expect(mergeLayaBlock({ mode: 'shadow' }, 'router@1.0.0')).toMatchObject({ mode: 'shadow' });
+    expect(mergeLayaBlock({ mode: 'active' }, 'router@1.0.0')).toMatchObject({ mode: 'active' });
   });
 
   it('keeps the user keys (mode, endpoint, timeout) and moves enabled and checkpoint', () => {
@@ -359,6 +384,21 @@ describe('runLayaInstall', () => {
     });
     expect(out).toMatch(/pi-laya-model|laya-model-install\.js/);
     expect(out).toMatch(/serve router@1\.0\.0/);
+  });
+
+  it('active mode: the success text says the route changes, not that it is logged only (ADR-0035)', async () => {
+    // Red first: the success line said "the answer is logged; the route does not
+    // change" for every mode. Under the new installer default (active) that is
+    // false, and a user reading it would expect Laya to be only observed.
+    const active = fakes({ installed: true, layaBlock: { mode: 'active' } });
+    const activeOut = await runLayaInstall(active.ui, active.deps);
+    expect(activeOut).toMatch(/in active mode/);
+    expect(activeOut).toMatch(/Laya leads the classifier chain/);
+    expect(activeOut).not.toMatch(/the route does not change/);
+
+    const shadow = fakes({ installed: true, layaBlock: { mode: 'shadow' } });
+    const shadowOut = await runLayaInstall(shadow.ui, shadow.deps);
+    expect(shadowOut).toMatch(/in shadow mode \(the answer is logged; the route does not change\)/);
   });
 
   it('a config write that fails is reported, and the wizard does not claim success', async () => {

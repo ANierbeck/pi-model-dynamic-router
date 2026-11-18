@@ -118,7 +118,7 @@ the static rules. The config only switches legs on and off and names their model
 
 - Shipped: `shadow (code default)`
 - Set by: `/router config integration laya active|shadow`
-- Meaning: `active` routes on Laya results; `shadow` only records them for comparison.
+- Meaning: `active` routes on Laya results; `shadow` only records them for comparison. The installer writes `active` (ADR-0035), so an installed Laya leads; `shadow` is the code default for a hand-written block without `mode`.
 
 ### `integrations.laya.checkpoint`
 
