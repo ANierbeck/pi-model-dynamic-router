@@ -84,7 +84,7 @@ import {
   runLayaStop,
   writeLayaConfigBlock,
 } from './laya-install-command.ts';
-import { defaultSupervisorDeps } from './laya-sidecar-supervisor.ts';
+import { defaultSupervisorDeps, endpointProblem } from './laya-sidecar-supervisor.ts';
 import { clearCorrections, listCorrections } from './hint-corrections.ts';
 
 /**
@@ -1280,31 +1280,18 @@ function layaEndpoint(rt: CommandDeps): string {
   return typeof endpoint === 'string' && endpoint ? endpoint : LAYA_DEFAULT_ENDPOINT;
 }
 
-/** Loopback hosts. The sidecar is a local server; a probe may not leave the machine. */
-function probeProblem(endpoint: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(endpoint);
-  } catch {
-    return `${endpoint} is not a URL`;
-  }
-  if (url.protocol !== 'http:') return `${endpoint} is not plain http`;
-  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname))
-    return `${endpoint} is not local`;
-  return null;
-}
-
 /**
  * A short local probe of the sidecar's /health. Never throws: a sidecar that is
  * down is a normal state, and the status line says so.
  *
  * Two limits, both deliberate: a non-loopback endpoint is not probed at all (a
  * config file must not turn `/router laya` into a scanner of other hosts,
- * including internal services), and redirects are refused for the same reason.
+ * including internal services; the rule is `endpointProblem`), and redirects are
+ * refused for the same reason.
  */
 async function probeLayaHealth(rt: CommandDeps): Promise<{ artifact_sha256?: string } | null> {
   const endpoint = layaEndpoint(rt);
-  if (probeProblem(endpoint)) return null;
+  if (endpointProblem(endpoint)) return null;
   const url = `${endpoint.replace(/\/+$/, '')}/health`;
   try {
     const res = await fetch(url, {
@@ -1350,7 +1337,7 @@ async function handleLayaCommand(
     supervisor: defaultSupervisorDeps(layaCliPath()),
     health: () => probeLayaHealth(rt),
     endpoint: layaEndpoint(rt),
-    probeProblem: () => probeProblem(layaEndpoint(rt)),
+    probeProblem: () => endpointProblem(layaEndpoint(rt)),
   });
   if (sub === '') return (await layaStatus(deps)).join('\n');
   if (sub === 'serve') return runLayaServe(deps);
