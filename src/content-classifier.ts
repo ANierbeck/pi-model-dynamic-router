@@ -1551,7 +1551,7 @@ async function classifyPromptUncounted(
 
   // Laya: local typed-decision classifier (opt-in, disabled by default).
   // After the deterministic early-returns and the cache, before the cloud and
-  // local-LLM legs. `mode: 'active'` lets a confident, vetted answer decide
+  // local-LLM legs. `mode: 'active'` lets a vetted answer decide
   // and short-circuit the chain; anything else - `shadow` (the validated
   // default) or an unset mode - runs the stage only to LOG what it would have
   // said next to the real decision (ADR-0027 Phase 4) and never changes the
@@ -1612,7 +1612,7 @@ async function classifyPromptUncounted(
     return classifyStatically(prompt);
   };
 
-  // Live A/B snapshot (owner decision 2026-10-25): when a confident Laya
+  // Live A/B snapshot (owner decision 2026-10-25): when a Laya
   // answer takes the route in active mode and `compare_in_background` is
   // set, run the chain it replaced DETACHED and log its answer as a
   // `comparator` decision-log record for the same input. Logging only: the

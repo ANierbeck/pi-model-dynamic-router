@@ -9,7 +9,10 @@
 //     confidence - exactly the raw material for the golden set (Task 7).
 //     input.text is only present if classifier.log.store_text is "full".
 //
-//   npx tsx scripts/laya-shadow-stats.ts [--file=<log>] [--threshold=0.8]
+//   npx tsx scripts/laya-shadow-stats.ts [--file=<log>] [--threshold=<0..1>]
+//
+// --threshold defaults to the router's own gate (LAYA_DEFAULT_CONFIDENCE_THRESHOLD,
+// 0 since ADR-0036), so "would have decided" matches what active mode does.
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +22,7 @@ import {
   type DecisionRecord as LogDecisionRecord,
 } from './lib/decision-log.ts';
 import { arg } from './lib/cli.ts';
+import { LAYA_DEFAULT_CONFIDENCE_THRESHOLD } from '../src/laya-classifier.ts';
 
 /**
  * The decision-log record as this script reads it. The full type is owned by
@@ -34,7 +38,7 @@ type DecisionRecord = LogDecisionRecord & {
 const LOG_FILE = join(homedir(), '.pi', 'logs', 'classifier-decisions.jsonl');
 
 const file = arg('file') ?? LOG_FILE;
-const threshold = parseFloat(arg('threshold') ?? '0.8');
+const threshold = parseFloat(arg('threshold') ?? String(LAYA_DEFAULT_CONFIDENCE_THRESHOLD));
 
 const records: DecisionRecord[] = ((): DecisionRecord[] => {
   try {

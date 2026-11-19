@@ -221,8 +221,8 @@ Local first (ADR 0032, 2026-11-14): with `classifier.cloud.enabled: true` (set i
 
 An opt-in **local stage** can answer the category from a small multilingual
 encoder model (Laya, 322M parameters, Apache-2.0 base) instead of the chain:
-a confident Laya answer takes the route, everything else falls through
-unchanged. It is **experimental** and **disabled by default** — see
+every Laya answer with a valid category takes the route, and the chain
+answers when Laya fails. It is **experimental** and **disabled by default** — see
 `docs/config-override.md#integrationslaya--experimental-local-classifier-stage` for every config key.
 
 - **Platforms:** the sidecar ships inside this package (`dist/laya-sidecar.js`);

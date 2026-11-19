@@ -68,7 +68,7 @@ decided every route). Users who installed Laya before this release keep the
 mode in their file; a reinstall keeps it too. Without an installed Laya the
 standard chain of ADR 0032 runs as before. Closes the sole-classifier steps 3,
 5 and 6 as release gates. The default confidence gate is removed separately
-(ADR 0036, below).
+(ADR 0036, above).
 
 ### Fixed — `/router laya stop` no longer signals a pid another sidecar vouches for
 

@@ -33,6 +33,8 @@ describe('describeClassifierChain', () => {
     );
     expect(stepOf(active, 'laya')).toMatchObject({ active: true });
     expect(stepOf(active, 'laya').detail).toMatch(/decides/);
+    // ADR-0036: no gate by default, so the line must not promise a confidence bar.
+    expect(stepOf(active, 'laya').detail).not.toMatch(/confident/);
 
     const shadow = describeClassifierChain(
       base({ integrations: { laya: { enabled: true, mode: 'shadow' } } } as Partial<Config>)

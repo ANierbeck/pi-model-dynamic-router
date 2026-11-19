@@ -461,14 +461,15 @@ export interface LayaAnswer {
 
 /**
  * Apply the stage's veto rules to a raw answer; null = the chain must go on.
- * - below `confidence_threshold` (written so that NaN also fails);
+ * - below `confidence_threshold` or above 1 (written so that NaN also fails;
+ *   a sidecar confidence outside 0..1 is a broken answer, not a decision);
  * - anything outside the production taxonomy. The legacy 9-category spike
  *   answered `fallback` = "could not tell" — under the v2 taxonomy that
  *   label is simply invalid, and an invalid answer must not shadow the
  *   better classifier stages behind this one.
  */
 function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult | null {
-  if (!(answer.confidence >= threshold)) return null;
+  if (!(answer.confidence >= threshold && answer.confidence <= 1)) return null;
   if (!VALID_CATEGORIES.includes(answer.category as never)) return null;
   const top = Object.entries(answer.probabilities)
     .sort((a, b) => b[1] - a[1])

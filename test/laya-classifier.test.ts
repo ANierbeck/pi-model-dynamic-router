@@ -181,6 +181,33 @@ describe('laya-classifier', () => {
     expect(res).toMatchObject({ category: 'simple', confidence: 0.5 });
   });
 
+  it('a confidence outside 0..1 from the sidecar is vetoed, not taken as a decision', async () => {
+    // Red first: only typeof number was checked, so confidence 5 passed every
+    // gate. With the default gate 0 a negative value fails already; above 1
+    // must fail too. A veto is per prompt: the stage stays available.
+    const p = await startServer('ok');
+    await classifier.probeLaya(ENDPOINT(p), 3000);
+    const cfg = {
+      integrations: {
+        laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), timeout_ms: 500 },
+      },
+    } as any;
+    const saved = okResponse.confidence;
+    try {
+      okResponse.confidence = 5;
+      expect(
+        await classifier.classifyWithLaya('fix the typo', undefined, { cfg, checkpoint: 'x/y' })
+      ).toBeNull();
+      okResponse.confidence = 1;
+      expect(
+        await classifier.classifyWithLaya('fix the typo', undefined, { cfg, checkpoint: 'x/y' })
+      ).toMatchObject({ confidence: 1 });
+    } finally {
+      okResponse.confidence = saved;
+    }
+    expect(classifier.isLayaAvailable()).toBe(true);
+  });
+
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
     classifier.resetLayaAvailability();
     const probeResult = await classifier.probeLaya('http://127.0.0.1:9999', 500);

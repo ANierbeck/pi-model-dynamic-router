@@ -281,11 +281,11 @@ export interface ClassifierLayaConfig extends IntegrationConfig {
    * the chain from stalling on a broken sidecar. */
   timeout_ms?: number;
   /** Mode: "shadow" writes Laya's decision into the decision log (ADR-0027 Phase 4)
-   * without affecting the routed answer; "active" lets a confident result take the
-   * route. Default "shadow" when enabled. */
+   * without affecting the routed answer; "active" lets a vetted result take the
+   * route (no confidence gate by default, ADR-0036). Default "shadow" when enabled. */
   mode?: 'active' | 'shadow';
   /** Live A/B snapshot (owner decision 2026-10-25): in active mode, when a
-   * confident Laya answer takes the route, still run the cloud/ollama chain it
+   * Laya answer takes the route, still run the cloud/ollama chain it
    * replaced DETACHED and log its answer as a `comparator` decision-log record
    * for the same input. Logging only — it never changes the route, the
    * classification cache, or the process-global classification source. Default

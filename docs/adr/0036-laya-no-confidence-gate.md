@@ -29,7 +29,7 @@ local classifier: the prompt text stays on the machine.
    veto (`vetAnswer`), the fallback for an invalid value and `/router status`
    all read the same constant. Before, each named 0.8 itself.
 3. **The other vetoes stay.** An answer outside the production taxonomy, a NaN
-   confidence, a timeout, an unavailable sidecar: the chain still decides that
+   confidence or one outside 0..1 (a broken sidecar answer), a timeout, an unavailable sidecar: the chain still decides that
    prompt (ADR 0035, decision 3).
 4. **A user value is kept.** A block that sets `confidence_threshold` keeps
    it. A user who wants a gate sets one between 0 and 1.
@@ -44,7 +44,9 @@ local classifier: the prompt text stays on the machine.
 - Users who installed Laya earlier and never set the key lose the 0.8 gate on
   the next start. Their routes now follow Laya's low-confidence answers too.
   The CHANGELOG names this.
-- In shadow mode nothing changes for routing. The decision log records every
-  answer as "would have decided" instead of only those above 0.8.
+- In shadow mode nothing changes for routing. The decision log already
+  recorded every Laya answer; what changes is which answers count as "would
+  have decided" in an evaluation (now every valid one). `scripts/laya-shadow-stats.ts`
+  defaults its `--threshold` to the same constant.
 - The confidence is still logged with every answer (decision log `laya`
   record), so a later calibration can set a measured gate if one is needed.
