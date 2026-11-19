@@ -30,7 +30,10 @@ const input = (over: Record<string, unknown> = {}) => ({
 describe('fresh-session suggestion', () => {
   it('suggests when compaction is not sticking (cold, large, compacted twice)', () => {
     const d = decideFreshStart(input());
-    expect(d).toMatchObject({ suggest: true, reason: expect.stringMatching(/compaction is not sticking/) });
+    expect(d).toMatchObject({
+      suggest: true,
+      reason: expect.stringMatching(/compaction is not sticking/),
+    });
   });
 
   it('suggests when the cache went cold from idling and the context share is high', () => {
@@ -41,7 +44,10 @@ describe('fresh-session suggestion', () => {
 
   it('suggests on a plain cold cache with a large context even without compactions', () => {
     const d = decideFreshStart(input({ compactionsThisSession: 0, idleSeconds: 10 }));
-    expect(d).toMatchObject({ suggest: true, reason: expect.stringMatching(/cache cold and context large/) });
+    expect(d).toMatchObject({
+      suggest: true,
+      reason: expect.stringMatching(/cache cold and context large/),
+    });
   });
 
   it('never suggests while the cache serves hits on a small context', () => {
@@ -83,17 +89,24 @@ import type { Config } from '../src/types.ts';
 
 const now = 1_800_000_000_000;
 
-const freshHarness = (over: {
-  cfg?: Partial<Config['context_budget']>;
-  tokens?: number | null;
-  compactionsRun?: number;
-  lastHintAt?: number;
-  usage?: { cacheRead: number; ts: number };
-} = {}) => {
+const freshHarness = (
+  over: {
+    cfg?: Partial<Config['context_budget']>;
+    tokens?: number | null;
+    compactionsRun?: number;
+    lastHintAt?: number;
+    usage?: { cacheRead: number; ts: number };
+  } = {}
+) => {
   const notify = vi.fn();
   const compact = vi.fn();
   const usageLog = [
-    { ref: 'x/y', tokens: 100, ts: over.usage?.ts ?? now - 1_000, cacheRead: over.usage?.cacheRead ?? 90 },
+    {
+      ref: 'x/y',
+      tokens: 100,
+      ts: over.usage?.ts ?? now - 1_000,
+      cacheRead: over.usage?.cacheRead ?? 90,
+    },
   ];
   const state = { lastHintAt: over.lastHintAt ?? 0, compactionsRun: over.compactionsRun ?? 0 };
   const ctx = {

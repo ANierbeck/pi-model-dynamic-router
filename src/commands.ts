@@ -73,7 +73,11 @@ import { describeClassifierChain, formatClassifierChain } from './classifier-cha
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
-import type { ExtensionAPI, ExtensionContext, SessionCompactEvent } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionCompactEvent,
+} from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
@@ -1406,10 +1410,7 @@ async function handleFreshCommand(
     compact(options?: { customInstructions?: string }): void;
     newSession(options?: {
       withSession?: (fresh: {
-        sendMessage(
-          message: unknown,
-          options?: { triggerTurn?: boolean }
-        ): Promise<void>;
+        sendMessage(message: unknown, options?: { triggerTurn?: boolean }): Promise<void>;
         ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
       }) => Promise<void>;
     }): Promise<{ cancelled: boolean }>;
@@ -1453,10 +1454,7 @@ async function handleFreshCommand(
   const { cancelled } = await ctx.newSession({
     withSession: async (fresh) => {
       await fresh.sendMessage(freshHandoffMessage(summary, nextStep), { triggerTurn: true });
-      fresh.ui.notify(
-        'Fresh session started — the handoff summary is its first prompt.',
-        'info'
-      );
+      fresh.ui.notify('Fresh session started — the handoff summary is its first prompt.', 'info');
     },
   });
   if (cancelled) {

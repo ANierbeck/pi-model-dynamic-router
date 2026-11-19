@@ -49,10 +49,8 @@ export function decideFreshStart(i: FreshSessionInputs): FreshSessionDecision {
   if (i.stepsSinceSessionStart < FRESH_DEFAULTS.after_turns) return { suggest: false };
   if (i.contextWindow === null || !(i.contextWindow > 0)) return { suggest: false };
   if (i.contextTokens / i.contextWindow < FRESH_DEFAULTS.min_ctx_share) return { suggest: false };
-  const idledOut =
-    i.idleSeconds !== null && i.idleSeconds > FRESH_DEFAULTS.cold_idle_s;
-  const stuck =
-    i.compactionsThisSession >= 2 && i.contextTokens >= (i.budget.soft_tokens ?? 0);
+  const idledOut = i.idleSeconds !== null && i.idleSeconds > FRESH_DEFAULTS.cold_idle_s;
+  const stuck = i.compactionsThisSession >= 2 && i.contextTokens >= (i.budget.soft_tokens ?? 0);
   if (!(i.cold || idledOut || stuck)) return { suggest: false };
   const reason = idledOut
     ? 'cache went cold from idling; a fresh session restarts cheap'
@@ -79,10 +77,7 @@ export const FRESH_SUMMARY_PROMPT =
 export const FRESH_WAIT_MS = 30_000;
 
 /** The first prompt the new session receives: the summary plus the carry-over. */
-export function freshHandoffMessage(
-  summary: string | null,
-  nextStep: string | null
-): string {
+export function freshHandoffMessage(summary: string | null, nextStep: string | null): string {
   const head = summary
     ? `Handover from the previous session (start fresh from here):\n\n${summary}`
     : 'Handover from the previous session; the summary was unavailable — read ' +
