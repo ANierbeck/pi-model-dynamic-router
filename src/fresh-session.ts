@@ -66,3 +66,26 @@ export function decideFreshStart(i: FreshSessionInputs): FreshSessionDecision {
 export function freshStatusLine(d: FreshSessionDecision): string {
   return d.suggest ? `fresh session suggested — ${d.reason} — /router fresh` : '';
 }
+
+/** Ask-for-summary instructions handed to Pi's compaction for the handoff doc. */
+export const FRESH_SUMMARY_PROMPT =
+  'Summarise this session for a handover: the task, decisions made, files ' +
+  'touched, and the exact next step. Be terse.';
+
+/**
+ * How long `/router fresh` waits for the compaction summary before shipping a
+ * skeleton handoff (fail-open: a slow summary never blocks the handover).
+ */
+export const FRESH_COMPACTION_WAIT_MS = 30_000;
+
+/** The first prompt the new session receives: the summary plus the carry-over. */
+export function freshHandoffMessage(
+  summary: string | null,
+  nextStep: string | null
+): string {
+  const head = summary
+    ? `Handover from the previous session (start fresh from here):\n\n${summary}`
+    : 'Handover from the previous session; the summary was unavailable — read ' +
+      'the last milestone in the session history and continue from there.';
+  return nextStep ? `${head}\n\nNext step (user): ${nextStep}` : head;
+}
