@@ -439,6 +439,13 @@ export interface ContextBudgetConfig {
   hard_tokens?: number;
   /** Provider-cache TTL in seconds: an idle gap longer than this counts as a cold cache. */
   cache_ttl_s?: number;
+  /**
+   * Task-type balancing step 5c (docs/plans/2026-11-19-fresh-session-suggestion.md):
+   * suggest (never force) a fresh session when the context cache stops paying
+   * off. Default off; the switch only gates the SUGGESTION — the user-invoked
+   * `/router fresh` command works regardless. See src/fresh-session.ts.
+   */
+  fresh_session?: { enabled?: boolean };
 }
 
 /**
