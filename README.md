@@ -156,9 +156,18 @@ Long agentic sessions burn most of their cost resending context — and a **cold
 
 ```json
 {
-  "context_budget": { "enabled": true, "soft_tokens": 150000, "hard_tokens": 400000, "cache_ttl_s": 300 }
+  "context_budget": {
+    "enabled": true,
+    "soft_tokens": 150000,
+    "hard_tokens": 400000,
+    "cache_ttl_s": 300,
+    "fresh_session": { "enabled": true }
+  }
 }
 ```
+
+The thresholds are the 5b compaction gates; `fresh_session` is independent of them
+(see the bullet below) — a user can switch on the suggestion alone.
 
 Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step (cacheRead below half the step's tokens; partial hits count as mostly-reprocessed), an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
 
