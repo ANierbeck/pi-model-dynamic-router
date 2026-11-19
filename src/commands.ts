@@ -32,6 +32,7 @@ import {
   layaReportedIdentity,
   type LayaAvailabilityState,
   type LayaReportedIdentity,
+  LAYA_DEFAULT_CONFIDENCE_THRESHOLD,
 } from './laya-classifier.ts';
 import { formatIntegrationLines, checkIntegrationPatch } from './integration.ts';
 import { INTEGRATION_SPECS } from './integration-registry.ts';
@@ -1676,7 +1677,8 @@ export function createCommands(rt: CommandDeps): void {
                           checkpoint: rt.cfg.integrations.laya.checkpoint ?? '?',
                           endpoint: rt.cfg.integrations.laya.endpoint ?? LAYA_DEFAULT_ENDPOINT,
                           confidence_threshold:
-                            rt.cfg.integrations.laya.confidence_threshold ?? 0.8,
+                            rt.cfg.integrations.laya.confidence_threshold ??
+                            LAYA_DEFAULT_CONFIDENCE_THRESHOLD,
                           // same safe reading as the chain: only an explicit 'active' decides
                           mode:
                             rt.cfg.integrations.laya.mode === 'active'

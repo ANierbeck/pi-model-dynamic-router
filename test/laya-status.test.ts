@@ -288,7 +288,8 @@ describe('/router overview (real handler)', () => {
     const line = lines.find((l) => l.startsWith('│ Laya (')) ?? '';
     expect(line).toContain('Laya (shadow)');
     expect(line).toContain('http://127.0.0.1:8089'); // default endpoint applied
-    expect(line).toContain('threshold 0.8');
+    // ADR-0036: no gate by default. Anchored so 'threshold 0.8' cannot pass.
+    expect(line).toMatch(/· threshold 0$/);
     expect(lines.find((l) => l.startsWith('│ Chain:'))).not.toContain('Laya');
   });
 

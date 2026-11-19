@@ -164,6 +164,23 @@ describe('laya-classifier', () => {
     });
   });
 
+  it('without a confidence_threshold a low-confidence answer still decides (no gate by default)', async () => {
+    // Owner decision 2026-11-19 (ADR-0036): the default gate is 0. Red first:
+    // with the old default 0.8 this 0.5 answer fell through to the chain,
+    // and for users without a local model that chain is the cloud.
+    const p = await startServer('ok');
+    await classifier.probeLaya(ENDPOINT(p), 3000);
+    const res = await classifier.classifyWithLaya('fix the typo', undefined, {
+      cfg: {
+        integrations: {
+          laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), timeout_ms: 500 },
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
+    expect(res).toMatchObject({ category: 'simple', confidence: 0.5 });
+  });
+
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
     classifier.resetLayaAvailability();
     const probeResult = await classifier.probeLaya('http://127.0.0.1:9999', 500);

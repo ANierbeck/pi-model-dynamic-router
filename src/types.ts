@@ -257,9 +257,9 @@ export interface ClassifierLayaConfig extends IntegrationConfig {
   /** Enable the local Laya classifier stage. Default false — active use is gated
    * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
   enabled?: boolean;
-  /** Confidence threshold for forwarding a Laya result into the chain (default 0.8).
-   * The shipped confidence scale is uncalibrated (ECE 0.466); the gate is the
-   * first line of defense until the benchmark says otherwise. */
+  /** Minimum Laya confidence for a result to decide (default 0 = no gate, ADR-0036).
+   * The confidence scale is uncalibrated (ECE 0.466), so a gate is not a
+   * measured quality bar; a user who wants one sets a value between 0 and 1. */
   confidence_threshold?: number;
   /** Endpoint of the local Laya wrapper/sidecar (default http://127.0.0.1:8089).
    * The wrapper speaks POST /classify {prompt, context?} ->

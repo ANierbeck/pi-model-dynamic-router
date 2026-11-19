@@ -243,8 +243,10 @@ unchanged. It is **experimental** and **disabled by default** — see
   leads the classifier chain, and the chain runs when Laya is unavailable or
   its answer is vetoed. `mode: "shadow"` logs Laya's answer without affecting
   the route (ADR-0027 decision log); it is the code default when a hand-written
-  block has no `mode`. Keep the confidence gate (default 0.8) — the shipped
-  confidence scale is uncalibrated.
+  block has no `mode`. There is no confidence gate by default
+  (`confidence_threshold: 0`, ADR-0036): every Laya answer with a valid
+  category decides. Set a value between 0 and 1 to send less confident
+  answers to the local and cloud chain instead.
 
 ---
 

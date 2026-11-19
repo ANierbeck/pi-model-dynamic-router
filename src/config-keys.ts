@@ -220,8 +220,9 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
   {
     path: 'integrations.laya.confidence_threshold',
     kind: 'number',
-    shipped: '0.8 (code default)',
-    meaning: 'Minimum Laya confidence for a result to enter the chain.',
+    shipped: '0 (code default)',
+    meaning:
+      'Minimum Laya confidence for a result to decide. 0 = no gate: every valid Laya answer decides (ADR-0036); a higher value sends the answers below it to the local and cloud chain.',
     via: 'file-only',
   },
   {
