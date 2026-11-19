@@ -20,7 +20,12 @@ import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
 import { fmt, fmtTime, textOf } from './utils.ts';
 import { buildUsageLogEntry, formatCacheStatus } from './cache-stats.ts';
-import { runContextCompaction, type CompactionRunState } from './context-compaction.ts';
+import {
+  noteSessionCompaction,
+  resetSessionTally,
+  runContextCompaction,
+  type CompactionRunState,
+} from './context-compaction.ts';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +153,12 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
       ) {
         rt.sessionStart = Date.now();
         rt.sessionAnchorInit = true;
+        // Fresh-session trigger inputs are PER-SESSION (PR #193 review P2):
+        // reset the compaction tally and rebase the step count on the same
+        // real-switch reasons — so the handover compaction of `/router fresh`
+        // (session_compact fires BEFORE session_start) cannot count into the
+        // new session.
+        resetSessionTally(compactionState, rt.turnSeq);
       }
       // Capture pi's setStatus ONLY from a ctx that has it — the MAIN session's
       // interactive TUI. A subagent's headless ctx has no setStatus; overwriting
@@ -306,7 +317,16 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
   // Hint cooldown state for cache-aware compaction (Phase 5b): without it,
   // a long over-soft session with a cold cache would notify on EVERY turn
   // boundary. Owned here because it must survive the Router reloads.
-  const compactionState: CompactionRunState = { lastHintAt: 0 };
+  const compactionState: CompactionRunState = {
+    lastHintAt: 0,
+    compactionsRun: 0,
+    turnSeqAtStart: 0,
+  };
+
+  // Completed compactions feed the fresh-session trigger (step 5c): a single
+  // counting point in noteSessionCompaction — 5b's own compactions, manual
+  // /compact and /router fresh all land here exactly once.
+  rt.pi.on('session_compact', () => noteSessionCompaction(compactionState));
 
   rt.pi.on(
     'turn_start',
@@ -332,6 +352,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
         activeGroup: rt.activeGroup,
         usageLog: rt.cache.usage_log,
         state: compactionState,
+        stepsThisSession: rt.turnSeq - compactionState.turnSeqAtStart,
       });
     })
   );

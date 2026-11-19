@@ -31,6 +31,7 @@
 import type { Config, ContextBudgetConfig, UsageLogEntry } from './types.ts';
 import { fmt, textOf } from './utils.ts';
 import { routerLog, warnLog } from './logger.ts';
+import { decideFreshStart, freshStatusLine } from './fresh-session.ts';
 
 /**
  * Below this share of cached context the last step counts as a MISS (cold):
@@ -154,14 +155,51 @@ export function resolveContextBudget(
   return { ...globalBudget, ...groupBudget };
 }
 
-/** Mutable state the hint cooldown lives in (owned by the event-handler closure). */
+/** Mutable state the hint cooldown and the per-session compaction tally live in
+ * (owned by the event-handler closure; process-lifetime — a Pi restart resets
+ * the tally, documented in the fresh-session plan). */
 export interface CompactionRunState {
   lastHintAt: number;
+  /** Completed compactions in the CURRENT session. Drives the fresh-session
+   * "compaction is not sticking" trigger (step 5c). Counts ONLY through
+   * noteSessionCompaction() (the session_compact event handler): 5b's own
+   * compactions, manual /compact, and /router fresh alike — never the 5b
+   * decision itself (a compaction counts once, when it COMPLETES). Reset by
+   * resetSessionTally() on real session switches (PR #193 review P2). */
+  compactionsRun: number;
+  /** turnSeq value when the current session started; stepsThisSession is the
+   * difference (the raw turnSeq is a process-lifetime log id — never reset). */
+  turnSeqAtStart: number;
 }
 
-/** The Pi-side surface runContextCompaction needs (duck-typed for tests). */
+/**
+ * The single tally increment for completed compactions: the session_compact
+ * event handler calls this. Kept exported (not inline) so the tally contract
+ * is unit-testable and cannot silently double-count from the 5b decision path.
+ */
+/**
+ * Reset the PER-SESSION trigger inputs on a real session switch
+ * (`new`/`resume`/`fork` — the same reasons as the session-anchor reset, not
+ * subagent `startup`, which must not clobber the main session's state).
+ * Without this, `/new` and `/router fresh` would inherit the old session's
+ * compaction tally (the handover compaction would count into the new
+ * session) and "steps in the session" would keep the old count. lastHintAt
+ * survives: the notify cooldown is a process courtesy, not a session property.
+ */
+export function resetSessionTally(state: CompactionRunState, turnSeq: number): void {
+  state.compactionsRun = 0;
+  state.turnSeqAtStart = turnSeq;
+}
+
+export function noteSessionCompaction(state: CompactionRunState): void {
+  state.compactionsRun += 1;
+}
+
+/** The Pi-side surface runContextCompaction needs (duck-typed for tests).
+ * Pi's real ContextUsage carries `contextWindow` too — the fresh-session
+ * share gate reads it when present (src/fresh-session.ts). */
 export interface CompactionCtx {
-  getContextUsage(): { tokens: number | null } | undefined;
+  getContextUsage(): { tokens: number | null; contextWindow?: number } | undefined;
   compact(options?: { customInstructions?: string }): void;
   ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
 }
@@ -179,6 +217,8 @@ export function runContextCompaction(opts: {
   activeGroup: string | null;
   usageLog: UsageLogEntry[] | undefined;
   state: CompactionRunState;
+  /** Turns this session has seen (rt.turnSeq; process-lifetime approximation). */
+  stepsThisSession?: number;
   now?: number;
 }): void {
   try {
@@ -193,32 +233,60 @@ export function runContextCompaction(opts: {
 function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>[0]): void {
   const budget = resolveContextBudget(opts.cfg, opts.activeGroup);
   if (!budget) return;
-  // Nothing configured → measurement only (5a already records), no hints.
-  if (!((budget.soft_tokens ?? 0) > 0 || (budget.hard_tokens ?? 0) > 0)) return;
 
   const now = opts.now ?? Date.now();
   const usage = opts.ctx.getContextUsage?.();
   const tokens = usage?.tokens ?? null;
   if (tokens === null || !(tokens > 0)) return; // unknown right after a compaction
 
-  const decision = decideCompaction(budget, tokens, lastStepCacheState(opts.usageLog), now);
-  if (decision.action === 'compact') {
-    routerLog(
-      `[compaction] context ${fmt(tokens)} tokens (${decision.reason === 'over-hard' ? 'over hard limit' : 'cold cache, over soft limit'}) — compacting at the turn boundary`
-    );
-    // 5d seam: a cheaper-model custom summarizer would hook in here
-    // (session_before_compact), instead of Pi's plain compact().
-    opts.ctx.compact();
-  } else if (decision.action === 'hint') {
-    if (now - opts.state.lastHintAt < HINT_COOLDOWN_MS) return;
-    opts.state.lastHintAt = now;
-    const limit = decision.reason === 'over-hard' ? budget.hard_tokens : budget.soft_tokens;
-    const why =
-      decision.reason === 'over-hard'
-        ? `above the hard limit (${fmt(limit!)})`
-        : `over the soft limit (${fmt(limit!)}) with a cold cache`;
-    const msg = `[router] context is ${fmt(tokens)} tokens — ${why}. Compacting now would pay off: /compact`;
-    routerLog(`[compaction] hint: ${msg}`);
-    opts.ctx.ui.notify(msg, 'info');
+  // Nothing configured → measurement only (5a already records), no 5b hints.
+  // The 5c fresh-session suggestion below does NOT need the thresholds — its
+  // gates are the context share and the cold/idle/stuck conditions, so a user
+  // who switches it on without soft/hard tokens still gets it (PR #193
+  // review P1: it used to sit behind this early return, dead, while the
+  // status line reported the switch as on).
+  if ((budget.soft_tokens ?? 0) > 0 || (budget.hard_tokens ?? 0) > 0) {
+    const decision = decideCompaction(budget, tokens, lastStepCacheState(opts.usageLog), now);
+    if (decision.action === 'compact') {
+      routerLog(
+        `[compaction] context ${fmt(tokens)} tokens (${decision.reason === 'over-hard' ? 'over hard limit' : 'cold cache, over soft limit'}) — compacting at the turn boundary`
+      );
+      // 5d seam: a cheaper-model custom summarizer would hook in here
+      // (session_before_compact), instead of Pi's plain compact().
+      opts.ctx.compact();
+    } else if (decision.action === 'hint') {
+      if (now - opts.state.lastHintAt < HINT_COOLDOWN_MS) return;
+      opts.state.lastHintAt = now;
+      const limit = decision.reason === 'over-hard' ? budget.hard_tokens : budget.soft_tokens;
+      const why =
+        decision.reason === 'over-hard'
+          ? `above the hard limit (${fmt(limit!)})`
+          : `over the soft limit (${fmt(limit!)}) with a cold cache`;
+      const msg = `[router] context is ${fmt(tokens)} tokens — ${why}. Compacting now would pay off: /compact`;
+      routerLog(`[compaction] hint: ${msg}`);
+      opts.ctx.ui.notify(msg, 'info');
+    }
+  }
+
+  // Task-type balancing step 5c: a fresh session may beat continuing. Shares
+  // the hint cooldown with the 5b hint (at most one nag per HINT_COOLDOWN_MS).
+  if (budget.fresh_session?.enabled === true) {
+    const last = lastStepCacheState(opts.usageLog);
+    const fresh = decideFreshStart({
+      budget,
+      freshEnabled: true,
+      cold: isCacheCold(budget, last, now),
+      contextTokens: tokens,
+      contextWindow: usage?.contextWindow ?? null,
+      idleSeconds: last.ts !== null ? Math.round((now - last.ts) / 1000) : null,
+      stepsSinceSessionStart: opts.stepsThisSession ?? 0,
+      compactionsThisSession: opts.state.compactionsRun,
+    });
+    if (fresh.suggest && now - opts.state.lastHintAt >= HINT_COOLDOWN_MS) {
+      opts.state.lastHintAt = now;
+      const line = `[router] ${freshStatusLine(fresh)}`;
+      routerLog(`[compaction] ${line}`);
+      opts.ctx.ui.notify(line, 'info');
+    }
   }
 }

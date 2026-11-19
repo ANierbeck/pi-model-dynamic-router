@@ -79,7 +79,16 @@ async function routerReply(args: string): Promise<string> {
   return notes.join('\n');
 }
 
-const SUBCOMMANDS = ['scan', 'cost', 'classifier', 'errors', 'blocklist', 'cooldowns', 'config'];
+const SUBCOMMANDS = [
+  'scan',
+  'cost',
+  'classifier',
+  'errors',
+  'blocklist',
+  'cooldowns',
+  'fresh',
+  'config',
+];
 
 describe('/router subcommand list', () => {
   it('an unknown subcommand is reported, with a suggestion, instead of showing the overview', async () => {

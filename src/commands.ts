@@ -35,6 +35,7 @@ import {
   LAYA_DEFAULT_CONFIDENCE_THRESHOLD,
 } from './laya-classifier.ts';
 import { formatIntegrationLines, checkIntegrationPatch } from './integration.ts';
+import { FRESH_SUMMARY_PROMPT, freshHandoffMessage, FRESH_WAIT_MS } from './fresh-session.ts';
 import { INTEGRATION_SPECS } from './integration-registry.ts';
 import { getCachedCloudModels } from './classifier-cloud-probe.ts';
 import {
@@ -72,7 +73,11 @@ import { describeClassifierChain, formatClassifierChain } from './classifier-cha
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  SessionCompactEvent,
+} from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
@@ -308,6 +313,7 @@ function compactionStateLine(cfg: {
     soft_tokens?: number;
     hard_tokens?: number;
     cache_ttl_s?: number;
+    fresh_session?: { enabled?: boolean };
   };
 }): string {
   const b = cfg.context_budget;
@@ -319,7 +325,10 @@ function compactionStateLine(cfg: {
   const detail = bits.length
     ? ` (${bits.join(', ')})`
     : ' (no soft_tokens/hard_tokens configured — triggers disarmed)';
-  return `Compaction (context_budget): ${enabled}${detail}`;
+  // Task-type balancing 5c: the suggestion switch (the /router fresh command
+  // works regardless — this only gates the automatic suggestion).
+  const fresh = b?.fresh_session?.enabled ? 'on' : 'off';
+  return `Compaction (context_budget): ${enabled}${detail} · fresh-session suggestion: ${fresh}`;
 }
 
 /**
@@ -1060,6 +1069,20 @@ const ROUTER_SUBCOMMANDS: readonly RouterSubcommand[] = [
     ],
   },
   {
+    name: 'fresh',
+    usage: 'fresh [next step]',
+    summary:
+      'Start a fresh session with a handoff summary of this one (optional: the next step to carry over)',
+    completions: [
+      {
+        value: 'fresh',
+        label: 'fresh',
+        description:
+          'Start a fresh session with a handoff summary of this one; optional text after "fresh" becomes the next step in the handoff',
+      },
+    ],
+  },
+  {
     name: 'corrections',
     usage: 'corrections [list|clear]',
     summary: 'Saved HINT category corrections: list them, or clear all (ADR-0030)',
@@ -1363,8 +1386,97 @@ async function handleLayaCommand(
   return 'Usage: /router laya [install|serve|stop]';
 }
 
+/**
+ * `/router fresh` — task-type balancing step 5c (docs/plans/
+ * 2026-11-19-fresh-session-suggestion.md): start a NEW session with a handoff
+ * summary of the current one, linked via parentSession (the host records the
+ * link; extensions never pass it — agent-session-runtime wires the current
+ * file itself). Only a user-invoked command may switch sessions, so this is
+ * the only writer and it is always explicit. Summary source: Pi's compaction
+ * (the cheapest moment per the 5b measurement); a too-slow compaction ships a
+ * skeleton handoff instead of blocking (fail-open, FRESH_WAIT_MS).
+ * Post-replacement work (the handoff message, the confirmation notify) runs
+ * on the withSession context: the captured command ctx is stale after
+ * newSession() (loader rule).
+ */
+async function handleFreshCommand(
+  rt: CommandDeps,
+  ctx: {
+    mode: string;
+    ui: {
+      confirm(title: string, message: string): Promise<boolean>;
+      notify(message: string, type?: 'info' | 'warning' | 'error'): void;
+    };
+    compact(options?: { customInstructions?: string }): void;
+    newSession(options?: {
+      withSession?: (fresh: {
+        sendMessage(message: unknown, options?: { triggerTurn?: boolean }): Promise<void>;
+        ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
+      }) => Promise<void>;
+    }): Promise<{ cancelled: boolean }>;
+  },
+  nextStep: string | null
+): Promise<void> {
+  if (ctx.mode !== 'tui') {
+    ctx.ui.notify('/router fresh needs the interactive TUI', 'warning');
+    return;
+  }
+  const ok = await ctx.ui.confirm(
+    'Fresh session',
+    'Start a new session with a handoff summary of this one?' +
+      (nextStep ? ` Next step: ${nextStep}` : '')
+  );
+  if (!ok) {
+    ctx.ui.notify('Fresh session cancelled — this session continues.', 'info');
+    return;
+  }
+
+  // The FIRST completed compaction after we asked carries the handoff
+  // summary. All three paths funnel into first() (the losers of the race are
+  // no-ops) and every branch unsubscribes BOTH listeners: the session_compact
+  // event resolves 'summary', a FAILED compaction resolves 'skeleton' at
+  // once (review P2: it used to wait out the full 30s in silence), and the
+  // timer resolves the skeleton — fail-open, a slow or broken summary never
+  // blocks the switch.
+  let summary: string | null = null;
+  ctx.ui.notify('Compacting for the handoff summary…', 'info');
+  await new Promise<'summary' | 'skeleton'>((resolve) => {
+    let off = (): void => {}; // rebound below to unsubscribe BOTH listeners
+    let done = false;
+    const first = (sum: string | null): void => {
+      if (done) return; // the losing race participant must not rewrite summary
+      done = true;
+      off();
+      clearTimeout(timer);
+      summary = sum;
+      resolve(sum !== null ? 'summary' : 'skeleton');
+    };
+    const timer = setTimeout(() => first(null), FRESH_WAIT_MS);
+    const offCompact = rt.pi.on('session_compact', (ev: SessionCompactEvent) => {
+      first(ev.compactionEntry.summary);
+    });
+    const offFailed = rt.pi.on('session_compact_failed', () => first(null));
+    off = (): void => {
+      offCompact();
+      offFailed();
+    };
+    ctx.compact({ customInstructions: FRESH_SUMMARY_PROMPT });
+  });
+
+  const { cancelled } = await ctx.newSession({
+    withSession: async (fresh) => {
+      await fresh.sendMessage(freshHandoffMessage(summary, nextStep), { triggerTurn: true });
+      fresh.ui.notify('Fresh session started — the handoff summary is its first prompt.', 'info');
+    },
+  });
+  if (cancelled) {
+    // No withSession ran: the session was NOT replaced, the captured ctx is fine.
+    ctx.ui.notify('Fresh session was cancelled by the host — staying here.', 'warning');
+  }
+}
+
 export function createCommands(rt: CommandDeps): void {
-  // ── Command: /router ───────────────────────────────────────────────────
+  // ── Command: /router ───────────────────────────────────────────────
 
   rt.pi.registerCommand('router', {
     description: routerCommandDescription(),
@@ -1403,6 +1515,11 @@ export function createCommands(rt: CommandDeps): void {
             }
             const reply = handleConfigCommand(rt, ctx, sub);
             ctx.ui.notify(!sub ? [reply, '', CONFIG_NO_MENU_NOTE].join('\n') : reply, 'info');
+            return;
+          }
+
+          if (arg === 'fresh' || arg?.startsWith('fresh ')) {
+            await handleFreshCommand(rt, ctx, arg.slice('fresh'.length).trim() || null);
             return;
           }
 

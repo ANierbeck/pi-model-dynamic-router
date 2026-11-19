@@ -215,6 +215,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/classifier-chain.ts` | The classifier chain the current config produces (Laya, local, cloud, static), as ordered steps with the ids the routing-flow diagram pins |
 | `src/context-budget.ts` | Minimum output budget; below it a candidate is skipped |
 | `src/context-compaction.ts` | Cache-aware compaction (Phase 5b): cold-MISS threshold and the between-turns decision |
+| `src/fresh-session.ts` | Fresh-session suggestion (step 5c): the pure trigger (`decideFreshStart`) and `/router fresh` handover pieces (summary prompt, handoff message) |
 | `src/context-utils.ts` | Context and prompt inspection helpers, per-model timeout lookups (extracted from `index.ts`) |
 | `src/cost-tracker.ts` | `CostTracker`: per-request, per-model and daily cost summary |
 | `src/delegation.ts` | Enforced delegation (ADR-0007): summarizes oversized `read`/`bash` results before the main model sees them |

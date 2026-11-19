@@ -13,6 +13,19 @@ without the owner's explicit release approval).
 
 ### Added
 
+- **Fresh-session suggestion and `/router fresh`** (task-type balancing step
+  5c, plan `docs/plans/2026-11-19-fresh-session-suggestion.md`): when the
+  context cache stops paying off — cold cache on a large context, or
+  compaction that no longer sticks — the compaction hint now names the better
+  move ("fresh session suggested — /router fresh") instead of only offering
+  another in-place compaction. `/router fresh [next step]` performs the
+  handover, always user-invoked: after confirmation it compacts the session
+  with a handover-summary instruction, starts a NEW session via the host
+  (Pi records the parent link itself) and seeds the summary plus the optional
+  next step as the new session's first prompt. A summary that does not arrive
+  within 30 seconds ships a skeleton handoff — a slow compaction never blocks
+  the switch. Off by default (`context_budget.fresh_session.enabled`); the
+  `/router fresh` command works regardless of the switch.
 - **A failed config write now says what to do** about `EBUSY`/`EXDEV`:
   the atomic replace cannot replace a file that is itself a mount point (a
   Docker single-file bind mount) or lives on another file system. The old
