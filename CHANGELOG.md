@@ -50,6 +50,16 @@ without the owner's explicit release approval).
   unpublished release, and it never starts the sidecar; the last message gives
   the `serve` command for the user's terminal.
 
+### Changed — Laya has no confidence gate by default (ADR 0036)
+
+`integrations.laya.confidence_threshold` now defaults to `0` (it was `0.8`).
+In active mode every Laya answer with a valid category decides; the chain
+runs only when Laya fails or answers outside the taxonomy. Laya's confidence
+is uncalibrated, and the 0.8 gate sent the prompts below it to the chain,
+which is the cloud for a user without a local model. A block that sets the
+key keeps its value. Users who enabled Laya without setting it lose the gate
+on the next start. An invalid value now falls back to 0.
+
 ### Changed — an installed Laya leads the classifier chain (ADR 0035)
 
 `/router laya install` now writes `integrations.laya.mode: "active"` (it wrote
@@ -57,8 +67,8 @@ without the owner's explicit release approval).
 decided every route). Users who installed Laya before this release keep the
 mode in their file; a reinstall keeps it too. Without an installed Laya the
 standard chain of ADR 0032 runs as before. Closes the sole-classifier steps 3,
-5 and 6 as release gates; the default confidence gate (0.8) is unchanged and
-still an open owner decision.
+5 and 6 as release gates. The default confidence gate is removed separately
+(ADR 0036, above).
 
 ### Fixed — `/router laya stop` no longer signals a pid another sidecar vouches for
 

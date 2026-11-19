@@ -7,7 +7,8 @@ steps 3, 5 and 6, which need real Laya decisions to accumulate first.
 classifier chain (the installer writes `mode: "active"`); without an installed
 Laya the standard chain of ADR 0032 runs. Steps 3, 5 and 6 are no longer
 release gates for 2.0.0; their data collection continues in the owner's setup.
-Open: the default confidence gate (see ADR 0035, "Open"). The spike branch `laya-spike` no longer exists locally or on `origin` (checked 2026-11-12); its code is on `main` (e.g. `src/laya-classifier.ts`, PRs #147-#150).
+**2026-11-19: decision 1 implemented (owner), ADR 0036.** The default
+`confidence_threshold` is 0 for every user; no open owner decision remains. The spike branch `laya-spike` no longer exists locally or on `origin` (checked 2026-11-12); its code is on `main` (e.g. `src/laya-classifier.ts`, PRs #147-#150).
 
 ## Owner decisions (2026-10-25)
 
@@ -34,10 +35,10 @@ Open: the default confidence gate (see ADR 0035, "Open"). The spike branch `laya
 - Done (`9c9e63b`): `classifier_laya.compare_in_background`, detached
   comparator run, `comparator` stage in the decision log, cache / global source
   protected from the detached run.
-- Done (user config, no code): `mode: active`, `confidence_threshold: 0`,
-  `compare_in_background: true`. With threshold 0 `vetAnswer` accepts every
-  answer with a valid category; the comparator therefore runs for every
-  Laya-decided prompt. Needs a Pi restart to take effect.
+- Done 2026-11-19 (code, ADR 0036): `confidence_threshold` defaults to 0.
+  With threshold 0 `vetAnswer` accepts every answer with a valid category;
+  with `compare_in_background` on, the comparator therefore runs for every
+  Laya-decided prompt.
 - Not covered by the comparator: prompts Laya never sees (HINT, compaction,
   short-prompt momentum) and prompts where Laya was unavailable (the chain
   decided; there is nothing to compare against).

@@ -63,3 +63,4 @@ Each ADR is a numbered file: `NNNN-title-in-kebab-case.md`, containing:
 - [0033 — Opt-in escalation of low-confidence local replies to the cloud chain](0033-opt-in-low-confidence-escalation.md)
 - [0034 — One config surface: a classifier block, a key table, validated writes, a generated reference (accepted)](0034-config-surface.md)
 - [0035 — An installed Laya leads the classifier chain; without it the standard chain runs (accepted)](0035-installed-laya-leads.md)
+- [0036 — Laya has no confidence gate by default (accepted)](0036-laya-no-confidence-gate.md)

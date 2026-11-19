@@ -620,7 +620,7 @@ Pick up in a later round, each as its own plan where noted (§11):
     installed Laya leads the classifier chain, the standard chain runs without
     it (ADR 0035; the installer now writes `mode: "active"`). The plan
     `docs/plans/2026-10-25-laya-sole-classifier.md` records it; the confidence
-    default (0.8) is still an open owner question (ADR 0035, "Open");
+    default is 0 since 2026-11-19 (ADR 0036, no gate);
     (2) sidecar distribution — packaging, parity (golden 180/180, corpus 298/300,
     live queue 259/260) and per-platform docs DONE; since 2026-11-16 the sidecar
     ships inside the router tarball and needs no publish of its own; the r2

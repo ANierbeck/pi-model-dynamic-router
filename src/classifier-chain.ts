@@ -26,7 +26,7 @@ export function describeClassifierChain(cfg: Config): ClassifierChainStep[] {
   const layaDetail = !layaOn
     ? 'integration not enabled'
     : laya?.mode === 'active'
-      ? 'active: a confident answer decides'
+      ? 'active: a valid answer decides'
       : 'shadow: log only, the route does not change';
 
   const local = cfg.classifier?.local;

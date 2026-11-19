@@ -13,8 +13,9 @@
 // - On connection refused / timeout / HTTP error / malformed JSON the stage is
 //   marked unavailable for UNAVAILABLE_TTL_MS (analog to the classifier_no_schema
 //   501 marker) and the chain falls through to the next stage (fail-open).
-// - Below confidence_threshold (default 0.8, uncalibrated — ECE 0.466 per spike):
-//   falls through; the stage never returns `fallback` itself.
+// - Below confidence_threshold (default 0 = no gate, ADR-0036; the confidence
+//   is uncalibrated, ECE 0.466 per spike): falls through; the stage never
+//   returns `fallback` itself.
 // - Probe gates the stage per session: a real classification task (never a bare
 //   ping) with a TTL; on first use in a session without a valid probe the stage
 //   attempts a probe, and a failed probe disables the stage for the TTL.
@@ -42,6 +43,14 @@ import { headSha256, isSafeName } from './laya-model-manifest.ts';
 
 /** Where the sidecar listens unless `integrations.laya.endpoint` says otherwise (a base URL). */
 export const LAYA_DEFAULT_ENDPOINT = 'http://127.0.0.1:8089';
+/**
+ * Minimum Laya confidence unless `integrations.laya.confidence_threshold` says
+ * otherwise. 0 = no gate: an installed Laya decides every prompt it answers
+ * with a valid category (ADR-0036). A gate on the uncalibrated confidence sent
+ * the prompts Laya was unsure about to the chain, which is the cloud for a
+ * user without a local model.
+ */
+export const LAYA_DEFAULT_CONFIDENCE_THRESHOLD = 0;
 export const UNAVAILABLE_TTL_MS = 5 * 60 * 1000; // 5 min; a sidecar can die/restart faster than a 501 backend
 /**
  * Consecutive classify timeouts that take the stage down. One slow answer is
@@ -78,9 +87,9 @@ export const LAYA_SPEC: IntegrationSpec = {
         !(t >= 0 && t <= 1))
     ) {
       warnLog(
-        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to 0.8`
+        `[router] integrations.laya: invalid confidence_threshold ${JSON.stringify(t)} — falling back to ${LAYA_DEFAULT_CONFIDENCE_THRESHOLD}`
       );
-      block.confidence_threshold = 0.8;
+      block.confidence_threshold = LAYA_DEFAULT_CONFIDENCE_THRESHOLD;
     }
     return undefined;
   },
@@ -452,14 +461,15 @@ export interface LayaAnswer {
 
 /**
  * Apply the stage's veto rules to a raw answer; null = the chain must go on.
- * - below `confidence_threshold` (written so that NaN also fails);
+ * - below `confidence_threshold` or above 1 (written so that NaN also fails;
+ *   a sidecar confidence outside 0..1 is a broken answer, not a decision);
  * - anything outside the production taxonomy. The legacy 9-category spike
  *   answered `fallback` = "could not tell" — under the v2 taxonomy that
  *   label is simply invalid, and an invalid answer must not shadow the
  *   better classifier stages behind this one.
  */
 function vetAnswer(answer: LayaAnswer, threshold: number): ClassificationResult | null {
-  if (!(answer.confidence >= threshold)) return null;
+  if (!(answer.confidence >= threshold && answer.confidence <= 1)) return null;
   if (!VALID_CATEGORIES.includes(answer.category as never)) return null;
   const top = Object.entries(answer.probabilities)
     .sort((a, b) => b[1] - a[1])
@@ -504,7 +514,10 @@ export async function classifyWithLayaDetailed(
     warnLog(`[router] integrations.laya: classify failed — ${message}; stage disabled`);
     return null;
   }
-  return { answer, result: vetAnswer(answer, cfg.confidence_threshold ?? 0.8) };
+  return {
+    answer,
+    result: vetAnswer(answer, cfg.confidence_threshold ?? LAYA_DEFAULT_CONFIDENCE_THRESHOLD),
+  };
 }
 
 /**

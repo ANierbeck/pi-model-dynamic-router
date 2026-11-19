@@ -93,7 +93,7 @@ describe('classifier-laya-config', () => {
       validateClassifierLaya(cfg);
       expect(cfg.integrations?.laya?.enabled).toBe(true);
       expect(cfg.integrations?.laya?.mode).toBe('shadow');
-      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0);
       expect(cfg.integrations?.laya?.timeout_ms).toBe(1500);
     });
 
@@ -122,7 +122,7 @@ describe('classifier-laya-config', () => {
           integrations: { laya: { enabled: true, checkpoint: 'x/y', confidence_threshold: bad } },
         }) as Config;
         validateClassifierLaya(cfg);
-        expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
+        expect(cfg.integrations?.laya?.confidence_threshold).toBe(0);
       }
     });
 
@@ -142,7 +142,8 @@ describe('classifier-laya-config', () => {
       );
       expect(cfg.integrations?.laya?.endpoint).toBe('http://127.0.0.1:8089');
       expect(cfg.integrations?.laya?.timeout_ms).toBe(1500);
-      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0.8);
+      // ADR-0036: no confidence gate by default.
+      expect(cfg.integrations?.laya?.confidence_threshold).toBe(0);
       expect(cfg.integrations?.laya?.mode).toBe('shadow');
     });
 

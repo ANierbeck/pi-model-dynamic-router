@@ -257,9 +257,9 @@ export interface ClassifierLayaConfig extends IntegrationConfig {
   /** Enable the local Laya classifier stage. Default false — active use is gated
    * behind the golden-set benchmark (AGENTS.md §1 / Task 8). */
   enabled?: boolean;
-  /** Confidence threshold for forwarding a Laya result into the chain (default 0.8).
-   * The shipped confidence scale is uncalibrated (ECE 0.466); the gate is the
-   * first line of defense until the benchmark says otherwise. */
+  /** Minimum Laya confidence for a result to decide (default 0 = no gate, ADR-0036).
+   * The confidence scale is uncalibrated (ECE 0.466), so a gate is not a
+   * measured quality bar; a user who wants one sets a value between 0 and 1. */
   confidence_threshold?: number;
   /** Endpoint of the local Laya wrapper/sidecar (default http://127.0.0.1:8089).
    * The wrapper speaks POST /classify {prompt, context?} ->
@@ -281,11 +281,11 @@ export interface ClassifierLayaConfig extends IntegrationConfig {
    * the chain from stalling on a broken sidecar. */
   timeout_ms?: number;
   /** Mode: "shadow" writes Laya's decision into the decision log (ADR-0027 Phase 4)
-   * without affecting the routed answer; "active" lets a confident result take the
-   * route. Default "shadow" when enabled. */
+   * without affecting the routed answer; "active" lets a vetted result take the
+   * route (no confidence gate by default, ADR-0036). Default "shadow" when enabled. */
   mode?: 'active' | 'shadow';
   /** Live A/B snapshot (owner decision 2026-10-25): in active mode, when a
-   * confident Laya answer takes the route, still run the cloud/ollama chain it
+   * Laya answer takes the route, still run the cloud/ollama chain it
    * replaced DETACHED and log its answer as a `comparator` decision-log record
    * for the same input. Logging only — it never changes the route, the
    * classification cache, or the process-global classification source. Default

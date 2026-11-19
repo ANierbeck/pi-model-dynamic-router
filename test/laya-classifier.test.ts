@@ -164,6 +164,50 @@ describe('laya-classifier', () => {
     });
   });
 
+  it('without a confidence_threshold a low-confidence answer still decides (no gate by default)', async () => {
+    // Owner decision 2026-11-19 (ADR-0036): the default gate is 0. Red first:
+    // with the old default 0.8 this 0.5 answer fell through to the chain,
+    // and for users without a local model that chain is the cloud.
+    const p = await startServer('ok');
+    await classifier.probeLaya(ENDPOINT(p), 3000);
+    const res = await classifier.classifyWithLaya('fix the typo', undefined, {
+      cfg: {
+        integrations: {
+          laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), timeout_ms: 500 },
+        },
+      } as any,
+      checkpoint: 'x/y',
+    });
+    expect(res).toMatchObject({ category: 'simple', confidence: 0.5 });
+  });
+
+  it('a confidence outside 0..1 from the sidecar is vetoed, not taken as a decision', async () => {
+    // Red first: only typeof number was checked, so confidence 5 passed every
+    // gate. With the default gate 0 a negative value fails already; above 1
+    // must fail too. A veto is per prompt: the stage stays available.
+    const p = await startServer('ok');
+    await classifier.probeLaya(ENDPOINT(p), 3000);
+    const cfg = {
+      integrations: {
+        laya: { enabled: true, checkpoint: 'x/y', endpoint: ENDPOINT(p), timeout_ms: 500 },
+      },
+    } as any;
+    const saved = okResponse.confidence;
+    try {
+      okResponse.confidence = 5;
+      expect(
+        await classifier.classifyWithLaya('fix the typo', undefined, { cfg, checkpoint: 'x/y' })
+      ).toBeNull();
+      okResponse.confidence = 1;
+      expect(
+        await classifier.classifyWithLaya('fix the typo', undefined, { cfg, checkpoint: 'x/y' })
+      ).toMatchObject({ confidence: 1 });
+    } finally {
+      okResponse.confidence = saved;
+    }
+    expect(classifier.isLayaAvailable()).toBe(true);
+  });
+
   it('connection refused -> probe marks unavailable and classify falls through', async () => {
     classifier.resetLayaAvailability();
     const probeResult = await classifier.probeLaya('http://127.0.0.1:9999', 500);

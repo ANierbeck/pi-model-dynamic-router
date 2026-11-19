@@ -120,7 +120,7 @@ export interface DecisionRecord {
   shadow?: DecisionShadowEntry[];
   /** hint | compaction | momentum | cache | laya | llm-local | llm-cloud | static | fallback |
    * comparator — the DETACHED background chain of the live A/B snapshot (owner
-   * decision 2026-10-25): written only when a confident Laya answer took the
+   * decision 2026-10-25): written only when a Laya answer took the
    * route, `compare_in_background` is set, and the chain it replaced answered.
    * Same `input.sha` as the `laya` record of that classification — the pairing
    * key for evaluation. Never routed.

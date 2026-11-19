@@ -30,7 +30,7 @@ function run(args: string[]): string {
 
 describe('laya-shadow-stats', () => {
   it('reports agreement rate, confidence buckets and latency from synthetic records', () => {
-    const out = run([]);
+    const out = run(['--threshold=0.8']);
     expect(out).toContain('Laya shadow statistics');
     expect(out).toContain('Laya invocations across 6 classifications');
     expect(out).toContain('33.3 %'); // 2 agree of 6
@@ -42,7 +42,7 @@ describe('laya-shadow-stats', () => {
   }, 30_000);
 
   it('lists only real disagreements in the top-pairs matrix and shows the high-confidence prompt', () => {
-    const out = run([]);
+    const out = run(['--threshold=0.8']);
     // agreement pairs must not appear here
     expect(out).not.toContain('design → design');
     expect(out).not.toContain('code_simple → code_simple');
@@ -53,6 +53,13 @@ describe('laya-shadow-stats', () => {
     expect(out).toContain('This is the raw material for the golden set (Task 7):');
     expect(out).toContain('rename variable cnt to count');
     expect(out).toContain('HINT: use group strategic');
+  }, 30_000);
+
+  it('without --threshold it counts with the runtime default gate (0, ADR-0036)', () => {
+    // Red first: the script defaulted to 0.8 while the router decides on
+    // every valid answer, so "would have decided" undercounted.
+    const out = run([]);
+    expect(out).toContain('Laya ≥ 0.00 (would have decided): 6 of 6');
   }, 30_000);
 
   it('handles an empty decision log gracefully', () => {

@@ -140,9 +140,9 @@ the static rules. The config only switches legs on and off and names their model
 
 ### `integrations.laya.confidence_threshold`
 
-- Shipped: `0.8 (code default)`
+- Shipped: `0 (code default)`
 - Set by: hand-edit the user layer (`router-config.user.json`)
-- Meaning: Minimum Laya confidence for a result to enter the chain.
+- Meaning: Minimum Laya confidence for a result to decide. 0 = no gate: every valid Laya answer decides (ADR-0036); a higher value sends the answers below it to the local and cloud chain.
 
 ### `integrations.laya.compare_in_background`
 

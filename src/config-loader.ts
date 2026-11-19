@@ -23,7 +23,7 @@ import * as path from 'node:path';
 import type { Config } from './types.ts';
 import { CATEGORY_TO_GROUP } from './content-classifier.ts';
 import { warnLog } from './logger.ts';
-import { LAYA_SPEC } from './laya-classifier.ts';
+import { LAYA_DEFAULT_CONFIDENCE_THRESHOLD, LAYA_SPEC } from './laya-classifier.ts';
 import { forgetWarnOnce, jsonKey, validateIntegration, warnOnceFor } from './integration.ts';
 import { KNOWN_TOP_LEVEL_KEYS, closestKey, unknownTopLevelKeys } from './config-schema.ts';
 import { deleteKeyPath, isRecord, textOf } from './utils.ts';
@@ -447,7 +447,7 @@ export function validateClassifierLaya(config: Config): void {
   if (!c || typeof c !== 'object') return;
   // Runs for a disabled or enabled-less block too: the typo check must see it.
   validateIntegration(LAYA_SPEC, c as Record<string, unknown>);
-  if (c.enabled) c.confidence_threshold ??= 0.8;
+  if (c.enabled) c.confidence_threshold ??= LAYA_DEFAULT_CONFIDENCE_THRESHOLD;
 }
 
 /**
