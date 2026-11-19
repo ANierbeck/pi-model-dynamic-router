@@ -2,7 +2,22 @@
 // the pure trigger heuristic for suggesting (never forcing) a fresh session.
 // Red-first per AGENTS.md §4: written against the unfixed implementation.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Spy-Wrapper: capture what the event-handlers' turn_start wiring PASSES to
+// runContextCompaction (the reset/rebase contract pins its arguments).
+vi.mock('../src/context-compaction.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/context-compaction.ts')>();
+  const calls: Array<Parameters<typeof actual.runContextCompaction>[0]> = [];
+  return {
+    ...actual,
+    __compactionCalls: calls,
+    runContextCompaction: (opts: Parameters<typeof actual.runContextCompaction>[0]) => {
+      calls.push(opts);
+      return actual.runContextCompaction(opts);
+    },
+  };
+});
 import { FRESH_DEFAULTS, decideFreshStart } from '../src/fresh-session.ts';
 import type { ContextBudgetConfig } from '../src/types.ts';
 
@@ -129,6 +144,21 @@ const freshHarness = (
 };
 
 describe('fresh-session wiring (5b hint channel)', () => {
+  it('fires WITHOUT soft/hard thresholds configured — independent of the 5b gates', () => {
+    // Review P1 (PR #193 round): the 5b early return ("nothing configured →
+    // measurement only") used to swallow the 5c block, so the suggestion was
+    // silently dead while /router status reported the switch as on.
+    const h = freshHarness({
+      cfg: {
+        soft_tokens: undefined as unknown as number,
+        hard_tokens: undefined as unknown as number,
+      },
+      usage: { cacheRead: 5, ts: now - 20 * 60 * 1_000 }, // cold from idling
+    });
+    expect(h.notify).toHaveBeenCalled();
+    expect(h.notify.mock.calls.join(' ')).toMatch(/fresh session/i);
+  });
+
   it('compaction is not sticking: the suggestion notifies with the invocation', () => {
     const { notify, state } = freshHarness({ compactionsRun: 2 });
     expect(notify).toHaveBeenCalledTimes(1);
@@ -154,7 +184,11 @@ describe('fresh-session wiring (5b hint channel)', () => {
 
   it('noteSessionCompaction is the single tally increment (the session_compact wiring calls it)', () => {
     // Red first: the helper did not exist.
-    const state: CompactionRunState = { lastHintAt: 0, compactionsRun: 0 };
+    const state: CompactionRunState = {
+      lastHintAt: 0,
+      compactionsRun: 0,
+      turnSeqAtStart: 0,
+    };
     noteSessionCompaction(state);
     noteSessionCompaction(state);
     expect(state.compactionsRun).toBe(2);
@@ -166,6 +200,86 @@ describe('fresh-session wiring (5b hint channel)', () => {
       compactionsRun: 2,
     });
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('resetSessionTally zeroes the compaction count and rebases the step count', async () => {
+    const { resetSessionTally } = await import('../src/context-compaction.ts');
+    const state = { lastHintAt: 7, compactionsRun: 3, turnSeqAtStart: 2 } as Parameters<
+      typeof resetSessionTally
+    >[0];
+    resetSessionTally(state, 55);
+    // lastHintAt survives: the cooldown is a process property, not a session one.
+    expect(state).toEqual({ lastHintAt: 7, compactionsRun: 0, turnSeqAtStart: 55 });
+  });
+
+  it('session switches (new/resume/fork) reset tally+steps; subagent startup does not', async () => {
+    // PR #193 review P2: the per-session tally and the step baseline must
+    // follow the session. The handover compaction of `/router fresh` fires in
+    // the OLD session (session_compact precedes session_start) and must not
+    // count into the new one. Pinned through what the turn_start wiring
+    // actually PASSES to runContextCompaction (stepsThisSession and the
+    // state's tally) — a broken wiring fails both assertions.
+    const cc = await import('../src/context-compaction.ts');
+    const calls: Array<Parameters<typeof cc.runContextCompaction>[0]> = (
+      cc as unknown as { __compactionCalls: typeof calls }
+    ).__compactionCalls;
+    calls.length = 0;
+
+    const { createEventHandlers } = await import('../src/event-handlers.ts');
+    const handlers: Record<string, Array<(ev: unknown, ctx: unknown) => void>> = {};
+    const rt = {
+      pi: { on: (ev: string, h: unknown) => void (handlers[ev] ??= []).push(h) },
+      turnSeq: 41,
+      cfg: { model_groups: {}, model_metrics: {} } as never,
+      activeGroup: null,
+      cache: { usage_log: [] },
+      sessionCtx: undefined,
+      router: { setSessionCtx: () => {}, noteTurnStart: () => {} },
+      load: () => {},
+      loadCache: () => {},
+      loadModelMap: () => {},
+      extDir: '',
+      updateErrorStatusLine: () => {},
+      registerGroupModels: () => {},
+      escalation: { reset: () => {} },
+      scan: () => Promise.resolve(),
+      statusUpdater: undefined,
+    };
+    createEventHandlers(rt as never);
+    const tuiCtx = {
+      ui: { setStatus: () => {}, notify: () => {}, setFooter: () => {} },
+      cwd: '/tmp',
+      // The handler publishes the registry FIRST — the stub keeps the rest of
+      // the handler (including the reset) alive.
+      modelRegistry: { getRegisteredProviderIds: () => [] },
+    } as never;
+
+    // Boot ('startup' as the FIRST start of the process resets+rebases),
+    // 2 compactions, then a real switch ('new'), 2 further compactions,
+    // 1 turn — the passed state must show the RESET tally (2) and the REBASED
+    // steps (1), not the process-lifetime values (4 / 42).
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['session_start'][0]({ reason: 'startup' }, tuiCtx);
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['session_start'][0]({ reason: 'new' }, tuiCtx);
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['turn_start'][0]({ reason: 'startup' }, tuiCtx);
+
+    const last = calls[calls.length - 1];
+    expect(last, 'runContextCompaction was called at the turn boundary').toBeTruthy();
+    expect(last!.stepsThisSession).toBe(1); // rebased: turnSeq 42 - base 41
+    expect(last!.state.compactionsRun).toBe(2); // reset at the switch, not 4
+
+    // A subagent's re-fired 'startup' (sessionAnchorInit already true) must
+    // NOT clobber the running session's state.
+    handlers['session_compact']?.[0]?.(undefined, tuiCtx);
+    handlers['session_start'][0]({ reason: 'startup' }, tuiCtx);
+    handlers['turn_start'][0]({}, tuiCtx);
+    const after = calls[calls.length - 1];
+    expect(after!.state.compactionsRun).toBe(3); // tally survived the startup
+    expect(after!.stepsThisSession).toBe(2);
   });
 
   it('the status line names the trigger and the command', () => {

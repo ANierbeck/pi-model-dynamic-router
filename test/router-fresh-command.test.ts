@@ -116,4 +116,49 @@ describe('/router fresh', () => {
     expect(ctx.newSession).not.toHaveBeenCalled();
     expect(ctx.ui.notify.mock.calls[0][1]).toBe('warning');
   });
+
+  it('a FAILED compaction resolves at once to the skeleton handoff (PR #193 review P2)', async () => {
+    const rig = freshRig();
+    const ctx = freshCtx();
+    const p = rig.handler('fresh', ctx).then(() => 'done');
+    await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
+    rig.onHandlers['session_compact_failed']?.({ reason: 'threshold', aborted: false });
+    expect(await p).toBe('done'); // NO timer advance needed
+    const opts = ctx.newSession.mock.calls[0][0] as {
+      withSession: (fresh: unknown) => Promise<void>;
+    };
+    const sendMessage = vi.fn(async () => undefined);
+    await opts.withSession({ sendMessage, ui: { notify: vi.fn() } });
+    expect(sendMessage.mock.calls[0][0]).toMatch(/summary was unavailable/i);
+  });
+
+  it('the wait is announced (no silent 30s); the timeout branch unsubscribes (review P2)', async () => {
+    vi.useFakeTimers();
+    try {
+      const rig = freshRig();
+      const ctx = freshCtx();
+      const p = rig.handler('fresh', ctx).then(() => 'done');
+      await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
+      // Announced: a progress line about the compaction summary appears
+      // before any handoff/search feedback.
+      expect(ctx.ui.notify.mock.calls.some((c) => String(c[0]).match(/handoff|summary/i))).toBe(
+        true
+      );
+      // The subscription is still live while waiting.
+      expect(rig.onHandlers['session_compact']).toBeDefined();
+      await vi.advanceTimersByTimeAsync(FRESH_WAIT_MS);
+      expect(await p).toBe('done');
+      // Timeout branch unsubscribed the listener (review P2: it used to stay
+      // subscribed until the NEXT session_compact).
+      expect(rig.onHandlers['session_compact']).toBeUndefined();
+      const opts = ctx.newSession.mock.calls[0][0] as {
+        withSession: (fresh: unknown) => Promise<void>;
+      };
+      const sendMessage = vi.fn(async () => undefined);
+      await opts.withSession({ sendMessage, ui: { notify: vi.fn() } });
+      expect(sendMessage.mock.calls[0][0]).toMatch(/summary was unavailable/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

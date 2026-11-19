@@ -60,7 +60,11 @@ export function decideFreshStart(i: FreshSessionInputs): FreshSessionDecision {
   return { suggest: true, reason };
 }
 
-/** One narration line; used by the 5b hint channel and `/router` status. */
+/** One narration line; used by the 5b hint channel (at a turn boundary, where
+ * the trigger inputs are fresh). `/router status` shows the SWITCH state —
+ * the suggestion itself is only computable with a turn-boundary context, so
+ * status never pretends to know whether it would fire right now (PR #193
+ * review P2). */
 export function freshStatusLine(d: FreshSessionDecision): string {
   return d.suggest ? `fresh session suggested — ${d.reason} — /router fresh` : '';
 }

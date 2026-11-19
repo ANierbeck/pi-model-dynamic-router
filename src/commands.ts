@@ -1432,22 +1432,34 @@ async function handleFreshCommand(
   }
 
   // The FIRST completed compaction after we asked carries the handoff
-  // summary. Both paths settle the same promise (the loser of the race is a
-  // no-op): the session_compact event resolves 'summary' and unsubscribes,
-  // the timer resolves 'skeleton' — fail-open, a slow summary never blocks.
+  // summary. All three paths funnel into first() (the losers of the race are
+  // no-ops) and every branch unsubscribes BOTH listeners: the session_compact
+  // event resolves 'summary', a FAILED compaction resolves 'skeleton' at
+  // once (review P2: it used to wait out the full 30s in silence), and the
+  // timer resolves the skeleton — fail-open, a slow or broken summary never
+  // blocks the switch.
   let summary: string | null = null;
+  ctx.ui.notify('Compacting for the handoff summary…', 'info');
   await new Promise<'summary' | 'skeleton'>((resolve) => {
-    const timer = setTimeout(() => {
+    let off = (): void => {}; // rebound below to unsubscribe BOTH listeners
+    let done = false;
+    const first = (sum: string | null): void => {
+      if (done) return; // the losing race participant must not rewrite summary
+      done = true;
+      off();
       clearTimeout(timer);
-      resolve('skeleton');
-    }, FRESH_WAIT_MS);
-    let unregister: (() => void) | undefined = () => {};
-    unregister = rt.pi.on('session_compact', (ev: SessionCompactEvent) => {
-      summary = ev.compactionEntry.summary;
-      clearTimeout(timer);
-      unregister?.();
-      resolve('summary');
+      summary = sum;
+      resolve(sum !== null ? 'summary' : 'skeleton');
+    };
+    const timer = setTimeout(() => first(null), FRESH_WAIT_MS);
+    const offCompact = rt.pi.on('session_compact', (ev: SessionCompactEvent) => {
+      first(ev.compactionEntry.summary);
     });
+    const offFailed = rt.pi.on('session_compact_failed', () => first(null));
+    off = (): void => {
+      offCompact();
+      offFailed();
+    };
     ctx.compact({ customInstructions: FRESH_SUMMARY_PROMPT });
   });
 

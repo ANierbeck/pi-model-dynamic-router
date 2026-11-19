@@ -10,7 +10,11 @@
 
 ---
 
-**Status:** In progress (Tasks 1-4 implemented 2026-11-19; PR pending).
+**Status:** Done 2026-11-19 — PR #193. Deviation from Task 2, deliberate:
+`/router status` shows the SWITCH state (`fresh-session suggestion: on|off`),
+not the live suggestion line — the suggestion is only computable at a turn
+boundary (its inputs are the last step's cache state), so status never
+pretends to know whether it would fire right now (PR #193 review).
 
 **Problem:** After a long session the context cache grows (measured: cacheRead is 72 % of all tokens and the cost driver), summarisation quality of "the same huge irrelevant context" degrades, and compacting in place (Phase 5b) only keeps the already-paid context alive. At some point a **fresh session with a handoff summary** is the better move. Step 5c of `docs/plans/2026-10-05-task-type-balancing.md` recorded this as "deferred to a 2.0 version"; the owner has now pulled it back into the 2.0 scope.
 

@@ -275,7 +275,7 @@ describe('runContextCompaction', () => {
 
   it('hint decision notifies the user instead of compacting, with a cooldown', () => {
     const { ctx, compact, notify } = fakeCtx(ctxFixture({ tokens: 500_000 }));
-    const state: CompactionRunState = { lastHintAt: 0 };
+    const state: CompactionRunState = { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 };
     const call = () =>
       runContextCompaction({
         ctx,
