@@ -308,6 +308,7 @@ function compactionStateLine(cfg: {
     soft_tokens?: number;
     hard_tokens?: number;
     cache_ttl_s?: number;
+    fresh_session?: { enabled?: boolean };
   };
 }): string {
   const b = cfg.context_budget;
@@ -319,7 +320,10 @@ function compactionStateLine(cfg: {
   const detail = bits.length
     ? ` (${bits.join(', ')})`
     : ' (no soft_tokens/hard_tokens configured — triggers disarmed)';
-  return `Compaction (context_budget): ${enabled}${detail}`;
+  // Task-type balancing 5c: the suggestion switch (the /router fresh command
+  // works regardless — this only gates the automatic suggestion).
+  const fresh = b?.fresh_session?.enabled ? 'on' : 'off';
+  return `Compaction (context_budget): ${enabled}${detail} · fresh-session suggestion: ${fresh}`;
 }
 
 /**

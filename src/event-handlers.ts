@@ -20,7 +20,11 @@ import { setPiRegisteredProviders, setModelRegistry } from './metrics.ts';
 import { countSessionErrorsSince } from './session-errors.ts';
 import { fmt, fmtTime, textOf } from './utils.ts';
 import { buildUsageLogEntry, formatCacheStatus } from './cache-stats.ts';
-import { runContextCompaction, type CompactionRunState } from './context-compaction.ts';
+import {
+  noteSessionCompaction,
+  runContextCompaction,
+  type CompactionRunState,
+} from './context-compaction.ts';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { truncateToWidth } from '@earendil-works/pi-tui';
 import { fileURLToPath } from 'node:url';
@@ -306,7 +310,12 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
   // Hint cooldown state for cache-aware compaction (Phase 5b): without it,
   // a long over-soft session with a cold cache would notify on EVERY turn
   // boundary. Owned here because it must survive the Router reloads.
-  const compactionState: CompactionRunState = { lastHintAt: 0 };
+  const compactionState: CompactionRunState = { lastHintAt: 0, compactionsRun: 0 };
+
+  // Completed compactions feed the fresh-session trigger (step 5c): a single
+  // counting point in noteSessionCompaction — 5b's own compactions, manual
+  // /compact and /router fresh all land here exactly once.
+  rt.pi.on('session_compact', () => noteSessionCompaction(compactionState));
 
   rt.pi.on(
     'turn_start',
@@ -332,6 +341,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
         activeGroup: rt.activeGroup,
         usageLog: rt.cache.usage_log,
         state: compactionState,
+        stepsThisSession: rt.turnSeq,
       });
     })
   );

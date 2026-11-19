@@ -61,3 +61,8 @@ export function decideFreshStart(i: FreshSessionInputs): FreshSessionDecision {
       : 'cache cold and context large: continuing pays full price either way';
   return { suggest: true, reason };
 }
+
+/** One narration line; used by the 5b hint channel and `/router` status. */
+export function freshStatusLine(d: FreshSessionDecision): string {
+  return d.suggest ? `fresh session suggested — ${d.reason} — /router fresh` : '';
+}

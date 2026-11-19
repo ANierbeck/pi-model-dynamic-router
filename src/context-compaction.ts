@@ -31,6 +31,7 @@
 import type { Config, ContextBudgetConfig, UsageLogEntry } from './types.ts';
 import { fmt, textOf } from './utils.ts';
 import { routerLog, warnLog } from './logger.ts';
+import { decideFreshStart, freshStatusLine } from './fresh-session.ts';
 
 /**
  * Below this share of cached context the last step counts as a MISS (cold):
@@ -154,14 +155,33 @@ export function resolveContextBudget(
   return { ...globalBudget, ...groupBudget };
 }
 
-/** Mutable state the hint cooldown lives in (owned by the event-handler closure). */
+/** Mutable state the hint cooldown and the per-session compaction tally live in
+ * (owned by the event-handler closure; process-lifetime — a Pi restart resets
+ * the tally, documented in the fresh-session plan). */
 export interface CompactionRunState {
   lastHintAt: number;
+  /** Completed compactions this process has seen. Drives the fresh-session
+   * "compaction is not sticking" trigger (step 5c). Counts ONLY through
+   * noteSessionCompaction() (the session_compact event handler): 5b's own
+   * compactions, manual /compact, and /router fresh alike — never the 5b
+   * decision itself (a compaction counts once, when it COMPLETES). */
+  compactionsRun: number;
 }
 
-/** The Pi-side surface runContextCompaction needs (duck-typed for tests). */
+/**
+ * The single tally increment for completed compactions: the session_compact
+ * event handler calls this. Kept exported (not inline) so the tally contract
+ * is unit-testable and cannot silently double-count from the 5b decision path.
+ */
+export function noteSessionCompaction(state: CompactionRunState): void {
+  state.compactionsRun += 1;
+}
+
+/** The Pi-side surface runContextCompaction needs (duck-typed for tests).
+ * Pi's real ContextUsage carries `contextWindow` too — the fresh-session
+ * share gate reads it when present (src/fresh-session.ts). */
 export interface CompactionCtx {
-  getContextUsage(): { tokens: number | null } | undefined;
+  getContextUsage(): { tokens: number | null; contextWindow?: number } | undefined;
   compact(options?: { customInstructions?: string }): void;
   ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
 }
@@ -179,6 +199,8 @@ export function runContextCompaction(opts: {
   activeGroup: string | null;
   usageLog: UsageLogEntry[] | undefined;
   state: CompactionRunState;
+  /** Turns this session has seen (rt.turnSeq; process-lifetime approximation). */
+  stepsThisSession?: number;
   now?: number;
 }): void {
   try {
@@ -220,5 +242,27 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
     const msg = `[router] context is ${fmt(tokens)} tokens — ${why}. Compacting now would pay off: /compact`;
     routerLog(`[compaction] hint: ${msg}`);
     opts.ctx.ui.notify(msg, 'info');
+  }
+
+  // Task-type balancing step 5c: a fresh session may beat continuing. Shares
+  // the hint cooldown with the 5b hint (at most one nag per HINT_COOLDOWN_MS).
+  if (budget.fresh_session?.enabled === true) {
+    const last = lastStepCacheState(opts.usageLog);
+    const fresh = decideFreshStart({
+      budget,
+      freshEnabled: true,
+      cold: isCacheCold(budget, last, now),
+      contextTokens: tokens,
+      contextWindow: usage?.contextWindow ?? null,
+      idleSeconds: last.ts !== null ? Math.round((now - last.ts) / 1000) : null,
+      stepsSinceSessionStart: opts.stepsThisSession ?? 0,
+      compactionsThisSession: opts.state.compactionsRun,
+    });
+    if (fresh.suggest && now - opts.state.lastHintAt >= HINT_COOLDOWN_MS) {
+      opts.state.lastHintAt = now;
+      const line = `[router] ${freshStatusLine(fresh)}`;
+      routerLog(`[compaction] ${line}`);
+      opts.ctx.ui.notify(line, 'info');
+    }
   }
 }
