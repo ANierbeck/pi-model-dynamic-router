@@ -35,7 +35,7 @@ import {
   LAYA_DEFAULT_CONFIDENCE_THRESHOLD,
 } from './laya-classifier.ts';
 import { formatIntegrationLines, checkIntegrationPatch } from './integration.ts';
-import { FRESH_SUMMARY_PROMPT, freshHandoffMessage, FRESH_COMPACTION_WAIT_MS } from './fresh-session.ts';
+import { FRESH_SUMMARY_PROMPT, freshHandoffMessage, FRESH_WAIT_MS } from './fresh-session.ts';
 import { INTEGRATION_SPECS } from './integration-registry.ts';
 import { getCachedCloudModels } from './classifier-cloud-probe.ts';
 import {
@@ -73,7 +73,7 @@ import { describeClassifierChain, formatClassifierChain } from './classifier-cha
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
 import type { Cache, ClassifierConfig, Config, ExcludeRules, Metrics } from './types.ts';
 import type { CacheManager } from './cache.ts';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext, SessionCompactEvent } from '@earendil-works/pi-coding-agent';
 import type { RateLimitManager } from './rate-limit.ts';
 import type { Router } from './routing.ts';
 import { runInSession, sessionIdOf } from './turn-state.ts';
@@ -1390,7 +1390,7 @@ async function handleLayaCommand(
  * file itself). Only a user-invoked command may switch sessions, so this is
  * the only writer and it is always explicit. Summary source: Pi's compaction
  * (the cheapest moment per the 5b measurement); a too-slow compaction ships a
- * skeleton handoff instead of blocking (fail-open, FRESH_COMPACTION_WAIT_MS).
+ * skeleton handoff instead of blocking (fail-open, FRESH_WAIT_MS).
  * Post-replacement work (the handoff message, the confirmation notify) runs
  * on the withSession context: the captured command ctx is stale after
  * newSession() (loader rule).
@@ -1430,26 +1430,25 @@ async function handleFreshCommand(
     return;
   }
 
-  // One-shot subscription: the FIRST completed compaction after we asked
-  // carries the handoff summary. A timeout ships the skeleton handoff.
+  // The FIRST completed compaction after we asked carries the handoff
+  // summary. Both paths settle the same promise (the loser of the race is a
+  // no-op): the session_compact event resolves 'summary' and unsubscribes,
+  // the timer resolves 'skeleton' — fail-open, a slow summary never blocks.
   let summary: string | null = null;
-  let off: (() => void) | undefined;
-  let done!: () => void;
-  const finished = new Promise<void>((resolve) => (done = resolve));
-  off = rt.pi.on('session_compact', (ev) => {
-    summary =
-      (ev as { compactionEntry?: { summary?: string } } | undefined)?.compactionEntry?.summary ??
-      null;
-    off?.();
-    done();
+  await new Promise<'summary' | 'skeleton'>((resolve) => {
+    const timer = setTimeout(() => {
+      clearTimeout(timer);
+      resolve('skeleton');
+    }, FRESH_WAIT_MS);
+    let unregister: (() => void) | undefined = () => {};
+    unregister = rt.pi.on('session_compact', (ev: SessionCompactEvent) => {
+      summary = ev.compactionEntry.summary;
+      clearTimeout(timer);
+      unregister?.();
+      resolve('summary');
+    });
+    ctx.compact({ customInstructions: FRESH_SUMMARY_PROMPT });
   });
-  ctx.compact({ customInstructions: FRESH_SUMMARY_PROMPT });
-  const timer = setTimeout(() => {
-    off?.();
-    done();
-  }, FRESH_COMPACTION_WAIT_MS);
-  await finished;
-  clearTimeout(timer);
 
   const { cancelled } = await ctx.newSession({
     withSession: async (fresh) => {

@@ -2,7 +2,7 @@
 
 > **REQUIRED SUB-SKILL:** Use the executing-plans skill to implement this plan task-by-task.
 
-**Status:** Done except 5c (2026-11-08) — approved by the owner 2026-10-05.
+**Status:** Done (2026-11-19) — approved by the owner 2026-10-05; 5c implemented in [`docs/plans/2026-11-19-fresh-session-suggestion.md`](2026-11-19-fresh-session-suggestion.md).
 Phases 0–3, 4 (budget pacing, `src/budget-pacing.ts`), 5a (cache
 measurement) and 5b (cache-aware compaction, `src/context-compaction.ts`) are
 implemented and merged (CHANGELOG); Phase 0 step 6 is closed by measurement

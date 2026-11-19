@@ -108,6 +108,12 @@ the static rules. The config only switches legs on and off and names their model
 - Set by: `/router config compaction on|off`
 - Meaning: Cache-aware auto-compaction. Only the switch is command-settable.
 
+### `context_budget.fresh_session.enabled`
+
+- Shipped: `false (code default)`
+- Set by: hand-edit the user layer (`router-config.user.json`)
+- Meaning: Suggests — never forces — a fresh session with a handoff summary when the context cache stops paying off (step 5c). The /router fresh command works regardless of this switch.
+
 ### `integrations.laya.enabled`
 
 - Shipped: `false`

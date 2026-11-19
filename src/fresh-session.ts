@@ -76,7 +76,7 @@ export const FRESH_SUMMARY_PROMPT =
  * How long `/router fresh` waits for the compaction summary before shipping a
  * skeleton handoff (fail-open: a slow summary never blocks the handover).
  */
-export const FRESH_COMPACTION_WAIT_MS = 30_000;
+export const FRESH_WAIT_MS = 30_000;
 
 /** The first prompt the new session receives: the summary plus the carry-over. */
 export function freshHandoffMessage(

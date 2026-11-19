@@ -177,6 +177,14 @@ export const CONFIG_KEYS: readonly ConfigKeySpec[] = [
     alias: 'config compaction on|off',
   },
   {
+    path: 'context_budget.fresh_session.enabled',
+    kind: 'boolean',
+    shipped: 'false (code default)',
+    meaning:
+      'Suggests — never forces — a fresh session with a handoff summary when the context cache stops paying off (step 5c). The /router fresh command works regardless of this switch.',
+    via: 'file-only',
+  },
+  {
     path: 'integrations.laya.enabled',
     kind: 'boolean',
     shipped: 'false',

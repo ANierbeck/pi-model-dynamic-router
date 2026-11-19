@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createCommands } from '../src/commands.ts';
-import { FRESH_COMPACTION_WAIT_MS } from '../src/fresh-session.ts';
+import { FRESH_WAIT_MS } from '../src/fresh-session.ts';
 
 type Handler = (args: string, ctx: unknown) => Promise<void>;
 
@@ -95,7 +95,7 @@ describe('/router fresh', () => {
       const ctx = freshCtx();
       const p = rig.handler('fresh', ctx).then(() => 'done');
       await vi.waitFor(() => expect(ctx.compact).toHaveBeenCalledTimes(1));
-      await vi.advanceTimersByTimeAsync(FRESH_COMPACTION_WAIT_MS);
+      await vi.advanceTimersByTimeAsync(FRESH_WAIT_MS);
       expect(await p).toBe('done');
       const opts = ctx.newSession.mock.calls[0][0] as {
         withSession: (fresh: unknown) => Promise<void>;

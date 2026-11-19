@@ -167,6 +167,7 @@ Heuristic caveat (honest disclosure): the "last step" is the last entry of the s
 - **Hints** (default): with `enabled` false or absent but thresholds configured, the same conditions only produce a hint — "compacting now would pay off: /compact" (at most one per 30 minutes).
 - **Automatic**: `enabled: true` additionally calls Pi's compaction at the boundary instead of hinting.
 - `/router config compaction on|off` toggles the master switch live (persisted to `router-config.user.json`; the thresholds remain hand-edited config).
+- **Fresh-session suggestion** (step 5c, `context_budget.fresh_session.enabled`, off by default): when the cache went cold on a large context or compaction is not sticking (it already ran twice this session and the context grew back), the hint names the better move — "fresh session suggested — /router fresh". `/router fresh [next step]` then does the handover, always user-invoked: confirm → compact (the summary) → a new session seeded with the handoff as its first prompt; the parent link is recorded by Pi.
 
 ## How It Works
 

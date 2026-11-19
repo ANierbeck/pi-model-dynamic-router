@@ -606,8 +606,9 @@ Pick up in a later round, each as its own plan where noted (§11):
   (`docs/plans/2026-10-05-task-type-balancing.md`): Phases 0–5b are done;
   5d is closed by the owner after the measurement
   (`docs/research/2026-11-08-task-type-balancing-remainder.md`: all 27
-  November compactions cost $2.97). Only 5c (fresh-session suggestion) stays
-  deferred to a later 2.0.x by owner decision.
+  November compactions cost $2.97). 5c (fresh-session suggestion +
+  `/router fresh`) was pulled back into 2.0 and is implemented 2026-11-19
+  (`docs/plans/2026-11-19-fresh-session-suggestion.md`).
 - **Release prep for 2.0.0** (owner 2026-11-07: the next release is 2.0.0; `package.json`
   is `2.0.0-SNAPSHOT`). Status 2026-11-13:
   - §1 whole-range review: DONE. Round 1 on 2026-11-08 (PR #128); round 2 on
@@ -689,8 +690,9 @@ narration; the owner confirmed the idea 2026-10-06.
 
 **`docs/plans/2026-10-05-task-type-balancing.md` remainder** — Phases 0–3, 4
 (budget pacing), 5a, 5b (cache-aware compaction) are DONE and 5d is closed
-(measured, see the closed entry in the deferred list above). Only 5c
-(fresh-session suggestion) is deferred to a later 2.0.x.
+(measured, see the closed entry in the deferred list above). 5c
+(fresh-session suggestion) came back into 2.0 and is implemented
+(`docs/plans/2026-11-19-fresh-session-suggestion.md`).
 
 **Laya classifier integration** — the spike is merged (PR #81, 2026-11-02,
 owner go). Laya ships disabled by default; its remaining release steps are in
