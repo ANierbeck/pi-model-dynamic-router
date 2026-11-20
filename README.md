@@ -169,6 +169,10 @@ Long agentic sessions burn most of their cost resending context — and a **cold
 The thresholds are the 5b compaction gates; `fresh_session` is independent of them
 (see the bullet below) — a user can switch on the suggestion alone.
 
+Pi's own `cacheWarming` setting (pi 1.6.0) has no effect on router sessions: the group
+models declare no prompt-cache lifetime, so Pi never starts warming them. See
+[docs/research/2026-11-20-pi-cache-warming-1.6.md](docs/research/2026-11-20-pi-cache-warming-1.6.md).
+
 Evaluated at every **turn boundary** (never between tool steps): context over `hard_tokens` compacts regardless of cache state; context over `soft_tokens` compacts only when the cache is cold — a miss on the last step (cacheRead below half the step's tokens; partial hits count as mostly-reprocessed), an idle gap over `cache_ttl_s`, or no step recorded yet (fresh/resumed session). A warm cache is never thrown away. Per-group overrides live on `model_groups.<g>.context_budget` and win per field over the global block.
 
 Heuristic caveat (honest disclosure): the "last step" is the last entry of the shared persistent `usage_log` — with concurrent sessions, or right after resuming one, the signal can come from another session, in which case the trigger can misfire in the wasteful direction (compacting a warm cache costs one full-price step — the same cost the feature already accepts on a genuinely cold start) or the conservative direction (a cheap compaction opportunity is missed). Never a wrong exclusion; opt-in only.
