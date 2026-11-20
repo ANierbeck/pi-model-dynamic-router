@@ -9,6 +9,38 @@ M3 latency fix are planned into 2.0. `package.json` carries the
 published 2.0.0 is cut from the release tag only (AGENTS.md §1 — no publish
 without the owner's explicit release approval).
 
+### Added
+
+- **Pi's `cacheWarming` setting is honored in router sessions** (plan
+  `docs/plans/2026-11-20-honor-pi-cache-warming.md`, owner decision 2026-11-20:
+  the router must not behave differently from a Pi setting the user chose).
+  Before, group models declared no prompt-cache lifetime and zero cost, so
+  Pi's CacheWarmer never warmed a router session (`cache lifetime unavailable`).
+  Pi stays the only owner of *when* to warm; the router supplies what Pi cannot
+  know about a virtual model:
+  - after a served request, the group model Pi asked for declares the served
+    model's `promptCache` and `cost` (re-registered only on a change; Pi's
+    Anthropic budget-thinking replay gate is mirrored by withholding the
+    lifetime);
+  - Pi's warm request (`maxTokens: 1` + `disableContinuation` + `maxRetries: 0`)
+    is forwarded verbatim to the model that served the session's last
+    successful request — no classification, fallback, breaker evidence or
+    decision-log record, and no warm into a rate-limit cooldown, an open
+    breaker or after a failed request; delegation and `bulk_read` sub-calls
+    neither move the warm target nor declare economics (they are the turn's
+    tool work, not requests of the session);
+  - Pi's `cache_warm` usage entries on the session's current branch count as
+    steps for the 5b/5c cold-cache signal, show in `/router cost` as their own `Cache warms (Pi)` line
+    (outside the session total, decision O1) and in the footer's session
+    totals (Pi's own footer counts them; ours replaces it).
+  Known limits (documented): the declaration lags one request, so a session's
+  first request is never warmed; in-process sessions of one group share the
+  declaration (decision O3). Red-first: `test/honor-pi-cache-warming.test.ts`
+  (8 of 12 red against the old entry; the
+  rate-limit, breaker and sub-call cases red against their missing gates), the warm cases in
+  `test/context-compaction.test.ts` (3 red), `test/cache-warm-cost.test.ts`
+  (2 red) and the footer total case in `test/session-keyed-turn-state.test.ts`.
+
 ### Changed
 
 - **Host alignment to pi 1.6.0** (devDependencies `^1.5.2` → `^1.6.0` for
@@ -35,6 +67,14 @@ without the owner's explicit release approval).
   documented `footerData.getExtensionStatuses()`. The router's own `router` key
   is skipped because its error count is already a footer part. Red-first: two
   tests in `test/session-keyed-turn-state.test.ts` failed against the old footer.
+- **A static group's turn state landed in the wrong session.** Pi's entry into
+  a static group (the registered provider's `streamSimple`) called the
+  candidate walk outside the request's session scope, so the served model was
+  remembered for the default session instead of the one Pi named — a tool
+  follow-up in that session was classified again, and the footer could show
+  another session's model. The entry now runs in `options.sessionId`'s scope
+  for every group. Found while wiring the cache-warm target; red-first pin in
+  `test/honor-pi-cache-warming.test.ts`.
 
 ## [Unreleased]
 

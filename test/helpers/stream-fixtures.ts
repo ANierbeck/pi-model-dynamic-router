@@ -37,6 +37,29 @@ export function doneEvent(overrides: DoneEventOverrides = {}): Record<string, un
 }
 
 /**
+ * A terminal error event with the full assistant-message shape a provider
+ * stream ends with (`reason` doubles as the message's stop reason): a provider
+ * error (`'error'`) or a cancellation (`'aborted'`).
+ */
+export function errorEvent(
+  reason: 'error' | 'aborted',
+  errorMessage: string
+): Record<string, unknown> {
+  return {
+    type: 'error',
+    reason,
+    error: {
+      role: 'assistant',
+      content: [],
+      errorMessage,
+      stopReason: reason,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      timestamp: Date.now(),
+    },
+  };
+}
+
+/**
  * The standard priced-model cost fixture (input 0.1 / output 0.2) used by
  * ~5 test files' model literals.
  */

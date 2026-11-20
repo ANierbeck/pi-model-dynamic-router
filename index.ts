@@ -519,34 +519,49 @@ const defaultExport = function (pi: ExtensionAPI): void {
       get streamOrchestrator() {
         return streamOrchestrator;
       },
+      get turnModel(): string {
+        return turn().lastDynamicModel;
+      },
+      get cacheWarmTarget(): string {
+        return turn().cacheWarmTarget;
+      },
+      set cacheWarmTarget(v: string) {
+        turn().cacheWarmTarget = v;
+      },
+      get declareCacheEconomics() {
+        return declareCacheEconomics;
+      },
+      unavailableReason: (ref: string): string | null =>
+        isLimited(ref) ? 'rate-limited' : isBreakerOpenFor(ref) ? 'behind an open breaker' : null,
     });
 
-  const { registerGroupProviders, registerGroupModels } = createGroupRegistration({
-    get cache() {
-      return cache;
-    },
-    get cfg() {
-      return cfg;
-    },
-    get getM() {
-      return getM;
-    },
-    get groupStream() {
-      return groupStream;
-    },
-    get pi() {
-      return pi;
-    },
-    get resolve() {
-      return resolve;
-    },
-    get sessionCtx(): ExtensionContext | null {
-      return sessionCtx;
-    },
-    get contextWindow() {
-      return lookupContextWindow;
-    },
-  });
+  const { registerGroupProviders, registerGroupModels, declareCacheEconomics } =
+    createGroupRegistration({
+      get cache() {
+        return cache;
+      },
+      get cfg() {
+        return cfg;
+      },
+      get getM() {
+        return getM;
+      },
+      get groupStream() {
+        return groupStream;
+      },
+      get pi() {
+        return pi;
+      },
+      get resolve() {
+        return resolve;
+      },
+      get sessionCtx(): ExtensionContext | null {
+        return sessionCtx;
+      },
+      get contextWindow() {
+        return lookupContextWindow;
+      },
+    });
 
   createEventHandlers({
     get activeGroup() {
@@ -1016,6 +1031,15 @@ const defaultExport = function (pi: ExtensionAPI): void {
   // Build the streaming orchestrator context once all helpers are defined.
   // Fields that change mid-session (cfg, cache) are passed as mutable object
   // references so the orchestrator always reads the current value.
+  /** Whether `ref`'s provider sits behind an open circuit breaker (ADR-0026). */
+  function isBreakerOpenFor(ref: string): boolean {
+    const provider = ref.split('/')[0];
+    if (!isProviderOpen(cache, provider)) return false;
+    // Local providers keep ADR-0016's always-on watchdog; the kill switch
+    // only ever disarms the cloud generalization (plan D8).
+    return isLocalProviderName(provider) || resolveBreakerTuning(cfg.provider_breaker).cloudEnabled;
+  }
+
   const buildOrchestratorContext = (): StreamOrchestratorContext => ({
     // NOTE: curModel is deliberately NOT passed here. It changes every turn;
     // a by-value field would snapshot a stale ref while looking like live
@@ -1157,15 +1181,7 @@ const defaultExport = function (pi: ExtensionAPI): void {
       }
       return newlyOpen;
     },
-    isBreakerOpen: (ref: string): boolean => {
-      const provider = ref.split('/')[0];
-      if (!isProviderOpen(cache, provider)) return false;
-      // Local providers keep ADR-0016's always-on watchdog; the kill switch
-      // only ever disarms the cloud generalization (plan D8).
-      return (
-        isLocalProviderName(provider) || resolveBreakerTuning(cfg.provider_breaker).cloudEnabled
-      );
-    },
+    isBreakerOpen: isBreakerOpenFor,
     noteBreakerSkip: (ref: string) => recordBreakerSkip(cache, ref.split('/')[0]),
     wedgeCooldownText: (ref: string) =>
       wedgeCooldownText(cache, ref.split('/')[0], resolveBreakerTuning(cfg.provider_breaker)),

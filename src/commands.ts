@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { costTracker } from './cost-tracker.ts';
+import { cacheWarmTotals } from './cache-warming.ts';
 import { formatOverviewTable, displayMetricsFor, type OverviewRow } from './overview-table.ts';
 import { describeBestMethod } from './rank-explain.ts';
 import {
@@ -1612,6 +1613,8 @@ export function createCommands(rt: CommandDeps): void {
                     ? { input: p.input, output: p.output }
                     : undefined;
                 },
+                // Pi's own record of this session's cache warms (plan O1).
+                cacheWarms: cacheWarmTotals(ctx.sessionManager?.getEntries?.()),
               }),
               'info'
             );

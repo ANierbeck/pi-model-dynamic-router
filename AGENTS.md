@@ -105,7 +105,8 @@
   suggestion 5c (task-type balancing, PR 2026-11-19: trigger contract
   `decideFreshStart`, the 5b-hint surfacing, the `/router fresh` handover
   race — skeleton fail-open, summary via the verified host `SessionCompactEvent`;
-  3605 passing / 3 skipped); do not
+  3605 passing / 3 skipped); the pi 1.6.0 host alignment, the footer status
+  line and honoring Pi's `cacheWarming` incl. its review round (3643 passing / 3 skipped); do not
   lower the bar to a count).
   Don't lower the `coverage.thresholds` in `vitest.config.ts` to unblock a
   red run — fix the actual regression.

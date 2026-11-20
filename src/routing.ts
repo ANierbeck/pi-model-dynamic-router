@@ -471,11 +471,13 @@ export function getFallbackGroup(
  * 'trivial/trivial', 'dynamic/dynamic', 'dynamic/dynamic:use-static')?
  * registerGroupProviders() registers one per group so Pi's model picker /
  * --model flag can select a group as the active model. These virtual models
- * carry no real cost or GDPval (their registry cost is {0,0} → null →
- * 'unknown'), so they must be excluded both as resolution candidates
- * (allDiscoveredRefs) and from cost diagnostics (the "unknown cost" scan
- * log), where they would otherwise pollute the list with routing artefacts
- * the user can neither price nor exclude.
+ * have no GDPval and no cost of their own — the price a group model declares
+ * is borrowed from the model it last served (for Pi's cache warming,
+ * src/cache-warming.ts) or {0,0} before that — so they must be excluded
+ * both as resolution candidates (allDiscoveredRefs) and from cost
+ * diagnostics (the "unknown cost" scan log), where they would otherwise
+ * pollute the list with routing artefacts the user can neither price nor
+ * exclude.
  */
 export function isVirtualGroupRef(ref: string, groupNames: ReadonlySet<string>): boolean {
   const slash = ref.indexOf('/');

@@ -258,6 +258,7 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           let inp = 0,
             out = 0,
             cost = 0,
+            stepCost = 0,
             steps = 0;
           let lastUsage: AssistantMessage['usage'] | undefined;
           for (const e of ctx.sessionManager.getBranch()) {
@@ -266,13 +267,21 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
               inp += a.usage.input;
               out += a.usage.output;
               cost += a.usage.cost.total;
+              stepCost += a.usage.cost.total;
               steps++;
               lastUsage = a.usage;
+            } else if (e.type === 'usage') {
+              // Usage outside the conversation — Pi's cache warms (kind
+              // cache_warm). Pi's own footer counts it in the session totals,
+              // and this footer replaces Pi's; it is not a step.
+              inp += e.usage.input;
+              out += e.usage.output;
+              cost += e.usage.cost.total;
             }
           }
           // Phase 5a: context size, cache share of the last step and the
-          // session-average cost per step ("ctx 182.0k · cache 97% · ~$0.03/step").
-          const cacheStr = formatCacheStatus(lastUsage, steps, cost);
+          // average cost per step ("ctx 182.0k · cache 97% · ~$0.03/step").
+          const cacheStr = formatCacheStatus(lastUsage, steps, stepCost);
           const u = ctx.getContextUsage(),
             pct = u?.percent ?? 0;
           const pCol = pct > 75 ? 'error' : pct > 50 ? 'warning' : 'success';

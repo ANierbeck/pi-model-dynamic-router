@@ -24,6 +24,13 @@ import { buildErrorAssistantMessage, type SourceModelInfo } from './stream-drive
 import { splitRef, textOf } from './utils.ts';
 import { estimateInputTokens, planOutputBudget } from './context-budget.ts';
 import {
+  cacheEconomicsFor,
+  isPiCacheWarmRequest,
+  type DeclaredCacheEconomics,
+} from './cache-warming.ts';
+import { runInSession } from './turn-state.ts';
+import { inSubCall } from './subcall-scope.ts';
+import {
   type Api,
   type Model,
   type Context,
@@ -66,6 +73,18 @@ interface StreamProxyDeps {
   readonly sessionCtx: ExtensionContext | null;
   skipReasons: Map<string, string>;
   readonly streamOrchestrator: StreamOrchestrator;
+  /** The current session's last served model (TurnState.lastDynamicModel). */
+  readonly turnModel: string;
+  /** The current session's cache-warm target (TurnState.cacheWarmTarget). */
+  cacheWarmTarget: string;
+  /** Why `ref` must not be sent a request now (rate-limit cooldown, open breaker); null = it may. */
+  readonly unavailableReason: (ref: string) => string | null;
+  /** Declare the served model's cache economics on a group model (group-registration.ts). */
+  readonly declareCacheEconomics: (
+    groupName: string,
+    modelId: string,
+    economics: DeclaredCacheEconomics
+  ) => void;
 }
 
 export interface StreamProxy {
@@ -913,6 +932,123 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
   // fallback cascade on every empty response would exhaust all tiers
   // when a simple retry would suffice.
   function groupStream(
+    model: Model<Api>,
+    context: Context,
+    options?: SimpleStreamOptions
+  ): AssistantMessageEventStream {
+    // Pi names the session on every request; everything below — the turn
+    // state the walk reads and writes, the cache-warm target — belongs to it.
+    // (The static branch used to call driveStream outside this scope, so a
+    // static group's turn model landed in the default session.)
+    return runInSession(options?.sessionId, () => {
+      // Pi's cache warm (docs/plans/2026-11-20-honor-pi-cache-warming.md):
+      // a replay of the session's last request, served on the model that
+      // answered it — never routed, classified, retried or logged.
+      if (isPiCacheWarmRequest(options)) return serveCacheWarm(model, context, options);
+      const stream = routeGroupStream(model, context, options);
+      noteServedRequest(model, stream, options);
+      return stream;
+    });
+  }
+
+  /**
+   * After a routed request: remember the model that served it as the
+   * session's warm target and declare its cache economics on the group model
+   * Pi asked for (step 1). A failed request clears the target — it cached
+   * nothing, so a warm would only pay for a cold write.
+   *
+   * Sub-calls (delegation, bulk_read) are the turn's tool work, not requests
+   * of the session — the recordServedRef rule. They neither move the warm
+   * target nor declare economics on the group they streamed through (review
+   * 2026-11-20: they used to stamp the parent's model on the delegation group).
+   */
+  function noteServedRequest(
+    groupModel: Model<Api>,
+    stream: AssistantMessageEventStream,
+    options: SimpleStreamOptions | undefined
+  ): void {
+    if (inSubCall()) return;
+    void stream
+      .result()
+      .then((message) =>
+        runInSession(options?.sessionId, () => {
+          if (message.stopReason === 'error' || message.stopReason === 'aborted') {
+            rt.cacheWarmTarget = '';
+            return;
+          }
+          const ref = rt.turnModel;
+          rt.cacheWarmTarget = ref;
+          if (!ref) return;
+          const { provider, modelId } = splitRef(ref);
+          const served = rt.sessionCtx?.modelRegistry.find(provider, modelId);
+          if (served) {
+            rt.declareCacheEconomics(
+              groupModel.provider,
+              groupModel.id,
+              cacheEconomicsFor(served, options)
+            );
+          }
+        })
+      )
+      .catch((err: unknown) => {
+        debugLog(`[cache-warm] could not note the served model: ${textOf(err)}`);
+      });
+  }
+
+  /**
+   * Forward Pi's warm request verbatim to the session's warm target. No
+   * fallback: warming another model's cache keeps nothing alive. Any reason
+   * not to warm ends the stream with an error, which Pi records as no warm.
+   */
+  function serveCacheWarm(
+    model: Model<Api>,
+    context: Context,
+    options: SimpleStreamOptions | undefined
+  ): AssistantMessageEventStream {
+    const proxy = createAssistantMessageEventStream();
+    const sourceModel: SourceModelInfo = { provider: model.provider, id: model.id, api: model.api };
+    const target = rt.cacheWarmTarget;
+    const fail = (why: string): void => {
+      debugLog(`[cache-warm] not warming ${model.provider}/${model.id}: ${why}`);
+      proxy.push({
+        type: 'error',
+        reason: 'error',
+        error: buildErrorAssistantMessage(`[router] cache warm skipped: ${why}`, why, sourceModel),
+      });
+      proxy.end();
+    };
+    void (async (): Promise<void> => {
+      try {
+        if (!target) return fail('no served request to warm in this session');
+        // Never into a known cooldown or an open breaker: the warm would fail
+        // and only add load to a provider the router is already waiting out.
+        const unavailable = rt.unavailableReason(target);
+        if (unavailable) return fail(`${target} is ${unavailable}`);
+        const registry = rt.sessionCtx?.modelRegistry;
+        const { provider, modelId } = splitRef(target);
+        const realModel = registry?.find(provider, modelId);
+        if (!registry || !realModel) return fail(`${target} is not in Pi's model registry`);
+        const apiKey = await registry.getApiKeyForProvider(realModel.provider).catch(() => null);
+        // The group's virtual key must not reach the real provider.
+        const { apiKey: _drop, ...base } = options ?? {};
+        const upstream = hostStreamSimple(realModel, context, apiKey ? { ...base, apiKey } : base);
+        if (!upstream) return fail(`no stream handler for ${target}`);
+        routerLog(`[cache-warm] forwarding Pi's warm to ${target}`);
+        let terminated = false;
+        for await (const event of upstream) {
+          proxy.push(event);
+          if (event.type === 'done' || event.type === 'error') terminated = true;
+        }
+        if (!terminated) return fail(`${target} ended the warm without a result`);
+        proxy.end();
+      } catch (err) {
+        fail(textOf(err));
+      }
+    })();
+    return proxy;
+  }
+
+  function routeGroupStream(
     model: Model<Api>,
     context: Context,
     options?: SimpleStreamOptions

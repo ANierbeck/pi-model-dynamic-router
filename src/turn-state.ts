@@ -26,6 +26,12 @@ export interface TurnState {
   /** Last concrete model that served a stream — the first candidate of a tool follow-up. */
   lastDynamicModel: string;
   /**
+   * The model whose prompt cache Pi's warm requests keep alive: the one that
+   * served the session's last SUCCESSFUL request; '' after a failed request
+   * (nothing was cached) or before any (docs/plans/2026-11-20-honor-pi-cache-warming.md).
+   */
+  cacheWarmTarget: string;
+  /**
    * The agent run's group and intended driver, remembered at classification so a
    * tool follow-up continues in the run's group instead of falling to `simple`
    * (docs/plans/2026-11-07-tool-follow-up-group.md). null/'' = no run remembered.
@@ -160,6 +166,7 @@ export function emptyTurnState(): TurnState {
     curModel: '',
     activeGroup: null,
     lastDynamicModel: '',
+    cacheWarmTarget: '',
     runGroup: null,
     runDriver: '',
     lastClassifiedCategory: undefined,

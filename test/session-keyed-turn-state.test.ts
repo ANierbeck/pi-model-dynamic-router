@@ -183,14 +183,15 @@ const theme = { fg: (_color: string, text: string): string => text };
 async function footerOf(
   h: { onHandlers: Record<string, any>; modelRegistry: any },
   id: string,
-  statuses: ReadonlyMap<string, string> = new Map()
+  statuses: ReadonlyMap<string, string> = new Map(),
+  branch: unknown[] = []
 ): Promise<() => string> {
   let render: (() => string) | undefined;
   const ctx: any = {
     cwd: process.cwd(),
     model: { provider: 'standard', id: 'standard' },
     modelRegistry: h.modelRegistry,
-    sessionManager: { getSessionId: () => id, getBranch: () => [] },
+    sessionManager: { getSessionId: () => id, getBranch: () => branch },
     getContextUsage: () => null,
     ui: {
       setFooter: (factory: any) => {
@@ -209,6 +210,30 @@ async function footerOf(
 }
 
 describe('footer, category and sub-calls follow the session', () => {
+  // Pi 1.6 records each cache warm as a `usage` entry (kind cache_warm). Pi's
+  // built-in footer adds those to the session totals; ours replaces it, so it
+  // must too (docs/plans/2026-11-20-honor-pi-cache-warming.md, O1). The
+  // per-step average stays a per-STEP figure: a warm is not a step.
+  it('session totals include Pi’s cache-warm usage, the per-step average does not', async () => {
+    await boot(async (h) => {
+      const usage = (input: number, output: number, cacheRead: number, total: number): any => ({
+        input,
+        output,
+        cacheRead,
+        cacheWrite: 0,
+        totalTokens: input + output + cacheRead,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total },
+      });
+      const branch = [
+        { type: 'message', message: { role: 'assistant', usage: usage(1000, 100, 9000, 0.1) } },
+        { type: 'usage', kind: 'cache_warm', usage: usage(0, 1, 10_000, 0.25) },
+      ];
+      const text = (await footerOf(h, 'parent', new Map(), branch))();
+      expect(text).toContain('$0.35');
+      expect(text).toContain('~$0.10/step');
+    });
+  }, 30000);
+
   // Pi's built-in footer is the only renderer of ctx.ui.setStatus texts; our
   // footer REPLACES it, so it must render them itself (footerData, the
   // documented setFooter contract). Red-first: written against the footer that

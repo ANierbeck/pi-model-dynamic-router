@@ -201,6 +201,7 @@ Modules without their own heading above. One row per file, so every `src/` modul
 | `src/budget-pacing.ts` | Declared spend allowance per provider (user-layer key) and its pacing |
 | `src/bulk-read.ts` | `bulk_read` tool and the `read` pre-call block (ADR-0007) |
 | `src/cache-stats.ts` | Provider-reported usage block of an assistant message (all fields optional); cache statistics |
+| `src/cache-warming.ts` | Honoring Pi's `cacheWarming`: warm-request detection, the cache economics a group model declares, Pi's `cache_warm` usage entries |
 | `src/cache.ts` | `CacheManager`: the scan cache file and the `usage_log` entry shape |
 | `src/capabilities.ts` | Raw entries of provider models-list responses (the shape varies per provider) |
 | `src/classification-prompt.ts` | Classifier prompt; `hint:*` categories only when the request starts with a HINT marker |
