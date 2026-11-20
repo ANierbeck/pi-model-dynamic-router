@@ -90,6 +90,31 @@ interface EventHandlerDeps {
  * turn state (src/turn-state.ts) is then the one of the session that fired the
  * event, not whichever session started last.
  */
+/** Status keys this router sets itself and renders as footer parts. */
+const ROUTER_OWN_STATUS_KEYS: ReadonlySet<string> = new Set(['router']);
+
+/**
+ * One footer line from pi's extension status map, mirroring pi's built-in
+ * footer: sorted by key, newlines/tabs flattened, runs of spaces collapsed.
+ * Empty string when nothing (other than the excluded keys) is set.
+ */
+export function extensionStatusLine(
+  statuses: ReadonlyMap<string, string>,
+  exclude: ReadonlySet<string>
+): string {
+  return [...statuses.entries()]
+    .filter(([key]) => !exclude.has(key))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, text]) =>
+      text
+        .replace(/[\r\n\t]/g, ' ')
+        .replace(/ +/g, ' ')
+        .trim()
+    )
+    .filter((text) => text.length > 0)
+    .join(' ');
+}
+
 function inSessionOf<E, R>(
   handler: (ev: E, ctx: ExtensionContext) => R
 ): (ev: E, ctx: ExtensionContext) => R {
@@ -284,7 +309,14 @@ export function createEventHandlers(rt: EventHandlerDeps): void {
           if (brS) parts.push(brS);
           if (rlS) parts.push(rlS);
           if (errS) parts.push(errS);
-          return [truncateToWidth(parts.join(sep), w)];
+          const lines = [truncateToWidth(parts.join(sep), w)];
+          // Status texts of OTHER extensions (ctx.ui.setStatus). Pi's built-in
+          // footer rendered these on their own line, sorted by key; this footer
+          // replaces it, so it must do the same. The router's own 'router' key
+          // is skipped: its error count is already the errS part above.
+          const extLine = extensionStatusLine(fd.getExtensionStatuses(), ROUTER_OWN_STATUS_KEYS);
+          if (extLine) lines.push(truncateToWidth(extLine, w, theme.fg('dim', '...')));
+          return lines;
         }
       });
     })

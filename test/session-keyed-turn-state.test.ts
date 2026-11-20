@@ -182,7 +182,8 @@ const theme = { fg: (_color: string, text: string): string => text };
  */
 async function footerOf(
   h: { onHandlers: Record<string, any>; modelRegistry: any },
-  id: string
+  id: string,
+  statuses: ReadonlyMap<string, string> = new Map()
 ): Promise<() => string> {
   let render: (() => string) | undefined;
   const ctx: any = {
@@ -196,6 +197,7 @@ async function footerOf(
         const footer = factory({ requestRender: () => {} }, theme, {
           onBranchChange: () => () => {},
           getGitBranch: () => '',
+          getExtensionStatuses: () => statuses,
         });
         render = () => footer.render(400).join('');
       },
@@ -207,6 +209,41 @@ async function footerOf(
 }
 
 describe('footer, category and sub-calls follow the session', () => {
+  // Pi's built-in footer is the only renderer of ctx.ui.setStatus texts; our
+  // footer REPLACES it, so it must render them itself (footerData, the
+  // documented setFooter contract). Red-first: written against the footer that
+  // rendered only its own parts.
+  it('renders the status texts other extensions set, on their own line, sorted by key', async () => {
+    await boot(async (h) => {
+      const footer = await footerOf(
+        h,
+        'parent',
+        new Map([
+          ['zeta-ext', 'zeta  ready'],
+          ['pi-memory', 'memory\t3 notes'],
+        ])
+      );
+      expect(footer()).toContain('memory 3 notes');
+      expect(footer()).toContain('zeta ready');
+      expect(footer().indexOf('memory 3 notes')).toBeLessThan(footer().indexOf('zeta ready'));
+    });
+  }, 30000);
+
+  it('does not repeat the router’s own status key (its error count is already a footer part)', async () => {
+    await boot(async (h) => {
+      const footer = await footerOf(
+        h,
+        'parent',
+        new Map([
+          ['router', '⚠2 err'],
+          ['pi-memory', 'memory 3 notes'],
+        ])
+      );
+      expect(footer()).toContain('memory 3 notes');
+      expect(footer()).not.toContain('⚠2 err');
+    });
+  }, 30000);
+
   it('each footer names its own session’s resolved model, rendered outside any scope', async () => {
     await boot(async (h) => {
       const parentFooter = await footerOf(h, 'parent');

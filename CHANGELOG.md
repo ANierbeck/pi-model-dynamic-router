@@ -25,6 +25,17 @@ without the owner's explicit release approval).
   does not affect the router: the footer builds a fresh array per render and
   never mutates a returned one.
 
+### Fixed
+
+- **Footer hid other extensions' status texts.** The router's footer replaces
+  pi's built-in footer, which was the only renderer of `ctx.ui.setStatus()`
+  texts, so statuses from other extensions (for example pi-memory, pi-subagents)
+  disappeared while the router was active. The footer now renders them on their
+  own line, sorted by key, the way pi's built-in footer does, using the
+  documented `footerData.getExtensionStatuses()`. The router's own `router` key
+  is skipped because its error count is already a footer part. Red-first: two
+  tests in `test/session-keyed-turn-state.test.ts` failed against the old footer.
+
 ## [Unreleased]
 
 ### Added
