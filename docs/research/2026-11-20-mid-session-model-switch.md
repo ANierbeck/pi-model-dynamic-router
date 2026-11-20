@@ -63,6 +63,47 @@ should therefore be gated on the cache being cold already, or on an explicit
 amortization estimate (remaining-steps × price-delta > one full-price read);
 otherwise it is a pure loss near the session's end.
 
+## Mid-turn variant (while the turn is working)
+
+Owner clarification 2026-11-20: the interesting moments are not user turns
+but the steps WHILE a turn executes — every time new decisions/insights are
+sent to the model backend mid-work. Verdict: switching the MAIN thread
+mid-turn does not pay, and the healthy core of the idea already exists:
+
+- **Failover already is mid-turn switching** — on failure. A model error or
+  stream throw mid-turn walks the candidate list immediately. What does not
+  exist is switching on cost/quality signals while everything works.
+- **The bulk_reader sub-call already is the mid-turn model switch that
+  makes sense**: oversized tool output is summarized by a cheap model as a
+  sub-call while the main thread keeps its model, its plan and its cache.
+  The owner's condition "bulk reading must keep being intercepted" IS that
+  mechanism.
+- **Everything the router itself sends mid-turn** (tool-step
+  classification skip, compaction summaries, delegation) already runs on
+  its own deliberately chosen model via the sub-call scope.
+
+Why a main-thread switch mid-turn does not pay:
+
+- The context is largest exactly then (every tool step grows it), so the
+  one-time uncached re-read hits at the most expensive moment of the turn.
+- The remaining horizon is short: a turn has at most ~20-25 steps, usually
+  fewer. At 100k context the switch costs ~$0.14 once (GLM-class input
+  price) while the per-step saving is ~$0.01-0.02 — break-even only after
+  ~9-14 further steps FROM the switch, which the turn rarely has left.
+  Best case (expensive base model, large price gap, long turn) is
+  borderline; on the usual cheap-model sessions it never pays.
+- A mid-task model switch is a brain transplant: the model holds a plan,
+  open tool assumptions, partial reasoning. The sub-call-scope bug class
+  (live incident 2026-11-03, fixed through PR #86/#129 and the PR #199
+  sub-call guard) shows how fragile those state assumptions are — a
+  main-thread mid-turn switch would reopen them in the core path.
+
+Where the information that would justify a switch belongs: the next turn
+boundary — which follows an agent loop soon anyway, and where a switch is
+free whenever the cache is already cold (the condition above). A possible
+later lever: the observe_momentum quality observations could justify an
+up-/downgrade AT the turn boundary; mid-turn it is too late to matter.
+
 ## Options
 
 - **A — status quo.** Category changes already switch; drift is handled by
