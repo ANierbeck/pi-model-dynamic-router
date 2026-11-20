@@ -294,7 +294,7 @@ describe('runContextCompaction reads Pi’s warms from the session', () => {
 
   it('5b: a recent warm keeps a TTL-expired step from compacting', () => {
     const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
-    ctx.sessionManager = { getEntries: () => [warmEntry(Date.now() - 60_000)] };
+    ctx.sessionManager = { getBranch: () => [warmEntry(Date.now() - 60_000)] };
     runContextCompaction({
       ctx,
       cfg: cfg({ enabled: true, soft_tokens: SOFT, cache_ttl_s: 300 }),
@@ -307,7 +307,27 @@ describe('runContextCompaction reads Pi’s warms from the session', () => {
 
   it('5b: without a warm the same step still compacts (the pin above is not vacuous)', () => {
     const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
-    ctx.sessionManager = { getEntries: () => [] };
+    ctx.sessionManager = { getBranch: () => [] };
+    runContextCompaction({
+      ctx,
+      cfg: cfg({ enabled: true, soft_tokens: SOFT, cache_ttl_s: 300 }),
+      activeGroup: null,
+      usageLog: staleStep(),
+      state: { lastHintAt: 0, compactionsRun: 0, turnSeqAtStart: 0 },
+    });
+    expect(compact).toHaveBeenCalledTimes(1);
+  });
+
+  // Review finding (2026-11-20): Pi appends a warm under the current leaf, so
+  // after /tree navigation the session holds warms of abandoned branches. Only
+  // the current branch's warms say anything about the cache this context uses
+  // (Pi's own warmer judges on getBranch()).
+  it('5b: a warm on another branch of the session does not count', () => {
+    const { ctx, compact } = fakeCtx(ctxFixture({ tokens: 500_000 }));
+    ctx.sessionManager = {
+      getEntries: () => [warmEntry(Date.now() - 60_000)],
+      getBranch: () => [],
+    };
     runContextCompaction({
       ctx,
       cfg: cfg({ enabled: true, soft_tokens: SOFT, cache_ttl_s: 300 }),
@@ -320,7 +340,7 @@ describe('runContextCompaction reads Pi’s warms from the session', () => {
 
   it('5c: a recent warm means the session did not idle out', () => {
     const { ctx, notify } = fakeCtx(ctxFixture({ tokens: 700_000 }));
-    ctx.sessionManager = { getEntries: () => [warmEntry(Date.now() - 60_000)] };
+    ctx.sessionManager = { getBranch: () => [warmEntry(Date.now() - 60_000)] };
     runContextCompaction({
       ctx,
       cfg: cfg({ enabled: true, fresh_session: { enabled: true } }),
@@ -334,7 +354,7 @@ describe('runContextCompaction reads Pi’s warms from the session', () => {
 
   it('5c: without a warm the idle gap suggests a fresh session', () => {
     const { ctx, notify } = fakeCtx(ctxFixture({ tokens: 700_000 }));
-    ctx.sessionManager = { getEntries: () => [] };
+    ctx.sessionManager = { getBranch: () => [] };
     runContextCompaction({
       ctx,
       cfg: cfg({ enabled: true, fresh_session: { enabled: true } }),

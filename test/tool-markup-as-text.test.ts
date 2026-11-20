@@ -30,7 +30,7 @@ import {
 } from './helpers/noop-scan-cache.ts';
 import { drainStream, makeExtensionContext } from './helpers/extension-harness.ts';
 import { rmTmpDir } from './helpers/router-env.ts';
-import { testModelCost } from './helpers/stream-fixtures.ts';
+import { errorEvent, testModelCost } from './helpers/stream-fixtures.ts';
 
 const scanCachePath = path.join(process.env.PI_ROUTER_STATE_DIR!, '.cache', 'scan-cache.json');
 
@@ -384,17 +384,7 @@ describe('I4 review round (2026-11-05): the hold must not leak, reorder or drop 
       bodies: {
         'first-model': async function* () {
           yield { type: 'text_delta', delta: 'partial answer' };
-          yield {
-            type: 'error',
-            reason: 'aborted',
-            error: {
-              role: 'assistant',
-              content: [],
-              stopReason: 'aborted',
-              errorMessage: 'Aborted',
-              timestamp: Date.now(),
-            },
-          };
+          yield errorEvent('aborted', 'Aborted');
         },
       },
     });

@@ -26,15 +26,18 @@ without the owner's explicit release approval).
     is forwarded verbatim to the model that served the session's last
     successful request — no classification, fallback, breaker evidence or
     decision-log record, and no warm into a rate-limit cooldown, an open
-    breaker or after a failed request;
-  - Pi's `cache_warm` usage entries count as steps for the 5b/5c cold-cache
-    signal, show in `/router cost` as their own `Cache warms (Pi)` line
+    breaker or after a failed request; delegation and `bulk_read` sub-calls
+    neither move the warm target nor declare economics (they are the turn's
+    tool work, not requests of the session);
+  - Pi's `cache_warm` usage entries on the session's current branch count as
+    steps for the 5b/5c cold-cache signal, show in `/router cost` as their own `Cache warms (Pi)` line
     (outside the session total, decision O1) and in the footer's session
     totals (Pi's own footer counts them; ours replaces it).
   Known limits (documented): the declaration lags one request, so a session's
   first request is never warmed; in-process sessions of one group share the
   declaration (decision O3). Red-first: `test/honor-pi-cache-warming.test.ts`
-  (9 of 13 red against the old entry), the warm cases in
+  (8 of 12 red against the old entry; the
+  rate-limit, breaker and sub-call cases red against their missing gates), the warm cases in
   `test/context-compaction.test.ts` (3 red), `test/cache-warm-cost.test.ts`
   (2 red) and the footer total case in `test/session-keyed-turn-state.test.ts`.
 

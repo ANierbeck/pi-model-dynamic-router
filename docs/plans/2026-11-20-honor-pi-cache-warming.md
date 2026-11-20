@@ -68,7 +68,9 @@ about a virtual model.
 
 Each step red-first (AGENTS §4); one PR.
 
-## Decisions (owner, 2026-11-20)
+## Open decisions
+
+None open — the owner decided O1–O3 on 2026-11-20:
 
 - **O1 — warm costs in `/router cost`: yes.** Shown as their own line, read from
   Pi's `cache_warm` session usage entries (Pi's record is the source; the router's

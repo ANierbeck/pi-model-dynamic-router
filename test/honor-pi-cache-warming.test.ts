@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { makeObservableExtensionContext, startSession } from './helpers/extension-harness.ts';
-import { doneEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
+import { doneEvent, errorEvent, paidCloudModel } from './helpers/stream-fixtures.ts';
 import { withRouterEnv } from './helpers/router-env.ts';
 
 vi.mock('../src/content-classifier.ts', async (importOriginal) => {
@@ -25,11 +25,25 @@ const CONFIG = {
   providers: {},
   model_groups: {
     dynamic: { method: 'dynamic' },
-    standard: { fallback_groups: [], min_gdpval: 0 },
+    standard: {
+      fallback_groups: [],
+      min_gdpval: 0,
+      exclude_models: ['paid-cloud-provider/side-*'],
+    },
+    // Two more models of the same provider that only this group uses: wedging
+    // them opens the provider's breaker without putting a session's turn
+    // model into a rate-limit cooldown.
+    side: {
+      fallback_groups: [],
+      min_gdpval: 0,
+      exclude_models: ['paid-cloud-provider/paid-model', 'paid-cloud-provider/other-model'],
+    },
   },
-  gdpval_builtin: { 'paid-model': 1000, 'other-model': 900 },
+  gdpval_builtin: { 'paid-model': 1000, 'other-model': 900, 'side-a': 500, 'side-b': 400 },
   // A session whose candidates all fail must terminate now, not wait out cooldowns.
   rate_limit_wait_max_ms: 0,
+  // Two wedged models of one provider open its breaker (default: three).
+  provider_breaker: { min_models: { cloud: 2 } },
 };
 
 const PROMPT_CACHE = { short: 300, long: 3600 };
@@ -80,37 +94,28 @@ async function boot(
         promptCache: PROMPT_CACHE,
         ...modelOverrides,
       });
-      // Session 'fails' cannot be served by anyone, session 'limiter' gets a
-      // 429 from every model; a warm with `failWarm` fails on its model.
-      // Everything else answers.
+      const sideModels = ['side-a', 'side-b'].map((id) => paidCloudModel({ id }));
+      // Session 'fails' cannot be served by anyone, a `cancelled` request is
+      // aborted, session 'limiter' gets a 429 from every model, session
+      // 'wedger' gets empty answers (breaker evidence, not a rate limit); a
+      // warm with `failWarm` fails on its model. Everything else answers.
       const streamSimple = vi.fn((model: any, _ctx: any, options: any) =>
         (async function* () {
+          if (options?.cancelled) {
+            // A cancellation: no cooldown, no breaker evidence.
+            yield errorEvent('aborted', 'Request was aborted');
+            return;
+          }
+          if (options?.sessionId === 'wedger') {
+            yield doneEvent();
+            return;
+          }
           if (options?.sessionId === 'limiter') {
-            yield {
-              type: 'error',
-              reason: 'error',
-              error: {
-                role: 'assistant',
-                content: [],
-                errorMessage: '429 rate limit exceeded',
-                stopReason: 'error',
-                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-              },
-            };
+            yield errorEvent('error', '429 rate limit exceeded');
             return;
           }
           if (options?.sessionId === 'fails' || options?.failWarm) {
-            yield {
-              type: 'error',
-              reason: 'error',
-              error: {
-                role: 'assistant',
-                content: [],
-                errorMessage: '500 internal server error',
-                stopReason: 'error',
-                usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
-              },
-            };
+            yield errorEvent('error', '500 internal server error');
             return;
           }
           yield { type: 'text_delta', delta: 'reply' };
@@ -128,8 +133,9 @@ async function boot(
         })()
       );
       const modelRegistry = {
-        getAvailable: () => [paidModel, otherModel],
-        find: (_provider: string, id: string) => (id === 'other-model' ? otherModel : paidModel),
+        getAvailable: () => [paidModel, otherModel, ...sideModels],
+        find: (_provider: string, id: string) =>
+          sideModels.find((m) => m.id === id) ?? (id === 'other-model' ? otherModel : paidModel),
         getApiKeyForProvider: async () => null,
         getRegisteredProviderIds: () => [],
         runtime: { streamSimple },
@@ -155,6 +161,16 @@ async function boot(
     },
     { config: CONFIG, disableNetwork: true }
   );
+}
+
+/**
+ * runAsSubCall from the module graph the booted extension uses: withRouterEnv
+ * re-imports the extension, so a static import would be another instance
+ * with its own AsyncLocalStorage.
+ */
+async function runAsSubCall<T>(fn: () => Promise<T>): Promise<T> {
+  const scope = await import('../src/subcall-scope.ts');
+  return scope.runAsSubCall(fn);
 }
 
 const userTurn = (): any => ({ messages: [{ role: 'user', content: 'hello' }] });
@@ -257,6 +273,45 @@ describe('Pi cache-warm requests are served verbatim on the session’s turn mod
     });
   }, 30000);
 
+  it('a turn model behind an open breaker is not warmed', async () => {
+    await boot(async (h) => {
+      await drain(h.entry('standard', userTurn(), { sessionId: 'S' }));
+      // Another session's empty answers on the provider's OTHER models wedge
+      // it (breaker evidence) while the turn model itself stays out of any
+      // cooldown — so only the breaker can keep this warm back.
+      await drain(h.entry('side', userTurn(), { sessionId: 'wedger' }));
+      const wedged = h.streamSimple.mock.calls.map((c) => c[0].id);
+      expect(wedged).toEqual(expect.arrayContaining(['side-a', 'side-b']));
+      h.streamSimple.mockClear();
+
+      const warm = h.entry('standard', userTurn(), warmOptions('S'));
+      await drain(warm);
+
+      expect(h.streamSimple).not.toHaveBeenCalled();
+      expect((await warm.result()).stopReason).toBe('error');
+    });
+  }, 30000);
+
+  // Review finding (2026-11-20): delegation and bulk_read sub-calls stream
+  // through a group provider inside the parent's session. They are the turn's
+  // tool work, not a request of the session (the recordServedRef rule).
+  it('an unsuccessful sub-call does not clear the session’s warm target', async () => {
+    await boot(async (h) => {
+      await drain(h.entry('standard', userTurn(), { sessionId: 'S' }));
+      const sub = await runAsSubCall(async () => {
+        const s = h.entry('standard', userTurn(), { sessionId: 'S', cancelled: true });
+        await drain(s);
+        return s.result();
+      });
+      expect(sub.stopReason).toBe('aborted');
+      h.streamSimple.mockClear();
+
+      await drain(h.entry('standard', userTurn(), warmOptions('S')));
+
+      expect(h.streamSimple).toHaveBeenCalledTimes(1);
+    });
+  }, 30000);
+
   it('a request that only caps its output at one token is routed normally', async () => {
     await boot(async (h) => {
       const events = await drain(h.entry('standard', userTurn(), { sessionId: 'S', maxTokens: 1 }));
@@ -295,6 +350,16 @@ describe('the group model declares the served model’s cache economics', () => 
       const after = h.registrationsOf('standard');
       await drain(h.entry('standard', userTurn(), { sessionId: 'S' }));
       expect(h.registrationsOf('standard')).toBe(after);
+    });
+  }, 30000);
+
+  it('a sub-call declares nothing on the group it streamed through', async () => {
+    await boot(async (h) => {
+      // The parent's turn model is known; the sub-call must not stamp it on
+      // the group the sub-call happened to use.
+      await drain(h.entry('dynamic', userTurn(), { sessionId: 'S' }));
+      await runAsSubCall(() => drain(h.entry('standard', userTurn(), { sessionId: 'S' })));
+      expect(h.groupModel('standard').promptCache).toBeUndefined();
     });
   }, 30000);
 

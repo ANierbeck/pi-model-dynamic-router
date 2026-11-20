@@ -209,8 +209,8 @@ export function noteSessionCompaction(state: CompactionRunState): void {
  * share gate reads it when present (src/fresh-session.ts). */
 export interface CompactionCtx {
   getContextUsage(): { tokens: number | null; contextWindow?: number } | undefined;
-  /** Pi's session entries — the source of its `cache_warm` usage records. */
-  sessionManager?: { getEntries(): readonly unknown[] };
+  /** Pi's session — its current branch carries the `cache_warm` usage records. */
+  sessionManager?: { getBranch(): readonly unknown[] };
   compact(options?: { customInstructions?: string }): void;
   ui: { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
 }
@@ -250,8 +250,10 @@ function runContextCompactionInner(opts: Parameters<typeof runContextCompaction>
   const tokens = usage?.tokens ?? null;
   if (tokens === null || !(tokens > 0)) return; // unknown right after a compaction
   // One cache state for both 5b and 5c: the last usage_log step or Pi's
-  // latest cache warm, whichever is newer.
-  const last = lastStepCacheState(opts.usageLog, opts.ctx.sessionManager?.getEntries());
+  // latest cache warm, whichever is newer. Only the CURRENT branch's warms:
+  // Pi appends a warm under the leaf, so after /tree navigation the session
+  // also holds warms of abandoned branches (Pi's warmer judges on the branch too).
+  const last = lastStepCacheState(opts.usageLog, opts.ctx.sessionManager?.getBranch());
 
   // Nothing configured → measurement only (5a already records), no 5b hints.
   // The 5c fresh-session suggestion below does NOT need the thresholds — its

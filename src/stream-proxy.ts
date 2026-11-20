@@ -29,6 +29,7 @@ import {
   type DeclaredCacheEconomics,
 } from './cache-warming.ts';
 import { runInSession } from './turn-state.ts';
+import { inSubCall } from './subcall-scope.ts';
 import {
   type Api,
   type Model,
@@ -955,12 +956,18 @@ export function createStreamProxy(rt: StreamProxyDeps): StreamProxy {
    * session's warm target and declare its cache economics on the group model
    * Pi asked for (step 1). A failed request clears the target — it cached
    * nothing, so a warm would only pay for a cold write.
+   *
+   * Sub-calls (delegation, bulk_read) are the turn's tool work, not requests
+   * of the session — the recordServedRef rule. They neither move the warm
+   * target nor declare economics on the group they streamed through (review
+   * 2026-11-20: they used to stamp the parent's model on the delegation group).
    */
   function noteServedRequest(
     groupModel: Model<Api>,
     stream: AssistantMessageEventStream,
     options: SimpleStreamOptions | undefined
   ): void {
+    if (inSubCall()) return;
     void stream
       .result()
       .then((message) =>
