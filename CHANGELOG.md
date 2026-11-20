@@ -9,6 +9,22 @@ M3 latency fix are planned into 2.0. `package.json` carries the
 published 2.0.0 is cut from the release tag only (AGENTS.md §1 — no publish
 without the owner's explicit release approval).
 
+### Changed
+
+- **Host alignment to pi 1.6.0** (devDependencies `^1.5.2` → `^1.6.0` for
+  `pi-coding-agent`, `pi-ai`, `pi-tui`). The user's pi self-updated to 1.6.0,
+  so the test suite now runs against the host that actually loads the router.
+  The host bump moves `undici` 8.12.3 → 8.12.4 in the dev lock, which carries
+  the six undici security advisories listed in pi 1.6.0's release notes. The
+  shipped package has no runtime dependencies (pi is a peer), so the bump
+  changes the dev lock and the host the user runs, not the published tarball.
+  Checked: `tsc`, lint gate, vitest (3610 passed / 3 skipped), coverage
+  thresholds unchanged, build, prettier; the private `modelRegistry.runtime`
+  reach-throughs (`streamSimple`, `completeSimple`, `hasConfiguredAuth`) still
+  exist in 1.6.0. Pi 1.6.0 breaking change `render()` → `readonly string[]`
+  does not affect the router: the footer builds a fresh array per render and
+  never mutates a returned one.
+
 ## [Unreleased]
 
 ### Added
